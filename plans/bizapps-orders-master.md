@@ -21,10 +21,10 @@
 ## 0. Table of contents
 
 1. [Context and positioning](#1-context-and-positioning)
-2. [Decisions (BO-D1 through BO-D26)](#2-decisions-bo-d1-through-bo-d26)
+2. [Decisions (BO-D1 through BO-D36)](#2-decisions-bo-d1-through-bo-d36)
 3. [Architecture and scope boundaries](#3-architecture-and-scope-boundaries)
 4. [Entity model](#4-entity-model)
-   - 4.1 Product, ProductCategory, ProductPrice, ProductTaxCategory
+   - 4.1 Product Management — Product, ProductType, Bundles, Pricing, Entitlements
    - 4.2 Order + OrderLine (with multi-company)
    - 4.3 Invoice + CreditMemo
    - 4.4 Subscription + SubscriptionPlan + SubscriptionEvent
@@ -81,7 +81,7 @@ This is a refinement, not a contradiction, of PR #2214's design intent.
 
 ---
 
-## 2. Decisions (BO-D1 through BO-D26)
+## 2. Decisions (BO-D1 through BO-D36)
 
 References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). References to `BA-D*` are BizAppsAccounting decisions (`plans/bizapps-accounting-master.md`).
 
@@ -116,6 +116,13 @@ References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). Refe
 | **BO-D27** | **Workflow & approvals run on BizAppsTasks** — the shared workflow/state-management substrate across Orders and Accounting. Any human gate (sales-rule violation, customer-requested credit-limit override, discount exception, subscription cancellation override, refund authorization, …) is raised as an **"Approval Request" Task** (a Task Type) linked to the subject record via the polymorphic `Task Links`, routed to an approver role, with the decision driving a Task Type action hook. | Replaces the non-existent `__mj.ApprovalRequest`. Requires generic approval features in tasks (outcome/decision model, reject hook, role routing, orchestration API) — tasks issue [#8](https://github.com/MemberJunction/bizapps-tasks/issues/8). Tasks is a new dependency. |
 | **BO-D28** | **The `AccountingService` façade is the integration contract.** Orders is its first consumer and **drives the `JournalEntryDraft` / `ScheduledJournalEntryDraft` shapes** (undefined in the accounting plan today). Orders codes against the façade; accounting builds it (issue #9). | Single stable contract that survives accounting's internal schema churn; atomic balanced-set creation + period-open validation in one call. |
 | **BO-D29** | **v1 ships Stripe + Manual payment providers only.** PayPal/Square/Authorize/Adyen deferred to v1.5/v2. Orders co-evolves with accounting (which is ~Phase 1, wrapping shortly); phases that depend on unbuilt accounting surface (Tax provider, intercompany, scheduled-JE materialization) are sequenced behind their accounting counterparts. | Avoids building against an incomplete dependency; gets a usable substrate out fastest. |
+| **BO-D30** | **Engine architecture: `OrdersEngine` (this app) + `AccountingEngine` (accounting).** Both extend MJ `BaseEngine` — caching slow-changing metadata and exposing domain helper methods (`Config()` + `ObserveProperty` + lazy-load singleton). `OrdersEngine` caches catalog/config and exposes `ResolvePrice`, `ComputeOrderTotals`, `BuildBookingJEs`, `BuildRevRecWaterfall`, `EvaluateSalesRules`, `InvokeTax`; JE emission delegates to `AccountingEngine` (accounting issue [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9)). | MJ canonical engine pattern: cached reads + reactivity, lazy singleton. PascalCase public members. See [§3 Engine architecture](#engine-architecture-bo-d30). |
+| **BO-D31** | **`ProductType` is a first-class entity** carrying behavior defaults (rev-rec type, taxability, fulfillment-required, billing cadence): Physical Good / Digital Good / Service / Subscription / Usage / Bundle / Add-on / Fee / Donation / Gift Card. Replaces the v1 `IsSubscription` boolean. | New products inherit correct behavior instead of per-flag hand-setting. |
+| **BO-D32** | **Bundles/kits in v1** via `ProductBundleItem` (parent → component products, qty, priced-as-bundle vs sum-of-parts). **Product variants (SKU matrix) deferred to v2.** | Bundles unlock package selling + ASC-606 revenue allocation; variants are heavier and rarer for SaaS. |
+| **BO-D33** | **Pricing depth in v1**: `PriceList` (segment/region/channel/tier, currency-scoped) + `PriceTier` (volume/quantity breaks) + a `PricingModel` on `ProductPrice` (flat / per-unit / tiered / volume / package / usage-rate) + fee types (setup / recurring / overage). Effective-dated, currency-specific. | Pricing structure is hard to retrofit; build it once. |
+| **BO-D34** | **`ProductEntitlement` modeled in v1** — what a purchase grants (feature / access level / quantity-of-resource). Provisioning/enforcement is later, but the entity + order/subscription linkage ship in v1. | Entitlements are the machine-readable contract of what the customer can use — the enabler for downstream apps. |
+| **BO-D35** | **ASC 606 fields in v1; allocation engine in v2.** Product carries performance obligation(s) + standalone selling price (SSP) so bundle revenue can be allocated across components by SSP into the `ScheduledJournalEntry` waterfall. The allocation *engine* is v2; the fields ship in v1. | Correct bundle rev-rec roots in product metadata; model now to avoid a breaking change. |
+| **BO-D36** | **Usage/metered modeled on the product/pricing side in v1; metered billing engine in v2.** `PricingModel='Usage'` + UnitOfMeasure + overage rates exist in v1; consumption aggregation + metered invoicing is v2. | Lets metered billing land later without a breaking schema change. |
 
 ---
 
@@ -162,63 +169,144 @@ BizAppsTasks  ══╣ cross-cutting workflow/approval substrate, consumed by B
 - Handle payroll / vendor bills / expenses (future BizApps* siblings)
 - Customer master (BizAppsCommon's job)
 
+### Engine architecture (BO-D30)
+
+Both apps expose an MJ `BaseEngine` that caches slow-changing metadata and provides domain helper methods — the canonical `Config()` + `ObserveProperty` + lazy-load singleton pattern. Admin edits (a price change, a new GL account) propagate to subscribers via `ObserveProperty` with no manual reload; public members are PascalCase.
+
+- **`OrdersEngine`** (this app)
+  - *Caches*: `Product`, `ProductType`, `ProductCategory`, `ProductPrice` / `PriceList` / `PriceTier`, `ProductTaxCategory`, `SubscriptionPlan`, `PaymentProvider`, `SalesRule`, `SalesAuthority`, `PaymentTermsType`.
+  - *Helpers*: `ResolvePrice(productId, currency, qty, date, priceList)`, `ComputeOrderTotals(order)`, `BuildBookingJEs(order)` (→ `AccountingEngine`), `BuildRevRecWaterfall(subscription)` (→ `ScheduledJournalEntry` drafts), `EvaluateSalesRules(order)`, `InvokeTax(...)`.
+- **`AccountingEngine`** (BizApps Accounting; accounting issue [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9))
+  - *Caches*: `GLAccount`, `AccountingPeriod`, `AccountingCompanyProfile`, `Currency`, `Dimension` / `DimensionValue`, `Tax*`.
+  - *Helpers*: `CreateJournalEntry`, `CreateScheduledJournalEntries`, `ReverseJournalEntry`, `GetAccountBalance`, `GetPeriodStatus`, `ResolveGLAccount`.
+
 ---
 
 ## 4. Entity model
 
 Schema: `__mj_BizAppsOrders`. All entities use `UUID PK`.
 
-### 4.1 Product, ProductCategory, ProductPrice, ProductTaxCategory
+### 4.1 Product Management — the catalog root
+
+Product is the root of the whole app: it defines **how an item is billed** (one-time / subscription / usage), **how revenue is recognized and allocated**, **how it is taxed**, **what the purchase grants** (entitlements), and **how it is priced**. Nail the catalog and orders / invoicing / subscriptions / rev-rec / tax / intercompany all inherit correct behavior. (Variants and the metered-billing engine are v2 — BO-D32 / BO-D36.)
 
 ```sql
+__mj_BizAppsOrders.ProductType                           -- BO-D31: behavior defaults per kind
+  ID UUID PK,
+  Code NVARCHAR(40) UNIQUE,                               -- 'PhysicalGood' | 'DigitalGood' | 'Service' | 'Subscription'
+                                                           -- | 'Usage' | 'Bundle' | 'AddOn' | 'Fee' | 'Donation' | 'GiftCard'
+  Name NVARCHAR(200),
+  DefaultRevenueRecognitionType NVARCHAR(20),             -- seeds Product.RevenueRecognitionType
+  DefaultIsTaxable BIT NOT NULL DEFAULT 1,
+  RequiresFulfillment BIT NOT NULL DEFAULT 0,
+  IsBillableRecurring BIT NOT NULL DEFAULT 0,             -- subscription / usage kinds
+  IsActive BIT NOT NULL DEFAULT 1
+
 __mj_BizAppsOrders.ProductCategory
   ID UUID PK,
   Name NVARCHAR(200) NOT NULL,
-  ParentProductCategoryID UUID FK → ProductCategory NULL,   -- hierarchical
+  ParentProductCategoryID UUID FK → ProductCategory NULL, -- hierarchical
   Code NVARCHAR(40),
   Description NVARCHAR(MAX),
   IsActive BIT NOT NULL DEFAULT 1
 
 __mj_BizAppsOrders.Product
   ID UUID PK,
-  OwningCompanyID UUID FK → __mj.Company NOT NULL,    -- which subsidiary "owns" this product (revenue accrues)
+  OwningCompanyID UUID FK → __mj.Company NOT NULL,        -- subsidiary whose revenue accrues (multi-company)
+  ProductTypeID UUID FK → ProductType NOT NULL,           -- BO-D31: drives default behavior
   ProductCategoryID UUID FK NOT NULL,
   ProductTaxCategoryID UUID FK NULL,
   SKU NVARCHAR(80) UNIQUE,
   Name NVARCHAR(400) NOT NULL,
   Description NVARCHAR(MAX),
-  -- Revenue recognition
-  RevenueRecognitionType NVARCHAR(20) NOT NULL,       -- 'Immediate' | 'Ratable' | 'Milestone' | 'Custom'
+  -- Lifecycle
+  Status NVARCHAR(20) NOT NULL DEFAULT 'Draft',           -- 'Draft' | 'Active' | 'Discontinued' | 'EOL'
+  SuccessorProductID UUID FK → Product NULL,              -- replacement on discontinuation
+  AvailableFrom DATE NULL, AvailableTo DATE NULL,
+  -- Revenue recognition + GL routing
+  RevenueRecognitionType NVARCHAR(20) NOT NULL,           -- 'Immediate' | 'Ratable' | 'Milestone' | 'Custom'
   RevenueGLAccountID UUID FK → Accounting.GLAccount,
   DeferredRevenueGLAccountID UUID FK → Accounting.GLAccount NULL,
-  COGSGLAccountID UUID FK → Accounting.GLAccount NULL, -- for products with COGS (rare for SaaS)
-  -- Subscription support
-  IsSubscription BIT NOT NULL DEFAULT 0,
-  DefaultBillingCycle NVARCHAR(20),                    -- 'Monthly' | 'Quarterly' | 'Annual' | 'Custom'
+  COGSGLAccountID UUID FK → Accounting.GLAccount NULL,    -- for products with COGS (rare for SaaS)
+  -- ASC 606 (BO-D35: fields in v1; allocation engine v2)
+  StandaloneSellingPrice DECIMAL(18,4) NULL,             -- SSP for bundle revenue allocation
+  -- Subscription defaults (detailed plan in SubscriptionPlan §4.4)
+  DefaultBillingCycle NVARCHAR(20),                       -- 'Monthly' | 'Quarterly' | 'Annual' | 'Custom'
   DefaultSubscriptionTermMonths INT NULL,
   -- Tax
   IsTaxable BIT NOT NULL DEFAULT 1,
-  -- Pricing handled in ProductPrice
+  IsActive BIT NOT NULL DEFAULT 1
+  -- NOTE: the v1 `IsSubscription` boolean is replaced by ProductTypeID (BO-D31)
+
+__mj_BizAppsOrders.ProductBundleItem                      -- BO-D32: composite products
+  ID UUID PK,
+  BundleProductID UUID FK → Product NOT NULL,             -- parent bundle (ProductType='Bundle')
+  ComponentProductID UUID FK → Product NOT NULL,
+  Quantity DECIMAL(18,4) NOT NULL DEFAULT 1,
+  PricingMode NVARCHAR(20) NOT NULL DEFAULT 'Bundled',    -- 'Bundled' (fixed bundle price) | 'SumOfParts'
+  SortOrder INT NOT NULL DEFAULT 0,
+  UNIQUE (BundleProductID, ComponentProductID)
+
+__mj_BizAppsOrders.ProductPerformanceObligation          -- BO-D35: ASC 606; one+ per product (esp. bundles)
+  ID UUID PK,
+  ProductID UUID FK → Product NOT NULL,
+  Name NVARCHAR(200),
+  RevenueRecognitionType NVARCHAR(20) NOT NULL,           -- per-obligation pattern
+  StandaloneSellingPrice DECIMAL(18,4) NOT NULL,         -- SSP used for allocation across obligations
+  RevenueGLAccountID UUID FK → Accounting.GLAccount NULL,
+  DeferredRevenueGLAccountID UUID FK → Accounting.GLAccount NULL
+
+__mj_BizAppsOrders.ProductEntitlement                     -- BO-D34: what a purchase grants
+  ID UUID PK,
+  ProductID UUID FK → Product NOT NULL,
+  EntitlementType NVARCHAR(40) NOT NULL,                  -- 'Feature' | 'AccessLevel' | 'ResourceQuantity' | 'Custom'
+  Code NVARCHAR(80) NOT NULL,                             -- machine key consumed by downstream apps
+  Name NVARCHAR(200),
+  Quantity DECIMAL(18,4) NULL,                            -- for ResourceQuantity (e.g. 100 GB, 5 seats)
+  UnitOfMeasure NVARCHAR(40) NULL,
+  IsActive BIT NOT NULL DEFAULT 1
+  -- Provisioned on Order Post / Subscription activation (provisioning/enforcement engine is later)
+
+__mj_BizAppsOrders.PriceList                              -- BO-D33: pricing segmentation
+  ID UUID PK,
+  Code NVARCHAR(40) UNIQUE,
+  Name NVARCHAR(200),
+  CurrencyCode CHAR(3) FK → BizAppsAccounting.Currency NULL, -- null = multi-currency list
+  Segment NVARCHAR(40) NULL,                              -- region / channel / customer-tier scope
+  EffectiveFrom DATE NULL, EffectiveTo DATE NULL,
   IsActive BIT NOT NULL DEFAULT 1
 
 __mj_BizAppsOrders.ProductPrice
   ID UUID PK,
-  ProductID UUID FK,
+  ProductID UUID FK NOT NULL,
+  PriceListID UUID FK → PriceList NULL,                   -- optional grouping / segmentation
   CurrencyCode CHAR(3) FK → BizAppsAccounting.Currency,   -- Currency owned by Accounting (BA-D11)
-  Amount DECIMAL(18,4) NOT NULL,                       -- 4 decimal places for per-unit pricing
-  UnitOfMeasure NVARCHAR(40),                          -- 'each', 'month', 'hour', 'GB', etc.
+  PricingModel NVARCHAR(20) NOT NULL DEFAULT 'Flat',      -- 'Flat' | 'PerUnit' | 'Tiered' | 'Volume' | 'Package' | 'Usage'
+  FeeType NVARCHAR(20) NOT NULL DEFAULT 'Standard',       -- 'Standard' | 'Setup' | 'Recurring' | 'Overage'
+  Amount DECIMAL(18,4) NOT NULL,                          -- base/flat amount; tier detail in PriceTier
+  UnitOfMeasure NVARCHAR(40),                             -- 'each', 'month', 'hour', 'GB', 'seat'
+  MinQuantity DECIMAL(18,4) NULL, MaxQuantity DECIMAL(18,4) NULL,
   EffectiveFrom DATE NOT NULL,
   EffectiveTo DATE NULL,
-  PriceListID UUID FK NULL,                            -- optional price list grouping
   INDEX (ProductID, CurrencyCode, EffectiveFrom DESC)
+
+__mj_BizAppsOrders.PriceTier                              -- BO-D33: volume / quantity breaks
+  ID UUID PK,
+  ProductPriceID UUID FK → ProductPrice NOT NULL,
+  MinQuantity DECIMAL(18,4) NOT NULL,                     -- tier lower bound (inclusive)
+  MaxQuantity DECIMAL(18,4) NULL,                         -- null = unbounded top tier
+  Amount DECIMAL(18,4) NOT NULL,                          -- per-unit (or flat) price for this tier
+  SortOrder INT NOT NULL DEFAULT 0
 
 __mj_BizAppsOrders.ProductTaxCategory
   ID UUID PK,
-  Code NVARCHAR(40) UNIQUE,                            -- 'Standard', 'Reduced', 'Exempt', 'Digital'
+  Code NVARCHAR(40) UNIQUE,                               -- 'Standard' | 'Reduced' | 'Exempt' | 'Digital'
   Name NVARCHAR(200),
-  Description NVARCHAR(MAX),
+  Description NVARCHAR(MAX)
   -- maps to TaxRate.TaxCategory in Accounting
 ```
+
+> **Governance**: new-product and price-change approvals route through BizAppsTasks ("Approval Request" Task, BO-D27). **Variants** (size/color/tier SKU matrix) and the **metered-billing engine** (consumption aggregation + overage invoicing) are v2 (BO-D32 / BO-D36); the catalog + pricing structure modeled here is forward-compatible with both. The `OrdersEngine` (BO-D30) caches this catalog and resolves prices/tiers without per-line DB round-trips.
 
 ### 4.2 Order + OrderLine (with multi-company)
 
@@ -837,8 +925,9 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 
 ### Phase A: Product catalog + basic Order (Weeks 1–3)
 
-- [ ] Product / ProductCategory / ProductPrice / ProductTaxCategory entities
-- [ ] Seeded sample products for demo
+- [ ] Catalog entities: ProductType, Product, ProductCategory, ProductPrice (+ PriceList, PriceTier), ProductTaxCategory, ProductBundleItem, ProductEntitlement, ProductPerformanceObligation (variants + metered-billing engine deferred to v2)
+- [ ] `OrdersEngine` (BaseEngine) caching catalog/config metadata + price-resolution helper (BO-D30)
+- [ ] Seeded sample products (incl. a bundle + a subscription) for demo
 - [ ] Order / OrderLine entities, single-company first
 - [ ] Order Draft → Confirmed → Posted lifecycle (no JE yet)
 - [ ] OrderLine validation (totals match, currency consistency)
@@ -950,7 +1039,9 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 - CRM (deal management, lead nurturing) (HubSpot / future app)
 - Inventory / fulfillment / shipping (future BizAppsInventory)
 - Customer service / support tickets (future)
-- Advanced subscription patterns: usage-based billing, metered consumption, tiered pricing (v2 maybe)
+- Metered/usage **billing engine** + consumption aggregation — the product/pricing side is modeled in v1 (BO-D36), the billing engine is v2
+- Product **variants** (size/color/tier SKU matrix) — v2 (BO-D32)
+- Bundle **revenue-allocation engine** (SSP-based ASC 606 allocation) — fields modeled in v1, allocation engine v2 (BO-D35)
 - Marketplace / multi-vendor (significant scope expansion; not in plan)
 - Quote-to-cash workflow tooling (workflow engine could be separate app)
 - Pricing optimization / dynamic pricing
@@ -965,7 +1056,7 @@ This plan depends on work in sibling repos, tracked as GitHub issues:
 
 | Dependency | Repo / Issue | Owner | What Orders needs |
 |---|---|---|---|
-| `AccountingService` façade — `createJournalEntry` / `createScheduledJournalEntries` helpers over the JE BaseEntity subclasses; defined `JournalEntryDraft` / `ScheduledJournalEntryDraft` contracts | bizapps-accounting [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9) | MarceloT-BC | The integration entry point for emitting JEs and scheduling rev-rec. Orders drives the draft shapes (BO-D28). Interim: direct entity CRUD. |
+| `AccountingEngine` (BaseEngine) — cached ledger metadata + `CreateJournalEntry` / `CreateScheduledJournalEntries` helpers over the JE BaseEntity subclasses; defined `JournalEntryDraft` / `ScheduledJournalEntryDraft` contracts | bizapps-accounting [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9) | MarceloT-BC | The integration entry point for emitting JEs and scheduling rev-rec. Orders drives the draft shapes (BO-D28). Interim: direct entity CRUD. |
 | Accounting adopts the **BizAppsTasks** approval substrate (replacing the phantom `__mj.ApprovalRequest`) + accounting-plan update | bizapps-accounting [#10](https://github.com/MemberJunction/bizapps-accounting/issues/10) | MarceloT-BC (with bc-izygmunt) | Keeps approvals consistent across the ecosystem. |
 | Generic approval/workflow features in **BizAppsTasks**: outcome/decision model (`TaskDecision`), reject hook, role-based routing, orchestration API (MJ casing conventions), reusable approval UX widget | bizapps-tasks [#8](https://github.com/MemberJunction/bizapps-tasks/issues/8) | bc-izygmunt (Ian) | Prerequisite for Phase F (sales-rule approvals) and all other workflow gates (BO-D27). |
 
