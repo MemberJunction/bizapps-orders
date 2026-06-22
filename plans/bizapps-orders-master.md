@@ -1,10 +1,20 @@
 # BizAppsOrders Master Plan
 
-> **Status**: Plan / pre-implementation
-> **Target repo**: `MemberJunction/bizapps-orders` (new OSS repo, not yet scaffolded — will follow BizAppsAccounting pattern)
-> **Depends on**: `plans/bizapps-accounting-master.md`, `plans/mj-core-changes.md`
-> **Sibling plans**: `plans/bizapps-contracts-master.md`, `plans/aidp-master-plan.md`
+> **Status**: Plan — v2 (revised 2026-06-22 to reconcile with the as-built BizAppsAccounting design)
+> **Target repo**: `MemberJunction/bizapps-orders` (repo scaffolded; schema/build work begins once the BizAppsAccounting schema locks — imminent, expected this week or next)
+> **Depends on**: `bizapps-accounting` (GLAccount, JournalEntry primitives + `AccountingService` façade, AccountingPeriod, Dimension, Tax\*, **Currency + CurrencySpotRate**), `bizapps-common` (Person, Organization, Address, ContactMethod), `bizapps-tasks` (workflow/approval substrate), `__mj` core (Company, User, Roles, Credentials, Scheduled Actions)
+> **Sibling plans**: `plans/bizapps-accounting-master.md`, `plans/bizapps-contracts-master.md`, `plans/aidp-master-plan.md`
 > **Positioning**: **Unified order management — products, orders, payments, subscriptions, invoices, intercompany flows. Order is the substrate; payments and subscriptions are aspects.**
+
+> **⚠️ Revision v2 (2026-06-22)** — this plan was originally authored in the CDP repo against the *planned* BizAppsAccounting design. It has been reconciled with the *as-built* accounting app and verified MJ framework primitives. Material changes from v1:
+> - **JE emission**: Orders generates balanced JEs from domain logic and persists them as accounting entity records via a thin `AccountingService` façade (a helper on the accounting engine over the BaseEntity subclasses — accounting issue [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9)). JEs land `Pending`; **Accounting batches them** to the ERP. "Post" means *create a Pending JE*, not GL-post.
+> - **Revenue recognition**: Orders computes the waterfall and generates one **`ScheduledJournalEntry`** (+ line items) per accounting period; **Accounting materializes** each into a Pending JE at period close (BA-D25). The v1 Orders-side rev-rec cron is removed.
+> - **Currency/FX**: owned by **BizAppsAccounting** (`Currency` + `CurrencySpotRate`), not BizAppsCommon (BA-D11; common never shipped them).
+> - **Workflow/approvals**: run on **BizAppsTasks** via an "Approval Request" Task Type, replacing the non-existent `__mj.ApprovalRequest` (tasks issue [#8](https://github.com/MemberJunction/bizapps-tasks/issues/8); accounting adopts the same substrate, issue [#10](https://github.com/MemberJunction/bizapps-accounting/issues/10)).
+> - **Lineage**: JE → Order/Payment/Sub linkage is via soft-ref columns + the polymorphic `JournalEntryLink` — **never hard FKs into Orders** (accounting takes no dependency on us). FKs from Orders *into* accounting (e.g. `Invoice.PostedJournalEntryID`) are fine.
+> - **Entity naming**: cross-app entities use the underscore prefix — `MJ_BizApps_Accounting: …`, `MJ_BizApps_Common: …`, `MJ_BizApps_Tasks: …` (the `Accounting.X` / `BizAppsCommon.X` shorthand below is conceptual).
+>
+> See [§17 Cross-repo coordination](#17-cross-repo-coordination) for the dependency tracking.
 
 ---
 
@@ -34,6 +44,7 @@
 14. [Phasing and delivery](#14-phasing-and-delivery)
 15. [Open questions](#15-open-questions)
 16. [Out of scope](#16-out-of-scope)
+17. [Cross-repo coordination](#17-cross-repo-coordination)
 
 ---
 
@@ -82,26 +93,29 @@ References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). Refe
 | **BO-D4** | **Order is the top-level entity**; OrderLine is line-level granularity. Subscriptions are born from OrderLines; Payments allocate to Invoices; Invoices generate from Orders. | The order is the customer's commitment; everything else is mechanical fallout. |
 | **BO-D5** | **Multi-company orders via `OrderLine.CompanyID`**: each line owns its revenue/recognition Company. Order has no single CompanyID. The "receiving company" (where cash hits) is on Payment. | M19. Models the "unified company with products" pattern from the 2026-05-26 meeting. Allows a customer to buy a Sidecar product + a Cimatri product + a BCHQ product in one transaction. |
 | **BO-D6** | **IntercompanyFlow generation at order-book time.** When an OrderLine's CompanyID differs from the order's primary receiving Company, BizAppsOrders auto-generates `IntercompanyFlow` records and emits the Due-From / Due-To JEs into BizAppsAccounting. | M19 / BA-D17. Eliminates Power BI consolidation hack from CDP. Replaces missing BC intercompany functionality. |
-| **BO-D7** | **JE emission via `AccountingService.postJournalEntry()`** (the API in BizAppsAccounting). BizAppsOrders is the orchestrator; Accounting is the primitive. | BA-D4 / BA-D17. Clean separation of concerns. |
+| **BO-D7** | **JE emission by creating accounting entity records via a thin `AccountingService` façade** (a helper on the accounting engine that wraps the `JournalEntry` / `JournalEntryLine` BaseEntity subclasses — accounting issue [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9)). Orders generates balanced JEs from domain logic; they land in `Pending`; **Accounting batches them** to the ERP. Orders orchestrates; Accounting is the primitive. | BA-D4 / BA-D17. "Post" = create a Pending JE, **not** GL-post (the batch run does GL). Falls back to direct entity CRUD if the façade isn't ready. |
 | **BO-D8** | **Order status lifecycle: `Draft → Quoted → Confirmed → Posted → Fulfilled` (or `Voided`)**. `Posted` is the business-event commit; from then on, changes are via amendment/reversal Orders. | M9 / M10. Pencil → pen at Order level. |
 | **BO-D9** | **Reversals at every layer**: Order (return/cancel/amendment) → Payment (refund/chargeback/bank-return) → Invoice (CreditMemo) → Subscription (cancellation with proration refund). Each emits its own reversal JEs through Accounting. | M10. Standard subledger pattern. |
 | **BO-D10** | **OrderLine.Quantity supports negative values** for reversal slices. A partial return is a new Order with `Qty=-1, ReversesOrderLineID=line1`. | M10. Handles "return 1 of 2" naturally; partial reversals stack. |
-| **BO-D11** | **Subscription is the primitive for ratable revenue recognition;** RevenueRecognitionSchedule lives on Subscription (and Order for deferred-service one-time orders). Contract-level overrides come from BizAppsContracts. | M20. A standalone Stripe sub without a contract still needs revrec ratably over the period. Contract is an envelope, not the owner. |
+| **BO-D11** | **Subscription is the primitive for ratable revenue recognition.** Orders computes the recognition waterfall (count, per-period amounts, front-loaded rounding remainder in entry 1, uneven-start / no-lapse-gap handling) and generates one **`ScheduledJournalEntry`** (+ line items, one Dr Deferred Revenue / Cr Revenue pair) **per accounting period** via `AccountingService.createScheduledJournalEntries(...)`. **Accounting materializes** each into a Pending JE at its target period close (BA-D25) and freezes it. Orders keeps a lightweight `RevenueRecognitionSchedule` for MRR/ARR display + as the source of the computation — it does **not** run its own rev-rec cron. Contract-level overrides come from BizAppsContracts. | M20 / BA-D25. A standalone Stripe sub without a contract still needs revrec ratably. Contract is an envelope, not the owner. |
 | **BO-D12** | **PaymentProvider abstraction via `RegisterClass`/`ClassFactory`**. Ship Stripe (primary), PayPal, Square, Authorize, Adyen, Manual. New providers added without schema change. | Per MJ PR #2214 + master M14. Cleaner than per-provider entity proliferation. |
-| **BO-D13** | **Webhook receipt as MJ Actions.** Each provider has a `*WebhookReceiver` action; idempotency handled via `PaymentIntent.ProviderEventID` uniqueness. | MJ Integration framework pattern. Cryptographic signature verification at the receiver. |
+| **BO-D13** | **Webhook receipt as an unauthenticated Express route** following MJ's `SignatureWebhookHandler` precedent: raw-body capture + provider HMAC signature verification in a driver, mounted before the auth middleware, then hand off to a processing engine (a `BaseAction` is appropriate for the *processing* step, not HTTP receipt). Idempotency via `PaymentIntent.ProviderEventID` / `SubscriptionEvent.ProviderEventID` uniqueness. | Matches MJ's actual inbound-webhook pattern (the eSignature handler), not the generic Action pattern. |
 | **BO-D14** | **Payment Method enum includes reversal types**: `CreditCard`, `ACH`, `Wire`, `Check`, `Cash`, `InternalTransfer`, `Refund`, `Chargeback`, `BankReturn`. Reversal-method Payments have negative `Amount` and `ReversesPaymentID` set. | Lets us model the full payment graph (forward + reverse) in one entity with one query path. |
 | **BO-D15** | **Invoice has `InvoiceType` (`Standard` / `CreditMemo`).** CreditMemo invoices have `ReversesInvoiceID` set. Can apply to future invoice OR trigger refund Payment OR write-off. | Standard AR pattern. Refines what was previously a separate "CreditMemo" entity sketched in the earlier reversal-pattern discussion. |
 | **BO-D16** | **PaymentAllocation as a junction** between Payment and Invoice. One Payment can clear multiple Invoices; one Invoice can be partially cleared by multiple Payments. | Standard pattern; supports complex AR workflows (lump sum payment with itemized application). |
-| **BO-D17** | **Sales rules enforced at Order Confirm** via `SalesRule` + `SalesAuthority` metadata: discount limits, payment terms, product authorization, customer credit limits. Off-path → routes to `ApprovalRequest`. Golden path → instant Confirm. | M21. Johanna's existing BC rules become first-class system constraints. |
+| **BO-D17** | **Sales rules enforced at Order Confirm** via `SalesRule` + `SalesAuthority` metadata: discount limits, payment terms, product authorization, customer credit limits. Off-path → raises an **"Approval Request" Task in BizAppsTasks** (BO-D27), linked to the Order and routed to the approver role; on approve → Confirm proceeds, on reject → Order returns to Draft with annotation. Golden path → instant Confirm. | M21. Johanna's existing BC rules become first-class system constraints; routing runs on the shared Tasks substrate. |
 | **BO-D18** | **Sales rule definitions are metadata-driven**, not code. `SalesRule.RuleType` enum + JSON expression for predicate; admin-editable. | New rules without code change. Customer-facing UI for the rule editor in MJ Explorer. |
 | **BO-D19** | **Product.RevenueRecognitionType + default GL accounts** drive JE pattern selection at order-book time. Values: `Immediate` (Sales account), `Ratable` (Deferred Revenue then ratable recognition), `Milestone` (Deferred Revenue then milestone-triggered), `Custom` (caller specifies schedule). | M11 / BA-D24. Metadata-driven JE generation. |
 | **BO-D20** | **Tax calculation at OrderLine time via BizAppsAccounting's `TaxCalculationProvider`**. We pass shipping address + product tax category + customer tax profile; we get back per-jurisdiction tax breakdowns; we store on OrderLine. | BA-D19. Engine pluggable; we're a consumer. |
 | **BO-D21** | **Contract reference is optional** on Order (`Order.ContractID NULL`). Most orders won't have contracts (e.g., one-time e-commerce purchases). Contracts entity in BizAppsContracts is the envelope when one applies. | M20. Decouples Orders from formal contract requirements. |
-| **BO-D22** | **CurrencyExchangeRate consumed from BizAppsCommon** at order/payment time. Rate captured per-transaction; stored on `OrderLine.ExchangeRateUsed` and `Payment.ExchangeRateUsed`. | BA-D11. Single source of truth for rates; per-transaction snapshot for reproducibility. |
+| **BO-D22** | **Currency + FX consumed from BizAppsAccounting** (`Currency` + `CurrencySpotRate`, owned there per BA-D11 — BizAppsCommon never shipped them). Rate captured per-transaction; stored on `OrderLine.ExchangeRateUsed` and `Payment.ExchangeRateUsed`. | BA-D11. Single source of truth for rates; per-transaction snapshot for reproducibility. |
 | **BO-D23** | **Stripe is the day-1 payment provider**; PayPal/Square/Adyen as MJ-ecosystem contributions in v1.5 / v2. Manual provider always available. | Stripe is most common; gets the highest investment. Others added based on demand. |
 | **BO-D24** | **Subscription downgrade is modeled as cancel-existing + new-sub** (with appropriate proration refund + new Subscription record). Not a single "downgrade" event. | Cleaner audit trail (each sub has clean lifecycle). Matches how Stripe models it. |
 | **BO-D25** | **Order amendments use a separate Order record** with `OrderType = 'Amendment'` and `ReversesOrderID` (partial slice via OrderLine.ReversesOrderLineID). Not in-place mutation of the original. | M10. Audit trail by construction. |
 | **BO-D26** | **PaymentIntent is provider-side state**; Payment is internal state. Webhooks update PaymentIntent; PaymentIntent transitions update Payment.Status. | Maps to Stripe's PaymentIntent concept. Decouples our state from provider state. |
+| **BO-D27** | **Workflow & approvals run on BizAppsTasks** — the shared workflow/state-management substrate across Orders and Accounting. Any human gate (sales-rule violation, customer-requested credit-limit override, discount exception, subscription cancellation override, refund authorization, …) is raised as an **"Approval Request" Task** (a Task Type) linked to the subject record via the polymorphic `Task Links`, routed to an approver role, with the decision driving a Task Type action hook. | Replaces the non-existent `__mj.ApprovalRequest`. Requires generic approval features in tasks (outcome/decision model, reject hook, role routing, orchestration API) — tasks issue [#8](https://github.com/MemberJunction/bizapps-tasks/issues/8). Tasks is a new dependency. |
+| **BO-D28** | **The `AccountingService` façade is the integration contract.** Orders is its first consumer and **drives the `JournalEntryDraft` / `ScheduledJournalEntryDraft` shapes** (undefined in the accounting plan today). Orders codes against the façade; accounting builds it (issue #9). | Single stable contract that survives accounting's internal schema churn; atomic balanced-set creation + period-open validation in one call. |
+| **BO-D29** | **v1 ships Stripe + Manual payment providers only.** PayPal/Square/Authorize/Adyen deferred to v1.5/v2. Orders co-evolves with accounting (which is ~Phase 1, wrapping shortly); phases that depend on unbuilt accounting surface (Tax provider, intercompany, scheduled-JE materialization) are sequenced behind their accounting counterparts. | Avoids building against an incomplete dependency; gets a usable substrate out fastest. |
 
 ---
 
@@ -110,11 +124,11 @@ References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). Refe
 ### Dependency stack (zoom-in on Orders)
 
 ```
-BizAppsCommon                    (Person, Organization, Address, ContactMethod,
-                                  Currency, CurrencyExchangeRate)
+BizAppsCommon                    (Person, Organization, Address, ContactMethod)
    ↑
 BizAppsAccounting                (GLAccount, JournalEntry primitives, AccountingPeriod,
-                                  Dimension, Tax* entities, AccountingService API)
+                                  Dimension, Tax* entities, Currency + CurrencySpotRate,
+                                  AccountingService façade)
    ↑
 BizAppsOrders   ◄── this plan    (Product, Order, OrderLine, Invoice, Subscription,
                                   Payment, PaymentProvider, PaymentIntent,
@@ -124,7 +138,12 @@ BizAppsOrders   ◄── this plan    (Product, Order, OrderLine, Invoice, Subs
 BizAppsContracts                 (Contract envelope — consumes Orders)
    ↑
 aidp                             (Analytics consumer)
+
+BizAppsTasks  ══╣ cross-cutting workflow/approval substrate, consumed by BOTH
+                 BizAppsOrders AND BizAppsAccounting for "Approval Request" Tasks (BO-D27)
 ```
+
+> **Note on Currency**: `Currency` and `CurrencySpotRate` live in `__mj_BizAppsAccounting` (BA-D11, revised 2026-06). Orders already depends on Accounting, so currency/FX is sourced there — BizAppsCommon does **not** ship currency entities.
 
 ### What Orders provides to upstream apps
 
@@ -132,7 +151,7 @@ aidp                             (Analytics consumer)
 - **Subscription API**: create/pause/cancel/migrate, lifecycle event emission
 - **Payment API**: capture/refund/chargeback handling, allocation to Invoices
 - **Webhook receivers**: Stripe (and other providers) → idempotent state updates
-- **JE emission**: every business event that requires accounting (Order Post, Payment Capture, Sub revrec rollover, Refund, etc.) emits balanced JEs into Accounting via `AccountingService.postJournalEntry()`
+- **JE emission**: every business event that requires accounting (Order Post, Payment Capture, Sub revrec rollover, Refund, etc.) emits balanced JEs into Accounting via the `AccountingService` façade (`createJournalEntry` / `createScheduledJournalEntries`); JEs land `Pending` and **Accounting batches them** to the ERP
 
 ### What Orders does NOT do
 
@@ -185,7 +204,7 @@ __mj_BizAppsOrders.Product
 __mj_BizAppsOrders.ProductPrice
   ID UUID PK,
   ProductID UUID FK,
-  CurrencyCode CHAR(3) FK → BizAppsCommon.Currency,
+  CurrencyCode CHAR(3) FK → BizAppsAccounting.Currency,   -- Currency owned by Accounting (BA-D11)
   Amount DECIMAL(18,4) NOT NULL,                       -- 4 decimal places for per-unit pricing
   UnitOfMeasure NVARCHAR(40),                          -- 'each', 'month', 'hour', 'GB', etc.
   EffectiveFrom DATE NOT NULL,
@@ -227,8 +246,10 @@ __mj_BizAppsOrders.Order
   PostedByUserID UUID FK → __mj.User NULL,
   -- Optional contract envelope (per BO-D21)
   ContractID UUID NULL,                                 -- references Contracts.Contract, soft FK across apps
-  -- Approval gating (sales rules)
-  ApprovalRequestID UUID FK → __mj.ApprovalRequest NULL,
+  -- Approval gating (sales rules) — via BizAppsTasks (BO-D27), NOT __mj.ApprovalRequest (which does not exist).
+  -- The approval is a Task ("Approval Request" type) that links to this Order via the polymorphic Task Links
+  -- table; no FK column is required here. ApprovalTaskID is an optional denormalized convenience pointer.
+  ApprovalTaskID UUID NULL,                             -- soft ref → MJ_BizApps_Tasks: Tasks (optional convenience)
   -- Note: Order has NO single CompanyID — multi-company support is via OrderLine.CompanyID
 
 __mj_BizAppsOrders.OrderLine
@@ -402,6 +423,8 @@ __mj_BizAppsOrders.PaymentAllocation                      -- per BO-D16
 
 ### 4.6 RevenueRecognitionSchedule + RevRecScheduleLine
 
+**Division of labor (revised v2, per BA-D25):** Orders **computes** the recognition waterfall and keeps this lightweight schedule for MRR/ARR display and as the computation source. The actual ledger entries are **not** emitted by Orders — for each schedule line, Orders generates a corresponding **`ScheduledJournalEntry`** (+ line items) in BizAppsAccounting via `AccountingService.createScheduledJournalEntries(...)`. Accounting's **period-close engine materializes** each `ScheduledJournalEntry` into a Pending `JournalEntry` (Dr Deferred Revenue / Cr Revenue) on its target period, then freezes it. There is **no Orders-side rev-rec cron**.
+
 ```sql
 __mj_BizAppsOrders.RevenueRecognitionSchedule
   ID UUID PK,
@@ -409,21 +432,25 @@ __mj_BizAppsOrders.RevenueRecognitionSchedule
   StartDate DATE NOT NULL,
   EndDate DATE NOT NULL,
   TotalAmount DECIMAL(18,2) NOT NULL,
-  TotalRecognized DECIMAL(18,2) NOT NULL DEFAULT 0,
-  CurrencyCode CHAR(3) FK NOT NULL,
+  TotalRecognized DECIMAL(18,2) NOT NULL DEFAULT 0,      -- updated as accounting materializes scheduled JEs
+  CurrencyCode CHAR(3) FK NOT NULL,                      -- → BizAppsAccounting.Currency (BA-D11)
   -- Detail in RevRecScheduleLine
   IsComplete BIT NOT NULL DEFAULT 0
 
-__mj_BizAppsOrders.RevRecScheduleLine
+__mj_BizAppsOrders.RevRecScheduleLine                     -- one per accounting period in the waterfall
   ID UUID PK,
   ScheduleID UUID FK NOT NULL,
   PeriodStart DATE NOT NULL,
   PeriodEnd DATE NOT NULL,
-  Amount DECIMAL(18,2) NOT NULL,
-  RecognizedAt DATETIMEOFFSET NULL,                       -- when JE emitted
-  RecognizedJournalEntryID UUID FK → Accounting.JournalEntry NULL,
+  Amount DECIMAL(18,2) NOT NULL,                          -- entry 1 carries the front-loaded rounding remainder
+  -- Linkage to the accounting-side scheduled entry Orders created for this period (soft refs; no FK)
+  ScheduledJournalEntryID UUID NULL,                      -- → Accounting.ScheduledJournalEntry (the future JE)
+  RecognizedJournalEntryID UUID NULL,                     -- → Accounting.JournalEntry once materialized (read-back)
+  RecognizedAt DATETIMEOFFSET NULL,                       -- when accounting materialized it
   IsRecognized BIT NOT NULL DEFAULT 0
 ```
+
+> Renewals/amendments that recompute a future schedule cause Orders to supersede the affected `ScheduledJournalEntry` rows in accounting (accounting sets `Status='Superseded'` with `SupersededByScheduledJournalEntryID`); already-materialized periods are corrected via reversal JEs, never mutation.
 
 ### 4.7 IntercompanyFlow
 
@@ -485,7 +512,7 @@ Total: $15,099 + tax. Payment goes to BCHQ (the receiving company).
 
 ### At Order Post time, BizAppsOrders generates:
 
-**Per-line revenue/AR JEs (calling AccountingService.postJournalEntry)**:
+**Per-line revenue/AR JEs (via `AccountingService.createJournalEntry`, each landing `Pending`)**:
 
 ```
 JE A (in Sidecar, EntryType='OrderBooking'):
@@ -592,7 +619,9 @@ Both JEs persist forever. Net is zero. Audit story: walk from any reversal JE �
 
 ## 7. JE emission to BizAppsAccounting
 
-BizAppsOrders calls `AccountingService.postJournalEntry(JournalEntryDraft)` for every business event that requires accounting.
+BizAppsOrders generates balanced JEs from domain logic and persists them into BizAppsAccounting via the thin `AccountingService` façade — `createJournalEntry(JournalEntryDraft)` for immediate entries and `createScheduledJournalEntries(ScheduledJournalEntryDraft[])` for the rev-rec waterfall (BO-D7, BO-D11, BO-D28). Each created JE lands in `Pending`; **Accounting's batch run** later flips it to `Batched` and ships it to the ERP (accounting plan §8.4 / BA-D16). **"Emit"/"post" here means create a Pending JE — not post to the GL.** Where the façade isn't yet built, Orders writes `JournalEntry` + `JournalEntryLine` records directly through the MJ entity layer (the accounting server subclass auto-numbers; DB triggers enforce balance/immutability).
+
+**Lineage (no hard FKs).** Accounting takes no dependency on Orders. Each JE records its origin via accounting's soft-ref columns (`JournalEntry.OrderID / OrderLineID / SubscriptionID / PaymentID / ContractID / RevRecScheduleID` — no FK) **and** a row in the polymorphic `JournalEntryLink (EntityID + RecordID)` table pointing back at the Order/Payment/etc. Orders owns referential integrity for those links. FKs from Orders *into* accounting (e.g. `Invoice.PostedJournalEntryID`, `Payment.PostedJournalEntryID`) are normal and fine.
 
 ### When JEs are emitted
 
@@ -600,7 +629,7 @@ BizAppsOrders calls `AccountingService.postJournalEntry(JournalEntryDraft)` for 
 |---|---|---|
 | Order Post | `'OrderBooking'` | Dr A/R / Cr Sales (or DefRev for subs) / Cr Tax Payable; plus intercompany legs if multi-company |
 | Payment Capture | `'PaymentReceipt'` | Dr Cash / Cr A/R; plus realized FX line if rate mismatch |
-| Subscription period rollover | `'RevenueRecognition'` | Dr DefRev / Cr Sales |
+| Subscription period rollover | `'RevenueRecognition'` | **Materialized by Accounting** from the `ScheduledJournalEntry` rows Orders pre-generated (Dr DefRev / Cr Sales). Orders does **not** emit these at rollover (BO-D11). |
 | Refund Payment Capture | `'Refund'` (reversal) | Reverses the original Payment Receipt slice |
 | Return Order Post | `'OrderBooking'` (reversal) | Reverses the original OrderBooking slice |
 | CreditMemo Invoice issue | `'OrderBooking'` (reversal) | Reverses the original Invoice's posted JE |
@@ -642,7 +671,7 @@ stateDiagram-v2
 - `TrialStarted` → no JE
 - `TrialEnded` (with payment) → `OrderBooking` JE for first period
 - `PaymentSucceeded` (each billing cycle) → `PaymentReceipt` JE
-- `Period rolling forward` → `RevenueRecognition` JE for the period
+- `Period rolling forward` → no Orders action; **Accounting materializes** the pre-generated `ScheduledJournalEntry` for that period (Dr DefRev / Cr Sales) at period close
 - `PaymentFailed` → SubscriptionEvent only; retry per dunning policy
 - `Paused` → SubscriptionEvent only; no revrec during pause
 - `Canceled` → if proration applies, Refund Payment + reversal JEs
@@ -689,9 +718,11 @@ export abstract class PaymentProvider {
 - **`AuthorizeNetPaymentProvider`** (v2): legacy support.
 - **`AdyenPaymentProvider`** (v2): enterprise European/international.
 
-### Webhook idempotency
+### Webhook receipt & idempotency
 
-Each webhook event has a `ProviderEventID`. We store it on `SubscriptionEvent.ProviderEventID` (and `PaymentIntent.ProviderEventID` for non-subscription events). Unique constraint prevents duplicate processing. Signature verification via provider's library.
+Inbound webhooks are received by an **unauthenticated Express route** mounted before the auth middleware, mirroring MJ's `SignatureWebhookHandler` (the eSignature precedent): it captures the **raw request body**, verifies the provider HMAC signature inside the provider driver's `verifyWebhookSignature`, resolves a context user, then dispatches to `handleWebhookEvent` (a processing engine; a `BaseAction` may wrap the *processing* step for agent/workflow reuse). The HTTP boundary is **not** an MJ Action (BO-D13).
+
+Each webhook event has a `ProviderEventID`. We store it on `SubscriptionEvent.ProviderEventID` (and `PaymentIntent.ProviderEventID` for non-subscription events). A unique constraint prevents duplicate processing.
 
 ---
 
@@ -714,9 +745,21 @@ Per BO-D17, BO-D18. Johanna's existing BC rules become first-class system constr
 
 1. At Order Confirm, all applicable `SalesRule` records evaluated against the Order
 2. If all pass → Order proceeds to Posted on user action
-3. If any violation → `ApprovalRequest` auto-created routed to the relevant approver role
-4. Approval workflow per MJ's approval framework
-5. On approval → Order proceeds to Posted; on rejection → Order returns to Draft with annotation
+3. If any violation → an **"Approval Request" Task** is created in **BizAppsTasks**, linked to the Order via `Task Links` and routed to the approver role named by `SalesRule.ApprovalRequiredRoleID` (BO-D27)
+4. Approver acts in the Tasks approval inbox; the Task Type's decision hook fires the appropriate Action
+5. On **approve** → Order proceeds to Posted; on **reject** → Order returns to Draft with the decision notes annotated
+
+### Other workflow gates on the same Tasks substrate
+
+Sales-rule approval is one consumer of a shared mechanism. The same "Approval Request" Task pattern handles the broader set of order/subscription workflow gates that product management and finance need, e.g.:
+
+- **Customer-requested credit-limit override** routed to finance for approval
+- **Discount / pricing exception** beyond a rep's `SalesAuthority`
+- **Refund / chargeback authorization** above a threshold
+- **Subscription cancellation / mid-term change** requiring manager sign-off
+- **Manual payment write-off** approval
+
+Each is a Task linked to its subject record (Order, Payment, Subscription, Invoice) with an approver role; the recorded decision drives the downstream state transition. BizAppsAccounting uses the same substrate (manual JE approval, period reopen, CoA-mapping approval) — see [§17](#17-cross-repo-coordination).
 
 ---
 
@@ -742,7 +785,7 @@ For each OrderLine:
 
 ### Provider choice
 
-Per BA-D19: deployments configure their TaxCalculationProvider. We're a consumer, not a provider implementer. Local fallback supports manual rate entry for simple cases.
+Per BA-D19: the `TaxCalculationProvider` **interface, the tax entities, and the adapters (Avalara/TaxJar/Local) all live in BizAppsAccounting**; the **order-time invocation lives here in Orders**. Deployments select a provider via `RegisterClass`. Local fallback supports manual rate entry for simple cases. **Note (v2):** the provider abstraction is **not yet built** in accounting (only the tax *data* tables exist) — Orders' tax phase (Phase G) sequences behind accounting's tax phase. Cross-app references use the `MJ_BizApps_Accounting:` entity prefix.
 
 ---
 
@@ -790,6 +833,8 @@ Migration scripts under `migration/bizapps-orders/` in new aidp repo (when Stage
 
 Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 
+> **v2 sequencing note.** **v1 ships Stripe + Manual providers only** (BO-D29); other providers move to v1.5/v2 (Phase H). Schema migrations land once the BizAppsAccounting schema locks (imminent). Phases that consume not-yet-built accounting surface are gated on their accounting counterparts: Phase B's JE emission ⇠ accounting `AccountingService` façade (issue #9); Phase D's rev-rec materialization ⇠ accounting `ScheduledJournalEntry` close engine; Phase G's tax ⇠ accounting `TaxCalculationProvider`. Phase F's approvals ⇠ BizAppsTasks workflow features (issue #8). Until a dependency lands, Orders uses the documented interim (direct entity CRUD for JEs).
+
 ### Phase A: Product catalog + basic Order (Weeks 1–3)
 
 - [ ] Product / ProductCategory / ProductPrice / ProductTaxCategory entities
@@ -804,7 +849,7 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 
 - [ ] OrderLine.CompanyID multi-company support
 - [ ] IntercompanyFlow generation at Post time
-- [ ] AccountingService.postJournalEntry() integration
+- [ ] AccountingService façade integration (`createJournalEntry`) — interim fallback: direct `JournalEntry`/`JournalEntryLine` entity CRUD
 - [ ] Order JE generation per BO-D19 (Product.RevenueRecognitionType drives pattern)
 - [ ] Invoice generation from Posted Order
 - [ ] Reversal Order pattern (Return/Cancellation/Amendment)
@@ -818,7 +863,7 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 - [ ] Payment entity (capture + refund + chargeback methods)
 - [ ] PaymentAllocation junction
 - [ ] Payment Capture JE generation (Dr Cash / Cr AR + realized FX line)
-- [ ] Stripe webhook receiver with signature verification + idempotency
+- [ ] Stripe webhook receiver as an unauthenticated Express route (raw-body capture + HMAC signature verification) + idempotency (BO-D13)
 - [ ] Refund Payment pattern (reverses prior Payment)
 
 **Demo**: customer pays an invoice via Stripe Checkout; see PaymentIntent → Payment → PaymentAllocation → JE; refund part of the payment; see reversal JE.
@@ -829,7 +874,7 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 - [ ] Stripe Subscription integration (create / pause / resume / cancel / migrate)
 - [ ] Webhook handling for subscription events
 - [ ] RevenueRecognitionSchedule + RevRecScheduleLine
-- [ ] Auto-emit RevenueRecognition JE on each period rollover (cron / scheduled action)
+- [ ] Generate one `ScheduledJournalEntry` (+ line items) per accounting period via `AccountingService.createScheduledJournalEntries(...)`; **Accounting materializes** them at period close (no Orders-side cron) (BO-D11)
 - [ ] Mid-period cancellation with proration refund pattern
 
 **Demo**: create a $99/mo Stripe subscription; see monthly RevRec JEs auto-emit; cancel mid-month; see proration Refund + reversal JE.
@@ -843,12 +888,15 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 
 **Demo**: enter a manual ACH payment; allocate to an Invoice; see JE; same for a manual subscription cycle.
 
-### Phase F: Sales rules enforcement (Weeks 15–16)
+### Phase F: Sales rules enforcement + Tasks-based approvals (Weeks 15–16)
+
+> **Prerequisite**: the generic approval features in BizAppsTasks (outcome/decision model, reject hook, role-based routing, orchestration API — tasks issue [#8](https://github.com/MemberJunction/bizapps-tasks/issues/8)) must land first. Orders depends on `@mj-biz-apps/tasks-entities` + `tasks-core` + `tasks-server` (`LoadBizAppsTasksServer()` at startup) and the `__mj_BizAppsTasks` schema.
 
 - [ ] SalesRule + SalesAuthority entities
 - [ ] Seeded rule types (DiscountLimit, PaymentTermsRequired, etc.)
 - [ ] Evaluation engine at Order Confirm
-- [ ] ApprovalRequest routing on violation
+- [ ] "Approval Request" Task Type + `Task Links` from Order; route to approver role (BO-D27)
+- [ ] Raise Approval Request Task on violation; decision hook drives Post / return-to-Draft
 - [ ] Rule editor UI in MJ Explorer
 
 **Demo**: salesperson confirms an order with discount > authority; see ApprovalRequest; approver approves; order proceeds to Post.
@@ -863,7 +911,10 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 
 **Demo**: AUD-billed customer order; see OrderLine.OriginalCurrency populated; see tax accrued by jurisdiction; later, payment in AUD at different rate; see realized FX line.
 
-### Phase H: Provider expansion + webhooks + reconciliation (Weeks 17–18)
+### Phase H: Provider expansion (v1.5/v2) + reconciliation (Weeks 17–18)
+
+> v1 ships **Stripe + Manual only** (BO-D29). The providers below are v1.5/v2 ecosystem contributions.
+
 
 - [ ] PayPalPaymentProvider (basic ops)
 - [ ] Webhook event log entity (for forensics + replay)
@@ -886,7 +937,7 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 8. **Bulk invoice send**: emailing invoices to customers — is that an Orders responsibility or a separate `BizAppsBilling` app? **Lean**: thin built-in send-via-email functionality; extensibility via Action plugin.
 9. **Customer portal**: customer-facing payment-page / subscription-management UI? Almost certainly a v2 / separate app. Out of v1.
 10. **Cross-app FK enforcement**: `Order.ContractID` references `BizAppsContracts.Contract` — is that enforced or soft? **Lean**: soft (no DB FK across app schemas), with validator in BaseEntity.
-11. **PaymentTermsType** location: currently in `crm` in CDP. Move to BizAppsOrders (we're the consumer). Confirm.
+11. **PaymentTermsType** location: **RESOLVED — owned by BizAppsOrders.** Accounting's `AccountingCompanyProfile.DefaultPaymentTermsTypeID` already delegates to `BizAppsOrders.PaymentTermsType`. Add a `PaymentTermsType` entity to the Orders schema (migrated from CDP `crm`).
 12. **What happens to a Pending JE if its source Order is voided before Batch?** Per BizAppsAccounting open question — flag-and-emit-zero vs hard-delete. **Lean**: flag-and-emit-zero (audit purity).
 
 ---
@@ -905,6 +956,22 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 - Pricing optimization / dynamic pricing
 - Returns logistics (RMA tracking, restocking) — out for v1
 - Audit packages / SOC2 evidence collection (future BizAppsAudit)
+
+---
+
+## 17. Cross-repo coordination
+
+This plan depends on work in sibling repos, tracked as GitHub issues:
+
+| Dependency | Repo / Issue | Owner | What Orders needs |
+|---|---|---|---|
+| `AccountingService` façade — `createJournalEntry` / `createScheduledJournalEntries` helpers over the JE BaseEntity subclasses; defined `JournalEntryDraft` / `ScheduledJournalEntryDraft` contracts | bizapps-accounting [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9) | MarceloT-BC | The integration entry point for emitting JEs and scheduling rev-rec. Orders drives the draft shapes (BO-D28). Interim: direct entity CRUD. |
+| Accounting adopts the **BizAppsTasks** approval substrate (replacing the phantom `__mj.ApprovalRequest`) + accounting-plan update | bizapps-accounting [#10](https://github.com/MemberJunction/bizapps-accounting/issues/10) | MarceloT-BC (with bc-izygmunt) | Keeps approvals consistent across the ecosystem. |
+| Generic approval/workflow features in **BizAppsTasks**: outcome/decision model (`TaskDecision`), reject hook, role-based routing, orchestration API (MJ casing conventions), reusable approval UX widget | bizapps-tasks [#8](https://github.com/MemberJunction/bizapps-tasks/issues/8) | bc-izygmunt (Ian) | Prerequisite for Phase F (sales-rule approvals) and all other workflow gates (BO-D27). |
+
+**Sequencing.** BizAppsAccounting is ~Phase 1 and expected to wrap this week or next; its schema lock is imminent. Orders begins **now** against this v2 design (entities, services, phasing). Orders' **schema** migrations land once the accounting schema is locked, and phases that consume unbuilt accounting surface (Tax provider, intercompany posting, scheduled-JE materialization) sequence behind their accounting counterparts (BO-D29).
+
+**Naming reminder.** Cross-app entity references resolve as `MJ_BizApps_Accounting: …`, `MJ_BizApps_Common: …`, `MJ_BizApps_Tasks: …`; schemas are `__mj_BizAppsAccounting`, `__mj_BizAppsCommon`, `__mj_BizAppsTasks`, and this app's `__mj_BizAppsOrders`.
 
 ---
 
