@@ -21,7 +21,7 @@
 ## 0. Table of contents
 
 1. [Context and positioning](#1-context-and-positioning)
-2. [Decisions (BO-D1 through BO-D42)](#2-decisions-bo-d1-through-bo-d42)
+2. [Decisions (BO-D1 through BO-D43)](#2-decisions-bo-d1-through-bo-d43)
 3. [Architecture and scope boundaries](#3-architecture-and-scope-boundaries)
 4. [Entity model](#4-entity-model)
    - 4.1 Product Management — Product, ProductType, Bundles, Pricing, Entitlements
@@ -46,6 +46,7 @@
 16. [Out of scope](#16-out-of-scope)
 17. [Cross-repo coordination](#17-cross-repo-coordination)
 - [Appendix A — BizAppsContracts boundary](#appendix-a--bizappscontracts-boundary)
+- [Appendix B — BizAppsInventory boundary](#appendix-b--bizappsinventory-boundary)
 
 ---
 
@@ -82,7 +83,7 @@ This is a refinement, not a contradiction, of PR #2214's design intent.
 
 ---
 
-## 2. Decisions (BO-D1 through BO-D42)
+## 2. Decisions (BO-D1 through BO-D43)
 
 References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). References to `BA-D*` are BizAppsAccounting decisions (`plans/bizapps-accounting-master.md`).
 
@@ -130,6 +131,7 @@ References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). Refe
 | **BO-D40** | **`SubscriptionType` on Product drives recurring behavior.** Selling a subscription-typed product on a posted order **finds-or-extends-or-creates** a `Subscription` for (Product, Customer, Beneficiary) — renewals extend the existing sub. `SubscriptionPlan` is optional elaboration for multi-tier/multi-cycle products; simple memberships need none. Behavior is pluggable (BO-D38). | Unifies "is this recurring?" as a product behavior instead of a separate universe; trivial simple case, open complex case. |
 | **BO-D41** | **`ProductBundleItem` is one grouping structure serving two order modes.** (1) **Bundle line** — a single OrderLine for the bundle product (components visible, one line; revenue allocated across components by SSP). (2) **Fast-path expansion** — the bundle is a "fast code" whose components explode into individual normal OrderLines at entry; `OrderLine.SourceBundleProductID` records provenance. Same DB structure powers both. SSP allocation math is v2 (BO-D35). | Bundling and order-entry fast-grouping are the same data shape; lets order entry stay fast without a separate construct. |
 | **BO-D42** | **Seeded out-of-the-box product types** (extensible by adopters): Event, Membership, PhysicalGood, DigitalGood, Service, Donation, GiftCard, plus structural Bundle and attribute-only AddOn/Fee and generic Subscription/Usage. Each ships its `ProductType` + (where useful) IsA extension entities and a default `ProductBehavior`. | A useful catalog out of the box; anyone can register additional types/extensions/behaviors later. |
+| **BO-D43** | **PhysicalGood products are inventory-aware via seams; inventory, costing (FIFO/LIFO/Average), COGS, and asset valuation live in a future bolt-on `BizAppsInventory` app.** Orders ships the seams now — `PhysicalGoodProduct.IsStockTracked` + `InventoryAssetGLAccountID` (Product already has `COGSGLAccountID`), `OrderLine.FulfillmentStatus`, and an `OrderEvent` on fulfillment — but builds **no** cost-layer/valuation machinery. BizAppsInventory computes COGS per the costing method and emits Inventory-asset/COGS JEs into Accounting (generate-then-batch, BO-D7), like any upstream emitter. | Inventory + cost accounting is a large domain of its own; keep Orders focused and let Inventory bolt on. See [Appendix B](#appendix-b--bizappsinventory-boundary). |
 
 ---
 
@@ -355,7 +357,7 @@ Seeded by the app; adopters register their own types, extensions, and behaviors 
 |---|---|---|---|---|
 | `Event` | `EventProduct` | `EventOrderLine` | No | attendee = beneficiary per line |
 | `Membership` | `MembershipProduct` | — | Membership | renews/extends a sub on purchase |
-| `PhysicalGood` | `PhysicalGoodProduct` (weight/dims/ship class) | `PhysicalGoodOrderLine` (fulfillment) | No | requires fulfillment |
+| `PhysicalGood` | `PhysicalGoodProduct` (weight/dims/ship class, `IsStockTracked`, `InventoryAssetGLAccountID`) | `PhysicalGoodOrderLine` (fulfillment) | No | requires fulfillment; inventory/COGS via future BizAppsInventory (BO-D43) |
 | `DigitalGood` | `DigitalGoodProduct` (license/download model) | `DigitalGoodOrderLine` (key issued) | No | grants a download/license entitlement |
 | `Service` | `ServiceProduct` (delivery model/hours) | `ServiceOrderLine` (scheduling) | optional | project or retainer |
 | `Donation` | `DonationProduct` (fund/campaign, tax-deductible) | `DonationOrderLine` (designation, honoree, anonymous) | optional (recurring giving) | beneficiary may be an honoree |
@@ -470,6 +472,8 @@ __mj_BizAppsOrders.OrderLine
   -- Subscription / ratable
   RevenueRecognitionScheduleID UUID FK NULL,
   SubscriptionID UUID FK → Subscription NULL,           -- if this line births a subscription
+  -- Fulfillment seam (BO-D43) — future BizAppsInventory hooks here for COGS/inventory
+  FulfillmentStatus NVARCHAR(20) NULL,                  -- 'Pending' | 'Fulfilled' | 'Returned'
   -- Reversal (per BO-D10)
   ReversesOrderLineID UUID FK → OrderLine NULL,
   UNIQUE (OrderID, LineNumber)
@@ -1148,7 +1152,7 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 - Contract envelope (BizAppsContracts' domain)
 - E-commerce storefront / customer portal (future app)
 - CRM (deal management, lead nurturing) (HubSpot / future app)
-- Inventory / fulfillment / shipping (future BizAppsInventory)
+- Inventory, costing (FIFO/LIFO/Average), COGS recognition, and inventory-asset valuation — a future bolt-on **BizAppsInventory** app; Orders ships only the seams (BO-D43, [Appendix B](#appendix-b--bizappsinventory-boundary))
 - Customer service / support tickets (future)
 - Metered/usage **billing engine** + consumption aggregation — the product/pricing side is modeled in v1 (BO-D36), the billing engine is v2
 - Product **variants** (size/color/tier SKU matrix) — v2 (BO-D32)
@@ -1206,3 +1210,31 @@ BizAppsContracts is the **B2B agreement envelope** that layers on top of Orders 
 - Pricing precedence reserves the top slot for a contract override (BO-D33 / §10 resolution order).
 - A rev-rec override hook on the waterfall builder (`OrdersEngine.BuildRevRecWaterfall`) so a contract can supply a custom schedule.
 - `OrderEvent` raised on Post/Void so Contracts can react.
+
+---
+
+## Appendix B — BizAppsInventory boundary
+
+> **Status**: forward-looking. `bizapps-inventory` is a **separate bolt-on app**, not built in v1. Orders ships inventory *seams* so it can attach later without a schema break; the costing/valuation engine lives entirely there.
+
+PhysicalGood products need real inventory + cost accounting — stock by location, cost layers, **FIFO / LIFO / Average** (later Standard / Specific-ID), receipts / transfers / adjustments / cycle counts, lower-of-cost-or-market write-downs, and the COGS + inventory-asset JEs these drive. That is a large domain of its own and belongs in **BizAppsInventory**, not Orders.
+
+| Lives in **Orders** (this repo) | Lives in **BizAppsInventory** (future) |
+|---|---|
+| PhysicalGood product + `IsStockTracked` + GL account refs | Stock on hand by item × location/warehouse |
+| The order + per-line `FulfillmentStatus` + fulfillment `OrderEvent` | Cost layers/lots + the costing method (FIFO/LIFO/Average) |
+| Revenue side of the sale (Dr A/R / Cr Sales) | COGS + inventory-asset side (Dr COGS / Cr Inventory Asset) |
+| — | Receipts, transfers, adjustments, cycle counts, revaluation |
+
+**Flow**: Orders raises an OrderLine **Fulfilled** event → BizAppsInventory relieves the right cost layer per the costing method and **emits the COGS + Inventory-asset JEs into Accounting** (`AccountingEngine.CreateJournalEntry`, generate-then-batch, BO-D7). Accounting needs no knowledge of Inventory — it is just another upstream emitter, exactly like Orders.
+
+**Typical entries Inventory owns:**
+
+| Event | JE |
+|---|---|
+| Purchase receipt | Dr Inventory Asset / Cr AP (or GR-NI) |
+| Sale fulfillment | Dr COGS / Cr Inventory Asset (cost per FIFO/LIFO/Average) |
+| Revaluation / write-down | Dr COGS (or Loss) / Cr Inventory Asset |
+| Adjustment / shrinkage | Dr Inventory Shrinkage / Cr Inventory Asset |
+
+**Seams Orders ships now** (no cost-layer/valuation machinery in v1): `PhysicalGoodProduct.IsStockTracked` + `InventoryAssetGLAccountID`, `Product.COGSGLAccountID` (already present), `OrderLine.FulfillmentStatus`, the fulfillment `OrderEvent`, and the `ProductBehavior` `AfterPost` / fulfillment hooks (BO-D38) where the Inventory integration attaches.
