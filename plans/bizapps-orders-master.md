@@ -21,14 +21,14 @@
 ## 0. Table of contents
 
 1. [Context and positioning](#1-context-and-positioning)
-2. [Decisions (BO-D1 through BO-D43)](#2-decisions-bo-d1-through-bo-d43)
+2. [Decisions (BO-D1 through BO-D47)](#2-decisions-bo-d1-through-bo-d47)
 3. [Architecture and scope boundaries](#3-architecture-and-scope-boundaries)
 4. [Entity model](#4-entity-model)
    - 4.1 Product Management — Product, ProductType, Bundles, Pricing, Entitlements
    - 4.2 Order + OrderLine (with multi-company)
    - 4.3 Invoice + CreditMemo
    - 4.4 Subscription + SubscriptionPlan + SubscriptionEvent
-   - 4.5 Payment + PaymentProvider + PaymentIntent + PaymentAllocation
+   - 4.5 Payment + PaymentProvider + PaymentIntent + PaymentLine (+ CustomerPaymentMethod, StoredValue)
    - 4.6 RevenueRecognitionSchedule + RevRecScheduleLine
    - 4.7 IntercompanyFlow
    - 4.8 SalesRule + SalesAuthority
@@ -83,7 +83,7 @@ This is a refinement, not a contradiction, of PR #2214's design intent.
 
 ---
 
-## 2. Decisions (BO-D1 through BO-D43)
+## 2. Decisions (BO-D1 through BO-D47)
 
 References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). References to `BA-D*` are BizAppsAccounting decisions (`plans/bizapps-accounting-master.md`).
 
@@ -128,10 +128,14 @@ References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). Refe
 | **BO-D37** | **Type-driven IsA extensions at both Product and OrderLine level.** `ProductType` names a product-level and an order-line-level extension entity, each an **IsA Disjoint child** (shared UUID PK) of `Product` / `OrderLine` (same pattern as accounting's `AccountingCompanyProfile` IsA `__mj.Company`). Type-specific attributes (e.g. event date at product level, attendee at line level) live in the extension, keeping base tables thin. | MJ IsA is rich; generic forms render the right extension by type. Adopters add their own subtypes without touching base tables. |
 | **BO-D38** | **`ProductBehavior` plugin** (`@RegisterClass`/`ClassFactory`), resolved most-specific-wins: `Product.BehaviorClass` → `ProductType.BehaviorClass` → default. Full **Before/After hook surface** (pricing, order-entry, lifecycle, provisioning, subscription, rev-rec, tax) plumbed now. Default implements the deterministic pricing precedence (BO-D33) + standard post; plugins augment. | Pluggable per-type/per-product behavior without forking the engine; predictable defaults with an escape hatch. |
 | **BO-D39** | **Entitlements split into definition + grant.** `ProductEntitlement` is the template (on Product/Plan); `EntitlementGrant` is the instance created at Post/activation, carrying a **beneficiary** (Person/Org — defaults to the buyer; an order line may designate another, e.g. the event attendee). Downstream apps read grants to provision access. | Entitlement grants are the machine-readable spine carrying value out to downstream apps; provisioning/enforcement engine is later. |
-| **BO-D40** | **`SubscriptionType` on Product drives recurring behavior.** Selling a subscription-typed product on a posted order **finds-or-extends-or-creates** a `Subscription` for (Product, Customer, Beneficiary) — renewals extend the existing sub. `SubscriptionPlan` is optional elaboration for multi-tier/multi-cycle products; simple memberships need none. Behavior is pluggable (BO-D38). | Unifies "is this recurring?" as a product behavior instead of a separate universe; trivial simple case, open complex case. |
+| **BO-D40** | **`SubscriptionType` on Product drives recurring behavior.** The first sale **creates** a `Subscription` (continuity record) for (Product, Customer, Beneficiary); each **billing cycle the Subscription spawns a renewal `Order`** (→ its own 1:1 Invoice, BO-D45), and a later same-sub purchase extends it. `SubscriptionPlan` is optional elaboration for multi-tier/multi-cycle products; simple memberships need none. Behavior is pluggable (BO-D38). | Recurring cadence = many per-cycle Orders under one Subscription — consistent with Order-as-substrate + 1:1 Invoice. |
 | **BO-D41** | **`ProductBundleItem` is one grouping structure serving two order modes.** (1) **Bundle line** — a single OrderLine for the bundle product (components visible, one line; revenue allocated across components by SSP). (2) **Fast-path expansion** — the bundle is a "fast code" whose components explode into individual normal OrderLines at entry; `OrderLine.SourceBundleProductID` records provenance. Same DB structure powers both. SSP allocation math is v2 (BO-D35). | Bundling and order-entry fast-grouping are the same data shape; lets order entry stay fast without a separate construct. |
 | **BO-D42** | **Seeded out-of-the-box product types** (extensible by adopters): Event, Membership, PhysicalGood, DigitalGood, Service, Donation, GiftCard, plus structural Bundle and attribute-only AddOn/Fee and generic Subscription/Usage. Each ships its `ProductType` + (where useful) IsA extension entities and a default `ProductBehavior`. | A useful catalog out of the box; anyone can register additional types/extensions/behaviors later. |
 | **BO-D43** | **PhysicalGood products are inventory-aware via seams; inventory, costing (FIFO/LIFO/Average), COGS, and asset valuation live in a future bolt-on `BizAppsInventory` app.** Orders ships the seams now — `PhysicalGoodProduct.IsStockTracked` + `InventoryAssetGLAccountID` (Product already has `COGSGLAccountID`), `OrderLine.FulfillmentStatus`, and an `OrderEvent` on fulfillment — but builds **no** cost-layer/valuation machinery. BizAppsInventory computes COGS per the costing method and emits Inventory-asset/COGS JEs into Accounting (generate-then-batch, BO-D7), like any upstream emitter. | Inventory + cost accounting is a large domain of its own; keep Orders focused and let Inventory bolt on. See [Appendix B](#appendix-b--bizappsinventory-boundary). |
+| **BO-D44** | **Gift cards / stored value are two-sided.** Selling a GiftCard product issues a `StoredValueAccount` (+ `StoredValueTransaction` ledger) and books a **liability** (Dr Cash / Cr Gift Card Liability — *not* revenue). Redeeming is an internal `StoredValuePaymentProvider`: a `Payment` with `Method='GiftCard'` referencing the account, posting **liability relief** (Dr Gift Card Liability / Cr A/R). Cross-company redemption (v1.5) and breakage (v2) deferred. | The instrument bridges product-issuance and payment-redemption; reuses the pluggable-provider + reversal models. |
+| **BO-D45** | **Order↔Invoice is 1:1; Invoice is a generated document; rename `PaymentAllocation` → `PaymentLine`.** Invoice is **system-generated at Order Post** and mirrors its immutable Order — **no `InvoiceLine`** (the invoice renders the OrderLines directly). Recurring/milestone cadence is modeled as **many Orders under a `Subscription`/`Contract` envelope** (the sub spawns a renewal Order each cycle; the contract issues an Order per milestone), **not** many invoices under one order. `PaymentLine` applies cash at invoice grain. | Matches "Order is the substrate" and keeps Invoice trivial; AR identity (number, tax point, due date, status) lives on the per-order Invoice. Consolidated multi-order statements are out of v1 (§15). |
+| **BO-D46** | **`CustomerPaymentMethod` — saved instrument / token vault.** Stores the provider token (e.g. Stripe `cus_` / `pm_`) + display metadata (brand / last4 / expiry / default) per customer; **never the PAN**. Required for subscriptions and repeat charges (charge-on-file without re-collecting). `Payment.PaymentMethodID` references it. | Recurring billing needs a reusable instrument; PCI-safe (token only, no card data at rest). |
+| **BO-D47** | **Payment captures settlement reality + minor links.** `Payment.ProcessingFeeAmount` / `NetAmount` so capture JEs and bank recon are accurate (Dr Cash *net* / Dr Processing Fee / Cr A/R *gross*); `PaymentIntent.InvoiceID` for invoice-driven collection. Full **dispute lifecycle** (evidence / won-lost) deferred to v2 — v1 models a chargeback as a reversal `Payment` + `Status='Disputed'`. | Accurate cash/settlement now; dispute case management later. |
 
 ---
 
@@ -489,12 +493,14 @@ __mj_BizAppsOrders.OrderLineTaxLine                     -- per-jurisdiction tax 
 
 ### 4.3 Invoice + CreditMemo
 
+> **Invoice is a generated 1:1 document for a posted Order (BO-D45)** — always **system-generated** at Order Post, never hand-authored. Recurring and milestone **cadence lives upstream**: a `Subscription` spawns a new renewal `Order` each billing cycle, and a `Contract` (BizAppsContracts) issues a new `Order` per milestone — **each Order is exactly one Invoice**. So Invoice stays trivial (it mirrors its posted, immutable Order); the "many bills over time" complexity is modeled as **many Orders under a Subscription/Contract envelope**, not many invoices under one order. Cash application (`PaymentLine`, §4.5) is invoice-grain. (Consolidated multi-order statements are out of v1 — see §15.)
+
 ```sql
 __mj_BizAppsOrders.Invoice
   ID UUID PK,
   InvoiceNumber NVARCHAR(40) UNIQUE NOT NULL,
   InvoiceType NVARCHAR(20) NOT NULL DEFAULT 'Standard', -- 'Standard' | 'CreditMemo'
-  OrderID UUID FK → Order NOT NULL,                     -- the originating Order
+  OrderID UUID FK → Order NOT NULL,                     -- the originating Order (1:1)
   IssuingCompanyID UUID FK → __mj.Company NOT NULL,     -- which Company's books this invoices from
   CustomerOrganizationID UUID FK → BizAppsCommon.Organization NOT NULL,
   IssuedDate DATE NOT NULL,
@@ -511,6 +517,8 @@ __mj_BizAppsOrders.Invoice
   ReversalReason NVARCHAR(MAX) NULL,
   -- JE linkage
   PostedJournalEntryID UUID FK → Accounting.JournalEntry NULL
+  -- NOTE: no InvoiceLine — Invoice is 1:1 with a posted (immutable) Order, so the
+  -- invoice's lines ARE the OrderLines; the document renders them directly (BO-D45).
 ```
 
 ### 4.4 Subscription + SubscriptionPlan + SubscriptionEvent
@@ -583,6 +591,7 @@ __mj_BizAppsOrders.PaymentIntent
   Amount DECIMAL(18,2) NOT NULL,
   CurrencyCode CHAR(3) FK NOT NULL,
   OrderID UUID FK → Order NULL,                          -- what triggered this intent
+  InvoiceID UUID FK → Invoice NULL,                      -- for invoice-driven collection (BO-D47)
   CustomerOrganizationID UUID FK NOT NULL,
   CreatedAt DATETIMEOFFSET NOT NULL,
   LastEventAt DATETIMEOFFSET
@@ -593,14 +602,18 @@ __mj_BizAppsOrders.Payment
   ReceivingCompanyID UUID FK → __mj.Company NOT NULL,     -- where cash hits (often BCHQ)
   PaymentDate DATE NOT NULL,
   Method NVARCHAR(20) NOT NULL,                           -- 'CreditCard' | 'ACH' | 'Wire' | 'Check' | 'Cash' | 'InternalTransfer'
-                                                           -- | 'Refund' | 'Chargeback' | 'BankReturn'
-  Amount DECIMAL(18,2) NOT NULL,                          -- negative for refund/chargeback/return
+                                                           -- | 'GiftCard' | 'Refund' | 'Chargeback' | 'BankReturn'
+  Amount DECIMAL(18,2) NOT NULL,                          -- gross; negative for refund/chargeback/return
+  ProcessingFeeAmount DECIMAL(18,2) NOT NULL DEFAULT 0,   -- provider fee withheld (BO-D47)
+  NetAmount DECIMAL(18,2),                                -- = Amount - ProcessingFeeAmount (cash actually settled)
   CurrencyCode CHAR(3) FK NOT NULL,
   ExchangeRateUsed DECIMAL(18,8) NULL,                    -- when foreign currency
   FunctionalCurrencyAmount DECIMAL(18,2),
   -- Provider linkage
   PaymentProviderID UUID FK NULL,
   PaymentIntentID UUID FK → PaymentIntent NULL,
+  PaymentMethodID UUID FK → CustomerPaymentMethod NULL,   -- saved instrument used (BO-D46)
+  StoredValueAccountID UUID FK → StoredValueAccount NULL, -- when Method='GiftCard' (BO-D44)
   ProviderChargeID NVARCHAR(100) NULL,                    -- provider-side charge ID
   -- Reversal (per BO-D9, BO-D14)
   ReversesPaymentID UUID FK → Payment NULL,
@@ -613,13 +626,47 @@ __mj_BizAppsOrders.Payment
   Description NVARCHAR(MAX),
   Notes NVARCHAR(MAX)
 
-__mj_BizAppsOrders.PaymentAllocation                      -- per BO-D16
+__mj_BizAppsOrders.PaymentLine                            -- cash application (renamed from PaymentAllocation; BO-D16 / BO-D45)
   ID UUID PK,
   PaymentID UUID FK NOT NULL,
-  InvoiceID UUID FK → Invoice NOT NULL,
+  InvoiceID UUID FK → Invoice NOT NULL,                   -- cash application is invoice-grain (1:1 with Order)
   Amount DECIMAL(18,2) NOT NULL,                          -- how much of this Payment clears this Invoice
   AllocatedAt DATETIMEOFFSET NOT NULL,
   AllocatedByUserID UUID FK NULL                          -- NULL = auto-allocated
+
+__mj_BizAppsOrders.CustomerPaymentMethod                  -- saved instrument / token vault (BO-D46)
+  ID UUID PK,
+  CustomerOrganizationID UUID FK → BizAppsCommon.Organization NOT NULL,
+  PaymentProviderID UUID FK → PaymentProvider NOT NULL,
+  ProviderCustomerID NVARCHAR(100),                       -- e.g. Stripe cus_xxx
+  ProviderPaymentMethodID NVARCHAR(100),                  -- e.g. Stripe pm_xxx (token only; no PAN stored)
+  MethodType NVARCHAR(20),                                -- 'CreditCard' | 'ACH' | ...
+  Brand NVARCHAR(40), Last4 CHAR(4), ExpiryMonth INT, ExpiryYear INT,
+  IsDefault BIT NOT NULL DEFAULT 0,
+  IsActive BIT NOT NULL DEFAULT 1
+
+__mj_BizAppsOrders.StoredValueAccount                     -- gift card / stored-value instrument (BO-D44)
+  ID UUID PK,
+  Code NVARCHAR(60) UNIQUE,                               -- the gift-card number
+  IssuingCompanyID UUID FK → __mj.Company NOT NULL,       -- whose books carry the liability
+  CurrencyCode CHAR(3) FK → BizAppsAccounting.Currency NOT NULL,
+  InitialAmount DECIMAL(18,2) NOT NULL,
+  CurrentBalance DECIMAL(18,2) NOT NULL,
+  Status NVARCHAR(20) NOT NULL,                           -- 'Active' | 'Depleted' | 'Expired' | 'Suspended' | 'Voided'
+  IssuedFromOrderLineID UUID FK → OrderLine NULL,         -- the sale that created it
+  BeneficiaryPersonID UUID FK → BizAppsCommon.Person NULL,
+  BeneficiaryOrganizationID UUID FK → BizAppsCommon.Organization NULL,
+  ExpiresAt DATE NULL
+
+__mj_BizAppsOrders.StoredValueTransaction                 -- stored-value balance ledger (BO-D44)
+  ID UUID PK,
+  StoredValueAccountID UUID FK NOT NULL,
+  TransactionType NVARCHAR(20) NOT NULL,                  -- 'Issue' | 'Redeem' | 'Refund' | 'Adjust' | 'Expire'
+  Amount DECIMAL(18,2) NOT NULL,                          -- signed
+  BalanceAfter DECIMAL(18,2) NOT NULL,
+  RelatedPaymentID UUID FK → Payment NULL,
+  RelatedOrderID UUID FK → Order NULL,
+  OccurredAt DATETIMEOFFSET NOT NULL
 ```
 
 ### 4.6 RevenueRecognitionSchedule + RevRecScheduleLine
@@ -829,9 +876,11 @@ BizAppsOrders generates balanced JEs from domain logic and persists them into Bi
 | Business event | EntryType in Accounting | Pattern |
 |---|---|---|
 | Order Post | `'OrderBooking'` | Dr A/R / Cr Sales (or DefRev for subs) / Cr Tax Payable; plus intercompany legs if multi-company |
-| Payment Capture | `'PaymentReceipt'` | Dr Cash / Cr A/R; plus realized FX line if rate mismatch |
+| Payment Capture | `'PaymentReceipt'` | Dr Cash (net) / Dr Processing Fee / Cr A/R (gross); plus realized FX line if rate mismatch (BO-D47) |
 | Subscription period rollover | `'RevenueRecognition'` | **Materialized by Accounting** from the `ScheduledJournalEntry` rows Orders pre-generated (Dr DefRev / Cr Sales). Orders does **not** emit these at rollover (BO-D11). |
 | Refund Payment Capture | `'Refund'` (reversal) | Reverses the original Payment Receipt slice |
+| Gift card sold | `'OrderBooking'` | Dr Cash / Cr Gift Card Liability (deferred — not revenue) (BO-D44) |
+| Gift card redeemed (as payment) | `'PaymentReceipt'` | Dr Gift Card Liability / Cr A/R (liability relief, no cash) (BO-D44) |
 | Return Order Post | `'OrderBooking'` (reversal) | Reverses the original OrderBooking slice |
 | CreditMemo Invoice issue | `'OrderBooking'` (reversal) | Reverses the original Invoice's posted JE |
 | Subscription cancellation (with refund) | `'Refund'` + reverses prior `'RevenueRecognition'` lines as appropriate | Multiple JEs to back out unearned revenue + emit refund Payment + refund JE |
@@ -914,6 +963,7 @@ export abstract class PaymentProvider {
 
 - **`StripePaymentProvider`** (v1): full implementation including PaymentIntents, Subscriptions, Refunds, webhooks. Per MJ PR #2214 design.
 - **`ManualPaymentProvider`** (v1): supports Wire/ACH/Check/Cash payments manually recorded by finance.
+- **`StoredValuePaymentProvider`** (v1): internal provider for gift-card / stored-value redemption — validates the code, debits the `StoredValueAccount`, posts liability relief (BO-D44).
 - **`PayPalPaymentProvider`** (v1.5): basic operations.
 - **`SquarePaymentProvider`** (v2): basic operations.
 - **`AuthorizeNetPaymentProvider`** (v2): legacy support.
@@ -1055,7 +1105,7 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 - [ ] IntercompanyFlow generation at Post time
 - [ ] AccountingService façade integration (`createJournalEntry`) — interim fallback: direct `JournalEntry`/`JournalEntryLine` entity CRUD
 - [ ] Order JE generation per BO-D19 (Product.RevenueRecognitionType drives pattern)
-- [ ] Invoice generation from Posted Order
+- [ ] Invoice generation from posted Order (1:1, generated; renders OrderLines) (BO-D45)
 - [ ] Reversal Order pattern (Return/Cancellation/Amendment)
 
 **Demo**: post a multi-company order, see all JEs in BizAppsAccounting (revenue + IC due-from/due-to + tax accrual), generate Invoice, return part of the order, see reversal JEs.
@@ -1064,9 +1114,11 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 
 - [ ] PaymentProvider abstract class + Stripe implementation
 - [ ] PaymentIntent entity + Stripe PaymentIntent lifecycle mapping
-- [ ] Payment entity (capture + refund + chargeback methods)
-- [ ] PaymentAllocation junction
-- [ ] Payment Capture JE generation (Dr Cash / Cr AR + realized FX line)
+- [ ] Payment entity (capture + refund + chargeback) with ProcessingFee/Net settlement fields (BO-D47)
+- [ ] PaymentLine cash application (renamed from PaymentAllocation; invoice-grain) (BO-D45)
+- [ ] CustomerPaymentMethod token vault (charge-on-file for subscriptions/repeat) (BO-D46)
+- [ ] Payment Capture JE generation (Dr Cash net / Dr Processing Fee / Cr AR gross + realized FX) (BO-D47)
+- [ ] Gift card: StoredValueAccount + StoredValueTransaction + StoredValuePaymentProvider (issuance liability + redemption relief) (BO-D44)
 - [ ] Stripe webhook receiver as an unauthenticated Express route (raw-body capture + HMAC signature verification) + idempotency (BO-D13)
 - [ ] Refund Payment pattern (reverses prior Payment)
 
@@ -1143,6 +1195,8 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 10. **Cross-app FK enforcement**: `Order.ContractID` references `BizAppsContracts.Contract` — is that enforced or soft? **Lean**: soft (no DB FK across app schemas), with validator in BaseEntity.
 11. **PaymentTermsType** location: **RESOLVED — owned by BizAppsOrders.** Accounting's `AccountingCompanyProfile.DefaultPaymentTermsTypeID` already delegates to `BizAppsOrders.PaymentTermsType`. Add a `PaymentTermsType` entity to the Orders schema (migrated from CDP `crm`).
 12. **What happens to a Pending JE if its source Order is voided before Batch?** Per BizAppsAccounting open question — flag-and-emit-zero vs hard-delete. **Lean**: flag-and-emit-zero (audit purity).
+13. **Consolidated invoicing / customer statements** (one bill covering multiple Orders). Order↔Invoice is 1:1 (BO-D45), so a "single monthly statement across many orders" is a *grouping/presentation* concern, not an Invoice. **Lean**: out of v1; add a `Statement` entity that groups per-order Invoices later if B2B demand warrants — keeps the 1:1 primitive intact.
+14. **Keep `Invoice` as a thin 1:1 entity vs. collapse onto `Order`.** Since it's 1:1 and generated, invoice attributes (number, due date, AR status) could live on `Order`. **Lean**: keep `Invoice` separate — distinct AR lifecycle (Open/Paid/Overdue), legal/tax-point identity, separate numbering sequence, and it's the natural home for CreditMemo. Reversible either way.
 
 ---
 
@@ -1153,6 +1207,8 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 - E-commerce storefront / customer portal (future app)
 - CRM (deal management, lead nurturing) (HubSpot / future app)
 - Inventory, costing (FIFO/LIFO/Average), COGS recognition, and inventory-asset valuation — a future bolt-on **BizAppsInventory** app; Orders ships only the seams (BO-D43, [Appendix B](#appendix-b--bizappsinventory-boundary))
+- Payment **dispute case management** (evidence / won-lost lifecycle) — v1 models a chargeback as a reversal Payment + `Status='Disputed'` (BO-D47)
+- Gift-card **cross-company redemption** (v1.5) and **breakage** revenue recognition (v2) (BO-D44)
 - Customer service / support tickets (future)
 - Metered/usage **billing engine** + consumption aggregation — the product/pricing side is modeled in v1 (BO-D36), the billing engine is v2
 - Product **variants** (size/color/tier SKU matrix) — v2 (BO-D32)
