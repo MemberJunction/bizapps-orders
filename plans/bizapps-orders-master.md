@@ -21,7 +21,7 @@
 ## 0. Table of contents
 
 1. [Context and positioning](#1-context-and-positioning)
-2. [Decisions (BO-D1 through BO-D36)](#2-decisions-bo-d1-through-bo-d36)
+2. [Decisions (BO-D1 through BO-D42)](#2-decisions-bo-d1-through-bo-d42)
 3. [Architecture and scope boundaries](#3-architecture-and-scope-boundaries)
 4. [Entity model](#4-entity-model)
    - 4.1 Product Management — Product, ProductType, Bundles, Pricing, Entitlements
@@ -45,6 +45,7 @@
 15. [Open questions](#15-open-questions)
 16. [Out of scope](#16-out-of-scope)
 17. [Cross-repo coordination](#17-cross-repo-coordination)
+- [Appendix A — BizAppsContracts boundary](#appendix-a--bizappscontracts-boundary)
 
 ---
 
@@ -81,7 +82,7 @@ This is a refinement, not a contradiction, of PR #2214's design intent.
 
 ---
 
-## 2. Decisions (BO-D1 through BO-D36)
+## 2. Decisions (BO-D1 through BO-D42)
 
 References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). References to `BA-D*` are BizAppsAccounting decisions (`plans/bizapps-accounting-master.md`).
 
@@ -123,6 +124,12 @@ References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). Refe
 | **BO-D34** | **`ProductEntitlement` modeled in v1** — what a purchase grants (feature / access level / quantity-of-resource). Provisioning/enforcement is later, but the entity + order/subscription linkage ship in v1. | Entitlements are the machine-readable contract of what the customer can use — the enabler for downstream apps. |
 | **BO-D35** | **ASC 606 fields in v1; allocation engine in v2.** Product carries performance obligation(s) + standalone selling price (SSP) so bundle revenue can be allocated across components by SSP into the `ScheduledJournalEntry` waterfall. The allocation *engine* is v2; the fields ship in v1. | Correct bundle rev-rec roots in product metadata; model now to avoid a breaking change. |
 | **BO-D36** | **Usage/metered modeled on the product/pricing side in v1; metered billing engine in v2.** `PricingModel='Usage'` + UnitOfMeasure + overage rates exist in v1; consumption aggregation + metered invoicing is v2. | Lets metered billing land later without a breaking schema change. |
+| **BO-D37** | **Type-driven IsA extensions at both Product and OrderLine level.** `ProductType` names a product-level and an order-line-level extension entity, each an **IsA Disjoint child** (shared UUID PK) of `Product` / `OrderLine` (same pattern as accounting's `AccountingCompanyProfile` IsA `__mj.Company`). Type-specific attributes (e.g. event date at product level, attendee at line level) live in the extension, keeping base tables thin. | MJ IsA is rich; generic forms render the right extension by type. Adopters add their own subtypes without touching base tables. |
+| **BO-D38** | **`ProductBehavior` plugin** (`@RegisterClass`/`ClassFactory`), resolved most-specific-wins: `Product.BehaviorClass` → `ProductType.BehaviorClass` → default. Full **Before/After hook surface** (pricing, order-entry, lifecycle, provisioning, subscription, rev-rec, tax) plumbed now. Default implements the deterministic pricing precedence (BO-D33) + standard post; plugins augment. | Pluggable per-type/per-product behavior without forking the engine; predictable defaults with an escape hatch. |
+| **BO-D39** | **Entitlements split into definition + grant.** `ProductEntitlement` is the template (on Product/Plan); `EntitlementGrant` is the instance created at Post/activation, carrying a **beneficiary** (Person/Org — defaults to the buyer; an order line may designate another, e.g. the event attendee). Downstream apps read grants to provision access. | Entitlement grants are the machine-readable spine carrying value out to downstream apps; provisioning/enforcement engine is later. |
+| **BO-D40** | **`SubscriptionType` on Product drives recurring behavior.** Selling a subscription-typed product on a posted order **finds-or-extends-or-creates** a `Subscription` for (Product, Customer, Beneficiary) — renewals extend the existing sub. `SubscriptionPlan` is optional elaboration for multi-tier/multi-cycle products; simple memberships need none. Behavior is pluggable (BO-D38). | Unifies "is this recurring?" as a product behavior instead of a separate universe; trivial simple case, open complex case. |
+| **BO-D41** | **`ProductBundleItem` is one grouping structure serving two order modes.** (1) **Bundle line** — a single OrderLine for the bundle product (components visible, one line; revenue allocated across components by SSP). (2) **Fast-path expansion** — the bundle is a "fast code" whose components explode into individual normal OrderLines at entry; `OrderLine.SourceBundleProductID` records provenance. Same DB structure powers both. SSP allocation math is v2 (BO-D35). | Bundling and order-entry fast-grouping are the same data shape; lets order entry stay fast without a separate construct. |
+| **BO-D42** | **Seeded out-of-the-box product types** (extensible by adopters): Event, Membership, PhysicalGood, DigitalGood, Service, Donation, GiftCard, plus structural Bundle and attribute-only AddOn/Fee and generic Subscription/Usage. Each ships its `ProductType` + (where useful) IsA extension entities and a default `ProductBehavior`. | A useful catalog out of the box; anyone can register additional types/extensions/behaviors later. |
 
 ---
 
@@ -200,6 +207,12 @@ __mj_BizAppsOrders.ProductType                           -- BO-D31: behavior def
   DefaultIsTaxable BIT NOT NULL DEFAULT 1,
   RequiresFulfillment BIT NOT NULL DEFAULT 0,
   IsBillableRecurring BIT NOT NULL DEFAULT 0,             -- subscription / usage kinds
+  DefaultSubscriptionType NVARCHAR(20) NOT NULL DEFAULT 'None', -- seeds Product.SubscriptionType (BO-D40)
+  -- Type-driven IsA extensions (BO-D37) — names the subtype entities for this type
+  ProductExtensionEntity NVARCHAR(200) NULL,             -- e.g. 'MJ_BizApps_Orders: Event Products'  (IsA Product)
+  OrderLineExtensionEntity NVARCHAR(200) NULL,           -- e.g. 'MJ_BizApps_Orders: Event Order Lines' (IsA OrderLine)
+  -- Default behavior plugin (BO-D38) — ClassFactory key
+  BehaviorClass NVARCHAR(100) NULL,
   IsActive BIT NOT NULL DEFAULT 1
 
 __mj_BizAppsOrders.ProductCategory
@@ -230,6 +243,10 @@ __mj_BizAppsOrders.Product
   COGSGLAccountID UUID FK → Accounting.GLAccount NULL,    -- for products with COGS (rare for SaaS)
   -- ASC 606 (BO-D35: fields in v1; allocation engine v2)
   StandaloneSellingPrice DECIMAL(18,4) NULL,             -- SSP for bundle revenue allocation
+  -- Subscription semantics (BO-D40): selling this on a posted order creates/extends a sub
+  SubscriptionType NVARCHAR(20) NOT NULL DEFAULT 'None',  -- 'None' | 'Standard' | 'Membership' | 'Custom' (seeded from ProductType)
+  -- Behavior override (BO-D38): ClassFactory key; falls back to ProductType.BehaviorClass then the default
+  BehaviorClass NVARCHAR(100) NULL,
   -- Subscription defaults (detailed plan in SubscriptionPlan §4.4)
   DefaultBillingCycle NVARCHAR(20),                       -- 'Monthly' | 'Quarterly' | 'Annual' | 'Custom'
   DefaultSubscriptionTermMonths INT NULL,
@@ -308,6 +325,97 @@ __mj_BizAppsOrders.ProductTaxCategory
 
 > **Governance**: new-product and price-change approvals route through BizAppsTasks ("Approval Request" Task, BO-D27). **Variants** (size/color/tier SKU matrix) and the **metered-billing engine** (consumption aggregation + overage invoicing) are v2 (BO-D32 / BO-D36); the catalog + pricing structure modeled here is forward-compatible with both. The `OrdersEngine` (BO-D30) caches this catalog and resolves prices/tiers without per-line DB round-trips.
 
+#### Type-driven IsA extensions (BO-D37)
+
+`ProductType` names two extension entities — one at the **Product** level, one at the **OrderLine** level — each an **IsA Disjoint child** that shares the parent's UUID PK (the same mechanism accounting uses for `AccountingCompanyProfile` IsA `__mj.Company`). A product is at most one subtype, so MJ's generic forms can render the right extension by type, and base tables stay thin. Example — Events:
+
+```sql
+__mj_BizAppsOrders.EventProduct              -- IsA Product (PK = Product.ID, same UUID)
+  ID UUID PK FK → Product,
+  EventStartsAt DATETIMEOFFSET NOT NULL,
+  EventEndsAt DATETIMEOFFSET NULL,
+  VenueName NVARCHAR(300),
+  VenueAddressID UUID FK → BizAppsCommon.Address NULL,
+  Capacity INT NULL,
+  RequiresAttendeeInfo BIT NOT NULL DEFAULT 1
+
+__mj_BizAppsOrders.EventOrderLine            -- IsA OrderLine (PK = OrderLine.ID, same UUID)
+  ID UUID PK FK → OrderLine,
+  AttendeeName NVARCHAR(300),
+  AttendeeEmail NVARCHAR(255),
+  CheckInAt DATETIMEOFFSET NULL
+  -- the attendee is typically the EntitlementGrant beneficiary (BO-D39)
+```
+
+#### Out-of-the-box product types (BO-D42)
+
+Seeded by the app; adopters register their own types, extensions, and behaviors later. (`ProductType.ProductExtensionEntity` / `OrderLineExtensionEntity` / `BehaviorClass` wire each one up.)
+
+| Type (Code) | Product extension | OrderLine extension | Subscription | Notes |
+|---|---|---|---|---|
+| `Event` | `EventProduct` | `EventOrderLine` | No | attendee = beneficiary per line |
+| `Membership` | `MembershipProduct` | — | Membership | renews/extends a sub on purchase |
+| `PhysicalGood` | `PhysicalGoodProduct` (weight/dims/ship class) | `PhysicalGoodOrderLine` (fulfillment) | No | requires fulfillment |
+| `DigitalGood` | `DigitalGoodProduct` (license/download model) | `DigitalGoodOrderLine` (key issued) | No | grants a download/license entitlement |
+| `Service` | `ServiceProduct` (delivery model/hours) | `ServiceOrderLine` (scheduling) | optional | project or retainer |
+| `Donation` | `DonationProduct` (fund/campaign, tax-deductible) | `DonationOrderLine` (designation, honoree, anonymous) | optional (recurring giving) | beneficiary may be an honoree |
+| `GiftCard` | `GiftCardProduct` (denomination rules) | `GiftCardOrderLine` (recipient, code, balance) | No | recipient = beneficiary |
+| `Bundle` | — (uses `ProductBundleItem`) | — | — | composite; see Bundles below |
+| `AddOn` / `Fee` | — | — | — | attribute/pricing only, no extension |
+| `Subscription` (generic) | — | — | Standard | plain recurring; `SubscriptionType` drives it |
+| `Usage` (generic) | — | — | Standard | metered; pricing side only in v1 (BO-D36) |
+
+#### Product behavior plugins — `ProductBehavior` (BO-D38)
+
+A `ProductBehavior` base resolved via `ClassFactory` most-specific-wins: **`Product.BehaviorClass` → `ProductType.BehaviorClass` → default**. The default implements the deterministic pricing precedence (BO-D33) and the standard post path; plugins **augment** (they don't silently replace). The full hook surface is plumbed now (some hooks are no-ops in v1) so behaviors have real power:
+
+| Phase | Before / After pair |
+|---|---|
+| Pricing | `BeforeResolvePrice` / `AfterResolvePrice`, `BeforeComputeTotals` / `AfterComputeTotals` |
+| Order entry | `BeforeOrderLineAdded` / `AfterOrderLineAdded`, `BeforeOrderLineValidate` / `AfterOrderLineValidate` |
+| Lifecycle | `BeforePost` / `AfterPost`, `BeforeVoid` / `AfterVoid`, `BeforeReverse` / `AfterReverse` |
+| Provisioning | `BeforeProvisionEntitlements` / `AfterProvisionEntitlements` |
+| Subscription | `BeforeSubscriptionCreateOrExtend` / `AfterSubscriptionCreateOrExtend` |
+| Revenue | `BeforeBuildRevRec` / `AfterBuildRevRec` |
+| Tax | `BeforeInvokeTax` / `AfterInvokeTax` |
+
+The `OrdersEngine` (BO-D30) resolves and invokes the behavior at each phase. MJ casing applies (PascalCase public hooks).
+
+#### Entitlements & grants (BO-D39)
+
+`ProductEntitlement` (above) is the **definition**. At Post / subscription activation, an `EntitlementGrant` **instance** is created — carrying the **beneficiary**, who defaults to the buyer but can be designated per order line (the event attendee, the gift-card recipient, a donation honoree):
+
+```sql
+__mj_BizAppsOrders.EntitlementGrant
+  ID UUID PK,
+  ProductEntitlementID UUID FK → ProductEntitlement NOT NULL,
+  -- source of the grant
+  OrderLineID UUID FK → OrderLine NULL,
+  SubscriptionID UUID FK → Subscription NULL,
+  -- beneficiary (defaults to the buyer; an order line may name another)
+  BeneficiaryPersonID UUID FK → BizAppsCommon.Person NULL,
+  BeneficiaryOrganizationID UUID FK → BizAppsCommon.Organization NULL,
+  Quantity DECIMAL(18,4) NULL,
+  ValidFrom DATE NULL, ValidTo DATE NULL,
+  Status NVARCHAR(20) NOT NULL DEFAULT 'Active',         -- 'Active' | 'Suspended' | 'Revoked' | 'Expired'
+  ProvisionedAt DATETIMEOFFSET NULL
+  -- downstream apps read EntitlementGrants to provision access; the provisioning/
+  -- enforcement engine is later — v1 ships the grant record + beneficiary linkage
+```
+
+#### Subscriptions from products (BO-D40)
+
+`Product.SubscriptionType` (seeded from `ProductType.DefaultSubscriptionType`) declares that selling the product creates recurring value. On Post, the subscription behavior does **find-or-extend-or-create** for `(Product, Customer, Beneficiary)`: a renewal purchase **extends** the existing `Subscription`; a first purchase **creates** one. `SubscriptionPlan` (§4.4) is **optional elaboration** — only needed when one subscription product offers multiple commercial variants (tiers / cycles / add-ons); a simple membership needs none. Proration / extension / beneficiary specifics ride the `ProductBehavior` plugin.
+
+#### Bundles & product grouping (BO-D41)
+
+`ProductBundleItem` is a single grouping structure that powers **two order modes**:
+
+1. **Bundle line** — one `OrderLine` for the bundle product; components are visible but it stays a single line. Revenue is allocated across the components' performance obligations by relative SSP (`component_revenue = T × component_SSP / Σ component_SSP`), each slice then following its own rev-rec policy into the `ScheduledJournalEntry` waterfall. The **allocation engine is v2** (BO-D35); v1 carries the SSP fields + bundle structure.
+2. **Fast-path expansion** — the bundle acts as a "fast code": at entry its components **explode into individual normal `OrderLine`s**, each a standard product line, with `OrderLine.SourceBundleProductID` recording the provenance. This is order-entry convenience, not a true bundle (no allocation — each line prices and recognizes on its own).
+
+Same DB structure, two behaviors; order entry chooses per add.
+
 ### 4.2 Order + OrderLine (with multi-company)
 
 ```sql
@@ -345,6 +453,7 @@ __mj_BizAppsOrders.OrderLine
   OrderID UUID FK NOT NULL,
   LineNumber INT NOT NULL,
   ProductID UUID FK NOT NULL,
+  SourceBundleProductID UUID FK → Product NULL,         -- fast-path provenance when a bundle was exploded into lines (BO-D41)
   CompanyID UUID FK → __mj.Company NOT NULL,            -- which sub OWNS this line (revenue accrues here)
   Quantity DECIMAL(18,4) NOT NULL,                      -- supports negative for reversal slices (BO-D10)
   UnitPrice DECIMAL(18,4) NOT NULL,
@@ -925,9 +1034,11 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 
 ### Phase A: Product catalog + basic Order (Weeks 1–3)
 
-- [ ] Catalog entities: ProductType, Product, ProductCategory, ProductPrice (+ PriceList, PriceTier), ProductTaxCategory, ProductBundleItem, ProductEntitlement, ProductPerformanceObligation (variants + metered-billing engine deferred to v2)
+- [ ] Catalog entities: ProductType, Product, ProductCategory, ProductPrice (+ PriceList, PriceTier), ProductTaxCategory, ProductBundleItem, ProductEntitlement, ProductPerformanceObligation, EntitlementGrant (variants + metered-billing engine deferred to v2)
+- [ ] Out-of-the-box product types + IsA extension entities (Event first; Membership/PhysicalGood/DigitalGood/Service/Donation/GiftCard) (BO-D37, BO-D42)
+- [ ] `ProductBehavior` base + ClassFactory resolution + full Before/After hook surface plumbed (default behavior implements pricing precedence + standard post) (BO-D38)
 - [ ] `OrdersEngine` (BaseEngine) caching catalog/config metadata + price-resolution helper (BO-D30)
-- [ ] Seeded sample products (incl. a bundle + a subscription) for demo
+- [ ] Seeded sample products (incl. a bundle + a subscription + an event) for demo
 - [ ] Order / OrderLine entities, single-company first
 - [ ] Order Draft → Confirmed → Posted lifecycle (no JE yet)
 - [ ] OrderLine validation (totals match, currency consistency)
@@ -1067,3 +1178,31 @@ This plan depends on work in sibling repos, tracked as GitHub issues:
 ---
 
 *v1 ships a comprehensive order management substrate that handles BC's day-to-day customer transactions: multi-company orders with intercompany generation, Stripe + manual payments, subscriptions with revrec, returns/refunds/chargebacks at every layer, sales rules enforcement, multi-currency, tax integration. Each MJ adopter can install this and have working order management in days. BC layers Contracts on top in Stage 3; the AIDP analytics layer consumes from this substrate in Stage 4.*
+
+---
+
+## Appendix A — BizAppsContracts boundary
+
+> **Status**: forward-looking. `bizapps-contracts` is a **separate repo to be spun up after BizAppsOrders is underway**. This appendix records the agreed Orders↔Contracts split so we build Orders with the right seams (soft `Order.ContractID`, pricing-precedence slot, rev-rec override hook) and don't absorb contract concerns here.
+
+BizAppsContracts is the **B2B agreement envelope** that layers on top of Orders + Subscriptions. It encapsulates the *negotiated terms that govern future activity*; Orders remains the *transactional substrate that records what actually happened*.
+
+| Lives in **Orders/Subs** (this repo) | Lives in **BizAppsContracts** (future repo) |
+|---|---|
+| Catalog, prices, deterministic price resolution | Negotiated **price overrides / rate cards** (top of the BO-D33 precedence chain) |
+| The *actual* orders, subscriptions, invoices, payments | The *agreement* that spawns/governs them |
+| Subscription lifecycle + execution | **Renewal cycles, escalators, committed volume/spend, term length** |
+| Rev-rec execution (ScheduledJournalEntry waterfall) | **Contract-level rev-rec overrides** (e.g. allocate to a custom schedule) |
+| "What happened / what's active" | "What we agreed" — SLAs, MFN/caps, signature & legal status, amendments |
+
+**Principles**
+- An **Order can exist with no Contract** (one-off purchase). A Contract never *replaces* an Order — it **spawns and governs** them.
+- Contracts **drive** Orders: generate the renewal Order each cycle; supply the override price; optionally override rev-rec.
+- Linkage is via Contracts-owned join tables (e.g. `ContractOrderLink`, `ContractSubscriptionLink`) + the soft `Order.ContractID`; **no hard FK from Orders into Contracts** (Orders takes no dependency on Contracts — same one-way rule Orders follows toward Accounting).
+- Workflow/approvals for contract negotiation reuse **BizAppsTasks** (BO-D27), consistent across the stack.
+
+**Seams Orders ships now so Contracts can layer cleanly later**
+- `Order.ContractID` soft reference (BO-D21).
+- Pricing precedence reserves the top slot for a contract override (BO-D33 / §10 resolution order).
+- A rev-rec override hook on the waterfall builder (`OrdersEngine.BuildRevRecWaterfall`) so a contract can supply a custom schedule.
+- `OrderEvent` raised on Post/Void so Contracts can react.
