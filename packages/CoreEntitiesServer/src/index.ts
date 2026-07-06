@@ -1,31 +1,28 @@
 /**
- * @mj-biz-apps/orders-core-entities-server — SERVER-ONLY entity subclasses
- * (OPTIONAL — delete if you have no server-side entity logic).
+ * @mj-biz-apps/orders-core-entities-server — server-side Orders logic.
  *
- * Override generated entities here to add server-side behavior: validation,
- * cross-record invariants (ValidateAsync — not DB triggers), Save() hooks,
- * FK cleanup before delete. This package must NEVER be imported by client
- * code — it is a dependency of the Server package only.
+ * Exports ONLY what this package defines (MJ rule 5 — no re-exports from other packages):
+ *   - OrdersEngine        — catalog cache + GL-account resolver (product → category → company)
+ *   - OrderEntityServer    — books the balanced JE into accounting on first Confirmed
+ *   - the pure order → JE draft builder + its contract
  *
- * NOTE the dependency shape in package.json: the sibling app package
- * (@mj-biz-apps/orders-entities) is a HARD dependency pinned to the exact same
- * version (all app packages version together via changesets `fixed`), while
- * every @memberjunction/* package is a PEER (^X.Y.Z).
- *
- * EXAMPLE — override a generated entity's Save():
- *
- *   import { RegisterClass } from '@memberjunction/global';
- *   import { BaseEntity } from '@memberjunction/core';
- *   import { SampleRecordEntity } from '@mj-biz-apps/orders-entities';
- *
- *   @RegisterClass(BaseEntity, 'Sample App: Sample Records')
- *   export class SampleRecordEntityServer extends SampleRecordEntity {
- *       public override async Save(): Promise<boolean> {
- *           // server-side enrichment / invariants here
- *           return super.Save();
- *       }
- *   }
+ * LoadBizAppsOrdersEntitiesServer is the tree-shaking anchor the server bootstrap calls; the
+ * static re-export of OrderEntityServer below is what fires its @RegisterClass decorator.
  */
+export { OrdersEngine } from './OrdersEngine.js';
+export type { ResolvedAccount, OrderDraftBuildResult } from './OrdersEngine.js';
+export { buildOrderJournalDraft, OrderDraftError } from './orderJournalDraft.js';
+export type {
+  ResolvedOrderLine,
+  OrderJournalContext,
+  OrderDraftInputs,
+} from './orderJournalDraft.js';
+export { OrderEntityServer, LoadBizAppsOrdersOrderServer } from './OrderEntityServer.js';
+
+import { LoadBizAppsOrdersOrderServer } from './OrderEntityServer.js';
+
 export function LoadBizAppsOrdersEntitiesServer(): void {
-    // No-op: importing this module registers the server-side subclasses above.
+  // Importing this module registered OrderEntityServer (via the export above); this call is the
+  // tree-shaking anchor the bootstrap invokes so bundlers can't drop the side effect.
+  LoadBizAppsOrdersOrderServer();
 }
