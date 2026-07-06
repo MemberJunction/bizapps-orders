@@ -1,0 +1,40 @@
+name: Build All Packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [next]
+    paths:
+      - 'package-lock.json'
+      - 'packages/**'
+  pull_request:
+    branches: [next]
+    paths:
+      - 'package-lock.json'
+      - 'packages/**'
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Validate repository.url in packages
+        run: ./.github/scripts/validate-package-repository.sh
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all packages
+        run: npm run build:packages

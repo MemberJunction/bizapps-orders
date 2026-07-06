@@ -1,0 +1,27 @@
+{
+  "name": "@mj-biz-apps/orders-entities",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Generated entity subclasses for the app schema. TODO(template): rename package + description.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc && tsc-alias -f",
+    "test": "echo \"No tests configured yet\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-orders"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^3.25.76"
+  },
+  "peerDependencies": {
+    "@memberjunction/core": "^5.44.0",
+    "@memberjunction/global": "^5.44.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

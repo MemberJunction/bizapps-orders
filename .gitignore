@@ -1,0 +1,24 @@
+# Dependencies / build output
+node_modules/
+dist/
+*.tsbuildinfo
+.turbo/
+.cache/
+
+# Environment / secrets — NEVER commit credentials
+.env
+.env.*
+
+# CodeGen scratch output (fold what you need into migrations/, then discard)
+codegen.output.log
+migrations/codegen/
+SQL Scripts/
+Schema Files/
+temp_sql_scripts/
+metadata/sql_logging/
+metadata/**/.backups/
+
+# OS / editor noise
+.DS_Store
+report.html
+report.json

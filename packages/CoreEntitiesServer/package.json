@@ -1,0 +1,33 @@
+{
+  "name": "@mj-biz-apps/orders-core-entities-server",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Server-side Orders logic: OrdersEngine (catalog cache + GL-account resolver over accounting's GLAccountLink) and OrderEntityServer (books balanced JEs into BizApps Accounting on first Confirmed).",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc && tsc-alias -f",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-orders"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@mj-biz-apps/orders-entities": "0.1.0",
+    "@mj-biz-apps/accounting-engine-base": "0.1.0",
+    "@mj-biz-apps/accounting-core-entities-server": "0.1.0"
+  },
+  "peerDependencies": {
+    "@memberjunction/core": "^5.44.0",
+    "@memberjunction/core-entities": "^5.44.0",
+    "@memberjunction/global": "^5.44.0",
+    "@memberjunction/sqlserver-dataprovider": "^5.44.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}

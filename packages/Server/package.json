@@ -1,0 +1,32 @@
+{
+  "name": "@mj-biz-apps/orders-server",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Server bootstrap package - loaded by MJAPI at startup via the manifest's startupExport. TODO(template): rename.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc && tsc-alias -f",
+    "test": "echo \"No tests configured yet\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-orders"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@mj-biz-apps/orders-actions": "0.1.0",
+    "@mj-biz-apps/orders-core-entities-server": "0.1.0",
+    "@mj-biz-apps/orders-entities": "0.1.0",
+    "class-validator": "^0.14.3"
+  },
+  "peerDependencies": {
+    "@memberjunction/core": "^5.44.0",
+    "@memberjunction/global": "^5.44.0",
+    "@memberjunction/server": "^5.44.0",
+    "@memberjunction/sqlserver-dataprovider": "^5.44.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

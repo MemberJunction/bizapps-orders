@@ -1,0 +1,17 @@
+[
+  {
+    "_comment": "RENAME to .item-types.json (leading dot). One object per record; ONLY the fields block — primaryKey + sync are written back by mj-sync on first push.",
+    "fields": {
+      "Name": "Standard",
+      "Description": "Default item type",
+      "DefaultRank": 10
+    }
+  },
+  {
+    "fields": {
+      "Name": "Premium",
+      "Description": "Premium item type",
+      "DefaultRank": 20
+    }
+  }
+]

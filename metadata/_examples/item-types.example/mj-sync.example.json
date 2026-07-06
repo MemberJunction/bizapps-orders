@@ -1,0 +1,13 @@
+{
+  "_comment": "RENAME to .mj-sync.json (leading dot) to activate. Maps this folder to one MJ entity.",
+  "entity": "Sample App: Item Types",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".item-types.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true
+  }
+}
