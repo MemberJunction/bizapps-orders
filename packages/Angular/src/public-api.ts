@@ -12,7 +12,12 @@
 import '@mj-biz-apps/orders-entities';
 import './lib/generated/generated-forms.module';
 
+// Custom Explorer surface: the Orders Console (interactive order-entry + live JE booking).
+import './lib/custom/OrdersConsole/orders-console.module';
+import { LoadOrdersConsoleResource } from './lib/custom/OrdersConsole/orders-console-resource.component';
+
 export { GeneratedFormsModule } from './lib/generated/generated-forms.module';
+export { OrdersConsoleModule } from './lib/custom/OrdersConsole/orders-console.module';
 export { mjBizAppsOrdersOrderFormComponent } from './lib/generated/Entities/mjBizAppsOrdersOrder/mjbizappsordersorder.form.component';
 export { mjBizAppsOrdersOrderLineFormComponent } from './lib/generated/Entities/mjBizAppsOrdersOrderLine/mjbizappsordersorderline.form.component';
 export { mjBizAppsOrdersProductFormComponent } from './lib/generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
@@ -21,5 +26,7 @@ export { mjBizAppsOrdersProductTypeFormComponent } from './lib/generated/Entitie
 
 /** Startup entry point invoked by MJExplorer; the static imports above register the forms. */
 export function LoadBizAppsOrdersClient(): void {
-  // No-op: importing this module registered the generated forms above.
+  // Importing the modules above registered the generated forms + the Orders Console; this call is
+  // the tree-shaking anchor for the custom Explorer resource.
+  LoadOrdersConsoleResource();
 }

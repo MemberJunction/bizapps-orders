@@ -4,6 +4,7 @@
     "autoCreateMissingRecords": true
   },
   "directoryOrder": [
-    "schema-info"
+    "schema-info",
+    "applications"
   ]
 }

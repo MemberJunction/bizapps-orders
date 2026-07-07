@@ -1,0 +1,184 @@
+<mj-page-layout>
+  <mj-page-header
+    Title="Orders Console"
+    Icon="fa-solid fa-cart-shopping"
+    Subtitle="Compose an order, confirm it, and watch a balanced journal entry post to Accounting in real time">
+
+    <div meta>
+      <mj-stat-badge Icon="fa-solid fa-receipt" [Count]="RecentOrders.length" Label="orders" Variant="info" />
+      <mj-stat-badge Icon="fa-solid fa-circle-check" [Count]="ConfirmedCount" Label="confirmed" Variant="success" />
+      <mj-stat-badge Icon="fa-solid fa-book" [Count]="BookedCount" Label="booked" Variant="info" />
+    </div>
+
+    <div actions>
+      <mj-refresh-button [Loading]="IsLoading" (Clicked)="loadData()"></mj-refresh-button>
+    </div>
+  </mj-page-header>
+
+  <mj-page-body>
+    @if (IsLoading) {
+      <mj-loading text="Loading catalog + orders…"></mj-loading>
+    } @else {
+      @if (LoadError) {
+        <div class="oc-banner oc-banner--error" role="alert">
+          <i class="fa-solid fa-triangle-exclamation"></i> {{ LoadError }}
+        </div>
+      }
+
+      <div class="oc-grid">
+        <!-- ═══════════ Compose ═══════════ -->
+        <section class="oc-card oc-compose">
+          <header class="oc-card__head">
+            <h3><i class="fa-solid fa-pen-to-square"></i> Compose Order</h3>
+            @if (DraftLines.length > 0) {
+              <button mjButton variant="flat" size="sm" (click)="ResetDraft()">
+                <i class="fa-solid fa-eraser"></i> Clear
+              </button>
+            }
+          </header>
+
+          <div class="oc-addline">
+            <label class="oc-field oc-field--grow">
+              <span class="oc-field__label">Product</span>
+              <select class="mj-input" [(ngModel)]="SelectedProductID">
+                <option value="" disabled>Select a product…</option>
+                @for (p of Products; track p.ID) {
+                  <option [value]="p.ID">{{ p.Name }} · {{ p.Recognition }}</option>
+                }
+              </select>
+            </label>
+            <label class="oc-field oc-field--sm">
+              <span class="oc-field__label">Qty</span>
+              <input class="mj-input" type="number" min="1" step="1" [(ngModel)]="NewQuantity" />
+            </label>
+            <label class="oc-field oc-field--sm">
+              <span class="oc-field__label">Unit price</span>
+              <input class="mj-input" type="number" min="0" step="0.01" placeholder="0.00" [(ngModel)]="NewUnitPrice" />
+            </label>
+            <button mjButton variant="flat" size="sm" class="oc-addbtn" [disabled]="!CanAddLine" (click)="AddLine()">
+              <i class="fa-solid fa-plus"></i> Add
+            </button>
+          </div>
+
+          @if (DraftLines.length === 0) {
+            <mj-empty-state Icon="fa-solid fa-basket-shopping" Title="No lines yet"
+              Message="Add one or more products above, then confirm to book the journal entry.">
+            </mj-empty-state>
+          } @else {
+            <table class="oc-lines">
+              <thead>
+                <tr><th>#</th><th>Product</th><th class="oc-num">Qty</th><th class="oc-num">Unit</th><th class="oc-num">Amount</th><th></th></tr>
+              </thead>
+              <tbody>
+                @for (l of DraftLines; track $index) {
+                  <tr>
+                    <td class="oc-dim">{{ $index + 1 }}</td>
+                    <td>
+                      <span class="oc-prodname">{{ l.ProductName }}</span>
+                      <span class="oc-chip" [class.oc-chip--deferred]="l.Recognition === 'Deferred'">{{ l.Recognition }}</span>
+                    </td>
+                    <td class="oc-num">{{ l.Quantity }}</td>
+                    <td class="oc-num">{{ l.UnitPrice | number:'1.2-2' }}</td>
+                    <td class="oc-num oc-strong">{{ l.Quantity * l.UnitPrice | number:'1.2-2' }}</td>
+                    <td class="oc-num">
+                      <button mjButton variant="flat" size="sm" (click)="RemoveLine($index)" title="Remove line">
+                        <i class="fa-solid fa-xmark"></i>
+                      </button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+              <tfoot>
+                <tr><td colspan="4" class="oc-total-label">Order total</td><td class="oc-num oc-total">{{ DraftTotal | number:'1.2-2' }}</td><td></td></tr>
+              </tfoot>
+            </table>
+
+            <button mjButton variant="primary" size="md" class="oc-confirm" [disabled]="!CanConfirm" (click)="ConfirmOrder()">
+              @if (Booking) {
+                <i class="fa-solid fa-spinner fa-spin"></i> Booking journal entry…
+              } @else {
+                <i class="fa-solid fa-circle-check"></i> Confirm &amp; Book — {{ DraftTotal | number:'1.2-2' }}
+              }
+            </button>
+          }
+
+          @if (ActionMessage) {
+            <div class="oc-banner" [class.oc-banner--error]="ActionIsError" [class.oc-banner--success]="!ActionIsError" role="status">
+              <i class="fa-solid" [class.fa-circle-check]="!ActionIsError" [class.fa-triangle-exclamation]="ActionIsError"></i>
+              {{ ActionMessage }}
+            </div>
+          }
+
+          @if (Booked) {
+            <div class="oc-booked" role="status">
+              <div class="oc-booked__spark"><i class="fa-solid fa-book-open"></i></div>
+              <div class="oc-booked__body">
+                <div class="oc-booked__title">Journal entry booked</div>
+                <div class="oc-booked__num">{{ Booked.EntryNumber }} <span class="oc-chip">{{ Booked.EntryType }}</span></div>
+                <div class="oc-booked__stats">
+                  <span>Dr <strong>{{ Booked.TotalDebits | number:'1.2-2' }}</strong></span>
+                  <span>Cr <strong>{{ Booked.TotalCredits | number:'1.2-2' }}</strong></span>
+                  <span>{{ Booked.LineCount }} lines</span>
+                  @if (Booked.Balanced) {
+                    <span class="oc-balanced"><i class="fa-solid fa-scale-balanced"></i> Balanced</span>
+                  } @else {
+                    <span class="oc-unbalanced"><i class="fa-solid fa-triangle-exclamation"></i> Unbalanced</span>
+                  }
+                </div>
+              </div>
+            </div>
+          }
+        </section>
+
+        <!-- ═══════════ Recent orders ═══════════ -->
+        <section class="oc-card oc-recent">
+          <header class="oc-card__head"><h3><i class="fa-solid fa-clock-rotate-left"></i> Recent Orders</h3></header>
+          @if (RecentOrders.length === 0) {
+            <mj-empty-state Icon="fa-solid fa-inbox" Title="No orders yet"
+              Message="Confirmed orders appear here with their booked journal entry.">
+            </mj-empty-state>
+          } @else {
+            <ul class="oc-orderlist">
+              @for (o of RecentOrders; track o.ID) {
+                <li class="oc-order" [class.oc-order--open]="SelectedOrderID === o.ID">
+                  <button class="oc-order__row" (click)="ViewOrderJE(o)">
+                    <span class="oc-order__num">{{ o.OrderNumber }}</span>
+                    <span class="oc-pill" [attr.data-variant]="StatusVariant(o.Status)">{{ o.Status }}</span>
+                    <span class="oc-order__total">{{ o.Total | number:'1.2-2' }}</span>
+                    @if (o.JournalEntryID) {
+                      <span class="oc-order__je"><i class="fa-solid fa-book"></i></span>
+                    } @else {
+                      <span class="oc-order__je oc-dim"><i class="fa-regular fa-circle"></i></span>
+                    }
+                  </button>
+                  @if (SelectedOrderID === o.ID) {
+                    <div class="oc-order__detail">
+                      @if (!o.JournalEntryID) {
+                        <div class="oc-dim oc-detail-empty">No journal entry booked for this order.</div>
+                      } @else if (SelectedJELines.length === 0) {
+                        <div class="oc-dim oc-detail-empty">Loading journal entry…</div>
+                      } @else {
+                        <table class="oc-je">
+                          <thead><tr><th>Account</th><th class="oc-num">Debit</th><th class="oc-num">Credit</th></tr></thead>
+                          <tbody>
+                            @for (jl of SelectedJELines; track $index) {
+                              <tr>
+                                <td>{{ jl.Account }}</td>
+                                <td class="oc-num">{{ jl.Debit ? (jl.Debit | number:'1.2-2') : '' }}</td>
+                                <td class="oc-num">{{ jl.Credit ? (jl.Credit | number:'1.2-2') : '' }}</td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      }
+                    </div>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      </div>
+    }
+  </mj-page-body>
+</mj-page-layout>

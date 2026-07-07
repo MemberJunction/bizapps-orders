@@ -1,0 +1,53 @@
+{
+  "fields": {
+    "Name": "Orders",
+    "Description": "Product catalog + order lifecycle. Confirmed orders book balanced journal entries into Accounting.",
+    "Icon": "fa-solid fa-cart-shopping",
+    "DefaultForNewUser": false,
+    "Color": "#1F7A4D",
+    "DefaultSequence": 2020,
+    "DefaultNavItems": [
+      {
+        "Label": "Orders Console",
+        "Icon": "fa-solid fa-cart-shopping",
+        "ResourceType": "Custom",
+        "DriverClass": "OrdersConsoleResource",
+        "isDefault": true
+      },
+      {
+        "Label": "Orders",
+        "Icon": "fa-solid fa-receipt",
+        "ResourceType": "User Views",
+        "Configuration": {
+          "Entity": "MJ_BizApps_Orders: Orders"
+        },
+        "isDefault": false
+      },
+      {
+        "Label": "Products",
+        "Icon": "fa-solid fa-box",
+        "ResourceType": "User Views",
+        "Configuration": {
+          "Entity": "MJ_BizApps_Orders: Products"
+        },
+        "isDefault": false
+      },
+      {
+        "Label": "Product Categories",
+        "Icon": "fa-solid fa-sitemap",
+        "ResourceType": "User Views",
+        "Configuration": {
+          "Entity": "MJ_BizApps_Orders: Product Categories"
+        },
+        "isDefault": false
+      }
+    ]
+  },
+  "primaryKey": {
+    "ID": "765AB04C-3AB0-4ADB-A9BD-5CC9BB38C2EF"
+  },
+  "sync": {
+    "lastModified": "2026-07-07T18:53:44.165Z",
+    "checksum": "218a67f76e69c77dc0afa502feb4aaf5e88f478a4d03afa237e7dc2b402f198f"
+  }
+}

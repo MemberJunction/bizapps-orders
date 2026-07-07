@@ -1,0 +1,197 @@
+/* Orders Console — all colors via MJ design tokens (dark-mode + white-label safe). */
+
+.oc-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 980px) {
+  .oc-grid { grid-template-columns: 1fr; }
+}
+
+.oc-card {
+  background: var(--mj-bg-surface);
+  border: 1px solid var(--mj-border-default);
+  border-radius: 14px;
+  padding: 18px 20px 20px;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--mj-brand-primary) 6%, transparent);
+}
+
+.oc-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 16px;
+}
+.oc-card__head h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  color: var(--mj-text-primary);
+}
+.oc-card__head h3 i { color: var(--mj-brand-primary); }
+
+/* The compose card gets a subtle brand gradient rail on top for "zing". */
+.oc-compose {
+  position: relative;
+  overflow: hidden;
+}
+.oc-compose::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg,
+    var(--mj-brand-primary),
+    color-mix(in srgb, var(--mj-brand-primary) 40%, var(--mj-status-success)));
+}
+
+/* ─── add-line row ─── */
+.oc-addline {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding: 14px;
+  background: var(--mj-bg-surface-sunken);
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+.oc-field { display: flex; flex-direction: column; gap: 4px; }
+.oc-field--grow { flex: 1 1 200px; }
+.oc-field--sm { width: 92px; }
+.oc-field__label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--mj-text-muted);
+}
+.oc-addbtn { align-self: flex-end; }
+
+/* ─── draft lines table ─── */
+.oc-lines, .oc-je {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.oc-lines th, .oc-je th {
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--mj-text-muted);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+}
+.oc-lines td, .oc-je td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+  color: var(--mj-text-primary);
+}
+.oc-num { text-align: right; font-variant-numeric: tabular-nums; }
+.oc-dim { color: var(--mj-text-muted); }
+.oc-strong { font-weight: 600; }
+.oc-prodname { font-weight: 550; margin-right: 8px; }
+
+.oc-chip {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--mj-brand-primary) 12%, var(--mj-bg-surface));
+  color: var(--mj-brand-primary);
+  border: 1px solid color-mix(in srgb, var(--mj-brand-primary) 22%, transparent);
+}
+.oc-chip--deferred {
+  background: color-mix(in srgb, var(--mj-status-warning) 14%, var(--mj-bg-surface));
+  color: var(--mj-status-warning-text, var(--mj-status-warning));
+  border-color: color-mix(in srgb, var(--mj-status-warning) 30%, transparent);
+}
+
+.oc-total-label { text-align: right; font-weight: 600; color: var(--mj-text-secondary); padding-top: 12px; }
+.oc-total { font-weight: 750; font-size: 1.05rem; color: var(--mj-text-primary); padding-top: 12px; }
+
+.oc-confirm { width: 100%; margin-top: 16px; }
+
+/* ─── booked celebration ─── */
+.oc-booked {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-top: 16px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--mj-status-success) 16%, var(--mj-bg-surface)),
+    color-mix(in srgb, var(--mj-brand-primary) 12%, var(--mj-bg-surface)));
+  border: 1px solid color-mix(in srgb, var(--mj-status-success) 32%, transparent);
+  animation: oc-pop 0.35s ease-out;
+}
+@keyframes oc-pop { from { transform: scale(0.97); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.oc-booked__spark {
+  flex: 0 0 auto;
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--mj-status-success);
+  color: var(--mj-text-inverse, #fff);
+  font-size: 1.25rem;
+}
+.oc-booked__title { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--mj-text-secondary); font-weight: 600; }
+.oc-booked__num { font-size: 1.15rem; font-weight: 750; color: var(--mj-text-primary); display: flex; align-items: center; gap: 8px; margin: 2px 0 6px; }
+.oc-booked__stats { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.85rem; color: var(--mj-text-secondary); }
+.oc-booked__stats strong { color: var(--mj-text-primary); }
+.oc-balanced { color: var(--mj-status-success); font-weight: 650; }
+.oc-unbalanced { color: var(--mj-status-error); font-weight: 650; }
+
+/* ─── banners ─── */
+.oc-banner {
+  display: flex; align-items: center; gap: 9px;
+  margin-top: 14px; padding: 11px 14px;
+  border-radius: 9px; font-size: 0.9rem;
+  background: var(--mj-status-info-bg, color-mix(in srgb, var(--mj-status-info) 12%, var(--mj-bg-surface)));
+  color: var(--mj-text-primary);
+}
+.oc-banner--success { background: color-mix(in srgb, var(--mj-status-success) 12%, var(--mj-bg-surface)); color: var(--mj-status-success-text, var(--mj-text-primary)); }
+.oc-banner--error { background: color-mix(in srgb, var(--mj-status-error) 12%, var(--mj-bg-surface)); color: var(--mj-status-error-text, var(--mj-text-primary)); }
+
+/* ─── recent orders ─── */
+.oc-orderlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.oc-order { border: 1px solid var(--mj-border-subtle); border-radius: 10px; overflow: hidden; transition: border-color 0.15s; }
+.oc-order--open { border-color: var(--mj-brand-primary); }
+.oc-order__row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  background: var(--mj-bg-surface);
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  color: var(--mj-text-primary);
+}
+.oc-order__row:hover { background: var(--mj-bg-surface-hover); }
+.oc-order__num { font-weight: 600; font-size: 0.9rem; }
+.oc-order__total { font-variant-numeric: tabular-nums; font-weight: 600; }
+.oc-order__je { color: var(--mj-brand-primary); width: 18px; text-align: center; }
+
+.oc-pill {
+  font-size: 0.7rem; font-weight: 650; padding: 2px 10px; border-radius: 999px;
+  background: color-mix(in srgb, var(--mj-text-muted) 15%, var(--mj-bg-surface));
+  color: var(--mj-text-secondary);
+}
+.oc-pill[data-variant="success"] { background: color-mix(in srgb, var(--mj-status-success) 16%, var(--mj-bg-surface)); color: var(--mj-status-success); }
+.oc-pill[data-variant="info"]    { background: color-mix(in srgb, var(--mj-status-info) 16%, var(--mj-bg-surface)); color: var(--mj-status-info); }
+.oc-pill[data-variant="warning"] { background: color-mix(in srgb, var(--mj-status-warning) 16%, var(--mj-bg-surface)); color: var(--mj-status-warning-text, var(--mj-status-warning)); }
+.oc-pill[data-variant="error"]   { background: color-mix(in srgb, var(--mj-status-error) 16%, var(--mj-bg-surface)); color: var(--mj-status-error); }
+
+.oc-order__detail { padding: 4px 14px 14px; background: var(--mj-bg-surface-sunken); }
+.oc-detail-empty { padding: 10px 4px; font-size: 0.85rem; }
