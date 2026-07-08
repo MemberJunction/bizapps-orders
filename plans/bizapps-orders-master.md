@@ -1,5 +1,17 @@
 # BizAppsOrders Master Plan
 
+> **🚦 AUTHORITY / AS-BUILT (updated 2026-07-08):** **`plans/2026-07-02-engine-meeting-amendment.md`** (S1–S11)
+> supersedes parts of this master plan and records what is actually built. **Precedence: amendment > this master
+> plan.** Deltas a plan-only reader MUST know before building against the BO-D* decisions below:
+> - **Booking trigger:** JEs book on the **first transition to `Confirmed`** (amendment S4) — **not** `Posted`
+>   (**BO-D8 is superseded** on this point). *(Open: whether "Posted" later means GL/ERP-posted — pending Robert.)*
+> - **Account refs:** Orders **resolves accounts itself to `GLAccountID` UUIDs** via accounting's polymorphic
+>   `GLAccountLink` (`AccountingEngineBase.ResolveLinkedAccount`); account **numbers** are only the ERP wire format
+>   at the batch boundary (S2). The **`AccountingService` façade** referenced throughout is superseded by the
+>   **`AccountingEngine` + `Accounting.CreateJournalEntry` remote operation**.
+> - **Product→GL mapping:** `Product.*GLAccountID` columns are **killed** — role-based mapping via `GLAccountLink`
+>   (S3). `Order` has **no CompanyID** (per-line company resolution) and **no currency** (FX deferred).
+>
 > **Status**: Plan — v2 (revised 2026-06-22 to reconcile with the as-built BizAppsAccounting design)
 > **Target repo**: `MemberJunction/bizapps-orders` (repo scaffolded; schema/build work begins once the BizAppsAccounting schema locks — imminent, expected this week or next)
 > **Depends on**: `bizapps-accounting` (GLAccount, JournalEntry primitives + `AccountingService` façade, AccountingPeriod, Dimension, Tax\*, **Currency + CurrencySpotRate**), `bizapps-common` (Person, Organization, Address, ContactMethod), `bizapps-tasks` (workflow/approval substrate), `__mj` core (Company, User, Roles, Credentials, Scheduled Actions)
