@@ -1,0 +1,190 @@
+<mj-page-layout>
+  <mj-page-header
+    Title="Orders"
+    Icon="fa-solid fa-cart-shopping"
+    Subtitle="The order pipeline — track every order from draft to fulfilled and drill into the journal entry it booked">
+
+    <div meta>
+      <mj-stat-badge Icon="fa-solid fa-receipt" [Count]="TotalOrders" Label="orders" Variant="info" />
+      <mj-stat-badge Icon="fa-solid fa-circle-check" [Count]="ConfirmedCount" Label="confirmed" Variant="success" />
+      <mj-stat-badge Icon="fa-solid fa-book" [Count]="BookedCount" Label="booked" Variant="info" />
+    </div>
+
+    <div actions>
+      <mj-refresh-button [Loading]="IsBusy" (Clicked)="loadData()"></mj-refresh-button>
+    </div>
+
+    <div toolbar>
+      <div class="om-filters">
+        <div class="om-searchbox">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input class="mj-input" type="text" placeholder="Search order # or description…" [(ngModel)]="Search" />
+        </div>
+        <div class="om-chips">
+          <button class="om-chip" [class.om-chip--on]="StatusFilter === 'All'" (click)="SetStatusFilter('All')">All</button>
+          @for (s of Lanes; track s) {
+            <button class="om-chip" [attr.data-variant]="StatusVariant(s)" [class.om-chip--on]="StatusFilter === s" (click)="SetStatusFilter(s)">
+              <i [class]="LaneIcon(s)"></i> {{ s }}
+            </button>
+          }
+        </div>
+      </div>
+    </div>
+  </mj-page-header>
+
+  <mj-page-body>
+    @if (IsBusy) {
+      <mj-loading text="Loading orders…"></mj-loading>
+    } @else {
+      @if (LoadError) {
+        <div class="om-banner om-banner--error" role="alert">
+          <i class="fa-solid fa-triangle-exclamation"></i> {{ LoadError }}
+        </div>
+      }
+
+      @if (TotalOrders === 0) {
+        <mj-empty-state Icon="fa-solid fa-inbox" Title="No orders yet"
+          Message="Confirm an order in the Orders Console to see it flow through the pipeline here.">
+        </mj-empty-state>
+      } @else {
+        <div class="om-board" [class.om-board--split]="SelectedOrderID">
+          <!-- ═══════════ Kanban lanes ═══════════ -->
+          <div class="om-lanes">
+            @for (lane of LaneData; track lane.Status) {
+              <section class="om-lane" [attr.data-variant]="StatusVariant(lane.Status)">
+                <header class="om-lane__head">
+                  <span class="om-lane__title"><i [class]="LaneIcon(lane.Status)"></i> {{ lane.Status }}</span>
+                  <span class="om-lane__count">{{ lane.Count }}</span>
+                </header>
+                <div class="om-lane__total">{{ lane.Total | number:'1.2-2' }}</div>
+                <div class="om-lane__cards">
+                  @for (o of lane.Orders; track o.ID) {
+                    <button class="om-card" [class.om-card--active]="SelectedOrderID === o.ID" (click)="SelectOrder(o)">
+                      <div class="om-card__top">
+                        <span class="om-card__num">{{ o.OrderNumber }}</span>
+                        @if (o.JournalEntryID) {
+                          <span class="om-card__je" title="Journal entry booked"><i class="fa-solid fa-book"></i></span>
+                        }
+                      </div>
+                      <div class="om-card__meta">
+                        <span class="om-card__total">{{ o.Total | number:'1.2-2' }}</span>
+                        <span class="om-card__lines">{{ o.LineCount }} {{ o.LineCount === 1 ? 'line' : 'lines' }}</span>
+                      </div>
+                      @if (o.OrderDate) {
+                        <div class="om-card__date">{{ o.OrderDate | date:'MMM d, y' }}</div>
+                      }
+                    </button>
+                  }
+                  @if (lane.Count === 0) {
+                    <div class="om-lane__empty">—</div>
+                  }
+                </div>
+              </section>
+            }
+          </div>
+
+          <!-- ═══════════ Detail panel ═══════════ -->
+          @if (SelectedOrder; as order) {
+            <aside class="om-detail">
+              <header class="om-detail__head">
+                <div class="om-detail__title">
+                  <span class="om-detail__num">{{ order.OrderNumber }}</span>
+                  <span class="om-pill" [attr.data-variant]="StatusVariant(order.Status)">{{ order.Status }}</span>
+                </div>
+                <button mjButton variant="flat" size="sm" (click)="CloseDetail()" title="Close">
+                  <i class="fa-solid fa-xmark"></i>
+                </button>
+              </header>
+
+              @if (DetailLoading) {
+                <mj-loading text="Loading order…"></mj-loading>
+              } @else {
+                <!-- lifecycle -->
+                <div class="om-lifecycle">
+                  @for (s of Lanes; track s) {
+                    @if (s !== 'Voided' || order.Status === 'Voided') {
+                      <div class="om-step"
+                        [class.om-step--done]="order.Status === s"
+                        [attr.data-variant]="StatusVariant(s)">
+                        <i [class]="LaneIcon(s)"></i>
+                        <span>{{ s }}</span>
+                      </div>
+                    }
+                  }
+                </div>
+
+                @if (order.Description) {
+                  <div class="om-detail__desc">{{ order.Description }}</div>
+                }
+                <div class="om-detail__facts">
+                  @if (order.OrderDate) { <span><i class="fa-regular fa-calendar"></i> {{ order.OrderDate | date:'mediumDate' }}</span> }
+                  @if (order.ConfirmedAt) { <span><i class="fa-solid fa-circle-check"></i> Confirmed {{ order.ConfirmedAt | date:'mediumDate' }}</span> }
+                  @if (order.CustomerOrganizationID) { <span><i class="fa-regular fa-building"></i> Customer set</span> }
+                </div>
+
+                <!-- lines -->
+                <h4 class="om-detail__section"><i class="fa-solid fa-list"></i> Lines</h4>
+                @if (DetailLines.length === 0) {
+                  <div class="om-dim">No lines on this order.</div>
+                } @else {
+                  <table class="om-table">
+                    <thead><tr><th>#</th><th>Product</th><th class="om-num">Qty</th><th class="om-num">Unit</th><th class="om-num">Amount</th></tr></thead>
+                    <tbody>
+                      @for (l of DetailLines; track l.LineNumber) {
+                        <tr>
+                          <td class="om-dim">{{ l.LineNumber }}</td>
+                          <td>{{ l.Product }}</td>
+                          <td class="om-num">{{ l.Quantity }}</td>
+                          <td class="om-num">{{ l.UnitPrice | number:'1.2-2' }}</td>
+                          <td class="om-num om-strong">{{ l.Amount | number:'1.2-2' }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                    <tfoot>
+                      <tr><td colspan="4" class="om-total-label">Order total</td><td class="om-num om-total">{{ order.Total | number:'1.2-2' }}</td></tr>
+                    </tfoot>
+                  </table>
+                }
+
+                <!-- journal entry -->
+                <h4 class="om-detail__section"><i class="fa-solid fa-book"></i> Journal Entry</h4>
+                @if (!order.JournalEntryID) {
+                  <div class="om-dim">No journal entry — this order has not been confirmed/booked.</div>
+                } @else if (DetailJE; as je) {
+                  <div class="om-je-head">
+                    <span class="om-je-num">{{ je.EntryNumber }}</span>
+                    <span class="om-chip">{{ je.EntryType }}</span>
+                    @if (je.Status) { <span class="om-pill" [attr.data-variant]="je.Status === 'GLPosted' ? 'success' : (je.Status === 'Batched' ? 'info' : 'warning')">{{ je.Status }}</span> }
+                    @if (je.Balanced) {
+                      <span class="om-balanced"><i class="fa-solid fa-scale-balanced"></i> Balanced</span>
+                    } @else {
+                      <span class="om-unbalanced"><i class="fa-solid fa-triangle-exclamation"></i> Unbalanced</span>
+                    }
+                  </div>
+                  <table class="om-table">
+                    <thead><tr><th>Account</th><th class="om-num">Debit</th><th class="om-num">Credit</th></tr></thead>
+                    <tbody>
+                      @for (jl of DetailJELines; track $index) {
+                        <tr>
+                          <td>{{ jl.Account }}</td>
+                          <td class="om-num">{{ jl.Debit ? (jl.Debit | number:'1.2-2') : '' }}</td>
+                          <td class="om-num">{{ jl.Credit ? (jl.Credit | number:'1.2-2') : '' }}</td>
+                        </tr>
+                      }
+                    </tbody>
+                    <tfoot>
+                      <tr><td class="om-total-label">Totals</td><td class="om-num om-total">{{ je.TotalDebits | number:'1.2-2' }}</td><td class="om-num om-total">{{ je.TotalCredits | number:'1.2-2' }}</td></tr>
+                    </tfoot>
+                  </table>
+                  <button mjButton variant="primary" size="sm" class="om-drill" (click)="OpenInAccounting()">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Open in Accounting
+                  </button>
+                }
+              }
+            </aside>
+          }
+        </div>
+      }
+    }
+  </mj-page-body>
+</mj-page-layout>

@@ -15,7 +15,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "0.1.0"
+    "@mj-biz-apps/orders-entities": "0.1.0",
+    "@mj-biz-apps/accounting-entities": "0.1.0"
   },
   "peerDependencies": {
     "@angular/common": ">=21.0.0 <22.0.0",

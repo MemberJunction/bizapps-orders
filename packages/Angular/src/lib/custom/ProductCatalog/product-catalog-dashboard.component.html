@@ -1,0 +1,120 @@
+<mj-page-layout>
+  <mj-page-header
+    Title="Product Catalog"
+    Icon="fa-solid fa-box"
+    Subtitle="Manage products and wire each one to its Sales / Deferred-Revenue GL account — the mapping the order-booking engine resolves">
+
+    <div meta>
+      <mj-stat-badge Icon="fa-solid fa-box" [Count]="ActiveCount" Label="active" Variant="success" />
+      <mj-stat-badge Icon="fa-solid fa-tags" [Count]="TypeCount" Label="types" Variant="info" />
+      <mj-stat-badge Icon="fa-solid fa-sitemap" [Count]="CategoryCount" Label="categories" Variant="info" />
+    </div>
+
+    <div actions>
+      <mj-refresh-button [Loading]="IsBusy" (Clicked)="loadData()"></mj-refresh-button>
+    </div>
+
+    <div toolbar>
+      <div class="pc-filters">
+        <div class="pc-searchbox">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input class="mj-input" type="text" placeholder="Search products…" [(ngModel)]="Search" />
+        </div>
+        <select class="mj-input pc-catselect" [(ngModel)]="CategoryFilter">
+          <option value="All">All categories</option>
+          @for (c of Categories; track c) { <option [value]="c">{{ c }}</option> }
+        </select>
+        <label class="pc-toggle"><input type="checkbox" [(ngModel)]="ActiveOnly" /> Active only</label>
+      </div>
+    </div>
+  </mj-page-header>
+
+  <mj-page-body>
+    @if (IsBusy) {
+      <mj-loading text="Loading catalog…"></mj-loading>
+    } @else {
+      @if (LoadError) {
+        <div class="pc-banner pc-banner--error" role="alert"><i class="fa-solid fa-triangle-exclamation"></i> {{ LoadError }}</div>
+      }
+      @if (AllProducts.length === 0) {
+        <mj-empty-state Icon="fa-solid fa-box-open" Title="No products" Message="Seed the demo catalog or create products to manage them here."></mj-empty-state>
+      } @else {
+        <div class="pc-grid" [class.pc-grid--split]="SelectedProductID">
+          <!-- product list -->
+          <div class="pc-list">
+            <table class="pc-table">
+              <thead><tr><th>Product</th><th>Type</th><th>Category</th><th>Revenue</th><th>Active</th></tr></thead>
+              <tbody>
+                @for (p of FilteredProducts; track p.ID) {
+                  <tr class="pc-row" [class.pc-row--active]="SelectedProductID === p.ID" (click)="SelectProduct(p)">
+                    <td class="pc-strong">{{ p.Name }}</td>
+                    <td class="pc-dim">{{ p.ProductType ?? '—' }}</td>
+                    <td class="pc-dim">{{ p.ProductCategory ?? '—' }}</td>
+                    <td><span class="pc-chip" [class.pc-chip--deferred]="p.Recognition === 'Deferred'">{{ p.Recognition }}</span></td>
+                    <td>@if (p.IsActive) { <i class="fa-solid fa-circle-check pc-ok"></i> } @else { <i class="fa-regular fa-circle pc-dim"></i> }</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <!-- detail + account mapping -->
+          @if (SelectedProduct; as product) {
+            <aside class="pc-detail">
+              <header class="pc-detail__head">
+                <div>
+                  <div class="pc-detail__name">{{ product.Name }}</div>
+                  <div class="pc-detail__sub">{{ product.ProductType ?? '—' }} · {{ product.ProductCategory ?? 'Uncategorized' }} · <span class="pc-chip" [class.pc-chip--deferred]="product.Recognition === 'Deferred'">{{ product.Recognition }}</span></div>
+                </div>
+                <button mjButton variant="flat" size="sm" (click)="OpenProduct()" title="Open product form">
+                  <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                </button>
+              </header>
+              @if (product.Description) { <div class="pc-detail__desc">{{ product.Description }}</div> }
+
+              <h4 class="pc-section"><i class="fa-solid fa-link"></i> Account mapping</h4>
+              @if (DetailLoading) {
+                <mj-loading text="Loading mappings…" size="small"></mj-loading>
+              } @else {
+                @if (Links.length === 0) {
+                  <div class="pc-dim pc-empty-links">No GL-account links yet. Add one below so confirmed orders can resolve this product's revenue account.</div>
+                } @else {
+                  <ul class="pc-links">
+                    @for (l of Links; track l.ID) {
+                      <li class="pc-link">
+                        <span class="pc-link__role">{{ l.Role }}</span>
+                        <span class="pc-link__arrow"><i class="fa-solid fa-arrow-right"></i></span>
+                        <span class="pc-link__acct">{{ l.Account }}</span>
+                        <button mjButton variant="flat" size="sm" [disabled]="Saving" (click)="RemoveMapping(l)" title="Remove mapping"><i class="fa-solid fa-xmark"></i></button>
+                      </li>
+                    }
+                  </ul>
+                }
+
+                <div class="pc-addlink">
+                  <select class="mj-input" [(ngModel)]="NewRoleID">
+                    <option value="" disabled>Role…</option>
+                    @for (r of Roles; track r.ID) { <option [value]="r.ID">{{ r.Name }}</option> }
+                  </select>
+                  <select class="mj-input" [(ngModel)]="NewAccountID">
+                    <option value="" disabled>GL account…</option>
+                    @for (a of Accounts; track a.ID) { <option [value]="a.ID">{{ a.Code }} — {{ a.Name }}</option> }
+                  </select>
+                  <button mjButton variant="primary" size="sm" [disabled]="!CanAddMapping" (click)="AddMapping()">
+                    @if (Saving) { <i class="fa-solid fa-spinner fa-spin"></i> } @else { <i class="fa-solid fa-plus"></i> Add }
+                  </button>
+                </div>
+
+                @if (ActionMessage) {
+                  <div class="pc-banner" [class.pc-banner--error]="ActionIsError" [class.pc-banner--success]="!ActionIsError" role="status">
+                    <i class="fa-solid" [class.fa-circle-check]="!ActionIsError" [class.fa-triangle-exclamation]="ActionIsError"></i> {{ ActionMessage }}
+                  </div>
+                }
+              }
+            </aside>
+          }
+        </div>
+      }
+    }
+  </mj-page-body>
+</mj-page-layout>

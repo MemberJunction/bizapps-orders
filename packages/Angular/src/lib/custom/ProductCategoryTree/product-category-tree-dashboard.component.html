@@ -1,0 +1,40 @@
+<mj-page-layout>
+  <mj-page-header
+    Title="Product Categories"
+    Icon="fa-solid fa-sitemap"
+    Subtitle="The category hierarchy — the order-booking engine walks this tree upward to resolve a product's GL account">
+
+    <div meta>
+      <mj-stat-badge Icon="fa-solid fa-sitemap" [Count]="Nodes.length" Label="categories" Variant="info" />
+      <mj-stat-badge Icon="fa-solid fa-folder-tree" [Count]="RootCount" Label="top-level" Variant="info" />
+    </div>
+    <div actions>
+      <mj-refresh-button [Loading]="IsBusy" (Clicked)="loadData()"></mj-refresh-button>
+    </div>
+  </mj-page-header>
+
+  <mj-page-body>
+    @if (IsBusy) {
+      <mj-loading text="Loading categories…"></mj-loading>
+    } @else {
+      @if (LoadError) {
+        <div class="ct-banner ct-banner--error" role="alert"><i class="fa-solid fa-triangle-exclamation"></i> {{ LoadError }}</div>
+      }
+      @if (Nodes.length === 0) {
+        <mj-empty-state Icon="fa-solid fa-folder-open" Title="No categories" Message="Create product categories to organize the catalog."></mj-empty-state>
+      } @else {
+        <div class="ct-tree">
+          @for (n of Nodes; track n.ID) {
+            <button class="ct-node" [class.ct-node--inactive]="!n.IsActive" [style.padding-left]="IndentPx(n.Depth)" (click)="OpenCategory(n)">
+              <i class="ct-icon" [class]="n.Depth === 0 ? 'fa-solid fa-folder' : 'fa-solid fa-folder-tree'"></i>
+              <span class="ct-name">{{ n.Name }}</span>
+              @if (!n.IsActive) { <span class="ct-tag">inactive</span> }
+              <span class="ct-spacer"></span>
+              <span class="ct-count" [class.ct-count--zero]="n.ProductCount === 0">{{ n.ProductCount }} {{ n.ProductCount === 1 ? 'product' : 'products' }}</span>
+            </button>
+          }
+        </div>
+      }
+    }
+  </mj-page-body>
+</mj-page-layout>

@@ -17,28 +17,22 @@
       {
         "Label": "Orders",
         "Icon": "fa-solid fa-receipt",
-        "ResourceType": "User Views",
-        "Configuration": {
-          "Entity": "MJ_BizApps_Orders: Orders"
-        },
+        "ResourceType": "Custom",
+        "DriverClass": "OrdersManagementResource",
         "isDefault": false
       },
       {
-        "Label": "Products",
+        "Label": "Product Catalog",
         "Icon": "fa-solid fa-box",
-        "ResourceType": "User Views",
-        "Configuration": {
-          "Entity": "MJ_BizApps_Orders: Products"
-        },
+        "ResourceType": "Custom",
+        "DriverClass": "ProductCatalogResource",
         "isDefault": false
       },
       {
         "Label": "Product Categories",
         "Icon": "fa-solid fa-sitemap",
-        "ResourceType": "User Views",
-        "Configuration": {
-          "Entity": "MJ_BizApps_Orders: Product Categories"
-        },
+        "ResourceType": "Custom",
+        "DriverClass": "ProductCategoryTreeResource",
         "isDefault": false
       }
     ]
@@ -47,7 +41,7 @@
     "ID": "765AB04C-3AB0-4ADB-A9BD-5CC9BB38C2EF"
   },
   "sync": {
-    "lastModified": "2026-07-07T18:53:44.165Z",
-    "checksum": "218a67f76e69c77dc0afa502feb4aaf5e88f478a4d03afa237e7dc2b402f198f"
+    "lastModified": "2026-07-07T21:34:05.618Z",
+    "checksum": "7a8b3417d577ed415ff1cb4274542206bfff7e9a2ac13b38731d15430021e5c2"
   }
 }
