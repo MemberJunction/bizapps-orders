@@ -7,7 +7,8 @@
  * (OrdersEngine), assembles the balanced draft, and books it through the in-process
  * `Accounting.CreateJournalEntry` operation — the same op a browser/script would invoke over
  * GraphQL. On success it stamps the order's JournalEntryID (the idempotency guard — a re-save of
- * an already-booked order skips) + ConfirmedAt.
+ * an already-booked order skips) + ConfirmedAt, and advances the order to `Posted` (2026-07-08
+ * decision D1: `Posted` = "the journal entries are in the subledger"; Confirmed triggers posting).
  *
  * FAILURE POLICY (v1): if resolution or the op fails, Save() returns false — the Confirm is
  * BLOCKED and the reason is logged. This is the strongest form of "the financial effect never
@@ -37,6 +38,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
     if (this.shouldBookJournalEntry()) {
       const booked = await this.bookOrderJournalEntry();
       if (!booked) return false; // block the Confirm — reason is logged; retries on next save
+      // The journal entries are now in the accounting subledger, so the order advances to `Posted`
+      // (2026-07-08 Robert decision D1: `Posted` = "the JEs are in"; `Confirmed` triggers the posting
+      // operation, so the transition is immediate). The flow stays linear — the next step is Fulfilled.
+      this.Status = 'Posted';
     }
     return super.Save(options);
   }

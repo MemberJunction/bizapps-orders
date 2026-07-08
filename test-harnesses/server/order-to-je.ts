@@ -249,6 +249,9 @@ async function main(): Promise<void> {
     assert(saved, 'confirm Save should succeed');
     assert(!!order.JournalEntryID, 'order.JournalEntryID should be stamped');
     assert(!!order.ConfirmedAt, 'order.ConfirmedAt should be stamped');
+    assert(order.Status === 'Posted', `order should advance to Posted after booking, got ${order.Status}`);
+    const dbStatus = (await pool.request().query(`SELECT Status FROM ${ORD_SCHEMA}.[Order] WHERE ID='${orderId}'`)).recordset[0];
+    assert(dbStatus.Status === 'Posted', `order should be PERSISTED Posted, got ${dbStatus.Status}`);
     const je = await readJE(order.JournalEntryID!);
     assert(je.header.EntryType === 'OrderBooking', `EntryType should be OrderBooking, got ${je.header.EntryType}`);
     assert((je.header.OrderID ?? '').toUpperCase() === orderId.toUpperCase(), 'JE.OrderID should be the order');
