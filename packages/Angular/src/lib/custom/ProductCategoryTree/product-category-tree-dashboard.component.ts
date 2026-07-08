@@ -105,6 +105,6 @@ export class ProductCategoryTreeDashboardComponent extends BaseDashboard {
   public IndentPx(depth: number): string { return `${depth * 22}px`; }
 
   public OpenCategory(node: CategoryNode): void {
-    this.OpenEntityRecord.emit({ EntityName: CATEGORY_ENTITY, RecordPKey: CompositeKey.FromID(node.ID) });
+    this.navigationService.OpenEntityRecord(CATEGORY_ENTITY, CompositeKey.FromID(node.ID));
   }
 }

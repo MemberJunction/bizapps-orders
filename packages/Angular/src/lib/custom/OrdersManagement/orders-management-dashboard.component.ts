@@ -320,7 +320,7 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
   public OpenInAccounting(): void {
     const jeId = this.SelectedOrder?.JournalEntryID;
     if (!jeId) return;
-    this.OpenEntityRecord.emit({ EntityName: JE_ENTITY, RecordPKey: CompositeKey.FromID(jeId) });
+    this.navigationService.OpenEntityRecord(JE_ENTITY, CompositeKey.FromID(jeId));
   }
 
   // ─── presentation helpers ────────────────────────────────────────────────────

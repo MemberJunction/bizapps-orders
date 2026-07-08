@@ -230,7 +230,7 @@ export class ProductCatalogDashboardComponent extends BaseDashboard {
 
   public OpenProduct(): void {
     if (!this.SelectedProductID) return;
-    this.OpenEntityRecord.emit({ EntityName: PRODUCT_ENTITY, RecordPKey: CompositeKey.FromID(this.SelectedProductID) });
+    this.navigationService.OpenEntityRecord(PRODUCT_ENTITY, CompositeKey.FromID(this.SelectedProductID));
   }
 
   private setError(message: string): void {
