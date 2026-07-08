@@ -20,10 +20,10 @@
           <i class="fa-solid fa-magnifying-glass"></i>
           <input class="mj-input" type="text" placeholder="Search order # or description…" [(ngModel)]="Search" />
         </div>
-        <div class="om-chips">
-          <button class="om-chip" [class.om-chip--on]="StatusFilter === 'All'" (click)="SetStatusFilter('All')">All</button>
+        <div class="om-chips" role="group" aria-label="Show lanes">
+          <button class="om-chip" [class.om-chip--on]="AllLanesShown" (click)="ShowAllLanes()">All lanes</button>
           @for (s of Lanes; track s) {
-            <button class="om-chip" [attr.data-variant]="StatusVariant(s)" [class.om-chip--on]="StatusFilter === s" (click)="SetStatusFilter(s)">
+            <button class="om-chip" [attr.data-variant]="StatusVariant(s)" [class.om-chip--on]="IsLaneSelected(s)" [attr.aria-pressed]="IsLaneSelected(s)" (click)="ToggleLane(s)">
               <i [class]="LaneIcon(s)"></i> {{ s }}
             </button>
           }

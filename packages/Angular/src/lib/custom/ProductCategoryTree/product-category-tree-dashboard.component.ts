@@ -1,5 +1,6 @@
 import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject } from '@angular/core';
 import { BaseDashboard } from '@memberjunction/ng-shared';
+import { MJFormPresenterService } from '@memberjunction/ng-base-forms';
 import { RegisterClass } from '@memberjunction/global';
 import { CompositeKey, RunView } from '@memberjunction/core';
 import { ResourceData } from '@memberjunction/core-entities';
@@ -31,6 +32,7 @@ interface CategoryNode {
 @RegisterClass(BaseDashboard, 'ProductCategoryTreeDashboard')
 export class ProductCategoryTreeDashboardComponent extends BaseDashboard {
   private cdr = inject(ChangeDetectorRef);
+  private forms = inject(MJFormPresenterService);
 
   public IsBusy = false;
   public LoadError: string | null = null;
@@ -105,6 +107,6 @@ export class ProductCategoryTreeDashboardComponent extends BaseDashboard {
   public IndentPx(depth: number): string { return `${depth * 22}px`; }
 
   public OpenCategory(node: CategoryNode): void {
-    this.navigationService.OpenEntityRecord(CATEGORY_ENTITY, CompositeKey.FromID(node.ID));
+    this.forms.Open({ EntityName: CATEGORY_ENTITY, PrimaryKey: CompositeKey.FromID(node.ID), Presentation: 'dialog', Width: '94vw' });
   }
 }

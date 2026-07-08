@@ -1,5 +1,6 @@
 import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject } from '@angular/core';
 import { BaseDashboard } from '@memberjunction/ng-shared';
+import { MJFormPresenterService } from '@memberjunction/ng-base-forms';
 import { RegisterClass } from '@memberjunction/global';
 import { CompositeKey, Metadata, RunView } from '@memberjunction/core';
 import { ResourceData } from '@memberjunction/core-entities';
@@ -49,6 +50,7 @@ interface LinkRow { ID: string; Role: string; Account: string }
 @RegisterClass(BaseDashboard, 'ProductCatalogDashboard')
 export class ProductCatalogDashboardComponent extends BaseDashboard {
   private cdr = inject(ChangeDetectorRef);
+  private forms = inject(MJFormPresenterService);
 
   public IsBusy = false;
   public LoadError: string | null = null;
@@ -230,7 +232,7 @@ export class ProductCatalogDashboardComponent extends BaseDashboard {
 
   public OpenProduct(): void {
     if (!this.SelectedProductID) return;
-    this.navigationService.OpenEntityRecord(PRODUCT_ENTITY, CompositeKey.FromID(this.SelectedProductID));
+    this.forms.Open({ EntityName: PRODUCT_ENTITY, PrimaryKey: CompositeKey.FromID(this.SelectedProductID), Presentation: 'dialog', Width: '94vw' });
   }
 
   private setError(message: string): void {

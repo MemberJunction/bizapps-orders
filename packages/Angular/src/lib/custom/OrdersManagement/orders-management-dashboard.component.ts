@@ -1,5 +1,6 @@
 import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject } from '@angular/core';
 import { BaseDashboard } from '@memberjunction/ng-shared';
+import { MJFormPresenterService } from '@memberjunction/ng-base-forms';
 import { RegisterClass } from '@memberjunction/global';
 import { CompositeKey, RunView } from '@memberjunction/core';
 import { ResourceData } from '@memberjunction/core-entities';
@@ -81,6 +82,7 @@ interface JELineRow {
 @RegisterClass(BaseDashboard, 'OrdersManagementDashboard')
 export class OrdersManagementDashboardComponent extends BaseDashboard {
   private cdr = inject(ChangeDetectorRef);
+  private forms = inject(MJFormPresenterService);
 
   public readonly Lanes: readonly OrderStatus[] = LANES;
 
@@ -90,7 +92,8 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
   public AllOrders: OrderRow[] = [];
 
   // ─── filters ───────────────────────────────────────────────────────────────
-  public StatusFilter: OrderStatus | 'All' = 'All';
+  /** Which lanes to show. Empty = show all lanes. */
+  public SelectedLanes = new Set<OrderStatus>();
   public Search = '';
 
   // ─── selected-order detail ───────────────────────────────────────────────────
@@ -175,13 +178,10 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
 
   // ─── filtered views + lanes ──────────────────────────────────────────────────
 
+  /** Orders after the text search (lane filtering happens in LaneData). */
   public get FilteredOrders(): OrderRow[] {
     const q = this.Search.trim().toLowerCase();
-    return this.AllOrders.filter(o => {
-      if (this.StatusFilter !== 'All' && o.Status !== this.StatusFilter) return false;
-      if (q && !this.matchesSearch(o, q)) return false;
-      return true;
-    });
+    return q ? this.AllOrders.filter(o => this.matchesSearch(o, q)) : this.AllOrders;
   }
 
   private matchesSearch(o: OrderRow, q: string): boolean {
@@ -189,9 +189,14 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
       || (o.Description?.toLowerCase().includes(q) ?? false);
   }
 
+  /** The lanes to render — the selected subset, or all lanes when nothing is selected. */
+  public get VisibleLanes(): OrderStatus[] {
+    return this.SelectedLanes.size > 0 ? LANES.filter(s => this.SelectedLanes.has(s)) : [...LANES];
+  }
+
   public get LaneData(): Lane[] {
     const orders = this.FilteredOrders;
-    return LANES.map(status => {
+    return this.VisibleLanes.map(status => {
       const laneOrders = orders.filter(o => o.Status === status);
       return {
         Status: status,
@@ -215,8 +220,21 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
     return this.AllOrders.filter(o => !!o.JournalEntryID).reduce((s, o) => s + o.Total, 0);
   }
 
-  public SetStatusFilter(status: OrderStatus | 'All'): void {
-    this.StatusFilter = status;
+  /** Toggle a lane in/out of the shown set (multi-select). */
+  public ToggleLane(status: OrderStatus): void {
+    const next = new Set(this.SelectedLanes);
+    if (next.has(status)) next.delete(status); else next.add(status);
+    this.SelectedLanes = next;
+    this.cdr.markForCheck();
+  }
+  public IsLaneSelected(status: OrderStatus): boolean {
+    return this.SelectedLanes.has(status);
+  }
+  public get AllLanesShown(): boolean {
+    return this.SelectedLanes.size === 0;
+  }
+  public ShowAllLanes(): void {
+    this.SelectedLanes = new Set();
     this.cdr.markForCheck();
   }
 
@@ -320,7 +338,7 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
   public OpenInAccounting(): void {
     const jeId = this.SelectedOrder?.JournalEntryID;
     if (!jeId) return;
-    this.navigationService.OpenEntityRecord(JE_ENTITY, CompositeKey.FromID(jeId));
+    this.forms.Open({ EntityName: JE_ENTITY, PrimaryKey: CompositeKey.FromID(jeId), Presentation: 'dialog', Width: '94vw' });
   }
 
   // ─── presentation helpers ────────────────────────────────────────────────────

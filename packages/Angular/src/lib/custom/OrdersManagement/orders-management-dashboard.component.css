@@ -85,9 +85,28 @@
 .om-lanes {
   display: flex;
   gap: 12px;
-  overflow-x: auto;
+  /* Always show the horizontal scrollbar so users without a trackpad can scroll
+     (scroll, not auto) — many don't know shift+scroll. */
+  overflow-x: scroll;
   padding-bottom: 8px;
   align-items: flex-start;
+  scrollbar-width: auto;
+  scrollbar-color: var(--mj-border-strong) var(--mj-bg-surface-sunken);
+}
+.om-lanes::-webkit-scrollbar {
+  height: 12px;
+}
+.om-lanes::-webkit-scrollbar-track {
+  background: var(--mj-bg-surface-sunken);
+  border-radius: 6px;
+}
+.om-lanes::-webkit-scrollbar-thumb {
+  background: var(--mj-border-strong);
+  border-radius: 6px;
+  border: 2px solid var(--mj-bg-surface-sunken);
+}
+.om-lanes::-webkit-scrollbar-thumb:hover {
+  background: var(--mj-text-muted);
 }
 .om-lane {
   flex: 0 0 240px;
