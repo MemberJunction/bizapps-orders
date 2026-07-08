@@ -1,10 +1,14 @@
 # BizAppsOrders Master Plan
 
-> **🚦 AUTHORITY / AS-BUILT (updated 2026-07-08):** **`plans/2026-07-02-engine-meeting-amendment.md`** (S1–S11)
-> supersedes parts of this master plan and records what is actually built. **Precedence: amendment > this master
-> plan.** Deltas a plan-only reader MUST know before building against the BO-D* decisions below:
+> **🚦 AUTHORITY / AS-BUILT (updated 2026-07-08):** **`plans/2026-07-08-robert-meeting-decisions.md`** (newest) and
+> **`plans/2026-07-02-engine-meeting-amendment.md`** (S1–S11) supersede parts of this master plan and record what
+> is actually built. **Precedence: 07-08 decisions > 07-02 amendment > this master plan.** Deltas a plan-only
+> reader MUST know before building against the BO-D* decisions below:
 > - **Booking trigger:** JEs book on the **first transition to `Confirmed`** (amendment S4) — **not** `Posted`
->   (**BO-D8 is superseded** on this point). *(Open: whether "Posted" later means GL/ERP-posted — pending Robert.)*
+>   (**BO-D8 is superseded** on this point).
+> - **`Posted` = the journal entries are in the subledger** (07-08 D1) — near-instant after Confirm; keep the
+>   flow **linear** (each stage required; can't Fulfill before Posted). Pricing is **order-line only, deferred**
+>   (07-08 D3); Confirmed/Posted/Fulfilled can't be voided → reversing/credit order (07-08 D4).
 > - **Account refs:** Orders **resolves accounts itself to `GLAccountID` UUIDs** via accounting's polymorphic
 >   `GLAccountLink` (`AccountingEngineBase.ResolveLinkedAccount`); account **numbers** are only the ERP wire format
 >   at the batch boundary (S2). The **`AccountingService` façade** referenced throughout is superseded by the
