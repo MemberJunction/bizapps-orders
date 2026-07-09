@@ -59,7 +59,8 @@
                 <div class="om-lane__total">{{ lane.Total | number:'1.2-2' }}</div>
                 <div class="om-lane__cards">
                   @for (o of lane.Orders; track o.ID) {
-                    <button class="om-card" [class.om-card--active]="SelectedOrderID === o.ID" (click)="SelectOrder(o)">
+                    <div class="om-card" [class.om-card--active]="SelectedOrderID === o.ID" [class.om-card--busy]="IsMoving(o)"
+                         role="button" tabindex="0" (click)="SelectOrder(o)">
                       <div class="om-card__top">
                         <span class="om-card__num">{{ o.OrderNumber }}</span>
                         @if (o.JournalEntryID) {
@@ -73,7 +74,27 @@
                       @if (o.OrderDate) {
                         <div class="om-card__date">{{ o.OrderDate | date:'MMM d, y' }}</div>
                       }
-                    </button>
+
+                      <div class="om-card__actions" (click)="$event.stopPropagation()">
+                        @if (IsMoving(o)) {
+                          <span class="om-card__busy-ind"><i class="fa-solid fa-spinner fa-spin"></i> working…</span>
+                        } @else {
+                          @if (CanMoveBack(o)) {
+                            <button mjButton variant="flat" size="sm" title="Move back" [disabled]="AnyMoving()" (click)="MoveBack(o)"><i class="fa-solid fa-arrow-left"></i></button>
+                          }
+                          @if (CanVoid(o)) {
+                            <button mjButton variant="flat" size="sm" class="om-card__void" title="Void order" [disabled]="AnyMoving()" (click)="Void(o)"><i class="fa-solid fa-trash"></i></button>
+                          }
+                          @if (CanRefresh(o)) {
+                            <button mjButton variant="flat" size="sm" title="Refresh status (check if it posted)" [disabled]="AnyMoving()" (click)="RefreshStatus(o)"><i class="fa-solid fa-arrows-rotate"></i></button>
+                          }
+                          <span class="om-card__spacer"></span>
+                          @if (CanMoveForward(o)) {
+                            <button mjButton variant="primary" size="sm" class="om-card__fwd" [title]="ForwardTitle(o)" [disabled]="AnyMoving()" (click)="MoveForward(o)"><i class="fa-solid fa-arrow-right"></i></button>
+                          }
+                        }
+                      </div>
+                    </div>
                   }
                   @if (lane.Count === 0) {
                     <div class="om-lane__empty">—</div>
@@ -188,3 +209,16 @@
     }
   </mj-page-body>
 </mj-page-layout>
+
+<!-- Reusable lifecycle confirmation dialog (Confirm order / Fulfill / Void all route through this). -->
+<mj-dialog [Visible]="ConfirmVisible" [Title]="ConfirmTitle" [Width]="460" (Close)="OnConfirmCancel()">
+  <div class="om-confirm">
+    <i class="om-confirm__icon fa-solid" [class.fa-triangle-exclamation]="ConfirmDanger" [class.fa-circle-info]="!ConfirmDanger"
+       [class.om-confirm__icon--danger]="ConfirmDanger"></i>
+    <p class="om-confirm__msg">{{ ConfirmMessage }}</p>
+  </div>
+  <mj-dialog-actions>
+    <button mjButton [variant]="ConfirmDanger ? 'danger' : 'primary'" size="sm" (click)="OnConfirmProceed()">{{ ConfirmLabel }}</button>
+    <button mjButton variant="flat" size="sm" (click)="OnConfirmCancel()">Cancel</button>
+  </mj-dialog-actions>
+</mj-dialog>

@@ -93,13 +93,24 @@
               </tfoot>
             </table>
 
-            <button mjButton variant="primary" size="md" class="oc-confirm" [disabled]="!CanConfirm" (click)="ConfirmOrder()">
-              @if (Booking) {
-                <i class="fa-solid fa-spinner fa-spin"></i> Booking journal entry…
-              } @else {
-                <i class="fa-solid fa-circle-check"></i> Confirm &amp; Book — {{ DraftTotal | number:'1.2-2' }}
-              }
-            </button>
+            <div class="oc-create">
+              <label class="oc-stage">
+                <span class="oc-stage__label">Create as</span>
+                <select class="mj-input" [disabled]="Booking" (change)="OnCreateStageChange($any($event.target).value)">
+                  @for (s of StageOptions; track s) { <option [value]="s" [selected]="s === CreateStage">{{ s }}</option> }
+                </select>
+              </label>
+              <button mjButton variant="primary" size="md" class="oc-confirm" [disabled]="!CanConfirm" (click)="ConfirmOrder()">
+                @if (Booking) {
+                  <i class="fa-solid fa-spinner fa-spin"></i> {{ CreateStage === 'Confirmed' ? 'Booking journal entry…' : 'Creating…' }}
+                } @else {
+                  <i class="fa-solid fa-circle-check"></i> {{ CreateButtonLabel }} — {{ DraftTotal | number:'1.2-2' }}
+                }
+              </button>
+            </div>
+            @if (CreateStage === 'Confirmed') {
+              <div class="oc-stage__hint"><i class="fa-solid fa-circle-info"></i> Confirming books a balanced journal entry into accounting immediately.</div>
+            }
           }
 
           @if (ActionMessage) {

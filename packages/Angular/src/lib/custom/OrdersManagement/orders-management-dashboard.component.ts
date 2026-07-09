@@ -2,7 +2,7 @@ import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject } from '@
 import { BaseDashboard } from '@memberjunction/ng-shared';
 import { MJFormPresenterService } from '@memberjunction/ng-base-forms';
 import { RegisterClass } from '@memberjunction/global';
-import { CompositeKey, RunView } from '@memberjunction/core';
+import { CompositeKey, Metadata, RunView } from '@memberjunction/core';
 import { ResourceData } from '@memberjunction/core-entities';
 import { mjBizAppsOrdersOrderEntity } from '@mj-biz-apps/orders-entities';
 
@@ -102,6 +102,18 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
   public DetailLines: OrderLineRow[] = [];
   public DetailJE: JESummary | null = null;
   public DetailJELines: JELineRow[] = [];
+
+  // ─── lifecycle movement (arrows / void / refresh) ────────────────────────────
+  /** The order currently mid-action — drives the standardized per-card loading spinner. */
+  public MovingOrderID: string | null = null;
+
+  /** Reusable confirmation dialog state (Confirm / Fulfill / Void all route through it). */
+  public ConfirmVisible = false;
+  public ConfirmTitle = '';
+  public ConfirmMessage = '';
+  public ConfirmLabel = '';
+  public ConfirmDanger = false;
+  private pendingAction: (() => Promise<void>) | null = null;
 
   async GetResourceDisplayName(_data: ResourceData): Promise<string> {
     return 'Orders';
@@ -236,6 +248,107 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
   public ShowAllLanes(): void {
     this.SelectedLanes = new Set();
     this.cdr.markForCheck();
+  }
+
+  // ─── lifecycle movement — the pipeline state machine ─────────────────────────
+  // Draft ⇄ Quoted (free) · Quoted → Confirmed (confirm; books the JE, auto-advances to Posted) ·
+  // Confirmed: no arrows (auto-advances) + a status-refresh · Posted → Fulfilled (confirm) · no going back
+  // once posted. Void (Draft/Quoted only, confirm). Every action shows the standardized per-card spinner.
+
+  public IsMoving(o: OrderRow): boolean { return this.MovingOrderID === o.ID; }
+  public AnyMoving(): boolean { return this.MovingOrderID !== null; }
+
+  public CanMoveForward(o: OrderRow): boolean { return this.forwardTarget(o) !== null; }
+  public CanMoveBack(o: OrderRow): boolean { return o.Status === 'Quoted'; } // only Quoted → Draft
+  public CanVoid(o: OrderRow): boolean { return o.Status === 'Draft' || o.Status === 'Quoted'; }
+  public CanRefresh(o: OrderRow): boolean { return o.Status === 'Confirmed'; }
+
+  private forwardTarget(o: OrderRow): OrderStatus | null {
+    switch (o.Status) {
+      case 'Draft': return 'Quoted';
+      case 'Quoted': return 'Confirmed';
+      case 'Posted': return 'Fulfilled';
+      default: return null; // Confirmed auto-advances; Fulfilled/Voided are terminal
+    }
+  }
+  public ForwardTitle(o: OrderRow): string {
+    const t = this.forwardTarget(o);
+    return t ? `Move to ${t}` : 'Move forward';
+  }
+
+  /** Forward: Draft→Quoted is immediate; Quoted→Confirmed and Posted→Fulfilled prompt a confirmation first. */
+  public MoveForward(o: OrderRow): void {
+    const target = this.forwardTarget(o);
+    if (!target || this.MovingOrderID) return;
+    if (target === 'Confirmed') {
+      this.askConfirm('Confirm order',
+        `You're about to confirm order ${o.OrderNumber}. This books a balanced journal entry into the accounting system and cannot be undone.`,
+        'Confirm order', false, () => this.applyStatus(o, 'Confirmed'));
+    } else if (target === 'Fulfilled') {
+      this.askConfirm('Fulfill order',
+        `Fulfilling order ${o.OrderNumber} recognizes any deferred revenue that isn't on a recognition schedule. This cannot be undone.`,
+        'Fulfill order', false, () => this.applyStatus(o, 'Fulfilled'));
+    } else {
+      void this.applyStatus(o, target);
+    }
+  }
+
+  public MoveBack(o: OrderRow): void {
+    if (o.Status !== 'Quoted' || this.MovingOrderID) return;
+    void this.applyStatus(o, 'Draft');
+  }
+
+  public Void(o: OrderRow): void {
+    if (!this.CanVoid(o) || this.MovingOrderID) return;
+    this.askConfirm('Void order',
+      `Void order ${o.OrderNumber}? This cancels the order and it will move to the Voided lane.`,
+      'Void order', true, () => this.applyStatus(o, 'Voided'));
+  }
+
+  /** Confirmed cards: re-check the order; if its journal entry is booked, catch it up to Posted. */
+  public RefreshStatus(o: OrderRow): void {
+    if (o.Status !== 'Confirmed' || this.MovingOrderID) return;
+    void this.applyStatus(o, 'Posted', true);
+  }
+
+  /**
+   * Persist a status change (the ONE write path — standardized spinner + reload). `onlyIfBooked` guards
+   * the Confirmed→Posted catch-up so refresh only advances an order whose journal entry actually booked.
+   */
+  private async applyStatus(o: OrderRow, status: OrderStatus, onlyIfBooked = false): Promise<void> {
+    this.MovingOrderID = o.ID;
+    this.LoadError = null;
+    this.cdr.markForCheck();
+    try {
+      const order = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY);
+      if (!(await order.Load(o.ID))) throw new Error(`could not load order ${o.OrderNumber}`);
+      if (onlyIfBooked && !order.JournalEntryID) {
+        this.LoadError = `Order ${o.OrderNumber} isn't posted yet — its journal entry hasn't booked. Try again shortly.`;
+        return;
+      }
+      order.Status = status;
+      if (!(await order.Save())) throw new Error(order.LatestResult?.CompleteMessage ?? 'save failed');
+      await this.loadOrders(); // a Confirm books the JE + auto-advances to Posted server-side
+    } catch (e) {
+      this.LoadError = `Couldn't update order ${o.OrderNumber}: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      this.MovingOrderID = null;
+      this.cdr.markForCheck();
+    }
+  }
+
+  // ─── confirmation dialog (reused for Confirm / Fulfill / Void) ────────────────
+  private askConfirm(title: string, message: string, label: string, danger: boolean, action: () => Promise<void>): void {
+    this.ConfirmTitle = title; this.ConfirmMessage = message; this.ConfirmLabel = label; this.ConfirmDanger = danger;
+    this.pendingAction = action; this.ConfirmVisible = true; this.cdr.markForCheck();
+  }
+  public OnConfirmCancel(): void {
+    this.ConfirmVisible = false; this.pendingAction = null; this.cdr.markForCheck();
+  }
+  public async OnConfirmProceed(): Promise<void> {
+    const action = this.pendingAction;
+    this.ConfirmVisible = false; this.pendingAction = null; this.cdr.markForCheck();
+    if (action) await action();
   }
 
   // ─── selection + detail ────────────────────────────────────────────────────

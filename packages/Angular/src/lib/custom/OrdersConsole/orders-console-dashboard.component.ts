@@ -191,6 +191,16 @@ export class OrdersConsoleDashboardComponent extends BaseDashboard {
     return this.RecentOrders.filter(o => !!o.JournalEntryID).length;
   }
 
+  // ─── create-at-stage picker ──────────────────────────────────────────────────
+  /** The stages a new order can be created at (later stages are reached via the pipeline board). */
+  public readonly StageOptions: readonly OrderStatus[] = ['Draft', 'Quoted', 'Confirmed'];
+  /** The stage the composed order is created at (default Confirmed — the book-the-JE happy path). */
+  public CreateStage: OrderStatus = 'Confirmed';
+  public OnCreateStageChange(v: string): void { this.CreateStage = v as OrderStatus; this.cdr.markForCheck(); }
+  public get CreateButtonLabel(): string {
+    return this.CreateStage === 'Confirmed' ? 'Confirm & Book' : `Create as ${this.CreateStage}`;
+  }
+
   public AddLine(): void {
     if (!this.CanAddLine) return;
     const product = this.Products.find(p => p.ID === this.SelectedProductID);
@@ -236,13 +246,33 @@ export class OrdersConsoleDashboardComponent extends BaseDashboard {
     try {
       const order = await this.createDraftOrder();
       if (!order) return;
-      await this.bookAndReport(order);
+      if (this.CreateStage === 'Confirmed') {
+        await this.bookAndReport(order); // Confirmed → OrderEntityServer books the JE
+      } else {
+        await this.finalizeAtStage(order, this.CreateStage); // Draft / Quoted → no accounting
+      }
     } catch (e) {
       this.setError(e instanceof Error ? e.message : String(e));
     } finally {
       this.Booking = false;
       this.cdr.markForCheck();
     }
+  }
+
+  /** For a Draft/Quoted create: leave (or advance) the just-created order at the chosen stage. */
+  private async finalizeAtStage(order: mjBizAppsOrdersOrderEntity, stage: OrderStatus): Promise<void> {
+    if (stage !== 'Draft') { // createDraftOrder already saved it as Draft
+      order.Status = stage;
+      if (!(await order.Save())) {
+        this.setError(`Order ${order.OrderNumber} created but could not be set to ${stage}: ${order.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+        await this.loadRecentOrders();
+        return;
+      }
+    }
+    this.ActionMessage = `Created order ${order.OrderNumber} as ${stage}.`;
+    this.ActionIsError = false;
+    this.ResetDraft();
+    await this.loadRecentOrders();
   }
 
   private async createDraftOrder(): Promise<mjBizAppsOrdersOrderEntity | null> {

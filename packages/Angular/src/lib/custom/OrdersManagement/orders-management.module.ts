@@ -14,6 +14,8 @@ import {
   MJStatBadgeComponent,
   MJRefreshButtonComponent,
   MJEmptyStateComponent,
+  MJDialogComponent,
+  MJDialogActionsComponent,
 } from '@memberjunction/ng-ui-components';
 
 import { OrdersManagementDashboardComponent } from './orders-management-dashboard.component';
@@ -36,6 +38,8 @@ import { OrdersManagementResourceComponent } from './orders-management-resource.
     MJStatBadgeComponent,
     MJRefreshButtonComponent,
     MJEmptyStateComponent,
+    MJDialogComponent,
+    MJDialogActionsComponent,
   ],
   exports: [OrdersManagementDashboardComponent, OrdersManagementResourceComponent],
 })

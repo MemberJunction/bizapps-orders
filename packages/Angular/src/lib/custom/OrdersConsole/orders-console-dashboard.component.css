@@ -195,3 +195,12 @@
 
 .oc-order__detail { padding: 4px 14px 14px; background: var(--mj-bg-surface-sunken); }
 .oc-detail-empty { padding: 10px 4px; font-size: 0.85rem; }
+
+/* create-at-stage picker */
+.oc-create { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.oc-create .oc-confirm { flex: 1 1 auto; }
+.oc-stage { display: flex; flex-direction: column; gap: 4px; }
+.oc-stage__label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--mj-text-muted); }
+.oc-stage .mj-input { min-width: 130px; }
+.oc-stage__hint { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 0.78rem; color: var(--mj-text-muted); }
+.oc-stage__hint i { color: var(--mj-brand-primary); }

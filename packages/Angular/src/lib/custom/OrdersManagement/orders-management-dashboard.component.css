@@ -297,3 +297,20 @@
 .om-balanced { display: inline-flex; align-items: center; gap: 4px; color: var(--mj-status-success-text); font-size: 0.72rem; font-weight: 600; }
 .om-unbalanced { display: inline-flex; align-items: center; gap: 4px; color: var(--mj-status-error-text); font-size: 0.72rem; font-weight: 600; }
 .om-drill { margin-top: 12px; }
+
+/* ── card lifecycle actions (arrows / void / refresh) ─────────────────────── */
+.om-card--busy { opacity: 0.7; }
+.om-card__actions {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--mj-border-subtle);
+}
+.om-card__spacer { flex: 1 1 auto; }
+.om-card__busy-ind { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--mj-text-muted); }
+.om-card__busy-ind i { color: var(--mj-brand-primary); }
+.om-card__void:hover { color: var(--mj-status-error-text); }
+
+/* ── confirmation dialog body ─────────────────────────────────────────────── */
+.om-confirm { display: flex; align-items: flex-start; gap: 12px; padding: 4px 2px 8px; }
+.om-confirm__icon { font-size: 1.5rem; color: var(--mj-brand-primary); margin-top: 2px; }
+.om-confirm__icon--danger { color: var(--mj-status-error-text); }
+.om-confirm__msg { margin: 0; color: var(--mj-text-primary); font-size: 0.9rem; line-height: 1.5; }
