@@ -1,3 +1,8 @@
+> ✅ **PROCESSED / READ — 2026-07-09** by the accounting-engine-dev agent. Distilled into
+> `plans/2026-07-09-robert-meeting-decisions.md` (+ accounting companion); plans, QUESTIONS (Q12–Q19), BACKLOG
+> (Tasks 32–35), and BUGS updated; code shipped (moving-window presets on Batch Status + Order History; order
+> naming). See `_PROCESSED.md` for the index.
+
 Accounting Meeting-20260709_121044-Meeting Recording
 July 9, 2026, 5:10PM
 38m 34s

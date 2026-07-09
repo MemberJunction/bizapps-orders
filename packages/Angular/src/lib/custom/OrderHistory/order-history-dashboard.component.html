@@ -70,6 +70,15 @@
           <span class="oh-field__label">To</span>
           <input type="date" class="mj-input" [value]="ToDate ?? ''" (change)="OnToDateChange($any($event.target).value)" />
         </label>
+        <div class="oh-field">
+          <span class="oh-field__label">Window</span>
+          <div class="oh-windows">
+            <button mjButton size="sm" [variant]="StatusVariant(IsWindowOn('today'))" (click)="ApplyWindow('today')">Today</button>
+            <button mjButton size="sm" [variant]="StatusVariant(IsWindowOn('7d'))" (click)="ApplyWindow('7d')">7 days</button>
+            <button mjButton size="sm" [variant]="StatusVariant(IsWindowOn('30d'))" (click)="ApplyWindow('30d')">30 days</button>
+            <button mjButton size="sm" variant="flat" (click)="ClearWindow()" title="Clear the date range">Clear</button>
+          </div>
+        </div>
       </div>
     </div>
   </mj-page-header>

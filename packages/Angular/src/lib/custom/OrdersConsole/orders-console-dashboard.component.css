@@ -72,6 +72,8 @@
   color: var(--mj-text-muted);
 }
 .oc-addbtn { align-self: flex-end; }
+.oc-name { margin-bottom: 12px; }
+.oc-field__opt { font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--mj-text-disabled); }
 
 /* ─── draft lines table ─── */
 .oc-lines, .oc-je {

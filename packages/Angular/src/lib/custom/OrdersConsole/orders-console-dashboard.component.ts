@@ -84,6 +84,8 @@ export class OrdersConsoleDashboardComponent extends BaseDashboard {
 
   // ─── order composer state ────────────────────────────────────────────────
   public DraftLines: DraftLine[] = [];
+  /** Optional human-friendly name/description for the order (Robert 2026-07-09: "ability to name orders"). */
+  public NewOrderName = '';
   public SelectedProductID = '';
   public NewQuantity = 1;
   public NewUnitPrice: number | null = null;
@@ -229,6 +231,7 @@ export class OrdersConsoleDashboardComponent extends BaseDashboard {
 
   public ResetDraft(): void {
     this.DraftLines = [];
+    this.NewOrderName = '';
     this.SelectedProductID = '';
     this.NewQuantity = 1;
     this.NewUnitPrice = null;
@@ -282,6 +285,8 @@ export class OrdersConsoleDashboardComponent extends BaseDashboard {
     order.OrderNumber = `ORD-${Date.now().toString().slice(-9)}`;
     order.OrderDate = new Date();
     order.Status = 'Draft';
+    const name = this.NewOrderName.trim();
+    if (name) order.Description = name;
     if (!(await order.Save())) {
       this.setError(`Could not create the order: ${order.LatestResult?.CompleteMessage ?? 'unknown error'}`);
       return null;

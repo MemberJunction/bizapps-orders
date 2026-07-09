@@ -2,6 +2,7 @@
 
 .oh-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 16px; width: 100%; }
 .oh-toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+.oh-windows { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .oh-field { display: flex; flex-direction: column; gap: 4px; }
 .oh-field__label {

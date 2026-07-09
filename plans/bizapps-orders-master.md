@@ -1,5 +1,13 @@
 # BizAppsOrders Master Plan
 
+> **🚦 NEWER DECISIONS (2026-07-09):** **`plans/2026-07-09-robert-meeting-decisions.md`** — **fulfillment ↔
+> revenue recognition are DISCONNECTED** (fulfillment = delivery of value; deferred rev recognized by **scheduled
+> transactions**, NOT the Fulfilled flip → Q16 answered, supersedes the earlier "Fulfilled recognizes deferred
+> revenue" intent; do NOT book a JE on Posted→Fulfilled). **Order naming** shipped (`Order.Description`).
+> **Moving-window filter presets** shipped on Order History. Orders should seed its own roles (incl. an order
+> **fulfiller**). **Backdating** allowed (order carries `OrderDate`); only guard is a closed period (gated on the
+> accounting periods-removed reconciliation, Q18). Read that doc before fulfillment/rev-rec/roles work.
+>
 > **🚦 AUTHORITY / AS-BUILT (updated 2026-07-08):** **`plans/2026-07-08-robert-meeting-decisions.md`** (newest) and
 > **`plans/2026-07-02-engine-meeting-amendment.md`** (S1–S11) supersede parts of this master plan and record what
 > is actually built. **Precedence: 07-08 decisions > 07-02 amendment > this master plan.** Deltas a plan-only
