@@ -26,11 +26,16 @@ import { LoadProductCatalogResource } from './lib/custom/ProductCatalog/product-
 import './lib/custom/ProductCategoryTree/product-category-tree.module';
 import { LoadProductCategoryTreeResource } from './lib/custom/ProductCategoryTree/product-category-tree-resource.component';
 
+// Custom Explorer surface: Order History (filterable, sortable order table).
+import './lib/custom/OrderHistory/order-history.module';
+import { LoadOrderHistoryResource } from './lib/custom/OrderHistory/order-history-resource.component';
+
 export { GeneratedFormsModule } from './lib/generated/generated-forms.module';
 export { OrdersConsoleModule } from './lib/custom/OrdersConsole/orders-console.module';
 export { OrdersManagementModule } from './lib/custom/OrdersManagement/orders-management.module';
 export { ProductCatalogModule } from './lib/custom/ProductCatalog/product-catalog.module';
 export { ProductCategoryTreeModule } from './lib/custom/ProductCategoryTree/product-category-tree.module';
+export { OrderHistoryModule } from './lib/custom/OrderHistory/order-history.module';
 export { mjBizAppsOrdersOrderFormComponent } from './lib/generated/Entities/mjBizAppsOrdersOrder/mjbizappsordersorder.form.component';
 export { mjBizAppsOrdersOrderLineFormComponent } from './lib/generated/Entities/mjBizAppsOrdersOrderLine/mjbizappsordersorderline.form.component';
 export { mjBizAppsOrdersProductFormComponent } from './lib/generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
@@ -45,4 +50,5 @@ export function LoadBizAppsOrdersClient(): void {
   LoadOrdersManagementResource();
   LoadProductCatalogResource();
   LoadProductCategoryTreeResource();
+  LoadOrderHistoryResource();
 }

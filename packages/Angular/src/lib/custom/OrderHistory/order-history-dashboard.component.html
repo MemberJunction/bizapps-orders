@@ -1,0 +1,122 @@
+<mj-page-layout>
+  <mj-page-header
+    Title="Order History"
+    Icon="fa-solid fa-clock-rotate-left"
+    Subtitle="Every order — filter by status, customer, product, and date; sort any column">
+
+    <div meta>
+      <mj-stat-badge Icon="fa-solid fa-cart-shopping" [Count]="FilteredCount" Label="orders" Variant="info" />
+      @for (s of StatusOptions; track s) {
+        @if (statusCount(s) > 0) {
+          <mj-stat-badge [Count]="statusCount(s)" [Label]="s" [Variant]="BadgeVariant(s)" />
+        }
+      }
+    </div>
+
+    <div actions>
+      <mj-refresh-button [Loading]="IsLoading" (Clicked)="Reload()"></mj-refresh-button>
+    </div>
+
+    <div toolbar>
+      <div class="oh-filters">
+        <div class="oh-toggles">
+          <button mjButton size="sm" [variant]="StatusVariant(AllStatusesShown)" (click)="ShowAllStatuses()">All</button>
+          @for (s of StatusOptions; track s) {
+            <button mjButton size="sm" [variant]="StatusVariant(IsStatusOn(s))" (click)="ToggleStatus(s)">{{ s }}</button>
+          }
+        </div>
+
+        <label class="oh-field">
+          <span class="oh-field__label">Customer</span>
+          <select class="mj-input" [value]="SelectedCustomerID ?? ''" (change)="OnCustomerChange($any($event.target).value)">
+            <option value="">All customers</option>
+            @for (c of Customers; track c.ID) { <option [value]="c.ID">{{ c.Name }}</option> }
+          </select>
+        </label>
+
+        <div class="oh-field oh-products">
+          <span class="oh-field__label">Products</span>
+          <button mjButton variant="flat" size="sm" class="oh-products__btn" (click)="ToggleProductMenu()">
+            <i class="fa-solid fa-box"></i> {{ ProductButtonLabel }}
+            <i class="fa-solid" [class.fa-chevron-down]="!ShowProductMenu" [class.fa-chevron-up]="ShowProductMenu"></i>
+          </button>
+          @if (ShowProductMenu) {
+            <div class="oh-products__menu">
+              <input type="text" class="mj-input oh-products__search" placeholder="Search products…"
+                     [value]="ProductSearch" (input)="OnProductSearch($any($event.target).value)" />
+              <label class="oh-products__opt oh-products__opt--all">
+                <input type="checkbox" [checked]="AllProductsShown" (change)="ClearProducts()" />
+                <span>All products</span>
+              </label>
+              <div class="oh-products__list">
+                @for (p of FilteredProductOptions; track p.ID) {
+                  <label class="oh-products__opt">
+                    <input type="checkbox" [checked]="IsProductOn(p.ID)" (change)="ToggleProduct(p.ID)" />
+                    <span>{{ p.Name }}</span>
+                  </label>
+                } @empty {
+                  <div class="oh-products__empty">No products match.</div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+
+        <label class="oh-field">
+          <span class="oh-field__label">From</span>
+          <input type="date" class="mj-input" [value]="FromDate ?? ''" (change)="OnFromDateChange($any($event.target).value)" />
+        </label>
+        <label class="oh-field">
+          <span class="oh-field__label">To</span>
+          <input type="date" class="mj-input" [value]="ToDate ?? ''" (change)="OnToDateChange($any($event.target).value)" />
+        </label>
+      </div>
+    </div>
+  </mj-page-header>
+
+  <mj-page-body>
+    @if (IsLoading) {
+      <mj-loading text="Loading orders…"></mj-loading>
+    } @else if (LoadError) {
+      <div class="oh-banner oh-banner--error" role="alert"><i class="fa-solid fa-triangle-exclamation"></i> {{ LoadError }}</div>
+    } @else if (FilteredOrders.length === 0) {
+      <mj-empty-state Icon="fa-solid fa-inbox" Title="No orders"
+        Message="No orders match the current filters.">
+      </mj-empty-state>
+    } @else {
+      <div class="oh-table-region">
+        <table class="oh-table">
+          <thead>
+            <tr>
+              <th class="oh-th--sort" (click)="SortBy('OrderNumber')">Order # <i [class]="SortIcon('OrderNumber')"></i></th>
+              <th class="oh-th--sort" (click)="SortBy('Status')">Status <i [class]="SortIcon('Status')"></i></th>
+              <th class="oh-th--sort" (click)="SortBy('OrderDate')">Order Date <i [class]="SortIcon('OrderDate')"></i></th>
+              <th class="oh-th--sort" (click)="SortBy('CustomerName')">Customer <i [class]="SortIcon('CustomerName')"></i></th>
+              <th>Products</th>
+              <th class="oh-th--sort oh-num" (click)="SortBy('LineCount')">Lines <i [class]="SortIcon('LineCount')"></i></th>
+              <th class="oh-th--sort oh-num" (click)="SortBy('Total')">Total <i [class]="SortIcon('Total')"></i></th>
+              <th>Journal Entry</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (o of FilteredOrders; track o.ID) {
+              <tr class="oh-row">
+                <td class="oh-ordnum">{{ o.OrderNumber }}</td>
+                <td><span class="oh-pill" [attr.data-status]="o.Status">{{ o.Status }}</span></td>
+                <td>{{ o.OrderDate ? (o.OrderDate | date:'yyyy-MM-dd') : '—' }}</td>
+                <td>{{ o.CustomerName }}</td>
+                <td class="oh-products-cell" [title]="o.ProductNames.join(', ')">{{ o.ProductNames.join(', ') || '—' }}</td>
+                <td class="oh-num">{{ o.LineCount }}</td>
+                <td class="oh-num">{{ o.Total | number:'1.2-2' }}</td>
+                <td>
+                  @if (o.JournalEntryID) { <span class="oh-je oh-je--yes"><i class="fa-solid fa-check"></i> Booked</span> }
+                  @else { <span class="oh-je oh-je--no">—</span> }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </mj-page-body>
+</mj-page-layout>
