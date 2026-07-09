@@ -12,6 +12,9 @@
 
     <div actions>
       <mj-refresh-button [Loading]="IsBusy" (Clicked)="loadData()"></mj-refresh-button>
+      <button mjButton variant="primary" size="sm" (click)="OnNewProduct()">
+        <i class="fa-solid fa-plus"></i> New Product
+      </button>
     </div>
 
     <div toolbar>

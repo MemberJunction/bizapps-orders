@@ -235,6 +235,15 @@ export class ProductCatalogDashboardComponent extends BaseDashboard {
     this.forms.Open({ EntityName: PRODUCT_ENTITY, PrimaryKey: CompositeKey.FromID(this.SelectedProductID), Presentation: 'dialog', Width: '94vw' });
   }
 
+  /** Create a new product via the entity form (create mode = no PrimaryKey); refresh the catalog on save. */
+  public async OnNewProduct(): Promise<void> {
+    const ref = this.forms.Open({ EntityName: PRODUCT_ENTITY, Presentation: 'dialog', Width: '94vw' });
+    const saved = await ref.AfterSaved();
+    if (saved) {
+      await this.loadData();
+    }
+  }
+
   private setError(message: string): void {
     this.ActionMessage = message;
     this.ActionIsError = true;

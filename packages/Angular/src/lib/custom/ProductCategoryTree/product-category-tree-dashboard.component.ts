@@ -2,8 +2,9 @@ import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject } from '@
 import { BaseDashboard } from '@memberjunction/ng-shared';
 import { MJFormPresenterService } from '@memberjunction/ng-base-forms';
 import { RegisterClass } from '@memberjunction/global';
-import { CompositeKey, RunView } from '@memberjunction/core';
+import { CompositeKey, Metadata, RunView } from '@memberjunction/core';
 import { ResourceData } from '@memberjunction/core-entities';
+import { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
 
 const CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
@@ -16,6 +17,9 @@ interface CategoryNode {
   ProductCount: number;
   Depth: number;
 }
+
+/** One product row for the "manage membership" panel. */
+interface ProductItem { ID: string; Name: string; ProductCategoryID: string | null }
 
 /**
  * Product Categories tree — a hierarchical view of the category taxonomy (the account resolver walks
@@ -37,6 +41,13 @@ export class ProductCategoryTreeDashboardComponent extends BaseDashboard {
   public IsBusy = false;
   public LoadError: string | null = null;
   public Nodes: CategoryNode[] = [];
+
+  /** Product-membership management panel state. */
+  public AllProducts: ProductItem[] = [];
+  public SelectedNode: CategoryNode | null = null;
+  public TogglingID: string | null = null;
+  public ActionMessage: string | null = null;
+  public ActionIsError = false;
 
   async GetResourceDisplayName(_data: ResourceData): Promise<string> {
     return 'Product Categories';
@@ -64,14 +75,15 @@ export class ProductCategoryTreeDashboardComponent extends BaseDashboard {
     const rv = new RunView();
     const [cats, products] = await rv.RunViews([
       { EntityName: CATEGORY_ENTITY, Fields: ['ID', 'Name', 'ParentID', 'IsActive'], OrderBy: 'Name ASC', ResultType: 'simple' },
-      { EntityName: PRODUCT_ENTITY, Fields: ['ProductCategoryID'], ResultType: 'simple' },
+      { EntityName: PRODUCT_ENTITY, Fields: ['ID', 'Name', 'ProductCategoryID'], OrderBy: 'Name ASC', ResultType: 'simple' },
     ]);
-    const counts = this.countByCategory((products.Results ?? []) as Array<{ ProductCategoryID: string | null }>);
+    this.AllProducts = (products.Results ?? []) as ProductItem[];
     const rows = (cats.Results ?? []) as Array<{ ID: string; Name: string; ParentID: string | null; IsActive: boolean }>;
-    this.Nodes = this.flattenTree(rows, counts);
+    this.Nodes = this.flattenTree(rows, this.countByCategory(this.AllProducts));
+    if (this.SelectedNode) this.SelectedNode = this.Nodes.find(n => n.ID === this.SelectedNode?.ID) ?? null;
   }
 
-  private countByCategory(products: Array<{ ProductCategoryID: string | null }>): Map<string, number> {
+  private countByCategory(products: ProductItem[]): Map<string, number> {
     const counts = new Map<string, number>();
     for (const p of products) {
       if (!p.ProductCategoryID) continue;
@@ -108,5 +120,55 @@ export class ProductCategoryTreeDashboardComponent extends BaseDashboard {
 
   public OpenCategory(node: CategoryNode): void {
     this.forms.Open({ EntityName: CATEGORY_ENTITY, PrimaryKey: CompositeKey.FromID(node.ID), Presentation: 'dialog', Width: '94vw' });
+  }
+
+  /** Create a new category via the entity form (create mode); refresh the tree on save. */
+  public async OnNewCategory(): Promise<void> {
+    const ref = this.forms.Open({ EntityName: CATEGORY_ENTITY, Presentation: 'dialog', Width: '94vw' });
+    const saved = await ref.AfterSaved();
+    if (saved) await this.loadData();
+  }
+
+  // ─── manage products in a category ───────────────────────────────────────────
+
+  /** Select a category to manage its product membership (toggles the side panel). */
+  public SelectNode(node: CategoryNode): void {
+    this.SelectedNode = this.SelectedNode?.ID === node.ID ? null : node;
+    this.ActionMessage = null;
+    this.cdr.markForCheck();
+  }
+  public ClearSelection(): void { this.SelectedNode = null; this.cdr.markForCheck(); }
+
+  public IsInSelected(p: ProductItem): boolean {
+    return !!this.SelectedNode && (p.ProductCategoryID ?? '').toUpperCase() === this.SelectedNode.ID.toUpperCase();
+  }
+
+  /** Add/remove a product to/from the selected category (sets/clears Product.ProductCategoryID). */
+  public async ToggleProductInCategory(p: ProductItem): Promise<void> {
+    if (!this.SelectedNode || this.TogglingID) return;
+    const target = this.IsInSelected(p) ? null : this.SelectedNode.ID;
+    this.TogglingID = p.ID;
+    this.ActionMessage = null;
+    this.cdr.markForCheck();
+    try {
+      const prod = await new Metadata().GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY);
+      if (!(await prod.Load(p.ID))) throw new Error(`could not load product ${p.Name}`);
+      prod.ProductCategoryID = target;
+      if (!(await prod.Save())) throw new Error(prod.LatestResult?.CompleteMessage ?? 'save failed');
+      p.ProductCategoryID = target;
+      this.recomputeCounts();
+    } catch (e) {
+      this.ActionMessage = `Failed to update ${p.Name}: ${e instanceof Error ? e.message : String(e)}`;
+      this.ActionIsError = true;
+    } finally {
+      this.TogglingID = null;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /** Refresh each node's product count from the in-memory product list (after a membership change). */
+  private recomputeCounts(): void {
+    const counts = this.countByCategory(this.AllProducts);
+    this.Nodes = this.Nodes.map(n => ({ ...n, ProductCount: counts.get(n.ID.toUpperCase()) ?? 0 }));
   }
 }

@@ -30,7 +30,7 @@ export interface OrderRow {
   ProductNames: string[];
 }
 
-type SortField = 'OrderNumber' | 'Status' | 'OrderDate' | 'CustomerName' | 'LineCount' | 'Total';
+type SortField = 'OrderNumber' | 'Status' | 'OrderDate' | 'CustomerName' | 'ProductNames' | 'LineCount' | 'Total';
 
 /**
  * Order History — a filterable, sortable history of orders (mirrors the accounting Batch Status page).
@@ -169,6 +169,10 @@ export class OrderHistoryDashboardComponent extends BaseDashboard {
     const av = a[f], bv = b[f];
     if (av instanceof Date || bv instanceof Date) return (av instanceof Date ? av.getTime() : 0) - (bv instanceof Date ? bv.getTime() : 0);
     if (typeof av === 'number' && typeof bv === 'number') return av - bv;
+    // Products is a name array — sort alphabetically by its (already-sorted) joined names.
+    if (Array.isArray(av) || Array.isArray(bv)) {
+      return (Array.isArray(av) ? av.join(', ') : '').localeCompare(Array.isArray(bv) ? bv.join(', ') : '', undefined, { sensitivity: 'base' });
+    }
     return String(av ?? '').localeCompare(String(bv ?? ''));
   }
 
@@ -192,7 +196,7 @@ export class OrderHistoryDashboardComponent extends BaseDashboard {
       LineCount: a?.count ?? 0,
       Total: a ? Math.round(a.total * 100) / 100 : 0,
       ProductIDs: a ? [...a.products.keys()] : [],
-      ProductNames: a ? [...a.products.values()] : [],
+      ProductNames: a ? [...a.products.values()].sort((x, y) => x.localeCompare(y)) : [],
     };
   }
 

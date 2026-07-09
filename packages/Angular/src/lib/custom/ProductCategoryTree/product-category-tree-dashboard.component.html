@@ -2,7 +2,7 @@
   <mj-page-header
     Title="Product Categories"
     Icon="fa-solid fa-sitemap"
-    Subtitle="The category hierarchy — the order-booking engine walks this tree upward to resolve a product's GL account">
+    Subtitle="The category hierarchy — click a category to manage which products belong to it">
 
     <div meta>
       <mj-stat-badge Icon="fa-solid fa-sitemap" [Count]="Nodes.length" Label="categories" Variant="info" />
@@ -10,6 +10,9 @@
     </div>
     <div actions>
       <mj-refresh-button [Loading]="IsBusy" (Clicked)="loadData()"></mj-refresh-button>
+      <button mjButton variant="primary" size="sm" (click)="OnNewCategory()">
+        <i class="fa-solid fa-plus"></i> New Category
+      </button>
     </div>
   </mj-page-header>
 
@@ -23,15 +26,45 @@
       @if (Nodes.length === 0) {
         <mj-empty-state Icon="fa-solid fa-folder-open" Title="No categories" Message="Create product categories to organize the catalog."></mj-empty-state>
       } @else {
-        <div class="ct-tree">
-          @for (n of Nodes; track n.ID) {
-            <button class="ct-node" [class.ct-node--inactive]="!n.IsActive" [style.padding-left]="IndentPx(n.Depth)" (click)="OpenCategory(n)">
-              <i class="ct-icon" [class]="n.Depth === 0 ? 'fa-solid fa-folder' : 'fa-solid fa-folder-tree'"></i>
-              <span class="ct-name">{{ n.Name }}</span>
-              @if (!n.IsActive) { <span class="ct-tag">inactive</span> }
-              <span class="ct-spacer"></span>
-              <span class="ct-count" [class.ct-count--zero]="n.ProductCount === 0">{{ n.ProductCount }} {{ n.ProductCount === 1 ? 'product' : 'products' }}</span>
-            </button>
+        <div class="ct-layout">
+          <div class="ct-tree">
+            @for (n of Nodes; track n.ID) {
+              <div class="ct-node" [class.ct-node--inactive]="!n.IsActive" [class.ct-node--sel]="SelectedNode?.ID === n.ID"
+                   [style.padding-left]="IndentPx(n.Depth)" (click)="SelectNode(n)">
+                <i class="ct-icon" [class]="n.Depth === 0 ? 'fa-solid fa-folder' : 'fa-solid fa-folder-tree'"></i>
+                <span class="ct-name">{{ n.Name }}</span>
+                @if (!n.IsActive) { <span class="ct-tag">inactive</span> }
+                <span class="ct-spacer"></span>
+                <span class="ct-count" [class.ct-count--zero]="n.ProductCount === 0">{{ n.ProductCount }} {{ n.ProductCount === 1 ? 'product' : 'products' }}</span>
+                <button mjButton variant="flat" size="sm" class="ct-edit" title="Edit category"
+                        (click)="$event.stopPropagation(); OpenCategory(n)"><i class="fa-solid fa-pen"></i></button>
+              </div>
+            }
+          </div>
+
+          @if (SelectedNode) {
+            <div class="ct-panel">
+              <div class="ct-panel__head">
+                <span class="ct-panel__title"><i class="fa-solid fa-box"></i> Products in <strong>{{ SelectedNode.Name }}</strong></span>
+                <button mjButton variant="flat" size="sm" title="Close" (click)="ClearSelection()"><i class="fa-solid fa-xmark"></i></button>
+              </div>
+              @if (ActionMessage) {
+                <div class="ct-banner ct-banner--error"><i class="fa-solid fa-triangle-exclamation"></i> {{ ActionMessage }}</div>
+              }
+              <div class="ct-panel__hint">Check a product to put it in this category. Unchecking leaves it uncategorized.</div>
+              <div class="ct-products">
+                @for (p of AllProducts; track p.ID) {
+                  <label class="ct-product">
+                    <input type="checkbox" [checked]="IsInSelected(p)" [disabled]="TogglingID === p.ID" (change)="ToggleProductInCategory(p)" />
+                    <span class="ct-product__name">{{ p.Name }}</span>
+                    @if (p.ProductCategoryID && !IsInSelected(p)) { <span class="ct-product__other">elsewhere</span> }
+                    @if (TogglingID === p.ID) { <i class="fa-solid fa-spinner fa-spin ct-product__spin"></i> }
+                  </label>
+                } @empty {
+                  <div class="ct-panel__empty">No products yet — add some on the Product Catalog page.</div>
+                }
+              </div>
+            </div>
           }
         </div>
       }
