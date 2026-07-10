@@ -6,9 +6,9 @@ import { CompositeKey, Metadata, RunView } from '@memberjunction/core';
 import { ResourceData } from '@memberjunction/core-entities';
 import { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsAccountingGLAccountLinkEntity } from '@mj-biz-apps/accounting-entities';
+import { OrdersCatalogEngine } from '../shared/orders-catalog-engine';
 
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
-const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 const GL_ROLE_ENTITY = 'MJ_BizApps_Accounting: GL Account Roles';
 const GL_ACCOUNT_ENTITY = 'MJ_BizApps_Accounting: GL Accounts';
@@ -103,17 +103,18 @@ export class ProductCatalogDashboardComponent extends BaseDashboard {
   }
 
   private async loadCatalog(): Promise<void> {
+    // Product Types come from the shared front-end catalog engine (cached, reactive) — not a per-page RunView.
+    await OrdersCatalogEngine.Instance.Config(false, this.ProviderToUse.CurrentUser, this.ProviderToUse);
     const rv = new RunView();
-    const [products, types, categories, roles, accounts] = await rv.RunViews([
+    const [products, categories, roles, accounts] = await rv.RunViews([
       { EntityName: PRODUCT_ENTITY, Fields: ['ID', 'Name', 'ProductType', 'ProductCategory', 'RevenueRecognitionType', 'IsActive', 'Description'], OrderBy: 'Name ASC', ResultType: 'simple' },
-      { EntityName: PRODUCT_TYPE_ENTITY, Fields: ['ID'], ResultType: 'simple' },
       { EntityName: PRODUCT_CATEGORY_ENTITY, Fields: ['ID', 'Name'], OrderBy: 'Name ASC', ResultType: 'simple' },
       { EntityName: GL_ROLE_ENTITY, ExtraFilter: `Status='Active'`, Fields: ['ID', 'Name'], OrderBy: 'Sequence ASC, Name ASC', ResultType: 'simple' },
       { EntityName: GL_ACCOUNT_ENTITY, ExtraFilter: `IsActive=1`, Fields: ['ID', 'Code', 'Name'], OrderBy: 'Code ASC', ResultType: 'simple' },
     ]);
     this.AllProducts = ((products.Results ?? []) as Array<{ ID: string; Name: string; ProductType: string | null; ProductCategory: string | null; RevenueRecognitionType: Recognition; IsActive: boolean; Description: string | null }>)
       .map(p => ({ ID: p.ID, Name: p.Name, ProductType: p.ProductType, ProductCategory: p.ProductCategory, Recognition: p.RevenueRecognitionType, IsActive: p.IsActive, Description: p.Description }));
-    this.TypeCount = (types.Results ?? []).length;
+    this.TypeCount = OrdersCatalogEngine.Instance.ProductTypes.length;
     const cats = (categories.Results ?? []) as Array<{ Name: string }>;
     this.CategoryCount = cats.length;
     this.Categories = cats.map(c => c.Name);
