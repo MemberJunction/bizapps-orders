@@ -1,6 +1,6 @@
 {
   "name": "@mj-biz-apps/orders-actions",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "MJ Actions exposed by this app (generated subclasses + hand-written actions). TODO(template): rename.",
   "main": "dist/index.js",

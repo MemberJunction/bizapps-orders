@@ -47,26 +47,18 @@ module.exports = {
   // CodeGen for THIS app touches ONLY its own schema. Exclude MJ core, system schemas,
   // and every OTHER dev-linked app schema in the instance (common / tasks / accounting) so
   // Orders codegen never regenerates their entities.
-  excludeSchemas: [
-    'sys',
-    'staging',
-    'dbo',
-    '__mj',
-    '__mj_BizAppsCommon',
-    '__mj_BizAppsTasks',
-    '__mj_BizAppsAccounting',
-  ],
+  excludeSchemas: ["sys", "staging", "dbo", "__mj", "__mj_BizAppsCommon", "__mj_BizAppsTasks", "__mj_BizAppsAccounting"],
 
   SQLOutput: {
     enabled: true,
-    folderPath: './migrations/codegen/',
+    folderPath: "./migrations/codegen/",
     appendToFile: false,
     convertCoreSchemaToFlywayMigrationFile: true,
     omitRecurringScriptsFromLog: false,
     schemaPlaceholders: [
       // Order matters: more-specific schema names first (greedy sequential substitution).
-      { schema: '__mj_BizAppsOrders', placeholder: '${flyway:defaultSchema}' },
-      { schema: '__mj', placeholder: '${mjSchema}' },
+      { schema: "__mj_BizAppsOrders", placeholder: "${flyway:defaultSchema}" },
+      { schema: "__mj", placeholder: "${mjSchema}" },
     ],
   },
 };

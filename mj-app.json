@@ -4,7 +4,7 @@
   "name": "mj-bizapps-orders",
   "displayName": "BizApps Orders",
   "description": "Product catalog + order lifecycle for MemberJunction. Confirmed orders emit balanced journal entries into BizApps Accounting via the Accounting.CreateJournalEntry remote operation; GL account resolution rides accounting's polymorphic GLAccountLink system (no GL columns here).",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "license": "ISC",
   "icon": "fa-solid fa-cart-shopping",
   "color": "#1F7A4D",
@@ -16,7 +16,7 @@
   "mjVersionRange": ">=5.44.0 <6.0.0",
   "dependencies": {
     "mj-bizapps-accounting": {
-      "version": ">=0.1.0 <1.0.0",
+      "version": ">=1.0.0 <2.0.0",
       "repository": "https://github.com/MemberJunction/bizapps-accounting"
     }
   },

@@ -1,6 +1,6 @@
 {
   "name": "@mj-biz-apps/orders-server",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "Server bootstrap package - loaded by MJAPI at startup via the manifest's startupExport. TODO(template): rename.",
   "main": "dist/index.js",
@@ -15,9 +15,9 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@mj-biz-apps/orders-actions": "0.1.0",
-    "@mj-biz-apps/orders-core-entities-server": "0.1.0",
-    "@mj-biz-apps/orders-entities": "0.1.0",
+    "@mj-biz-apps/orders-actions": "^1.0.0",
+    "@mj-biz-apps/orders-core-entities-server": "^1.0.0",
+    "@mj-biz-apps/orders-entities": "^1.0.0",
     "class-validator": "^0.14.3"
   },
   "peerDependencies": {

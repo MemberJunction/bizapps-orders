@@ -1,6 +1,6 @@
 {
   "name": "@mj-biz-apps/orders-entities",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "Generated entity subclasses for the app schema. TODO(template): rename package + description.",
   "main": "dist/index.js",
