@@ -24,8 +24,6 @@ interface OrderRow {
   Status: OrderStatus;
   CustomerOrganizationID: string | null;
   JournalEntryID: string | null;
-  /** True when ≥1 journal entry for this order exists in accounting (order-level check via JournalEntry.OrderID). */
-  HasAccountingJE: boolean;
   ConfirmedAt: Date | null;
   Description: string | null;
   Total: number;
@@ -153,11 +151,7 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
       ResultType: 'simple',
     });
     const rows = res.Results ?? [];
-    const orderIds = rows.map(r => r.ID);
-    const [stats, jePresence] = await Promise.all([
-      this.loadOrderStats(orderIds),
-      this.loadAccountingJEPresence(orderIds),
-    ]);
+    const stats = await this.loadOrderStats(rows.map(r => r.ID));
     this.AllOrders = rows.map(r => ({
       ID: r.ID,
       OrderNumber: r.OrderNumber,
@@ -165,24 +159,11 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
       Status: r.Status,
       CustomerOrganizationID: r.CustomerOrganizationID,
       JournalEntryID: r.JournalEntryID,
-      HasAccountingJE: jePresence.has(r.ID.toUpperCase()) || !!r.JournalEntryID,
       ConfirmedAt: r.ConfirmedAt,
       Description: r.Description,
       Total: stats.get(r.ID.toUpperCase())?.total ?? 0,
       LineCount: stats.get(r.ID.toUpperCase())?.count ?? 0,
     }));
-  }
-
-  /** Order-level: which of these orders have ≥1 journal entry in accounting (by JournalEntry.OrderID). */
-  private async loadAccountingJEPresence(orderIds: string[]): Promise<Set<string>> {
-    const present = new Set<string>();
-    if (orderIds.length === 0) return present;
-    const inList = orderIds.map(id => `'${id}'`).join(',');
-    const res = await new RunView().RunView<{ OrderID: string | null }>({
-      EntityName: JE_ENTITY, ExtraFilter: `OrderID IN (${inList})`, Fields: ['OrderID'], ResultType: 'simple',
-    });
-    for (const r of res.Results ?? []) if (r.OrderID) present.add(r.OrderID.toUpperCase());
-    return present;
   }
 
   /** One batched read of all lines for the listed orders → per-order total + line count. */
@@ -324,16 +305,17 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
       'Void order', true, () => this.applyStatus(o, 'Voided'));
   }
 
-  /** An order stuck in Confirmed with NOTHING in accounting yet — surfaces a clickable warning. */
+  /** An order stuck in Confirmed with no journal entry in accounting yet — surfaces a clickable warning.
+   *  (An order has exactly one journal entry, stamped on JournalEntryID once it's posted to accounting.) */
   public NeedsAttention(o: OrderRow): boolean {
-    return o.Status === 'Confirmed' && !o.HasAccountingJE;
+    return o.Status === 'Confirmed' && !o.JournalEntryID;
   }
 
   /** Per-order reason from the last failed nudge (transient, session-scoped). */
   public NudgeErrors = new Map<string, string>();
   public NudgeMessage(o: OrderRow): string {
     return this.NudgeErrors.get(o.ID)
-      ?? 'This order is confirmed but its journal entries are not in accounting yet. Recheck to post them.';
+      ?? 'This order is confirmed but its journal entry is not in accounting yet. Recheck to post it.';
   }
 
   // ── warning dialog ──
@@ -349,11 +331,11 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
   }
 
   /**
-   * Nudge a Confirmed order (order-level): re-check accounting for THIS order's journal entries. If any are
-   * already in, catch the order up to Posted. If none are in and nothing's mid-flight, re-attempt booking
-   * (a Confirmed save re-fires OrderEntityServer, guarded idempotently by the stamped JournalEntryID). On a
-   * failed attempt, capture the reason for the warning. The per-card spinner (MovingOrderID) is the in-flight
-   * guard, so the same user can't fire concurrent attempts.
+   * Nudge a Confirmed order: an order has exactly ONE journal entry, stamped on JournalEntryID once it posts
+   * to accounting. If that JE is in (JournalEntryID set), advance the order to Posted. If it isn't and nothing's
+   * mid-flight, re-attempt booking (a Confirmed save re-fires OrderEntityServer, guarded idempotently by the
+   * stamped JournalEntryID). On a failed attempt, capture the reason for the warning. The per-card spinner
+   * (MovingOrderID) is the in-flight guard, so the same user can't fire concurrent attempts.
    */
   public async RefreshStatus(o: OrderRow): Promise<void> {
     if (o.Status !== 'Confirmed' || this.MovingOrderID) return;
@@ -361,25 +343,23 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
     this.LoadError = null;
     this.cdr.markForCheck();
     try {
-      const alreadyIn = (await this.orderHasAccountingJE(o.ID)) || !!o.JournalEntryID;
       const order = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY);
       if (!(await order.Load(o.ID))) throw new Error(`could not load order ${o.OrderNumber}`);
 
-      if (alreadyIn || order.JournalEntryID) {
-        // Journal entries are in accounting — advance the order to Posted.
+      if (order.JournalEntryID) {
+        // The order's journal entry is in accounting — advance the order to Posted.
         if (order.Status !== 'Posted') {
           order.Status = 'Posted';
           if (!(await order.Save())) throw new Error(order.LatestResult?.CompleteMessage ?? 'could not advance to Posted');
         }
         this.NudgeErrors.delete(o.ID);
       } else {
-        // Nothing in accounting yet — re-attempt booking (server books on a Confirmed save).
+        // Not in accounting yet — re-attempt booking (server books the JE on a Confirmed save).
         order.Status = 'Confirmed';
         const ok = await order.Save();
-        const nowIn = ok && (!!order.JournalEntryID || (await this.orderHasAccountingJE(o.ID)));
-        if (nowIn) this.NudgeErrors.delete(o.ID);
+        if (ok && order.JournalEntryID) this.NudgeErrors.delete(o.ID);
         else this.NudgeErrors.set(o.ID, order.LatestResult?.CompleteMessage?.trim()
-          || 'The journal entries could not be posted to accounting. A common cause is a product (or its company) missing a linked GL account — open the order to review its lines.');
+          || 'The journal entry could not be posted to accounting. A common cause is a product (or its company) missing a linked GL account — open the order to review its lines.');
       }
       await this.loadOrders();
     } catch (e) {
@@ -388,14 +368,6 @@ export class OrdersManagementDashboardComponent extends BaseDashboard {
       this.MovingOrderID = null;
       this.cdr.markForCheck();
     }
-  }
-
-  /** Order-level: does accounting hold ≥1 journal entry for this order (by JournalEntry.OrderID)? */
-  private async orderHasAccountingJE(orderId: string): Promise<boolean> {
-    const res = await new RunView().RunView<{ ID: string }>({
-      EntityName: JE_ENTITY, ExtraFilter: `OrderID='${orderId}'`, Fields: ['ID'], MaxRows: 1, ResultType: 'simple',
-    });
-    return res.Success && (res.Results?.length ?? 0) > 0;
   }
 
   /**

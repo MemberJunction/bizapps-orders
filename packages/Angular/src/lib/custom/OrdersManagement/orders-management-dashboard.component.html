@@ -68,8 +68,8 @@
                                   (click)="OpenWarning(o); $event.stopPropagation()">
                             <i class="fa-solid fa-triangle-exclamation"></i>
                           </button>
-                        } @else if (o.HasAccountingJE) {
-                          <span class="om-card__je" title="Journal entries booked in accounting"><i class="fa-solid fa-book"></i></span>
+                        } @else if (o.JournalEntryID) {
+                          <span class="om-card__je" title="Journal entry booked in accounting"><i class="fa-solid fa-book"></i></span>
                         }
                       </div>
                       <div class="om-card__meta">
