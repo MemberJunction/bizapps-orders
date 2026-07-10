@@ -15,6 +15,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@mj-biz-apps/orders-engine-base": "0.1.0",
     "@mj-biz-apps/orders-entities": "0.1.0",
     "@mj-biz-apps/accounting-entities": "0.1.0"
   },

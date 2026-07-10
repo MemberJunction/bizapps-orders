@@ -1,0 +1,34 @@
+{
+  "name": "@mj-biz-apps/orders-engine-base",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Browser-safe orders engine base for BizApps Orders — front-end reference caches for the product catalog (product types now; categories/products later as sizing allows), shared by the Angular pages and any client caller. Mirrors @mj-biz-apps/accounting-engine-base.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "/dist"
+  ],
+  "scripts": {
+    "build": "tsc && tsc-alias -f",
+    "test": "echo \"No tests configured yet\""
+  },
+  "author": "MemberJunction.com",
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@mj-biz-apps/orders-entities": "0.1.0"
+  },
+  "peerDependencies": {
+    "@memberjunction/core": "^5.44.0",
+    "@memberjunction/global": "^5.44.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-orders"
+  }
+}
