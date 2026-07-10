@@ -178,6 +178,12 @@
 .om-card__top { display: flex; align-items: center; justify-content: space-between; }
 .om-card__num { font-weight: 600; font-size: 0.85rem; color: var(--mj-text-primary); }
 .om-card__je { color: var(--mj-status-success); font-size: 0.8rem; }
+.om-card__warn {
+  border: none; background: transparent; cursor: pointer; padding: 2px 4px; line-height: 1;
+  color: var(--mj-status-warning-text); font-size: 0.85rem; border-radius: 4px;
+}
+.om-card__warn:hover { background: color-mix(in srgb, var(--mj-status-warning) 18%, transparent); }
+.om-warn__num { margin: 0 0 4px; font-weight: 700; color: var(--mj-text-primary); }
 .om-card__meta { display: flex; align-items: baseline; justify-content: space-between; }
 .om-card__total { font-weight: 700; color: var(--mj-text-primary); }
 .om-card__lines { font-size: 0.72rem; color: var(--mj-text-muted); }

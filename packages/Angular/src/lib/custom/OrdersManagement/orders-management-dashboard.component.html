@@ -63,8 +63,13 @@
                          role="button" tabindex="0" (click)="SelectOrder(o)">
                       <div class="om-card__top">
                         <span class="om-card__num">{{ o.OrderNumber }}</span>
-                        @if (o.JournalEntryID) {
-                          <span class="om-card__je" title="Journal entry booked"><i class="fa-solid fa-book"></i></span>
+                        @if (NeedsAttention(o)) {
+                          <button class="om-card__warn" title="Not posted to accounting — click for details"
+                                  (click)="OpenWarning(o); $event.stopPropagation()">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                          </button>
+                        } @else if (o.HasAccountingJE) {
+                          <span class="om-card__je" title="Journal entries booked in accounting"><i class="fa-solid fa-book"></i></span>
                         }
                       </div>
                       <div class="om-card__meta">
@@ -86,7 +91,7 @@
                             <button mjButton variant="flat" size="sm" class="om-card__void" title="Void order" [disabled]="AnyMoving()" (click)="Void(o)"><i class="fa-solid fa-trash"></i></button>
                           }
                           @if (CanRefresh(o)) {
-                            <button mjButton variant="flat" size="sm" title="Refresh status (check if it posted)" [disabled]="AnyMoving()" (click)="RefreshStatus(o)"><i class="fa-solid fa-arrows-rotate"></i></button>
+                            <button mjButton variant="flat" size="sm" title="Recheck accounting & post" [disabled]="AnyMoving()" (click)="RefreshStatus(o)"><i class="fa-solid fa-arrows-rotate"></i></button>
                           }
                           <span class="om-card__spacer"></span>
                           @if (CanMoveForward(o)) {
@@ -220,5 +225,22 @@
   <mj-dialog-actions>
     <button mjButton [variant]="ConfirmDanger ? 'danger' : 'primary'" size="sm" (click)="OnConfirmProceed()">{{ ConfirmLabel }}</button>
     <button mjButton variant="flat" size="sm" (click)="OnConfirmCancel()">Cancel</button>
+  </mj-dialog-actions>
+</mj-dialog>
+
+<!-- "Not posted" warning: why the order's journal entries aren't in accounting + a Recheck action. -->
+<mj-dialog [Visible]="WarnVisible" Title="Order not posted to accounting" [Width]="480" (Close)="CloseWarning()">
+  <div class="om-confirm">
+    <i class="om-confirm__icon om-confirm__icon--danger fa-solid fa-triangle-exclamation"></i>
+    <div>
+      @if (WarnOrder) { <p class="om-warn__num">{{ WarnOrder.OrderNumber }}</p> }
+      <p class="om-confirm__msg">{{ WarnOrder ? NudgeMessage(WarnOrder) : '' }}</p>
+    </div>
+  </div>
+  <mj-dialog-actions>
+    <button mjButton variant="primary" size="sm" [disabled]="AnyMoving()" (click)="RecheckFromWarning()">
+      <i class="fa-solid fa-arrows-rotate"></i> Recheck &amp; post
+    </button>
+    <button mjButton variant="flat" size="sm" (click)="CloseWarning()">Close</button>
   </mj-dialog-actions>
 </mj-dialog>
