@@ -2,14 +2,13 @@ import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject } from '@
 import { RegisterClass } from '@memberjunction/global';
 import { BaseDashboard } from '@memberjunction/ng-shared';
 import { ResourceData } from '@memberjunction/core-entities';
-import { RunView } from '@memberjunction/core';
+import { Metadata, RunView } from '@memberjunction/core';
 import { MjButtonVariant } from '@memberjunction/ng-ui-components';
 import { mjBizAppsOrdersOrderEntity } from '@mj-biz-apps/orders-entities';
 
 /** Generated value-list union (rule 2c: derived from the entity, never hand-copied). */
 type OrderStatus = mjBizAppsOrdersOrderEntity['Status'];
 
-const STATUS_ORDER: readonly OrderStatus[] = ['Draft', 'Quoted', 'Confirmed', 'Posted', 'Fulfilled', 'Voided'];
 
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
@@ -54,7 +53,8 @@ export class OrderHistoryDashboardComponent extends BaseDashboard {
   public Customers: { ID: string; Name: string }[] = [];
   public Products: { ID: string; Name: string }[] = [];
 
-  public readonly StatusOptions = STATUS_ORDER;
+  /** Value-list sourced from entity metadata (the CHECK-constraint values) — never hardcoded. */
+  public StatusOptions: OrderStatus[] = [];
 
   /** Filters. Empty status/product sets = show all; null customer = All. */
   public SelectedStatuses = new Set<OrderStatus>();
@@ -71,9 +71,14 @@ export class OrderHistoryDashboardComponent extends BaseDashboard {
   public SortDir: 'asc' | 'desc' = 'desc';
 
   private cdr = inject(ChangeDetectorRef);
+  private md = new Metadata();
 
   async GetResourceDisplayName(_data: ResourceData): Promise<string> { return 'Order History'; }
-  protected initDashboard(): void { /* no persisted UI state for v1 */ }
+  protected initDashboard(): void {
+    // Value-list from entity metadata (CHECK-constraint values), never hardcoded.
+    const f = this.md.EntityByName(ORDER_ENTITY)?.Fields?.find(x => x.Name === 'Status');
+    this.StatusOptions = (f?.EntityFieldValues ?? []).map(v => v.Value as OrderStatus);
+  }
 
   protected async loadData(): Promise<void> {
     this.IsLoading = true;
