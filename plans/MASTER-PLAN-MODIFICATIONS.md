@@ -1,9 +1,10 @@
 # MASTER-PLAN-MODIFICATIONS — bizapps-orders
 
-Append-only ledger of changes to `MASTER-PLAN.md` (the write-forward-only source of truth).
-**Precedence: Modification > Extension > original master-plan text.** Every entry has a reciprocal
-⚠ inline marker at the superseded section in MASTER-PLAN.md. Convention:
-`~/MJDev/shared-plans/repo-planning-system.md`.
+A **living collection** (overlay) of changes to `MASTER-PLAN.md` (the write-forward-only source of
+truth) — edit entries in place as decisions evolve; the file must never be self-contradictory (git is
+the history). IDs are stable and never reused; keep each entry's reciprocal ⚠ inline marker in
+MASTER-PLAN.md in sync when editing/withdrawing. **Precedence: Modification > Update > Extension >
+original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.
 
 > **Backfill note (2026-07-10):** MOD-1..9 formalize the decisions previously scattered across the
 > master plan's 🚦 banners, `meetings/2026-07-02-engine-meeting-amendment.md` (S1–S11), and the

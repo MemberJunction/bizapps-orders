@@ -6,8 +6,8 @@ This folder follows the repo planning system (`~/MJDev/shared-plans/repo-plannin
 | Path | What it is |
 |---|---|
 | `MASTER-PLAN.md` | **The central source of truth.** Write-forward-only: closed text is never edited/deleted. New scope = appended Extensions (`Status: OPEN` while drafting → `CLOSED` when work begins). Top of file: Contradictions & Ambiguities ledger (CA-*). |
-| `MASTER-PLAN-MODIFICATIONS.md` | Append-only MOD-* ledger of changes that SUPERSEDE closed master-plan text. Each MOD has a reciprocal ⚠ inline marker at the superseded section. **Precedence: MOD > Update > Extension > original text.** |
-| `MASTER-PLAN-UPDATES.md` | Append-only UPD-* ledger of SMALL intent-preserving refinements/additions to existing sections (new field, clarified behavior). Reciprocal ➕ inline markers. |
+| `MASTER-PLAN-MODIFICATIONS.md` | MOD-* living collection (overlay) of changes that SUPERSEDE closed master-plan text — edited in place as decisions evolve, never self-contradictory (git = history; IDs never reused). Reciprocal ⚠ inline markers. **Precedence: MOD > Update > Extension > original text.** |
+| `MASTER-PLAN-UPDATES.md` | UPD-* living collection of SMALL intent-preserving refinements/additions to existing sections — same editing rules. Reciprocal ➕ inline markers. |
 | `BACKLOG.md` | Repo-level wanted-but-not-started work + `[decision needed]` items. Holding pen — promote to an action plan when picked up. |
 | `ISSUES.md` | Known problems / open questions about the plan or built system, persisted so they aren't lost. |
 | `action-plans/` | `ActionPlan - <Summary of Actions>.md` — the ONLY docs work is executed from. Header cites the §/MOD/EXT they implement. Move to `completed/` when done. |
