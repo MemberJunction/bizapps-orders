@@ -6,10 +6,13 @@ This folder follows the repo planning system (`~/MJDev/shared-plans/repo-plannin
 | Path | What it is |
 |---|---|
 | `MASTER-PLAN.md` | **The central source of truth.** Write-forward-only: closed text is never edited/deleted. New scope = appended Extensions (`Status: OPEN` while drafting → `CLOSED` when work begins). Top of file: Contradictions & Ambiguities ledger (CA-*). |
-| `MASTER-PLAN-MODIFICATIONS.md` | Append-only MOD-* ledger of changes to closed master-plan text. Each MOD has a reciprocal ⚠ inline marker at the superseded section. **Precedence: MOD > Extension > original text.** |
+| `MASTER-PLAN-MODIFICATIONS.md` | Append-only MOD-* ledger of changes that SUPERSEDE closed master-plan text. Each MOD has a reciprocal ⚠ inline marker at the superseded section. **Precedence: MOD > Update > Extension > original text.** |
+| `MASTER-PLAN-UPDATES.md` | Append-only UPD-* ledger of SMALL intent-preserving refinements/additions to existing sections (new field, clarified behavior). Reciprocal ➕ inline markers. |
+| `BACKLOG.md` | Repo-level wanted-but-not-started work + `[decision needed]` items. Holding pen — promote to an action plan when picked up. |
+| `ISSUES.md` | Known problems / open questions about the plan or built system, persisted so they aren't lost. |
 | `action-plans/` | `ActionPlan - <Summary of Actions>.md` — the ONLY docs work is executed from. Header cites the §/MOD/EXT they implement. Move to `completed/` when done. |
 | `completed/` | Finished (or abandoned) action plans. |
-| `meetings/` | Transcripts + distilled per-meeting decision notes (incl. the 07-02 engine-meeting amendment). **Meetings are inputs, never authority** — a decision only becomes the plan as a MOD or Extension. |
+| `meetings/` | Transcripts + distilled per-meeting decision notes (incl. the 07-02 engine-meeting amendment). **Meetings are inputs, never authority** — a decision only becomes the plan as a MOD, Update, or Extension. |
 | `supporting-documents/` | Reference material that is neither plan nor meeting (ERDs, analyses, external-system exports). |
 
 **Migration map (2026-07-10)** — old paths → new, for stale references in older docs:

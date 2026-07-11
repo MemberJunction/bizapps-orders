@@ -4,7 +4,8 @@
 > planning system (`~/MJDev/shared-plans/repo-planning-system.md`). It is **write-forward-only**: original
 > sections are CLOSED and never edited or deleted. Changes to closed text live in
 > **`MASTER-PLAN-MODIFICATIONS.md`** (MOD-*), each with a reciprocal ⚠ inline marker at the superseded
-> section. New scope is appended as labeled Extensions. **Precedence: Modification > Extension > original
+> section. Small intent-preserving refinements live in **`MASTER-PLAN-UPDATES.md`** (UPD-*, ➕ markers).
+> New scope is appended as labeled Extensions. **Precedence: Modification > Update > Extension > original
 > text.** Meetings are inputs, never authority. Work is executed only from `action-plans/`.
 > The legacy 🚦 banners directly below predate the system — their content is now FORMALIZED as MOD-1..9
 > in the ledger, which is authoritative; the banners are retained as history.
@@ -255,6 +256,8 @@ Schema: `__mj_BizAppsOrders`. All entities use `UUID PK`.
 > columns below are KILLED — GL routing is role-based via accounting's polymorphic `GLAccountLink`
 > (product → category tree → company default). **MOD-6:** the PriceList/ProductPrice/PriceTier BUILD is
 > deferred (pricing is order-line-only for now; CA-1). Original text retained below.
+> ➕ **UPDATED by UPD-3 (2026-07-10):** `RequiresFulfillment` becomes save-logic — orders with no
+> fulfillment-requiring lines may auto-advance Posted → Fulfilled — see MASTER-PLAN-UPDATES.md.
 
 Product is the root of the whole app: it defines **how an item is billed** (one-time / subscription / usage), **how revenue is recognized and allocated**, **how it is taxed**, **what the purchase grants** (entitlements), and **how it is priced**. Nail the catalog and orders / invoicing / subscriptions / rev-rec / tax / intercompany all inherit correct behavior. (Variants and the metered-billing engine are v2 — BO-D32 / BO-D36.)
 
@@ -485,6 +488,8 @@ Same DB structure, two behaviors; order entry chooses per add.
 > first `Confirmed` (not Posted); Confirmed/Posted/Fulfilled cannot be Voided (reversing/credit order
 > instead). Original text retained below — the FIELD SET here is otherwise the target shape for the
 > schema-alignment work.
+> ➕ **UPDATED by UPD-1 + UPD-2 (2026-07-10):** Order also carries `ExternalDocumentNumber` (bill.com);
+> OrderLine also carries `ServicePeriodStart`/`ServicePeriodEnd` — see MASTER-PLAN-UPDATES.md.
 
 ```sql
 __mj_BizAppsOrders.Order
@@ -568,6 +573,10 @@ __mj_BizAppsOrders.OrderLineTaxLine                     -- per-jurisdiction tax 
 - **Statements / consolidated bills** = **reports** that group a customer's Orders + Payments over a period — a presentation concern, not a primitive (§15).
 
 ### 4.4 Subscription + SubscriptionPlan + SubscriptionEvent
+
+> ➕ **UPDATED by UPD-2 (2026-07-10):** deferred recognition supports two shapes — single-date (event,
+> 100% on the date; accounting `ScheduleCount=1`) and period subscription (waterfall over the line's
+> service period) — see MASTER-PLAN-UPDATES.md.
 
 ```sql
 __mj_BizAppsOrders.SubscriptionPlan
@@ -1345,55 +1354,3 @@ PhysicalGood products need real inventory + cost accounting — stock by locatio
 
 **Seams Orders ships now** (no cost-layer/valuation machinery in v1): `PhysicalGoodProduct.IsStockTracked` + `InventoryAssetGLAccountID`, `Product.COGSGLAccountID` (already present), `OrderLine.FulfillmentStatus`, the fulfillment `OrderEvent`, and the `ProductBehavior` `AfterPost` / fulfillment hooks (BO-D38) where the Inventory integration attaches.
 
----
-
-## Extension A — 2026-07-10 requirements intake (Jeremy feature collection + Robert demo feedback)
-
-> **EXTENSION · Status: OPEN** (created 2026-07-10, sources: `meetings/2026-07-10-decisions.md`,
-> `meetings/2026-07-10--Robert-demo-feedback.md`, the two Jeremy transcripts + Robert check-in transcript)
-> Adds finance-user (Jeremy/Business Central/bill.com workflow) and demo-feedback requirements NOT in the
-> original plan. This is an ADDITION, not part of the original master plan. Items already covered by original
-> sections are cited, not duplicated. Close this extension when the schema-alignment action plan is approved.
-
-### A.1 Order — new fields (beyond §4.2)
-- **`ExternalDocumentNumber`** — required for the bill.com sync path; may equal `OrderNumber` but must exist
-  as its own column (Jeremy: BC + bill.com carry two identifiers today).
-- **Numbering — OPEN:** single `OrderNumber` sequence vs BC-style split (draft sequence → separate posted
-  sequence, so drafts/cancellations don't gap the posted series). Jeremy doesn't use it as a control today
-  ("maybe it should be") — decide with Jeremy before adding a second sequence.
-- (§4.2 already carries the rest of Jeremy's asks: CustomerPersonID, SalesRepUserID, BillTo/ShipTo,
-  PaymentTermsTypeID + DueDate, PostedAt as the posting date, Balance/PaymentStatus.)
-
-### A.2 OrderLine — service period + deferred-rev typing (refines §4.4/§4.6)
-- **`ServicePeriodStart` / `ServicePeriodEnd` on the order line** — the contract/subscription term rides the
-  line (Jeremy's invoice lines carry the coverage period; Robert: "store dates with the Order Line (or the
-  related Subscription entity)").
-- **Deferred revenue needs at least TWO recognition shapes** (Robert demo feedback):
-  1. **Single-date** — e.g. an Event Date; 100% recognized on that date (maps to accounting's
-     `ScheduleCount=1` deferral, BA-D25).
-  2. **Period subscription** — Annual/Quarterly/Monthly waterfall over the line's service period.
-- Recognition cadence (batch-monthly vs continuous running balance) — OPEN with Amith; reproducibility is
-  the hard requirement either way.
-
-### A.3 Lifecycle + validation (demo feedback)
-- **Forward status skipping** — Draft → Confirmed directly (skipping Quoted) must be allowed; see **MOD-10**.
-- **Fulfillment auto-advance** — `ProductType.RequiresFulfillment` (§4.1) becomes save-logic: on Posted, an
-  order whose lines require NO fulfillment may auto-advance to Fulfilled; any fulfillment-requiring line
-  holds the order for the fulfiller role (MOD-9 item a).
-- **State-based validation matrix** — define + enforce what is valid per Order/JE status (Robert asked "how
-  much validation is in place?"); includes defined, LOUD behavior when a Product/Category/Company account
-  map is missing at Confirm (fail the Confirm with a clear error — never book a partial JE).
-- **Void affordance ≠ delete** — a distinct Void action/button (trashcan reads as delete); Void reachable
-  only per MOD-7.
-
-### A.4 UI direction (demo + GUI review; execution detail lives in action plans)
-- Compose Order takes the full available space when composing.
-- Follow the 2026-07-10 GUI-review direction (accounting companion doc §1): standardized AG-grid tables,
-  slide-in side panel as the default detail surface, centered dialog where the page already shows the record.
-
-### A.5 Delivery + integration intake (OPEN items, from Jeremy)
-- **Invoice delivery** — sending the posted order (the invoice) to customer email(s), with multiple
-  recipients/CC; path undecided: AIDP → BC → bill.com (today) vs direct bill.com API. Blocks nothing in the
-  schema; drives a future integration action plan.
-- **Customer identifier stability** across systems (dup/acronym mismatches are a real pain today) — lean on
-  bizapps-common Organization identity + an external-ref strategy when the BC/bill.com integration lands.
