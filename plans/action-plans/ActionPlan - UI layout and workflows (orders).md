@@ -27,16 +27,23 @@
 5. **Mobile/laptop-width tolerance:** compact layouts, no fixed 1080p assumptions (Matt).
 6. All colors via `--mj-*` design tokens; `@if/@for`; `inject()`; PascalCase publics — house rules.
 
-## 1. Compose / edit Order (Robert's top feedback)
+## 1. Compose / edit Order (Robert's top feedback + Amith's 2026-07-11 UX direction)
 
-- **Full-space compose:** creating an order takes the full content area (not a cramped card) — it is the
-  user's sole focus while composing. Keep the slide-in for *viewing*; full-page (or maximized panel) for
-  *composing*.
+- **Full-WINDOW order form** (Amith, resolving old Q2): composing/editing an order takes the full window —
+  the user sees everything — with a **contemporary tabbed layout** between sections:
+  **Details** (customer, dates, terms, status) · **Lines** · **Bill-To / Ship-To** · **Payments** ·
+  **Accounting**. Keep the slide-in only for quick *viewing* from lists.
+- **Payments tab + always-visible money strip** (Amith): the top-level form always shows **payments total
+  and balance**; the Payments tab lists **all linked payments (zero to many)** via PaymentLines — what
+  cleared this order, when, by which payment — with drill-through (S2/F3).
+- **Accounting tab** (Amith): shows the order's **journal entry** (lines, Dr/Cr, status, batch membership)
+  inline, with a deep link into the accounting app for full context. Replaces the improvised
+  "open-an-accounting card" from the demo.
 - **Full field set** (as S1 lands): Customer Organization (picker over common `Organization`), Customer
   Contact (Person picker filtered to the org via common `Relationship`/ContactMethod), Sales Rep (User
   picker), Order Date, Status, Payment Terms, Due Date (auto-derived, editable), Bill-To / Ship-To address
   pickers (common `Address` via `AddressLink`, with inline "new address"), External Document №, Notes.
-  Totals strip (TotalGross / AmountPaid / Balance / PaymentStatus chip) always visible.
+  Totals strip (TotalGross / AmountPaid / Balance / PaymentStatus chip) always visible across tabs.
 - **Line editor:** grid-style line entry (product picker, qty, unit price, discount %, line totals live-
   computed); per-line service-period dates VISIBLE when the product is Deferred (UPD-2); per-line
   fulfillment status chip when relevant. Deferred lines show a "recognition" affordance (F4 schedule
@@ -104,9 +111,10 @@ later).
 
 ## 8. Cross-app navigation
 
-"Open in Accounting" on the order detail should **navigate to the accounting app's JE view** (deep link),
-not render an embedded accounting card in orders (Marcelo flagged this in the GUI review as the intended
-fix). Applies symmetrically to accounting → order links (JE origin → order detail).
+Reconciled with Amith's Accounting-tab direction (§1): the order form's **Accounting tab shows the JE
+inline** (Amith), and a **deep link** from that tab navigates to the accounting app's full JE view
+(Marcelo's GUI-review fix — no more improvised embedded accounting card). Symmetrically, accounting's JE
+detail links back to the originating order (JournalEntryLink lineage).
 
 ## Sequencing
 
@@ -121,8 +129,9 @@ fix). Applies symmetrically to accounting → order links (JE origin → order d
 ## Questions for Marcelo
 
 1. **Board vs accordion (§2):** trim-and-keep-board (my lean) or adopt Matt's accordion sketch now?
-2. **Compose full-space:** full route page, or maximized slide-in that collapses back? Route page is simpler
-   and matches "it's your sole focus"; slide-in preserves context. I lean route page.
+2. ~~Compose full-space: route page vs maximized slide-in?~~ **RESOLVED 2026-07-11 (Amith): full-window
+   tabbed order form** (§1). Remaining detail only: exact tab set/order — current proposal Details ·
+   Lines · Bill-To/Ship-To · Payments · Accounting.
 3. **Customer A/R view home:** orders app, accounting app, or both (shared component)? It straddles the
    boundary — data is accounting views, workflow is orders. I lean **shared component in orders** (Jeremy's
    entry point is invoices/payments) with accounting linking to it.

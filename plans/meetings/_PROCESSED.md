@@ -12,3 +12,13 @@ new meeting, add a row (newest first) and prepend a `> ✅ PROCESSED` banner to 
 > Note: the 2026-07-10 domain decisions are ORDERS-heavy (orders=invoices, payments, subscriptions, taxes, customer schema),
 > so the fuller domain write-up lives here; the accounting companion owns the UI/UX direction. The 2026-07-08/09 Robert
 > meetings were distilled into `2026-07-08-robert-meeting-decisions.md` / `2026-07-09-robert-meeting-decisions.md` (this folder).
+
+### 2026-07-11--Amith's Demo Feedback.md — ✅ PROCESSED 2026-07-11
+Triaged per the planning system (Amith = master-plan-level authority, non-extension → MOD/UPD):
+- Remotable-ops-for-big-work principle + singular transactional `CreateJournalEntry` + JE-logic-in-OrdersEngine
+  → **MOD-5 enriched in place** (confirmations of as-built + the general principle).
+- OrdersEngineBase/OrdersEngine split (AIEngineBase/AIEngine pattern) → **UPD-5** (+ ➕ marker at §3
+  BO-D30) → feature action plan **F0**.
+- UX (full-window tabbed order form; Accounting tab w/ JE; payments list + total/balance) → UI action plan
+  §1/§8 updated; old UI Q2 resolved.
+- His "please confirm" → answered in feature plan F0 (relay: yes as-built except the packaging split = F0).

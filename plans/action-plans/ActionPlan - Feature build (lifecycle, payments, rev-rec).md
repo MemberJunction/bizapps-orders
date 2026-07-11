@@ -20,6 +20,25 @@ write-then-delete).
 
 ---
 
+## F0 — Engine repackaging: `OrdersEngineBase` + server-only `OrdersEngine` (UPD-5, Amith 2026-07-11)
+
+Extract **`@mj-biz-apps/orders-engine-base`** (new package, mirroring accounting's
+`accounting-engine-base`): the catalog/config metadata caching (Product / ProductType / ProductCategory,
+plus the GL-link lookup surface it consumes from `AccountingEngineBase`) and the pure logic
+(`orderJournalDraft` assembly, totals math, waterfall when F4 lands) move to the base; the server-only
+`OrdersEngine` becomes a thin convenience wrapper (AIEngineBase/AIEngine pattern). Booking stays a
+**singular transactional `CreateJournalEntry` remote-op call** (Amith: critical for the transaction
+wrapper — already as-built).
+
+**Amith's "please confirm" answer (relay to him):** JE creation IS a single `Accounting.CreateJournalEntry`
+remote-op call (atomic, proven end-to-end); the JE-draft logic IS in OrdersEngine reading Product rev-rec
+rules + resolving accounts via accounting's `GLAccountLink` (his "ProductGLAccount rows" — MOD-2's
+role-based mapping, cached in `AccountingEngineBase`); the one gap vs his guidance is the base/server
+**packaging split**, which this F0 closes.
+
+Sequenced FIRST — it's a mechanical refactor that every later feature block builds on top of (cheaper
+before F1–F4 add engine surface). Existing tier-1/tier-2 harnesses must stay green through the move.
+
 ## F1 — Order lifecycle: transition matrix, totals, validation (consumes S1)
 
 **The centerpiece — Robert's "how much validation is in place?" answered by construction.**
@@ -152,7 +171,8 @@ consults role), not UI-only. Co-designed with Marcelo alongside accounting MOD-9
 
 ## Execution order
 
-F1 → F2 (same S1 wave, F2 needs F1's matrix) → F3-manual → F4 → F3-stripe / F5 / F6 as decisions land.
+F0 (engine split — first, mechanical, everything builds on it) → F1 → F2 (same S1 wave, F2 needs F1's
+matrix) → F3-manual → F4 → F3-stripe / F5 / F6 as decisions land.
 
 ## Questions for Marcelo
 

@@ -239,6 +239,10 @@ BizAppsTasks  ══╣ cross-cutting workflow/approval substrate, consumed by B
 
 ### Engine architecture (BO-D30)
 
+> ➕ **UPDATED by UPD-5 (2026-07-11, Amith):** OrdersEngine splits into a client-safe `OrdersEngineBase`
+> (metadata caching) + a server-only `OrdersEngine` wrapper — the AIEngineBase/AIEngine pattern, mirroring
+> accounting's as-built engine-base split — see MASTER-PLAN-UPDATES.md.
+
 Both apps expose an MJ `BaseEngine` that caches slow-changing metadata and provides domain helper methods — the canonical `Config()` + `ObserveProperty` + lazy-load singleton pattern. Admin edits (a price change, a new GL account) propagate to subscribers via `ObserveProperty` with no manual reload; public members are PascalCase.
 
 - **`OrdersEngine`** (this app)

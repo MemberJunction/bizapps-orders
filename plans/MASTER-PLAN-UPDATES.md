@@ -50,3 +50,16 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
 - **Why / source:** Marcelo directive 2026-07-11 (overnight planning session); Robert check-in 2026-07-10
   (`meetings/2026-07-10-decisions.md` §A).
 - **Status:** Accepted.
+
+## UPD-5 — OrdersEngine splits into `OrdersEngineBase` + server-only `OrdersEngine` (2026-07-11)
+- **Amends:** MASTER-PLAN.md §3 "Engine architecture (BO-D30)" — refines the engine's packaging; the
+  engine-pair intent is unchanged.
+- **Change:** the catalog/config **metadata caching** (Product / ProductType / ProductCategory / GL-link
+  lookup info) lives in an **`OrdersEngineBase`** (client-safe base class), and the server-only
+  **`OrdersEngine`** simply wraps the base for convenience — the **AIEngineBase/AIEngine pattern**,
+  mirroring accounting's as-built `@mj-biz-apps/accounting-engine-base` + `AccountingEngine` split. The
+  currently-built server-only `OrdersEngine` (in CoreEntitiesServer) is refactored into this shape.
+- **Why / source:** Amith demo feedback 2026-07-11 (`meetings/2026-07-11--Amith's Demo Feedback.md`) —
+  Amith's guidance carries master-plan-level authority (project originator).
+- **Status:** Accepted — refactor task F0 in `action-plans/ActionPlan - Feature build (lifecycle, payments,
+  rev-rec).md`.

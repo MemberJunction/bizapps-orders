@@ -49,7 +49,14 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
 - **Change:** JE emission calls `new CreateJournalEntryOperation().Execute(draft, {user})`; the engine pair
   (OrdersEngine + AccountingEngine, BO-D30) is as planned. `createScheduledJournalEntries` will follow the
   same remote-operation pattern when the rev-rec bridge is built.
-- **Why / source:** as-built integration (accounting engine action plan); 07-08 banner.
+- **Amith confirmation + general principle (2026-07-11 demo feedback):** use **Remotable Operations for
+  larger encapsulated units of logical work**; plain BaseEntity subclasses are fine for creating
+  Order/OrderLine-type records one at a time. It is **critical** that a JE + its line items are created
+  through a **singular `AccountingEngine.CreateJournalEntry`-type call** so there is a proper transaction
+  wrapper (the as-built op satisfies this; the same requirement extends to `CreateScheduledJournalEntries`).
+  JE-creation logic belongs in the **OrdersEngine** (it knows the Product's accounting rules + GL mapping).
+- **Why / source:** as-built integration (accounting engine action plan); 07-08 banner;
+  `meetings/2026-07-11--Amith's Demo Feedback.md`.
 - **Status:** Implemented (order→JE proven end-to-end).
 
 ## MOD-6 — Pricing is order-line-only for now; catalog pricing BUILD deferred (2026-07-08)
