@@ -94,6 +94,10 @@
 
 ## 1. Context and positioning
 
+> ➕ **UPDATED by UPD-4 (2026-07-11):** positioning wording — the app is best understood as an invoice
+> creation & tracking + payment management system, but is officially NAMED **Orders** (higher-ups' wording
+> choice; "invoice management" is a category analog only) — see MASTER-PLAN-UPDATES.md.
+
 BizAppsOrders provides the **unified order management substrate** for the MJ ecosystem. It subsumes the previously-planned `BizAppsPayments` and `BizAppsSubscriptions` (per MJ PR #2214) into a single app, on the principle that orders, payments, and subscriptions are **aspects of the same business event** — a customer commits to pay, the system tracks both what they're getting and how they're paying.
 
 ### What we ARE

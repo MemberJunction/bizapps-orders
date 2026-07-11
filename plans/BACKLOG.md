@@ -7,20 +7,19 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
 
 ## Tasks
 
-- [ ] **Order form: surface the full field set** (customer org + contact, order date, status, billing/
-      shipping addresses) once the §4.2 fields land in the schema. — Robert demo feedback 2026-07-10.
-- [ ] **Compose Order takes the full available space** when composing. — Robert demo feedback 2026-07-10.
-- [ ] **Void affordance ≠ delete** — distinct Void button/action (trashcan reads as delete); Void reachable
-      only per MOD-7. — Robert demo feedback 2026-07-10.
-- [ ] **State-based validation matrix** — define + enforce what's valid per Order/JE status; audit current
-      coverage (Robert: "how much validation is in place?"). Includes LOUD failure when a Product/Category/
-      Company account map is missing at Confirm — fail the Confirm with a clear error, never book a partial
-      JE. — Robert demo feedback 2026-07-10.
-- [ ] **Fulfillment auto-advance** per UPD-3 (RequiresFulfillment save-logic + fulfiller-role hold).
-- [ ] **Forward status skipping** per MOD-10 (transition validation in the Order entity server).
+- [x] ~~**Order form: surface the full field set**~~ — PROMOTED 2026-07-11 →
+      `action-plans/ActionPlan - UI layout and workflows (orders).md` §1.
+- [x] ~~**Compose Order takes the full available space**~~ — PROMOTED 2026-07-11 → UI action plan §1.
+- [x] ~~**Void affordance ≠ delete**~~ — PROMOTED 2026-07-11 → UI action plan §1 + Feature action plan F2.4.
+- [x] ~~**State-based validation matrix** (+ LOUD missing-account-map failure at Confirm)~~ — PROMOTED
+      2026-07-11 → `action-plans/ActionPlan - Feature build (lifecycle, payments, rev-rec).md` F1.
+- [x] ~~**Fulfillment auto-advance** (UPD-3)~~ — PROMOTED 2026-07-11 → Feature action plan F1.6
+      (+ schema plan S1.4 for `ProductType.RequiresFulfillment`).
+- [x] ~~**Forward status skipping** (MOD-10)~~ — PROMOTED 2026-07-11 → Feature action plan F1.1.
 - [ ] **Customer identifier stability strategy** — stable account number across systems (dups/acronym
       mismatches are a real pain today); lean on bizapps-common Organization identity + external refs when
-      the BC/bill.com integration lands. — Jeremy 2026-07-10.
+      the BC/bill.com integration lands. — Jeremy 2026-07-10. (Noted in schema action plan as a
+      bizapps-common concern — NOT an orders migration.)
 
 ## Decisions needed
 

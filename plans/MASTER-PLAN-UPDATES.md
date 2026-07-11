@@ -39,3 +39,14 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
 - **Why / source:** Robert demo feedback 2026-07-10 ("Physical products require fulfillment and that will
   be part of the logic when saving a Committed Order").
 - **Status:** Accepted — implementation task in `BACKLOG.md`.
+
+## UPD-4 — Positioning wording: an invoice/payment-management system NAMED "Orders" (2026-07-11)
+- **Amends:** MASTER-PLAN.md §1 (Context and positioning) — clarifies wording; intent unchanged.
+- **Change:** the app is best understood as an **invoice creation & tracking + payment management**
+  system — but its official name and entity vocabulary are **Orders** (a deliberate wording choice from
+  the higher-ups; respect it). Use "invoice management / payment management" only as category ANALOGS
+  when explaining the app; never reintroduce "Invoice" as an entity, type, or status (consistent with
+  BO-D45/CA-2 and Robert's 2026-07-10 terminology ruling: orders ≡ invoices, the term is "order").
+- **Why / source:** Marcelo directive 2026-07-11 (overnight planning session); Robert check-in 2026-07-10
+  (`meetings/2026-07-10-decisions.md` §A).
+- **Status:** Accepted.
