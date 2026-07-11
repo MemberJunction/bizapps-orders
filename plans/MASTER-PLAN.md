@@ -1,5 +1,22 @@
 # BizAppsOrders Master Plan
 
+> 📐 **PLANNING SYSTEM (anointed 2026-07-10):** this file is the repo's central source of truth under the
+> planning system (`~/MJDev/shared-plans/repo-planning-system.md`). It is **write-forward-only**: original
+> sections are CLOSED and never edited or deleted. Changes to closed text live in
+> **`MASTER-PLAN-MODIFICATIONS.md`** (MOD-*), each with a reciprocal ⚠ inline marker at the superseded
+> section. New scope is appended as labeled Extensions. **Precedence: Modification > Extension > original
+> text.** Meetings are inputs, never authority. Work is executed only from `action-plans/`.
+> The legacy 🚦 banners directly below predate the system — their content is now FORMALIZED as MOD-1..9
+> in the ledger, which is authoritative; the banners are retained as history.
+
+## Contradictions & Ambiguities
+
+| # | Issue (sections involved) | Resolution | Resolved by / date |
+|---|---|---|---|
+| CA-1 | §4.1 models full pricing depth in v1 (BO-D33: PriceList/ProductPrice/PriceTier) while MOD-6 (07-08 D3) defers pricing to order-line-only — Robert re-flagged the pricing tables on 2026-07-10. | Resolved: pricing BUILD is deferred (order-line UnitPrice only for now); the §4.1 pricing model remains the target shape for when it lands. Not a v1 blocker. | Robert 07-08 D3 + 07-10 check-in |
+| CA-2 | BO-D45 "no Invoice entity" vs Jeremy's invoice-centric workflows (document numbers, due dates, delivery, application). | Resolved: the posted Order IS the invoice — Jeremy's needs land as Order A/R fields + payment application + rendered reports, not a new entity. Robert confirmed the terminology flip (orders ≡ invoices) 2026-07-10. | Robert 2026-07-10 check-in |
+| CA-3 | Backdating is allowed and "the only guard is a closed period" (07-09) — but accounting REMOVED `AccountingPeriod` (its MOD-1), so no closed-period notion exists to guard against. | **OPEN** — gated on the accounting repo's CA-1 reconciliation (QUESTIONS Q18 / D-Q2) | — |
+
 > **🚦 NEWER DECISIONS (2026-07-09):** **`plans/2026-07-09-robert-meeting-decisions.md`** — **fulfillment ↔
 > revenue recognition are DISCONNECTED** (fulfillment = delivery of value; deferred rev recognized by **scheduled
 > transactions**, NOT the Fulfilled flip → Q16 answered, supersedes the earlier "Fulfilled recognizes deferred
@@ -108,6 +125,15 @@ This is a refinement, not a contradiction, of PR #2214's design intent.
 ---
 
 ## 2. Decisions (BO-D1 through BO-D47)
+
+> ⚠ **MODIFIED — several decision rows below are superseded; see `MASTER-PLAN-MODIFICATIONS.md`:**
+> BO-D8 booking-on-Posted + Voided reachability → **MOD-1** (book on first Confirmed; linear lifecycle) +
+> **MOD-7** (Confirmed+ can't be voided — reversing/credit order) · BO-D5 `OrderLine.CompanyID` mechanism →
+> **MOD-3** (company resolved per-line via `GLAccount.CompanyID`) · BO-D7/BO-D28 `AccountingService` façade →
+> **MOD-5** (`AccountingEngine` + `Accounting.CreateJournalEntry` remote op) · BO-D19 Product default-GL
+> columns → **MOD-2** (role-based `GLAccountLink`) · BO-D22 FX timing → **MOD-4** (deferred from baseline) ·
+> BO-D33 pricing timing → **MOD-6** (order-line-only for now) · Fulfilled-recognizes-deferred-revenue intent
+> → **MOD-8** (fulfillment ↔ rev-rec disconnected). Table text below is the ORIGINAL design, kept for history.
 
 References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). References to `BA-D*` are BizAppsAccounting decisions (`plans/bizapps-accounting-master.md`).
 
@@ -224,6 +250,11 @@ Both apps expose an MJ `BaseEngine` that caches slow-changing metadata and provi
 Schema: `__mj_BizAppsOrders`. All entities use `UUID PK`.
 
 ### 4.1 Product Management — the catalog root
+
+> ⚠ **MODIFIED by MOD-2:** the `Product.RevenueGLAccountID / DeferredRevenueGLAccountID / COGSGLAccountID`
+> columns below are KILLED — GL routing is role-based via accounting's polymorphic `GLAccountLink`
+> (product → category tree → company default). **MOD-6:** the PriceList/ProductPrice/PriceTier BUILD is
+> deferred (pricing is order-line-only for now; CA-1). Original text retained below.
 
 Product is the root of the whole app: it defines **how an item is billed** (one-time / subscription / usage), **how revenue is recognized and allocated**, **how it is taxed**, **what the purchase grants** (entitlements), and **how it is priced**. Nail the catalog and orders / invoicing / subscriptions / rev-rec / tax / intercompany all inherit correct behavior. (Variants and the metered-billing engine are v2 — BO-D32 / BO-D36.)
 
@@ -447,6 +478,13 @@ __mj_BizAppsOrders.EntitlementGrant
 Same DB structure, two behaviors; order entry chooses per add.
 
 ### 4.2 Order + OrderLine (with multi-company)
+
+> ⚠ **MODIFIED by MOD-3:** `OrderLine.CompanyID` below is superseded — the built schema carries NO company
+> column at either level; each line's company is resolved via its `GLAccount.CompanyID` at booking time.
+> **MOD-4:** the CurrencyCode/FX fields are deferred from the baseline. **MOD-1/MOD-7:** JEs book on the
+> first `Confirmed` (not Posted); Confirmed/Posted/Fulfilled cannot be Voided (reversing/credit order
+> instead). Original text retained below — the FIELD SET here is otherwise the target shape for the
+> schema-alignment work.
 
 ```sql
 __mj_BizAppsOrders.Order
@@ -875,6 +913,10 @@ Both JEs persist forever. Net is zero. Audit story: walk from any reversal JE �
 
 ## 7. JE emission to BizAppsAccounting
 
+> ⚠ **MODIFIED by MOD-5:** every `AccountingService.*` reference in this section is superseded — emission
+> goes through `AccountingEngine` + the `Accounting.CreateJournalEntry` remote operation (built + proven).
+> **MOD-8:** no JE fires on Posted→Fulfilled (fulfillment is disconnected from rev-rec). Original retained.
+
 BizAppsOrders generates balanced JEs from domain logic and persists them into BizAppsAccounting via the thin `AccountingService` façade — `createJournalEntry(JournalEntryDraft)` for immediate entries and `createScheduledJournalEntries(ScheduledJournalEntryDraft[])` for the rev-rec waterfall (BO-D7, BO-D11, BO-D28). Each created JE lands in `Pending`; **Accounting's batch run** later flips it to `Batched` and ships it to the ERP (accounting plan §8.4 / BA-D16). **"Emit"/"post" here means create a Pending JE — not post to the GL.** Where the façade isn't yet built, Orders writes `JournalEntry` + `JournalEntryLine` records directly through the MJ entity layer (the accounting server subclass auto-numbers; DB triggers enforce balance/immutability).
 
 **Lineage (no hard FKs).** Accounting takes no dependency on Orders. Each JE records its origin via accounting's soft-ref columns (`JournalEntry.OrderID / OrderLineID / SubscriptionID / PaymentID / ContractID / RevRecScheduleID` — no FK) **and** a row in the polymorphic `JournalEntryLink (EntityID + RecordID)` table pointing back at the Order/Payment/etc. Orders owns referential integrity for those links. FKs from Orders *into* accounting (e.g. `Payment.PostedJournalEntryID`) are normal and fine.
@@ -1302,3 +1344,56 @@ PhysicalGood products need real inventory + cost accounting — stock by locatio
 | Adjustment / shrinkage | Dr Inventory Shrinkage / Cr Inventory Asset |
 
 **Seams Orders ships now** (no cost-layer/valuation machinery in v1): `PhysicalGoodProduct.IsStockTracked` + `InventoryAssetGLAccountID`, `Product.COGSGLAccountID` (already present), `OrderLine.FulfillmentStatus`, the fulfillment `OrderEvent`, and the `ProductBehavior` `AfterPost` / fulfillment hooks (BO-D38) where the Inventory integration attaches.
+
+---
+
+## Extension A — 2026-07-10 requirements intake (Jeremy feature collection + Robert demo feedback)
+
+> **EXTENSION · Status: OPEN** (created 2026-07-10, sources: `meetings/2026-07-10-decisions.md`,
+> `meetings/2026-07-10--Robert-demo-feedback.md`, the two Jeremy transcripts + Robert check-in transcript)
+> Adds finance-user (Jeremy/Business Central/bill.com workflow) and demo-feedback requirements NOT in the
+> original plan. This is an ADDITION, not part of the original master plan. Items already covered by original
+> sections are cited, not duplicated. Close this extension when the schema-alignment action plan is approved.
+
+### A.1 Order — new fields (beyond §4.2)
+- **`ExternalDocumentNumber`** — required for the bill.com sync path; may equal `OrderNumber` but must exist
+  as its own column (Jeremy: BC + bill.com carry two identifiers today).
+- **Numbering — OPEN:** single `OrderNumber` sequence vs BC-style split (draft sequence → separate posted
+  sequence, so drafts/cancellations don't gap the posted series). Jeremy doesn't use it as a control today
+  ("maybe it should be") — decide with Jeremy before adding a second sequence.
+- (§4.2 already carries the rest of Jeremy's asks: CustomerPersonID, SalesRepUserID, BillTo/ShipTo,
+  PaymentTermsTypeID + DueDate, PostedAt as the posting date, Balance/PaymentStatus.)
+
+### A.2 OrderLine — service period + deferred-rev typing (refines §4.4/§4.6)
+- **`ServicePeriodStart` / `ServicePeriodEnd` on the order line** — the contract/subscription term rides the
+  line (Jeremy's invoice lines carry the coverage period; Robert: "store dates with the Order Line (or the
+  related Subscription entity)").
+- **Deferred revenue needs at least TWO recognition shapes** (Robert demo feedback):
+  1. **Single-date** — e.g. an Event Date; 100% recognized on that date (maps to accounting's
+     `ScheduleCount=1` deferral, BA-D25).
+  2. **Period subscription** — Annual/Quarterly/Monthly waterfall over the line's service period.
+- Recognition cadence (batch-monthly vs continuous running balance) — OPEN with Amith; reproducibility is
+  the hard requirement either way.
+
+### A.3 Lifecycle + validation (demo feedback)
+- **Forward status skipping** — Draft → Confirmed directly (skipping Quoted) must be allowed; see **MOD-10**.
+- **Fulfillment auto-advance** — `ProductType.RequiresFulfillment` (§4.1) becomes save-logic: on Posted, an
+  order whose lines require NO fulfillment may auto-advance to Fulfilled; any fulfillment-requiring line
+  holds the order for the fulfiller role (MOD-9 item a).
+- **State-based validation matrix** — define + enforce what is valid per Order/JE status (Robert asked "how
+  much validation is in place?"); includes defined, LOUD behavior when a Product/Category/Company account
+  map is missing at Confirm (fail the Confirm with a clear error — never book a partial JE).
+- **Void affordance ≠ delete** — a distinct Void action/button (trashcan reads as delete); Void reachable
+  only per MOD-7.
+
+### A.4 UI direction (demo + GUI review; execution detail lives in action plans)
+- Compose Order takes the full available space when composing.
+- Follow the 2026-07-10 GUI-review direction (accounting companion doc §1): standardized AG-grid tables,
+  slide-in side panel as the default detail surface, centered dialog where the page already shows the record.
+
+### A.5 Delivery + integration intake (OPEN items, from Jeremy)
+- **Invoice delivery** — sending the posted order (the invoice) to customer email(s), with multiple
+  recipients/CC; path undecided: AIDP → BC → bill.com (today) vs direct bill.com API. Blocks nothing in the
+  schema; drives a future integration action plan.
+- **Customer identifier stability** across systems (dup/acronym mismatches are a real pain today) — lean on
+  bizapps-common Organization identity + an external-ref strategy when the BC/bill.com integration lands.
