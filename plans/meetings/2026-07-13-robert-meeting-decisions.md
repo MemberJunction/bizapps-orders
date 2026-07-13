@@ -9,3 +9,7 @@ fidelity**: locks are JE-grained, so one company closing/locking before another 
 ⚠ residual Amith sanity-check noted. NOT restored: booking-time intercompany legs (stay Payments-side,
 MOD-5) and company columns on Order/OrderLine (MOD-3 stands; Q2's remaining half = order-ownership field
 + company-level revenue default, still with Robert).
+
+> **UPDATE (later 2026-07-13):** Marcelo **LOCKED** the per-company-JE decision — a logical requirement
+> (per-company close independence), no Amith gate; build proceeds now. Only a later Amith-ordered broad
+> restructure would revisit it (considered unlikely).
