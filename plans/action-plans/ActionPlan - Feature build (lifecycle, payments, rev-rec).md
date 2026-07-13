@@ -124,13 +124,16 @@ miniature — it becomes the regression spine.
 
 1. **Find-or-extend-or-create (BO-D40):** on first Confirm of a line whose product `SubscriptionType≠'None'`,
    create/extend the `Subscription` for (Product, Customer, Beneficiary); log `SubscriptionEvent`.
-2. **Waterfall computation (BO-D11 + UPD-2):** pure function in the engine —
-   input (line total, service period, shape, cadence) → `RevRecScheduleLine[]`:
-   - `SingleDate` shape → one line, 100% on the date (accounting `ScheduleCount=1`).
-   - `ServicePeriod` shape → straight-line per period (Monthly first; Annual/Quarterly params), rounding
-     remainder front-loaded into line 1, uneven-start handling, no lapse gaps.
-   - **Cadence (batch-monthly vs continuous) is Amith's open decision** — computation is cadence-agnostic
-     (period granularity is a parameter); only the materialization side cares (accounting CA-2).
+2. **Waterfall computation (BO-D11 + UPD-2, dated-entry semantics per Robert 2026-07-13):** pure function
+   in the engine — input (line total, service period, shape) → `RevRecScheduleLine[]`, **each row bearing
+   a specific recognition DATE** (not a period span):
+   - `SingleDate` shape → one row, 100% on the date (event date; accounting `ScheduleCount=1`).
+   - `ServicePeriod` shape → monthly **anniversary dates** across the service period (7/13, 8/13, …),
+     rounding remainder front-loaded into row 1, uneven-start handling, no lapse gaps.
+   - Schedules are created **at booking-lock** (with the Confirm JE) and pushed to accounting immediately
+     (step 3); recognition then fires by date accounting-side (MOD-11 — CA-2 is resolved, no longer a
+     gate). Residual Amith confirm: anniversary vs month-end-bucket dates (BACKLOG cadence entry, low
+     stakes).
 3. **Bridge to accounting:** new **`Accounting.CreateScheduledJournalEntries` remote operation** (MOD-5 says
    this follows the same pattern as CreateJournalEntry — the op itself is accounting-repo work; coordinate
    with accounting Feature plan). Orders persists its schedule + the SJE soft refs; supersede-on-recompute

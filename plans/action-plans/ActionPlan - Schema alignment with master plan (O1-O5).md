@@ -233,7 +233,8 @@ Plus `PaymentSequence` (same singleton pattern) for `PAY-{seq}` numbers.
 
 One migration: `V<TS>__v0.4.x__Subscriptions_And_RevRec_Bridge.sql`. Sequenced AFTER S2 (renewal orders +
 charge-on-file want Payments) but NOT blocked by CA-1 — persisting schedules is legal now; only accounting's
-**materialization trigger timing** is gated (accounting CA-2).
+**materialization trigger timing** was gated (accounting CA-2) — **RESOLVED 2026-07-13 by accounting
+MOD-11 (date-driven recognition)**; S3 is now ungated.
 
 ### 3.1 Tables (per §4.4/§4.6 as overlaid; UPD-2 shapes)
 
@@ -395,7 +396,7 @@ servers (never client-side).
 |---|---|---|---|---|
 | 1 | S1 Order A/R + customer + PaymentTermsType + OrderSequence | v0.2.x | none — ready on approval | 1 migration, ~15 col adds + 2 tables + seeds |
 | 2 | S2 Payments | v0.3.x | none (Manual provider needs no Stripe creds) | 1 migration, 5 tables + 1 sequence |
-| 3 | S3 Subscriptions + rev-rec | v0.4.x | soft-gated: accounting CA-2 for materialization TIMING only | 1 migration, 5 tables + col adds |
+| 3 | S3 Subscriptions + rev-rec | v0.4.x | none — CA-2 resolved 2026-07-13 (accounting MOD-11, date-driven) | 1 migration, 5 tables + col adds |
 | 4 | S4 Tax v0 | none (A) / v0.5.x (B) | Robert decision | seeds or 2 tables |
 | 5 | S5 Catalog depth | per-need | concrete consumer | incremental |
 | — | §6.2 roles/permissions | metadata | Marcelo co-design | metadata only |
@@ -430,7 +431,9 @@ Marcelo executes/validates schema stages personally (his call: schema correctnes
 - **Q-B / Jeremy:** single vs dual numbering; ExternalDocumentNumber semantics (= posted number or free-form?).
 - **Robert:** tax v0 shape (§4 A vs B); contracts ownership vs AIDP contracts (Q-E — shapes `Order.ContractID`
   semantics); Employee entity for approver links (Q-F, accounting D-Q1).
-- **Amith/Robert:** CA-3/accounting CA-1 periods reconciliation — gates backdating guard + S3 materialization
-  timing (accounting CA-2). **Schema here is deliberately decision-proof** (PostedAt/OrderDate both stored).
+- **Robert (researching):** CA-3/accounting CA-1 periods reconciliation — gates the backdating guard only
+  (CA-2/materialization was resolved 2026-07-13 by accounting MOD-11). **Schema here is deliberately
+  decision-proof** (PostedAt/OrderDate both stored). Also Robert's 2026-07-13 company-owns-order tension
+  (Q2, escalated) — NO schema change unless he reverses CH-2 after his research.
   *Marcelo 2026-07-11: circle back to him on this one IN DETAIL at plan finalization (before executing).*
 - **Amith:** rev-rec cadence — batch-monthly vs continuous (UPD-2 note; affects Feature F4, not schema).

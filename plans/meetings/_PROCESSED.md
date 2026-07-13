@@ -22,3 +22,10 @@ Triaged per the planning system (Amith = master-plan-level authority, non-extens
 - UX (full-window tabbed order form; Accounting tab w/ JE; payments list + total/balance) → UI action plan
   §1/§8 updated; old UI Q2 resolved.
 - His "please confirm" → answered in feature plan F0 (relay: yes as-built except the packaging split = F0).
+
+### 2026-07-13 - Marcelo & Robert accounting meeting.md — ✅ PROCESSED 2026-07-13
+Distilled → `2026-07-13-robert-meeting-decisions.md` (identical in accounting). Orders-side landings:
+UPD-2 enriched (dated recognition entries, anniversary dates, created at booking-lock); feature plan F4.2
+reworked to dated rows + CA-2 ungated; schema plan S3 ungated; Q2 ESCALATED (Robert's company-owns-order
+model vs as-built CH-2 multi-company JE — research pending, no change). Accounting-side: MOD-11 (CA-2
+resolved), Q18 progressed, change ledger imported for Robert.

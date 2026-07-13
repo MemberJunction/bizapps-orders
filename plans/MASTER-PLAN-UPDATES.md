@@ -25,10 +25,16 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
   Line (or the related Subscription entity)"). (b) Deferred recognition supports at least TWO shapes:
   **single-date** (e.g. an Event Date — 100% recognized on that date; maps to accounting's
   `ScheduleCount=1` deferral, BA-D25) and **period subscription** (Annual/Quarterly/Monthly waterfall over
-  the line's service period). Recognition cadence (batch-monthly vs continuous running balance) is open —
-  `BACKLOG.md` `[decision needed: Amith]`.
+  the line's service period).
+- **Concrete semantics (Robert 2026-07-13 → accounting MOD-11):** the waterfall's rows are **dated
+  entries created up-front at booking-lock** — a $1,200 annual sub sold 7/13 yields 12 × $100 scheduled
+  entries dated 7/13, 8/13, … 6/13 (monthly **anniversary dates**); an event product yields ONE entry
+  dated the event date. Recognition fires by date; accounting batches pick entries up by date window.
+  The remaining Amith cadence question (`BACKLOG.md`) now only concerns the producer's date granularity
+  (anniversary vs month-end buckets) — low stakes.
 - **Why / source:** Robert demo feedback (`meetings/2026-07-10--Robert-demo-feedback.md`) + Jeremy meeting
-  (`meetings/2026-07-10-decisions.md` §D).
+  (`meetings/2026-07-10-decisions.md` §D) + Robert 2026-07-13
+  (`meetings/2026-07-13-robert-meeting-decisions.md` D1).
 - **Status:** Accepted.
 
 ## UPD-3 — `RequiresFulfillment` drives auto-advance to Fulfilled (2026-07-10)
