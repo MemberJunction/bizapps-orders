@@ -29,7 +29,7 @@ codegen loop per stage. Engine/UI behavior that consumes the schema lives in the
 | `PriceList` / `ProductPrice` / `PriceTier` tables | pricing BUILD deferred — order-line `UnitPrice` only | MOD-6, CA-1 |
 | Any period/closed-period guard structure | no periods substrate exists; gated on CA-3 / accounting CA-1 | MOD-9(b), ISSUES |
 | `ApprovalTaskID` + SalesRule/SalesAuthority tables | approvals need bizapps-tasks (#8), deferred with Phase F | BO-D27, BO-D29 |
-| `IntercompanyFlow` | intercompany legs generate in Payments per accounting MOD-5; revisit at O2+ when accounting's `IntercompanyRelationship` exists (see §6 Q7) | accounting MOD-5 |
+| `IntercompanyFlow` | intercompany legs generate in Payments per accounting MOD-5; revisit at O2+ when intercompany activates (see §6 Q7). **Note (2026-07-13): the per-pair Due-To/Due-From WIRING table is also Payments-side** — accounting's baseline deliberately dropped `IntercompanyRelationship` ("the Payments component owns due-to/due-from"); Amith's OQ-A shape (accounting MOD-5) is the reference when it lands here with O2 | accounting MOD-5 + 2026-07-06 baseline ruling |
 
 **Migration ground rules (every stage):**
 - New `V*` migration file per stage; **never** edit an applied migration. T-SQL is source of truth; PG converted.
@@ -213,6 +213,12 @@ Plus `PaymentSequence` (same singleton pattern) for `PAY-{seq}` numbers.
 - **CustomerOrganizationID on Payment** is needed so a receipt can be booked to the customer subledger
   (accounting `JournalEntryLine.CounterpartyOrganizationID`) even before it's applied to specific orders
   (Jeremy: book to customer AND against the invoice — two distinct facts).
+- **Intercompany wiring is THIS subsystem's future scope (2026-07-13):** accounting's baseline
+  deliberately dropped `IntercompanyRelationship` — "the Payments component owns due-to/due-from." When
+  intercompany activates (O2+ fast-follow per Robert), the per-pair wiring table lands on this side
+  (Amith's OQ-A reference shape is preserved in accounting MOD-5; the per-pair GL accounts themselves
+  are still `GLAccount` rows in accounting's COA — provisioning mechanism to settle at that design,
+  QUESTIONS Q20 residual w/ Amith). NOT in the S2 baseline migration.
 
 ### 2.3 S2 validation gate
 
@@ -414,8 +420,10 @@ Marcelo executes/validates schema stages personally (his call: schema correctnes
    Capture). Review the exact frozen-column lists at finalization.
 6. **RLS for orders:** defer (my lean) or scope now — and if now, by what axis (sales rep? customer? none)?
 7. **IntercompanyFlow timing:** master §4.7 puts it in Orders; accounting MOD-5 moves leg *generation* to
-   Payments. Build the `IntercompanyFlow` table with S2, or wait until accounting's `IntercompanyRelationship`
-   migration + a real multi-company consumer? I lean **wait** (it's recon/analytics plumbing with no consumer yet).
+   Payments — and (2026-07-13) the per-pair WIRING table is Payments-side too (accounting dropped it from
+   its baseline). Build `IntercompanyFlow` + the wiring table with S2, or wait for a real multi-company
+   consumer? I lean **wait** (recon/analytics plumbing + wiring with no consumer yet; design both together
+   at O2+ with the Q20-residual Amith check).
 
 ## 9. Questions to route to others (tracked in BACKLOG/ISSUES; do not block S1–S3)
 
