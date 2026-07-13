@@ -62,3 +62,13 @@ would cascade widely (booking draft, balance checks, MOD-3, batch splitting) —
   surface **plan risks + dates**; next **demo ~end of Tuesday** targeting master-plan alignment.
 - Standing directive: **reconcile this transcript with the plans and surface contradictions** → this
   doc (D3 is the headline contradiction; D1 the headline confirmation).
+
+## POSTSCRIPT (same day, ~2h later) — D2 SETTLED-for-now: Amith's fuller verbatim found; removal followed
+
+Marcelo located the definitive Amith statement ("…the concept of accounting period is just irrelevant to
+us largely because it's going to get settled out when the accounting system says it settles out. So when
+we send a batch over, it's going to go into whatever the active accounting period is in the accounting
+system. That's not our job to worry about… just kill that.") and ruled: **follow the removal for now —
+no local period guard or period machinery; batches land in the ERP's active period. There may be changes
+later** (Robert's research continues). Landed: full quote in accounting MOD-1; CA-1 Resolved-for-now;
+orders CA-3 resolved-for-now + MOD-9(b) backdating ungated-for-now; Q18/Q8 answered-for-now.

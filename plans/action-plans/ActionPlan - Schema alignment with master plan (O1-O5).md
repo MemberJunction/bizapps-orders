@@ -27,7 +27,7 @@ codegen loop per stage. Engine/UI behavior that consumes the schema lives in the
 | `Order.CompanyID` / `OrderLine.CompanyID` | company resolved per line via `GLAccount.CompanyID` at booking | MOD-3 |
 | Currency/FX columns (`CurrencyCode`, `ExchangeRateUsed`, `FunctionalCurrencyAmount`, …) on Order/OrderLine/Payment | FX deferred from baseline; add when multi-currency activates | MOD-4 |
 | `PriceList` / `ProductPrice` / `PriceTier` tables | pricing BUILD deferred — order-line `UnitPrice` only | MOD-6, CA-1 |
-| Any period/closed-period guard structure | no periods substrate exists; gated on CA-3 / accounting CA-1 | MOD-9(b), ISSUES |
+| Any period/closed-period guard structure | **CA-3 resolved-for-now (2026-07-13): follow Amith's removal — no guard, no period machinery**; backdating ships unguarded; reopens only if Robert's research overturns it | MOD-9(b), accounting MOD-1 |
 | `ApprovalTaskID` + SalesRule/SalesAuthority tables | approvals need bizapps-tasks (#8), deferred with Phase F | BO-D27, BO-D29 |
 | `IntercompanyFlow` | intercompany legs generate in Payments per accounting MOD-5; revisit at O2+ when intercompany activates (see §6 Q7). **Note (2026-07-13): the per-pair Due-To/Due-From WIRING table is also Payments-side** — accounting's baseline deliberately dropped `IntercompanyRelationship` ("the Payments component owns due-to/due-from"); Amith's OQ-A shape (accounting MOD-5) is the reference when it lands here with O2 | accounting MOD-5 + 2026-07-06 baseline ruling |
 
@@ -431,9 +431,10 @@ Marcelo executes/validates schema stages personally (his call: schema correctnes
 - **Q-B / Jeremy:** single vs dual numbering; ExternalDocumentNumber semantics (= posted number or free-form?).
 - **Robert:** tax v0 shape (§4 A vs B); contracts ownership vs AIDP contracts (Q-E — shapes `Order.ContractID`
   semantics); Employee entity for approver links (Q-F, accounting D-Q1).
-- **Robert (researching):** CA-3/accounting CA-1 periods reconciliation — gates the backdating guard only
-  (CA-2/materialization was resolved 2026-07-13 by accounting MOD-11). **Schema here is deliberately
-  decision-proof** (PostedAt/OrderDate both stored). Also Robert's 2026-07-13 company-owns-order tension
-  (Q2, escalated) — NO schema change unless he reverses CH-2 after his research.
+- **Periods: SETTLED-for-now (Marcelo 2026-07-13, Amith-doc confirmation)** — follow the removal;
+  backdating ships unguarded; no period machinery anywhere (CA-3 + accounting CA-1 resolved-for-now;
+  CA-2 resolved by MOD-11). Reopens only if Robert's continuing research overturns it. **Schema here is
+  deliberately decision-proof** (PostedAt/OrderDate both stored). Still live from that meeting: Robert's
+  company-owns-order tension (Q2, escalated) — NO schema change unless he reverses CH-2.
   *Marcelo 2026-07-11: circle back to him on this one IN DETAIL at plan finalization (before executing).*
 - **Amith:** rev-rec cadence — batch-monthly vs continuous (UPD-2 note; affects Feature F4, not schema).

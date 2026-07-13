@@ -7,7 +7,10 @@ Entry: `### [OPEN|RESOLVED] <title> — <date>` with source + status. Convention
 
 ---
 
-### [OPEN] Closed-period guard has no substrate — 2026-07-10
+### [RESOLVED — for now] Closed-period guard has no substrate — 2026-07-10 → 2026-07-13
 - Backdating is allowed and "the only guard is a closed period" (MOD-9), but accounting removed
-  `AccountingPeriod` (accounting MOD-1) — nothing exists to guard against. Gated on the accounting
-  repo's CA-1 reconciliation (QUESTIONS Q18 / D-Q2). Mirrors orders CA-3.
+  `AccountingPeriod` (accounting MOD-1) — nothing exists to guard against. **RESOLVED-for-now
+  (Marcelo 2026-07-13, Amith-doc confirmation): follow the removal — backdating ships UNGUARDED;
+  batches land in the ERP's active period.** Reopens only if Robert's research overturns the removal
+  (his position — batches must not be the lock — is recorded in
+  `meetings/2026-07-13-robert-meeting-decisions.md` D2 + postscript). Mirrors orders CA-3.

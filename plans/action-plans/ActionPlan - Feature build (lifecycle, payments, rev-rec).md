@@ -70,9 +70,10 @@ before F1–F4 add engine surface). Existing tier-1/tier-2 harnesses must stay g
 6. **Fulfillment auto-advance (UPD-3):** on reaching Posted, if NO line's product type
    `RequiresFulfillment` → auto-advance to Fulfilled; else set pending lines' `FulfillmentStatus='Pending'`
    and hold for the Fulfiller role. **No JE either way** (MOD-8).
-7. **Backdating (MOD-9b):** `OrderDate` freely settable; JE bears it. The closed-period guard is NOT built
-   (CA-3 open) — leave a named seam (`validatePostingDate()`, currently pass-through with a code comment
-   pointing at CA-3).
+7. **Backdating (MOD-9b):** `OrderDate` freely settable; JE bears it. **No closed-period guard — settled
+   for now** (CA-3 resolved-for-now 2026-07-13: follow Amith's removal; the ERP's active period absorbs
+   dispatched batches). Keep the named seam (`validatePostingDate()`, pass-through, comment pointing at
+   CA-3) purely as the reopen point if Robert's research ever overturns the ruling.
 
 **Tests:** transition-matrix unit suite; booking-gate harness; totals property tests (random line sets);
 auto-advance both branches; existing order-to-je harness stays green.
