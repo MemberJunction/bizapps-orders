@@ -57,6 +57,12 @@ before F1–F4 add engine surface). Existing tier-1/tier-2 harnesses must stay g
    (which line, which role, where resolution stopped) — never a partial JE, never a silent skip. Extend the
    existing `OrdersEngine.buildDraftForOrder` error path; add a tier-2 harness case (product with no link
    anywhere → Confirm rejected, order stays Draft/Quoted, no JE row).
+   **Per-company split (MOD-11, 2026-07-13):** `buildDraftForOrder` now groups lines by resolved
+   `GLAccount.CompanyID` and emits **one single-company draft per company**; booking executes them as a
+   set — ALL succeed or the Confirm fails (no partial multi-company booking). `Order.JournalEntryID`
+   (single) is reworked: idempotency guard becomes order-level (`ConfirmedAt`/any-JE-exists via
+   `JournalEntry.OrderID`); lineage via `JournalEntryLink` per JE. The order-to-je harness reworks from
+   "one JE, per-company-balanced lines" to "N single-company JEs" (accounting A4 is the counterpart).
 3. **Totals materialization:** `LineTotalNet/LineTotalGross` computed on OrderLine save;
    `Order.TotalGross` = Σ lines, recomputed on line save/delete while Draft/Quoted (frozen after Confirm —
    enforced by the schema plan §6.1 immutability trigger, per Marcelo's 2026-07-11 triggers directive);

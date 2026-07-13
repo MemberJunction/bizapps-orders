@@ -810,6 +810,12 @@ __mj_BizAppsOrders.SalesAuthority                          -- per-rep limits (e.
 
 ## 5. Multi-company order mechanics
 
+> ✅ **RESTORED by MOD-11 (2026-07-13, Marcelo):** the per-company JE split below (one JE per company at
+> booking) is back in force — it had been superseded as-built by Amith's 07-02 CH-2 single multi-company
+> JE, now reversed (lock-fidelity rationale: per-company close requires per-company JEs). **Except:** the
+> booking-time intercompany AR/AP legs in the example remain Payments-side (accounting MOD-5), and
+> company columns stay absent (MOD-3 — company via the line's resolved account).
+
 Per BO-D5/D6 and M19 of master plan. The canonical scenario: a customer purchases items from three different BC subsidiaries on one order.
 
 ### Example

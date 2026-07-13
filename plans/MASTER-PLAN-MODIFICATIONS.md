@@ -102,3 +102,27 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
 - **Why / source:** Robert demo feedback 2026-07-10 (`meetings/2026-07-10--Robert-demo-feedback.md`:
   "You should be able to skip some of the Status values… Draft to Confirmed without hitting Quoted").
 - **Status:** Accepted — enforce in the Order entity server's transition validation.
+
+## MOD-11 — Booking emits ONE JE PER COMPANY (restores §5/§7; supersedes the as-built multi-company JE) (2026-07-13)
+- **Supersedes:** the AS-BUILT single multi-company booking JE (Amith's 2026-07-02 CH-2 ruling, recorded
+  in the amendment/baseline — never a master-plan text change) and MOD-1's single-`JournalEntryID`
+  idempotency-guard mechanics. **RESTORES the master plan's original design:** §5's per-company JE
+  example (JE A/B/C) and §7's "the generator emits **multiple JEs** (one per Company involved) all
+  referencing the same Order."
+- **Change:** at booking (first Confirmed), the draft builder **splits lines by resolved
+  `GLAccount.CompanyID` and books ONE single-company JE per company involved**. Order↔JE becomes
+  **one-to-many** (lineage via `JournalEntry.OrderID` + `JournalEntryLink`; the single
+  `Order.JournalEntryID` column is reworked — idempotency guard becomes "order already booked", e.g.
+  ConfirmedAt/BookedAt + any-JE-exists check). **NOT restored:** §5's booking-time intercompany AR/AP
+  legs — leg generation stays Payments-side (accounting MOD-5); each company's booking JE already
+  balances within itself (Dr own-AR / Cr own-revenue — the as-built per-company balance rule, AM-4).
+  MOD-3 (no CompanyID columns on Order/OrderLine; per-line company via the resolved account) is
+  **unchanged** by this.
+- **Why / source:** Marcelo ruling 2026-07-13: accounting needs to see the separate per-company
+  movements, and — decisive — **locks are JE-grained** (batch/approve locks whole JEs), so letting one
+  company close/lock before another REQUIRES per-company JEs; a multi-company JE cannot be half-locked.
+  Robert's model agrees (2026-07-13 meeting D3); the master plans already specified it (orders §5/§7;
+  accounting master `JournalEntry.CompanyID NOT NULL`). ⚠ Supersedes an explicit Amith ruling (CH-2) —
+  sanity-check with Amith (residual, with the Q20-residual batch).
+- **Status:** Accepted — engine rework in the feature action plan F1/F0; accounting counterpart =
+  accounting MOD-12 (single-company JE validation + CompanyID decision).
