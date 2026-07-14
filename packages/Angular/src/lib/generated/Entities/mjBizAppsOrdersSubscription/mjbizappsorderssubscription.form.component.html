@@ -20,7 +20,7 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="PaymentNumber"
+            FieldName="SubscriptionNumber"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -28,7 +28,25 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ReceivingCompanyID"
+            FieldName="OrderLineID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="SubscriptionPlanID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProductID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -45,15 +63,15 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="PaymentDate"
-            Type="datepicker"
+            FieldName="BeneficiaryPersonID"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="Method"
+            FieldName="Status"
             Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -61,23 +79,63 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="Amount"
-            Type="number"
+            FieldName="StartDate"
+            Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ProcessingFeeAmount"
-            Type="number"
+            FieldName="CurrentPeriodStart"
+            Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="NetAmount"
+            FieldName="CurrentPeriodEnd"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="TrialEndDate"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CanceledAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="EndDate"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="AutoRenew"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RenewalLeadDays"
             Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -94,7 +152,15 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="PaymentIntentID"
+            FieldName="ProviderSubscriptionID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MigratesFromSubscriptionID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -103,76 +169,11 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="PaymentMethodID"
+            FieldName="MigratesToSubscriptionID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProviderChargeID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProviderRefundID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReversesPaymentID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReversalReason"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="JournalEntryID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Description"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Notes"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
@@ -193,7 +194,15 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="RootReversesPaymentID"
+            FieldName="RootMigratesFromSubscriptionID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RootMigratesToSubscriptionID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -207,50 +216,75 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Payments Section -->
+    <!-- Subscriptions (Migrates From Subscription ID) Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPayments"
-        SectionName="Payments"
+        SectionKey="mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID"
+        SectionName="Subscriptions (Migrates From Subscription ID)"
         Icon="fa fa-table"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPayments')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payments','ReversesPaymentID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payments')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPayments')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','MigratesFromSubscriptionID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPayments', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
         }
     </mj-collapsible-panel>
 
-    <!-- Payment Lines Section -->
+    <!-- Subscriptions (Migrates To Subscription ID) Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPaymentLines"
-        SectionName="Payment Lines"
+        SectionKey="mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID"
+        SectionName="Subscriptions (Migrates To Subscription ID)"
         Icon="fa fa-table"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentLines')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Lines','PaymentID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Lines')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentLines')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','MigratesToSubscriptionID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentLines', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Order Lines Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersOrderLines"
+        SectionName="Order Lines"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderLines')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','SubscriptionID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLines')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
@@ -270,7 +304,7 @@
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Events','RelatedPaymentID')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Events','SubscriptionID')"
                 [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Events')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionEvents')"
                 [ShowToolbar]="false"

@@ -28,6 +28,11 @@ import { mjBizAppsOrdersPaymentFormComponent } from "./Entities/mjBizAppsOrdersP
 import { mjBizAppsOrdersProductCategoryFormComponent } from "./Entities/mjBizAppsOrdersProductCategory/mjbizappsordersproductcategory.form.component";
 import { mjBizAppsOrdersProductTypeFormComponent } from "./Entities/mjBizAppsOrdersProductType/mjbizappsordersproducttype.form.component";
 import { mjBizAppsOrdersProductFormComponent } from "./Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component";
+import { mjBizAppsOrdersRevRecScheduleLineFormComponent } from "./Entities/mjBizAppsOrdersRevRecScheduleLine/mjbizappsordersrevrecscheduleline.form.component";
+import { mjBizAppsOrdersRevenueRecognitionScheduleFormComponent } from "./Entities/mjBizAppsOrdersRevenueRecognitionSchedule/mjbizappsordersrevenuerecognitionschedule.form.component";
+import { mjBizAppsOrdersSubscriptionEventFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionEvent/mjbizappsorderssubscriptionevent.form.component";
+import { mjBizAppsOrdersSubscriptionPlanFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionPlan/mjbizappsorderssubscriptionplan.form.component";
+import { mjBizAppsOrdersSubscriptionFormComponent } from "./Entities/mjBizAppsOrdersSubscription/mjbizappsorderssubscription.form.component";
    
 
 @NgModule({
@@ -44,7 +49,12 @@ declarations: [
     mjBizAppsOrdersPaymentFormComponent,
     mjBizAppsOrdersProductCategoryFormComponent,
     mjBizAppsOrdersProductTypeFormComponent,
-    mjBizAppsOrdersProductFormComponent],
+    mjBizAppsOrdersProductFormComponent,
+    mjBizAppsOrdersRevRecScheduleLineFormComponent,
+    mjBizAppsOrdersRevenueRecognitionScheduleFormComponent,
+    mjBizAppsOrdersSubscriptionEventFormComponent,
+    mjBizAppsOrdersSubscriptionPlanFormComponent,
+    mjBizAppsOrdersSubscriptionFormComponent],
 imports: [
     CommonModule,
     FormsModule,

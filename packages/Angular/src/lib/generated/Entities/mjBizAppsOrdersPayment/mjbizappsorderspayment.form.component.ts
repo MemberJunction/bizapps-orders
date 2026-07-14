@@ -17,8 +17,9 @@ export class mjBizAppsOrdersPaymentFormComponent extends BaseFormComponent {
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'mJBizAppsOrdersPayments', sectionName: 'Payments', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPayments', sectionName: 'Payments', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events', isExpanded: false }
         ]);
     }
 }

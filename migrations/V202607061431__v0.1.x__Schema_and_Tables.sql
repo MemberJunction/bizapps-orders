@@ -20,6 +20,9 @@
 --   * Payments subsystem (S2, §4.5): PaymentProvider / CustomerPaymentMethod /
 --                           PaymentIntent / Payment / PaymentLine / PaymentSequence —
 --                           receipts, reversals, cash application; NO currency columns (MOD-4)
+--   * Subscriptions + rev-rec bridge (S3, §4.4/§4.6): SubscriptionPlan / Subscription /
+--                           SubscriptionEvent / RevenueRecognitionSchedule / RevRecScheduleLine —
+--                           schedules hang off ORDER LINES (renewals carry their own)
 --
 -- Cross-app references are SOFT (plain UNIQUEIDENTIFIER, no FK) so Orders never
 -- couples to another app's schema:
@@ -106,10 +109,14 @@ CREATE TABLE __mj_BizAppsOrders.Product (
     ProductTypeID UNIQUEIDENTIFIER NOT NULL,
     ProductCategoryID UNIQUEIDENTIFIER NULL,
     RevenueRecognitionType NVARCHAR(20) NOT NULL DEFAULT 'Immediate',
+    DeferredRecognitionShape NVARCHAR(20) NULL,
+    SubscriptionType NVARCHAR(20) NOT NULL DEFAULT 'None',
     Description NVARCHAR(MAX) NULL,
     IsActive BIT NOT NULL DEFAULT 1,
     CONSTRAINT PK_Product PRIMARY KEY (ID),
-    CONSTRAINT CK_Product_RevenueRecognitionType CHECK (RevenueRecognitionType IN ('Immediate','Deferred'))
+    CONSTRAINT CK_Product_RevenueRecognitionType CHECK (RevenueRecognitionType IN ('Immediate','Deferred')),
+    CONSTRAINT CK_Product_DeferredRecognitionShape CHECK (DeferredRecognitionShape IN ('SingleDate','ServicePeriod')),
+    CONSTRAINT CK_Product_SubscriptionType CHECK (SubscriptionType IN ('None','Standard','Membership'))
 );
 GO
 
@@ -182,6 +189,8 @@ CREATE TABLE __mj_BizAppsOrders.OrderLine (
     FulfillmentStatus NVARCHAR(20) NULL,
     ReversesOrderLineID UNIQUEIDENTIFIER NULL,
     SourceBundleProductID UNIQUEIDENTIFIER NULL,
+    SubscriptionID UNIQUEIDENTIFIER NULL,
+    RevenueRecognitionScheduleID UNIQUEIDENTIFIER NULL,
     Description NVARCHAR(500) NULL,
     CONSTRAINT PK_OrderLine PRIMARY KEY (ID),
     CONSTRAINT UQ_OrderLine_Order_LineNumber UNIQUE (OrderID, LineNumber),
@@ -365,6 +374,127 @@ GO
 INSERT INTO __mj_BizAppsOrders.PaymentSequence (ID, NextSequenceNumber) VALUES (1, 1);
 GO
 
+---------------------------------------------------------------------------
+-- 3.14 SubscriptionPlan — OPTIONAL elaboration of a subscription product
+--      (BO-D40); simple memberships need none.
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.SubscriptionPlan (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    ProductID UNIQUEIDENTIFIER NOT NULL,
+    Name NVARCHAR(200) NOT NULL,
+    BillingCycle NVARCHAR(20) NOT NULL,
+    CustomCycleDays INT NULL,
+    PricePerCycle DECIMAL(18,2) NULL,
+    TrialDays INT NOT NULL DEFAULT 0,
+    IsActive BIT NOT NULL DEFAULT 1,
+    CONSTRAINT PK_SubscriptionPlan PRIMARY KEY (ID),
+    CONSTRAINT CK_SubscriptionPlan_BillingCycle CHECK (BillingCycle IN ('Monthly','Quarterly','Annual','Custom')),
+    CONSTRAINT CK_SubscriptionPlan_CustomCycleDays CHECK (CustomCycleDays IS NULL OR CustomCycleDays > 0),
+    CONSTRAINT CK_SubscriptionPlan_TrialDays CHECK (TrialDays >= 0)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.15 Subscription — the recurring relationship (Product, Customer,
+--      Beneficiary) born from an order line (BO-D39/D40). Renewal cycles spawn
+--      new Orders under it; each renewal ORDER LINE carries its own rev-rec
+--      schedule, so there is deliberately NO schedule FK here (design deviation
+--      from master §4.4, flagged in the schema plan §3.2). No OwningCompanyID
+--      (MOD-3: company via the resolved account).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.Subscription (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    SubscriptionNumber NVARCHAR(40) NOT NULL,
+    OrderLineID UNIQUEIDENTIFIER NOT NULL,
+    SubscriptionPlanID UNIQUEIDENTIFIER NULL,
+    ProductID UNIQUEIDENTIFIER NOT NULL,
+    CustomerOrganizationID UNIQUEIDENTIFIER NULL,
+    BeneficiaryPersonID UNIQUEIDENTIFIER NULL,
+    Status NVARCHAR(20) NOT NULL,
+    StartDate DATE NOT NULL,
+    CurrentPeriodStart DATE NOT NULL,
+    CurrentPeriodEnd DATE NOT NULL,
+    TrialEndDate DATE NULL,
+    CanceledAt DATETIMEOFFSET NULL,
+    EndDate DATE NULL,
+    AutoRenew BIT NOT NULL DEFAULT 1,
+    RenewalLeadDays INT NOT NULL DEFAULT 90,
+    PaymentProviderID UNIQUEIDENTIFIER NULL,
+    ProviderSubscriptionID NVARCHAR(100) NULL,
+    MigratesFromSubscriptionID UNIQUEIDENTIFIER NULL,
+    MigratesToSubscriptionID UNIQUEIDENTIFIER NULL,
+    CONSTRAINT PK_Subscription PRIMARY KEY (ID),
+    CONSTRAINT UQ_Subscription_Number UNIQUE (SubscriptionNumber),
+    CONSTRAINT CK_Subscription_Status CHECK (Status IN ('Active','Paused','Canceled','Migrated','Trialing')),
+    CONSTRAINT CK_Subscription_Period CHECK (CurrentPeriodEnd >= CurrentPeriodStart),
+    CONSTRAINT CK_Subscription_RenewalLeadDays CHECK (RenewalLeadDays >= 0),
+    CONSTRAINT CK_Subscription_NoSelfMigrateFrom CHECK (MigratesFromSubscriptionID IS NULL OR MigratesFromSubscriptionID <> ID),
+    CONSTRAINT CK_Subscription_NoSelfMigrateTo CHECK (MigratesToSubscriptionID IS NULL OR MigratesToSubscriptionID <> ID)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.16 SubscriptionEvent — immutable lifecycle log (§4.4). ProviderEventID is
+--      the webhook idempotency key (unique filtered index below).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.SubscriptionEvent (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    SubscriptionID UNIQUEIDENTIFIER NOT NULL,
+    EventType NVARCHAR(40) NOT NULL,
+    OccurredAt DATETIMEOFFSET NOT NULL,
+    EventData NVARCHAR(MAX) NULL,
+    ProviderEventID NVARCHAR(100) NULL,
+    RelatedPaymentID UNIQUEIDENTIFIER NULL,
+    RelatedOrderID UNIQUEIDENTIFIER NULL,
+    CONSTRAINT PK_SubscriptionEvent PRIMARY KEY (ID),
+    CONSTRAINT CK_SubscriptionEvent_EventType CHECK (EventType IN ('Created','Activated','TrialStarted','TrialEnded','PaymentSucceeded','PaymentFailed','Paused','Resumed','CancellationRequested','Canceled','Migrated','RenewalOrderSpawned'))
+);
+GO
+
+CREATE UNIQUE NONCLUSTERED INDEX UQ_SubscriptionEvent_ProviderEventID
+    ON __mj_BizAppsOrders.SubscriptionEvent (ProviderEventID)
+    WHERE ProviderEventID IS NOT NULL;
+GO
+
+---------------------------------------------------------------------------
+-- 3.17 RevenueRecognitionSchedule — lightweight computation source + MRR/ARR
+--      display (BO-D11). 'SingleDate' = UPD-2 shape (a): 100% on the event
+--      date; 'StraightLine' = shape (b): spread over the line's service period.
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.RevenueRecognitionSchedule (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    SchedulingMethod NVARCHAR(20) NOT NULL,
+    StartDate DATE NOT NULL,
+    EndDate DATE NOT NULL,
+    TotalAmount DECIMAL(18,2) NOT NULL,
+    TotalRecognized DECIMAL(18,2) NOT NULL DEFAULT 0,
+    IsComplete BIT NOT NULL DEFAULT 0,
+    CONSTRAINT PK_RevenueRecognitionSchedule PRIMARY KEY (ID),
+    CONSTRAINT CK_RevRecSchedule_Method CHECK (SchedulingMethod IN ('StraightLine','SingleDate','Milestone','Custom')),
+    CONSTRAINT CK_RevRecSchedule_Dates CHECK (EndDate >= StartDate)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.18 RevRecScheduleLine — one row per recognition period; line 1 carries the
+--      rounding remainder. Soft refs to accounting's ScheduledJournalEntry /
+--      JournalEntry (dated-entry model, accounting MOD-11).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.RevRecScheduleLine (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    ScheduleID UNIQUEIDENTIFIER NOT NULL,
+    PeriodStart DATE NOT NULL,
+    PeriodEnd DATE NOT NULL,
+    Amount DECIMAL(18,2) NOT NULL,
+    ScheduledJournalEntryID UNIQUEIDENTIFIER NULL,
+    RecognizedJournalEntryID UNIQUEIDENTIFIER NULL,
+    RecognizedAt DATETIMEOFFSET NULL,
+    IsRecognized BIT NOT NULL DEFAULT 0,
+    CONSTRAINT PK_RevRecScheduleLine PRIMARY KEY (ID),
+    CONSTRAINT CK_RevRecScheduleLine_Period CHECK (PeriodEnd >= PeriodStart)
+);
+GO
+
 -- =============================================================================
 -- 4. FOREIGN KEYS (same-schema; created after all tables exist)
 -- =============================================================================
@@ -488,6 +618,73 @@ GO
 ALTER TABLE __mj_BizAppsOrders.PaymentLine
     ADD CONSTRAINT FK_PaymentLine_AllocatedByUser
     FOREIGN KEY (AllocatedByUserID) REFERENCES __mj.[User](ID);
+GO
+
+-- Subscriptions + rev-rec bridge (S3)
+ALTER TABLE __mj_BizAppsOrders.SubscriptionPlan
+    ADD CONSTRAINT FK_SubscriptionPlan_Product
+    FOREIGN KEY (ProductID) REFERENCES __mj_BizAppsOrders.Product(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Subscription
+    ADD CONSTRAINT FK_Subscription_OrderLine
+    FOREIGN KEY (OrderLineID) REFERENCES __mj_BizAppsOrders.OrderLine(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Subscription
+    ADD CONSTRAINT FK_Subscription_SubscriptionPlan
+    FOREIGN KEY (SubscriptionPlanID) REFERENCES __mj_BizAppsOrders.SubscriptionPlan(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Subscription
+    ADD CONSTRAINT FK_Subscription_Product
+    FOREIGN KEY (ProductID) REFERENCES __mj_BizAppsOrders.Product(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Subscription
+    ADD CONSTRAINT FK_Subscription_PaymentProvider
+    FOREIGN KEY (PaymentProviderID) REFERENCES __mj_BizAppsOrders.PaymentProvider(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Subscription
+    ADD CONSTRAINT FK_Subscription_MigratesFrom
+    FOREIGN KEY (MigratesFromSubscriptionID) REFERENCES __mj_BizAppsOrders.Subscription(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Subscription
+    ADD CONSTRAINT FK_Subscription_MigratesTo
+    FOREIGN KEY (MigratesToSubscriptionID) REFERENCES __mj_BizAppsOrders.Subscription(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.SubscriptionEvent
+    ADD CONSTRAINT FK_SubscriptionEvent_Subscription
+    FOREIGN KEY (SubscriptionID) REFERENCES __mj_BizAppsOrders.Subscription(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.SubscriptionEvent
+    ADD CONSTRAINT FK_SubscriptionEvent_RelatedPayment
+    FOREIGN KEY (RelatedPaymentID) REFERENCES __mj_BizAppsOrders.Payment(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.SubscriptionEvent
+    ADD CONSTRAINT FK_SubscriptionEvent_RelatedOrder
+    FOREIGN KEY (RelatedOrderID) REFERENCES __mj_BizAppsOrders.[Order](ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.RevRecScheduleLine
+    ADD CONSTRAINT FK_RevRecScheduleLine_Schedule
+    FOREIGN KEY (ScheduleID) REFERENCES __mj_BizAppsOrders.RevenueRecognitionSchedule(ID);
+GO
+
+-- The deliberate OrderLine ↔ Subscription pair (deferred from S1 so both are real FKs)
+ALTER TABLE __mj_BizAppsOrders.OrderLine
+    ADD CONSTRAINT FK_OrderLine_Subscription
+    FOREIGN KEY (SubscriptionID) REFERENCES __mj_BizAppsOrders.Subscription(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.OrderLine
+    ADD CONSTRAINT FK_OrderLine_RevRecSchedule
+    FOREIGN KEY (RevenueRecognitionScheduleID) REFERENCES __mj_BizAppsOrders.RevenueRecognitionSchedule(ID);
 GO
 
 -- =============================================================================
@@ -798,4 +995,69 @@ GO
 -- PaymentSequence
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Global singleton counter (ID=1) minting gap-conscious PAY-{seq} payment numbers. Consumed only by the entity server.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentSequence';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The next payment sequence number to assign.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentSequence', @level2type=N'COLUMN', @level2name=N'NextSequenceNumber';
+GO
+
+-- Product (S3 additions)
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'For Deferred products: SingleDate (100 percent recognized on the event date) or ServicePeriod (spread over the line''s service dates). Robert''s two deferred shapes on their own axis (UPD-2).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'DeferredRecognitionShape';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'None | Standard | Membership. Drives find-or-extend-or-create of a Subscription at order Confirm (BO-D40).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'SubscriptionType';
+GO
+
+-- OrderLine (S3 additions)
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The revenue recognition schedule this line carries (Deferred products). Each renewal order line carries its own schedule.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLine', @level2type=N'COLUMN', @level2name=N'RevenueRecognitionScheduleID';
+GO
+
+-- SubscriptionPlan
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Optional elaboration of a subscription product: billing cadence, price per cycle, trial (BO-D40). Simple memberships need no plan.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionPlan';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Display name of the plan.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionPlan', @level2type=N'COLUMN', @level2name=N'Name';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Monthly | Quarterly | Annual | Custom (CustomCycleDays).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionPlan', @level2type=N'COLUMN', @level2name=N'BillingCycle';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Cycle length in days when BillingCycle = Custom.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionPlan', @level2type=N'COLUMN', @level2name=N'CustomCycleDays';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Price per billing cycle. NULL = derive from the product/pricing engine.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionPlan', @level2type=N'COLUMN', @level2name=N'PricePerCycle';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Free-trial length in days (0 = none).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionPlan', @level2type=N'COLUMN', @level2name=N'TrialDays';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this plan is active and selectable.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionPlan', @level2type=N'COLUMN', @level2name=N'IsActive';
+GO
+
+-- Subscription
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'A recurring (Product, Customer, Beneficiary) relationship born from an order line (BO-D39/D40). Renewal cycles spawn new Orders under it; schedules hang off order lines, not here.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Human-readable subscription identifier. Unique.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'SubscriptionNumber';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Organization — the paying customer.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'CustomerOrganizationID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Person — who benefits (the member/seat), when distinct from the payer (BO-D39).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'BeneficiaryPersonID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Active | Paused | Canceled | Migrated | Trialing.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'Status';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Date the subscription began.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'StartDate';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Start of the current paid-through period.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'CurrentPeriodStart';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'End of the current paid-through period (renewal boundary).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'CurrentPeriodEnd';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'When the trial ends (Trialing status).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'TrialEndDate';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC timestamp the cancellation was recorded.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'CanceledAt';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Final service date after cancellation/migration.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'EndDate';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether renewal orders spawn automatically (Jeremy: auto-renew flag).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'AutoRenew';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'How many days before CurrentPeriodEnd the renewal order is raised (Jeremy: invoice about three months ahead).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'RenewalLeadDays';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Provider-side subscription identifier (e.g. Stripe sub_...), when provider-billed.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Subscription', @level2type=N'COLUMN', @level2name=N'ProviderSubscriptionID';
+GO
+
+-- SubscriptionEvent
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Immutable subscription lifecycle log (§4.4). One row per event; EventData carries the JSON payload.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionEvent';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The lifecycle event kind (Created ... RenewalOrderSpawned).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionEvent', @level2type=N'COLUMN', @level2name=N'EventType';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC timestamp the event occurred.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionEvent', @level2type=N'COLUMN', @level2name=N'OccurredAt';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'JSON event payload (provider webhook body or internal context).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionEvent', @level2type=N'COLUMN', @level2name=N'EventData';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Provider webhook event id — the idempotency key (unique when present).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionEvent', @level2type=N'COLUMN', @level2name=N'ProviderEventID';
+GO
+
+-- RevenueRecognitionSchedule
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Lightweight recognition computation source + MRR/ARR display (BO-D11). Owned by an order line; accounting''s dated ScheduledJournalEntry rows are the booked counterpart (accounting MOD-11).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'StraightLine (service-period spread) | SingleDate (100 percent on the event date) | Milestone | Custom.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'SchedulingMethod';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'First recognition date.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'StartDate';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Last recognition date.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'EndDate';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Total amount to recognize across all schedule lines.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'TotalAmount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Amount recognized so far (engine-maintained).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'TotalRecognized';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether every line has been recognized.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'IsComplete';
+GO
+
+-- RevRecScheduleLine
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'One recognition period of a schedule. Line 1 carries the rounding remainder. Soft refs to accounting''s ScheduledJournalEntry / recognized JournalEntry.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Start of this recognition period.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine', @level2type=N'COLUMN', @level2name=N'PeriodStart';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'End of this recognition period.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine', @level2type=N'COLUMN', @level2name=N'PeriodEnd';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Amount recognized in this period.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine', @level2type=N'COLUMN', @level2name=N'Amount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsAccounting.ScheduledJournalEntry — the dated future entry created at booking-lock (accounting MOD-11).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine', @level2type=N'COLUMN', @level2name=N'ScheduledJournalEntryID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to the __mj_BizAppsAccounting.JournalEntry that recognized this period.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine', @level2type=N'COLUMN', @level2name=N'RecognizedJournalEntryID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC timestamp this period was recognized.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine', @level2type=N'COLUMN', @level2name=N'RecognizedAt';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this period has been recognized.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine', @level2type=N'COLUMN', @level2name=N'IsRecognized';
 GO

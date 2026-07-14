@@ -17,8 +17,10 @@ export class mjBizAppsOrdersProductFormComponent extends BaseFormComponent {
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'mJBizAppsOrdersSubscriptionPlans', sectionName: 'Subscription Plans', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLinesProductID', sectionName: 'Order Lines (Product ID)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLinesSourceBundleProductID', sectionName: 'Order Lines (Source Bundle Product ID)', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLinesProductID', sectionName: 'Order Lines (Product ID)', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false }
         ]);
     }
 }
