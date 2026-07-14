@@ -26,8 +26,8 @@ codegen loop per stage. Engine/UI behavior that consumes the schema lives in the
 | `Product.RevenueGLAccountID / DeferredRevenueGLAccountID / COGSGLAccountID` | GL routing is role-based via accounting `GLAccountLink` | MOD-2 |
 | `Order.CompanyID` / `OrderLine.CompanyID` | company resolved per line via `GLAccount.CompanyID` at booking | MOD-3 |
 | Currency/FX columns (`CurrencyCode`, `ExchangeRateUsed`, `FunctionalCurrencyAmount`, …) on Order/OrderLine/Payment | FX deferred from baseline; add when multi-currency activates | MOD-4 |
-| `PriceList` / `ProductPrice` / `PriceTier` tables | pricing BUILD deferred — order-line `UnitPrice` only | MOD-6, CA-1 |
-| Any period/closed-period guard structure | **CA-3 resolved-for-now (2026-07-13): follow Amith's removal — no guard, no period machinery**; backdating ships unguarded; reopens only if Robert's research overturns it | MOD-9(b), accounting MOD-1 |
+| `PriceList` / `ProductPrice` / `PriceTier` tables | pricing BUILD deferred — order-line `UnitPrice` only | MOD-6 → `plans/DEFERRALS.md` |
+| Any period/closed-period structure IN ORDERS | the close mechanism lives ACCOUNTING-side (their MOD-13/A5, 2026-07-14); orders adds NO period tables/columns — the Confirm guard just CALLS accounting's closed-span check (F1.7). JEs/orders carry only dates; closability is detected by time | accounting MOD-13; MOD-9(b) |
 | `ApprovalTaskID` + SalesRule/SalesAuthority tables | approvals need bizapps-tasks (#8), deferred with Phase F | BO-D27, BO-D29 |
 | `IntercompanyFlow` | intercompany legs generate in Payments per accounting MOD-5; revisit at O2+ when intercompany activates (see §6 Q7). **Note (2026-07-13): the per-pair Due-To/Due-From WIRING table is also Payments-side** — accounting's baseline deliberately dropped `IntercompanyRelationship` ("the Payments component owns due-to/due-from"); Amith's OQ-A shape (accounting MOD-5) is the reference when it lands here with O2 | accounting MOD-5 + 2026-07-06 baseline ruling |
 
@@ -329,9 +329,11 @@ sum to the line total.
 
 ---
 
-## 5. Stage S5 — Catalog depth (phase O5; strictly consumer-demand-gated)
+## 5. Stage S5 — Catalog depth (phase O5) — **UPGRADED 2026-07-14 to a full PARITY wave**
 
-Everything here waits for a concrete consumer (LXP, events, gift cards) and ships in per-need migrations:
+> Marcelo directive: the goal is PARITY with the modified master plan — not consumer-gated minimalism.
+> S5 is a real, planned phase (one or two migrations), not a wish-list. Only `plans/DEFERRALS.md` items
+> stay out.
 
 - `ProductType` remaining behavior columns: `Code` (unique), `DefaultRevenueRecognitionType`,
   `DefaultIsTaxable`, `IsBillableRecurring`, `DefaultSubscriptionType`, `ProductExtensionEntity`,
@@ -340,9 +342,20 @@ Everything here waits for a concrete consumer (LXP, events, gift cards) and ship
   `OwningCompanyID`, `StandaloneSellingPrice`, `IsTaxable`, `DefaultBillingCycle`,
   `DefaultSubscriptionTermMonths` (BO-D35 fields-now-engine-later).
 - Bundles (`ProductBundleItem`), entitlements (`ProductEntitlement` + `EntitlementGrant`),
-  `ProductPerformanceObligation`, IsA extensions (`EventProduct`/`EventOrderLine` first — BO-D37/D42),
-  StoredValue pair + `Method='GiftCard'` CHECK widening (BO-D44).
-- Pricing tables (MOD-6) stay deferred until the pricing build is un-deferred — target shape unchanged.
+  `ProductPerformanceObligation` (BO-D32/34/35/39/41).
+- IsA extensions per BO-D37/D42: `EventProduct` + `EventOrderLine` FIRST, then Membership/PhysicalGood/
+  DigitalGood/Service/Donation/GiftCard extension entities as seeded types.
+- StoredValue pair (`StoredValueAccount` + `StoredValueTransaction`) + `Payment.Method='GiftCard'` CHECK
+  widening + `Payment.StoredValueAccountID` (BO-D44).
+- **`OrderLineDimension` junction** (§15 Q5, lean-yes — REQUIRED for Jeremy's batch-dimension detail:
+  order lines tag accounting Dimensions; the booking draft propagates them to JE lines).
+- Pricing tables: `plans/DEFERRALS.md` (MOD-6) — target shape unchanged.
+
+## 5b. Stage S6 — Sales rules + approvals (dependency-gated)
+
+`SalesRule` + `SalesAuthority` (§4.8) + the Approval-Request Task wiring (BO-D17/D27) — the schema is
+ready to author; **gated on bizapps-tasks #8** (see DEFERRALS). When tasks lands: 1 migration + the F6+
+enforcement phase.
 
 ---
 
@@ -398,7 +411,8 @@ servers (never client-side).
 | 2 | S2 Payments | v0.3.x | none (Manual provider needs no Stripe creds) | 1 migration, 5 tables + 1 sequence |
 | 3 | S3 Subscriptions + rev-rec | v0.4.x | none — CA-2 resolved 2026-07-13 (accounting MOD-11, date-driven) | 1 migration, 5 tables + col adds |
 | 4 | S4 Tax v0 | none (A) / v0.5.x (B) | Robert decision | seeds or 2 tables |
-| 5 | S5 Catalog depth | per-need | concrete consumer | incremental |
+| 5 | S5 Catalog depth (full parity wave) | v0.5.x/v0.6.x | none — planned phase (2026-07-14 upgrade) | 1-2 migrations, ~12 tables + col adds |
+| 5b | S6 Sales rules + approvals | v0.7.x | bizapps-tasks #8 | 1 migration, 2 tables + wiring |
 | — | §6.2 roles/permissions | metadata | Marcelo co-design | metadata only |
 
 Each stage = migrate → codegen → build → harness re-run → commit (migration + regenerated code together).
@@ -438,3 +452,45 @@ Marcelo executes/validates schema stages personally (his call: schema correctnes
   company-owns-order tension (Q2, escalated) — NO schema change unless he reverses CH-2.
   *Marcelo 2026-07-11: circle back to him on this one IN DETAIL at plan finalization (before executing).*
 - **Amith:** rev-rec cadence — batch-monthly vs continuous (UPD-2 note; affects Feature F4, not schema).
+
+---
+
+## Appendix — Parity coverage matrix (master plan → where it lands) — added 2026-07-14
+
+Every §4 entity + major feature of the MODIFIED master plan, mapped. **Nothing is unplanned**: each row
+is a schema stage (S*), a feature phase (F*), the UI plan, or an explicit `plans/DEFERRALS.md` row.
+
+| Master item | Covered by |
+|---|---|
+| ProductType (full behavior fields) | built (base) + S1.4 + **S5** |
+| ProductCategory | built (+`Code` in S5) |
+| Product (lifecycle/SSP/subscription fields) | built (base) + **S5**; GL columns never return (MOD-2) |
+| ProductBundleItem + two bundle modes | **S5** + F7 (fast-path expansion; bundle-line); allocation engine → DEFERRALS |
+| ProductPerformanceObligation | **S5** (fields; engine → DEFERRALS per BO-D35) |
+| ProductEntitlement + EntitlementGrant | **S5** + F7 (grant creation at booking; provisioning engine later per BO-D34/D39) |
+| PriceList/ProductPrice/PriceTier | DEFERRALS (MOD-6) |
+| ProductTaxCategory + OrderLineTaxLine | **S4** (Option B; Option A quick path = seeds only) |
+| IsA extensions (Event first; 6 more types) | **S5** + F7 |
+| Order (full §4.2 field set as overlaid) | **S1** |
+| OrderLine (full set + ServicePeriod + dimensions) | **S1** + S3 (sub/rev-rec FKs) + **S5** (OrderLineDimension) |
+| PaymentTermsType | **S1** |
+| Order sequences / numbering | **S1** (dual numbering pending Q-B) |
+| Subscription / SubscriptionPlan / SubscriptionEvent | **S3** + F4 |
+| RevenueRecognitionSchedule + RevRecScheduleLine (dated rows) | **S3** + F4 (MOD-11 accounting counterpart) |
+| Payment / PaymentLine / PaymentProvider / PaymentIntent / CustomerPaymentMethod | **S2** + F3 |
+| StoredValueAccount / StoredValueTransaction + gift-card flows | **S5** + F7 |
+| IntercompanyFlow + per-pair wiring table | O2+ with Payments maturity (accounting MOD-5; Q20 residual) |
+| SalesRule / SalesAuthority + approvals | **S6** (gated: tasks #8 — DEFERRALS) |
+| JE emission (booking, per-company split, reversals) | built + F1/F2 (MOD-11-orders) |
+| Payment JEs + cash application | F3 |
+| Rev-rec bridge (CreateScheduledJournalEntries) | F4 + accounting B3 |
+| Fulfillment (per-line flips by Fulfiller role + auto-advance) | F1.6 + F6 + UI §7 (MOD-8/UPD-3 — Marcelo 2026-07-14 confirm) |
+| Sales-rule evaluation at Confirm | with S6 (DEFERRALS gate) |
+| Tax invocation at line time | F5 (provider half = accounting DEFERRALS) |
+| Dunning workflow (master Phase E) | **F3.6** (added 2026-07-14) |
+| Manual subscription billing cron (Phase E) | **F4.4** (renewal spawning covers it; non-Stripe cadence) |
+| Webhooks + Stripe lifecycle | F3-Stripe |
+| Reversals at every layer | F2 (orders/payments) + F4 (sub cancellation/proration) |
+| Multi-company mechanics (§5) | F1.2 per-company split (MOD-11); intercompany legs → Payments (O2+) |
+| Backdating + closed-period guard | F1.7 → accounting MOD-13 closed-span check |
+| Statements/portal/variants/metered/dispute/recon/CDP-migration | DEFERRALS (each with trigger) |

@@ -73,13 +73,18 @@ before F1–F4 add engine surface). Existing tier-1/tier-2 harnesses must stay g
    when terms set and DueDate not manually supplied.
 5. **Customer requirement rule:** `CustomerOrganizationID` required to ENTER Confirmed (validation, not DB
    NOT NULL — drafts stay free-form). Per gap report O1.
-6. **Fulfillment auto-advance (UPD-3):** on reaching Posted, if NO line's product type
-   `RequiresFulfillment` → auto-advance to Fulfilled; else set pending lines' `FulfillmentStatus='Pending'`
-   and hold for the Fulfiller role. **No JE either way** (MOD-8).
-7. **Backdating (MOD-9b):** `OrderDate` freely settable; JE bears it. **No closed-period guard — settled
-   for now** (CA-3 resolved-for-now 2026-07-13: follow Amith's removal; the ERP's active period absorbs
-   dispatched batches). Keep the named seam (`validatePostingDate()`, pass-through, comment pointing at
-   CA-3) purely as the reopen point if Robert's research ever overturns the ruling.
+6. **Fulfillment system (UPD-3 + MOD-8; Marcelo 2026-07-14 confirm — this IS the physical-fulfillment
+   system):** on reaching Posted, if NO line's product type `RequiresFulfillment` → auto-advance to
+   Fulfilled; else set pending lines' `FulfillmentStatus='Pending'` and hold. The **Order Fulfiller role
+   (§6.2/F6) is enabled to flip line `FulfillmentStatus` Pending→Fulfilled** (per-line, the only write
+   that role gets on Confirmed+ orders — carve-out in the line-immutability trigger for this one column);
+   when the last required line flips, the order auto-advances to Fulfilled. **No JE either way** (MOD-8).
+   UI = the fulfillment queue (UI plan §7).
+7. **Backdating + closed-period guard (MOD-9b; REVISED 2026-07-14 per accounting MOD-13):** `OrderDate`
+   freely settable; JE bears it. The `validatePostingDate()` seam becomes REAL: at Confirm, check each
+   resolved company's **closed spans in accounting** (A5's check — the manual close mechanism) and fail
+   the Confirm with a clear per-company error if the order date falls in a closed span. No period FK
+   anywhere — pure date detection.
 
 **Tests:** transition-matrix unit suite; booking-gate harness; totals property tests (random line sets);
 auto-advance both branches; existing order-to-je harness stays green.
@@ -121,6 +126,10 @@ trigger passes + net zero across the pair); over-reversal rejected.
 5. **Stripe (second wave):** PaymentIntent lifecycle mapping + webhook receipt per BO-D13 (unauthenticated
    Express route, raw-body HMAC, `ProviderEventID` idempotency). Gate: needs the delivery/integration
    decisions (Q-D) NOT — Stripe is independent of bill.com; real gate is credentials + LXP consumer timing.
+6. **Dunning workflow (master Phase E — parity add 2026-07-14):** failed-payment retry policy + overdue
+   reminder workflow over `PaymentStatus='Overdue'`/DueDate (Jeremy's weekly overdue process); provider
+   retries (Stripe Smart Retries) vs our own = the §15 Q4 open lean — start with our simple scheduled
+   reminder + manual retry, refine with Jeremy.
 
 **Tests:** application-math unit suite (partial, multi-order, over-application rejected, credit-memo
 application); tier-2 harness: manual payment → capture → JE (assert CounterpartyOrganizationID) → apply →
@@ -157,6 +166,20 @@ miniature — it becomes the regression spine.
 harness (line → schedule → SJE rows sum to line total, supersede path); renewal-spawn harness with a frozen
 clock.
 
+## F7 — Catalog behaviors: bundles, entitlements, gift cards (consumes S5 — parity wave 2026-07-14)
+
+1. **Bundle fast-path expansion (BO-D41 mode 2):** bundle product at order entry explodes into component
+   lines with `SourceBundleProductID` provenance. Bundle-line mode (single line, SSP allocation) ships
+   schema-ready; the allocation ENGINE stays in DEFERRALS (BO-D35).
+2. **Entitlement grants (BO-D34/D39):** at booking, create `EntitlementGrant` rows from the product's
+   `ProductEntitlement` definitions with beneficiary defaulting (buyer; per-line designee for events/gift
+   cards). Provisioning/enforcement engine = later per master; the GRANT records are the v1 deliverable.
+3. **Gift cards (BO-D44):** selling a GiftCard product issues a `StoredValueAccount` + books the liability
+   (Dr Cash / Cr Gift Card Liability — role-mapped accounts); `StoredValuePaymentProvider` redeems
+   (`Method='GiftCard'`, liability relief). Cross-company redemption + breakage: DEFERRALS.
+4. **ProductBehavior plugin base (BO-D38):** ClassFactory-resolved, most-specific-wins, the Before/After
+   hook surface plumbed (several hooks no-op in v1) — the seam the IsA types + F7 behaviors hang off.
+
 ## F5 — Tax v0 (consumes S4 decision)
 
 Option A (quick path): seed `Tax` ProductType + per-jurisdiction tax products; engine treats Tax-type lines
@@ -182,7 +205,8 @@ consults role), not UI-only. Co-designed with Marcelo alongside accounting MOD-9
 ## Execution order
 
 F0 (engine split — first, mechanical, everything builds on it) → F1 → F2 (same S1 wave, F2 needs F1's
-matrix) → F3-manual → F4 → F3-stripe / F5 / F6 as decisions land.
+matrix) → F3-manual → F4 → F3-stripe / F5 / F6 / F7 as decisions + S5 land. Parity coverage: see the
+schema plan's Appendix matrix — every master feature maps to a phase here or a DEFERRALS row.
 
 ## Questions for Marcelo
 

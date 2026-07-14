@@ -89,9 +89,9 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
   periods reconciliation (CA-3 / accounting CA-1 / Q18). (c) Shipped: order naming (`Order.Description`),
   moving-window filter presets on Order History.
 - **Why / source:** Robert 2026-07-09 (orders decisions doc).
-- **Status:** (a) Accepted — not built; (b) Accepted — **backdating allowed with NO guard for now**
-  (CA-3 resolved-for-now 2026-07-13: follow Amith's period removal; reopens only if Robert's research
-  overturns it); (c) Implemented.
+- **Status:** (a) Accepted — not built; (b) Accepted — backdating allowed; **the closed-period guard is
+  BUILDABLE again (CA-3 resolved 2026-07-14 via accounting MOD-13's manual close)** — Confirm checks
+  accounting's closed spans per resolved company (feature plan F1.7); (c) Implemented.
 
 ## MOD-10 — Forward status skipping is allowed (refines MOD-1's "linear" lifecycle) (2026-07-10)
 - **Supersedes/refines:** MOD-1's "lifecycle is LINEAR: each stage required" and BO-D8's implied strict
