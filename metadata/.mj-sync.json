@@ -6,6 +6,7 @@
   "directoryOrder": [
     "schema-info",
     "payment-terms-types",
+    "product-types",
     "applications"
   ]
 }

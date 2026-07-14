@@ -23,6 +23,10 @@
 --   * Subscriptions + rev-rec bridge (S3, §4.4/§4.6): SubscriptionPlan / Subscription /
 --                           SubscriptionEvent / RevenueRecognitionSchedule / RevRecScheduleLine —
 --                           schedules hang off ORDER LINES (renewals carry their own)
+--   * Catalog depth (S5, §4.1): ProductType/Product behavior + lifecycle fields, bundles,
+--                           entitlements + grants, PPO, EventProduct/EventOrderLine (IsA),
+--                           StoredValue pair, OrderLineDimension, PriceList/ProductPrice/PriceTier;
+--                           seeded product types via metadata/. NO GL columns (MOD-2), NO currency (MOD-4)
 --
 -- Cross-app references are SOFT (plain UNIQUEIDENTIFIER, no FK) so Orders never
 -- couples to another app's schema:
@@ -75,13 +79,28 @@ GO
 ---------------------------------------------------------------------------
 CREATE TABLE __mj_BizAppsOrders.ProductType (
     ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    Code NVARCHAR(40) NULL,
     Name NVARCHAR(100) NOT NULL,
     Description NVARCHAR(MAX) NULL,
     RequiresFulfillment BIT NOT NULL DEFAULT 0,
+    DefaultRevenueRecognitionType NVARCHAR(20) NULL,
+    DefaultIsTaxable BIT NOT NULL DEFAULT 1,
+    IsBillableRecurring BIT NOT NULL DEFAULT 0,
+    DefaultSubscriptionType NVARCHAR(20) NOT NULL DEFAULT 'None',
+    ProductExtensionEntity NVARCHAR(255) NULL,
+    OrderLineExtensionEntity NVARCHAR(255) NULL,
+    BehaviorClass NVARCHAR(100) NULL,
     IsActive BIT NOT NULL DEFAULT 1,
     CONSTRAINT PK_ProductType PRIMARY KEY (ID),
-    CONSTRAINT UQ_ProductType_Name UNIQUE (Name)
+    CONSTRAINT UQ_ProductType_Name UNIQUE (Name),
+    CONSTRAINT CK_ProductType_DefaultRevRecType CHECK (DefaultRevenueRecognitionType IN ('Immediate','Deferred')),
+    CONSTRAINT CK_ProductType_DefaultSubscriptionType CHECK (DefaultSubscriptionType IN ('None','Standard','Membership'))
 );
+GO
+
+CREATE UNIQUE NONCLUSTERED INDEX UQ_ProductType_Code
+    ON __mj_BizAppsOrders.ProductType (Code)
+    WHERE Code IS NOT NULL;
 GO
 
 ---------------------------------------------------------------------------
@@ -90,6 +109,7 @@ GO
 ---------------------------------------------------------------------------
 CREATE TABLE __mj_BizAppsOrders.ProductCategory (
     ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    Code NVARCHAR(40) NULL,
     Name NVARCHAR(200) NOT NULL,
     ParentID UNIQUEIDENTIFIER NULL,
     Description NVARCHAR(MAX) NULL,
@@ -99,6 +119,11 @@ CREATE TABLE __mj_BizAppsOrders.ProductCategory (
 );
 GO
 
+CREATE UNIQUE NONCLUSTERED INDEX UQ_ProductCategory_Code
+    ON __mj_BizAppsOrders.ProductCategory (Code)
+    WHERE Code IS NOT NULL;
+GO
+
 ---------------------------------------------------------------------------
 -- 3.3 Product — a catalog item. RevenueRecognitionType drives the credit side of the
 --     order-booking JE (Immediate → Sales; Deferred → Deferred Revenue). NO GL columns (S3).
@@ -106,18 +131,38 @@ GO
 CREATE TABLE __mj_BizAppsOrders.Product (
     ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
     Name NVARCHAR(200) NOT NULL,
+    SKU NVARCHAR(80) NULL,
     ProductTypeID UNIQUEIDENTIFIER NOT NULL,
     ProductCategoryID UNIQUEIDENTIFIER NULL,
+    OwningCompanyID UNIQUEIDENTIFIER NULL,
+    Status NVARCHAR(20) NOT NULL DEFAULT 'Draft',
+    SuccessorProductID UNIQUEIDENTIFIER NULL,
+    AvailableFrom DATE NULL,
+    AvailableTo DATE NULL,
     RevenueRecognitionType NVARCHAR(20) NOT NULL DEFAULT 'Immediate',
     DeferredRecognitionShape NVARCHAR(20) NULL,
+    StandaloneSellingPrice DECIMAL(19,4) NULL,
     SubscriptionType NVARCHAR(20) NOT NULL DEFAULT 'None',
+    BehaviorClass NVARCHAR(100) NULL,
+    DefaultBillingCycle NVARCHAR(20) NULL,
+    DefaultSubscriptionTermMonths INT NULL,
+    IsTaxable BIT NOT NULL DEFAULT 1,
     Description NVARCHAR(MAX) NULL,
     IsActive BIT NOT NULL DEFAULT 1,
     CONSTRAINT PK_Product PRIMARY KEY (ID),
     CONSTRAINT CK_Product_RevenueRecognitionType CHECK (RevenueRecognitionType IN ('Immediate','Deferred')),
     CONSTRAINT CK_Product_DeferredRecognitionShape CHECK (DeferredRecognitionShape IN ('SingleDate','ServicePeriod')),
-    CONSTRAINT CK_Product_SubscriptionType CHECK (SubscriptionType IN ('None','Standard','Membership'))
+    CONSTRAINT CK_Product_SubscriptionType CHECK (SubscriptionType IN ('None','Standard','Membership')),
+    CONSTRAINT CK_Product_Status CHECK (Status IN ('Draft','Active','Discontinued','EOL')),
+    CONSTRAINT CK_Product_DefaultBillingCycle CHECK (DefaultBillingCycle IN ('Monthly','Quarterly','Annual','Custom')),
+    CONSTRAINT CK_Product_NoSelfSuccessor CHECK (SuccessorProductID IS NULL OR SuccessorProductID <> ID),
+    CONSTRAINT CK_Product_Availability CHECK (AvailableFrom IS NULL OR AvailableTo IS NULL OR AvailableTo >= AvailableFrom)
 );
+GO
+
+CREATE UNIQUE NONCLUSTERED INDEX UQ_Product_SKU
+    ON __mj_BizAppsOrders.Product (SKU)
+    WHERE SKU IS NOT NULL;
 GO
 
 ---------------------------------------------------------------------------
@@ -331,11 +376,12 @@ CREATE TABLE __mj_BizAppsOrders.Payment (
     ReversalReason NVARCHAR(MAX) NULL,
     Status NVARCHAR(20) NOT NULL DEFAULT 'Pending',
     JournalEntryID UNIQUEIDENTIFIER NULL,
+    StoredValueAccountID UNIQUEIDENTIFIER NULL,
     Description NVARCHAR(MAX) NULL,
     Notes NVARCHAR(MAX) NULL,
     CONSTRAINT PK_Payment PRIMARY KEY (ID),
     CONSTRAINT UQ_Payment_PaymentNumber UNIQUE (PaymentNumber),
-    CONSTRAINT CK_Payment_Method CHECK (Method IN ('CreditCard','ACH','Wire','Check','Cash','InternalTransfer','Refund','Chargeback','BankReturn')),
+    CONSTRAINT CK_Payment_Method CHECK (Method IN ('CreditCard','ACH','Wire','Check','Cash','InternalTransfer','GiftCard','Refund','Chargeback','BankReturn')),
     CONSTRAINT CK_Payment_Status CHECK (Status IN ('Pending','Captured','Failed','Refunded','Disputed'))
 );
 GO
@@ -492,6 +538,243 @@ CREATE TABLE __mj_BizAppsOrders.RevRecScheduleLine (
     IsRecognized BIT NOT NULL DEFAULT 0,
     CONSTRAINT PK_RevRecScheduleLine PRIMARY KEY (ID),
     CONSTRAINT CK_RevRecScheduleLine_Period CHECK (PeriodEnd >= PeriodStart)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.19 ProductBundleItem — composite products (BO-D32/D41). One structure,
+--      two order modes: bundle-line (single line, SSP allocation later) and
+--      fast-path expansion (components explode into normal lines with
+--      OrderLine.SourceBundleProductID provenance).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.ProductBundleItem (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    BundleProductID UNIQUEIDENTIFIER NOT NULL,
+    ComponentProductID UNIQUEIDENTIFIER NOT NULL,
+    Quantity DECIMAL(18,4) NOT NULL DEFAULT 1,
+    PricingMode NVARCHAR(20) NOT NULL DEFAULT 'Bundled',
+    SortOrder INT NOT NULL DEFAULT 0,
+    CONSTRAINT PK_ProductBundleItem PRIMARY KEY (ID),
+    CONSTRAINT UQ_ProductBundleItem_Pair UNIQUE (BundleProductID, ComponentProductID),
+    CONSTRAINT CK_ProductBundleItem_Quantity CHECK (Quantity > 0),
+    CONSTRAINT CK_ProductBundleItem_PricingMode CHECK (PricingMode IN ('Bundled','SumOfParts')),
+    CONSTRAINT CK_ProductBundleItem_NoSelfBundle CHECK (BundleProductID <> ComponentProductID)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.20 ProductPerformanceObligation — ASC 606 (BO-D35): one+ per product
+--      (esp. bundles); SSP drives allocation. Fields now, allocation engine
+--      later. NO GL columns (MOD-2 — GLAccountLink can point at PPO rows).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.ProductPerformanceObligation (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    ProductID UNIQUEIDENTIFIER NOT NULL,
+    Name NVARCHAR(200) NULL,
+    RevenueRecognitionType NVARCHAR(20) NOT NULL,
+    StandaloneSellingPrice DECIMAL(19,4) NOT NULL,
+    CONSTRAINT PK_ProductPerformanceObligation PRIMARY KEY (ID),
+    CONSTRAINT CK_PPO_RevRecType CHECK (RevenueRecognitionType IN ('Immediate','Deferred')),
+    CONSTRAINT CK_PPO_SSP CHECK (StandaloneSellingPrice >= 0)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.21 ProductEntitlement — the DEFINITION of what a purchase grants
+--      (BO-D34/D39). EntitlementGrant (3.22) is the instance.
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.ProductEntitlement (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    ProductID UNIQUEIDENTIFIER NOT NULL,
+    EntitlementType NVARCHAR(40) NOT NULL,
+    Code NVARCHAR(80) NOT NULL,
+    Name NVARCHAR(200) NULL,
+    Quantity DECIMAL(18,4) NULL,
+    UnitOfMeasure NVARCHAR(40) NULL,
+    IsActive BIT NOT NULL DEFAULT 1,
+    CONSTRAINT PK_ProductEntitlement PRIMARY KEY (ID),
+    CONSTRAINT UQ_ProductEntitlement_Product_Code UNIQUE (ProductID, Code),
+    CONSTRAINT CK_ProductEntitlement_Type CHECK (EntitlementType IN ('Feature','AccessLevel','ResourceQuantity','Custom'))
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.22 EntitlementGrant — the INSTANCE created at Post / subscription
+--      activation, carrying the beneficiary (defaults to the buyer; an order
+--      line may designate another — attendee, gift recipient, honoree).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.EntitlementGrant (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    ProductEntitlementID UNIQUEIDENTIFIER NOT NULL,
+    OrderLineID UNIQUEIDENTIFIER NULL,
+    SubscriptionID UNIQUEIDENTIFIER NULL,
+    BeneficiaryPersonID UNIQUEIDENTIFIER NULL,
+    BeneficiaryOrganizationID UNIQUEIDENTIFIER NULL,
+    Quantity DECIMAL(18,4) NULL,
+    ValidFrom DATE NULL,
+    ValidTo DATE NULL,
+    Status NVARCHAR(20) NOT NULL DEFAULT 'Active',
+    ProvisionedAt DATETIMEOFFSET NULL,
+    CONSTRAINT PK_EntitlementGrant PRIMARY KEY (ID),
+    CONSTRAINT CK_EntitlementGrant_Status CHECK (Status IN ('Active','Suspended','Revoked','Expired')),
+    CONSTRAINT CK_EntitlementGrant_Validity CHECK (ValidFrom IS NULL OR ValidTo IS NULL OR ValidTo >= ValidFrom)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.23 EventProduct — IsA Disjoint child of Product (BO-D37): PK = the SAME
+--      UUID as the parent Product row (accounting's ACP ⊂ __mj.Company
+--      pattern). First of the type-driven extension pairs; the other seeded
+--      types get their extension entities as their features land.
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.EventProduct (
+    ID UNIQUEIDENTIFIER NOT NULL,
+    EventStartsAt DATETIMEOFFSET NOT NULL,
+    EventEndsAt DATETIMEOFFSET NULL,
+    VenueName NVARCHAR(300) NULL,
+    VenueAddressID UNIQUEIDENTIFIER NULL,
+    Capacity INT NULL,
+    RequiresAttendeeInfo BIT NOT NULL DEFAULT 1,
+    CONSTRAINT PK_EventProduct PRIMARY KEY (ID),
+    CONSTRAINT CK_EventProduct_Capacity CHECK (Capacity IS NULL OR Capacity > 0),
+    CONSTRAINT CK_EventProduct_Ends CHECK (EventEndsAt IS NULL OR EventEndsAt >= EventStartsAt)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.24 EventOrderLine — IsA Disjoint child of OrderLine (BO-D37): the
+--      per-line attendee detail; the attendee is typically the
+--      EntitlementGrant beneficiary (BO-D39).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.EventOrderLine (
+    ID UNIQUEIDENTIFIER NOT NULL,
+    AttendeeName NVARCHAR(300) NULL,
+    AttendeeEmail NVARCHAR(255) NULL,
+    CheckInAt DATETIMEOFFSET NULL,
+    CONSTRAINT PK_EventOrderLine PRIMARY KEY (ID)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.25 StoredValueAccount — gift-card / stored-value instrument (BO-D44).
+--      Selling issues one and books a LIABILITY (not revenue); redeeming is a
+--      Payment with Method='GiftCard'. NO CurrencyCode (MOD-4).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.StoredValueAccount (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    Code NVARCHAR(60) NOT NULL,
+    IssuingCompanyID UNIQUEIDENTIFIER NOT NULL,
+    InitialAmount DECIMAL(18,2) NOT NULL,
+    CurrentBalance DECIMAL(18,2) NOT NULL,
+    Status NVARCHAR(20) NOT NULL DEFAULT 'Active',
+    IssuedFromOrderLineID UNIQUEIDENTIFIER NULL,
+    BeneficiaryPersonID UNIQUEIDENTIFIER NULL,
+    BeneficiaryOrganizationID UNIQUEIDENTIFIER NULL,
+    ExpiresAt DATE NULL,
+    CONSTRAINT PK_StoredValueAccount PRIMARY KEY (ID),
+    CONSTRAINT UQ_StoredValueAccount_Code UNIQUE (Code),
+    CONSTRAINT CK_StoredValueAccount_Status CHECK (Status IN ('Active','Depleted','Expired','Suspended','Voided')),
+    CONSTRAINT CK_StoredValueAccount_InitialAmount CHECK (InitialAmount > 0)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.26 StoredValueTransaction — the stored-value balance ledger (BO-D44).
+--      Signed Amount; BalanceAfter is the running balance.
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.StoredValueTransaction (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    StoredValueAccountID UNIQUEIDENTIFIER NOT NULL,
+    TransactionType NVARCHAR(20) NOT NULL,
+    Amount DECIMAL(18,2) NOT NULL,
+    BalanceAfter DECIMAL(18,2) NOT NULL,
+    RelatedPaymentID UNIQUEIDENTIFIER NULL,
+    RelatedOrderID UNIQUEIDENTIFIER NULL,
+    OccurredAt DATETIMEOFFSET NOT NULL,
+    CONSTRAINT PK_StoredValueTransaction PRIMARY KEY (ID),
+    CONSTRAINT CK_StoredValueTransaction_Type CHECK (TransactionType IN ('Issue','Redeem','Refund','Adjust','Expire')),
+    CONSTRAINT CK_StoredValueTransaction_Amount CHECK (Amount <> 0)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.27 OrderLineDimension — order lines tag accounting Dimensions (§15 Q5;
+--      REQUIRED for Jeremy's batch-dimension detail). Soft refs (no FK) to
+--      __mj_BizAppsAccounting.Dimension / DimensionValue; the booking draft
+--      propagates them onto JE lines.
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.OrderLineDimension (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    OrderLineID UNIQUEIDENTIFIER NOT NULL,
+    DimensionID UNIQUEIDENTIFIER NOT NULL,
+    DimensionValueID UNIQUEIDENTIFIER NOT NULL,
+    CONSTRAINT PK_OrderLineDimension PRIMARY KEY (ID),
+    CONSTRAINT UQ_OrderLineDimension_Line_Dimension UNIQUE (OrderLineID, DimensionID)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.28 PriceList — pricing segmentation (BO-D33): region / channel /
+--      customer-tier scoping, effective-dated. NO CurrencyCode (MOD-4).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.PriceList (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    Code NVARCHAR(40) NOT NULL,
+    Name NVARCHAR(200) NOT NULL,
+    Segment NVARCHAR(40) NULL,
+    EffectiveFrom DATE NULL,
+    EffectiveTo DATE NULL,
+    IsActive BIT NOT NULL DEFAULT 1,
+    CONSTRAINT PK_PriceList PRIMARY KEY (ID),
+    CONSTRAINT UQ_PriceList_Code UNIQUE (Code),
+    CONSTRAINT CK_PriceList_Effective CHECK (EffectiveFrom IS NULL OR EffectiveTo IS NULL OR EffectiveTo >= EffectiveFrom)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.29 ProductPrice — an effective-dated price for a product (BO-D33).
+--      PricingModel/FeeType structure now; the resolution engine is feature
+--      F9 (UnitPrice direct entry stays the precedence base). NO currency
+--      column (MOD-4).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.ProductPrice (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    ProductID UNIQUEIDENTIFIER NOT NULL,
+    PriceListID UNIQUEIDENTIFIER NULL,
+    PricingModel NVARCHAR(20) NOT NULL DEFAULT 'Flat',
+    FeeType NVARCHAR(20) NOT NULL DEFAULT 'Standard',
+    Amount DECIMAL(19,4) NOT NULL,
+    UnitOfMeasure NVARCHAR(40) NULL,
+    MinQuantity DECIMAL(18,4) NULL,
+    MaxQuantity DECIMAL(18,4) NULL,
+    EffectiveFrom DATE NOT NULL,
+    EffectiveTo DATE NULL,
+    CONSTRAINT PK_ProductPrice PRIMARY KEY (ID),
+    CONSTRAINT CK_ProductPrice_PricingModel CHECK (PricingModel IN ('Flat','PerUnit','Tiered','Volume','Package','Usage')),
+    CONSTRAINT CK_ProductPrice_FeeType CHECK (FeeType IN ('Standard','Setup','Recurring','Overage')),
+    CONSTRAINT CK_ProductPrice_Effective CHECK (EffectiveTo IS NULL OR EffectiveTo >= EffectiveFrom),
+    CONSTRAINT CK_ProductPrice_QuantityRange CHECK (MinQuantity IS NULL OR MaxQuantity IS NULL OR MaxQuantity >= MinQuantity)
+);
+GO
+
+-- Price-resolution seek index (not an FK index — CodeGen owns those).
+CREATE NONCLUSTERED INDEX IX_ProductPrice_Resolution
+    ON __mj_BizAppsOrders.ProductPrice (ProductID, EffectiveFrom DESC);
+GO
+
+---------------------------------------------------------------------------
+-- 3.30 PriceTier — volume / quantity breaks under a Tiered/Volume
+--      ProductPrice (BO-D33).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.PriceTier (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    ProductPriceID UNIQUEIDENTIFIER NOT NULL,
+    MinQuantity DECIMAL(18,4) NOT NULL,
+    MaxQuantity DECIMAL(18,4) NULL,
+    Amount DECIMAL(19,4) NOT NULL,
+    SortOrder INT NOT NULL DEFAULT 0,
+    CONSTRAINT PK_PriceTier PRIMARY KEY (ID),
+    CONSTRAINT CK_PriceTier_Range CHECK (MaxQuantity IS NULL OR MaxQuantity >= MinQuantity)
 );
 GO
 
@@ -685,6 +968,113 @@ GO
 ALTER TABLE __mj_BizAppsOrders.OrderLine
     ADD CONSTRAINT FK_OrderLine_RevRecSchedule
     FOREIGN KEY (RevenueRecognitionScheduleID) REFERENCES __mj_BizAppsOrders.RevenueRecognitionSchedule(ID);
+GO
+
+-- Catalog depth parity wave (S5)
+ALTER TABLE __mj_BizAppsOrders.Product
+    ADD CONSTRAINT FK_Product_OwningCompany
+    FOREIGN KEY (OwningCompanyID) REFERENCES __mj.Company(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Product
+    ADD CONSTRAINT FK_Product_SuccessorProduct
+    FOREIGN KEY (SuccessorProductID) REFERENCES __mj_BizAppsOrders.Product(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.ProductBundleItem
+    ADD CONSTRAINT FK_ProductBundleItem_BundleProduct
+    FOREIGN KEY (BundleProductID) REFERENCES __mj_BizAppsOrders.Product(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.ProductBundleItem
+    ADD CONSTRAINT FK_ProductBundleItem_ComponentProduct
+    FOREIGN KEY (ComponentProductID) REFERENCES __mj_BizAppsOrders.Product(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.ProductPerformanceObligation
+    ADD CONSTRAINT FK_PPO_Product
+    FOREIGN KEY (ProductID) REFERENCES __mj_BizAppsOrders.Product(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.ProductEntitlement
+    ADD CONSTRAINT FK_ProductEntitlement_Product
+    FOREIGN KEY (ProductID) REFERENCES __mj_BizAppsOrders.Product(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.EntitlementGrant
+    ADD CONSTRAINT FK_EntitlementGrant_ProductEntitlement
+    FOREIGN KEY (ProductEntitlementID) REFERENCES __mj_BizAppsOrders.ProductEntitlement(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.EntitlementGrant
+    ADD CONSTRAINT FK_EntitlementGrant_OrderLine
+    FOREIGN KEY (OrderLineID) REFERENCES __mj_BizAppsOrders.OrderLine(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.EntitlementGrant
+    ADD CONSTRAINT FK_EntitlementGrant_Subscription
+    FOREIGN KEY (SubscriptionID) REFERENCES __mj_BizAppsOrders.Subscription(ID);
+GO
+
+-- IsA pairs: PK = parent PK (same UUID)
+ALTER TABLE __mj_BizAppsOrders.EventProduct
+    ADD CONSTRAINT FK_EventProduct_Product
+    FOREIGN KEY (ID) REFERENCES __mj_BizAppsOrders.Product(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.EventOrderLine
+    ADD CONSTRAINT FK_EventOrderLine_OrderLine
+    FOREIGN KEY (ID) REFERENCES __mj_BizAppsOrders.OrderLine(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.StoredValueAccount
+    ADD CONSTRAINT FK_StoredValueAccount_IssuingCompany
+    FOREIGN KEY (IssuingCompanyID) REFERENCES __mj.Company(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.StoredValueAccount
+    ADD CONSTRAINT FK_StoredValueAccount_IssuedFromOrderLine
+    FOREIGN KEY (IssuedFromOrderLineID) REFERENCES __mj_BizAppsOrders.OrderLine(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.StoredValueTransaction
+    ADD CONSTRAINT FK_StoredValueTransaction_Account
+    FOREIGN KEY (StoredValueAccountID) REFERENCES __mj_BizAppsOrders.StoredValueAccount(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.StoredValueTransaction
+    ADD CONSTRAINT FK_StoredValueTransaction_RelatedPayment
+    FOREIGN KEY (RelatedPaymentID) REFERENCES __mj_BizAppsOrders.Payment(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.StoredValueTransaction
+    ADD CONSTRAINT FK_StoredValueTransaction_RelatedOrder
+    FOREIGN KEY (RelatedOrderID) REFERENCES __mj_BizAppsOrders.[Order](ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Payment
+    ADD CONSTRAINT FK_Payment_StoredValueAccount
+    FOREIGN KEY (StoredValueAccountID) REFERENCES __mj_BizAppsOrders.StoredValueAccount(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.OrderLineDimension
+    ADD CONSTRAINT FK_OrderLineDimension_OrderLine
+    FOREIGN KEY (OrderLineID) REFERENCES __mj_BizAppsOrders.OrderLine(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.ProductPrice
+    ADD CONSTRAINT FK_ProductPrice_Product
+    FOREIGN KEY (ProductID) REFERENCES __mj_BizAppsOrders.Product(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.ProductPrice
+    ADD CONSTRAINT FK_ProductPrice_PriceList
+    FOREIGN KEY (PriceListID) REFERENCES __mj_BizAppsOrders.PriceList(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.PriceTier
+    ADD CONSTRAINT FK_PriceTier_ProductPrice
+    FOREIGN KEY (ProductPriceID) REFERENCES __mj_BizAppsOrders.ProductPrice(ID);
 GO
 
 -- =============================================================================
@@ -1049,6 +1439,133 @@ EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Last recognition d
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Total amount to recognize across all schedule lines.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'TotalAmount';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Amount recognized so far (engine-maintained).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'TotalRecognized';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether every line has been recognized.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'IsComplete';
+GO
+
+-- ProductType (S5 behavior fields)
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Stable machine code (Event, Membership, PhysicalGood, ...). Unique when present; seeded types carry codes.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductType', @level2type=N'COLUMN', @level2name=N'Code';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Default recognition type stamped onto new products of this type (Immediate | Deferred).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductType', @level2type=N'COLUMN', @level2name=N'DefaultRevenueRecognitionType';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Default taxability stamped onto new products of this type.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductType', @level2type=N'COLUMN', @level2name=N'DefaultIsTaxable';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether products of this type bill on a recurring cadence (memberships, subscriptions, usage).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductType', @level2type=N'COLUMN', @level2name=N'IsBillableRecurring';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'None | Standard | Membership — the subscription semantics stamped onto new products of this type (BO-D40).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductType', @level2type=N'COLUMN', @level2name=N'DefaultSubscriptionType';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'MJ entity name of the IsA Product-level extension for this type (e.g. MJ_BizApps_Orders: Event Products). NULL = no extension (BO-D37).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductType', @level2type=N'COLUMN', @level2name=N'ProductExtensionEntity';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'MJ entity name of the IsA OrderLine-level extension for this type (e.g. MJ_BizApps_Orders: Event Order Lines). NULL = no extension (BO-D37).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductType', @level2type=N'COLUMN', @level2name=N'OrderLineExtensionEntity';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'ClassFactory key of the ProductBehavior plugin for this type; Product.BehaviorClass overrides; default behavior otherwise (BO-D38).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductType', @level2type=N'COLUMN', @level2name=N'BehaviorClass';
+GO
+
+-- ProductCategory (S5)
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Stable machine code for the category. Unique when present.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductCategory', @level2type=N'COLUMN', @level2name=N'Code';
+GO
+
+-- Product (S5 lifecycle/commerce fields)
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Stock-keeping unit / product code. Unique when present.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'SKU';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The subsidiary whose revenue this product accrues to. NULLABLE pending Robert''s owning-company ruling (Q2 residue); GL routing is via GLAccountLink regardless (MOD-2/MOD-3).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'OwningCompanyID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Draft | Active | Discontinued | EOL — catalog lifecycle. Data-only until the catalog engine gates ordering on it.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'Status';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'First date the product may be sold.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'AvailableFrom';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Last date the product may be sold.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'AvailableTo';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Standalone selling price for ASC 606 bundle revenue allocation (BO-D35; fields now, allocation engine later).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'StandaloneSellingPrice';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'ClassFactory key of this product''s ProductBehavior plugin; falls back to ProductType.BehaviorClass then the default (BO-D38).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'BehaviorClass';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Default billing cycle for subscription-creating products (Monthly | Quarterly | Annual | Custom).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'DefaultBillingCycle';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Default subscription term in months.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'DefaultSubscriptionTermMonths';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this product is subject to tax (tax subsystem lands at O4).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Product', @level2type=N'COLUMN', @level2name=N'IsTaxable';
+GO
+
+-- ProductBundleItem
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Component membership of a bundle product (BO-D32/D41): one structure powering bundle-line ordering and fast-path expansion.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductBundleItem';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Quantity of the component per one bundle.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductBundleItem', @level2type=N'COLUMN', @level2name=N'Quantity';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Bundled (fixed bundle price, SSP-allocated) | SumOfParts (components price individually).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductBundleItem', @level2type=N'COLUMN', @level2name=N'PricingMode';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Display order of components within the bundle.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductBundleItem', @level2type=N'COLUMN', @level2name=N'SortOrder';
+GO
+
+-- ProductPerformanceObligation
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'ASC 606 performance obligation (BO-D35): one or more per product; SSP drives bundle allocation. Fields now; the allocation engine is deferred. GL routing via GLAccountLink (MOD-2).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPerformanceObligation';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Display name of the obligation.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPerformanceObligation', @level2type=N'COLUMN', @level2name=N'Name';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Recognition pattern for THIS obligation (Immediate | Deferred), independent of siblings.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPerformanceObligation', @level2type=N'COLUMN', @level2name=N'RevenueRecognitionType';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Standalone selling price used for relative-SSP allocation across obligations.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPerformanceObligation', @level2type=N'COLUMN', @level2name=N'StandaloneSellingPrice';
+GO
+
+-- ProductEntitlement
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The DEFINITION of what purchasing a product grants (BO-D34): feature, access level, or resource quantity. EntitlementGrant is the per-purchase instance.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductEntitlement';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Feature | AccessLevel | ResourceQuantity | Custom.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductEntitlement', @level2type=N'COLUMN', @level2name=N'EntitlementType';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Machine key consumed by downstream apps (unique per product).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductEntitlement', @level2type=N'COLUMN', @level2name=N'Code';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Display name of the entitlement.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductEntitlement', @level2type=N'COLUMN', @level2name=N'Name';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Granted quantity for ResourceQuantity entitlements (e.g. 100 GB, 5 seats).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductEntitlement', @level2type=N'COLUMN', @level2name=N'Quantity';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Unit for Quantity (GB, seats, hours, ...).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductEntitlement', @level2type=N'COLUMN', @level2name=N'UnitOfMeasure';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this entitlement is currently granted by new purchases.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductEntitlement', @level2type=N'COLUMN', @level2name=N'IsActive';
+GO
+
+-- EntitlementGrant
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'A granted entitlement instance created at Post / subscription activation (BO-D39), carrying the beneficiary (defaults to the buyer; a line may designate another). Downstream apps read grants to provision access.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EntitlementGrant';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Person — the benefiting person (attendee, recipient, honoree).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EntitlementGrant', @level2type=N'COLUMN', @level2name=N'BeneficiaryPersonID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Organization — the benefiting organization.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EntitlementGrant', @level2type=N'COLUMN', @level2name=N'BeneficiaryOrganizationID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Granted quantity (defaults from the entitlement definition).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EntitlementGrant', @level2type=N'COLUMN', @level2name=N'Quantity';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Grant validity start.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EntitlementGrant', @level2type=N'COLUMN', @level2name=N'ValidFrom';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Grant validity end.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EntitlementGrant', @level2type=N'COLUMN', @level2name=N'ValidTo';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Active | Suspended | Revoked | Expired.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EntitlementGrant', @level2type=N'COLUMN', @level2name=N'Status';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC timestamp downstream provisioning completed (NULL until provisioned).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EntitlementGrant', @level2type=N'COLUMN', @level2name=N'ProvisionedAt';
+GO
+
+-- EventProduct / EventOrderLine (IsA pair)
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'IsA Disjoint child of Product (same UUID): event-specific catalog fields (BO-D37). A product is at most one subtype.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EventProduct';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC start of the event (also the SingleDate recognition date for Deferred event products).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EventProduct', @level2type=N'COLUMN', @level2name=N'EventStartsAt';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC end of the event.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EventProduct', @level2type=N'COLUMN', @level2name=N'EventEndsAt';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Venue display name.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EventProduct', @level2type=N'COLUMN', @level2name=N'VenueName';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Address — the venue address.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EventProduct', @level2type=N'COLUMN', @level2name=N'VenueAddressID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Maximum attendee count. NULL = uncapped.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EventProduct', @level2type=N'COLUMN', @level2name=N'Capacity';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether order lines for this event require attendee info (EventOrderLine).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EventProduct', @level2type=N'COLUMN', @level2name=N'RequiresAttendeeInfo';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'IsA Disjoint child of OrderLine (same UUID): per-line attendee detail; the attendee is typically the EntitlementGrant beneficiary (BO-D39).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EventOrderLine';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Attendee full name.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EventOrderLine', @level2type=N'COLUMN', @level2name=N'AttendeeName';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Attendee email.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EventOrderLine', @level2type=N'COLUMN', @level2name=N'AttendeeEmail';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC timestamp the attendee checked in.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'EventOrderLine', @level2type=N'COLUMN', @level2name=N'CheckInAt';
+GO
+
+-- StoredValueAccount / StoredValueTransaction
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Gift-card / stored-value instrument (BO-D44). Selling one books a LIABILITY (not revenue); redemption is a Payment with Method=GiftCard relieving the liability.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueAccount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The gift-card number / instrument code. Unique.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueAccount', @level2type=N'COLUMN', @level2name=N'Code';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Face value at issuance.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueAccount', @level2type=N'COLUMN', @level2name=N'InitialAmount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Current remaining balance (ledger-maintained via StoredValueTransaction).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueAccount', @level2type=N'COLUMN', @level2name=N'CurrentBalance';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Active | Depleted | Expired | Suspended | Voided.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueAccount', @level2type=N'COLUMN', @level2name=N'Status';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Person — the card recipient.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueAccount', @level2type=N'COLUMN', @level2name=N'BeneficiaryPersonID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Organization — the benefiting organization.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueAccount', @level2type=N'COLUMN', @level2name=N'BeneficiaryOrganizationID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Expiration date where legally permitted. NULL = never.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueAccount', @level2type=N'COLUMN', @level2name=N'ExpiresAt';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Stored-value balance ledger (BO-D44): every issue/redeem/refund/adjust/expire with the running balance.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueTransaction';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Issue | Redeem | Refund | Adjust | Expire.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueTransaction', @level2type=N'COLUMN', @level2name=N'TransactionType';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Signed amount (+issue/refund, -redeem/expire).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueTransaction', @level2type=N'COLUMN', @level2name=N'Amount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Account balance after applying this transaction.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueTransaction', @level2type=N'COLUMN', @level2name=N'BalanceAfter';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC timestamp of the transaction.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'StoredValueTransaction', @level2type=N'COLUMN', @level2name=N'OccurredAt';
+GO
+
+-- Payment (S5 addition)
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The stored-value account redeemed when Method = GiftCard (BO-D44).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'StoredValueAccountID';
+GO
+
+-- OrderLineDimension
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Analytical dimension tag on an order line (one value per dimension). Soft refs to __mj_BizAppsAccounting Dimension/DimensionValue; the booking draft propagates tags onto JE lines for batch-dimension detail.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLineDimension';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsAccounting.Dimension.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLineDimension', @level2type=N'COLUMN', @level2name=N'DimensionID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsAccounting.DimensionValue.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLineDimension', @level2type=N'COLUMN', @level2name=N'DimensionValueID';
+GO
+
+-- PriceList / ProductPrice / PriceTier
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Pricing segmentation container (BO-D33): region/channel/customer-tier scope, effective-dated. Currency column deferred with FX (MOD-4).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceList';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Stable machine code. Unique.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceList', @level2type=N'COLUMN', @level2name=N'Code';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Display name.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceList', @level2type=N'COLUMN', @level2name=N'Name';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Region / channel / customer-tier scope label.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceList', @level2type=N'COLUMN', @level2name=N'Segment';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'List validity start.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceList', @level2type=N'COLUMN', @level2name=N'EffectiveFrom';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'List validity end.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceList', @level2type=N'COLUMN', @level2name=N'EffectiveTo';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this list participates in resolution.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceList', @level2type=N'COLUMN', @level2name=N'IsActive';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'An effective-dated price for a product (BO-D33). Resolution engine = feature F9; direct UnitPrice entry remains the precedence base so order entry never blocks.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPrice';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Flat | PerUnit | Tiered | Volume | Package | Usage.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPrice', @level2type=N'COLUMN', @level2name=N'PricingModel';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Standard | Setup | Recurring | Overage.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPrice', @level2type=N'COLUMN', @level2name=N'FeeType';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Base/flat amount; tier detail lives in PriceTier.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPrice', @level2type=N'COLUMN', @level2name=N'Amount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Pricing unit (each, month, hour, GB, seat, ...).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPrice', @level2type=N'COLUMN', @level2name=N'UnitOfMeasure';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Minimum quantity this price applies to.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPrice', @level2type=N'COLUMN', @level2name=N'MinQuantity';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Maximum quantity this price applies to.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPrice', @level2type=N'COLUMN', @level2name=N'MaxQuantity';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Price validity start.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPrice', @level2type=N'COLUMN', @level2name=N'EffectiveFrom';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Price validity end.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPrice', @level2type=N'COLUMN', @level2name=N'EffectiveTo';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Volume/quantity break under a Tiered or Volume ProductPrice (BO-D33).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceTier';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Tier lower bound (inclusive).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceTier', @level2type=N'COLUMN', @level2name=N'MinQuantity';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Tier upper bound. NULL = unbounded top tier.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceTier', @level2type=N'COLUMN', @level2name=N'MaxQuantity';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Per-unit (or flat) price within this tier.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceTier', @level2type=N'COLUMN', @level2name=N'Amount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Display order of tiers.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceTier', @level2type=N'COLUMN', @level2name=N'SortOrder';
 GO
 
 -- RevRecScheduleLine

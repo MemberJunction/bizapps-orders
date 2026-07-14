@@ -93,6 +93,220 @@ export const mjBizAppsOrdersCustomerPaymentMethodSchema = z.object({
 export type mjBizAppsOrdersCustomerPaymentMethodEntityType = z.infer<typeof mjBizAppsOrdersCustomerPaymentMethodSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Entitlement Grants
+ */
+export const mjBizAppsOrdersEntitlementGrantSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    ProductEntitlementID: z.string().describe(`
+        * * Field Name: ProductEntitlementID
+        * * Display Name: Product Entitlement ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Entitlements (vwProductEntitlements.ID)`),
+    OrderLineID: z.string().nullable().describe(`
+        * * Field Name: OrderLineID
+        * * Display Name: Order Line ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)`),
+    SubscriptionID: z.string().nullable().describe(`
+        * * Field Name: SubscriptionID
+        * * Display Name: Subscription ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscriptions (vwSubscriptions.ID)`),
+    BeneficiaryPersonID: z.string().nullable().describe(`
+        * * Field Name: BeneficiaryPersonID
+        * * Display Name: Beneficiary Person ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Person — the benefiting person (attendee, recipient, honoree).`),
+    BeneficiaryOrganizationID: z.string().nullable().describe(`
+        * * Field Name: BeneficiaryOrganizationID
+        * * Display Name: Beneficiary Organization ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Organization — the benefiting organization.`),
+    Quantity: z.number().nullable().describe(`
+        * * Field Name: Quantity
+        * * Display Name: Quantity
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Granted quantity (defaults from the entitlement definition).`),
+    ValidFrom: z.date().nullable().describe(`
+        * * Field Name: ValidFrom
+        * * Display Name: Valid From
+        * * SQL Data Type: date
+        * * Description: Grant validity start.`),
+    ValidTo: z.date().nullable().describe(`
+        * * Field Name: ValidTo
+        * * Display Name: Valid To
+        * * SQL Data Type: date
+        * * Description: Grant validity end.`),
+    Status: z.union([z.literal('Active'), z.literal('Expired'), z.literal('Revoked'), z.literal('Suspended')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Active
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Expired
+    *   * Revoked
+    *   * Suspended
+        * * Description: Active | Suspended | Revoked | Expired.`),
+    ProvisionedAt: z.date().nullable().describe(`
+        * * Field Name: ProvisionedAt
+        * * Display Name: Provisioned At
+        * * SQL Data Type: datetimeoffset
+        * * Description: UTC timestamp downstream provisioning completed (NULL until provisioned).`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    ProductEntitlement: z.string().nullable().describe(`
+        * * Field Name: ProductEntitlement
+        * * Display Name: Product Entitlement
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersEntitlementGrantEntityType = z.infer<typeof mjBizAppsOrdersEntitlementGrantSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Event Order Lines
+ */
+export const mjBizAppsOrdersEventOrderLineSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)`),
+    AttendeeName: z.string().nullable().describe(`
+        * * Field Name: AttendeeName
+        * * Display Name: Attendee Name
+        * * SQL Data Type: nvarchar(300)
+        * * Description: Attendee full name.`),
+    AttendeeEmail: z.string().nullable().describe(`
+        * * Field Name: AttendeeEmail
+        * * Display Name: Attendee Email
+        * * SQL Data Type: nvarchar(255)
+        * * Description: Attendee email.`),
+    CheckInAt: z.date().nullable().describe(`
+        * * Field Name: CheckInAt
+        * * Display Name: Check In At
+        * * SQL Data Type: datetimeoffset
+        * * Description: UTC timestamp the attendee checked in.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersEventOrderLineEntityType = z.infer<typeof mjBizAppsOrdersEventOrderLineSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Event Products
+ */
+export const mjBizAppsOrdersEventProductSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
+    EventStartsAt: z.date().describe(`
+        * * Field Name: EventStartsAt
+        * * Display Name: Event Starts At
+        * * SQL Data Type: datetimeoffset
+        * * Description: UTC start of the event (also the SingleDate recognition date for Deferred event products).`),
+    EventEndsAt: z.date().nullable().describe(`
+        * * Field Name: EventEndsAt
+        * * Display Name: Event Ends At
+        * * SQL Data Type: datetimeoffset
+        * * Description: UTC end of the event.`),
+    VenueName: z.string().nullable().describe(`
+        * * Field Name: VenueName
+        * * Display Name: Venue Name
+        * * SQL Data Type: nvarchar(300)
+        * * Description: Venue display name.`),
+    VenueAddressID: z.string().nullable().describe(`
+        * * Field Name: VenueAddressID
+        * * Display Name: Venue Address ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Address — the venue address.`),
+    Capacity: z.number().nullable().describe(`
+        * * Field Name: Capacity
+        * * Display Name: Capacity
+        * * SQL Data Type: int
+        * * Description: Maximum attendee count. NULL = uncapped.`),
+    RequiresAttendeeInfo: z.boolean().describe(`
+        * * Field Name: RequiresAttendeeInfo
+        * * Display Name: Requires Attendee Info
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Whether order lines for this event require attendee info (EventOrderLine).`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Order Line Dimensions
+ */
+export const mjBizAppsOrdersOrderLineDimensionSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderLineID: z.string().describe(`
+        * * Field Name: OrderLineID
+        * * Display Name: Order Line ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)`),
+    DimensionID: z.string().describe(`
+        * * Field Name: DimensionID
+        * * Display Name: Dimension ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to __mj_BizAppsAccounting.Dimension.`),
+    DimensionValueID: z.string().describe(`
+        * * Field Name: DimensionValueID
+        * * Display Name: Dimension Value ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to __mj_BizAppsAccounting.DimensionValue.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersOrderLineDimensionEntityType = z.infer<typeof mjBizAppsOrdersOrderLineDimensionSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Lines
  */
 export const mjBizAppsOrdersOrderLineSchema = z.object({
@@ -746,7 +960,7 @@ export const mjBizAppsOrdersPaymentSchema = z.object({
         * * Display Name: Payment Date
         * * SQL Data Type: date
         * * Description: Date the money moved (bank date, not entry date).`),
-    Method: z.union([z.literal('ACH'), z.literal('BankReturn'), z.literal('Cash'), z.literal('Chargeback'), z.literal('Check'), z.literal('CreditCard'), z.literal('InternalTransfer'), z.literal('Refund'), z.literal('Wire')]).describe(`
+    Method: z.union([z.literal('ACH'), z.literal('BankReturn'), z.literal('Cash'), z.literal('Chargeback'), z.literal('Check'), z.literal('CreditCard'), z.literal('GiftCard'), z.literal('InternalTransfer'), z.literal('Refund'), z.literal('Wire')]).describe(`
         * * Field Name: Method
         * * Display Name: Method
         * * SQL Data Type: nvarchar(20)
@@ -758,6 +972,7 @@ export const mjBizAppsOrdersPaymentSchema = z.object({
     *   * Chargeback
     *   * Check
     *   * CreditCard
+    *   * GiftCard
     *   * InternalTransfer
     *   * Refund
     *   * Wire
@@ -831,6 +1046,12 @@ export const mjBizAppsOrdersPaymentSchema = z.object({
         * * Display Name: Journal Entry ID
         * * SQL Data Type: uniqueidentifier
         * * Description: Soft reference (no FK) to the __mj_BizAppsAccounting.JournalEntry booked at capture. Never cleared or replaced once set (trigger).`),
+    StoredValueAccountID: z.string().nullable().describe(`
+        * * Field Name: StoredValueAccountID
+        * * Display Name: Stored Value Account ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Stored Value Accounts (vwStoredValueAccounts.ID)
+        * * Description: The stored-value account redeemed when Method = GiftCard (BO-D44).`),
     Description: z.string().nullable().describe(`
         * * Field Name: Description
         * * Display Name: Description
@@ -868,6 +1089,172 @@ export const mjBizAppsOrdersPaymentSchema = z.object({
 export type mjBizAppsOrdersPaymentEntityType = z.infer<typeof mjBizAppsOrdersPaymentSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Price Lists
+ */
+export const mjBizAppsOrdersPriceListSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    Code: z.string().describe(`
+        * * Field Name: Code
+        * * Display Name: Code
+        * * SQL Data Type: nvarchar(40)
+        * * Description: Stable machine code. Unique.`),
+    Name: z.string().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(200)
+        * * Description: Display name.`),
+    Segment: z.string().nullable().describe(`
+        * * Field Name: Segment
+        * * Display Name: Segment
+        * * SQL Data Type: nvarchar(40)
+        * * Description: Region / channel / customer-tier scope label.`),
+    EffectiveFrom: z.date().nullable().describe(`
+        * * Field Name: EffectiveFrom
+        * * Display Name: Effective From
+        * * SQL Data Type: date
+        * * Description: List validity start.`),
+    EffectiveTo: z.date().nullable().describe(`
+        * * Field Name: EffectiveTo
+        * * Display Name: Effective To
+        * * SQL Data Type: date
+        * * Description: List validity end.`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Whether this list participates in resolution.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersPriceListEntityType = z.infer<typeof mjBizAppsOrdersPriceListSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Price Tiers
+ */
+export const mjBizAppsOrdersPriceTierSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    ProductPriceID: z.string().describe(`
+        * * Field Name: ProductPriceID
+        * * Display Name: Product Price ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Prices (vwProductPrices.ID)`),
+    MinQuantity: z.number().describe(`
+        * * Field Name: MinQuantity
+        * * Display Name: Min Quantity
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Tier lower bound (inclusive).`),
+    MaxQuantity: z.number().nullable().describe(`
+        * * Field Name: MaxQuantity
+        * * Display Name: Max Quantity
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Tier upper bound. NULL = unbounded top tier.`),
+    Amount: z.number().describe(`
+        * * Field Name: Amount
+        * * Display Name: Amount
+        * * SQL Data Type: decimal(19, 4)
+        * * Description: Per-unit (or flat) price within this tier.`),
+    SortOrder: z.number().describe(`
+        * * Field Name: SortOrder
+        * * Display Name: Sort Order
+        * * SQL Data Type: int
+        * * Default Value: 0
+        * * Description: Display order of tiers.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersPriceTierEntityType = z.infer<typeof mjBizAppsOrdersPriceTierSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Product Bundle Items
+ */
+export const mjBizAppsOrdersProductBundleItemSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    BundleProductID: z.string().describe(`
+        * * Field Name: BundleProductID
+        * * Display Name: Bundle Product ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
+    ComponentProductID: z.string().describe(`
+        * * Field Name: ComponentProductID
+        * * Display Name: Component Product ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
+    Quantity: z.number().describe(`
+        * * Field Name: Quantity
+        * * Display Name: Quantity
+        * * SQL Data Type: decimal(18, 4)
+        * * Default Value: 1
+        * * Description: Quantity of the component per one bundle.`),
+    PricingMode: z.union([z.literal('Bundled'), z.literal('SumOfParts')]).describe(`
+        * * Field Name: PricingMode
+        * * Display Name: Pricing Mode
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Bundled
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Bundled
+    *   * SumOfParts
+        * * Description: Bundled (fixed bundle price, SSP-allocated) | SumOfParts (components price individually).`),
+    SortOrder: z.number().describe(`
+        * * Field Name: SortOrder
+        * * Display Name: Sort Order
+        * * SQL Data Type: int
+        * * Default Value: 0
+        * * Description: Display order of components within the bundle.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    BundleProduct: z.string().describe(`
+        * * Field Name: BundleProduct
+        * * Display Name: Bundle Product
+        * * SQL Data Type: nvarchar(200)`),
+    ComponentProduct: z.string().describe(`
+        * * Field Name: ComponentProduct
+        * * Display Name: Component Product
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersProductBundleItemEntityType = z.infer<typeof mjBizAppsOrdersProductBundleItemSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Product Categories
  */
 export const mjBizAppsOrdersProductCategorySchema = z.object({
@@ -876,6 +1263,11 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Display Name: ID
         * * SQL Data Type: uniqueidentifier
         * * Default Value: newsequentialid()`),
+    Code: z.string().nullable().describe(`
+        * * Field Name: Code
+        * * Display Name: Code
+        * * SQL Data Type: nvarchar(40)
+        * * Description: Stable machine code for the category. Unique when present.`),
     Name: z.string().describe(`
         * * Field Name: Name
         * * Display Name: Name
@@ -920,6 +1312,223 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
 export type mjBizAppsOrdersProductCategoryEntityType = z.infer<typeof mjBizAppsOrdersProductCategorySchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Product Entitlements
+ */
+export const mjBizAppsOrdersProductEntitlementSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    ProductID: z.string().describe(`
+        * * Field Name: ProductID
+        * * Display Name: Product ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
+    EntitlementType: z.union([z.literal('AccessLevel'), z.literal('Custom'), z.literal('Feature'), z.literal('ResourceQuantity')]).describe(`
+        * * Field Name: EntitlementType
+        * * Display Name: Entitlement Type
+        * * SQL Data Type: nvarchar(40)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AccessLevel
+    *   * Custom
+    *   * Feature
+    *   * ResourceQuantity
+        * * Description: Feature | AccessLevel | ResourceQuantity | Custom.`),
+    Code: z.string().describe(`
+        * * Field Name: Code
+        * * Display Name: Code
+        * * SQL Data Type: nvarchar(80)
+        * * Description: Machine key consumed by downstream apps (unique per product).`),
+    Name: z.string().nullable().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(200)
+        * * Description: Display name of the entitlement.`),
+    Quantity: z.number().nullable().describe(`
+        * * Field Name: Quantity
+        * * Display Name: Quantity
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Granted quantity for ResourceQuantity entitlements (e.g. 100 GB, 5 seats).`),
+    UnitOfMeasure: z.string().nullable().describe(`
+        * * Field Name: UnitOfMeasure
+        * * Display Name: Unit Of Measure
+        * * SQL Data Type: nvarchar(40)
+        * * Description: Unit for Quantity (GB, seats, hours, ...).`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Whether this entitlement is currently granted by new purchases.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Product: z.string().describe(`
+        * * Field Name: Product
+        * * Display Name: Product
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersProductEntitlementEntityType = z.infer<typeof mjBizAppsOrdersProductEntitlementSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Product Performance Obligations
+ */
+export const mjBizAppsOrdersProductPerformanceObligationSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    ProductID: z.string().describe(`
+        * * Field Name: ProductID
+        * * Display Name: Product ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
+    Name: z.string().nullable().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(200)
+        * * Description: Display name of the obligation.`),
+    RevenueRecognitionType: z.union([z.literal('Deferred'), z.literal('Immediate')]).describe(`
+        * * Field Name: RevenueRecognitionType
+        * * Display Name: Revenue Recognition Type
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Deferred
+    *   * Immediate
+        * * Description: Recognition pattern for THIS obligation (Immediate | Deferred), independent of siblings.`),
+    StandaloneSellingPrice: z.number().describe(`
+        * * Field Name: StandaloneSellingPrice
+        * * Display Name: Standalone Selling Price
+        * * SQL Data Type: decimal(19, 4)
+        * * Description: Standalone selling price used for relative-SSP allocation across obligations.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Product: z.string().describe(`
+        * * Field Name: Product
+        * * Display Name: Product
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersProductPerformanceObligationEntityType = z.infer<typeof mjBizAppsOrdersProductPerformanceObligationSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Product Prices
+ */
+export const mjBizAppsOrdersProductPriceSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    ProductID: z.string().describe(`
+        * * Field Name: ProductID
+        * * Display Name: Product ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
+    PriceListID: z.string().nullable().describe(`
+        * * Field Name: PriceListID
+        * * Display Name: Price List ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Price Lists (vwPriceLists.ID)`),
+    PricingModel: z.union([z.literal('Flat'), z.literal('Package'), z.literal('PerUnit'), z.literal('Tiered'), z.literal('Usage'), z.literal('Volume')]).describe(`
+        * * Field Name: PricingModel
+        * * Display Name: Pricing Model
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Flat
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Flat
+    *   * Package
+    *   * PerUnit
+    *   * Tiered
+    *   * Usage
+    *   * Volume
+        * * Description: Flat | PerUnit | Tiered | Volume | Package | Usage.`),
+    FeeType: z.union([z.literal('Overage'), z.literal('Recurring'), z.literal('Setup'), z.literal('Standard')]).describe(`
+        * * Field Name: FeeType
+        * * Display Name: Fee Type
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Standard
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Overage
+    *   * Recurring
+    *   * Setup
+    *   * Standard
+        * * Description: Standard | Setup | Recurring | Overage.`),
+    Amount: z.number().describe(`
+        * * Field Name: Amount
+        * * Display Name: Amount
+        * * SQL Data Type: decimal(19, 4)
+        * * Description: Base/flat amount; tier detail lives in PriceTier.`),
+    UnitOfMeasure: z.string().nullable().describe(`
+        * * Field Name: UnitOfMeasure
+        * * Display Name: Unit Of Measure
+        * * SQL Data Type: nvarchar(40)
+        * * Description: Pricing unit (each, month, hour, GB, seat, ...).`),
+    MinQuantity: z.number().nullable().describe(`
+        * * Field Name: MinQuantity
+        * * Display Name: Min Quantity
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Minimum quantity this price applies to.`),
+    MaxQuantity: z.number().nullable().describe(`
+        * * Field Name: MaxQuantity
+        * * Display Name: Max Quantity
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Maximum quantity this price applies to.`),
+    EffectiveFrom: z.date().describe(`
+        * * Field Name: EffectiveFrom
+        * * Display Name: Effective From
+        * * SQL Data Type: date
+        * * Description: Price validity start.`),
+    EffectiveTo: z.date().nullable().describe(`
+        * * Field Name: EffectiveTo
+        * * Display Name: Effective To
+        * * SQL Data Type: date
+        * * Description: Price validity end.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Product: z.string().describe(`
+        * * Field Name: Product
+        * * Display Name: Product
+        * * SQL Data Type: nvarchar(200)`),
+    PriceList: z.string().nullable().describe(`
+        * * Field Name: PriceList
+        * * Display Name: Price List
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersProductPriceEntityType = z.infer<typeof mjBizAppsOrdersProductPriceSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Product Types
  */
 export const mjBizAppsOrdersProductTypeSchema = z.object({
@@ -928,6 +1537,11 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * Display Name: ID
         * * SQL Data Type: uniqueidentifier
         * * Default Value: newsequentialid()`),
+    Code: z.string().nullable().describe(`
+        * * Field Name: Code
+        * * Display Name: Code
+        * * SQL Data Type: nvarchar(40)
+        * * Description: Stable machine code (Event, Membership, PhysicalGood, ...). Unique when present; seeded types carry codes.`),
     Name: z.string().describe(`
         * * Field Name: Name
         * * Display Name: Name
@@ -944,6 +1558,53 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * SQL Data Type: bit
         * * Default Value: 0
         * * Description: When 1, orders containing products of this type hold at Posted until a fulfiller marks every such line Fulfilled; when no line requires fulfillment the order auto-advances to Fulfilled.`),
+    DefaultRevenueRecognitionType: z.union([z.literal('Deferred'), z.literal('Immediate')]).nullable().describe(`
+        * * Field Name: DefaultRevenueRecognitionType
+        * * Display Name: Default Revenue Recognition Type
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Deferred
+    *   * Immediate
+        * * Description: Default recognition type stamped onto new products of this type (Immediate | Deferred).`),
+    DefaultIsTaxable: z.boolean().describe(`
+        * * Field Name: DefaultIsTaxable
+        * * Display Name: Default Is Taxable
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Default taxability stamped onto new products of this type.`),
+    IsBillableRecurring: z.boolean().describe(`
+        * * Field Name: IsBillableRecurring
+        * * Display Name: Is Billable Recurring
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: Whether products of this type bill on a recurring cadence (memberships, subscriptions, usage).`),
+    DefaultSubscriptionType: z.union([z.literal('Membership'), z.literal('None'), z.literal('Standard')]).describe(`
+        * * Field Name: DefaultSubscriptionType
+        * * Display Name: Default Subscription Type
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: None
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Membership
+    *   * None
+    *   * Standard
+        * * Description: None | Standard | Membership — the subscription semantics stamped onto new products of this type (BO-D40).`),
+    ProductExtensionEntity: z.string().nullable().describe(`
+        * * Field Name: ProductExtensionEntity
+        * * Display Name: Product Extension Entity
+        * * SQL Data Type: nvarchar(255)
+        * * Description: MJ entity name of the IsA Product-level extension for this type (e.g. MJ_BizApps_Orders: Event Products). NULL = no extension (BO-D37).`),
+    OrderLineExtensionEntity: z.string().nullable().describe(`
+        * * Field Name: OrderLineExtensionEntity
+        * * Display Name: Order Line Extension Entity
+        * * SQL Data Type: nvarchar(255)
+        * * Description: MJ entity name of the IsA OrderLine-level extension for this type (e.g. MJ_BizApps_Orders: Event Order Lines). NULL = no extension (BO-D37).`),
+    BehaviorClass: z.string().nullable().describe(`
+        * * Field Name: BehaviorClass
+        * * Display Name: Behavior Class
+        * * SQL Data Type: nvarchar(100)
+        * * Description: ClassFactory key of the ProductBehavior plugin for this type; Product.BehaviorClass overrides; default behavior otherwise (BO-D38).`),
     IsActive: z.boolean().describe(`
         * * Field Name: IsActive
         * * Display Name: Is Active
@@ -978,6 +1639,11 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Name
         * * SQL Data Type: nvarchar(200)
         * * Description: Display name of the product.`),
+    SKU: z.string().nullable().describe(`
+        * * Field Name: SKU
+        * * Display Name: SKU
+        * * SQL Data Type: nvarchar(80)
+        * * Description: Stock-keeping unit / product code. Unique when present.`),
     ProductTypeID: z.string().describe(`
         * * Field Name: ProductTypeID
         * * Display Name: Product Type ID
@@ -988,6 +1654,39 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Product Category ID
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Categories (vwProductCategories.ID)`),
+    OwningCompanyID: z.string().nullable().describe(`
+        * * Field Name: OwningCompanyID
+        * * Display Name: Owning Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+        * * Description: The subsidiary whose revenue this product accrues to. NULLABLE pending Robert's owning-company ruling (Q2 residue); GL routing is via GLAccountLink regardless (MOD-2/MOD-3).`),
+    Status: z.union([z.literal('Active'), z.literal('Discontinued'), z.literal('Draft'), z.literal('EOL')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Draft
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Discontinued
+    *   * Draft
+    *   * EOL
+        * * Description: Draft | Active | Discontinued | EOL — catalog lifecycle. Data-only until the catalog engine gates ordering on it.`),
+    SuccessorProductID: z.string().nullable().describe(`
+        * * Field Name: SuccessorProductID
+        * * Display Name: Successor Product ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
+    AvailableFrom: z.date().nullable().describe(`
+        * * Field Name: AvailableFrom
+        * * Display Name: Available From
+        * * SQL Data Type: date
+        * * Description: First date the product may be sold.`),
+    AvailableTo: z.date().nullable().describe(`
+        * * Field Name: AvailableTo
+        * * Display Name: Available To
+        * * SQL Data Type: date
+        * * Description: Last date the product may be sold.`),
     RevenueRecognitionType: z.union([z.literal('Deferred'), z.literal('Immediate')]).describe(`
         * * Field Name: RevenueRecognitionType
         * * Display Name: Revenue Recognition Type
@@ -1007,6 +1706,11 @@ export const mjBizAppsOrdersProductSchema = z.object({
     *   * ServicePeriod
     *   * SingleDate
         * * Description: For Deferred products: SingleDate (100 percent recognized on the event date) or ServicePeriod (spread over the line's service dates). Robert's two deferred shapes on their own axis (UPD-2).`),
+    StandaloneSellingPrice: z.number().nullable().describe(`
+        * * Field Name: StandaloneSellingPrice
+        * * Display Name: Standalone Selling Price
+        * * SQL Data Type: decimal(19, 4)
+        * * Description: Standalone selling price for ASC 606 bundle revenue allocation (BO-D35; fields now, allocation engine later).`),
     SubscriptionType: z.union([z.literal('Membership'), z.literal('None'), z.literal('Standard')]).describe(`
         * * Field Name: SubscriptionType
         * * Display Name: Subscription Type
@@ -1018,6 +1722,33 @@ export const mjBizAppsOrdersProductSchema = z.object({
     *   * None
     *   * Standard
         * * Description: None | Standard | Membership. Drives find-or-extend-or-create of a Subscription at order Confirm (BO-D40).`),
+    BehaviorClass: z.string().nullable().describe(`
+        * * Field Name: BehaviorClass
+        * * Display Name: Behavior Class
+        * * SQL Data Type: nvarchar(100)
+        * * Description: ClassFactory key of this product's ProductBehavior plugin; falls back to ProductType.BehaviorClass then the default (BO-D38).`),
+    DefaultBillingCycle: z.union([z.literal('Annual'), z.literal('Custom'), z.literal('Monthly'), z.literal('Quarterly')]).nullable().describe(`
+        * * Field Name: DefaultBillingCycle
+        * * Display Name: Default Billing Cycle
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Annual
+    *   * Custom
+    *   * Monthly
+    *   * Quarterly
+        * * Description: Default billing cycle for subscription-creating products (Monthly | Quarterly | Annual | Custom).`),
+    DefaultSubscriptionTermMonths: z.number().nullable().describe(`
+        * * Field Name: DefaultSubscriptionTermMonths
+        * * Display Name: Default Subscription Term Months
+        * * SQL Data Type: int
+        * * Description: Default subscription term in months.`),
+    IsTaxable: z.boolean().describe(`
+        * * Field Name: IsTaxable
+        * * Display Name: Is Taxable
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Whether this product is subject to tax (tax subsystem lands at O4).`),
     Description: z.string().nullable().describe(`
         * * Field Name: Description
         * * Display Name: Description
@@ -1047,6 +1778,18 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Field Name: ProductCategory
         * * Display Name: Product Category
         * * SQL Data Type: nvarchar(200)`),
+    OwningCompany: z.string().nullable().describe(`
+        * * Field Name: OwningCompany
+        * * Display Name: Owning Company
+        * * SQL Data Type: nvarchar(50)`),
+    SuccessorProduct: z.string().nullable().describe(`
+        * * Field Name: SuccessorProduct
+        * * Display Name: Successor Product
+        * * SQL Data Type: nvarchar(200)`),
+    RootSuccessorProductID: z.string().nullable().describe(`
+        * * Field Name: RootSuccessorProductID
+        * * Display Name: Root Successor Product ID
+        * * SQL Data Type: uniqueidentifier`),
 });
 
 export type mjBizAppsOrdersProductEntityType = z.infer<typeof mjBizAppsOrdersProductSchema>;
@@ -1175,6 +1918,151 @@ export const mjBizAppsOrdersRevenueRecognitionScheduleSchema = z.object({
 });
 
 export type mjBizAppsOrdersRevenueRecognitionScheduleEntityType = z.infer<typeof mjBizAppsOrdersRevenueRecognitionScheduleSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Stored Value Accounts
+ */
+export const mjBizAppsOrdersStoredValueAccountSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    Code: z.string().describe(`
+        * * Field Name: Code
+        * * Display Name: Code
+        * * SQL Data Type: nvarchar(60)
+        * * Description: The gift-card number / instrument code. Unique.`),
+    IssuingCompanyID: z.string().describe(`
+        * * Field Name: IssuingCompanyID
+        * * Display Name: Issuing Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)`),
+    InitialAmount: z.number().describe(`
+        * * Field Name: InitialAmount
+        * * Display Name: Initial Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Face value at issuance.`),
+    CurrentBalance: z.number().describe(`
+        * * Field Name: CurrentBalance
+        * * Display Name: Current Balance
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Current remaining balance (ledger-maintained via StoredValueTransaction).`),
+    Status: z.union([z.literal('Active'), z.literal('Depleted'), z.literal('Expired'), z.literal('Suspended'), z.literal('Voided')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Active
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Depleted
+    *   * Expired
+    *   * Suspended
+    *   * Voided
+        * * Description: Active | Depleted | Expired | Suspended | Voided.`),
+    IssuedFromOrderLineID: z.string().nullable().describe(`
+        * * Field Name: IssuedFromOrderLineID
+        * * Display Name: Issued From Order Line ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)`),
+    BeneficiaryPersonID: z.string().nullable().describe(`
+        * * Field Name: BeneficiaryPersonID
+        * * Display Name: Beneficiary Person ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Person — the card recipient.`),
+    BeneficiaryOrganizationID: z.string().nullable().describe(`
+        * * Field Name: BeneficiaryOrganizationID
+        * * Display Name: Beneficiary Organization ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Organization — the benefiting organization.`),
+    ExpiresAt: z.date().nullable().describe(`
+        * * Field Name: ExpiresAt
+        * * Display Name: Expires At
+        * * SQL Data Type: date
+        * * Description: Expiration date where legally permitted. NULL = never.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    IssuingCompany: z.string().describe(`
+        * * Field Name: IssuingCompany
+        * * Display Name: Issuing Company
+        * * SQL Data Type: nvarchar(50)`),
+});
+
+export type mjBizAppsOrdersStoredValueAccountEntityType = z.infer<typeof mjBizAppsOrdersStoredValueAccountSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Stored Value Transactions
+ */
+export const mjBizAppsOrdersStoredValueTransactionSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    StoredValueAccountID: z.string().describe(`
+        * * Field Name: StoredValueAccountID
+        * * Display Name: Stored Value Account ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Stored Value Accounts (vwStoredValueAccounts.ID)`),
+    TransactionType: z.union([z.literal('Adjust'), z.literal('Expire'), z.literal('Issue'), z.literal('Redeem'), z.literal('Refund')]).describe(`
+        * * Field Name: TransactionType
+        * * Display Name: Transaction Type
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Adjust
+    *   * Expire
+    *   * Issue
+    *   * Redeem
+    *   * Refund
+        * * Description: Issue | Redeem | Refund | Adjust | Expire.`),
+    Amount: z.number().describe(`
+        * * Field Name: Amount
+        * * Display Name: Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Signed amount (+issue/refund, -redeem/expire).`),
+    BalanceAfter: z.number().describe(`
+        * * Field Name: BalanceAfter
+        * * Display Name: Balance After
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Account balance after applying this transaction.`),
+    RelatedPaymentID: z.string().nullable().describe(`
+        * * Field Name: RelatedPaymentID
+        * * Display Name: Related Payment ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payments (vwPayments.ID)`),
+    RelatedOrderID: z.string().nullable().describe(`
+        * * Field Name: RelatedOrderID
+        * * Display Name: Related Order ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Orders (vwOrders.ID)`),
+    OccurredAt: z.date().describe(`
+        * * Field Name: OccurredAt
+        * * Display Name: Occurred At
+        * * SQL Data Type: datetimeoffset
+        * * Description: UTC timestamp of the transaction.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersStoredValueTransactionEntityType = z.infer<typeof mjBizAppsOrdersStoredValueTransactionSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Subscription Events
@@ -1682,6 +2570,569 @@ export class mjBizAppsOrdersCustomerPaymentMethodEntity extends BaseEntity<mjBiz
     */
     get PaymentProvider(): string {
         return this.Get('PaymentProvider');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Entitlement Grants - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: EntitlementGrant
+ * * Base View: vwEntitlementGrants
+ * * @description A granted entitlement instance created at Post / subscription activation (BO-D39), carrying the beneficiary (defaults to the buyer; a line may designate another). Downstream apps read grants to provision access.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Entitlement Grants')
+export class mjBizAppsOrdersEntitlementGrantEntity extends BaseEntity<mjBizAppsOrdersEntitlementGrantEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Entitlement Grants record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Entitlement Grants record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersEntitlementGrantEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: ProductEntitlementID
+    * * Display Name: Product Entitlement ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Entitlements (vwProductEntitlements.ID)
+    */
+    get ProductEntitlementID(): string {
+        return this.Get('ProductEntitlementID');
+    }
+    set ProductEntitlementID(value: string) {
+        this.Set('ProductEntitlementID', value);
+    }
+
+    /**
+    * * Field Name: OrderLineID
+    * * Display Name: Order Line ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    */
+    get OrderLineID(): string | null {
+        return this.Get('OrderLineID');
+    }
+    set OrderLineID(value: string | null) {
+        this.Set('OrderLineID', value);
+    }
+
+    /**
+    * * Field Name: SubscriptionID
+    * * Display Name: Subscription ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscriptions (vwSubscriptions.ID)
+    */
+    get SubscriptionID(): string | null {
+        return this.Get('SubscriptionID');
+    }
+    set SubscriptionID(value: string | null) {
+        this.Set('SubscriptionID', value);
+    }
+
+    /**
+    * * Field Name: BeneficiaryPersonID
+    * * Display Name: Beneficiary Person ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Person — the benefiting person (attendee, recipient, honoree).
+    */
+    get BeneficiaryPersonID(): string | null {
+        return this.Get('BeneficiaryPersonID');
+    }
+    set BeneficiaryPersonID(value: string | null) {
+        this.Set('BeneficiaryPersonID', value);
+    }
+
+    /**
+    * * Field Name: BeneficiaryOrganizationID
+    * * Display Name: Beneficiary Organization ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Organization — the benefiting organization.
+    */
+    get BeneficiaryOrganizationID(): string | null {
+        return this.Get('BeneficiaryOrganizationID');
+    }
+    set BeneficiaryOrganizationID(value: string | null) {
+        this.Set('BeneficiaryOrganizationID', value);
+    }
+
+    /**
+    * * Field Name: Quantity
+    * * Display Name: Quantity
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Granted quantity (defaults from the entitlement definition).
+    */
+    get Quantity(): number | null {
+        return this.Get('Quantity');
+    }
+    set Quantity(value: number | null) {
+        this.Set('Quantity', value);
+    }
+
+    /**
+    * * Field Name: ValidFrom
+    * * Display Name: Valid From
+    * * SQL Data Type: date
+    * * Description: Grant validity start.
+    */
+    get ValidFrom(): Date | null {
+        return this.Get('ValidFrom');
+    }
+    set ValidFrom(value: Date | null) {
+        this.Set('ValidFrom', value);
+    }
+
+    /**
+    * * Field Name: ValidTo
+    * * Display Name: Valid To
+    * * SQL Data Type: date
+    * * Description: Grant validity end.
+    */
+    get ValidTo(): Date | null {
+        return this.Get('ValidTo');
+    }
+    set ValidTo(value: Date | null) {
+        this.Set('ValidTo', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Active
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Expired
+    *   * Revoked
+    *   * Suspended
+    * * Description: Active | Suspended | Revoked | Expired.
+    */
+    get Status(): 'Active' | 'Expired' | 'Revoked' | 'Suspended' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Active' | 'Expired' | 'Revoked' | 'Suspended') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: ProvisionedAt
+    * * Display Name: Provisioned At
+    * * SQL Data Type: datetimeoffset
+    * * Description: UTC timestamp downstream provisioning completed (NULL until provisioned).
+    */
+    get ProvisionedAt(): Date | null {
+        return this.Get('ProvisionedAt');
+    }
+    set ProvisionedAt(value: Date | null) {
+        this.Set('ProvisionedAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ProductEntitlement
+    * * Display Name: Product Entitlement
+    * * SQL Data Type: nvarchar(200)
+    */
+    get ProductEntitlement(): string | null {
+        return this.Get('ProductEntitlement');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Event Order Lines - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: EventOrderLine
+ * * Base View: vwEventOrderLines
+ * * @description IsA Disjoint child of OrderLine (same UUID): per-line attendee detail; the attendee is typically the EntitlementGrant beneficiary (BO-D39).
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Event Order Lines')
+export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrdersEventOrderLineEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Event Order Lines record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Event Order Lines record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersEventOrderLineEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: AttendeeName
+    * * Display Name: Attendee Name
+    * * SQL Data Type: nvarchar(300)
+    * * Description: Attendee full name.
+    */
+    get AttendeeName(): string | null {
+        return this.Get('AttendeeName');
+    }
+    set AttendeeName(value: string | null) {
+        this.Set('AttendeeName', value);
+    }
+
+    /**
+    * * Field Name: AttendeeEmail
+    * * Display Name: Attendee Email
+    * * SQL Data Type: nvarchar(255)
+    * * Description: Attendee email.
+    */
+    get AttendeeEmail(): string | null {
+        return this.Get('AttendeeEmail');
+    }
+    set AttendeeEmail(value: string | null) {
+        this.Set('AttendeeEmail', value);
+    }
+
+    /**
+    * * Field Name: CheckInAt
+    * * Display Name: Check In At
+    * * SQL Data Type: datetimeoffset
+    * * Description: UTC timestamp the attendee checked in.
+    */
+    get CheckInAt(): Date | null {
+        return this.Get('CheckInAt');
+    }
+    set CheckInAt(value: Date | null) {
+        this.Set('CheckInAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Event Products - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: EventProduct
+ * * Base View: vwEventProducts
+ * * @description IsA Disjoint child of Product (same UUID): event-specific catalog fields (BO-D37). A product is at most one subtype.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Event Products')
+export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrdersEventProductEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Event Products record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Event Products record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersEventProductEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: EventStartsAt
+    * * Display Name: Event Starts At
+    * * SQL Data Type: datetimeoffset
+    * * Description: UTC start of the event (also the SingleDate recognition date for Deferred event products).
+    */
+    get EventStartsAt(): Date {
+        return this.Get('EventStartsAt');
+    }
+    set EventStartsAt(value: Date) {
+        this.Set('EventStartsAt', value);
+    }
+
+    /**
+    * * Field Name: EventEndsAt
+    * * Display Name: Event Ends At
+    * * SQL Data Type: datetimeoffset
+    * * Description: UTC end of the event.
+    */
+    get EventEndsAt(): Date | null {
+        return this.Get('EventEndsAt');
+    }
+    set EventEndsAt(value: Date | null) {
+        this.Set('EventEndsAt', value);
+    }
+
+    /**
+    * * Field Name: VenueName
+    * * Display Name: Venue Name
+    * * SQL Data Type: nvarchar(300)
+    * * Description: Venue display name.
+    */
+    get VenueName(): string | null {
+        return this.Get('VenueName');
+    }
+    set VenueName(value: string | null) {
+        this.Set('VenueName', value);
+    }
+
+    /**
+    * * Field Name: VenueAddressID
+    * * Display Name: Venue Address ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Address — the venue address.
+    */
+    get VenueAddressID(): string | null {
+        return this.Get('VenueAddressID');
+    }
+    set VenueAddressID(value: string | null) {
+        this.Set('VenueAddressID', value);
+    }
+
+    /**
+    * * Field Name: Capacity
+    * * Display Name: Capacity
+    * * SQL Data Type: int
+    * * Description: Maximum attendee count. NULL = uncapped.
+    */
+    get Capacity(): number | null {
+        return this.Get('Capacity');
+    }
+    set Capacity(value: number | null) {
+        this.Set('Capacity', value);
+    }
+
+    /**
+    * * Field Name: RequiresAttendeeInfo
+    * * Display Name: Requires Attendee Info
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Whether order lines for this event require attendee info (EventOrderLine).
+    */
+    get RequiresAttendeeInfo(): boolean {
+        return this.Get('RequiresAttendeeInfo');
+    }
+    set RequiresAttendeeInfo(value: boolean) {
+        this.Set('RequiresAttendeeInfo', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Order Line Dimensions - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OrderLineDimension
+ * * Base View: vwOrderLineDimensions
+ * * @description Analytical dimension tag on an order line (one value per dimension). Soft refs to __mj_BizAppsAccounting Dimension/DimensionValue; the booking draft propagates tags onto JE lines for batch-dimension detail.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Line Dimensions')
+export class mjBizAppsOrdersOrderLineDimensionEntity extends BaseEntity<mjBizAppsOrdersOrderLineDimensionEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Order Line Dimensions record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Line Dimensions record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOrderLineDimensionEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderLineID
+    * * Display Name: Order Line ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    */
+    get OrderLineID(): string {
+        return this.Get('OrderLineID');
+    }
+    set OrderLineID(value: string) {
+        this.Set('OrderLineID', value);
+    }
+
+    /**
+    * * Field Name: DimensionID
+    * * Display Name: Dimension ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to __mj_BizAppsAccounting.Dimension.
+    */
+    get DimensionID(): string {
+        return this.Get('DimensionID');
+    }
+    set DimensionID(value: string) {
+        this.Set('DimensionID', value);
+    }
+
+    /**
+    * * Field Name: DimensionValueID
+    * * Display Name: Dimension Value ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to __mj_BizAppsAccounting.DimensionValue.
+    */
+    get DimensionValueID(): string {
+        return this.Get('DimensionValueID');
+    }
+    set DimensionValueID(value: string) {
+        this.Set('DimensionValueID', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
     }
 }
 
@@ -3364,15 +4815,16 @@ export class mjBizAppsOrdersPaymentEntity extends BaseEntity<mjBizAppsOrdersPaym
     *   * Chargeback
     *   * Check
     *   * CreditCard
+    *   * GiftCard
     *   * InternalTransfer
     *   * Refund
     *   * Wire
     * * Description: CreditCard | ACH | Wire | Check | Cash | InternalTransfer | Refund | Chargeback | BankReturn. Reversal methods carry negative Amount.
     */
-    get Method(): 'ACH' | 'BankReturn' | 'Cash' | 'Chargeback' | 'Check' | 'CreditCard' | 'InternalTransfer' | 'Refund' | 'Wire' {
+    get Method(): 'ACH' | 'BankReturn' | 'Cash' | 'Chargeback' | 'Check' | 'CreditCard' | 'GiftCard' | 'InternalTransfer' | 'Refund' | 'Wire' {
         return this.Get('Method');
     }
-    set Method(value: 'ACH' | 'BankReturn' | 'Cash' | 'Chargeback' | 'Check' | 'CreditCard' | 'InternalTransfer' | 'Refund' | 'Wire') {
+    set Method(value: 'ACH' | 'BankReturn' | 'Cash' | 'Chargeback' | 'Check' | 'CreditCard' | 'GiftCard' | 'InternalTransfer' | 'Refund' | 'Wire') {
         this.Set('Method', value);
     }
 
@@ -3542,6 +4994,20 @@ export class mjBizAppsOrdersPaymentEntity extends BaseEntity<mjBizAppsOrdersPaym
     }
 
     /**
+    * * Field Name: StoredValueAccountID
+    * * Display Name: Stored Value Account ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Stored Value Accounts (vwStoredValueAccounts.ID)
+    * * Description: The stored-value account redeemed when Method = GiftCard (BO-D44).
+    */
+    get StoredValueAccountID(): string | null {
+        return this.Get('StoredValueAccountID');
+    }
+    set StoredValueAccountID(value: string | null) {
+        this.Set('StoredValueAccountID', value);
+    }
+
+    /**
     * * Field Name: Description
     * * Display Name: Description
     * * SQL Data Type: nvarchar(MAX)
@@ -3617,6 +5083,436 @@ export class mjBizAppsOrdersPaymentEntity extends BaseEntity<mjBizAppsOrdersPaym
 
 
 /**
+ * MJ_BizApps_Orders: Price Lists - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: PriceList
+ * * Base View: vwPriceLists
+ * * @description Pricing segmentation container (BO-D33): region/channel/customer-tier scope, effective-dated. Currency column deferred with FX (MOD-4).
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Price Lists')
+export class mjBizAppsOrdersPriceListEntity extends BaseEntity<mjBizAppsOrdersPriceListEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Price Lists record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Price Lists record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersPriceListEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: Code
+    * * Display Name: Code
+    * * SQL Data Type: nvarchar(40)
+    * * Description: Stable machine code. Unique.
+    */
+    get Code(): string {
+        return this.Get('Code');
+    }
+    set Code(value: string) {
+        this.Set('Code', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(200)
+    * * Description: Display name.
+    */
+    get Name(): string {
+        return this.Get('Name');
+    }
+    set Name(value: string) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: Segment
+    * * Display Name: Segment
+    * * SQL Data Type: nvarchar(40)
+    * * Description: Region / channel / customer-tier scope label.
+    */
+    get Segment(): string | null {
+        return this.Get('Segment');
+    }
+    set Segment(value: string | null) {
+        this.Set('Segment', value);
+    }
+
+    /**
+    * * Field Name: EffectiveFrom
+    * * Display Name: Effective From
+    * * SQL Data Type: date
+    * * Description: List validity start.
+    */
+    get EffectiveFrom(): Date | null {
+        return this.Get('EffectiveFrom');
+    }
+    set EffectiveFrom(value: Date | null) {
+        this.Set('EffectiveFrom', value);
+    }
+
+    /**
+    * * Field Name: EffectiveTo
+    * * Display Name: Effective To
+    * * SQL Data Type: date
+    * * Description: List validity end.
+    */
+    get EffectiveTo(): Date | null {
+        return this.Get('EffectiveTo');
+    }
+    set EffectiveTo(value: Date | null) {
+        this.Set('EffectiveTo', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Whether this list participates in resolution.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Price Tiers - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: PriceTier
+ * * Base View: vwPriceTiers
+ * * @description Volume/quantity break under a Tiered or Volume ProductPrice (BO-D33).
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Price Tiers')
+export class mjBizAppsOrdersPriceTierEntity extends BaseEntity<mjBizAppsOrdersPriceTierEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Price Tiers record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Price Tiers record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersPriceTierEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: ProductPriceID
+    * * Display Name: Product Price ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Prices (vwProductPrices.ID)
+    */
+    get ProductPriceID(): string {
+        return this.Get('ProductPriceID');
+    }
+    set ProductPriceID(value: string) {
+        this.Set('ProductPriceID', value);
+    }
+
+    /**
+    * * Field Name: MinQuantity
+    * * Display Name: Min Quantity
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Tier lower bound (inclusive).
+    */
+    get MinQuantity(): number {
+        return this.Get('MinQuantity');
+    }
+    set MinQuantity(value: number) {
+        this.Set('MinQuantity', value);
+    }
+
+    /**
+    * * Field Name: MaxQuantity
+    * * Display Name: Max Quantity
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Tier upper bound. NULL = unbounded top tier.
+    */
+    get MaxQuantity(): number | null {
+        return this.Get('MaxQuantity');
+    }
+    set MaxQuantity(value: number | null) {
+        this.Set('MaxQuantity', value);
+    }
+
+    /**
+    * * Field Name: Amount
+    * * Display Name: Amount
+    * * SQL Data Type: decimal(19, 4)
+    * * Description: Per-unit (or flat) price within this tier.
+    */
+    get Amount(): number {
+        return this.Get('Amount');
+    }
+    set Amount(value: number) {
+        this.Set('Amount', value);
+    }
+
+    /**
+    * * Field Name: SortOrder
+    * * Display Name: Sort Order
+    * * SQL Data Type: int
+    * * Default Value: 0
+    * * Description: Display order of tiers.
+    */
+    get SortOrder(): number {
+        return this.Get('SortOrder');
+    }
+    set SortOrder(value: number) {
+        this.Set('SortOrder', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Product Bundle Items - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ProductBundleItem
+ * * Base View: vwProductBundleItems
+ * * @description Component membership of a bundle product (BO-D32/D41): one structure powering bundle-line ordering and fast-path expansion.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Product Bundle Items')
+export class mjBizAppsOrdersProductBundleItemEntity extends BaseEntity<mjBizAppsOrdersProductBundleItemEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Product Bundle Items record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Product Bundle Items record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersProductBundleItemEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: BundleProductID
+    * * Display Name: Bundle Product ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    */
+    get BundleProductID(): string {
+        return this.Get('BundleProductID');
+    }
+    set BundleProductID(value: string) {
+        this.Set('BundleProductID', value);
+    }
+
+    /**
+    * * Field Name: ComponentProductID
+    * * Display Name: Component Product ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    */
+    get ComponentProductID(): string {
+        return this.Get('ComponentProductID');
+    }
+    set ComponentProductID(value: string) {
+        this.Set('ComponentProductID', value);
+    }
+
+    /**
+    * * Field Name: Quantity
+    * * Display Name: Quantity
+    * * SQL Data Type: decimal(18, 4)
+    * * Default Value: 1
+    * * Description: Quantity of the component per one bundle.
+    */
+    get Quantity(): number {
+        return this.Get('Quantity');
+    }
+    set Quantity(value: number) {
+        this.Set('Quantity', value);
+    }
+
+    /**
+    * * Field Name: PricingMode
+    * * Display Name: Pricing Mode
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Bundled
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Bundled
+    *   * SumOfParts
+    * * Description: Bundled (fixed bundle price, SSP-allocated) | SumOfParts (components price individually).
+    */
+    get PricingMode(): 'Bundled' | 'SumOfParts' {
+        return this.Get('PricingMode');
+    }
+    set PricingMode(value: 'Bundled' | 'SumOfParts') {
+        this.Set('PricingMode', value);
+    }
+
+    /**
+    * * Field Name: SortOrder
+    * * Display Name: Sort Order
+    * * SQL Data Type: int
+    * * Default Value: 0
+    * * Description: Display order of components within the bundle.
+    */
+    get SortOrder(): number {
+        return this.Get('SortOrder');
+    }
+    set SortOrder(value: number) {
+        this.Set('SortOrder', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: BundleProduct
+    * * Display Name: Bundle Product
+    * * SQL Data Type: nvarchar(200)
+    */
+    get BundleProduct(): string {
+        return this.Get('BundleProduct');
+    }
+
+    /**
+    * * Field Name: ComponentProduct
+    * * Display Name: Component Product
+    * * SQL Data Type: nvarchar(200)
+    */
+    get ComponentProduct(): string {
+        return this.Get('ComponentProduct');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Product Categories - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: ProductCategory
@@ -3657,6 +5553,19 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
     }
     set ID(value: string) {
         this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: Code
+    * * Display Name: Code
+    * * SQL Data Type: nvarchar(40)
+    * * Description: Stable machine code for the category. Unique when present.
+    */
+    get Code(): string | null {
+        return this.Get('Code');
+    }
+    set Code(value: string | null) {
+        this.Set('Code', value);
     }
 
     /**
@@ -3753,6 +5662,537 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
 
 
 /**
+ * MJ_BizApps_Orders: Product Entitlements - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ProductEntitlement
+ * * Base View: vwProductEntitlements
+ * * @description The DEFINITION of what purchasing a product grants (BO-D34): feature, access level, or resource quantity. EntitlementGrant is the per-purchase instance.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Product Entitlements')
+export class mjBizAppsOrdersProductEntitlementEntity extends BaseEntity<mjBizAppsOrdersProductEntitlementEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Product Entitlements record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Product Entitlements record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersProductEntitlementEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: ProductID
+    * * Display Name: Product ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    */
+    get ProductID(): string {
+        return this.Get('ProductID');
+    }
+    set ProductID(value: string) {
+        this.Set('ProductID', value);
+    }
+
+    /**
+    * * Field Name: EntitlementType
+    * * Display Name: Entitlement Type
+    * * SQL Data Type: nvarchar(40)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * AccessLevel
+    *   * Custom
+    *   * Feature
+    *   * ResourceQuantity
+    * * Description: Feature | AccessLevel | ResourceQuantity | Custom.
+    */
+    get EntitlementType(): 'AccessLevel' | 'Custom' | 'Feature' | 'ResourceQuantity' {
+        return this.Get('EntitlementType');
+    }
+    set EntitlementType(value: 'AccessLevel' | 'Custom' | 'Feature' | 'ResourceQuantity') {
+        this.Set('EntitlementType', value);
+    }
+
+    /**
+    * * Field Name: Code
+    * * Display Name: Code
+    * * SQL Data Type: nvarchar(80)
+    * * Description: Machine key consumed by downstream apps (unique per product).
+    */
+    get Code(): string {
+        return this.Get('Code');
+    }
+    set Code(value: string) {
+        this.Set('Code', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(200)
+    * * Description: Display name of the entitlement.
+    */
+    get Name(): string | null {
+        return this.Get('Name');
+    }
+    set Name(value: string | null) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: Quantity
+    * * Display Name: Quantity
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Granted quantity for ResourceQuantity entitlements (e.g. 100 GB, 5 seats).
+    */
+    get Quantity(): number | null {
+        return this.Get('Quantity');
+    }
+    set Quantity(value: number | null) {
+        this.Set('Quantity', value);
+    }
+
+    /**
+    * * Field Name: UnitOfMeasure
+    * * Display Name: Unit Of Measure
+    * * SQL Data Type: nvarchar(40)
+    * * Description: Unit for Quantity (GB, seats, hours, ...).
+    */
+    get UnitOfMeasure(): string | null {
+        return this.Get('UnitOfMeasure');
+    }
+    set UnitOfMeasure(value: string | null) {
+        this.Set('UnitOfMeasure', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Whether this entitlement is currently granted by new purchases.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Product
+    * * Display Name: Product
+    * * SQL Data Type: nvarchar(200)
+    */
+    get Product(): string {
+        return this.Get('Product');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Product Performance Obligations - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ProductPerformanceObligation
+ * * Base View: vwProductPerformanceObligations
+ * * @description ASC 606 performance obligation (BO-D35): one or more per product; SSP drives bundle allocation. Fields now; the allocation engine is deferred. GL routing via GLAccountLink (MOD-2).
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Product Performance Obligations')
+export class mjBizAppsOrdersProductPerformanceObligationEntity extends BaseEntity<mjBizAppsOrdersProductPerformanceObligationEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Product Performance Obligations record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Product Performance Obligations record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersProductPerformanceObligationEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: ProductID
+    * * Display Name: Product ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    */
+    get ProductID(): string {
+        return this.Get('ProductID');
+    }
+    set ProductID(value: string) {
+        this.Set('ProductID', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(200)
+    * * Description: Display name of the obligation.
+    */
+    get Name(): string | null {
+        return this.Get('Name');
+    }
+    set Name(value: string | null) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: RevenueRecognitionType
+    * * Display Name: Revenue Recognition Type
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Deferred
+    *   * Immediate
+    * * Description: Recognition pattern for THIS obligation (Immediate | Deferred), independent of siblings.
+    */
+    get RevenueRecognitionType(): 'Deferred' | 'Immediate' {
+        return this.Get('RevenueRecognitionType');
+    }
+    set RevenueRecognitionType(value: 'Deferred' | 'Immediate') {
+        this.Set('RevenueRecognitionType', value);
+    }
+
+    /**
+    * * Field Name: StandaloneSellingPrice
+    * * Display Name: Standalone Selling Price
+    * * SQL Data Type: decimal(19, 4)
+    * * Description: Standalone selling price used for relative-SSP allocation across obligations.
+    */
+    get StandaloneSellingPrice(): number {
+        return this.Get('StandaloneSellingPrice');
+    }
+    set StandaloneSellingPrice(value: number) {
+        this.Set('StandaloneSellingPrice', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Product
+    * * Display Name: Product
+    * * SQL Data Type: nvarchar(200)
+    */
+    get Product(): string {
+        return this.Get('Product');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Product Prices - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ProductPrice
+ * * Base View: vwProductPrices
+ * * @description An effective-dated price for a product (BO-D33). Resolution engine = feature F9; direct UnitPrice entry remains the precedence base so order entry never blocks.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Product Prices')
+export class mjBizAppsOrdersProductPriceEntity extends BaseEntity<mjBizAppsOrdersProductPriceEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Product Prices record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Product Prices record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersProductPriceEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: ProductID
+    * * Display Name: Product ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    */
+    get ProductID(): string {
+        return this.Get('ProductID');
+    }
+    set ProductID(value: string) {
+        this.Set('ProductID', value);
+    }
+
+    /**
+    * * Field Name: PriceListID
+    * * Display Name: Price List ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Price Lists (vwPriceLists.ID)
+    */
+    get PriceListID(): string | null {
+        return this.Get('PriceListID');
+    }
+    set PriceListID(value: string | null) {
+        this.Set('PriceListID', value);
+    }
+
+    /**
+    * * Field Name: PricingModel
+    * * Display Name: Pricing Model
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Flat
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Flat
+    *   * Package
+    *   * PerUnit
+    *   * Tiered
+    *   * Usage
+    *   * Volume
+    * * Description: Flat | PerUnit | Tiered | Volume | Package | Usage.
+    */
+    get PricingModel(): 'Flat' | 'Package' | 'PerUnit' | 'Tiered' | 'Usage' | 'Volume' {
+        return this.Get('PricingModel');
+    }
+    set PricingModel(value: 'Flat' | 'Package' | 'PerUnit' | 'Tiered' | 'Usage' | 'Volume') {
+        this.Set('PricingModel', value);
+    }
+
+    /**
+    * * Field Name: FeeType
+    * * Display Name: Fee Type
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Standard
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Overage
+    *   * Recurring
+    *   * Setup
+    *   * Standard
+    * * Description: Standard | Setup | Recurring | Overage.
+    */
+    get FeeType(): 'Overage' | 'Recurring' | 'Setup' | 'Standard' {
+        return this.Get('FeeType');
+    }
+    set FeeType(value: 'Overage' | 'Recurring' | 'Setup' | 'Standard') {
+        this.Set('FeeType', value);
+    }
+
+    /**
+    * * Field Name: Amount
+    * * Display Name: Amount
+    * * SQL Data Type: decimal(19, 4)
+    * * Description: Base/flat amount; tier detail lives in PriceTier.
+    */
+    get Amount(): number {
+        return this.Get('Amount');
+    }
+    set Amount(value: number) {
+        this.Set('Amount', value);
+    }
+
+    /**
+    * * Field Name: UnitOfMeasure
+    * * Display Name: Unit Of Measure
+    * * SQL Data Type: nvarchar(40)
+    * * Description: Pricing unit (each, month, hour, GB, seat, ...).
+    */
+    get UnitOfMeasure(): string | null {
+        return this.Get('UnitOfMeasure');
+    }
+    set UnitOfMeasure(value: string | null) {
+        this.Set('UnitOfMeasure', value);
+    }
+
+    /**
+    * * Field Name: MinQuantity
+    * * Display Name: Min Quantity
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Minimum quantity this price applies to.
+    */
+    get MinQuantity(): number | null {
+        return this.Get('MinQuantity');
+    }
+    set MinQuantity(value: number | null) {
+        this.Set('MinQuantity', value);
+    }
+
+    /**
+    * * Field Name: MaxQuantity
+    * * Display Name: Max Quantity
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Maximum quantity this price applies to.
+    */
+    get MaxQuantity(): number | null {
+        return this.Get('MaxQuantity');
+    }
+    set MaxQuantity(value: number | null) {
+        this.Set('MaxQuantity', value);
+    }
+
+    /**
+    * * Field Name: EffectiveFrom
+    * * Display Name: Effective From
+    * * SQL Data Type: date
+    * * Description: Price validity start.
+    */
+    get EffectiveFrom(): Date {
+        return this.Get('EffectiveFrom');
+    }
+    set EffectiveFrom(value: Date) {
+        this.Set('EffectiveFrom', value);
+    }
+
+    /**
+    * * Field Name: EffectiveTo
+    * * Display Name: Effective To
+    * * SQL Data Type: date
+    * * Description: Price validity end.
+    */
+    get EffectiveTo(): Date | null {
+        return this.Get('EffectiveTo');
+    }
+    set EffectiveTo(value: Date | null) {
+        this.Set('EffectiveTo', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Product
+    * * Display Name: Product
+    * * SQL Data Type: nvarchar(200)
+    */
+    get Product(): string {
+        return this.Get('Product');
+    }
+
+    /**
+    * * Field Name: PriceList
+    * * Display Name: Price List
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PriceList(): string | null {
+        return this.Get('PriceList');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Product Types - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: ProductType
@@ -3796,6 +6236,19 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: Code
+    * * Display Name: Code
+    * * SQL Data Type: nvarchar(40)
+    * * Description: Stable machine code (Event, Membership, PhysicalGood, ...). Unique when present; seeded types carry codes.
+    */
+    get Code(): string | null {
+        return this.Get('Code');
+    }
+    set Code(value: string | null) {
+        this.Set('Code', value);
+    }
+
+    /**
     * * Field Name: Name
     * * Display Name: Name
     * * SQL Data Type: nvarchar(100)
@@ -3833,6 +6286,109 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     }
     set RequiresFulfillment(value: boolean) {
         this.Set('RequiresFulfillment', value);
+    }
+
+    /**
+    * * Field Name: DefaultRevenueRecognitionType
+    * * Display Name: Default Revenue Recognition Type
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Deferred
+    *   * Immediate
+    * * Description: Default recognition type stamped onto new products of this type (Immediate | Deferred).
+    */
+    get DefaultRevenueRecognitionType(): 'Deferred' | 'Immediate' | null {
+        return this.Get('DefaultRevenueRecognitionType');
+    }
+    set DefaultRevenueRecognitionType(value: 'Deferred' | 'Immediate' | null) {
+        this.Set('DefaultRevenueRecognitionType', value);
+    }
+
+    /**
+    * * Field Name: DefaultIsTaxable
+    * * Display Name: Default Is Taxable
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Default taxability stamped onto new products of this type.
+    */
+    get DefaultIsTaxable(): boolean {
+        return this.Get('DefaultIsTaxable');
+    }
+    set DefaultIsTaxable(value: boolean) {
+        this.Set('DefaultIsTaxable', value);
+    }
+
+    /**
+    * * Field Name: IsBillableRecurring
+    * * Display Name: Is Billable Recurring
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: Whether products of this type bill on a recurring cadence (memberships, subscriptions, usage).
+    */
+    get IsBillableRecurring(): boolean {
+        return this.Get('IsBillableRecurring');
+    }
+    set IsBillableRecurring(value: boolean) {
+        this.Set('IsBillableRecurring', value);
+    }
+
+    /**
+    * * Field Name: DefaultSubscriptionType
+    * * Display Name: Default Subscription Type
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: None
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Membership
+    *   * None
+    *   * Standard
+    * * Description: None | Standard | Membership — the subscription semantics stamped onto new products of this type (BO-D40).
+    */
+    get DefaultSubscriptionType(): 'Membership' | 'None' | 'Standard' {
+        return this.Get('DefaultSubscriptionType');
+    }
+    set DefaultSubscriptionType(value: 'Membership' | 'None' | 'Standard') {
+        this.Set('DefaultSubscriptionType', value);
+    }
+
+    /**
+    * * Field Name: ProductExtensionEntity
+    * * Display Name: Product Extension Entity
+    * * SQL Data Type: nvarchar(255)
+    * * Description: MJ entity name of the IsA Product-level extension for this type (e.g. MJ_BizApps_Orders: Event Products). NULL = no extension (BO-D37).
+    */
+    get ProductExtensionEntity(): string | null {
+        return this.Get('ProductExtensionEntity');
+    }
+    set ProductExtensionEntity(value: string | null) {
+        this.Set('ProductExtensionEntity', value);
+    }
+
+    /**
+    * * Field Name: OrderLineExtensionEntity
+    * * Display Name: Order Line Extension Entity
+    * * SQL Data Type: nvarchar(255)
+    * * Description: MJ entity name of the IsA OrderLine-level extension for this type (e.g. MJ_BizApps_Orders: Event Order Lines). NULL = no extension (BO-D37).
+    */
+    get OrderLineExtensionEntity(): string | null {
+        return this.Get('OrderLineExtensionEntity');
+    }
+    set OrderLineExtensionEntity(value: string | null) {
+        this.Set('OrderLineExtensionEntity', value);
+    }
+
+    /**
+    * * Field Name: BehaviorClass
+    * * Display Name: Behavior Class
+    * * SQL Data Type: nvarchar(100)
+    * * Description: ClassFactory key of the ProductBehavior plugin for this type; Product.BehaviorClass overrides; default behavior otherwise (BO-D38).
+    */
+    get BehaviorClass(): string | null {
+        return this.Get('BehaviorClass');
+    }
+    set BehaviorClass(value: string | null) {
+        this.Set('BehaviorClass', value);
     }
 
     /**
@@ -3928,6 +6484,19 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
 
     /**
+    * * Field Name: SKU
+    * * Display Name: SKU
+    * * SQL Data Type: nvarchar(80)
+    * * Description: Stock-keeping unit / product code. Unique when present.
+    */
+    get SKU(): string | null {
+        return this.Get('SKU');
+    }
+    set SKU(value: string | null) {
+        this.Set('SKU', value);
+    }
+
+    /**
     * * Field Name: ProductTypeID
     * * Display Name: Product Type ID
     * * SQL Data Type: uniqueidentifier
@@ -3951,6 +6520,79 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
     set ProductCategoryID(value: string | null) {
         this.Set('ProductCategoryID', value);
+    }
+
+    /**
+    * * Field Name: OwningCompanyID
+    * * Display Name: Owning Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    * * Description: The subsidiary whose revenue this product accrues to. NULLABLE pending Robert's owning-company ruling (Q2 residue); GL routing is via GLAccountLink regardless (MOD-2/MOD-3).
+    */
+    get OwningCompanyID(): string | null {
+        return this.Get('OwningCompanyID');
+    }
+    set OwningCompanyID(value: string | null) {
+        this.Set('OwningCompanyID', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Draft
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Discontinued
+    *   * Draft
+    *   * EOL
+    * * Description: Draft | Active | Discontinued | EOL — catalog lifecycle. Data-only until the catalog engine gates ordering on it.
+    */
+    get Status(): 'Active' | 'Discontinued' | 'Draft' | 'EOL' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Active' | 'Discontinued' | 'Draft' | 'EOL') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: SuccessorProductID
+    * * Display Name: Successor Product ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    */
+    get SuccessorProductID(): string | null {
+        return this.Get('SuccessorProductID');
+    }
+    set SuccessorProductID(value: string | null) {
+        this.Set('SuccessorProductID', value);
+    }
+
+    /**
+    * * Field Name: AvailableFrom
+    * * Display Name: Available From
+    * * SQL Data Type: date
+    * * Description: First date the product may be sold.
+    */
+    get AvailableFrom(): Date | null {
+        return this.Get('AvailableFrom');
+    }
+    set AvailableFrom(value: Date | null) {
+        this.Set('AvailableFrom', value);
+    }
+
+    /**
+    * * Field Name: AvailableTo
+    * * Display Name: Available To
+    * * SQL Data Type: date
+    * * Description: Last date the product may be sold.
+    */
+    get AvailableTo(): Date | null {
+        return this.Get('AvailableTo');
+    }
+    set AvailableTo(value: Date | null) {
+        this.Set('AvailableTo', value);
     }
 
     /**
@@ -3989,6 +6631,19 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
 
     /**
+    * * Field Name: StandaloneSellingPrice
+    * * Display Name: Standalone Selling Price
+    * * SQL Data Type: decimal(19, 4)
+    * * Description: Standalone selling price for ASC 606 bundle revenue allocation (BO-D35; fields now, allocation engine later).
+    */
+    get StandaloneSellingPrice(): number | null {
+        return this.Get('StandaloneSellingPrice');
+    }
+    set StandaloneSellingPrice(value: number | null) {
+        this.Set('StandaloneSellingPrice', value);
+    }
+
+    /**
     * * Field Name: SubscriptionType
     * * Display Name: Subscription Type
     * * SQL Data Type: nvarchar(20)
@@ -4005,6 +6660,65 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
     set SubscriptionType(value: 'Membership' | 'None' | 'Standard') {
         this.Set('SubscriptionType', value);
+    }
+
+    /**
+    * * Field Name: BehaviorClass
+    * * Display Name: Behavior Class
+    * * SQL Data Type: nvarchar(100)
+    * * Description: ClassFactory key of this product's ProductBehavior plugin; falls back to ProductType.BehaviorClass then the default (BO-D38).
+    */
+    get BehaviorClass(): string | null {
+        return this.Get('BehaviorClass');
+    }
+    set BehaviorClass(value: string | null) {
+        this.Set('BehaviorClass', value);
+    }
+
+    /**
+    * * Field Name: DefaultBillingCycle
+    * * Display Name: Default Billing Cycle
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Annual
+    *   * Custom
+    *   * Monthly
+    *   * Quarterly
+    * * Description: Default billing cycle for subscription-creating products (Monthly | Quarterly | Annual | Custom).
+    */
+    get DefaultBillingCycle(): 'Annual' | 'Custom' | 'Monthly' | 'Quarterly' | null {
+        return this.Get('DefaultBillingCycle');
+    }
+    set DefaultBillingCycle(value: 'Annual' | 'Custom' | 'Monthly' | 'Quarterly' | null) {
+        this.Set('DefaultBillingCycle', value);
+    }
+
+    /**
+    * * Field Name: DefaultSubscriptionTermMonths
+    * * Display Name: Default Subscription Term Months
+    * * SQL Data Type: int
+    * * Description: Default subscription term in months.
+    */
+    get DefaultSubscriptionTermMonths(): number | null {
+        return this.Get('DefaultSubscriptionTermMonths');
+    }
+    set DefaultSubscriptionTermMonths(value: number | null) {
+        this.Set('DefaultSubscriptionTermMonths', value);
+    }
+
+    /**
+    * * Field Name: IsTaxable
+    * * Display Name: Is Taxable
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Whether this product is subject to tax (tax subsystem lands at O4).
+    */
+    get IsTaxable(): boolean {
+        return this.Get('IsTaxable');
+    }
+    set IsTaxable(value: boolean) {
+        this.Set('IsTaxable', value);
     }
 
     /**
@@ -4070,6 +6784,33 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     */
     get ProductCategory(): string | null {
         return this.Get('ProductCategory');
+    }
+
+    /**
+    * * Field Name: OwningCompany
+    * * Display Name: Owning Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get OwningCompany(): string | null {
+        return this.Get('OwningCompany');
+    }
+
+    /**
+    * * Field Name: SuccessorProduct
+    * * Display Name: Successor Product
+    * * SQL Data Type: nvarchar(200)
+    */
+    get SuccessorProduct(): string | null {
+        return this.Get('SuccessorProduct');
+    }
+
+    /**
+    * * Field Name: RootSuccessorProductID
+    * * Display Name: Root Successor Product ID
+    * * SQL Data Type: uniqueidentifier
+    */
+    get RootSuccessorProductID(): string | null {
+        return this.Get('RootSuccessorProductID');
     }
 }
 
@@ -4371,6 +7112,368 @@ export class mjBizAppsOrdersRevenueRecognitionScheduleEntity extends BaseEntity<
     }
     set IsComplete(value: boolean) {
         this.Set('IsComplete', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Stored Value Accounts - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: StoredValueAccount
+ * * Base View: vwStoredValueAccounts
+ * * @description Gift-card / stored-value instrument (BO-D44). Selling one books a LIABILITY (not revenue); redemption is a Payment with Method=GiftCard relieving the liability.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Stored Value Accounts')
+export class mjBizAppsOrdersStoredValueAccountEntity extends BaseEntity<mjBizAppsOrdersStoredValueAccountEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Stored Value Accounts record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Stored Value Accounts record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersStoredValueAccountEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: Code
+    * * Display Name: Code
+    * * SQL Data Type: nvarchar(60)
+    * * Description: The gift-card number / instrument code. Unique.
+    */
+    get Code(): string {
+        return this.Get('Code');
+    }
+    set Code(value: string) {
+        this.Set('Code', value);
+    }
+
+    /**
+    * * Field Name: IssuingCompanyID
+    * * Display Name: Issuing Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    */
+    get IssuingCompanyID(): string {
+        return this.Get('IssuingCompanyID');
+    }
+    set IssuingCompanyID(value: string) {
+        this.Set('IssuingCompanyID', value);
+    }
+
+    /**
+    * * Field Name: InitialAmount
+    * * Display Name: Initial Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Face value at issuance.
+    */
+    get InitialAmount(): number {
+        return this.Get('InitialAmount');
+    }
+    set InitialAmount(value: number) {
+        this.Set('InitialAmount', value);
+    }
+
+    /**
+    * * Field Name: CurrentBalance
+    * * Display Name: Current Balance
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Current remaining balance (ledger-maintained via StoredValueTransaction).
+    */
+    get CurrentBalance(): number {
+        return this.Get('CurrentBalance');
+    }
+    set CurrentBalance(value: number) {
+        this.Set('CurrentBalance', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Active
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Depleted
+    *   * Expired
+    *   * Suspended
+    *   * Voided
+    * * Description: Active | Depleted | Expired | Suspended | Voided.
+    */
+    get Status(): 'Active' | 'Depleted' | 'Expired' | 'Suspended' | 'Voided' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Active' | 'Depleted' | 'Expired' | 'Suspended' | 'Voided') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: IssuedFromOrderLineID
+    * * Display Name: Issued From Order Line ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    */
+    get IssuedFromOrderLineID(): string | null {
+        return this.Get('IssuedFromOrderLineID');
+    }
+    set IssuedFromOrderLineID(value: string | null) {
+        this.Set('IssuedFromOrderLineID', value);
+    }
+
+    /**
+    * * Field Name: BeneficiaryPersonID
+    * * Display Name: Beneficiary Person ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Person — the card recipient.
+    */
+    get BeneficiaryPersonID(): string | null {
+        return this.Get('BeneficiaryPersonID');
+    }
+    set BeneficiaryPersonID(value: string | null) {
+        this.Set('BeneficiaryPersonID', value);
+    }
+
+    /**
+    * * Field Name: BeneficiaryOrganizationID
+    * * Display Name: Beneficiary Organization ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Organization — the benefiting organization.
+    */
+    get BeneficiaryOrganizationID(): string | null {
+        return this.Get('BeneficiaryOrganizationID');
+    }
+    set BeneficiaryOrganizationID(value: string | null) {
+        this.Set('BeneficiaryOrganizationID', value);
+    }
+
+    /**
+    * * Field Name: ExpiresAt
+    * * Display Name: Expires At
+    * * SQL Data Type: date
+    * * Description: Expiration date where legally permitted. NULL = never.
+    */
+    get ExpiresAt(): Date | null {
+        return this.Get('ExpiresAt');
+    }
+    set ExpiresAt(value: Date | null) {
+        this.Set('ExpiresAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: IssuingCompany
+    * * Display Name: Issuing Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get IssuingCompany(): string {
+        return this.Get('IssuingCompany');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Stored Value Transactions - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: StoredValueTransaction
+ * * Base View: vwStoredValueTransactions
+ * * @description Stored-value balance ledger (BO-D44): every issue/redeem/refund/adjust/expire with the running balance.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Stored Value Transactions')
+export class mjBizAppsOrdersStoredValueTransactionEntity extends BaseEntity<mjBizAppsOrdersStoredValueTransactionEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Stored Value Transactions record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Stored Value Transactions record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersStoredValueTransactionEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: StoredValueAccountID
+    * * Display Name: Stored Value Account ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Stored Value Accounts (vwStoredValueAccounts.ID)
+    */
+    get StoredValueAccountID(): string {
+        return this.Get('StoredValueAccountID');
+    }
+    set StoredValueAccountID(value: string) {
+        this.Set('StoredValueAccountID', value);
+    }
+
+    /**
+    * * Field Name: TransactionType
+    * * Display Name: Transaction Type
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Adjust
+    *   * Expire
+    *   * Issue
+    *   * Redeem
+    *   * Refund
+    * * Description: Issue | Redeem | Refund | Adjust | Expire.
+    */
+    get TransactionType(): 'Adjust' | 'Expire' | 'Issue' | 'Redeem' | 'Refund' {
+        return this.Get('TransactionType');
+    }
+    set TransactionType(value: 'Adjust' | 'Expire' | 'Issue' | 'Redeem' | 'Refund') {
+        this.Set('TransactionType', value);
+    }
+
+    /**
+    * * Field Name: Amount
+    * * Display Name: Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Signed amount (+issue/refund, -redeem/expire).
+    */
+    get Amount(): number {
+        return this.Get('Amount');
+    }
+    set Amount(value: number) {
+        this.Set('Amount', value);
+    }
+
+    /**
+    * * Field Name: BalanceAfter
+    * * Display Name: Balance After
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Account balance after applying this transaction.
+    */
+    get BalanceAfter(): number {
+        return this.Get('BalanceAfter');
+    }
+    set BalanceAfter(value: number) {
+        this.Set('BalanceAfter', value);
+    }
+
+    /**
+    * * Field Name: RelatedPaymentID
+    * * Display Name: Related Payment ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payments (vwPayments.ID)
+    */
+    get RelatedPaymentID(): string | null {
+        return this.Get('RelatedPaymentID');
+    }
+    set RelatedPaymentID(value: string | null) {
+        this.Set('RelatedPaymentID', value);
+    }
+
+    /**
+    * * Field Name: RelatedOrderID
+    * * Display Name: Related Order ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Orders (vwOrders.ID)
+    */
+    get RelatedOrderID(): string | null {
+        return this.Get('RelatedOrderID');
+    }
+    set RelatedOrderID(value: string | null) {
+        this.Set('RelatedOrderID', value);
+    }
+
+    /**
+    * * Field Name: OccurredAt
+    * * Display Name: Occurred At
+    * * SQL Data Type: datetimeoffset
+    * * Description: UTC timestamp of the transaction.
+    */
+    get OccurredAt(): Date {
+        return this.Get('OccurredAt');
+    }
+    set OccurredAt(value: Date) {
+        this.Set('OccurredAt', value);
     }
 
     /**
