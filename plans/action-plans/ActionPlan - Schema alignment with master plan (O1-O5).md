@@ -28,11 +28,18 @@ codegen loop per stage. Engine/UI behavior that consumes the schema lives in the
 | Currency/FX columns (`CurrencyCode`, `ExchangeRateUsed`, `FunctionalCurrencyAmount`, …) on Order/OrderLine/Payment | FX deferred from baseline; add when multi-currency activates | MOD-4 |
 | `PriceList` / `ProductPrice` / `PriceTier` tables | pricing BUILD deferred — order-line `UnitPrice` only | MOD-6 → `plans/DEFERRALS.md` |
 | Any period/closed-period structure IN ORDERS | the close mechanism lives ACCOUNTING-side (their MOD-13/A5, 2026-07-14); orders adds NO period tables/columns — the Confirm guard just CALLS accounting's closed-span check (F1.7). JEs/orders carry only dates; closability is detected by time | accounting MOD-13; MOD-9(b) |
-| `ApprovalTaskID` + SalesRule/SalesAuthority tables | approvals need bizapps-tasks (#8), deferred with Phase F | BO-D27, BO-D29 |
 | `IntercompanyFlow` | intercompany legs generate in Payments per accounting MOD-5; revisit at O2+ when intercompany activates (see §6 Q7). **Note (2026-07-13): the per-pair Due-To/Due-From WIRING table is also Payments-side** — accounting's baseline deliberately dropped `IntercompanyRelationship` ("the Payments component owns due-to/due-from"); Amith's OQ-A shape (accounting MOD-5) is the reference when it lands here with O2 | accounting MOD-5 + 2026-07-06 baseline ruling |
 
-**Migration ground rules (every stage):**
-- New `V*` migration file per stage; **never** edit an applied migration. T-SQL is source of truth; PG converted.
+**Migration ground rules (every stage) — REVISED 2026-07-14 (Marcelo): COLLAPSE INTO THE BASELINE.**
+We are not versioning the app yet — we are bringing the baseline to full feature. So: per stage, **edit
+the baseline migration (`V202607061431`) in place**; dev loop = `mjdev app drop-schema` → `migrate` →
+`codegen` → `build` (destructive re-migrate is fine — demo data is regenerable/reseeded). Commits still
+land per stage (the history lives in git, not in migration files). At the end of the schema waves:
+**recapture the codegen migration and the metadata-sync migration fresh** (the schema changes too much to
+patch them); if the stale codegen/metadata migrations block interim migrates, delete them for now and
+regenerate at recapture time. (This supersedes the never-edit-applied-migrations rule for THIS
+pre-release phase only; once the app versions/publishes, the additive V*-file rule + publish-no-break
+policy resume.) T-SQL stays the source of truth; PG conversion at recapture.
 - No `__mj_CreatedAt/UpdatedAt`, no FK indexes (CodeGen owns both). `sp_addextendedproperty` for every new
   column. One consolidated `ALTER TABLE … ADD col, col, …` per table. Hardcoded UUIDs for seed rows.
 - Cross-app references are **SOFT** (plain `UNIQUEIDENTIFIER`, no FK) — matches the as-built baseline
@@ -351,11 +358,12 @@ sum to the line total.
   order lines tag accounting Dimensions; the booking draft propagates them to JE lines).
 - Pricing tables: `plans/DEFERRALS.md` (MOD-6) — target shape unchanged.
 
-## 5b. Stage S6 — Sales rules + approvals (dependency-gated)
+## 5b. Stage S6 — Sales rules + approvals (UN-DEFERRED 2026-07-14 — Marcelo: "tasks is ready")
 
-`SalesRule` + `SalesAuthority` (§4.8) + the Approval-Request Task wiring (BO-D17/D27) — the schema is
-ready to author; **gated on bizapps-tasks #8** (see DEFERRALS). When tasks lands: 1 migration + the F6+
-enforcement phase.
+`SalesRule` + `SalesAuthority` (§4.8) + `Order.ApprovalTaskID` convenience pointer + the Approval-Request
+Task wiring (BO-D17/D27). **Pre-step:** verify bizapps-tasks' current capabilities cover the #8 feature
+list (outcome/decision model, reject hook, role routing) — strong evidence it does: accounting's
+batch-approval `TasksAppApprovalGate` already runs on it. Enforcement engine = feature plan **F8**.
 
 ---
 
@@ -412,7 +420,7 @@ servers (never client-side).
 | 3 | S3 Subscriptions + rev-rec | v0.4.x | none — CA-2 resolved 2026-07-13 (accounting MOD-11, date-driven) | 1 migration, 5 tables + col adds |
 | 4 | S4 Tax v0 | none (A) / v0.5.x (B) | Robert decision | seeds or 2 tables |
 | 5 | S5 Catalog depth (full parity wave) | v0.5.x/v0.6.x | none — planned phase (2026-07-14 upgrade) | 1-2 migrations, ~12 tables + col adds |
-| 5b | S6 Sales rules + approvals | v0.7.x | bizapps-tasks #8 | 1 migration, 2 tables + wiring |
+| 5b | S6 Sales rules + approvals | baseline edit | tasks-capability verification only (un-deferred 2026-07-14) | 2 tables + ApprovalTaskID + wiring |
 | — | §6.2 roles/permissions | metadata | Marcelo co-design | metadata only |
 
 Each stage = migrate → codegen → build → harness re-run → commit (migration + regenerated code together).
@@ -480,12 +488,12 @@ is a schema stage (S*), a feature phase (F*), the UI plan, or an explicit `plans
 | Payment / PaymentLine / PaymentProvider / PaymentIntent / CustomerPaymentMethod | **S2** + F3 |
 | StoredValueAccount / StoredValueTransaction + gift-card flows | **S5** + F7 |
 | IntercompanyFlow + per-pair wiring table | O2+ with Payments maturity (accounting MOD-5; Q20 residual) |
-| SalesRule / SalesAuthority + approvals | **S6** (gated: tasks #8 — DEFERRALS) |
+| SalesRule / SalesAuthority + approvals | **S6** + **F8** (un-deferred 2026-07-14; tasks-capability check first) |
 | JE emission (booking, per-company split, reversals) | built + F1/F2 (MOD-11-orders) |
 | Payment JEs + cash application | F3 |
 | Rev-rec bridge (CreateScheduledJournalEntries) | F4 + accounting B3 |
 | Fulfillment (per-line flips by Fulfiller role + auto-advance) | F1.6 + F6 + UI §7 (MOD-8/UPD-3 — Marcelo 2026-07-14 confirm) |
-| Sales-rule evaluation at Confirm | with S6 (DEFERRALS gate) |
+| Sales-rule evaluation at Confirm | **F8** (with S6) |
 | Tax invocation at line time | F5 (provider half = accounting DEFERRALS) |
 | Dunning workflow (master Phase E) | **F3.6** (added 2026-07-14) |
 | Manual subscription billing cron (Phase E) | **F4.4** (renewal spawning covers it; non-Stripe cadence) |

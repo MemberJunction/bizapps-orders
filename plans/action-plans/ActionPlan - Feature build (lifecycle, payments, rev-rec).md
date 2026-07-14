@@ -123,9 +123,11 @@ trigger passes + net zero across the pair); over-reversal rejected.
    Auto-apply helper: one payment → oldest-open-orders-first suggestion (UI confirms; BO-D16 lump-sum flow).
 4. **Refund/chargeback:** reversal Payment (`Method∈{Refund,Chargeback,BankReturn}`, negative amount,
    `ReversesPaymentID`) books the reversal JE; PaymentLines negative against the original orders.
-5. **Stripe (second wave):** PaymentIntent lifecycle mapping + webhook receipt per BO-D13 (unauthenticated
-   Express route, raw-body HMAC, `ProviderEventID` idempotency). Gate: needs the delivery/integration
-   decisions (Q-D) NOT — Stripe is independent of bill.com; real gate is credentials + LXP consumer timing.
+5. **Stripe — STUB-FIRST (Marcelo 2026-07-14):** ship `StripePaymentProvider` as a **success stub** (like
+   the BC dispatch stub) — implements the provider interface, simulates intent→capture success, exercises
+   the full Payment/PaymentLine/JE pipeline end-to-end with zero external calls. The REAL integration
+   (live API, webhook receipt per BO-D13 — unauthenticated Express route, raw-body HMAC,
+   `ProviderEventID` idempotency — recon, forensics) lands after integration research (DEFERRALS row).
 6. **Dunning workflow (master Phase E — parity add 2026-07-14):** failed-payment retry policy + overdue
    reminder workflow over `PaymentStatus='Overdue'`/DueDate (Jeremy's weekly overdue process); provider
    retries (Stripe Smart Retries) vs our own = the §15 Q4 open lean — start with our simple scheduled
@@ -166,6 +168,16 @@ miniature — it becomes the regression spine.
 harness (line → schedule → SJE rows sum to line total, supersede path); renewal-spawn harness with a frozen
 clock.
 
+## F8 — Sales rules + approvals (consumes S6 — un-deferred 2026-07-14)
+
+1. **Capability verification (pre-step):** confirm bizapps-tasks covers the #8 feature list — the
+   accounting batch-approval gate is the working precedent; reuse its pattern.
+2. **Evaluation engine at Confirm (BO-D17/§10):** seeded rule types (DiscountLimit, PaymentTermsRequired,
+   ProductAuthorization, CreditLimit, MaxOrderValue) evaluated before booking; golden path → instant
+   Confirm; violation → Approval-Request Task linked via Task Links, routed to `ApprovalRequiredRoleID`;
+   approve → Confirm proceeds; reject → back to Draft with annotation.
+3. **Rule editor** = generated forms first (UI plan refines later); `SalesAuthority` per-rep limits.
+
 ## F7 — Catalog behaviors: bundles, entitlements, gift cards (consumes S5 — parity wave 2026-07-14)
 
 1. **Bundle fast-path expansion (BO-D41 mode 2):** bundle product at order entry explodes into component
@@ -180,12 +192,12 @@ clock.
 4. **ProductBehavior plugin base (BO-D38):** ClassFactory-resolved, most-specific-wins, the Before/After
    hook surface plumbed (several hooks no-op in v1) — the seam the IsA types + F7 behaviors hang off.
 
-## F5 — Tax v0 (consumes S4 decision)
+## F5 — Tax v0 (consumes S4 decision) — *deferred-by-complexity note (Marcelo 2026-07-14)*
 
-Option A (quick path): seed `Tax` ProductType + per-jurisdiction tax products; engine treats Tax-type lines
-as `Cr Sales Tax Payable` in the booking draft (account via GLAccountLink role on the tax product/company);
-grand total = product + tax lines. Option B adds the provider invocation per §11 when accounting builds it.
-Blocked on the Robert decision only.
+Tax (and FX) are deliberately deferred so the baseline tests clean — **no tax stub** (even a stub carries
+enough complexity to become a blocker). When picked up: Option A (quick path) seeds a `Tax` ProductType +
+per-jurisdiction tax products; engine treats Tax-type lines as `Cr Sales Tax Payable` in the booking draft;
+Option B adds the provider invocation per §11 when accounting builds it. Robert's shape decision first.
 
 ## F6 — Permissions enforcement (consumes §6.2 roles)
 
@@ -205,7 +217,8 @@ consults role), not UI-only. Co-designed with Marcelo alongside accounting MOD-9
 ## Execution order
 
 F0 (engine split — first, mechanical, everything builds on it) → F1 → F2 (same S1 wave, F2 needs F1's
-matrix) → F3-manual → F4 → F3-stripe / F5 / F6 / F7 as decisions + S5 land. Parity coverage: see the
+matrix) → F3-manual (with the Stripe success-stub) → F4 → F8 (post S6 + tasks check) → F7 (post S5) →
+F6 → F5 / F3-stripe-real as decisions + research land. Parity coverage: see the
 schema plan's Appendix matrix — every master feature maps to a phase here or a DEFERRALS row.
 
 ## Questions for Marcelo
