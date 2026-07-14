@@ -148,8 +148,13 @@ trigger passes + net zero across the pair); over-reversal rejected.
    PaymentIntent lifecycle against the real API, hosted-checkout session creation, and webhook receipt
    → capture (BO-D13: unauthenticated Express route, raw-body HMAC, `ProviderEventID` idempotency).
    The DEEP half (reconciliation, forensics log, idempotency stress suite) stays deferred
-   (DEFERRALS row). Test posture: stub covers all tier-1/2; F3.5b adds a Stripe-test-mode tier-3
-   pass, gated on creds.
+   (DEFERRALS row). **Test posture (Marcelo 2026-07-14):** the stub covers all tier-1/2 and remains
+   the default; F3.5b adds an END-TO-END Stripe **sandbox/test-mode** harness tier — Marcelo will
+   provide sandbox credentials. **Credential rule: NEVER committed** — seeded from `.env`
+   (`STRIPE_TEST_SECRET_KEY` / `STRIPE_TEST_WEBHOOK_SECRET`, gitignored) or the MJ Credentials
+   engine (`PaymentProvider.CredentialsRef` — the S2 schema already points there; no secret at
+   rest in the DB either). The sandbox harness SKIPS with a loud notice when creds are absent, so
+   suites stay green on cred-less machines/CI.
 6. **Dunning workflow (master Phase E — parity add 2026-07-14):** failed-payment retry policy + overdue
    reminder workflow over `PaymentStatus='Overdue'`/DueDate (Jeremy's weekly overdue process); provider
    retries (Stripe Smart Retries) vs our own = the §15 Q4 open lean — start with our simple scheduled
