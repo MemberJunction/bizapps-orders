@@ -6,7 +6,7 @@
 > (`~/MJDev/reports/schema-functionality-gap-analysis/REPORT.md` §6: O1→O5).
 > **Sources:** MASTER-PLAN.md, MASTER-PLAN-MODIFICATIONS.md, MASTER-PLAN-UPDATES.md, BACKLOG.md, ISSUES.md,
 > meetings/2026-07-10-decisions.md, meetings/2026-07-10--Robert-demo-feedback.md, the built baseline
-> `migrations/V202607061431__v0.1.x__Schema_and_Tables.sql`, bizapps-common baseline (customer wiring targets),
+> `migrations/B202607061431__v0.1.x__Schema_and_Tables.sql`, bizapps-common baseline (customer wiring targets),
 > accounting baseline (JE-side counterparts).
 > **Companions:** `ActionPlan - Feature build (lifecycle, payments, rev-rec).md` (the engine/code that consumes
 > each stage) · `ActionPlan - UI layout and workflows.md` · accounting repo
@@ -31,7 +31,7 @@ codegen loop per stage. Engine/UI behavior that consumes the schema lives in the
 
 **Migration ground rules (every stage) — REVISED 2026-07-14 (Marcelo): COLLAPSE INTO THE BASELINE.**
 We are not versioning the app yet — we are bringing the baseline to full feature. So: per stage, **edit
-the baseline migration (`V202607061431`) in place**; dev loop = `mjdev app drop-schema` → `migrate` →
+the baseline migration (`B202607061431`) in place**; dev loop = `mjdev app drop-schema` → `migrate` →
 `codegen` → `build` (destructive re-migrate is fine — demo data is regenerable/reseeded). Commits still
 land per stage (the history lives in git, not in migration files). At the end of the schema waves:
 **recapture the codegen migration and the metadata-sync migration fresh** (the schema changes too much to

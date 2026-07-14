@@ -8,7 +8,7 @@ Built for AM-7 step 5 (see `plans/2026-07-02-engine-meeting-amendment.md` §3–
 ## Repository structure
 ```
 mj-app.json            - manifest (schema __mj_BizAppsOrders; depends on mj-bizapps-accounting)
-migrations/            - Skyway migrations (V202607061431 baseline: ProductType/Category/Product/Order/OrderLine)
+migrations/            - Skyway migrations (B202607061431 baseline: ProductType/Category/Product/Order/OrderLine)
 packages/
   Entities/            - @mj-biz-apps/orders-entities   (CodeGen entity subclasses — do not hand-edit generated/)
   CoreEntitiesServer/  - @mj-biz-apps/orders-core-entities-server
