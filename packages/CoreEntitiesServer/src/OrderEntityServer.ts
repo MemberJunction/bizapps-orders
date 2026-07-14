@@ -33,6 +33,7 @@ import {
 import { OrdersEngine } from './OrdersEngine.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+const ACCOUNTING_JE_ENTITY = 'MJ_BizApps_Accounting: Journal Entries';
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Orders')
 export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
@@ -51,15 +52,43 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
   /**
    * Book once — the ORDER-LEVEL idempotency guard (F1.2): a booked order has ConfirmedAt set
    * (always) and JournalEntryID set (single-JE case only). A failed prior attempt left both
-   * null, so it retries here.
+   * null, so it retries here. (The second guard half — any-JE-exists — runs inside
+   * bookOrderJournalEntries, since it needs a query.)
    */
   private shouldBookJournalEntries(): boolean {
     return this.Status === 'Confirmed' && !this.JournalEntryID && !this.ConfirmedAt;
   }
 
+  /**
+   * The any-JE-exists half of the F1.2 guard: if entries already exist for this order (a prior
+   * attempt's JE set committed but the ORDER row's save then failed, so ConfirmedAt never
+   * persisted), do NOT book again — adopt the existing set instead. This window closes fully when
+   * the Confirm unit-of-work rework lands (order row + JE set in ONE TransactionGroup — feature
+   * plan F1.2b); until then this check prevents double-booking.
+   */
+  private async findExistingBookedEntries(user: UserInfo | undefined): Promise<string[]> {
+    const rv = new RunView();
+    const res = await rv.RunView<{ ID: string }>(
+      { EntityName: ACCOUNTING_JE_ENTITY, ExtraFilter: `OrderID='${this.ID}'`, Fields: ['ID'], ResultType: 'simple', BypassCache: true },
+      user
+    );
+    return res.Success ? (res.Results ?? []).map(r => r.ID) : [];
+  }
+
   /** Resolve accounts, book one JE per company as a set, stamp lineage. False = block the Confirm. */
   private async bookOrderJournalEntries(): Promise<boolean> {
     const user = this.ContextCurrentUser;
+    const existing = await this.findExistingBookedEntries(user);
+    if (existing.length > 0) {
+      LogError(
+        `OrderEntityServer: order ${this.OrderNumber} already has ${existing.length} booked journal ` +
+          `entr${existing.length === 1 ? 'y' : 'ies'} (a prior attempt's order-row save must have failed). ` +
+          `Adopting the existing set instead of re-booking.`
+      );
+      if (existing.length === 1) this.JournalEntryID = existing[0];
+      this.ConfirmedAt = new Date();
+      return true;
+    }
     const lines = await this.loadLines(user);
     if (lines.length === 0) {
       LogError(`OrderEntityServer: order ${this.OrderNumber} has no lines; cannot book journal entries.`);

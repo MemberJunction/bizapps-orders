@@ -28,9 +28,9 @@ import { setupSQLServerClient, SQLServerProviderConfigData, UserCache } from '@m
 import '@memberjunction/server-bootstrap-lite';
 import '@mj-biz-apps/common-entities';
 import '@mj-biz-apps/accounting-entities';
-import '@mj-biz-apps/accounting-core-entities-server';
+import { CreateJournalEntriesOperation } from '@mj-biz-apps/accounting-core-entities-server';
 import '@mj-biz-apps/orders-entities';
-import '@mj-biz-apps/orders-core-entities-server';
+import { OrdersEngine } from '@mj-biz-apps/orders-core-entities-server';
 import type {
   mjBizAppsAccountingAccountingCompanyProfileEntity,
   mjBizAppsAccountingGLAccountLinkEntity,
@@ -345,6 +345,33 @@ async function main(): Promise<void> {
     }
     const codes = new Set(jes.map(j => j.EntryNumber.split('-')[1]));
     assert(codes.size === 2, `the two companies' entries should carry DIFFERENT company codes, got ${[...codes].join(',')}`);
+  });
+
+  await test('O7 crash-recovery guard — pre-existing JEs for the order are ADOPTED, never double-booked', async () => {
+    // Simulates the failure window before the F1.2b unit-of-work rework: a prior attempt's JE set
+    // committed but the ORDER row save failed (no ConfirmedAt persisted). A re-Confirm must adopt
+    // the existing entries instead of booking a second set.
+    const orderId = await createOrder([{ productId: pImmA, qty: 1, price: 55 }]);
+    // Book a JE for this order OUT-OF-BAND (as if a prior attempt committed it).
+    const md2 = new Metadata();
+    await OrdersEngine.Instance.Config(false, user);
+    const order0 = await md2.GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
+    await order0.Load(orderId);
+    const lines0 = (await new RunView().RunView<mjBizAppsOrdersOrderLineEntity>(
+      { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderID='${orderId}'`, ResultType: 'entity_object' }, user)).Results ?? [];
+    const built = OrdersEngine.Instance.buildDraftsForOrder(order0, lines0);
+    assert(!!built.Drafts && built.Drafts.length === 1, 'fixture draft build failed');
+    const preOp = await new CreateJournalEntriesOperation().Execute({ Drafts: built.Drafts! }, { user });
+    const preId = preOp.Output?.Results?.[0]?.JournalEntryID;
+    assert(!!preId, `fixture pre-booking failed: ${JSON.stringify(preOp.Output?.Errors)}`);
+    createdJEIds.push(preId!);
+    // Now Confirm through the entity server — it must ADOPT, not re-book.
+    const { saved, order } = await confirmOrder(orderId);
+    assert(saved, 're-confirm should succeed');
+    assert(order.JournalEntryID?.toUpperCase() === preId!.toUpperCase(), 'the EXISTING JE must be adopted as JournalEntryID');
+    assert(!!order.ConfirmedAt, 'ConfirmedAt stamped on adoption');
+    const count = (await pool.request().query(`SELECT COUNT(*) n FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}'`)).recordset[0].n;
+    assert(Number(count) === 1, `exactly ONE JE must exist after recovery (no double-booking), got ${count}`);
   });
 
   await teardown();
