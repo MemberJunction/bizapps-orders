@@ -210,6 +210,72 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    OrderID: z.string().describe(`
+        * * Field Name: OrderID
+        * * Display Name: Order
+        * * SQL Data Type: uniqueidentifier`),
+    ProductID: z.string().describe(`
+        * * Field Name: ProductID
+        * * Display Name: Product
+        * * SQL Data Type: uniqueidentifier`),
+    LineNumber: z.number().describe(`
+        * * Field Name: LineNumber
+        * * Display Name: Line Number
+        * * SQL Data Type: int`),
+    Quantity: z.number().describe(`
+        * * Field Name: Quantity
+        * * SQL Data Type: decimal(18, 4)`),
+    UnitPrice: z.number().describe(`
+        * * Field Name: UnitPrice
+        * * Display Name: Unit Price
+        * * SQL Data Type: decimal(19, 4)`),
+    DiscountPct: z.number().describe(`
+        * * Field Name: DiscountPct
+        * * Display Name: Discount Pct
+        * * SQL Data Type: decimal(7, 4)`),
+    LineTotalNet: z.number().nullable().describe(`
+        * * Field Name: LineTotalNet
+        * * Display Name: Line Total Net
+        * * SQL Data Type: decimal(18, 2)`),
+    LineTax: z.number().describe(`
+        * * Field Name: LineTax
+        * * Display Name: Line Tax
+        * * SQL Data Type: decimal(18, 2)`),
+    LineTotalGross: z.number().nullable().describe(`
+        * * Field Name: LineTotalGross
+        * * Display Name: Line Total Gross
+        * * SQL Data Type: decimal(18, 2)`),
+    ServicePeriodStart: z.date().nullable().describe(`
+        * * Field Name: ServicePeriodStart
+        * * Display Name: Service Period Start
+        * * SQL Data Type: date`),
+    ServicePeriodEnd: z.date().nullable().describe(`
+        * * Field Name: ServicePeriodEnd
+        * * Display Name: Service Period End
+        * * SQL Data Type: date`),
+    FulfillmentStatus: z.string().nullable().describe(`
+        * * Field Name: FulfillmentStatus
+        * * Display Name: Fulfillment Status
+        * * SQL Data Type: nvarchar(20)`),
+    ReversesOrderLineID: z.string().nullable().describe(`
+        * * Field Name: ReversesOrderLineID
+        * * Display Name: Reverses Order Line
+        * * SQL Data Type: uniqueidentifier`),
+    SourceBundleProductID: z.string().nullable().describe(`
+        * * Field Name: SourceBundleProductID
+        * * Display Name: Source Bundle Product
+        * * SQL Data Type: uniqueidentifier`),
+    SubscriptionID: z.string().nullable().describe(`
+        * * Field Name: SubscriptionID
+        * * Display Name: Subscription
+        * * SQL Data Type: uniqueidentifier`),
+    RevenueRecognitionScheduleID: z.string().nullable().describe(`
+        * * Field Name: RevenueRecognitionScheduleID
+        * * Display Name: Revenue Recognition Schedule
+        * * SQL Data Type: uniqueidentifier`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * SQL Data Type: nvarchar(500)`),
 });
 
 export type mjBizAppsOrdersEventOrderLineEntityType = z.infer<typeof mjBizAppsOrdersEventOrderLineSchema>;
@@ -264,6 +330,78 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    Name: z.string().describe(`
+        * * Field Name: Name
+        * * SQL Data Type: nvarchar(200)`),
+    SKU: z.string().nullable().describe(`
+        * * Field Name: SKU
+        * * SQL Data Type: nvarchar(80)`),
+    ProductTypeID: z.string().describe(`
+        * * Field Name: ProductTypeID
+        * * Display Name: Product Type
+        * * SQL Data Type: uniqueidentifier`),
+    ProductCategoryID: z.string().nullable().describe(`
+        * * Field Name: ProductCategoryID
+        * * Display Name: Product Category
+        * * SQL Data Type: uniqueidentifier`),
+    OwningCompanyID: z.string().nullable().describe(`
+        * * Field Name: OwningCompanyID
+        * * Display Name: Owning Company
+        * * SQL Data Type: uniqueidentifier`),
+    Status: z.string().describe(`
+        * * Field Name: Status
+        * * SQL Data Type: nvarchar(20)`),
+    SuccessorProductID: z.string().nullable().describe(`
+        * * Field Name: SuccessorProductID
+        * * Display Name: Successor Product
+        * * SQL Data Type: uniqueidentifier`),
+    AvailableFrom: z.date().nullable().describe(`
+        * * Field Name: AvailableFrom
+        * * Display Name: Available From
+        * * SQL Data Type: date`),
+    AvailableTo: z.date().nullable().describe(`
+        * * Field Name: AvailableTo
+        * * Display Name: Available To
+        * * SQL Data Type: date`),
+    RevenueRecognitionType: z.string().describe(`
+        * * Field Name: RevenueRecognitionType
+        * * Display Name: Revenue Recognition Type
+        * * SQL Data Type: nvarchar(20)`),
+    DeferredRecognitionShape: z.string().nullable().describe(`
+        * * Field Name: DeferredRecognitionShape
+        * * Display Name: Deferred Recognition Shape
+        * * SQL Data Type: nvarchar(20)`),
+    StandaloneSellingPrice: z.number().nullable().describe(`
+        * * Field Name: StandaloneSellingPrice
+        * * Display Name: Standalone Selling Price
+        * * SQL Data Type: decimal(19, 4)`),
+    SubscriptionType: z.string().describe(`
+        * * Field Name: SubscriptionType
+        * * Display Name: Subscription Type
+        * * SQL Data Type: nvarchar(20)`),
+    BehaviorClass: z.string().nullable().describe(`
+        * * Field Name: BehaviorClass
+        * * Display Name: Behavior Class
+        * * SQL Data Type: nvarchar(100)`),
+    DefaultBillingCycle: z.string().nullable().describe(`
+        * * Field Name: DefaultBillingCycle
+        * * Display Name: Default Billing Cycle
+        * * SQL Data Type: nvarchar(20)`),
+    DefaultSubscriptionTermMonths: z.number().nullable().describe(`
+        * * Field Name: DefaultSubscriptionTermMonths
+        * * Display Name: Default Subscription Term Months
+        * * SQL Data Type: int`),
+    IsTaxable: z.boolean().describe(`
+        * * Field Name: IsTaxable
+        * * Display Name: Is Taxable
+        * * SQL Data Type: bit`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * SQL Data Type: nvarchar(MAX)`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit`),
 });
 
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
@@ -3026,6 +3164,225 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
     }
+
+    /**
+    * * Field Name: OrderID
+    * * Display Name: Order
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get OrderID(): string {
+        return this.Get('OrderID');
+    }
+    set OrderID(value: string) {
+        this.Set('OrderID', value);
+    }
+
+    /**
+    * * Field Name: ProductID
+    * * Display Name: Product
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ProductID(): string {
+        return this.Get('ProductID');
+    }
+    set ProductID(value: string) {
+        this.Set('ProductID', value);
+    }
+
+    /**
+    * * Field Name: LineNumber
+    * * Display Name: Line Number
+    * * SQL Data Type: int
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get LineNumber(): number {
+        return this.Get('LineNumber');
+    }
+    set LineNumber(value: number) {
+        this.Set('LineNumber', value);
+    }
+
+    /**
+    * * Field Name: Quantity
+    * * SQL Data Type: decimal(18, 4)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get Quantity(): number {
+        return this.Get('Quantity');
+    }
+    set Quantity(value: number) {
+        this.Set('Quantity', value);
+    }
+
+    /**
+    * * Field Name: UnitPrice
+    * * Display Name: Unit Price
+    * * SQL Data Type: decimal(19, 4)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get UnitPrice(): number {
+        return this.Get('UnitPrice');
+    }
+    set UnitPrice(value: number) {
+        this.Set('UnitPrice', value);
+    }
+
+    /**
+    * * Field Name: DiscountPct
+    * * Display Name: Discount Pct
+    * * SQL Data Type: decimal(7, 4)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get DiscountPct(): number {
+        return this.Get('DiscountPct');
+    }
+    set DiscountPct(value: number) {
+        this.Set('DiscountPct', value);
+    }
+
+    /**
+    * * Field Name: LineTotalNet
+    * * Display Name: Line Total Net
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get LineTotalNet(): number | null {
+        return this.Get('LineTotalNet');
+    }
+    set LineTotalNet(value: number | null) {
+        this.Set('LineTotalNet', value);
+    }
+
+    /**
+    * * Field Name: LineTax
+    * * Display Name: Line Tax
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get LineTax(): number {
+        return this.Get('LineTax');
+    }
+    set LineTax(value: number) {
+        this.Set('LineTax', value);
+    }
+
+    /**
+    * * Field Name: LineTotalGross
+    * * Display Name: Line Total Gross
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get LineTotalGross(): number | null {
+        return this.Get('LineTotalGross');
+    }
+    set LineTotalGross(value: number | null) {
+        this.Set('LineTotalGross', value);
+    }
+
+    /**
+    * * Field Name: ServicePeriodStart
+    * * Display Name: Service Period Start
+    * * SQL Data Type: date
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ServicePeriodStart(): Date | null {
+        return this.Get('ServicePeriodStart');
+    }
+    set ServicePeriodStart(value: Date | null) {
+        this.Set('ServicePeriodStart', value);
+    }
+
+    /**
+    * * Field Name: ServicePeriodEnd
+    * * Display Name: Service Period End
+    * * SQL Data Type: date
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ServicePeriodEnd(): Date | null {
+        return this.Get('ServicePeriodEnd');
+    }
+    set ServicePeriodEnd(value: Date | null) {
+        this.Set('ServicePeriodEnd', value);
+    }
+
+    /**
+    * * Field Name: FulfillmentStatus
+    * * Display Name: Fulfillment Status
+    * * SQL Data Type: nvarchar(20)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get FulfillmentStatus(): string | null {
+        return this.Get('FulfillmentStatus');
+    }
+    set FulfillmentStatus(value: string | null) {
+        this.Set('FulfillmentStatus', value);
+    }
+
+    /**
+    * * Field Name: ReversesOrderLineID
+    * * Display Name: Reverses Order Line
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ReversesOrderLineID(): string | null {
+        return this.Get('ReversesOrderLineID');
+    }
+    set ReversesOrderLineID(value: string | null) {
+        this.Set('ReversesOrderLineID', value);
+    }
+
+    /**
+    * * Field Name: SourceBundleProductID
+    * * Display Name: Source Bundle Product
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get SourceBundleProductID(): string | null {
+        return this.Get('SourceBundleProductID');
+    }
+    set SourceBundleProductID(value: string | null) {
+        this.Set('SourceBundleProductID', value);
+    }
+
+    /**
+    * * Field Name: SubscriptionID
+    * * Display Name: Subscription
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get SubscriptionID(): string | null {
+        return this.Get('SubscriptionID');
+    }
+    set SubscriptionID(value: string | null) {
+        this.Set('SubscriptionID', value);
+    }
+
+    /**
+    * * Field Name: RevenueRecognitionScheduleID
+    * * Display Name: Revenue Recognition Schedule
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get RevenueRecognitionScheduleID(): string | null {
+        return this.Get('RevenueRecognitionScheduleID');
+    }
+    set RevenueRecognitionScheduleID(value: string | null) {
+        this.Set('RevenueRecognitionScheduleID', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * SQL Data Type: nvarchar(500)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
 }
 
 
@@ -3169,6 +3526,249 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Name
+    * * SQL Data Type: nvarchar(200)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get Name(): string {
+        return this.Get('Name');
+    }
+    set Name(value: string) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: SKU
+    * * SQL Data Type: nvarchar(80)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get SKU(): string | null {
+        return this.Get('SKU');
+    }
+    set SKU(value: string | null) {
+        this.Set('SKU', value);
+    }
+
+    /**
+    * * Field Name: ProductTypeID
+    * * Display Name: Product Type
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get ProductTypeID(): string {
+        return this.Get('ProductTypeID');
+    }
+    set ProductTypeID(value: string) {
+        this.Set('ProductTypeID', value);
+    }
+
+    /**
+    * * Field Name: ProductCategoryID
+    * * Display Name: Product Category
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get ProductCategoryID(): string | null {
+        return this.Get('ProductCategoryID');
+    }
+    set ProductCategoryID(value: string | null) {
+        this.Set('ProductCategoryID', value);
+    }
+
+    /**
+    * * Field Name: OwningCompanyID
+    * * Display Name: Owning Company
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get OwningCompanyID(): string | null {
+        return this.Get('OwningCompanyID');
+    }
+    set OwningCompanyID(value: string | null) {
+        this.Set('OwningCompanyID', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get Status(): string {
+        return this.Get('Status');
+    }
+    set Status(value: string) {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: SuccessorProductID
+    * * Display Name: Successor Product
+    * * SQL Data Type: uniqueidentifier
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get SuccessorProductID(): string | null {
+        return this.Get('SuccessorProductID');
+    }
+    set SuccessorProductID(value: string | null) {
+        this.Set('SuccessorProductID', value);
+    }
+
+    /**
+    * * Field Name: AvailableFrom
+    * * Display Name: Available From
+    * * SQL Data Type: date
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get AvailableFrom(): Date | null {
+        return this.Get('AvailableFrom');
+    }
+    set AvailableFrom(value: Date | null) {
+        this.Set('AvailableFrom', value);
+    }
+
+    /**
+    * * Field Name: AvailableTo
+    * * Display Name: Available To
+    * * SQL Data Type: date
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get AvailableTo(): Date | null {
+        return this.Get('AvailableTo');
+    }
+    set AvailableTo(value: Date | null) {
+        this.Set('AvailableTo', value);
+    }
+
+    /**
+    * * Field Name: RevenueRecognitionType
+    * * Display Name: Revenue Recognition Type
+    * * SQL Data Type: nvarchar(20)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get RevenueRecognitionType(): string {
+        return this.Get('RevenueRecognitionType');
+    }
+    set RevenueRecognitionType(value: string) {
+        this.Set('RevenueRecognitionType', value);
+    }
+
+    /**
+    * * Field Name: DeferredRecognitionShape
+    * * Display Name: Deferred Recognition Shape
+    * * SQL Data Type: nvarchar(20)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get DeferredRecognitionShape(): string | null {
+        return this.Get('DeferredRecognitionShape');
+    }
+    set DeferredRecognitionShape(value: string | null) {
+        this.Set('DeferredRecognitionShape', value);
+    }
+
+    /**
+    * * Field Name: StandaloneSellingPrice
+    * * Display Name: Standalone Selling Price
+    * * SQL Data Type: decimal(19, 4)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get StandaloneSellingPrice(): number | null {
+        return this.Get('StandaloneSellingPrice');
+    }
+    set StandaloneSellingPrice(value: number | null) {
+        this.Set('StandaloneSellingPrice', value);
+    }
+
+    /**
+    * * Field Name: SubscriptionType
+    * * Display Name: Subscription Type
+    * * SQL Data Type: nvarchar(20)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get SubscriptionType(): string {
+        return this.Get('SubscriptionType');
+    }
+    set SubscriptionType(value: string) {
+        this.Set('SubscriptionType', value);
+    }
+
+    /**
+    * * Field Name: BehaviorClass
+    * * Display Name: Behavior Class
+    * * SQL Data Type: nvarchar(100)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get BehaviorClass(): string | null {
+        return this.Get('BehaviorClass');
+    }
+    set BehaviorClass(value: string | null) {
+        this.Set('BehaviorClass', value);
+    }
+
+    /**
+    * * Field Name: DefaultBillingCycle
+    * * Display Name: Default Billing Cycle
+    * * SQL Data Type: nvarchar(20)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get DefaultBillingCycle(): string | null {
+        return this.Get('DefaultBillingCycle');
+    }
+    set DefaultBillingCycle(value: string | null) {
+        this.Set('DefaultBillingCycle', value);
+    }
+
+    /**
+    * * Field Name: DefaultSubscriptionTermMonths
+    * * Display Name: Default Subscription Term Months
+    * * SQL Data Type: int
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get DefaultSubscriptionTermMonths(): number | null {
+        return this.Get('DefaultSubscriptionTermMonths');
+    }
+    set DefaultSubscriptionTermMonths(value: number | null) {
+        this.Set('DefaultSubscriptionTermMonths', value);
+    }
+
+    /**
+    * * Field Name: IsTaxable
+    * * Display Name: Is Taxable
+    * * SQL Data Type: bit
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get IsTaxable(): boolean {
+        return this.Get('IsTaxable');
+    }
+    set IsTaxable(value: boolean) {
+        this.Set('IsTaxable', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * SQL Data Type: nvarchar(MAX)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
     }
 }
 

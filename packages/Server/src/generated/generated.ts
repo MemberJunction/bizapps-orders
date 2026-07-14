@@ -531,6 +531,65 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field() 
+    @MaxLength(36)
+    OrderID: string;
+        
+    @Field() 
+    @MaxLength(36)
+    ProductID: string;
+        
+    @Field(() => Int) 
+    LineNumber: number;
+        
+    @Field(() => Float) 
+    Quantity: number;
+        
+    @Field(() => Float) 
+    UnitPrice: number;
+        
+    @Field(() => Float) 
+    DiscountPct: number;
+        
+    @Field(() => Float, {nullable: true}) 
+    LineTotalNet?: number;
+        
+    @Field(() => Float) 
+    LineTax: number;
+        
+    @Field(() => Float, {nullable: true}) 
+    LineTotalGross?: number;
+        
+    @Field({nullable: true}) 
+    ServicePeriodStart?: Date;
+        
+    @Field({nullable: true}) 
+    ServicePeriodEnd?: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(20)
+    FulfillmentStatus?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ReversesOrderLineID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    SourceBundleProductID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    SubscriptionID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    RevenueRecognitionScheduleID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(500)
+    Description?: string;
+        
 }
 
 //****************************************************************************
@@ -549,6 +608,57 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     CheckInAt: Date | null;
+
+    @Field({ nullable: true })
+    OrderID?: string;
+
+    @Field({ nullable: true })
+    ProductID?: string;
+
+    @Field(() => Int, { nullable: true })
+    LineNumber?: number;
+
+    @Field(() => Float, { nullable: true })
+    Quantity?: number;
+
+    @Field(() => Float, { nullable: true })
+    UnitPrice?: number;
+
+    @Field(() => Float, { nullable: true })
+    DiscountPct?: number;
+
+    @Field(() => Float, { nullable: true })
+    LineTotalNet: number | null;
+
+    @Field(() => Float, { nullable: true })
+    LineTax?: number;
+
+    @Field(() => Float, { nullable: true })
+    LineTotalGross: number | null;
+
+    @Field({ nullable: true })
+    ServicePeriodStart: Date | null;
+
+    @Field({ nullable: true })
+    ServicePeriodEnd: Date | null;
+
+    @Field({ nullable: true })
+    FulfillmentStatus: string | null;
+
+    @Field({ nullable: true })
+    ReversesOrderLineID: string | null;
+
+    @Field({ nullable: true })
+    SourceBundleProductID: string | null;
+
+    @Field({ nullable: true })
+    SubscriptionID: string | null;
+
+    @Field({ nullable: true })
+    RevenueRecognitionScheduleID: string | null;
+
+    @Field({ nullable: true })
+    Description: string | null;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -571,6 +681,57 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field({ nullable: true })
     CheckInAt?: Date | null;
+
+    @Field({ nullable: true })
+    OrderID?: string;
+
+    @Field({ nullable: true })
+    ProductID?: string;
+
+    @Field(() => Int, { nullable: true })
+    LineNumber?: number;
+
+    @Field(() => Float, { nullable: true })
+    Quantity?: number;
+
+    @Field(() => Float, { nullable: true })
+    UnitPrice?: number;
+
+    @Field(() => Float, { nullable: true })
+    DiscountPct?: number;
+
+    @Field(() => Float, { nullable: true })
+    LineTotalNet?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    LineTax?: number;
+
+    @Field(() => Float, { nullable: true })
+    LineTotalGross?: number | null;
+
+    @Field({ nullable: true })
+    ServicePeriodStart?: Date | null;
+
+    @Field({ nullable: true })
+    ServicePeriodEnd?: Date | null;
+
+    @Field({ nullable: true })
+    FulfillmentStatus?: string | null;
+
+    @Field({ nullable: true })
+    ReversesOrderLineID?: string | null;
+
+    @Field({ nullable: true })
+    SourceBundleProductID?: string | null;
+
+    @Field({ nullable: true })
+    SubscriptionID?: string | null;
+
+    @Field({ nullable: true })
+    RevenueRecognitionScheduleID?: string | null;
+
+    @Field({ nullable: true })
+    Description?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -700,6 +861,75 @@ export class mjBizAppsOrdersEventProduct_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field() 
+    @MaxLength(200)
+    Name: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(80)
+    SKU?: string;
+        
+    @Field() 
+    @MaxLength(36)
+    ProductTypeID: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ProductCategoryID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    OwningCompanyID?: string;
+        
+    @Field() 
+    @MaxLength(20)
+    Status: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    SuccessorProductID?: string;
+        
+    @Field({nullable: true}) 
+    AvailableFrom?: Date;
+        
+    @Field({nullable: true}) 
+    AvailableTo?: Date;
+        
+    @Field() 
+    @MaxLength(20)
+    RevenueRecognitionType: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(20)
+    DeferredRecognitionShape?: string;
+        
+    @Field(() => Float, {nullable: true}) 
+    StandaloneSellingPrice?: number;
+        
+    @Field() 
+    @MaxLength(20)
+    SubscriptionType: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    BehaviorClass?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(20)
+    DefaultBillingCycle?: string;
+        
+    @Field(() => Int, {nullable: true}) 
+    DefaultSubscriptionTermMonths?: number;
+        
+    @Field(() => Boolean) 
+    IsTaxable: boolean;
+        
+    @Field({nullable: true}) 
+    Description?: string;
+        
+    @Field(() => Boolean) 
+    IsActive: boolean;
+        
 }
 
 //****************************************************************************
@@ -727,6 +957,63 @@ export class CreatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Boolean, { nullable: true })
     RequiresAttendeeInfo?: boolean;
+
+    @Field({ nullable: true })
+    Name?: string;
+
+    @Field({ nullable: true })
+    SKU: string | null;
+
+    @Field({ nullable: true })
+    ProductTypeID?: string;
+
+    @Field({ nullable: true })
+    ProductCategoryID: string | null;
+
+    @Field({ nullable: true })
+    OwningCompanyID: string | null;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field({ nullable: true })
+    SuccessorProductID: string | null;
+
+    @Field({ nullable: true })
+    AvailableFrom: Date | null;
+
+    @Field({ nullable: true })
+    AvailableTo: Date | null;
+
+    @Field({ nullable: true })
+    RevenueRecognitionType?: string;
+
+    @Field({ nullable: true })
+    DeferredRecognitionShape: string | null;
+
+    @Field(() => Float, { nullable: true })
+    StandaloneSellingPrice: number | null;
+
+    @Field({ nullable: true })
+    SubscriptionType?: string;
+
+    @Field({ nullable: true })
+    BehaviorClass: string | null;
+
+    @Field({ nullable: true })
+    DefaultBillingCycle: string | null;
+
+    @Field(() => Int, { nullable: true })
+    DefaultSubscriptionTermMonths: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsTaxable?: boolean;
+
+    @Field({ nullable: true })
+    Description: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -758,6 +1045,63 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Boolean, { nullable: true })
     RequiresAttendeeInfo?: boolean;
+
+    @Field({ nullable: true })
+    Name?: string;
+
+    @Field({ nullable: true })
+    SKU?: string | null;
+
+    @Field({ nullable: true })
+    ProductTypeID?: string;
+
+    @Field({ nullable: true })
+    ProductCategoryID?: string | null;
+
+    @Field({ nullable: true })
+    OwningCompanyID?: string | null;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field({ nullable: true })
+    SuccessorProductID?: string | null;
+
+    @Field({ nullable: true })
+    AvailableFrom?: Date | null;
+
+    @Field({ nullable: true })
+    AvailableTo?: Date | null;
+
+    @Field({ nullable: true })
+    RevenueRecognitionType?: string;
+
+    @Field({ nullable: true })
+    DeferredRecognitionShape?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    StandaloneSellingPrice?: number | null;
+
+    @Field({ nullable: true })
+    SubscriptionType?: string;
+
+    @Field({ nullable: true })
+    BehaviorClass?: string | null;
+
+    @Field({ nullable: true })
+    DefaultBillingCycle?: string | null;
+
+    @Field(() => Int, { nullable: true })
+    DefaultSubscriptionTermMonths?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsTaxable?: boolean;
+
+    @Field({ nullable: true })
+    Description?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

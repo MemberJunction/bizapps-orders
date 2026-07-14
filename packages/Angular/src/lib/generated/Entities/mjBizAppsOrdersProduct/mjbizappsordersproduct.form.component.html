@@ -406,31 +406,6 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Event Products Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersEventProducts"
-        SectionName="Event Products"
-        Icon="fa fa-table"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersEventProducts')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Event Products','ID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Event Products')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersEventProducts')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersEventProducts', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Product Performance Obligations Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersProductPerformanceObligations"

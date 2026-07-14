@@ -25,7 +25,6 @@ export class mjBizAppsOrdersProductFormComponent extends BaseFormComponent {
             { sectionKey: 'mJBizAppsOrdersOrderLinesSourceBundleProductID', sectionName: 'Order Lines (Source Bundle Product ID)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLinesProductID', sectionName: 'Order Lines (Product ID)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductPrices', sectionName: 'Product Prices', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersEventProducts', sectionName: 'Event Products', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductPerformanceObligations', sectionName: 'Product Performance Obligations', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionPlans', sectionName: 'Subscription Plans', isExpanded: false }
         ]);
