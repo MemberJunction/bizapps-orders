@@ -9,6 +9,90 @@ export const loadModule = () => {
      
  
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Customer Payment Methods
+ */
+export const mjBizAppsOrdersCustomerPaymentMethodSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    CustomerOrganizationID: z.string().describe(`
+        * * Field Name: CustomerOrganizationID
+        * * Display Name: Customer Organization ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Organization — the customer who owns this method.`),
+    PaymentProviderID: z.string().describe(`
+        * * Field Name: PaymentProviderID
+        * * Display Name: Payment Provider ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)`),
+    ProviderCustomerID: z.string().nullable().describe(`
+        * * Field Name: ProviderCustomerID
+        * * Display Name: Provider Customer ID
+        * * SQL Data Type: nvarchar(100)
+        * * Description: Provider-side customer identifier (e.g. Stripe cus_...).`),
+    ProviderPaymentMethodID: z.string().nullable().describe(`
+        * * Field Name: ProviderPaymentMethodID
+        * * Display Name: Provider Payment Method ID
+        * * SQL Data Type: nvarchar(100)
+        * * Description: Provider-side payment method token (e.g. Stripe pm_...).`),
+    MethodType: z.string().nullable().describe(`
+        * * Field Name: MethodType
+        * * Display Name: Method Type
+        * * SQL Data Type: nvarchar(20)
+        * * Description: Kind of method (card, us_bank_account, ...). Provider vocabulary, informational.`),
+    Brand: z.string().nullable().describe(`
+        * * Field Name: Brand
+        * * Display Name: Brand
+        * * SQL Data Type: nvarchar(40)
+        * * Description: Card brand for display (Visa, Mastercard, ...).`),
+    Last4: z.string().nullable().describe(`
+        * * Field Name: Last4
+        * * Display Name: Last 4
+        * * SQL Data Type: char(4)
+        * * Description: Last four digits for display. Never more.`),
+    ExpiryMonth: z.number().nullable().describe(`
+        * * Field Name: ExpiryMonth
+        * * Display Name: Expiry Month
+        * * SQL Data Type: int
+        * * Description: Card expiry month (1-12) for display/expiry warnings.`),
+    ExpiryYear: z.number().nullable().describe(`
+        * * Field Name: ExpiryYear
+        * * Display Name: Expiry Year
+        * * SQL Data Type: int
+        * * Description: Card expiry year for display/expiry warnings.`),
+    IsDefault: z.boolean().describe(`
+        * * Field Name: IsDefault
+        * * Display Name: Is Default
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: Whether this is the customer's default method for charge-on-file.`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Whether this method is active/usable.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    PaymentProvider: z.string().describe(`
+        * * Field Name: PaymentProvider
+        * * Display Name: Payment Provider
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersCustomerPaymentMethodEntityType = z.infer<typeof mjBizAppsOrdersCustomerPaymentMethodSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Lines
  */
 export const mjBizAppsOrdersOrderLineSchema = z.object({
@@ -350,6 +434,229 @@ export const mjBizAppsOrdersOrderSchema = z.object({
 export type mjBizAppsOrdersOrderEntityType = z.infer<typeof mjBizAppsOrdersOrderSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Payment Intents
+ */
+export const mjBizAppsOrdersPaymentIntentSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    PaymentProviderID: z.string().describe(`
+        * * Field Name: PaymentProviderID
+        * * Display Name: Payment Provider ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)`),
+    ProviderIntentID: z.string().describe(`
+        * * Field Name: ProviderIntentID
+        * * Display Name: Provider Intent ID
+        * * SQL Data Type: nvarchar(100)
+        * * Description: Provider-side intent identifier (e.g. Stripe pi_...). Unique.`),
+    Status: z.union([z.literal('Canceled'), z.literal('Failed'), z.literal('Processing'), z.literal('RequiresPayment'), z.literal('Succeeded')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(30)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Canceled
+    *   * Failed
+    *   * Processing
+    *   * RequiresPayment
+    *   * Succeeded
+        * * Description: RequiresPayment | Processing | Succeeded | Canceled | Failed. Mirrors the provider lifecycle.`),
+    Amount: z.number().describe(`
+        * * Field Name: Amount
+        * * Display Name: Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Amount being collected.`),
+    OrderID: z.string().nullable().describe(`
+        * * Field Name: OrderID
+        * * Display Name: Order ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Orders (vwOrders.ID)`),
+    CustomerOrganizationID: z.string().nullable().describe(`
+        * * Field Name: CustomerOrganizationID
+        * * Display Name: Customer Organization ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Organization — the paying customer.`),
+    ProviderEventID: z.string().nullable().describe(`
+        * * Field Name: ProviderEventID
+        * * Display Name: Provider Event ID
+        * * SQL Data Type: nvarchar(100)
+        * * Description: Last processed provider webhook event id — the idempotency key (unique when present).`),
+    LastEventAt: z.date().nullable().describe(`
+        * * Field Name: LastEventAt
+        * * Display Name: Last Event At
+        * * SQL Data Type: datetimeoffset
+        * * Description: UTC timestamp of the last provider event applied to this intent.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    PaymentProvider: z.string().describe(`
+        * * Field Name: PaymentProvider
+        * * Display Name: Payment Provider
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersPaymentIntentEntityType = z.infer<typeof mjBizAppsOrdersPaymentIntentSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Payment Lines
+ */
+export const mjBizAppsOrdersPaymentLineSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    PaymentID: z.string().describe(`
+        * * Field Name: PaymentID
+        * * Display Name: Payment ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payments (vwPayments.ID)`),
+    OrderID: z.string().describe(`
+        * * Field Name: OrderID
+        * * Display Name: Order ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Orders (vwOrders.ID)`),
+    OrderLineID: z.string().nullable().describe(`
+        * * Field Name: OrderLineID
+        * * Display Name: Order Line ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)`),
+    Amount: z.number().describe(`
+        * * Field Name: Amount
+        * * Display Name: Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Amount of the payment applied to this order (<> 0; negative when applying a credit memo).`),
+    AllocatedAt: z.date().describe(`
+        * * Field Name: AllocatedAt
+        * * Display Name: Allocated At
+        * * SQL Data Type: datetimeoffset
+        * * Description: UTC timestamp when this application was made.`),
+    AllocatedByUserID: z.string().nullable().describe(`
+        * * Field Name: AllocatedByUserID
+        * * Display Name: Allocated By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    AllocatedByUser: z.string().nullable().describe(`
+        * * Field Name: AllocatedByUser
+        * * Display Name: Allocated By User
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersPaymentLineEntityType = z.infer<typeof mjBizAppsOrdersPaymentLineSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Payment Providers
+ */
+export const mjBizAppsOrdersPaymentProviderSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    ProviderType: z.union([z.literal('Manual'), z.literal('Stripe')]).describe(`
+        * * Field Name: ProviderType
+        * * Display Name: Provider Type
+        * * SQL Data Type: nvarchar(40)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Manual
+    *   * Stripe
+        * * Description: Stripe | Manual. Widens as additional processors land.`),
+    CompanyID: z.string().describe(`
+        * * Field Name: CompanyID
+        * * Display Name: Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)`),
+    Name: z.string().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(200)
+        * * Description: Display name of this provider account.`),
+    CredentialsRef: z.string().nullable().describe(`
+        * * Field Name: CredentialsRef
+        * * Display Name: Credentials Ref
+        * * SQL Data Type: nvarchar(200)
+        * * Description: MJ Credentials engine key referencing the provider credentials. NEVER a secret value at rest.`),
+    IsLiveMode: z.boolean().describe(`
+        * * Field Name: IsLiveMode
+        * * Display Name: Is Live Mode
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: Whether this account points at the provider's live environment (vs test/sandbox).`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Whether this provider account is active.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Company: z.string().describe(`
+        * * Field Name: Company
+        * * Display Name: Company
+        * * SQL Data Type: nvarchar(50)`),
+});
+
+export type mjBizAppsOrdersPaymentProviderEntityType = z.infer<typeof mjBizAppsOrdersPaymentProviderSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Payment Sequences
+ */
+export const mjBizAppsOrdersPaymentSequenceSchema = z.object({
+    ID: z.number().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: int
+        * * Default Value: 1`),
+    NextSequenceNumber: z.number().describe(`
+        * * Field Name: NextSequenceNumber
+        * * Display Name: Next Sequence Number
+        * * SQL Data Type: int
+        * * Default Value: 1
+        * * Description: The next payment sequence number to assign.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersPaymentSequenceEntityType = z.infer<typeof mjBizAppsOrdersPaymentSequenceSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Payment Terms Types
  */
 export const mjBizAppsOrdersPaymentTermsTypeSchema = z.object({
@@ -398,6 +705,156 @@ export const mjBizAppsOrdersPaymentTermsTypeSchema = z.object({
 });
 
 export type mjBizAppsOrdersPaymentTermsTypeEntityType = z.infer<typeof mjBizAppsOrdersPaymentTermsTypeSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Payments
+ */
+export const mjBizAppsOrdersPaymentSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    PaymentNumber: z.string().describe(`
+        * * Field Name: PaymentNumber
+        * * Display Name: Payment Number
+        * * SQL Data Type: nvarchar(40)
+        * * Description: Human-readable payment identifier (PAY-{seq}). Unique.`),
+    ReceivingCompanyID: z.string().describe(`
+        * * Field Name: ReceivingCompanyID
+        * * Display Name: Receiving Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)`),
+    CustomerOrganizationID: z.string().nullable().describe(`
+        * * Field Name: CustomerOrganizationID
+        * * Display Name: Customer Organization ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Organization — the payer. NULL only for anonymous/e-commerce edge cases.`),
+    PaymentDate: z.date().describe(`
+        * * Field Name: PaymentDate
+        * * Display Name: Payment Date
+        * * SQL Data Type: date
+        * * Description: Date the money moved (bank date, not entry date).`),
+    Method: z.union([z.literal('ACH'), z.literal('BankReturn'), z.literal('Cash'), z.literal('Chargeback'), z.literal('Check'), z.literal('CreditCard'), z.literal('InternalTransfer'), z.literal('Refund'), z.literal('Wire')]).describe(`
+        * * Field Name: Method
+        * * Display Name: Method
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * ACH
+    *   * BankReturn
+    *   * Cash
+    *   * Chargeback
+    *   * Check
+    *   * CreditCard
+    *   * InternalTransfer
+    *   * Refund
+    *   * Wire
+        * * Description: CreditCard | ACH | Wire | Check | Cash | InternalTransfer | Refund | Chargeback | BankReturn. Reversal methods carry negative Amount.`),
+    Amount: z.number().describe(`
+        * * Field Name: Amount
+        * * Display Name: Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Gross amount received (negative for reversal methods).`),
+    ProcessingFeeAmount: z.number().describe(`
+        * * Field Name: ProcessingFeeAmount
+        * * Display Name: Processing Fee Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Default Value: 0
+        * * Description: Processor fee withheld from this payment.`),
+    NetAmount: z.number().nullable().describe(`
+        * * Field Name: NetAmount
+        * * Display Name: Net Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Net cash = Amount - ProcessingFeeAmount (engine-computed, BO-D47).`),
+    PaymentProviderID: z.string().nullable().describe(`
+        * * Field Name: PaymentProviderID
+        * * Display Name: Payment Provider ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)`),
+    PaymentIntentID: z.string().nullable().describe(`
+        * * Field Name: PaymentIntentID
+        * * Display Name: Payment Intent ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Intents (vwPaymentIntents.ID)`),
+    PaymentMethodID: z.string().nullable().describe(`
+        * * Field Name: PaymentMethodID
+        * * Display Name: Payment Method ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Customer Payment Methods (vwCustomerPaymentMethods.ID)`),
+    ProviderChargeID: z.string().nullable().describe(`
+        * * Field Name: ProviderChargeID
+        * * Display Name: Provider Charge ID
+        * * SQL Data Type: nvarchar(100)
+        * * Description: Provider-side charge identifier (e.g. Stripe ch_...).`),
+    ProviderRefundID: z.string().nullable().describe(`
+        * * Field Name: ProviderRefundID
+        * * Display Name: Provider Refund ID
+        * * SQL Data Type: nvarchar(100)
+        * * Description: Provider-side refund identifier when this payment is a provider refund.`),
+    ReversesPaymentID: z.string().nullable().describe(`
+        * * Field Name: ReversesPaymentID
+        * * Display Name: Reverses Payment ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payments (vwPayments.ID)`),
+    ReversalReason: z.string().nullable().describe(`
+        * * Field Name: ReversalReason
+        * * Display Name: Reversal Reason
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: Reason this payment reverses another (required by validation when ReversesPaymentID is set).`),
+    Status: z.union([z.literal('Captured'), z.literal('Disputed'), z.literal('Failed'), z.literal('Pending'), z.literal('Refunded')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Captured
+    *   * Disputed
+    *   * Failed
+    *   * Pending
+    *   * Refunded
+        * * Description: Pending | Captured | Failed | Refunded | Disputed. Financial fields freeze at Captured (DB trigger); corrections via reversal payments.`),
+    JournalEntryID: z.string().nullable().describe(`
+        * * Field Name: JournalEntryID
+        * * Display Name: Journal Entry ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to the __mj_BizAppsAccounting.JournalEntry booked at capture. Never cleared or replaced once set (trigger).`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * Display Name: Description
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: Customer-facing description / memo.`),
+    Notes: z.string().nullable().describe(`
+        * * Field Name: Notes
+        * * Display Name: Notes
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: Internal notes.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    ReceivingCompany: z.string().describe(`
+        * * Field Name: ReceivingCompany
+        * * Display Name: Receiving Company
+        * * SQL Data Type: nvarchar(50)`),
+    PaymentProvider: z.string().nullable().describe(`
+        * * Field Name: PaymentProvider
+        * * Display Name: Payment Provider
+        * * SQL Data Type: nvarchar(200)`),
+    RootReversesPaymentID: z.string().nullable().describe(`
+        * * Field Name: RootReversesPaymentID
+        * * Display Name: Root Reverses Payment ID
+        * * SQL Data Type: uniqueidentifier`),
+});
+
+export type mjBizAppsOrdersPaymentEntityType = z.infer<typeof mjBizAppsOrdersPaymentSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Product Categories
@@ -564,6 +1021,225 @@ export const mjBizAppsOrdersProductSchema = z.object({
 export type mjBizAppsOrdersProductEntityType = z.infer<typeof mjBizAppsOrdersProductSchema>;
  
  
+
+/**
+ * MJ_BizApps_Orders: Customer Payment Methods - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: CustomerPaymentMethod
+ * * Base View: vwCustomerPaymentMethods
+ * * @description A stored payment method token for a customer (BO-D46). Provider token references only — never card data.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Customer Payment Methods')
+export class mjBizAppsOrdersCustomerPaymentMethodEntity extends BaseEntity<mjBizAppsOrdersCustomerPaymentMethodEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Customer Payment Methods record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Customer Payment Methods record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersCustomerPaymentMethodEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: CustomerOrganizationID
+    * * Display Name: Customer Organization ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Organization — the customer who owns this method.
+    */
+    get CustomerOrganizationID(): string {
+        return this.Get('CustomerOrganizationID');
+    }
+    set CustomerOrganizationID(value: string) {
+        this.Set('CustomerOrganizationID', value);
+    }
+
+    /**
+    * * Field Name: PaymentProviderID
+    * * Display Name: Payment Provider ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    */
+    get PaymentProviderID(): string {
+        return this.Get('PaymentProviderID');
+    }
+    set PaymentProviderID(value: string) {
+        this.Set('PaymentProviderID', value);
+    }
+
+    /**
+    * * Field Name: ProviderCustomerID
+    * * Display Name: Provider Customer ID
+    * * SQL Data Type: nvarchar(100)
+    * * Description: Provider-side customer identifier (e.g. Stripe cus_...).
+    */
+    get ProviderCustomerID(): string | null {
+        return this.Get('ProviderCustomerID');
+    }
+    set ProviderCustomerID(value: string | null) {
+        this.Set('ProviderCustomerID', value);
+    }
+
+    /**
+    * * Field Name: ProviderPaymentMethodID
+    * * Display Name: Provider Payment Method ID
+    * * SQL Data Type: nvarchar(100)
+    * * Description: Provider-side payment method token (e.g. Stripe pm_...).
+    */
+    get ProviderPaymentMethodID(): string | null {
+        return this.Get('ProviderPaymentMethodID');
+    }
+    set ProviderPaymentMethodID(value: string | null) {
+        this.Set('ProviderPaymentMethodID', value);
+    }
+
+    /**
+    * * Field Name: MethodType
+    * * Display Name: Method Type
+    * * SQL Data Type: nvarchar(20)
+    * * Description: Kind of method (card, us_bank_account, ...). Provider vocabulary, informational.
+    */
+    get MethodType(): string | null {
+        return this.Get('MethodType');
+    }
+    set MethodType(value: string | null) {
+        this.Set('MethodType', value);
+    }
+
+    /**
+    * * Field Name: Brand
+    * * Display Name: Brand
+    * * SQL Data Type: nvarchar(40)
+    * * Description: Card brand for display (Visa, Mastercard, ...).
+    */
+    get Brand(): string | null {
+        return this.Get('Brand');
+    }
+    set Brand(value: string | null) {
+        this.Set('Brand', value);
+    }
+
+    /**
+    * * Field Name: Last4
+    * * Display Name: Last 4
+    * * SQL Data Type: char(4)
+    * * Description: Last four digits for display. Never more.
+    */
+    get Last4(): string | null {
+        return this.Get('Last4');
+    }
+    set Last4(value: string | null) {
+        this.Set('Last4', value);
+    }
+
+    /**
+    * * Field Name: ExpiryMonth
+    * * Display Name: Expiry Month
+    * * SQL Data Type: int
+    * * Description: Card expiry month (1-12) for display/expiry warnings.
+    */
+    get ExpiryMonth(): number | null {
+        return this.Get('ExpiryMonth');
+    }
+    set ExpiryMonth(value: number | null) {
+        this.Set('ExpiryMonth', value);
+    }
+
+    /**
+    * * Field Name: ExpiryYear
+    * * Display Name: Expiry Year
+    * * SQL Data Type: int
+    * * Description: Card expiry year for display/expiry warnings.
+    */
+    get ExpiryYear(): number | null {
+        return this.Get('ExpiryYear');
+    }
+    set ExpiryYear(value: number | null) {
+        this.Set('ExpiryYear', value);
+    }
+
+    /**
+    * * Field Name: IsDefault
+    * * Display Name: Is Default
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: Whether this is the customer's default method for charge-on-file.
+    */
+    get IsDefault(): boolean {
+        return this.Get('IsDefault');
+    }
+    set IsDefault(value: boolean) {
+        this.Set('IsDefault', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Whether this method is active/usable.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: PaymentProvider
+    * * Display Name: Payment Provider
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PaymentProvider(): string {
+        return this.Get('PaymentProvider');
+    }
+}
+
 
 /**
  * MJ_BizApps_Orders: Order Lines - strongly typed entity sub-class
@@ -1404,6 +2080,580 @@ export class mjBizAppsOrdersOrderEntity extends BaseEntity<mjBizAppsOrdersOrderE
 
 
 /**
+ * MJ_BizApps_Orders: Payment Intents - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: PaymentIntent
+ * * Base View: vwPaymentIntents
+ * * @description Provider-side collection state (BO-D26; Stripe-shaped). The Manual provider skips intents entirely.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Payment Intents')
+export class mjBizAppsOrdersPaymentIntentEntity extends BaseEntity<mjBizAppsOrdersPaymentIntentEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Payment Intents record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Payment Intents record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersPaymentIntentEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: PaymentProviderID
+    * * Display Name: Payment Provider ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    */
+    get PaymentProviderID(): string {
+        return this.Get('PaymentProviderID');
+    }
+    set PaymentProviderID(value: string) {
+        this.Set('PaymentProviderID', value);
+    }
+
+    /**
+    * * Field Name: ProviderIntentID
+    * * Display Name: Provider Intent ID
+    * * SQL Data Type: nvarchar(100)
+    * * Description: Provider-side intent identifier (e.g. Stripe pi_...). Unique.
+    */
+    get ProviderIntentID(): string {
+        return this.Get('ProviderIntentID');
+    }
+    set ProviderIntentID(value: string) {
+        this.Set('ProviderIntentID', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(30)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Canceled
+    *   * Failed
+    *   * Processing
+    *   * RequiresPayment
+    *   * Succeeded
+    * * Description: RequiresPayment | Processing | Succeeded | Canceled | Failed. Mirrors the provider lifecycle.
+    */
+    get Status(): 'Canceled' | 'Failed' | 'Processing' | 'RequiresPayment' | 'Succeeded' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Canceled' | 'Failed' | 'Processing' | 'RequiresPayment' | 'Succeeded') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: Amount
+    * * Display Name: Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Amount being collected.
+    */
+    get Amount(): number {
+        return this.Get('Amount');
+    }
+    set Amount(value: number) {
+        this.Set('Amount', value);
+    }
+
+    /**
+    * * Field Name: OrderID
+    * * Display Name: Order ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Orders (vwOrders.ID)
+    */
+    get OrderID(): string | null {
+        return this.Get('OrderID');
+    }
+    set OrderID(value: string | null) {
+        this.Set('OrderID', value);
+    }
+
+    /**
+    * * Field Name: CustomerOrganizationID
+    * * Display Name: Customer Organization ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Organization — the paying customer.
+    */
+    get CustomerOrganizationID(): string | null {
+        return this.Get('CustomerOrganizationID');
+    }
+    set CustomerOrganizationID(value: string | null) {
+        this.Set('CustomerOrganizationID', value);
+    }
+
+    /**
+    * * Field Name: ProviderEventID
+    * * Display Name: Provider Event ID
+    * * SQL Data Type: nvarchar(100)
+    * * Description: Last processed provider webhook event id — the idempotency key (unique when present).
+    */
+    get ProviderEventID(): string | null {
+        return this.Get('ProviderEventID');
+    }
+    set ProviderEventID(value: string | null) {
+        this.Set('ProviderEventID', value);
+    }
+
+    /**
+    * * Field Name: LastEventAt
+    * * Display Name: Last Event At
+    * * SQL Data Type: datetimeoffset
+    * * Description: UTC timestamp of the last provider event applied to this intent.
+    */
+    get LastEventAt(): Date | null {
+        return this.Get('LastEventAt');
+    }
+    set LastEventAt(value: Date | null) {
+        this.Set('LastEventAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: PaymentProvider
+    * * Display Name: Payment Provider
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PaymentProvider(): string {
+        return this.Get('PaymentProvider');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Payment Lines - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: PaymentLine
+ * * Base View: vwPaymentLines
+ * * @description Cash application junction (BO-D16/D45): how much of a payment settles which order (optionally which line). Negative Amount applies a credit memo.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Payment Lines')
+export class mjBizAppsOrdersPaymentLineEntity extends BaseEntity<mjBizAppsOrdersPaymentLineEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Payment Lines record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Payment Lines record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersPaymentLineEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: PaymentID
+    * * Display Name: Payment ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payments (vwPayments.ID)
+    */
+    get PaymentID(): string {
+        return this.Get('PaymentID');
+    }
+    set PaymentID(value: string) {
+        this.Set('PaymentID', value);
+    }
+
+    /**
+    * * Field Name: OrderID
+    * * Display Name: Order ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Orders (vwOrders.ID)
+    */
+    get OrderID(): string {
+        return this.Get('OrderID');
+    }
+    set OrderID(value: string) {
+        this.Set('OrderID', value);
+    }
+
+    /**
+    * * Field Name: OrderLineID
+    * * Display Name: Order Line ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    */
+    get OrderLineID(): string | null {
+        return this.Get('OrderLineID');
+    }
+    set OrderLineID(value: string | null) {
+        this.Set('OrderLineID', value);
+    }
+
+    /**
+    * * Field Name: Amount
+    * * Display Name: Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Amount of the payment applied to this order (<> 0; negative when applying a credit memo).
+    */
+    get Amount(): number {
+        return this.Get('Amount');
+    }
+    set Amount(value: number) {
+        this.Set('Amount', value);
+    }
+
+    /**
+    * * Field Name: AllocatedAt
+    * * Display Name: Allocated At
+    * * SQL Data Type: datetimeoffset
+    * * Description: UTC timestamp when this application was made.
+    */
+    get AllocatedAt(): Date {
+        return this.Get('AllocatedAt');
+    }
+    set AllocatedAt(value: Date) {
+        this.Set('AllocatedAt', value);
+    }
+
+    /**
+    * * Field Name: AllocatedByUserID
+    * * Display Name: Allocated By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    */
+    get AllocatedByUserID(): string | null {
+        return this.Get('AllocatedByUserID');
+    }
+    set AllocatedByUserID(value: string | null) {
+        this.Set('AllocatedByUserID', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: AllocatedByUser
+    * * Display Name: Allocated By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get AllocatedByUser(): string | null {
+        return this.Get('AllocatedByUser');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Payment Providers - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: PaymentProvider
+ * * Base View: vwPaymentProviders
+ * * @description A configured payment-processing account (Stripe account, or the built-in Manual provider) owned by one company.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Payment Providers')
+export class mjBizAppsOrdersPaymentProviderEntity extends BaseEntity<mjBizAppsOrdersPaymentProviderEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Payment Providers record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Payment Providers record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersPaymentProviderEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: ProviderType
+    * * Display Name: Provider Type
+    * * SQL Data Type: nvarchar(40)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Manual
+    *   * Stripe
+    * * Description: Stripe | Manual. Widens as additional processors land.
+    */
+    get ProviderType(): 'Manual' | 'Stripe' {
+        return this.Get('ProviderType');
+    }
+    set ProviderType(value: 'Manual' | 'Stripe') {
+        this.Set('ProviderType', value);
+    }
+
+    /**
+    * * Field Name: CompanyID
+    * * Display Name: Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    */
+    get CompanyID(): string {
+        return this.Get('CompanyID');
+    }
+    set CompanyID(value: string) {
+        this.Set('CompanyID', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(200)
+    * * Description: Display name of this provider account.
+    */
+    get Name(): string {
+        return this.Get('Name');
+    }
+    set Name(value: string) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: CredentialsRef
+    * * Display Name: Credentials Ref
+    * * SQL Data Type: nvarchar(200)
+    * * Description: MJ Credentials engine key referencing the provider credentials. NEVER a secret value at rest.
+    */
+    get CredentialsRef(): string | null {
+        return this.Get('CredentialsRef');
+    }
+    set CredentialsRef(value: string | null) {
+        this.Set('CredentialsRef', value);
+    }
+
+    /**
+    * * Field Name: IsLiveMode
+    * * Display Name: Is Live Mode
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: Whether this account points at the provider's live environment (vs test/sandbox).
+    */
+    get IsLiveMode(): boolean {
+        return this.Get('IsLiveMode');
+    }
+    set IsLiveMode(value: boolean) {
+        this.Set('IsLiveMode', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Whether this provider account is active.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Company
+    * * Display Name: Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get Company(): string {
+        return this.Get('Company');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Payment Sequences - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: PaymentSequence
+ * * Base View: vwPaymentSequences
+ * * @description Global singleton counter (ID=1) minting gap-conscious PAY-{seq} payment numbers. Consumed only by the entity server.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Payment Sequences')
+export class mjBizAppsOrdersPaymentSequenceEntity extends BaseEntity<mjBizAppsOrdersPaymentSequenceEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Payment Sequences record from the database
+    * @param ID: number - primary key value to load the MJ_BizApps_Orders: Payment Sequences record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersPaymentSequenceEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: number, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: int
+    * * Default Value: 1
+    */
+    get ID(): number {
+        return this.Get('ID');
+    }
+    set ID(value: number) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: NextSequenceNumber
+    * * Display Name: Next Sequence Number
+    * * SQL Data Type: int
+    * * Default Value: 1
+    * * Description: The next payment sequence number to assign.
+    */
+    get NextSequenceNumber(): number {
+        return this.Get('NextSequenceNumber');
+    }
+    set NextSequenceNumber(value: number) {
+        this.Set('NextSequenceNumber', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Payment Terms Types - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: PaymentTermsType
@@ -1531,6 +2781,365 @@ export class mjBizAppsOrdersPaymentTermsTypeEntity extends BaseEntity<mjBizAppsO
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Payments - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: Payment
+ * * Base View: vwPayments
+ * * @description A money movement: a customer receipt or a reversal (refund/chargeback/bank return). Booked to accounting at capture; applied to orders via PaymentLine.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Payments')
+export class mjBizAppsOrdersPaymentEntity extends BaseEntity<mjBizAppsOrdersPaymentEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Payments record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Payments record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersPaymentEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: PaymentNumber
+    * * Display Name: Payment Number
+    * * SQL Data Type: nvarchar(40)
+    * * Description: Human-readable payment identifier (PAY-{seq}). Unique.
+    */
+    get PaymentNumber(): string {
+        return this.Get('PaymentNumber');
+    }
+    set PaymentNumber(value: string) {
+        this.Set('PaymentNumber', value);
+    }
+
+    /**
+    * * Field Name: ReceivingCompanyID
+    * * Display Name: Receiving Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    */
+    get ReceivingCompanyID(): string {
+        return this.Get('ReceivingCompanyID');
+    }
+    set ReceivingCompanyID(value: string) {
+        this.Set('ReceivingCompanyID', value);
+    }
+
+    /**
+    * * Field Name: CustomerOrganizationID
+    * * Display Name: Customer Organization ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to __mj_BizAppsCommon.Organization — the payer. NULL only for anonymous/e-commerce edge cases.
+    */
+    get CustomerOrganizationID(): string | null {
+        return this.Get('CustomerOrganizationID');
+    }
+    set CustomerOrganizationID(value: string | null) {
+        this.Set('CustomerOrganizationID', value);
+    }
+
+    /**
+    * * Field Name: PaymentDate
+    * * Display Name: Payment Date
+    * * SQL Data Type: date
+    * * Description: Date the money moved (bank date, not entry date).
+    */
+    get PaymentDate(): Date {
+        return this.Get('PaymentDate');
+    }
+    set PaymentDate(value: Date) {
+        this.Set('PaymentDate', value);
+    }
+
+    /**
+    * * Field Name: Method
+    * * Display Name: Method
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * ACH
+    *   * BankReturn
+    *   * Cash
+    *   * Chargeback
+    *   * Check
+    *   * CreditCard
+    *   * InternalTransfer
+    *   * Refund
+    *   * Wire
+    * * Description: CreditCard | ACH | Wire | Check | Cash | InternalTransfer | Refund | Chargeback | BankReturn. Reversal methods carry negative Amount.
+    */
+    get Method(): 'ACH' | 'BankReturn' | 'Cash' | 'Chargeback' | 'Check' | 'CreditCard' | 'InternalTransfer' | 'Refund' | 'Wire' {
+        return this.Get('Method');
+    }
+    set Method(value: 'ACH' | 'BankReturn' | 'Cash' | 'Chargeback' | 'Check' | 'CreditCard' | 'InternalTransfer' | 'Refund' | 'Wire') {
+        this.Set('Method', value);
+    }
+
+    /**
+    * * Field Name: Amount
+    * * Display Name: Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Gross amount received (negative for reversal methods).
+    */
+    get Amount(): number {
+        return this.Get('Amount');
+    }
+    set Amount(value: number) {
+        this.Set('Amount', value);
+    }
+
+    /**
+    * * Field Name: ProcessingFeeAmount
+    * * Display Name: Processing Fee Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Default Value: 0
+    * * Description: Processor fee withheld from this payment.
+    */
+    get ProcessingFeeAmount(): number {
+        return this.Get('ProcessingFeeAmount');
+    }
+    set ProcessingFeeAmount(value: number) {
+        this.Set('ProcessingFeeAmount', value);
+    }
+
+    /**
+    * * Field Name: NetAmount
+    * * Display Name: Net Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Net cash = Amount - ProcessingFeeAmount (engine-computed, BO-D47).
+    */
+    get NetAmount(): number | null {
+        return this.Get('NetAmount');
+    }
+    set NetAmount(value: number | null) {
+        this.Set('NetAmount', value);
+    }
+
+    /**
+    * * Field Name: PaymentProviderID
+    * * Display Name: Payment Provider ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    */
+    get PaymentProviderID(): string | null {
+        return this.Get('PaymentProviderID');
+    }
+    set PaymentProviderID(value: string | null) {
+        this.Set('PaymentProviderID', value);
+    }
+
+    /**
+    * * Field Name: PaymentIntentID
+    * * Display Name: Payment Intent ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Intents (vwPaymentIntents.ID)
+    */
+    get PaymentIntentID(): string | null {
+        return this.Get('PaymentIntentID');
+    }
+    set PaymentIntentID(value: string | null) {
+        this.Set('PaymentIntentID', value);
+    }
+
+    /**
+    * * Field Name: PaymentMethodID
+    * * Display Name: Payment Method ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Customer Payment Methods (vwCustomerPaymentMethods.ID)
+    */
+    get PaymentMethodID(): string | null {
+        return this.Get('PaymentMethodID');
+    }
+    set PaymentMethodID(value: string | null) {
+        this.Set('PaymentMethodID', value);
+    }
+
+    /**
+    * * Field Name: ProviderChargeID
+    * * Display Name: Provider Charge ID
+    * * SQL Data Type: nvarchar(100)
+    * * Description: Provider-side charge identifier (e.g. Stripe ch_...).
+    */
+    get ProviderChargeID(): string | null {
+        return this.Get('ProviderChargeID');
+    }
+    set ProviderChargeID(value: string | null) {
+        this.Set('ProviderChargeID', value);
+    }
+
+    /**
+    * * Field Name: ProviderRefundID
+    * * Display Name: Provider Refund ID
+    * * SQL Data Type: nvarchar(100)
+    * * Description: Provider-side refund identifier when this payment is a provider refund.
+    */
+    get ProviderRefundID(): string | null {
+        return this.Get('ProviderRefundID');
+    }
+    set ProviderRefundID(value: string | null) {
+        this.Set('ProviderRefundID', value);
+    }
+
+    /**
+    * * Field Name: ReversesPaymentID
+    * * Display Name: Reverses Payment ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payments (vwPayments.ID)
+    */
+    get ReversesPaymentID(): string | null {
+        return this.Get('ReversesPaymentID');
+    }
+    set ReversesPaymentID(value: string | null) {
+        this.Set('ReversesPaymentID', value);
+    }
+
+    /**
+    * * Field Name: ReversalReason
+    * * Display Name: Reversal Reason
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: Reason this payment reverses another (required by validation when ReversesPaymentID is set).
+    */
+    get ReversalReason(): string | null {
+        return this.Get('ReversalReason');
+    }
+    set ReversalReason(value: string | null) {
+        this.Set('ReversalReason', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Captured
+    *   * Disputed
+    *   * Failed
+    *   * Pending
+    *   * Refunded
+    * * Description: Pending | Captured | Failed | Refunded | Disputed. Financial fields freeze at Captured (DB trigger); corrections via reversal payments.
+    */
+    get Status(): 'Captured' | 'Disputed' | 'Failed' | 'Pending' | 'Refunded' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Captured' | 'Disputed' | 'Failed' | 'Pending' | 'Refunded') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: JournalEntryID
+    * * Display Name: Journal Entry ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to the __mj_BizAppsAccounting.JournalEntry booked at capture. Never cleared or replaced once set (trigger).
+    */
+    get JournalEntryID(): string | null {
+        return this.Get('JournalEntryID');
+    }
+    set JournalEntryID(value: string | null) {
+        this.Set('JournalEntryID', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * Display Name: Description
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: Customer-facing description / memo.
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: Notes
+    * * Display Name: Notes
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: Internal notes.
+    */
+    get Notes(): string | null {
+        return this.Get('Notes');
+    }
+    set Notes(value: string | null) {
+        this.Set('Notes', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ReceivingCompany
+    * * Display Name: Receiving Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get ReceivingCompany(): string {
+        return this.Get('ReceivingCompany');
+    }
+
+    /**
+    * * Field Name: PaymentProvider
+    * * Display Name: Payment Provider
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PaymentProvider(): string | null {
+        return this.Get('PaymentProvider');
+    }
+
+    /**
+    * * Field Name: RootReversesPaymentID
+    * * Display Name: Root Reverses Payment ID
+    * * SQL Data Type: uniqueidentifier
+    */
+    get RootReversesPaymentID(): string | null {
+        return this.Get('RootReversesPaymentID');
     }
 }
 

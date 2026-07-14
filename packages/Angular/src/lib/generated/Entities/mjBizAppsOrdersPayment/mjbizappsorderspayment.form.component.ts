@@ -1,24 +1,24 @@
 import { Component } from '@angular/core';
-import { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersPaymentEntity } from '@mj-biz-apps/orders-entities';
 import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
 import {  } from "@memberjunction/ng-entity-viewer"
 
-@RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Order Lines') // Tell MemberJunction about this class
+@RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Payments') // Tell MemberJunction about this class
 @Component({
     standalone: false,
-    selector: 'gen-mjbizappsordersorderline-form',
-    templateUrl: './mjbizappsordersorderline.form.component.html'
+    selector: 'gen-mjbizappsorderspayment-form',
+    templateUrl: './mjbizappsorderspayment.form.component.html'
 })
-export class mjBizAppsOrdersOrderLineFormComponent extends BaseFormComponent {
-    public record!: mjBizAppsOrdersOrderLineEntity;
+export class mjBizAppsOrdersPaymentFormComponent extends BaseFormComponent {
+    public record!: mjBizAppsOrdersPaymentEntity;
 
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPayments', sectionName: 'Payments', isExpanded: false }
         ]);
     }
 }

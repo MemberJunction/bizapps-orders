@@ -15,10 +15,16 @@ import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 
 // Import Generated Components
+import { mjBizAppsOrdersCustomerPaymentMethodFormComponent } from "./Entities/mjBizAppsOrdersCustomerPaymentMethod/mjbizappsorderscustomerpaymentmethod.form.component";
 import { mjBizAppsOrdersOrderLineFormComponent } from "./Entities/mjBizAppsOrdersOrderLine/mjbizappsordersorderline.form.component";
 import { mjBizAppsOrdersOrderSequenceFormComponent } from "./Entities/mjBizAppsOrdersOrderSequence/mjbizappsordersordersequence.form.component";
 import { mjBizAppsOrdersOrderFormComponent } from "./Entities/mjBizAppsOrdersOrder/mjbizappsordersorder.form.component";
+import { mjBizAppsOrdersPaymentIntentFormComponent } from "./Entities/mjBizAppsOrdersPaymentIntent/mjbizappsorderspaymentintent.form.component";
+import { mjBizAppsOrdersPaymentLineFormComponent } from "./Entities/mjBizAppsOrdersPaymentLine/mjbizappsorderspaymentline.form.component";
+import { mjBizAppsOrdersPaymentProviderFormComponent } from "./Entities/mjBizAppsOrdersPaymentProvider/mjbizappsorderspaymentprovider.form.component";
+import { mjBizAppsOrdersPaymentSequenceFormComponent } from "./Entities/mjBizAppsOrdersPaymentSequence/mjbizappsorderspaymentsequence.form.component";
 import { mjBizAppsOrdersPaymentTermsTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentTermsType/mjbizappsorderspaymenttermstype.form.component";
+import { mjBizAppsOrdersPaymentFormComponent } from "./Entities/mjBizAppsOrdersPayment/mjbizappsorderspayment.form.component";
 import { mjBizAppsOrdersProductCategoryFormComponent } from "./Entities/mjBizAppsOrdersProductCategory/mjbizappsordersproductcategory.form.component";
 import { mjBizAppsOrdersProductTypeFormComponent } from "./Entities/mjBizAppsOrdersProductType/mjbizappsordersproducttype.form.component";
 import { mjBizAppsOrdersProductFormComponent } from "./Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component";
@@ -26,10 +32,16 @@ import { mjBizAppsOrdersProductFormComponent } from "./Entities/mjBizAppsOrdersP
 
 @NgModule({
 declarations: [
+    mjBizAppsOrdersCustomerPaymentMethodFormComponent,
     mjBizAppsOrdersOrderLineFormComponent,
     mjBizAppsOrdersOrderSequenceFormComponent,
     mjBizAppsOrdersOrderFormComponent,
+    mjBizAppsOrdersPaymentIntentFormComponent,
+    mjBizAppsOrdersPaymentLineFormComponent,
+    mjBizAppsOrdersPaymentProviderFormComponent,
+    mjBizAppsOrdersPaymentSequenceFormComponent,
     mjBizAppsOrdersPaymentTermsTypeFormComponent,
+    mjBizAppsOrdersPaymentFormComponent,
     mjBizAppsOrdersProductCategoryFormComponent,
     mjBizAppsOrdersProductTypeFormComponent,
     mjBizAppsOrdersProductFormComponent],

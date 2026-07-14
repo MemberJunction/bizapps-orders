@@ -17,6 +17,9 @@
 --                           fulfillment status, reversal lineage
 --   * PaymentTermsType    — payment-terms lookup (Net30 …; seed rows via metadata/)
 --   * OrderSequence       — global singleton counter for gap-conscious ORD-{seq} numbers
+--   * Payments subsystem (S2, §4.5): PaymentProvider / CustomerPaymentMethod /
+--                           PaymentIntent / Payment / PaymentLine / PaymentSequence —
+--                           receipts, reversals, cash application; NO currency columns (MOD-4)
 --
 -- Cross-app references are SOFT (plain UNIQUEIDENTIFIER, no FK) so Orders never
 -- couples to another app's schema:
@@ -227,6 +230,141 @@ GO
 INSERT INTO __mj_BizAppsOrders.OrderSequence (ID, NextSequenceNumber) VALUES (1, 1);
 GO
 
+---------------------------------------------------------------------------
+-- 3.8 PaymentProvider — a configured payment-processing account (S2, master §4.5).
+--     ProviderType widens as providers land (BO-D29). CredentialsRef is an MJ
+--     Credentials engine key — NEVER a secret at rest.
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.PaymentProvider (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    ProviderType NVARCHAR(40) NOT NULL,
+    CompanyID UNIQUEIDENTIFIER NOT NULL,
+    Name NVARCHAR(200) NOT NULL,
+    CredentialsRef NVARCHAR(200) NULL,
+    IsLiveMode BIT NOT NULL DEFAULT 0,
+    IsActive BIT NOT NULL DEFAULT 1,
+    CONSTRAINT PK_PaymentProvider PRIMARY KEY (ID),
+    CONSTRAINT CK_PaymentProvider_ProviderType CHECK (ProviderType IN ('Stripe','Manual'))
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.9 CustomerPaymentMethod — provider token vault (BO-D46). Token references
+--     only; NEVER a PAN or full card data. Created before Payment so the FK
+--     targets exist.
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.CustomerPaymentMethod (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    CustomerOrganizationID UNIQUEIDENTIFIER NOT NULL,
+    PaymentProviderID UNIQUEIDENTIFIER NOT NULL,
+    ProviderCustomerID NVARCHAR(100) NULL,
+    ProviderPaymentMethodID NVARCHAR(100) NULL,
+    MethodType NVARCHAR(20) NULL,
+    Brand NVARCHAR(40) NULL,
+    Last4 CHAR(4) NULL,
+    ExpiryMonth INT NULL,
+    ExpiryYear INT NULL,
+    IsDefault BIT NOT NULL DEFAULT 0,
+    IsActive BIT NOT NULL DEFAULT 1,
+    CONSTRAINT PK_CustomerPaymentMethod PRIMARY KEY (ID),
+    CONSTRAINT CK_CustomerPaymentMethod_ExpiryMonth CHECK (ExpiryMonth IS NULL OR (ExpiryMonth >= 1 AND ExpiryMonth <= 12))
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.10 PaymentIntent — provider-side collection state (BO-D26). Stripe-shaped;
+--      the Manual provider skips it entirely. ProviderEventID carries webhook
+--      idempotency (unique filtered index below).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.PaymentIntent (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    PaymentProviderID UNIQUEIDENTIFIER NOT NULL,
+    ProviderIntentID NVARCHAR(100) NOT NULL,
+    Status NVARCHAR(30) NOT NULL,
+    Amount DECIMAL(18,2) NOT NULL,
+    OrderID UNIQUEIDENTIFIER NULL,
+    CustomerOrganizationID UNIQUEIDENTIFIER NULL,
+    ProviderEventID NVARCHAR(100) NULL,
+    LastEventAt DATETIMEOFFSET NULL,
+    CONSTRAINT PK_PaymentIntent PRIMARY KEY (ID),
+    CONSTRAINT UQ_PaymentIntent_ProviderIntentID UNIQUE (ProviderIntentID),
+    CONSTRAINT CK_PaymentIntent_Status CHECK (Status IN ('RequiresPayment','Processing','Succeeded','Canceled','Failed'))
+);
+GO
+
+CREATE UNIQUE NONCLUSTERED INDEX UQ_PaymentIntent_ProviderEventID
+    ON __mj_BizAppsOrders.PaymentIntent (ProviderEventID)
+    WHERE ProviderEventID IS NOT NULL;
+GO
+
+---------------------------------------------------------------------------
+-- 3.11 Payment — a money movement (receipt or reversal). Gross Amount is the
+--      customer-side truth; NetAmount = Amount − ProcessingFeeAmount (BO-D47).
+--      Negative Amount for reversal methods. JournalEntryID is a SOFT ref to
+--      the accounting JE booked at capture (mirrors Order.JournalEntryID).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.Payment (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    PaymentNumber NVARCHAR(40) NOT NULL,
+    ReceivingCompanyID UNIQUEIDENTIFIER NOT NULL,
+    CustomerOrganizationID UNIQUEIDENTIFIER NULL,
+    PaymentDate DATE NOT NULL,
+    Method NVARCHAR(20) NOT NULL,
+    Amount DECIMAL(18,2) NOT NULL,
+    ProcessingFeeAmount DECIMAL(18,2) NOT NULL DEFAULT 0,
+    NetAmount DECIMAL(18,2) NULL,
+    PaymentProviderID UNIQUEIDENTIFIER NULL,
+    PaymentIntentID UNIQUEIDENTIFIER NULL,
+    PaymentMethodID UNIQUEIDENTIFIER NULL,
+    ProviderChargeID NVARCHAR(100) NULL,
+    ProviderRefundID NVARCHAR(100) NULL,
+    ReversesPaymentID UNIQUEIDENTIFIER NULL,
+    ReversalReason NVARCHAR(MAX) NULL,
+    Status NVARCHAR(20) NOT NULL DEFAULT 'Pending',
+    JournalEntryID UNIQUEIDENTIFIER NULL,
+    Description NVARCHAR(MAX) NULL,
+    Notes NVARCHAR(MAX) NULL,
+    CONSTRAINT PK_Payment PRIMARY KEY (ID),
+    CONSTRAINT UQ_Payment_PaymentNumber UNIQUE (PaymentNumber),
+    CONSTRAINT CK_Payment_Method CHECK (Method IN ('CreditCard','ACH','Wire','Check','Cash','InternalTransfer','Refund','Chargeback','BankReturn')),
+    CONSTRAINT CK_Payment_Status CHECK (Status IN ('Pending','Captured','Failed','Refunded','Disputed'))
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.12 PaymentLine — cash application junction (BO-D16/D45): which order(s)
+--      a payment settles, and by how much. Jeremy's "applying a payment".
+--      Negative Amount applies a credit memo. AllocatedByUserID NULL = auto.
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.PaymentLine (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    PaymentID UNIQUEIDENTIFIER NOT NULL,
+    OrderID UNIQUEIDENTIFIER NOT NULL,
+    OrderLineID UNIQUEIDENTIFIER NULL,
+    Amount DECIMAL(18,2) NOT NULL,
+    AllocatedAt DATETIMEOFFSET NOT NULL,
+    AllocatedByUserID UNIQUEIDENTIFIER NULL,
+    CONSTRAINT PK_PaymentLine PRIMARY KEY (ID),
+    CONSTRAINT CK_PaymentLine_Amount CHECK (Amount <> 0)
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.13 PaymentSequence — GLOBAL singleton counter for PAY-{seq} numbers
+--      (same pattern as OrderSequence). Seeded here.
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.PaymentSequence (
+    ID INT NOT NULL DEFAULT 1,
+    NextSequenceNumber INT NOT NULL DEFAULT 1,
+    CONSTRAINT PK_PaymentSequence PRIMARY KEY (ID),
+    CONSTRAINT CK_PaymentSequence_Singleton CHECK (ID = 1),
+    CONSTRAINT CK_PaymentSequence_NextSeq CHECK (NextSequenceNumber > 0)
+);
+GO
+
+INSERT INTO __mj_BizAppsOrders.PaymentSequence (ID, NextSequenceNumber) VALUES (1, 1);
+GO
+
 -- =============================================================================
 -- 4. FOREIGN KEYS (same-schema; created after all tables exist)
 -- =============================================================================
@@ -284,6 +422,72 @@ GO
 ALTER TABLE __mj_BizAppsOrders.[Order]
     ADD CONSTRAINT FK_Order_PostedByUser
     FOREIGN KEY (PostedByUserID) REFERENCES __mj.[User](ID);
+GO
+
+-- Payments subsystem (S2)
+ALTER TABLE __mj_BizAppsOrders.PaymentProvider
+    ADD CONSTRAINT FK_PaymentProvider_Company
+    FOREIGN KEY (CompanyID) REFERENCES __mj.Company(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.CustomerPaymentMethod
+    ADD CONSTRAINT FK_CustomerPaymentMethod_PaymentProvider
+    FOREIGN KEY (PaymentProviderID) REFERENCES __mj_BizAppsOrders.PaymentProvider(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.PaymentIntent
+    ADD CONSTRAINT FK_PaymentIntent_PaymentProvider
+    FOREIGN KEY (PaymentProviderID) REFERENCES __mj_BizAppsOrders.PaymentProvider(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.PaymentIntent
+    ADD CONSTRAINT FK_PaymentIntent_Order
+    FOREIGN KEY (OrderID) REFERENCES __mj_BizAppsOrders.[Order](ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Payment
+    ADD CONSTRAINT FK_Payment_ReceivingCompany
+    FOREIGN KEY (ReceivingCompanyID) REFERENCES __mj.Company(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Payment
+    ADD CONSTRAINT FK_Payment_PaymentProvider
+    FOREIGN KEY (PaymentProviderID) REFERENCES __mj_BizAppsOrders.PaymentProvider(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Payment
+    ADD CONSTRAINT FK_Payment_PaymentIntent
+    FOREIGN KEY (PaymentIntentID) REFERENCES __mj_BizAppsOrders.PaymentIntent(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Payment
+    ADD CONSTRAINT FK_Payment_PaymentMethod
+    FOREIGN KEY (PaymentMethodID) REFERENCES __mj_BizAppsOrders.CustomerPaymentMethod(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.Payment
+    ADD CONSTRAINT FK_Payment_ReversesPayment
+    FOREIGN KEY (ReversesPaymentID) REFERENCES __mj_BizAppsOrders.Payment(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.PaymentLine
+    ADD CONSTRAINT FK_PaymentLine_Payment
+    FOREIGN KEY (PaymentID) REFERENCES __mj_BizAppsOrders.Payment(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.PaymentLine
+    ADD CONSTRAINT FK_PaymentLine_Order
+    FOREIGN KEY (OrderID) REFERENCES __mj_BizAppsOrders.[Order](ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.PaymentLine
+    ADD CONSTRAINT FK_PaymentLine_OrderLine
+    FOREIGN KEY (OrderLineID) REFERENCES __mj_BizAppsOrders.OrderLine(ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.PaymentLine
+    ADD CONSTRAINT FK_PaymentLine_AllocatedByUser
+    FOREIGN KEY (AllocatedByUserID) REFERENCES __mj.[User](ID);
 GO
 
 -- =============================================================================
@@ -375,6 +579,82 @@ BEGIN
 END;
 GO
 
+---------------------------------------------------------------------------
+-- 5.3 trg_Payment_ImmutableAfterCapture (S2 — BO-D14)
+--     Once a payment reaches Captured (or beyond: Refunded/Disputed), its
+--     financial identity (Amount, ProcessingFeeAmount, NetAmount, Method,
+--     PaymentDate, ReceivingCompanyID, CustomerOrganizationID) is frozen and
+--     the row cannot be DELETEd. Status may still advance (Captured→Refunded/
+--     Disputed) and provider artifacts (ProviderRefundID) may land. The
+--     JournalEntryID booking record follows the Order rule: NULL→value once,
+--     never cleared or replaced. Corrections happen via a reversal Payment.
+---------------------------------------------------------------------------
+CREATE TRIGGER __mj_BizAppsOrders.trg_Payment_ImmutableAfterCapture
+ON __mj_BizAppsOrders.Payment
+AFTER UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- DELETE: block once captured+ (Pending/Failed payments may be deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
+       AND EXISTS (SELECT 1 FROM deleted WHERE Status IN ('Captured','Refunded','Disputed'))
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 51004, 'Payment cannot be deleted once Captured. Use a reversal payment (Refund/Chargeback) instead.', 1;
+    END;
+
+    -- UPDATE: frozen financial fields once the PREVIOUS status was Captured+
+    -- (the capture transition itself may set them in the same statement).
+    IF EXISTS (
+        SELECT 1
+        FROM deleted d
+        JOIN inserted i ON i.ID = d.ID
+        WHERE d.Status IN ('Captured','Refunded','Disputed')
+          AND (
+            i.Amount               <> d.Amount               OR
+            i.ProcessingFeeAmount  <> d.ProcessingFeeAmount  OR
+            ISNULL(i.NetAmount, 0) <> ISNULL(d.NetAmount, 0) OR
+            i.Method               <> d.Method               OR
+            i.PaymentDate          <> d.PaymentDate          OR
+            i.ReceivingCompanyID   <> d.ReceivingCompanyID   OR
+            ISNULL(i.CustomerOrganizationID, '00000000-0000-0000-0000-000000000000') <> ISNULL(d.CustomerOrganizationID, '00000000-0000-0000-0000-000000000000')
+          )
+    )
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 51005, 'Payment financial fields (Amount/Fees/Method/PaymentDate/ReceivingCompanyID/Customer) are frozen once Captured. Use a reversal payment.', 1;
+    END;
+
+    -- JournalEntryID: never cleared or replaced once set (any status)
+    IF EXISTS (
+        SELECT 1
+        FROM deleted d
+        JOIN inserted i ON i.ID = d.ID
+        WHERE d.JournalEntryID IS NOT NULL
+          AND (i.JournalEntryID IS NULL OR i.JournalEntryID <> d.JournalEntryID)
+    )
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 51006, 'Payment.JournalEntryID cannot be cleared or replaced once set. Corrections happen via a reversal payment.', 1;
+    END;
+
+    -- Status may not regress out of a terminal/locked state
+    IF EXISTS (
+        SELECT 1
+        FROM deleted d
+        JOIN inserted i ON i.ID = d.ID
+        WHERE (d.Status = 'Captured'  AND i.Status IN ('Pending','Failed'))
+           OR (d.Status = 'Refunded'  AND i.Status <> 'Refunded')
+           OR (d.Status = 'Disputed'  AND i.Status NOT IN ('Disputed','Refunded'))
+    )
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 51007, 'Payment.Status cannot regress (Captured may only advance to Refunded/Disputed; Refunded is terminal).', 1;
+    END;
+END;
+GO
+
 -- =============================================================================
 -- 6. EXTENDED PROPERTIES (MS_Description — CodeGen turns these into field docs).
 --    Skipped for PK (ID) and FK columns, which CodeGen documents automatically.
@@ -456,4 +736,66 @@ GO
 -- OrderSequence
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Global singleton counter (ID=1) minting gap-conscious ORD-{seq} order numbers. Consumed only by the entity server.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderSequence';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The next order sequence number to assign.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderSequence', @level2type=N'COLUMN', @level2name=N'NextSequenceNumber';
+GO
+
+-- PaymentProvider
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'A configured payment-processing account (Stripe account, or the built-in Manual provider) owned by one company.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentProvider';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Stripe | Manual. Widens as additional processors land.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentProvider', @level2type=N'COLUMN', @level2name=N'ProviderType';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Display name of this provider account.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentProvider', @level2type=N'COLUMN', @level2name=N'Name';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'MJ Credentials engine key referencing the provider credentials. NEVER a secret value at rest.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentProvider', @level2type=N'COLUMN', @level2name=N'CredentialsRef';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this account points at the provider''s live environment (vs test/sandbox).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentProvider', @level2type=N'COLUMN', @level2name=N'IsLiveMode';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this provider account is active.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentProvider', @level2type=N'COLUMN', @level2name=N'IsActive';
+GO
+
+-- CustomerPaymentMethod
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'A stored payment method token for a customer (BO-D46). Provider token references only — never card data.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'CustomerPaymentMethod';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Organization — the customer who owns this method.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'CustomerPaymentMethod', @level2type=N'COLUMN', @level2name=N'CustomerOrganizationID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Provider-side customer identifier (e.g. Stripe cus_...).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'CustomerPaymentMethod', @level2type=N'COLUMN', @level2name=N'ProviderCustomerID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Provider-side payment method token (e.g. Stripe pm_...).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'CustomerPaymentMethod', @level2type=N'COLUMN', @level2name=N'ProviderPaymentMethodID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Kind of method (card, us_bank_account, ...). Provider vocabulary, informational.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'CustomerPaymentMethod', @level2type=N'COLUMN', @level2name=N'MethodType';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Card brand for display (Visa, Mastercard, ...).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'CustomerPaymentMethod', @level2type=N'COLUMN', @level2name=N'Brand';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Last four digits for display. Never more.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'CustomerPaymentMethod', @level2type=N'COLUMN', @level2name=N'Last4';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Card expiry month (1-12) for display/expiry warnings.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'CustomerPaymentMethod', @level2type=N'COLUMN', @level2name=N'ExpiryMonth';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Card expiry year for display/expiry warnings.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'CustomerPaymentMethod', @level2type=N'COLUMN', @level2name=N'ExpiryYear';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this is the customer''s default method for charge-on-file.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'CustomerPaymentMethod', @level2type=N'COLUMN', @level2name=N'IsDefault';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this method is active/usable.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'CustomerPaymentMethod', @level2type=N'COLUMN', @level2name=N'IsActive';
+GO
+
+-- PaymentIntent
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Provider-side collection state (BO-D26; Stripe-shaped). The Manual provider skips intents entirely.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentIntent';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Provider-side intent identifier (e.g. Stripe pi_...). Unique.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentIntent', @level2type=N'COLUMN', @level2name=N'ProviderIntentID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'RequiresPayment | Processing | Succeeded | Canceled | Failed. Mirrors the provider lifecycle.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentIntent', @level2type=N'COLUMN', @level2name=N'Status';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Amount being collected.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentIntent', @level2type=N'COLUMN', @level2name=N'Amount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Organization — the paying customer.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentIntent', @level2type=N'COLUMN', @level2name=N'CustomerOrganizationID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Last processed provider webhook event id — the idempotency key (unique when present).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentIntent', @level2type=N'COLUMN', @level2name=N'ProviderEventID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC timestamp of the last provider event applied to this intent.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentIntent', @level2type=N'COLUMN', @level2name=N'LastEventAt';
+GO
+
+-- Payment
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'A money movement: a customer receipt or a reversal (refund/chargeback/bank return). Booked to accounting at capture; applied to orders via PaymentLine.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Human-readable payment identifier (PAY-{seq}). Unique.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'PaymentNumber';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Organization — the payer. NULL only for anonymous/e-commerce edge cases.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'CustomerOrganizationID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Date the money moved (bank date, not entry date).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'PaymentDate';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'CreditCard | ACH | Wire | Check | Cash | InternalTransfer | Refund | Chargeback | BankReturn. Reversal methods carry negative Amount.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'Method';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Gross amount received (negative for reversal methods).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'Amount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Processor fee withheld from this payment.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'ProcessingFeeAmount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Net cash = Amount - ProcessingFeeAmount (engine-computed, BO-D47).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'NetAmount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Provider-side charge identifier (e.g. Stripe ch_...).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'ProviderChargeID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Provider-side refund identifier when this payment is a provider refund.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'ProviderRefundID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Reason this payment reverses another (required by validation when ReversesPaymentID is set).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'ReversalReason';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Pending | Captured | Failed | Refunded | Disputed. Financial fields freeze at Captured (DB trigger); corrections via reversal payments.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'Status';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to the __mj_BizAppsAccounting.JournalEntry booked at capture. Never cleared or replaced once set (trigger).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'JournalEntryID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Customer-facing description / memo.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'Description';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Internal notes.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Payment', @level2type=N'COLUMN', @level2name=N'Notes';
+GO
+
+-- PaymentLine
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Cash application junction (BO-D16/D45): how much of a payment settles which order (optionally which line). Negative Amount applies a credit memo.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentLine';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Amount of the payment applied to this order (<> 0; negative when applying a credit memo).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentLine', @level2type=N'COLUMN', @level2name=N'Amount';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC timestamp when this application was made.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentLine', @level2type=N'COLUMN', @level2name=N'AllocatedAt';
+GO
+
+-- PaymentSequence
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Global singleton counter (ID=1) minting gap-conscious PAY-{seq} payment numbers. Consumed only by the entity server.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentSequence';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The next payment sequence number to assign.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PaymentSequence', @level2type=N'COLUMN', @level2name=N'NextSequenceNumber';
 GO
