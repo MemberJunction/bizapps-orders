@@ -8,11 +8,13 @@
  * + lines against the DB (balanced overall AND per company, correct accounts, EntryType, OrderID).
  *
  * Tiers/cases:
- *   O1  single-company immediate  — Dr AR / Cr Sales, balanced, EntryType=OrderBooking, lineage stamped
- *   O2  multi-company order        — balanced within EACH company (AM-4)
+ *   O1  single-company immediate  — ONE JE: Dr AR / Cr Sales, balanced, CompanyID + lineage stamped
+ *   O2  multi-company order        — ONE JE PER COMPANY (MOD-11/F1.2), each single-company + balanced;
+ *                                    Order.JournalEntryID stays NULL (lineage via JournalEntry.OrderID)
  *   O3  deferred-revenue product   — Cr Deferred Revenue (not Sales)
  *   O4  unresolvable product       — Confirm BLOCKED (Save false), no JE, order not persisted Confirmed
- *   O5  idempotency                — re-Save a booked order books no second JE
+ *   O5  idempotency                — re-Save a booked order books no second JE SET (ConfirmedAt guard)
+ *   O6  per-company numbering      — booked JEs carry JE-{CompanyCode}-{FY}-{seq} numbers
  *
  * Run from the instance worktree root:
  *   npx tsx packages/dev-apps/bizapps-orders/test-harnesses/server/order-to-je.ts
@@ -186,8 +188,18 @@ async function confirmOrder(orderId: string): Promise<{ saved: boolean; order: m
   await order.Load(orderId);
   order.Status = 'Confirmed';
   const saved = await order.Save();
-  if (saved && order.JournalEntryID) createdJEIds.push(order.JournalEntryID);
+  if (saved) {
+    // MOD-11: one JE per company — collect them all by lineage (JournalEntryID is only set single-JE).
+    const jes = (await pool.request().query(`SELECT ID FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}'`)).recordset as Array<{ ID: string }>;
+    for (const r of jes) if (!createdJEIds.includes(r.ID)) createdJEIds.push(r.ID);
+  }
   return { saved, order };
+}
+
+/** All JEs booked for an order (per-company set), with header fields for assertions. */
+async function readOrderJEs(orderId: string): Promise<Array<{ ID: string; CompanyID: string; EntryNumber: string }>> {
+  const rows = (await pool.request().query(`SELECT ID, CompanyID, EntryNumber FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}' ORDER BY EntryNumber`)).recordset;
+  return rows.map(r => ({ ID: r.ID as string, CompanyID: (r.CompanyID as string).toUpperCase(), EntryNumber: r.EntryNumber as string }));
 }
 
 interface JELineRow { GLAccountID: string; DebitAmount: number; CreditAmount: number }
@@ -255,22 +267,36 @@ async function main(): Promise<void> {
     const je = await readJE(order.JournalEntryID!);
     assert(je.header.EntryType === 'OrderBooking', `EntryType should be OrderBooking, got ${je.header.EntryType}`);
     assert((je.header.OrderID ?? '').toUpperCase() === orderId.toUpperCase(), 'JE.OrderID should be the order');
+    const jes = await readOrderJEs(orderId);
+    assert(jes.length === 1, `single-company order should book exactly ONE JE, got ${jes.length}`);
+    assert(jes[0].CompanyID === coA.id.toUpperCase(), 'JE.CompanyID should be company A (MOD-12)');
     assert(near(debitFor(je.lines, coA.arGL), 200), `Dr AR should be 200, got ${debitFor(je.lines, coA.arGL)}`);
     assert(near(creditFor(je.lines, coA.revGL), 200), `Cr Sales should be 200, got ${creditFor(je.lines, coA.revGL)}`);
     const totDr = je.lines.reduce((s, l) => s + l.DebitAmount, 0), totCr = je.lines.reduce((s, l) => s + l.CreditAmount, 0);
     assert(near(totDr, totCr), `JE should balance overall (${totDr} vs ${totCr})`);
   });
 
-  await test('O2 multi-company order → balanced within EACH company (AM-4)', async () => {
+  await test('O2 multi-company order → ONE JE PER COMPANY, each single-company + balanced (MOD-11)', async () => {
     const orderId = await createOrder([
       { productId: pImmA, qty: 1, price: 300 },
       { productId: pImmB, qty: 3, price: 50 },
     ]);
     const { saved, order } = await confirmOrder(orderId);
-    assert(saved && !!order.JournalEntryID, 'confirm should book a JE');
-    const je = await readJE(order.JournalEntryID!);
-    assert(near(debitFor(je.lines, coA.arGL), 300) && near(creditFor(je.lines, coA.revGL), 300), 'Co A: Dr AR 300 = Cr Sales 300');
-    assert(near(debitFor(je.lines, coB.arGL), 150) && near(creditFor(je.lines, coB.revGL), 150), 'Co B: Dr AR 150 = Cr Sales 150');
+    assert(saved, 'confirm should succeed');
+    assert(!order.JournalEntryID, 'multi-company order: JournalEntryID stays NULL (lineage via JE.OrderID)');
+    assert(!!order.ConfirmedAt, 'ConfirmedAt is the order-level booked marker');
+    const jes = await readOrderJEs(orderId);
+    assert(jes.length === 2, `expected 2 JEs (one per company), got ${jes.length}`);
+    const jeA = jes.find(j => j.CompanyID === coA.id.toUpperCase());
+    const jeB = jes.find(j => j.CompanyID === coB.id.toUpperCase());
+    assert(!!jeA && !!jeB, 'one JE per company, CompanyID stamped (MOD-12)');
+    const a = await readJE(jeA!.ID);
+    const b = await readJE(jeB!.ID);
+    assert(near(debitFor(a.lines, coA.arGL), 300) && near(creditFor(a.lines, coA.revGL), 300), 'Co A JE: Dr AR 300 = Cr Sales 300');
+    assert(near(debitFor(b.lines, coB.arGL), 150) && near(creditFor(b.lines, coB.revGL), 150), 'Co B JE: Dr AR 150 = Cr Sales 150');
+    // single-company purity: no cross-company accounts inside either JE
+    assert(near(debitFor(a.lines, coB.arGL), 0) && near(creditFor(a.lines, coB.revGL), 0), 'Co A JE contains no Co B lines');
+    assert(near(debitFor(b.lines, coA.arGL), 0) && near(creditFor(b.lines, coA.revGL), 0), 'Co B JE contains no Co A lines');
   });
 
   await test('O3 deferred-revenue product → credits Deferred Revenue, not Sales', async () => {
@@ -292,15 +318,33 @@ async function main(): Promise<void> {
     assert(dbStatus.JournalEntryID == null, 'order should have no JournalEntryID');
   });
 
-  await test('O5 idempotency — re-Save a booked order books no second JE', async () => {
+  await test('O5 idempotency — re-Save a booked order books no second JE set (order-level guard)', async () => {
     const orderId = await createOrder([{ productId: pImmA, qty: 1, price: 75 }]);
     const first = await confirmOrder(orderId);
     assert(first.saved && !!first.order.JournalEntryID, 'first confirm books a JE');
+    assert(!!first.order.ConfirmedAt, 'ConfirmedAt stamped on first booking');
     const again = await confirmOrder(orderId);
     assert(again.saved, 're-save should succeed');
     assert(again.order.JournalEntryID === first.order.JournalEntryID, 'JournalEntryID unchanged');
     const count = (await pool.request().query(`SELECT COUNT(*) n FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}'`)).recordset[0].n;
     assert(Number(count) === 1, `exactly one JE should exist for the order, got ${count}`);
+  });
+
+  await test('O6 per-company numbering — booked JEs carry JE-{CompanyCode}-{FY}-{seq} (A4.4)', async () => {
+    const orderId = await createOrder([
+      { productId: pImmA, qty: 1, price: 10 },
+      { productId: pImmB, qty: 1, price: 20 },
+    ]);
+    const { saved } = await confirmOrder(orderId);
+    assert(saved, 'confirm should succeed');
+    const jes = await readOrderJEs(orderId);
+    assert(jes.length === 2, `expected 2 JEs, got ${jes.length}`);
+    const re = /^JE-[A-Z0-9_-]{2,20}-\d{4}-\d{6}$/;
+    for (const je of jes) {
+      assert(re.test(je.EntryNumber), `EntryNumber '${je.EntryNumber}' does not match JE-{CompanyCode}-{FY}-{seq}`);
+    }
+    const codes = new Set(jes.map(j => j.EntryNumber.split('-')[1]));
+    assert(codes.size === 2, `the two companies' entries should carry DIFFERENT company codes, got ${[...codes].join(',')}`);
   });
 
   await teardown();
@@ -335,6 +379,7 @@ async function teardown(): Promise<void> {
   for (const co of companies) {
     await exec(`DELETE FROM ${ACC_SCHEMA}.AccountingCompanyProfile WHERE ID='${co.id}'`);
     await exec(`DELETE FROM ${ACC_SCHEMA}.GLAccount WHERE CompanyID='${co.id}'`);
+    await exec(`DELETE FROM __mj_BizAppsAccounting.JournalEntrySequence WHERE CompanyID='${co.id}'`); // per-company JE sequence rows (MOD-12)
     await exec(`DELETE FROM __mj.Company WHERE ID='${co.id}'`);
   }
 }

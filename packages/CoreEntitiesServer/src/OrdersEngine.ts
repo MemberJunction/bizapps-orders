@@ -41,7 +41,7 @@ import type {
   mjBizAppsOrdersProductEntity,
   mjBizAppsOrdersProductTypeEntity,
 } from '@mj-biz-apps/orders-entities';
-import { buildOrderJournalDraft, type ResolvedOrderLine } from './orderJournalDraft.js';
+import { buildOrderJournalDrafts, type ResolvedOrderLine } from './orderJournalDraft.js';
 
 const PRODUCT_TYPES_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const PRODUCT_CATEGORIES_ENTITY = 'MJ_BizApps_Orders: Product Categories';
@@ -58,9 +58,12 @@ export interface ResolvedAccount {
   CompanyID: string;
 }
 
-/** Outcome of turning an order into a draft: the draft, or the resolution errors that blocked it. */
+/**
+ * Outcome of turning an order into its booking drafts (ONE PER COMPANY — MOD-11), or the
+ * resolution errors that blocked it. Drafts is non-empty exactly when Errors is empty.
+ */
 export interface OrderDraftBuildResult {
-  Draft?: JournalEntryDraft;
+  Drafts?: JournalEntryDraft[];
   Errors: string[];
 }
 
@@ -176,10 +179,11 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
 
   /**
    * Resolve every line's revenue account and each involved company's AR account, then assemble the
-   * balanced order-booking draft. Returns typed resolution errors instead of throwing — the caller
-   * reservoirs them so a booking failure never silently vanishes.
+   * balanced order-booking drafts — ONE PER COMPANY (MOD-11; accounting MOD-12 rejects mixed
+   * drafts). Returns typed resolution errors instead of throwing — the caller reservoirs them so
+   * a booking failure never silently vanishes.
    */
-  public buildDraftForOrder(
+  public buildDraftsForOrder(
     order: mjBizAppsOrdersOrderEntity,
     lines: mjBizAppsOrdersOrderLineEntity[]
   ): OrderDraftBuildResult {
@@ -188,7 +192,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     const resolvedLines = this.resolveRevenueLines(lines, asOfDate, errors);
     const arByCompany = this.resolveArAccounts(resolvedLines, asOfDate, errors);
     if (errors.length > 0) return { Errors: errors };
-    const draft = buildOrderJournalDraft({
+    const drafts = buildOrderJournalDrafts({
       Lines: resolvedLines,
       ArAccountByCompany: arByCompany,
       Context: {
@@ -198,7 +202,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         Description: `Order ${order.OrderNumber}`,
       },
     });
-    return { Draft: draft, Errors: [] };
+    return { Drafts: drafts, Errors: [] };
   }
 
   /** Resolve each line's revenue account (product → category). Collects errors, never throws. */

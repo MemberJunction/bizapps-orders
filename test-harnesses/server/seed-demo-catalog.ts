@@ -15,7 +15,7 @@
 import * as dotenv from 'dotenv';
 import sql from 'mssql';
 import path from 'path';
-import { Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { CompositeKey, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import { setupSQLServerClient, SQLServerProviderConfigData, UserCache } from '@memberjunction/sqlserver-dataprovider';
 import '@memberjunction/server-bootstrap-lite';
 import '@mj-biz-apps/common-entities';
@@ -105,6 +105,20 @@ async function cleanupIncompleteDemoCompanies(): Promise<void> {
     if (await acp.Load(row.ID)) {
       if (await acp.Delete()) console.log(`  cleaned up incomplete demo company profile ${row.ID}`);
       else console.log(`  warn: could not delete demo company profile ${row.ID}: ${acp.LatestResult?.CompleteMessage ?? ''}`);
+    }
+  }
+  // A prior accounting drop-schema deletes the ACP but leaves the __mj.Company (IsA parent) behind —
+  // its UQ_Company_Name then blocks re-seeding. Sweep orphan demo Companies with no ACP.
+  const orphans = await rv.RunView<{ ID: string }>(
+    { EntityName: 'MJ: Companies', ExtraFilter: `Name='${DEMO_COMPANY}'`, Fields: ['ID'], ResultType: 'simple', BypassCache: true }, user);
+  for (const row of orphans.Results ?? []) {
+    const stillHasAcp = await rv.RunView<{ ID: string }>(
+      { EntityName: ACP_ENTITY, ExtraFilter: `ID='${row.ID}'`, Fields: ['ID'], ResultType: 'simple', BypassCache: true }, user);
+    if ((stillHasAcp.Results ?? []).length > 0) continue;
+    const co = await md.GetEntityObject('MJ: Companies', user);
+    if (await co.InnerLoad(CompositeKey.FromID(row.ID))) {
+      if (await co.Delete()) console.log(`  cleaned up orphan demo Company ${row.ID} (survived a schema drop)`);
+      else console.log(`  warn: could not delete orphan demo Company ${row.ID}: ${co.LatestResult?.CompleteMessage ?? ''}`);
     }
   }
 }

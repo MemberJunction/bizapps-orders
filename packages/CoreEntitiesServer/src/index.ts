@@ -11,7 +11,7 @@
  */
 export { OrdersEngine } from './OrdersEngine.js';
 export type { ResolvedAccount, OrderDraftBuildResult } from './OrdersEngine.js';
-export { buildOrderJournalDraft, OrderDraftError } from './orderJournalDraft.js';
+export { buildOrderJournalDrafts, OrderDraftError } from './orderJournalDraft.js';
 export type {
   ResolvedOrderLine,
   OrderJournalContext,

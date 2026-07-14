@@ -1,26 +1,27 @@
 /**
- * orderJournalDraft — the PURE assembly of an order's balanced journal-entry draft.
+ * orderJournalDraft — the PURE assembly of an order's balanced journal-entry drafts,
+ * ONE PER COMPANY (MOD-11, 2026-07-13 — restores master §5/§7 per-company JEs).
  *
  * This module has ZERO dependency on generated entities or a live provider: it takes the
  * ALREADY-RESOLVED GL account IDs (the recognition-type → role decision and the
  * product → category → company link walk happen in OrdersEngine, which owns the accounting
- * caches) plus per-line amounts, and produces the typed {@link JournalEntryDraft} the
- * `Accounting.CreateJournalEntry` operation consumes. Kept pure so it is fully unit-testable
- * offline (mirrors accounting's pure pipeline.ts).
+ * caches) plus per-line amounts, groups the lines by their resolved company, and produces one
+ * typed {@link JournalEntryDraft} per company for the `Accounting.CreateJournalEntry`
+ * operation (accounting MOD-12: a JE is single-company; mixed drafts are rejected with
+ * MULTI_COMPANY_DRAFT). Kept pure so it is fully unit-testable offline.
  *
- * The booking, for an order of Immediate + Deferred lines across one or more companies:
- *   Dr  Accounts Receivable   (per company — the sum of that company's line amounts)
+ * Each company's draft:
+ *   Dr  Accounts Receivable      (that company's line-amount total)
  *   Cr  Sales / Deferred Revenue (per line — the resolved revenue account)
- * Balanced overall AND within each company (AM-4) by construction: each company's AR debit
- * equals the exact sum of that company's revenue credits.
+ * Balanced by construction: the AR debit equals the exact sum of that company's credits.
  *
  * The engine merges duplicate (account + dimensions) same-side lines and orders debits before
- * credits (S8), so this builder emits raw per-line credits without pre-merging.
+ * credits, so this builder emits raw per-line credits without pre-merging.
  *
  * CONNECTS TO:
  *   CONTRACT: @mj-biz-apps/accounting-engine-base (JournalEntryDraft, JournalEntryLineDraft)
- *   CALLER:   OrdersEngine.buildDraftForOrder → CreateJournalEntryOperation.Execute
- *   DOC:      repos/apps/bizapps-orders/plans/2026-07-02-engine-meeting-amendment.md §4
+ *   CALLER:   OrdersEngine.buildDraftsForOrder → CreateJournalEntryOperation.Execute (per draft)
+ *   DOC:      MASTER-PLAN-MODIFICATIONS MOD-11 · feature plan F1.2
  */
 import type { JournalEntryDraft, JournalEntryLineDraft } from '@mj-biz-apps/accounting-engine-base';
 
@@ -122,22 +123,39 @@ function assertLinesValid(lines: ResolvedOrderLine[]): void {
   }
 }
 
+/** Group resolved lines by their (resolved) company, preserving line order within each group. */
+function groupLinesByCompany(lines: ResolvedOrderLine[]): Map<string, ResolvedOrderLine[]> {
+  const groups = new Map<string, ResolvedOrderLine[]>();
+  for (const line of lines) {
+    const existing = groups.get(line.CompanyID);
+    if (existing) existing.push(line);
+    else groups.set(line.CompanyID, [line]);
+  }
+  return groups;
+}
+
 /**
- * Assemble the balanced order-booking draft. Debits (AR, per company) precede credits (revenue,
- * per line) — the engine re-orders and merges anyway, but emitting Dr-first keeps the draft
- * readable. Throws {@link OrderDraftError} for structurally impossible inputs.
+ * Assemble the balanced order-booking drafts — ONE PER COMPANY (MOD-11). Each draft's debit
+ * (that company's AR, for the company total) precedes its credits (revenue, per line) — the
+ * engine re-orders and merges anyway, but emitting Dr-first keeps drafts readable. Group order
+ * follows first appearance in the line list (stable for tests). Throws {@link OrderDraftError}
+ * for structurally impossible inputs.
  */
-export function buildOrderJournalDraft(inputs: OrderDraftInputs): JournalEntryDraft {
+export function buildOrderJournalDrafts(inputs: OrderDraftInputs): JournalEntryDraft[] {
   const { Lines, ArAccountByCompany, Context } = inputs;
   assertLinesValid(Lines);
-  const totalsByCompany = sumAmountByCompany(Lines);
-  const debitLines = buildDebitLines(totalsByCompany, ArAccountByCompany);
-  const creditLines = buildCreditLines(Lines);
-  return {
-    EffectiveDate: Context.EffectiveDate,
-    EntryType: Context.EntryType,
-    OrderID: Context.OrderID,
-    Description: Context.Description,
-    Lines: [...debitLines, ...creditLines],
-  };
+  const drafts: JournalEntryDraft[] = [];
+  for (const [, companyLines] of groupLinesByCompany(Lines)) {
+    const totalsByCompany = sumAmountByCompany(companyLines);
+    const debitLines = buildDebitLines(totalsByCompany, ArAccountByCompany);
+    const creditLines = buildCreditLines(companyLines);
+    drafts.push({
+      EffectiveDate: Context.EffectiveDate,
+      EntryType: Context.EntryType,
+      OrderID: Context.OrderID,
+      Description: Context.Description,
+      Lines: [...debitLines, ...creditLines],
+    });
+  }
+  return drafts;
 }

@@ -1,29 +1,30 @@
 /**
- * OrderEntityServer — books a balanced journal entry into BizApps Accounting when an order is
- * first Confirmed (amendment §4, S4).
+ * OrderEntityServer — books balanced journal entries into BizApps Accounting when an order is
+ * first Confirmed (amendment §4, S4) — ONE JE PER COMPANY (MOD-11 / F1.2, 2026-07-13).
  *
- * Fires inside the order's Save(): when Status is 'Confirmed' and no JE has been booked yet
- * (JournalEntryID is null), it resolves each line's revenue account + each company's AR account
- * (OrdersEngine), assembles the balanced draft, and books it through the in-process
- * `Accounting.CreateJournalEntry` operation — the same op a browser/script would invoke over
- * GraphQL. On success it stamps the order's JournalEntryID (the idempotency guard — a re-save of
- * an already-booked order skips) + ConfirmedAt, and advances the order to `Posted` (2026-07-08
- * decision D1: `Posted` = "the journal entries are in the subledger"; Confirmed triggers posting).
+ * Fires inside the order's Save(): when Status is 'Confirmed' and the order has not booked yet
+ * (order-level guard: no JournalEntryID AND no ConfirmedAt), it resolves each line's revenue
+ * account + each company's AR account (OrdersEngine), assembles one single-company draft per
+ * company, and books them AS A SET through the in-process `Accounting.CreateJournalEntry` op —
+ * ALL succeed or the Confirm fails (a partial multi-company booking is compensated: already-
+ * created Pending JEs are deleted, loudly logged if that cleanup itself fails). On success it
+ * stamps ConfirmedAt (the order-level booked marker), sets JournalEntryID when the order booked
+ * exactly ONE entry (the single-company common case — multi-company lineage lives on
+ * JournalEntry.OrderID / JournalEntryLink), and advances the order to `Posted` (2026-07-08 D1).
  *
- * FAILURE POLICY (v1): if resolution or the op fails, Save() returns false — the Confirm is
- * BLOCKED and the reason is logged. This is the strongest form of "the financial effect never
- * silently disappears" (amendment §4): there is never a Confirmed-but-unbooked order. A retry
- * happens naturally on the next save (JournalEntryID is still null). A reservoir/retry queue that
- * lets Confirm proceed while alerting is a future enhancement.
+ * FAILURE POLICY (v1): if resolution or any op fails, Save() returns false — the Confirm is
+ * BLOCKED and the reason is logged. There is never a Confirmed-but-unbooked order; a retry
+ * happens naturally on the next save (the guard is still open).
  *
  * CONNECTS TO:
- *   ENGINE:   ./OrdersEngine (buildDraftForOrder)
+ *   ENGINE:   ./OrdersEngine (buildDraftsForOrder)
  *   OP:       @mj-biz-apps/accounting-core-entities-server (CreateJournalEntryOperation)
  *   ENTITY:   @mj-biz-apps/orders-entities (mjBizAppsOrdersOrderEntity)
  */
-import { BaseEntity, EntitySaveOptions, LogError, RunView, UserInfo } from '@memberjunction/core';
+import { BaseEntity, CompositeKey, EntitySaveOptions, LogError, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { CreateJournalEntryOperation } from '@mj-biz-apps/accounting-core-entities-server';
+import type { JournalEntryDraft } from '@mj-biz-apps/accounting-engine-base';
 import {
   mjBizAppsOrdersOrderEntity,
   mjBizAppsOrdersOrderLineEntity,
@@ -31,12 +32,13 @@ import {
 import { OrdersEngine } from './OrdersEngine.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+const ACCOUNTING_JE_ENTITY = 'MJ_BizApps_Accounting: Journal Entries';
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Orders')
 export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
   public override async Save(options?: EntitySaveOptions): Promise<boolean> {
-    if (this.shouldBookJournalEntry()) {
-      const booked = await this.bookOrderJournalEntry();
+    if (this.shouldBookJournalEntries()) {
+      const booked = await this.bookOrderJournalEntries();
       if (!booked) return false; // block the Confirm — reason is logged; retries on next save
       // The journal entries are now in the accounting subledger, so the order advances to `Posted`
       // (2026-07-08 Robert decision D1: `Posted` = "the JEs are in"; `Confirmed` triggers the posting
@@ -46,63 +48,97 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
     return super.Save(options);
   }
 
-  /** Book once: Status is Confirmed and no JE stamped yet (a failed prior attempt retries here). */
-  private shouldBookJournalEntry(): boolean {
-    return this.Status === 'Confirmed' && !this.JournalEntryID;
+  /**
+   * Book once — the ORDER-LEVEL idempotency guard (F1.2): a booked order has ConfirmedAt set
+   * (always) and JournalEntryID set (single-JE case only). A failed prior attempt left both
+   * null, so it retries here.
+   */
+  private shouldBookJournalEntries(): boolean {
+    return this.Status === 'Confirmed' && !this.JournalEntryID && !this.ConfirmedAt;
   }
 
-  /** Resolve accounts, book the balanced JE via the op, stamp lineage. False = block the Confirm. */
-  private async bookOrderJournalEntry(): Promise<boolean> {
+  /** Resolve accounts, book one JE per company as a set, stamp lineage. False = block the Confirm. */
+  private async bookOrderJournalEntries(): Promise<boolean> {
     const user = this.ContextCurrentUser;
     const lines = await this.loadLines(user);
     if (lines.length === 0) {
-      LogError(`OrderEntityServer: order ${this.OrderNumber} has no lines; cannot book a journal entry.`);
+      LogError(`OrderEntityServer: order ${this.OrderNumber} has no lines; cannot book journal entries.`);
       return false;
     }
-    const draft = await this.resolveDraft(lines, user);
-    if (!draft) return false;
-    return this.executeBooking(draft, user);
+    const drafts = await this.resolveDrafts(lines, user);
+    if (!drafts) return false;
+    return this.executeBookingSet(drafts, user);
   }
 
-  /** Build the draft, healing cross-process cache staleness with one forced refresh + retry. */
-  private async resolveDraft(
+  /** Build the per-company drafts, healing cross-process cache staleness with one forced refresh. */
+  private async resolveDrafts(
     lines: mjBizAppsOrdersOrderLineEntity[],
     user: UserInfo | undefined
-  ): Promise<Awaited<ReturnType<OrdersEngine['buildDraftForOrder']>>['Draft'] | null> {
+  ): Promise<JournalEntryDraft[] | null> {
     // No explicit provider: inside MJAPI the engine resolves the request's default provider — the
-    // same one this entity Save runs under. (this.ProviderToUse is typed IEntityDataProvider, not
-    // the IMetadataProvider the engine cache wants.)
+    // same one this entity Save runs under.
     await OrdersEngine.Instance.Config(false, user);
-    let result = OrdersEngine.Instance.buildDraftForOrder(this, lines);
-    if (!result.Draft) {
+    let result = OrdersEngine.Instance.buildDraftsForOrder(this, lines);
+    if (!result.Drafts) {
       await OrdersEngine.Instance.Config(true, user);
-      result = OrdersEngine.Instance.buildDraftForOrder(this, lines);
+      result = OrdersEngine.Instance.buildDraftsForOrder(this, lines);
     }
-    if (!result.Draft) {
+    if (!result.Drafts || result.Drafts.length === 0) {
       LogError(`OrderEntityServer: cannot book order ${this.OrderNumber}: ${result.Errors.join(' ')}`);
       return null;
     }
-    return result.Draft;
+    return result.Drafts;
   }
 
-  /** Invoke the remotable op in-process; stamp JournalEntryID + ConfirmedAt on success. */
-  private async executeBooking(
-    draft: NonNullable<Awaited<ReturnType<OrdersEngine['buildDraftForOrder']>>['Draft']>,
-    user: UserInfo | undefined
-  ): Promise<boolean> {
-    const result = await new CreateJournalEntryOperation().Execute(draft, { user });
-    const out = result.Output;
-    if (!result.Success || !out?.Success || !out.JournalEntryID) {
-      const detail = (out?.Errors ?? []).map(e => `${e.Code}: ${e.Message}`).join('; ');
-      LogError(
-        `OrderEntityServer: journal entry booking failed for order ${this.OrderNumber} ` +
-          `(${result.ResultCode ?? ''} ${result.ErrorMessage ?? ''} ${detail}).`
-      );
-      return false;
+  /**
+   * Execute the drafts as an all-or-nothing SET (MOD-11): book sequentially; on any failure,
+   * compensate by deleting the Pending JEs already created, then block the Confirm. On full
+   * success, stamp ConfirmedAt (+ JournalEntryID when exactly one JE was booked).
+   */
+  private async executeBookingSet(drafts: JournalEntryDraft[], user: UserInfo | undefined): Promise<boolean> {
+    const createdIDs: string[] = [];
+    for (const draft of drafts) {
+      const result = await new CreateJournalEntryOperation().Execute(draft, { user });
+      const out = result.Output;
+      if (!result.Success || !out?.Success || !out.JournalEntryID) {
+        const detail = (out?.Errors ?? []).map(e => `${e.Code}: ${e.Message}`).join('; ');
+        LogError(
+          `OrderEntityServer: journal entry booking failed for order ${this.OrderNumber} ` +
+            `(draft ${createdIDs.length + 1}/${drafts.length}; ${result.ResultCode ?? ''} ${result.ErrorMessage ?? ''} ${detail}).`
+        );
+        await this.compensateBookedEntries(createdIDs, user);
+        return false;
+      }
+      createdIDs.push(out.JournalEntryID);
     }
-    this.JournalEntryID = out.JournalEntryID;
+    if (createdIDs.length === 1) this.JournalEntryID = createdIDs[0];
     this.ConfirmedAt = new Date();
     return true;
+  }
+
+  /** Delete the Pending JEs a partially-failed set created — the order must never book partially. */
+  private async compensateBookedEntries(createdIDs: string[], user: UserInfo | undefined): Promise<void> {
+    const md = new Metadata();
+    for (const id of createdIDs) {
+      try {
+        const je = await md.GetEntityObject<BaseEntity>(ACCOUNTING_JE_ENTITY, user);
+        // Generic BaseEntity exposes InnerLoad(CompositeKey); the typed Load lives on generated subclasses.
+        const loaded = await je.InnerLoad(CompositeKey.FromID(id));
+        const deleted = loaded && (await je.Delete());
+        if (!deleted) {
+          LogError(
+            `OrderEntityServer: COMPENSATION FAILED — Pending JournalEntry ${id} from the partial booking of ` +
+              `order ${this.OrderNumber} could not be deleted (${je.LatestResult?.CompleteMessage ?? 'load failed'}). ` +
+              `Manual cleanup required; the order remains unbooked.`
+          );
+        }
+      } catch (e) {
+        LogError(
+          `OrderEntityServer: COMPENSATION FAILED for JournalEntry ${id} (order ${this.OrderNumber}): ` +
+            `${e instanceof Error ? e.message : String(e)}. Manual cleanup required.`
+        );
+      }
+    }
   }
 
   /** Load the order's lines (entity objects), ordered by LineNumber. */
