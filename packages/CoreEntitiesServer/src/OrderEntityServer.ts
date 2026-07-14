@@ -5,25 +5,26 @@
  * Fires inside the order's Save(): when Status is 'Confirmed' and the order has not booked yet
  * (order-level guard: no JournalEntryID AND no ConfirmedAt), it resolves each line's revenue
  * account + each company's AR account (OrdersEngine), assembles one single-company draft per
- * company, and books them AS A SET through the in-process `Accounting.CreateJournalEntry` op —
- * ALL succeed or the Confirm fails (a partial multi-company booking is compensated: already-
- * created Pending JEs are deleted, loudly logged if that cleanup itself fails). On success it
- * stamps ConfirmedAt (the order-level booked marker), sets JournalEntryID when the order booked
- * exactly ONE entry (the single-company common case — multi-company lineage lives on
- * JournalEntry.OrderID / JournalEntryLink), and advances the order to `Posted` (2026-07-08 D1).
+ * company, and books the WHOLE SET through ONE call to the in-process
+ * `Accounting.CreateJournalEntries` op — every header + line + dimension across every company
+ * writes in a single TransactionGroup, ALL entries or none (Amith's transaction rule; there is
+ * no partial-booking state and no compensation path). On success it stamps ConfirmedAt (the
+ * order-level booked marker), sets JournalEntryID when the order booked exactly ONE entry (the
+ * single-company common case — multi-company lineage lives on JournalEntry.OrderID /
+ * JournalEntryLink), and advances the order to `Posted` (2026-07-08 D1).
  *
- * FAILURE POLICY (v1): if resolution or any op fails, Save() returns false — the Confirm is
- * BLOCKED and the reason is logged. There is never a Confirmed-but-unbooked order; a retry
- * happens naturally on the next save (the guard is still open).
+ * FAILURE POLICY (v1): if resolution or the set op fails, Save() returns false — the Confirm is
+ * BLOCKED and the reason is logged. There is never a Confirmed-but-unbooked (or partially
+ * booked) order; a retry happens naturally on the next save (the guard is still open).
  *
  * CONNECTS TO:
  *   ENGINE:   ./OrdersEngine (buildDraftsForOrder)
- *   OP:       @mj-biz-apps/accounting-core-entities-server (CreateJournalEntryOperation)
+ *   OP:       @mj-biz-apps/accounting-core-entities-server (CreateJournalEntriesOperation)
  *   ENTITY:   @mj-biz-apps/orders-entities (mjBizAppsOrdersOrderEntity)
  */
-import { BaseEntity, CompositeKey, EntitySaveOptions, LogError, Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { BaseEntity, EntitySaveOptions, LogError, RunView, UserInfo } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { CreateJournalEntryOperation } from '@mj-biz-apps/accounting-core-entities-server';
+import { CreateJournalEntriesOperation } from '@mj-biz-apps/accounting-core-entities-server';
 import type { JournalEntryDraft } from '@mj-biz-apps/accounting-engine-base';
 import {
   mjBizAppsOrdersOrderEntity,
@@ -32,7 +33,6 @@ import {
 import { OrdersEngine } from './OrdersEngine.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
-const ACCOUNTING_JE_ENTITY = 'MJ_BizApps_Accounting: Journal Entries';
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Orders')
 export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
@@ -91,54 +91,28 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
   }
 
   /**
-   * Execute the drafts as an all-or-nothing SET (MOD-11): book sequentially; on any failure,
-   * compensate by deleting the Pending JEs already created, then block the Confirm. On full
-   * success, stamp ConfirmedAt (+ JournalEntryID when exactly one JE was booked).
+   * Book the drafts as ONE atomic unit of work (MOD-11 + Amith's transaction rule): a single
+   * `Accounting.CreateJournalEntries` call writes every entry across every company in one
+   * TransactionGroup — the DB commits all of them or none, so there is nothing to compensate.
+   * On success, stamp ConfirmedAt (+ JournalEntryID when exactly one JE was booked).
    */
   private async executeBookingSet(drafts: JournalEntryDraft[], user: UserInfo | undefined): Promise<boolean> {
-    const createdIDs: string[] = [];
-    for (const draft of drafts) {
-      const result = await new CreateJournalEntryOperation().Execute(draft, { user });
-      const out = result.Output;
-      if (!result.Success || !out?.Success || !out.JournalEntryID) {
-        const detail = (out?.Errors ?? []).map(e => `${e.Code}: ${e.Message}`).join('; ');
-        LogError(
-          `OrderEntityServer: journal entry booking failed for order ${this.OrderNumber} ` +
-            `(draft ${createdIDs.length + 1}/${drafts.length}; ${result.ResultCode ?? ''} ${result.ErrorMessage ?? ''} ${detail}).`
-        );
-        await this.compensateBookedEntries(createdIDs, user);
-        return false;
-      }
-      createdIDs.push(out.JournalEntryID);
+    const result = await new CreateJournalEntriesOperation().Execute({ Drafts: drafts }, { user });
+    const out = result.Output;
+    if (!result.Success || !out?.Success || (out.Results ?? []).length !== drafts.length) {
+      const detail = (out?.Errors ?? [])
+        .map(e => `${e.Code}${e.DraftIndex != null ? ` (draft ${e.DraftIndex + 1}/${drafts.length})` : ''}: ${e.Message}`)
+        .join('; ');
+      LogError(
+        `OrderEntityServer: journal entry set booking failed for order ${this.OrderNumber} ` +
+          `(${result.ResultCode ?? ''} ${result.ErrorMessage ?? ''} ${detail}). Nothing was written (atomic set).`
+      );
+      return false;
     }
+    const createdIDs = (out.Results ?? []).map(r => r.JournalEntryID).filter((id): id is string => !!id);
     if (createdIDs.length === 1) this.JournalEntryID = createdIDs[0];
     this.ConfirmedAt = new Date();
     return true;
-  }
-
-  /** Delete the Pending JEs a partially-failed set created — the order must never book partially. */
-  private async compensateBookedEntries(createdIDs: string[], user: UserInfo | undefined): Promise<void> {
-    const md = new Metadata();
-    for (const id of createdIDs) {
-      try {
-        const je = await md.GetEntityObject<BaseEntity>(ACCOUNTING_JE_ENTITY, user);
-        // Generic BaseEntity exposes InnerLoad(CompositeKey); the typed Load lives on generated subclasses.
-        const loaded = await je.InnerLoad(CompositeKey.FromID(id));
-        const deleted = loaded && (await je.Delete());
-        if (!deleted) {
-          LogError(
-            `OrderEntityServer: COMPENSATION FAILED — Pending JournalEntry ${id} from the partial booking of ` +
-              `order ${this.OrderNumber} could not be deleted (${je.LatestResult?.CompleteMessage ?? 'load failed'}). ` +
-              `Manual cleanup required; the order remains unbooked.`
-          );
-        }
-      } catch (e) {
-        LogError(
-          `OrderEntityServer: COMPENSATION FAILED for JournalEntry ${id} (order ${this.OrderNumber}): ` +
-            `${e instanceof Error ? e.message : String(e)}. Manual cleanup required.`
-        );
-      }
-    }
   }
 
   /** Load the order's lines (entity objects), ordered by LineNumber. */

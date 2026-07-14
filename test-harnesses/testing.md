@@ -44,11 +44,12 @@ curl -s -X POST http://localhost:4050/ -H "Content-Type: application/json" \
   reason is logged) — there is never a Confirmed-but-unbooked order. Retries on the next save.
 - **Idempotency** (tier 2 O5): the ORDER-LEVEL guard (F1.2) — `ConfirmedAt` (always stamped on
   success) + `JournalEntryID` (single-JE case only); a re-save books no second JE set.
-- **All-or-nothing set booking** (F1.2): a mid-set op failure compensates by deleting the already-
-  created Pending JEs (loud log if cleanup fails). Live fault-injection of a mid-set failure isn't
-  harness-reachable (would need the op to fail after N successes) — the resolution-failure path (O4)
-  plus tier-1's mid-split error case cover the reachable halves; compensation logic is code-reviewed.
-  ⚠ half-test label: compensation is NOT live-proven.
+- **All-or-nothing set booking** (F1.2 + Amith's transaction rule, 2026-07-14 rework): the whole
+  per-company draft set books through ONE `Accounting.CreateJournalEntries` call — every header,
+  line, and dimension across every company in a single TransactionGroup. The DB commits all or
+  none; the former compensation path is DELETED. Cross-draft atomicity is LIVE-PROVEN (accounting
+  engine-runtime E5: a mid-write FK failure in draft 2 rolls back draft 1's rows — raw-SQL
+  verified zero survivors). The previous half-test label is retired.
 - **Cross-process cache staleness**: OrderEntityServer does one forced `Config(true)` refresh + retry
   when resolution misses — heals a product/link written by another process (e.g. seeded out-of-band).
 
