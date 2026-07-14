@@ -29,3 +29,11 @@ UPD-2 enriched (dated recognition entries, anniversary dates, created at booking
 reworked to dated rows + CA-2 ungated; schema plan S3 ungated; Q2 ESCALATED (Robert's company-owns-order
 model vs as-built CH-2 multi-company JE — research pending, no change). Accounting-side: MOD-11 (CA-2
 resolved), Q18 progressed, change ledger imported for Robert.
+
+### 2026-07-14 - LXP Requirements.md — ✅ PROCESSED 2026-07-14
+Ethan's requirements doc (decisions by Amith + John): BizApps Orders = exclusive commerce engine, own
+Sidecar instance, BCSaaS wraps, LH4I checkout is the launch surface. Triaged (Marcelo review P1–P6) into:
+**UPD-6** (consumer record + IsOverdue + configurable grace) · **MOD-6 extension** (coupons v1; plan at
+`action-plans/ActionPlan - Coupons (schema to UI).md`, Robert to review schema) · DEFERRALS (Stripe
+stub-first → F3.5b subset; tax deferred + LXP note) · instance QUESTIONS **Q21** (tax structure, Robert,
+HIGH) · F1.2b unit-of-work committed next wave. No accounting-side changes.

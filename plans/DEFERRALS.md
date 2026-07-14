@@ -16,7 +16,7 @@ rationale · revisit trigger. Remove a row only when the item ships (note the pl
 | Provider expansion: PayPal / Square / Authorize / Adyen | BO-D23/D29 (master v1.5/v2) | Stripe + Manual are the v1 providers | demand per provider |
 | Statements / consolidated-bill packaged reports | BO-D45, §15 Q13 | presentation-layer reports; per-order rendered bill ships first | Jeremy asks / cutover reporting pack scope |
 | Bulk bill/statement email send + bill.com delivery workflow | §15 Q8 + Q-D | **decision-gated**: delivery path (AIDP→BC→bill.com vs direct) undecided | Q-D decision (Robert/Amith) |
-| Stripe REAL integration (live API + webhooks) + recon + forensics log + idempotency stress suite | Phase C/H; Marcelo 2026-07-14 | **Stripe IS in plan (F3.5)** — ships first as a **success-stub provider** (like the BC dispatch stub) so payment flows test end-to-end; the real API wiring lands after integration research | Stripe integration research / LXP go-live |
+| Stripe REAL integration — recon + forensics log + idempotency stress suite (the DEEP half) | Phase C/H; Marcelo 2026-07-14 | **Stub-first, then the checkout subset (Marcelo 2026-07-14, LXP D8):** F3.5's success-stub ships FIRST and stays the default test provider; then the LXP-checkout-critical subset (PaymentIntent lifecycle + hosted checkout + webhook→capture) UN-DEFERS into F3 for LH4I launch. Reconciliation/forensics/stress remain deferred | Stripe integration research done + LXP launch window |
 | CDP data migration (§13) | master §13 (aidp Stage 4) | external program dependency | aidp Stage 4 starts |
 | Customer portal / storefront | §15 Q9 / §16 | out of v1 by master | v2 scoping |
 
@@ -24,5 +24,10 @@ rationale · revisit trigger. Remove a row only when the item ships (note the pl
 > F9; UnitPrice direct entry stays the precedence base so baseline testing is never blocked.
 > **Struck 2026-07-14 (Marcelo):** *Sales rules + approvals* — un-deferred; bizapps-tasks is believed ready
 > (the batch-approval gate already runs on it). Now schema plan **S6** + feature plan **F8**.
-> **Tax note (Marcelo 2026-07-14):** tax + FX stay deferred by complexity — baseline tests first, added
-> later; **no tax stub** (even a stub is complex enough to become a blocker).
+> **Tax note (Marcelo 2026-07-14, re-affirmed after the LXP doc):** tax + FX stay deferred by
+> complexity — baseline tests first, added later; **no tax stub** (even a stub is complex enough to
+> become a blocker). **⚠ LXP dependency recorded (their D13/A4):** the LXP expects Orders to compute
+> sales/use tax at checkout (~30-day launch window) and long-term wants a rate/exemption package — so
+> this deferral now has a REAL consumer and a clock. The S4 Option-A-vs-B structure decision is a
+> HIGH-PRIORITY open question with Robert (instance QUESTIONS.md Q21); revisit trigger updated:
+> Robert's structure ruling OR the LXP launch-scope call (A7), whichever first.

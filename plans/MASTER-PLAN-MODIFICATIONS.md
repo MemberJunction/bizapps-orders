@@ -66,10 +66,17 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
   and is the base of the precedence chain** — the pricing engine layers resolution/suggestion on top,
   so pricing never blocks baseline testing.
 - **Change (current):** pricing tables (`PriceList`/`ProductPrice`/`PriceTier`, §4.1 shapes) build in the
-  schema plan's **S5 parity wave**; the resolution engine (BO-D33 precedence + BO-D38 behavior hooks) is
-  feature phase **F9**.
-- **Why / source:** Robert 2026-07-08 D3 (defer) → Robert 07-10 re-flag → Marcelo 2026-07-14 (un-defer).
-- **Status:** Accepted — S5 (tables) + F9 (engine).
+  schema plan's **S5 parity wave** (BUILT 2026-07-14); the resolution engine (BO-D33 precedence + BO-D38
+  behavior hooks) is feature phase **F9**.
+- **➕ Extended 2026-07-14 — COUPONS/PROMO CODES join the pricing scope (LXP D10, Amith: "v1, not
+  hard"):** the master plan carried no discount-code machinery (only per-line `DiscountPct`); the LXP's
+  LH4I checkout needs codes at launch. New schema stage **S7** (Coupon + CouponRedemption, §4.1-adjacent
+  shapes) + an F9 resolution-hook. Full feature (schema → engine → UI) is specified in
+  `action-plans/ActionPlan - Coupons (schema to UI).md` — **pending Robert's schema-structure review
+  (their A2: Robert specs/blesses), then it executes as written**.
+- **Why / source:** Robert 2026-07-08 D3 (defer) → Robert 07-10 re-flag → Marcelo 2026-07-14 (un-defer) →
+  LXP requirements 2026-07-14 (D10, coupons v1; Marcelo approved the plan-first path).
+- **Status:** Accepted — S5 (tables, built) + F9 (engine) + S7/coupon plan (awaiting Robert review).
 
 ## MOD-7 — Confirmed/Posted/Fulfilled orders cannot be Voided; reverse via reversing/credit order (2026-07-08)
 - **Supersedes:** BO-D8's implied Voided reachability from any state (BO-D9/D10/D15 reversal machinery stands

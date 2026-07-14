@@ -63,6 +63,23 @@ before F1–F4 add engine surface). Existing tier-1/tier-2 harnesses must stay g
    (single) is reworked: idempotency guard becomes order-level (`ConfirmedAt`/any-JE-exists via
    `JournalEntry.OrderID`); lineage via `JournalEntryLink` per JE. The order-to-je harness reworks from
    "one JE, per-company-balanced lines" to "N single-company JEs" (accounting A4 is the counterpart).
+   *Status 2026-07-14: BUILT — the whole draft set books through ONE `Accounting.CreateJournalEntries`
+   call (single TransactionGroup, all-or-none; engine-runtime E5 proves cross-draft rollback), and BOTH
+   guard halves are live (ConfirmedAt + any-JE-exists adoption, order-to-je O7).*
+
+   **F1.2b — Confirm UNIT OF WORK (Marcelo requirement, 2026-07-14 — COMMITTED FIRST ITEM of the
+   next wave):** extend Amith's
+   transaction rule to the ORDER ROW itself: the order's status/guard-field update must commit in the
+   SAME transaction as its journal-entry set. Design: the ORDERS side owns the unit of work — an
+   `Orders.ConfirmOrder` remotable op (browser + in-process callers) opens ONE TransactionGroup;
+   accounting exposes its row-writer as a queue-onto-caller's-TG seam (the `queueDraftRows` refactor
+   inside `AccountingEngine` is already TG-parameterized — expose e.g. `QueueJournalEntries(drafts, tg)`
+   with validation, no Submit); the order entity queues its own save on the same TG; ONE Submit commits
+   order + all JEs or nothing. Retires the interim any-JE-exists adoption guard (keep the check as a
+   defensive assert). Constraint: TransactionGroups don't cross the GraphQL boundary — the unit of work
+   composes SERVER-side inside the op (this is exactly why Confirm becomes a remotable op rather than a
+   bare entity save from the browser). Tests: unit-of-work rollback proof both directions (JE failure
+   rolls back the order row; order-row failure rolls back the JEs).
 3. **Totals materialization:** `LineTotalNet/LineTotalGross` computed on OrderLine save;
    `Order.TotalGross` = Σ lines, recomputed on line save/delete while Draft/Quoted (frozen after Confirm —
    enforced by the schema plan §6.1 immutability trigger, per Marcelo's 2026-07-11 triggers directive);
@@ -122,11 +139,17 @@ trigger passes + net zero across the pair); over-reversal rejected.
    Auto-apply helper: one payment → oldest-open-orders-first suggestion (UI confirms; BO-D16 lump-sum flow).
 4. **Refund/chargeback:** reversal Payment (`Method∈{Refund,Chargeback,BankReturn}`, negative amount,
    `ReversesPaymentID`) books the reversal JE; PaymentLines negative against the original orders.
-5. **Stripe — STUB-FIRST (Marcelo 2026-07-14):** ship `StripePaymentProvider` as a **success stub** (like
-   the BC dispatch stub) — implements the provider interface, simulates intent→capture success, exercises
-   the full Payment/PaymentLine/JE pipeline end-to-end with zero external calls. The REAL integration
-   (live API, webhook receipt per BO-D13 — unauthenticated Express route, raw-body HMAC,
-   `ProviderEventID` idempotency — recon, forensics) lands after integration research (DEFERRALS row).
+5. **Stripe — STUB-FIRST, then the checkout subset (Marcelo 2026-07-14 ×2):** ship
+   `StripePaymentProvider` as a **success stub** first (like the BC dispatch stub) — implements the
+   provider interface, simulates intent→capture success, exercises the full Payment/PaymentLine/JE
+   pipeline end-to-end with zero external calls; the stub REMAINS the default test/dev provider
+   permanently (harnesses never need Stripe creds). THEN — un-deferred for the LXP's LH4I launch
+   (their D8: upfront card via Stripe) — the **checkout-critical subset** lands as **F3.5b**:
+   PaymentIntent lifecycle against the real API, hosted-checkout session creation, and webhook receipt
+   → capture (BO-D13: unauthenticated Express route, raw-body HMAC, `ProviderEventID` idempotency).
+   The DEEP half (reconciliation, forensics log, idempotency stress suite) stays deferred
+   (DEFERRALS row). Test posture: stub covers all tier-1/2; F3.5b adds a Stripe-test-mode tier-3
+   pass, gated on creds.
 6. **Dunning workflow (master Phase E — parity add 2026-07-14):** failed-payment retry policy + overdue
    reminder workflow over `PaymentStatus='Overdue'`/DueDate (Jeremy's weekly overdue process); provider
    retries (Stripe Smart Retries) vs our own = the §15 Q4 open lean — start with our simple scheduled

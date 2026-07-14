@@ -69,3 +69,32 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
   Amith's guidance carries master-plan-level authority (project originator).
 - **Status:** Accepted — refactor task F0 in `action-plans/ActionPlan - Feature build (lifecycle, payments,
   rev-rec).md`.
+
+## UPD-6 — The LXP is the first integrating consumer; D1–D16 recorded; overdue + grace policy (2026-07-14)
+- **Amends:** MASTER-PLAN.md §1 (positioning/consumers), §4.2 (Order — computed-field surface), Phase E
+  (dunning). Additive record + two small feature deltas; no schema change (S1 already shipped `DueDate` —
+  the doc's A1 question is answered in place: it exists).
+- **Change:**
+  1. **First integrating consumer recorded:** Sidecar's **LXP** (Ethan's team) — Amith + John decided
+     2026-07-14 that **BizApps Orders is the exclusive go-forward order/payment engine** (their D1), on a
+     **dedicated Sidecar instance** (D5), with **BCSaaS refactored to wrap Orders** (D4, their side).
+     Launch surface: the **LH4I individual checkout** (3 tiers + coupons + track/bundle selection +
+     upfront Stripe card payment); LH4T (teams) is AD/manual. Full decision table (D1–D16) in
+     `meetings/2026-07-14 - LXP Requirements.md`.
+  2. **`IsOverdue` is an explicit computed/virtual surface** (their D15): `Balance > 0 AND DueDate < now` —
+     computed in the base view / entity layer, **never stored state** (consistent with the existing
+     F1.3 ruling that `Overdue` is time-derived; this makes it a first-class consumable field).
+  3. **Dunning grace policy (their D16) — CONFIGURABLE, not hardcoded** (Marcelo 2026-07-14: the period
+     must be modifiable): a **`DunningGracePeriodDays`** setting (default **7**) governs how long after a
+     failed renewal payment access-relevant state holds before cut-off, and dunning **notifies CS** rather
+     than auto-cancelling. Placement: per-company on `AccountingCompanyProfile`-style config is wrong-side
+     (it's an Orders policy) — plan it as an **Orders configuration setting** (per owning company when
+     multi-company needs it; single setting suffices for launch), consumed by F3.6. Consumers (the LXP)
+     read the order/subscription state; the grace window is OURS to compute, theirs to render.
+  4. **Entitlement change notification** (their D14) needs **no Orders-side build**: standard MJ
+     (`BaseEntityEvent` / entity subclass / Scheduled-Job + Record-Set-Processing poll — Amith recommends
+     the poll). Recorded so nobody invents a webhook system.
+- **Why / source:** `meetings/2026-07-14 - LXP Requirements.md` (Ethan; decisions by Amith + John,
+  2026-07-14). Coupons (their D10/A2) are handled separately — see MOD-6 revision + the dedicated
+  coupon action plan. Tax (their D13/A4) stays deferred — see DEFERRALS + QUESTIONS (Robert).
+- **Status:** Accepted (Marcelo review 2026-07-14).
