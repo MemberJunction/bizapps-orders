@@ -1,6 +1,6 @@
 # Plan — Schema alignment with the master plan (phases O1–O5)
 
-> **Status:** Draft (awaiting Marcelo review) · **Created:** 2026-07-11
+> **Status:** ACTIVE (approved for execution — Marcelo review completed 2026-07-14) · **Created:** 2026-07-11
 > **Implements:** MASTER-PLAN §4.1–§4.6, §4.3 (Order as A/R primitive), §15 Q11 (PaymentTermsType) — **as
 > overlaid by** MOD-1..10 and UPD-1..3. Phasing follows the gap analysis
 > (`~/MJDev/reports/schema-functionality-gap-analysis/REPORT.md` §6: O1→O5).
@@ -26,7 +26,6 @@ codegen loop per stage. Engine/UI behavior that consumes the schema lives in the
 | `Product.RevenueGLAccountID / DeferredRevenueGLAccountID / COGSGLAccountID` | GL routing is role-based via accounting `GLAccountLink` | MOD-2 |
 | `Order.CompanyID` / `OrderLine.CompanyID` | company resolved per line via `GLAccount.CompanyID` at booking | MOD-3 |
 | Currency/FX columns (`CurrencyCode`, `ExchangeRateUsed`, `FunctionalCurrencyAmount`, …) on Order/OrderLine/Payment | FX deferred from baseline; add when multi-currency activates | MOD-4 |
-| `PriceList` / `ProductPrice` / `PriceTier` tables | pricing BUILD deferred — order-line `UnitPrice` only | MOD-6 → `plans/DEFERRALS.md` |
 | Any period/closed-period structure ANYWHERE | **no periods, no close guard — FINAL** (accounting MOD-1; the brief MOD-13 reinstatement was withdrawn 2026-07-14). Orders/JEs carry only dates; accountants batch into the right periods | accounting MOD-1 (final); MOD-9(b) |
 | `IntercompanyFlow` | intercompany legs generate in Payments per accounting MOD-5; revisit at O2+ when intercompany activates (see §6 Q7). **Note (2026-07-13): the per-pair Due-To/Due-From WIRING table is also Payments-side** — accounting's baseline deliberately dropped `IntercompanyRelationship` ("the Payments component owns due-to/due-from"); Amith's OQ-A shape (accounting MOD-5) is the reference when it lands here with O2 | accounting MOD-5 + 2026-07-06 baseline ruling |
 
@@ -356,7 +355,9 @@ sum to the line total.
   widening + `Payment.StoredValueAccountID` (BO-D44).
 - **`OrderLineDimension` junction** (§15 Q5, lean-yes — REQUIRED for Jeremy's batch-dimension detail:
   order lines tag accounting Dimensions; the booking draft propagates them to JE lines).
-- Pricing tables: `plans/DEFERRALS.md` (MOD-6) — target shape unchanged.
+- **Pricing tables (un-deferred 2026-07-14, MOD-6 rev.):** `PriceList` + `ProductPrice` + `PriceTier`
+  per §4.1 (effective-dated, currency column deferred w/ MOD-4 — nullable CHAR(3) placeholder omitted
+  until FX). Resolution engine = feature F9; UnitPrice direct entry stays the precedence base.
 
 ## 5b. Stage S6 — Sales rules + approvals (UN-DEFERRED 2026-07-14 — Marcelo: "tasks is ready")
 
@@ -476,7 +477,7 @@ is a schema stage (S*), a feature phase (F*), the UI plan, or an explicit `plans
 | ProductBundleItem + two bundle modes | **S5** + F7 (fast-path expansion; bundle-line); allocation engine → DEFERRALS |
 | ProductPerformanceObligation | **S5** (fields; engine → DEFERRALS per BO-D35) |
 | ProductEntitlement + EntitlementGrant | **S5** + F7 (grant creation at booking; provisioning engine later per BO-D34/D39) |
-| PriceList/ProductPrice/PriceTier | DEFERRALS (MOD-6) |
+| PriceList/ProductPrice/PriceTier + resolution | **S5** (tables) + **F9** (engine) — un-deferred 2026-07-14 |
 | ProductTaxCategory + OrderLineTaxLine | **S4** (Option B; Option A quick path = seeds only) |
 | IsA extensions (Event first; 6 more types) | **S5** + F7 |
 | Order (full §4.2 field set as overlaid) | **S1** |

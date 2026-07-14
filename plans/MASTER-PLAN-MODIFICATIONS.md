@@ -59,11 +59,17 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
   `meetings/2026-07-11--Amith's Demo Feedback.md`.
 - **Status:** Implemented (order→JE proven end-to-end).
 
-## MOD-6 — Pricing is order-line-only for now; catalog pricing BUILD deferred (2026-07-08)
-- **Supersedes:** BO-D33's v1 timing (the PriceList/ProductPrice/PriceTier model remains the target shape).
-- **Change:** `OrderLine.UnitPrice` is entered directly; no price resolution engine, no pricing tables yet.
-- **Why / source:** Robert 2026-07-08 D3; re-flagged 07-10 (CA-1).
-- **Status:** Accepted.
+## MOD-6 — Pricing precedence anchored on direct entry; catalog pricing BUILD restored (2026-07-08, rev. 2026-07-14)
+- **Supersedes:** BO-D33's v1 timing was deferred here on 2026-07-08 (Robert D3) — **the deferral was
+  LIFTED by Marcelo on 2026-07-14** ("we should consider not [deferring]"; Robert had re-flagged the
+  tables 07-10). What survives of the original entry: `OrderLine.UnitPrice` **direct entry remains valid
+  and is the base of the precedence chain** — the pricing engine layers resolution/suggestion on top,
+  so pricing never blocks baseline testing.
+- **Change (current):** pricing tables (`PriceList`/`ProductPrice`/`PriceTier`, §4.1 shapes) build in the
+  schema plan's **S5 parity wave**; the resolution engine (BO-D33 precedence + BO-D38 behavior hooks) is
+  feature phase **F9**.
+- **Why / source:** Robert 2026-07-08 D3 (defer) → Robert 07-10 re-flag → Marcelo 2026-07-14 (un-defer).
+- **Status:** Accepted — S5 (tables) + F9 (engine).
 
 ## MOD-7 — Confirmed/Posted/Fulfilled orders cannot be Voided; reverse via reversing/credit order (2026-07-08)
 - **Supersedes:** BO-D8's implied Voided reachability from any state (BO-D9/D10/D15 reversal machinery stands

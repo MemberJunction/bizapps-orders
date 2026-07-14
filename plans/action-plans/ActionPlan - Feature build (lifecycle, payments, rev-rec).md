@@ -1,6 +1,6 @@
 # Plan — Feature build: order lifecycle, payments, rev-rec (engine + server)
 
-> **Status:** Draft (awaiting Marcelo review) · **Created:** 2026-07-11
+> **Status:** ACTIVE (approved for execution — Marcelo review completed 2026-07-14) · **Created:** 2026-07-11
 > **Implements:** MASTER-PLAN §4.3, §6 (reversals), §7 (JE emission), §8 (subscription lifecycle) — as overlaid
 > by MOD-1, MOD-5, MOD-7, MOD-8, MOD-9, MOD-10 + UPD-2, UPD-3; BACKLOG items "State-based validation matrix",
 > "Fulfillment auto-advance", "Forward status skipping".
@@ -177,6 +177,14 @@ clock.
    approve → Confirm proceeds; reject → back to Draft with annotation.
 3. **Rule editor** = generated forms first (UI plan refines later); `SalesAuthority` per-rep limits.
 
+## F9 — Pricing resolution engine (consumes S5 pricing tables — un-deferred 2026-07-14)
+
+`OrdersEngine(Base).ResolvePrice(productId, qty, date, priceList?)` per BO-D33 precedence: (contract
+override slot, reserved) → PriceList/segment match → PriceTier quantity breaks → ProductPrice flat →
+**UnitPrice direct entry (always valid — the baseline path)**. Order-entry UI shows the resolved
+suggestion, keeps the field editable; `BeforeResolvePrice/AfterResolvePrice` behavior hooks (BO-D38)
+plumbed via F7.4. Never blocks: absent pricing rows simply resolve to nothing and direct entry rules.
+
 ## F7 — Catalog behaviors: bundles, entitlements, gift cards (consumes S5 — parity wave 2026-07-14)
 
 1. **Bundle fast-path expansion (BO-D41 mode 2):** bundle product at order entry explodes into component
@@ -216,8 +224,8 @@ consults role), not UI-only. Co-designed with Marcelo alongside accounting MOD-9
 ## Execution order
 
 F0 (engine split — first, mechanical, everything builds on it) → F1 → F2 (same S1 wave, F2 needs F1's
-matrix) → F3-manual (with the Stripe success-stub) → F4 → F8 (post S6 + tasks check) → F7 (post S5) →
-F6 → F5 / F3-stripe-real as decisions + research land. Parity coverage: see the
+matrix) → F3-manual (with the Stripe success-stub) → F4 → F8 (post S6 + tasks check) → F7 + F9 (post
+S5) → F6 → F5 / F3-stripe-real as decisions + research land. Parity coverage: see the
 schema plan's Appendix matrix — every master feature maps to a phase here or a DEFERRALS row.
 
 ## Questions for Marcelo

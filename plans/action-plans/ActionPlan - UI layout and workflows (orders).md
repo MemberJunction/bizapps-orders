@@ -1,6 +1,6 @@
 # Plan — UI layout & workflows (orders)
 
-> **Status:** Draft (awaiting Marcelo review) · **Created:** 2026-07-11
+> **Status:** ACTIVE (approved for execution — Marcelo review completed 2026-07-14) · **Created:** 2026-07-11
 > **Implements:** BACKLOG items "Order form: surface the full field set", "Compose Order takes the full
 > available space", "Void affordance ≠ delete"; UPD-2/UPD-3 surfacing; the UI consequences of MOD-7/MOD-10.
 > **Sources:** meetings/2026-07-10--Robert-demo-feedback.md, meetings/07102026 - Matt & Marcelo GUI Review.md,

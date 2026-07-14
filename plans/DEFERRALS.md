@@ -7,7 +7,6 @@ rationale · revisit trigger. Remove a row only when the item ships (note the pl
 
 | Deferred item | Source | Rationale | Revisit trigger |
 |---|---|---|---|
-| Pricing BUILD: `PriceList`/`ProductPrice`/`PriceTier` + resolution engine (§4.1, BO-D33) | MOD-6 (Robert 07-08 D3; ex-CA-1) | order-line `UnitPrice` suffices for the baseline; model is the locked target shape | catalog pricing demanded (Robert re-flagged 07-10) |
 | Currency/FX columns + realized-FX emission (BO-D22, §5 FX, Phase G) | MOD-4 (Robert 07-10: "day one? No") | single-currency reality today | multi-currency activates |
 | Product variants (SKU matrix) | BO-D32 (master's own v2 call) | heavier + rarer for SaaS | a variant-shaped product need |
 | Metered/usage billing ENGINE (aggregation + overage invoicing) | BO-D36 (master v2) | pricing/product side ships in S5 | a metered consumer |
@@ -21,6 +20,8 @@ rationale · revisit trigger. Remove a row only when the item ships (note the pl
 | CDP data migration (§13) | master §13 (aidp Stage 4) | external program dependency | aidp Stage 4 starts |
 | Customer portal / storefront | §15 Q9 / §16 | out of v1 by master | v2 scoping |
 
+> **Struck 2026-07-14 (Marcelo):** *Pricing BUILD* — un-deferred (MOD-6 revised): tables → S5, engine →
+> F9; UnitPrice direct entry stays the precedence base so baseline testing is never blocked.
 > **Struck 2026-07-14 (Marcelo):** *Sales rules + approvals* — un-deferred; bizapps-tasks is believed ready
 > (the batch-approval gate already runs on it). Now schema plan **S6** + feature plan **F8**.
 > **Tax note (Marcelo 2026-07-14):** tax + FX stay deferred by complexity — baseline tests first, added
