@@ -92,25 +92,50 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Order Lines Section -->
+    <!-- Order Lines (Source Bundle Product ID) Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersOrderLines"
-        SectionName="Order Lines"
+        SectionKey="mJBizAppsOrdersOrderLinesSourceBundleProductID"
+        SectionName="Order Lines (Source Bundle Product ID)"
         Icon="fa fa-table"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderLines')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderLinesSourceBundleProductID')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','SourceBundleProductID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLinesSourceBundleProductID')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLinesSourceBundleProductID', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Order Lines (Product ID) Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersOrderLinesProductID"
+        SectionName="Order Lines (Product ID)"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderLinesProductID')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','ProductID')"
                 [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLines')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLinesProductID')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLinesProductID', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

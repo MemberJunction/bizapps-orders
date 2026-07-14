@@ -16,7 +16,9 @@ import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 
 // Import Generated Components
 import { mjBizAppsOrdersOrderLineFormComponent } from "./Entities/mjBizAppsOrdersOrderLine/mjbizappsordersorderline.form.component";
+import { mjBizAppsOrdersOrderSequenceFormComponent } from "./Entities/mjBizAppsOrdersOrderSequence/mjbizappsordersordersequence.form.component";
 import { mjBizAppsOrdersOrderFormComponent } from "./Entities/mjBizAppsOrdersOrder/mjbizappsordersorder.form.component";
+import { mjBizAppsOrdersPaymentTermsTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentTermsType/mjbizappsorderspaymenttermstype.form.component";
 import { mjBizAppsOrdersProductCategoryFormComponent } from "./Entities/mjBizAppsOrdersProductCategory/mjbizappsordersproductcategory.form.component";
 import { mjBizAppsOrdersProductTypeFormComponent } from "./Entities/mjBizAppsOrdersProductType/mjbizappsordersproducttype.form.component";
 import { mjBizAppsOrdersProductFormComponent } from "./Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component";
@@ -25,7 +27,9 @@ import { mjBizAppsOrdersProductFormComponent } from "./Entities/mjBizAppsOrdersP
 @NgModule({
 declarations: [
     mjBizAppsOrdersOrderLineFormComponent,
+    mjBizAppsOrdersOrderSequenceFormComponent,
     mjBizAppsOrdersOrderFormComponent,
+    mjBizAppsOrdersPaymentTermsTypeFormComponent,
     mjBizAppsOrdersProductCategoryFormComponent,
     mjBizAppsOrdersProductTypeFormComponent,
     mjBizAppsOrdersProductFormComponent],
