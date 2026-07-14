@@ -27,7 +27,7 @@ codegen loop per stage. Engine/UI behavior that consumes the schema lives in the
 | `Order.CompanyID` / `OrderLine.CompanyID` | company resolved per line via `GLAccount.CompanyID` at booking | MOD-3 |
 | Currency/FX columns (`CurrencyCode`, `ExchangeRateUsed`, `FunctionalCurrencyAmount`, …) on Order/OrderLine/Payment | FX deferred from baseline; add when multi-currency activates | MOD-4 |
 | `PriceList` / `ProductPrice` / `PriceTier` tables | pricing BUILD deferred — order-line `UnitPrice` only | MOD-6 → `plans/DEFERRALS.md` |
-| Any period/closed-period structure IN ORDERS | the close mechanism lives ACCOUNTING-side (their MOD-13/A5, 2026-07-14); orders adds NO period tables/columns — the Confirm guard just CALLS accounting's closed-span check (F1.7). JEs/orders carry only dates; closability is detected by time | accounting MOD-13; MOD-9(b) |
+| Any period/closed-period structure ANYWHERE | **no periods, no close guard — FINAL** (accounting MOD-1; the brief MOD-13 reinstatement was withdrawn 2026-07-14). Orders/JEs carry only dates; accountants batch into the right periods | accounting MOD-1 (final); MOD-9(b) |
 | `IntercompanyFlow` | intercompany legs generate in Payments per accounting MOD-5; revisit at O2+ when intercompany activates (see §6 Q7). **Note (2026-07-13): the per-pair Due-To/Due-From WIRING table is also Payments-side** — accounting's baseline deliberately dropped `IntercompanyRelationship` ("the Payments component owns due-to/due-from"); Amith's OQ-A shape (accounting MOD-5) is the reference when it lands here with O2 | accounting MOD-5 + 2026-07-06 baseline ruling |
 
 **Migration ground rules (every stage) — REVISED 2026-07-14 (Marcelo): COLLAPSE INTO THE BASELINE.**
@@ -453,11 +453,11 @@ Marcelo executes/validates schema stages personally (his call: schema correctnes
 - **Q-B / Jeremy:** single vs dual numbering; ExternalDocumentNumber semantics (= posted number or free-form?).
 - **Robert:** tax v0 shape (§4 A vs B); contracts ownership vs AIDP contracts (Q-E — shapes `Order.ContractID`
   semantics); Employee entity for approver links (Q-F, accounting D-Q1).
-- **Periods: SETTLED-for-now (Marcelo 2026-07-13, Amith-doc confirmation)** — follow the removal;
-  backdating ships unguarded; no period machinery anywhere (CA-3 + accounting CA-1 resolved-for-now;
-  CA-2 resolved by MOD-11). Reopens only if Robert's continuing research overturns it. **Schema here is
-  deliberately decision-proof** (PostedAt/OrderDate both stored). Still live from that meeting: Robert's
-  company-owns-order tension (Q2, escalated) — NO schema change unless he reverses CH-2.
+- **Periods: SETTLED — FINAL (Marcelo 2026-07-14; the same-day MOD-13 manual-close detour was
+  withdrawn)** — follow the removal; backdating ships unguarded; no period machinery anywhere (CA-3 +
+  accounting CA-1 resolved; CA-2 resolved by MOD-11). Accountants batch entries into the right periods.
+  **Schema here is deliberately decision-proof** (PostedAt/OrderDate both stored). Q2's remaining half
+  (owning-company field + company revenue default) still with Robert.
   *Marcelo 2026-07-11: circle back to him on this one IN DETAIL at plan finalization (before executing).*
 - **Amith:** rev-rec cadence — batch-monthly vs continuous (UPD-2 note; affects Feature F4, not schema).
 
@@ -500,5 +500,5 @@ is a schema stage (S*), a feature phase (F*), the UI plan, or an explicit `plans
 | Webhooks + Stripe lifecycle | F3-Stripe |
 | Reversals at every layer | F2 (orders/payments) + F4 (sub cancellation/proration) |
 | Multi-company mechanics (§5) | F1.2 per-company split (MOD-11); intercompany legs → Payments (O2+) |
-| Backdating + closed-period guard | F1.7 → accounting MOD-13 closed-span check |
+| Backdating (no guard — final) | F1.7 (seam only; accountants batch into right periods) |
 | Statements/portal/variants/metered/dispute/recon/CDP-migration | DEFERRALS (each with trigger) |

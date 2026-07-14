@@ -13,3 +13,8 @@ MOD-5) and company columns on Order/OrderLine (MOD-3 stands; Q2's remaining half
 > **UPDATE (later 2026-07-13):** Marcelo **LOCKED** the per-company-JE decision — a logical requirement
 > (per-company close independence), no Amith gate; build proceeds now. Only a later Amith-ordered broad
 > restructure would revisit it (considered unlikely).
+
+> **FINAL (2026-07-14, second update):** Marcelo **WITHDREW MOD-13** (the manual close) hours after
+> accepting it — periods stay REMOVED, full stop. Rationale: batches create consolidated entries that
+> lose date information anyway; the AR subledger doesn't own periods; accountants are responsible for
+> batching entries into the right periods. Q19f reverts to Robert's original validation question.

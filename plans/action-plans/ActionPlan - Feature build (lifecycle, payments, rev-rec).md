@@ -80,11 +80,10 @@ before F1–F4 add engine surface). Existing tier-1/tier-2 harnesses must stay g
    that role gets on Confirmed+ orders — carve-out in the line-immutability trigger for this one column);
    when the last required line flips, the order auto-advances to Fulfilled. **No JE either way** (MOD-8).
    UI = the fulfillment queue (UI plan §7).
-7. **Backdating + closed-period guard (MOD-9b; REVISED 2026-07-14 per accounting MOD-13):** `OrderDate`
-   freely settable; JE bears it. The `validatePostingDate()` seam becomes REAL: at Confirm, check each
-   resolved company's **closed spans in accounting** (A5's check — the manual close mechanism) and fail
-   the Confirm with a clear per-company error if the order date falls in a closed span. No period FK
-   anywhere — pure date detection.
+7. **Backdating (MOD-9b — FINAL 2026-07-14; the same-day closed-span guard was withdrawn with
+   accounting MOD-13):** `OrderDate` freely settable; JE bears it; **no guard**. Keep the
+   `validatePostingDate()` seam as a pass-through with a comment (any FUTURE timing rule detects by
+   date, never a period FK) — accountants batch entries into the right periods.
 
 **Tests:** transition-matrix unit suite; booking-gate harness; totals property tests (random line sets);
 auto-advance both branches; existing order-to-je harness stays green.
