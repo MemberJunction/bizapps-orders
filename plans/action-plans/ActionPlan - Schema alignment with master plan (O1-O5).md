@@ -501,5 +501,5 @@ is a schema stage (S*), a feature phase (F*), the UI plan, or an explicit `plans
 | Webhooks + Stripe lifecycle | F3-Stripe |
 | Reversals at every layer | F2 (orders/payments) + F4 (sub cancellation/proration) |
 | Multi-company mechanics (§5) | F1.2 per-company split (MOD-11); intercompany legs → Payments (O2+) |
-| Backdating (no guard — final) | F1.7 (seam only; accountants batch into right periods) |
+| Backdating guard / timing restrictions | **DEFERRED** — accounting `plans/DEFERRALS.md` (timing system); F1.7 seam is the future hook |
 | Statements/portal/variants/metered/dispute/recon/CDP-migration | DEFERRALS (each with trigger) |
