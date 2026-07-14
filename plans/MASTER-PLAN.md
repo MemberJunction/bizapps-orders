@@ -97,6 +97,10 @@
 > ➕ **UPDATED by UPD-4 (2026-07-11):** positioning wording — the app is best understood as an invoice
 > creation & tracking + payment management system, but is officially NAMED **Orders** (higher-ups' wording
 > choice; "invoice management" is a category analog only) — see MASTER-PLAN-UPDATES.md.
+> ➕ **UPDATED by UPD-6 (2026-07-14):** the **LXP (Sidecar's learning platform) is the FIRST integrating
+> consumer** — Amith + John decided BizApps Orders is the exclusive go-forward commerce engine (their
+> D1–D16, recorded in UPD-6); launch surface = the LH4I individual checkout on a dedicated Sidecar
+> instance — see MASTER-PLAN-UPDATES.md + `meetings/2026-07-14 - LXP Requirements.md`.
 
 BizAppsOrders provides the **unified order management substrate** for the MJ ecosystem. It subsumes the previously-planned `BizAppsPayments` and `BizAppsSubscriptions` (per MJ PR #2214) into a single app, on the principle that orders, payments, and subscriptions are **aspects of the same business event** — a customer commits to pay, the system tracks both what they're getting and how they're paying.
 
@@ -262,8 +266,11 @@ Schema: `__mj_BizAppsOrders`. All entities use `UUID PK`.
 
 > ⚠ **MODIFIED by MOD-2:** the `Product.RevenueGLAccountID / DeferredRevenueGLAccountID / COGSGLAccountID`
 > columns below are KILLED — GL routing is role-based via accounting's polymorphic `GLAccountLink`
-> (product → category tree → company default). **MOD-6:** the PriceList/ProductPrice/PriceTier BUILD is
-> deferred (pricing is order-line-only for now; CA-1). Original text retained below.
+> (product → category tree → company default). **MOD-6 (rev. 2026-07-14):** the PriceList/ProductPrice/
+> PriceTier BUILD was un-deferred (S5, built) — and MOD-6's 2026-07-14 extension adds **coupons/promo
+> codes** (LXP D10; absent from this plan's original scope): S7 schema + F10 engine, spec'd in
+> `action-plans/ActionPlan - Coupons (schema to UI).md` (awaiting Robert's schema review). Original
+> text retained below.
 > ➕ **UPDATED by UPD-3 (2026-07-10):** `RequiresFulfillment` becomes save-logic — orders with no
 > fulfillment-requiring lines may auto-advance Posted → Fulfilled — see MASTER-PLAN-UPDATES.md.
 
@@ -498,6 +505,9 @@ Same DB structure, two behaviors; order entry chooses per add.
 > schema-alignment work.
 > ➕ **UPDATED by UPD-1 + UPD-2 (2026-07-10):** Order also carries `ExternalDocumentNumber` (bill.com);
 > OrderLine also carries `ServicePeriodStart`/`ServicePeriodEnd` — see MASTER-PLAN-UPDATES.md.
+> ➕ **UPDATED by UPD-6 (2026-07-14):** `IsOverdue` becomes an explicit COMPUTED/virtual surface
+> (`Balance > 0 AND DueDate < now`; LXP D15) — never stored state, consistent with the F1.3
+> time-derived-Overdue ruling — see MASTER-PLAN-UPDATES.md.
 
 ```sql
 __mj_BizAppsOrders.Order
@@ -1209,6 +1219,10 @@ Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
 **Demo**: create a $99/mo Stripe subscription; see monthly RevRec JEs auto-emit; cancel mid-month; see proration Refund + reversal JE.
 
 ### Phase E: ManualPaymentProvider + non-Stripe lifecycle (Weeks 13–15)
+
+> ➕ **UPDATED by UPD-6 (2026-07-14):** the dunning workflow gains the LXP grace policy (their D16,
+> Marcelo: configurable) — a **`DunningGracePeriodDays`** setting (default 7) + notify-CS-not-auto-cancel;
+> see MASTER-PLAN-UPDATES.md item 3 and feature plan F3.6.
 
 - [ ] ManualPaymentProvider implementation (for Wire/ACH/Check/Cash)
 - [ ] Manual Payment entry UI in MJ Explorer
