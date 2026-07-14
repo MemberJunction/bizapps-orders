@@ -608,6 +608,11 @@ export const mjBizAppsOrdersOrderSchema = z.object({
         * * Display Name: Requested Delivery Date
         * * SQL Data Type: date
         * * Description: Customer-requested delivery/service date. Informational.`),
+    ApprovalTaskID: z.string().nullable().describe(`
+        * * Field Name: ApprovalTaskID
+        * * Display Name: Approval Task ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to the __mj_BizAppsTasks Task raised when a sales rule blocked Confirm (BO-D17). Convenience pointer; Task Links carry the authoritative linkage.`),
     Description: z.string().nullable().describe(`
         * * Field Name: Description
         * * Display Name: Description
@@ -1918,6 +1923,141 @@ export const mjBizAppsOrdersRevenueRecognitionScheduleSchema = z.object({
 });
 
 export type mjBizAppsOrdersRevenueRecognitionScheduleEntityType = z.infer<typeof mjBizAppsOrdersRevenueRecognitionScheduleSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Sales Authorities
+ */
+export const mjBizAppsOrdersSalesAuthoritySchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    SalesRepUserID: z.string().describe(`
+        * * Field Name: SalesRepUserID
+        * * Display Name: Sales Rep User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)`),
+    MaxDiscountPct: z.number().nullable().describe(`
+        * * Field Name: MaxDiscountPct
+        * * Display Name: Max Discount Pct
+        * * SQL Data Type: decimal(7, 4)
+        * * Description: Maximum discount fraction (0-1) this rep may grant unaided.`),
+    MaxOrderValue: z.number().nullable().describe(`
+        * * Field Name: MaxOrderValue
+        * * Display Name: Max Order Value
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: Maximum order value this rep may confirm unaided.`),
+    AllowedPaymentTermsTypeIDs: z.string().nullable().describe(`
+        * * Field Name: AllowedPaymentTermsTypeIDs
+        * * Display Name: Allowed Payment Terms Type I Ds
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: JSON array of PaymentTermsType IDs this rep may offer. NULL = all.`),
+    AllowedProductCategoryIDs: z.string().nullable().describe(`
+        * * Field Name: AllowedProductCategoryIDs
+        * * Display Name: Allowed Product Category I Ds
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: JSON array of ProductCategory IDs this rep may sell. NULL = all.`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Whether this authority row is in force.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    SalesRepUser: z.string().describe(`
+        * * Field Name: SalesRepUser
+        * * Display Name: Sales Rep User
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersSalesAuthorityEntityType = z.infer<typeof mjBizAppsOrdersSalesAuthoritySchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Sales Rules
+ */
+export const mjBizAppsOrdersSalesRuleSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    Name: z.string().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(200)
+        * * Description: Display name of the rule.`),
+    RuleType: z.union([z.literal('CreditLimit'), z.literal('Custom'), z.literal('DiscountLimit'), z.literal('PaymentTermsRequired'), z.literal('ProductAuthorization')]).describe(`
+        * * Field Name: RuleType
+        * * Display Name: Rule Type
+        * * SQL Data Type: nvarchar(40)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * CreditLimit
+    *   * Custom
+    *   * DiscountLimit
+    *   * PaymentTermsRequired
+    *   * ProductAuthorization
+        * * Description: DiscountLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom.`),
+    Scope: z.union([z.literal('Global'), z.literal('PerCustomer'), z.literal('PerProduct'), z.literal('PerSalesRep')]).describe(`
+        * * Field Name: Scope
+        * * Display Name: Scope
+        * * SQL Data Type: nvarchar(40)
+        * * Default Value: Global
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Global
+    *   * PerCustomer
+    *   * PerProduct
+    *   * PerSalesRep
+        * * Description: Global | PerProduct | PerCustomer | PerSalesRep — what ScopeReferenceID points at.`),
+    ScopeReferenceID: z.string().nullable().describe(`
+        * * Field Name: ScopeReferenceID
+        * * Display Name: Scope Reference ID
+        * * SQL Data Type: uniqueidentifier
+        * * Description: Soft reference (no FK) to the scoped Product / Customer Organization / Sales Rep User when Scope is not Global.`),
+    PredicateJson: z.string().nullable().describe(`
+        * * Field Name: PredicateJson
+        * * Display Name: Predicate Json
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: JSON rule expression (admin-editable; evaluated by the F8 engine).`),
+    ApprovalRequiredRoleID: z.string().nullable().describe(`
+        * * Field Name: ApprovalRequiredRoleID
+        * * Display Name: Approval Required Role ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Roles (vwRoles.ID)`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Whether this rule participates in Confirm evaluation.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    ApprovalRequiredRole: z.string().nullable().describe(`
+        * * Field Name: ApprovalRequiredRole
+        * * Display Name: Approval Required Role
+        * * SQL Data Type: nvarchar(50)`),
+});
+
+export type mjBizAppsOrdersSalesRuleEntityType = z.infer<typeof mjBizAppsOrdersSalesRuleSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Stored Value Accounts
@@ -3890,6 +4030,19 @@ export class mjBizAppsOrdersOrderEntity extends BaseEntity<mjBizAppsOrdersOrderE
     }
     set RequestedDeliveryDate(value: Date | null) {
         this.Set('RequestedDeliveryDate', value);
+    }
+
+    /**
+    * * Field Name: ApprovalTaskID
+    * * Display Name: Approval Task ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to the __mj_BizAppsTasks Task raised when a sales rule blocked Confirm (BO-D17). Convenience pointer; Task Links carry the authoritative linkage.
+    */
+    get ApprovalTaskID(): string | null {
+        return this.Get('ApprovalTaskID');
+    }
+    set ApprovalTaskID(value: string | null) {
+        this.Set('ApprovalTaskID', value);
     }
 
     /**
@@ -7132,6 +7285,339 @@ export class mjBizAppsOrdersRevenueRecognitionScheduleEntity extends BaseEntity<
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Sales Authorities - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: SalesAuthority
+ * * Base View: vwSalesAuthorities
+ * * @description Per-rep authority limits (§4.8): the caps within which a sales rep confirms without approval.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Sales Authorities')
+export class mjBizAppsOrdersSalesAuthorityEntity extends BaseEntity<mjBizAppsOrdersSalesAuthorityEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Sales Authorities record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Sales Authorities record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersSalesAuthorityEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: SalesRepUserID
+    * * Display Name: Sales Rep User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    */
+    get SalesRepUserID(): string {
+        return this.Get('SalesRepUserID');
+    }
+    set SalesRepUserID(value: string) {
+        this.Set('SalesRepUserID', value);
+    }
+
+    /**
+    * * Field Name: MaxDiscountPct
+    * * Display Name: Max Discount Pct
+    * * SQL Data Type: decimal(7, 4)
+    * * Description: Maximum discount fraction (0-1) this rep may grant unaided.
+    */
+    get MaxDiscountPct(): number | null {
+        return this.Get('MaxDiscountPct');
+    }
+    set MaxDiscountPct(value: number | null) {
+        this.Set('MaxDiscountPct', value);
+    }
+
+    /**
+    * * Field Name: MaxOrderValue
+    * * Display Name: Max Order Value
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: Maximum order value this rep may confirm unaided.
+    */
+    get MaxOrderValue(): number | null {
+        return this.Get('MaxOrderValue');
+    }
+    set MaxOrderValue(value: number | null) {
+        this.Set('MaxOrderValue', value);
+    }
+
+    /**
+    * * Field Name: AllowedPaymentTermsTypeIDs
+    * * Display Name: Allowed Payment Terms Type I Ds
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: JSON array of PaymentTermsType IDs this rep may offer. NULL = all.
+    */
+    get AllowedPaymentTermsTypeIDs(): string | null {
+        return this.Get('AllowedPaymentTermsTypeIDs');
+    }
+    set AllowedPaymentTermsTypeIDs(value: string | null) {
+        this.Set('AllowedPaymentTermsTypeIDs', value);
+    }
+
+    /**
+    * * Field Name: AllowedProductCategoryIDs
+    * * Display Name: Allowed Product Category I Ds
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: JSON array of ProductCategory IDs this rep may sell. NULL = all.
+    */
+    get AllowedProductCategoryIDs(): string | null {
+        return this.Get('AllowedProductCategoryIDs');
+    }
+    set AllowedProductCategoryIDs(value: string | null) {
+        this.Set('AllowedProductCategoryIDs', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Whether this authority row is in force.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: SalesRepUser
+    * * Display Name: Sales Rep User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get SalesRepUser(): string {
+        return this.Get('SalesRepUser');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Sales Rules - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: SalesRule
+ * * Base View: vwSalesRules
+ * * @description Metadata-driven sales constraint evaluated at Confirm (BO-D17/D18). Violations raise an Approval Request Task routed to ApprovalRequiredRoleID; golden path confirms instantly.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Sales Rules')
+export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSalesRuleEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Sales Rules record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Sales Rules record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersSalesRuleEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(200)
+    * * Description: Display name of the rule.
+    */
+    get Name(): string {
+        return this.Get('Name');
+    }
+    set Name(value: string) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: RuleType
+    * * Display Name: Rule Type
+    * * SQL Data Type: nvarchar(40)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * CreditLimit
+    *   * Custom
+    *   * DiscountLimit
+    *   * PaymentTermsRequired
+    *   * ProductAuthorization
+    * * Description: DiscountLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom.
+    */
+    get RuleType(): 'CreditLimit' | 'Custom' | 'DiscountLimit' | 'PaymentTermsRequired' | 'ProductAuthorization' {
+        return this.Get('RuleType');
+    }
+    set RuleType(value: 'CreditLimit' | 'Custom' | 'DiscountLimit' | 'PaymentTermsRequired' | 'ProductAuthorization') {
+        this.Set('RuleType', value);
+    }
+
+    /**
+    * * Field Name: Scope
+    * * Display Name: Scope
+    * * SQL Data Type: nvarchar(40)
+    * * Default Value: Global
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Global
+    *   * PerCustomer
+    *   * PerProduct
+    *   * PerSalesRep
+    * * Description: Global | PerProduct | PerCustomer | PerSalesRep — what ScopeReferenceID points at.
+    */
+    get Scope(): 'Global' | 'PerCustomer' | 'PerProduct' | 'PerSalesRep' {
+        return this.Get('Scope');
+    }
+    set Scope(value: 'Global' | 'PerCustomer' | 'PerProduct' | 'PerSalesRep') {
+        this.Set('Scope', value);
+    }
+
+    /**
+    * * Field Name: ScopeReferenceID
+    * * Display Name: Scope Reference ID
+    * * SQL Data Type: uniqueidentifier
+    * * Description: Soft reference (no FK) to the scoped Product / Customer Organization / Sales Rep User when Scope is not Global.
+    */
+    get ScopeReferenceID(): string | null {
+        return this.Get('ScopeReferenceID');
+    }
+    set ScopeReferenceID(value: string | null) {
+        this.Set('ScopeReferenceID', value);
+    }
+
+    /**
+    * * Field Name: PredicateJson
+    * * Display Name: Predicate Json
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: JSON rule expression (admin-editable; evaluated by the F8 engine).
+    */
+    get PredicateJson(): string | null {
+        return this.Get('PredicateJson');
+    }
+    set PredicateJson(value: string | null) {
+        this.Set('PredicateJson', value);
+    }
+
+    /**
+    * * Field Name: ApprovalRequiredRoleID
+    * * Display Name: Approval Required Role ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Roles (vwRoles.ID)
+    */
+    get ApprovalRequiredRoleID(): string | null {
+        return this.Get('ApprovalRequiredRoleID');
+    }
+    set ApprovalRequiredRoleID(value: string | null) {
+        this.Set('ApprovalRequiredRoleID', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Whether this rule participates in Confirm evaluation.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ApprovalRequiredRole
+    * * Display Name: Approval Required Role
+    * * SQL Data Type: nvarchar(50)
+    */
+    get ApprovalRequiredRole(): string | null {
+        return this.Get('ApprovalRequiredRole');
     }
 }
 

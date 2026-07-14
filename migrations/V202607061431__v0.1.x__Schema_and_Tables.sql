@@ -27,6 +27,8 @@
 --                           entitlements + grants, PPO, EventProduct/EventOrderLine (IsA),
 --                           StoredValue pair, OrderLineDimension, PriceList/ProductPrice/PriceTier;
 --                           seeded product types via metadata/. NO GL columns (MOD-2), NO currency (MOD-4)
+--   * Sales rules (S6, §4.8): SalesRule / SalesAuthority + Order.ApprovalTaskID —
+--                           evaluation engine + tasks-app routing = feature F8
 --
 -- Cross-app references are SOFT (plain UNIQUEIDENTIFIER, no FK) so Orders never
 -- couples to another app's schema:
@@ -198,6 +200,7 @@ CREATE TABLE __mj_BizAppsOrders.[Order] (
     ReversalReason NVARCHAR(MAX) NULL,
     ContractID UNIQUEIDENTIFIER NULL,
     RequestedDeliveryDate DATE NULL,
+    ApprovalTaskID UNIQUEIDENTIFIER NULL,
     Description NVARCHAR(MAX) NULL,
     Notes NVARCHAR(MAX) NULL,
     JournalEntryID UNIQUEIDENTIFIER NULL,
@@ -778,6 +781,45 @@ CREATE TABLE __mj_BizAppsOrders.PriceTier (
 );
 GO
 
+---------------------------------------------------------------------------
+-- 3.31 SalesRule — metadata-driven sales constraints evaluated at Confirm
+--      (§4.8, BO-D17/D18): discount limits, required terms, product
+--      authorization, credit limits. Violations raise an Approval Request
+--      Task in bizapps-tasks routed to ApprovalRequiredRoleID (engine = F8).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.SalesRule (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    Name NVARCHAR(200) NOT NULL,
+    RuleType NVARCHAR(40) NOT NULL,
+    Scope NVARCHAR(40) NOT NULL DEFAULT 'Global',
+    ScopeReferenceID UNIQUEIDENTIFIER NULL,
+    PredicateJson NVARCHAR(MAX) NULL,
+    ApprovalRequiredRoleID UNIQUEIDENTIFIER NULL,
+    IsActive BIT NOT NULL DEFAULT 1,
+    CONSTRAINT PK_SalesRule PRIMARY KEY (ID),
+    CONSTRAINT CK_SalesRule_RuleType CHECK (RuleType IN ('DiscountLimit','PaymentTermsRequired','ProductAuthorization','CreditLimit','Custom')),
+    CONSTRAINT CK_SalesRule_Scope CHECK (Scope IN ('Global','PerProduct','PerCustomer','PerSalesRep'))
+);
+GO
+
+---------------------------------------------------------------------------
+-- 3.32 SalesAuthority — per-rep limits (§4.8): the caps within which a rep
+--      Confirms without approval (e.g. Johanna's max discount).
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.SalesAuthority (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    SalesRepUserID UNIQUEIDENTIFIER NOT NULL,
+    MaxDiscountPct DECIMAL(7,4) NULL,
+    MaxOrderValue DECIMAL(18,2) NULL,
+    AllowedPaymentTermsTypeIDs NVARCHAR(MAX) NULL,
+    AllowedProductCategoryIDs NVARCHAR(MAX) NULL,
+    IsActive BIT NOT NULL DEFAULT 1,
+    CONSTRAINT PK_SalesAuthority PRIMARY KEY (ID),
+    CONSTRAINT CK_SalesAuthority_MaxDiscountPct CHECK (MaxDiscountPct IS NULL OR (MaxDiscountPct >= 0 AND MaxDiscountPct <= 1)),
+    CONSTRAINT CK_SalesAuthority_MaxOrderValue CHECK (MaxOrderValue IS NULL OR MaxOrderValue >= 0)
+);
+GO
+
 -- =============================================================================
 -- 4. FOREIGN KEYS (same-schema; created after all tables exist)
 -- =============================================================================
@@ -1077,6 +1119,17 @@ ALTER TABLE __mj_BizAppsOrders.PriceTier
     FOREIGN KEY (ProductPriceID) REFERENCES __mj_BizAppsOrders.ProductPrice(ID);
 GO
 
+-- Sales rules + approvals (S6)
+ALTER TABLE __mj_BizAppsOrders.SalesRule
+    ADD CONSTRAINT FK_SalesRule_ApprovalRequiredRole
+    FOREIGN KEY (ApprovalRequiredRoleID) REFERENCES __mj.[Role](ID);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.SalesAuthority
+    ADD CONSTRAINT FK_SalesAuthority_SalesRepUser
+    FOREIGN KEY (SalesRepUserID) REFERENCES __mj.[User](ID);
+GO
+
 -- =============================================================================
 -- 5. TRIGGERS — DB-level enforcement of master-plan financial invariants
 --    (schema action plan §6.1; house pattern per accounting's locked-JE triggers,
@@ -1293,6 +1346,7 @@ EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC timestamp of t
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Reason this order reverses another (required by validation when ReversesOrderID is set).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'ReversalReason';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to the governing contract record (contracts envelope, BO-D21; ownership pending the AIDP-contracts decision). Nullable.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'ContractID';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Customer-requested delivery/service date. Informational.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'RequestedDeliveryDate';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to the __mj_BizAppsTasks Task raised when a sales rule blocked Confirm (BO-D17). Convenience pointer; Task Links carry the authoritative linkage.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'ApprovalTaskID';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Internal notes on the order (Description is the customer-facing memo).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'Notes';
 GO
 
@@ -1566,6 +1620,22 @@ EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Tier lower bound (
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Tier upper bound. NULL = unbounded top tier.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceTier', @level2type=N'COLUMN', @level2name=N'MaxQuantity';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Per-unit (or flat) price within this tier.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceTier', @level2type=N'COLUMN', @level2name=N'Amount';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Display order of tiers.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'PriceTier', @level2type=N'COLUMN', @level2name=N'SortOrder';
+GO
+
+-- SalesRule / SalesAuthority (S6)
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Metadata-driven sales constraint evaluated at Confirm (BO-D17/D18). Violations raise an Approval Request Task routed to ApprovalRequiredRoleID; golden path confirms instantly.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesRule';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Display name of the rule.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesRule', @level2type=N'COLUMN', @level2name=N'Name';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'DiscountLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesRule', @level2type=N'COLUMN', @level2name=N'RuleType';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Global | PerProduct | PerCustomer | PerSalesRep — what ScopeReferenceID points at.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesRule', @level2type=N'COLUMN', @level2name=N'Scope';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to the scoped Product / Customer Organization / Sales Rep User when Scope is not Global.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesRule', @level2type=N'COLUMN', @level2name=N'ScopeReferenceID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'JSON rule expression (admin-editable; evaluated by the F8 engine).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesRule', @level2type=N'COLUMN', @level2name=N'PredicateJson';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this rule participates in Confirm evaluation.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesRule', @level2type=N'COLUMN', @level2name=N'IsActive';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Per-rep authority limits (§4.8): the caps within which a sales rep confirms without approval.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesAuthority';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Maximum discount fraction (0-1) this rep may grant unaided.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesAuthority', @level2type=N'COLUMN', @level2name=N'MaxDiscountPct';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Maximum order value this rep may confirm unaided.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesAuthority', @level2type=N'COLUMN', @level2name=N'MaxOrderValue';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'JSON array of PaymentTermsType IDs this rep may offer. NULL = all.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesAuthority', @level2type=N'COLUMN', @level2name=N'AllowedPaymentTermsTypeIDs';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'JSON array of ProductCategory IDs this rep may sell. NULL = all.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesAuthority', @level2type=N'COLUMN', @level2name=N'AllowedProductCategoryIDs';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this authority row is in force.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesAuthority', @level2type=N'COLUMN', @level2name=N'IsActive';
 GO
 
 -- RevRecScheduleLine
