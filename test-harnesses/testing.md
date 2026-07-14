@@ -85,3 +85,9 @@ curl -s -X POST http://localhost:4050/ -H "Content-Type: application/json" \
   transition matrix, fulfillment auto-advance) are F1 scope — schema is deliberately behavior-neutral;
   their tests land with F1. Payment/Subscription/pricing engine behavior = F3/F4/F9. Tier 4/5 GUI specs
   for the new forms = UI plan wave. `order-to-glposted` re-run pending in the final sweep (below).
+
+**Run-order note (2026-07-14):** `order-to-je` asserts ZERO stray Pending JEs at bootstrap (buildBatch
+is global), and the DEMO seeds legitimately create Pending JEs (3 confirmed demo orders). So: run the
+tier-2 harnesses BEFORE seeding demo data (the drop-schema loop naturally gives that order), or sweep
+demo Pending JEs first. The 2026-07-14 6/6 green run happened pre-reseed; a post-reseed re-run refusing
+to start is the guard working, not a failure.
