@@ -31,7 +31,7 @@ import type { mjBizAppsCommonOrganizationEntity } from '@mj-biz-apps/common-enti
 import '@mj-biz-apps/accounting-entities';
 import { CreateJournalEntriesOperation, MaterializeScheduledEntriesOperation } from '@mj-biz-apps/accounting-core-entities-server';
 import '@mj-biz-apps/orders-entities';
-import { CapturePaymentOperation, ConfirmOrderOperation, CreateRevRecScheduleOperation, OrdersEngine, ReversalOrderOperation, type ConfirmOrderOutput } from '@mj-biz-apps/orders-core-entities-server';
+import { CapturePaymentOperation, ConfirmOrderOperation, CreateRevRecScheduleOperation, GrantEntitlementsOperation, OrdersEngine, ReversalOrderOperation, type ConfirmOrderOutput } from '@mj-biz-apps/orders-core-entities-server';
 import type {
   mjBizAppsAccountingAccountingCompanyProfileEntity,
   mjBizAppsAccountingGLAccountLinkEntity,
@@ -42,6 +42,7 @@ import type {
   mjBizAppsOrdersPaymentEntity,
   mjBizAppsOrdersPaymentLineEntity,
   mjBizAppsOrdersPaymentProviderEntity,
+  mjBizAppsOrdersProductEntitlementEntity,
   mjBizAppsOrdersProductEntity,
   mjBizAppsOrdersProductTypeEntity,
 } from '@mj-biz-apps/orders-entities';
@@ -61,6 +62,8 @@ const PAYMENT_ENTITY = 'MJ_BizApps_Orders: Payments';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
 const ORGANIZATION_ENTITY = 'MJ_BizApps_Common: Organizations';
+const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
+const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
 const COMPANIES_ENTITY = 'MJ: Companies';
 
 const RUN_TAG = `ORD2JE-${Date.now()}`;
@@ -87,6 +90,8 @@ const createdPaymentIds: string[] = [];
 const createdPaymentLineIds: string[] = [];
 const createdProviderIds: string[] = [];
 const createdSJEIds: string[] = [];
+const createdEntitlementIds: string[] = [];
+const createdGrantIds: string[] = [];
 const createdLinkIds: string[] = [];
 const createdProductIds: string[] = [];
 const createdTypeIds: string[] = [];
@@ -710,6 +715,35 @@ async function main(): Promise<void> {
     for (const r of (mat.Output?.JournalEntryIDs ?? [])) if (!createdJEIds.includes(r)) createdJEIds.push(r);
   });
 
+  // ─── F7 entitlement grants: booking a product with entitlements issues Active grants (customer beneficiary) ───
+  await test('E1 entitlement grants — issues an Active grant per product entitlement, beneficiary = customer; idempotent', async () => {
+    const md = new Metadata();
+    const prod = await md.GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, user);
+    prod.NewRecord(); prod.Name = uid(); prod.ProductTypeID = typeId; prod.RevenueRecognitionType = 'Immediate';
+    assert(await prod.Save(), 'entitlement product saves'); createdProductIds.push(prod.ID);
+    await createLink(productsEntityId, prod.ID, 'Sales', coA.revGL);
+    // Two active entitlements + one inactive (must be ignored).
+    for (const [type, active] of [['Feature', true], ['ResourceQuantity', true], ['AccessLevel', false]] as const) {
+      const ent = await md.GetEntityObject<mjBizAppsOrdersProductEntitlementEntity>(PRODUCT_ENTITLEMENT_ENTITY, user);
+      ent.NewRecord(); ent.ProductID = prod.ID; ent.EntitlementType = type; ent.Code = `${uid()}`; ent.Quantity = type === 'ResourceQuantity' ? 5 : null; ent.IsActive = active;
+      assert(await ent.Save(), `entitlement (${type}) saves`); createdEntitlementIds.push(ent.ID);
+    }
+    const orderId = await createOrder([{ productId: prod.ID, qty: 1, price: 50 }]);
+    assert((await confirmOrder(orderId)).saved, 'order books');
+    const lineId = (await pool.request().query(`SELECT ID FROM ${ORD_SCHEMA}.OrderLine WHERE OrderID='${orderId}'`)).recordset[0].ID as string;
+    const res = await new GrantEntitlementsOperation().Execute({ OrderLineID: lineId }, { user });
+    assert(res.Output?.Success, `grant should succeed: ${JSON.stringify(res.Output?.Errors)}`);
+    const ids = res.Output!.GrantIDs ?? []; createdGrantIds.push(...ids);
+    assert(ids.length === 2, `expected 2 grants (the active entitlements), got ${ids.length}`);
+    const rows = (await pool.request().query(`SELECT Status, BeneficiaryOrganizationID FROM ${ORD_SCHEMA}.EntitlementGrant WHERE OrderLineID='${lineId}'`)).recordset;
+    assert(rows.every(r => r.Status === 'Active'), 'grants are Active');
+    assert(rows.every(r => (r.BeneficiaryOrganizationID ?? '').toUpperCase() === CUSTOMER_ORG_ID.toUpperCase()), 'beneficiary defaults to the order customer');
+    const again = await new GrantEntitlementsOperation().Execute({ OrderLineID: lineId }, { user });
+    assert(again.Output?.Success && !!again.Output?.Skipped, 're-granting is a no-op (idempotent)');
+    const count = (await pool.request().query(`SELECT COUNT(*) n FROM ${ORD_SCHEMA}.EntitlementGrant WHERE OrderLineID='${lineId}'`)).recordset[0].n;
+    assert(Number(count) === 2, `still exactly 2 grants after re-run, got ${count}`);
+  });
+
   await teardown();
   const failed = outcomes.filter(o => !o.Passed);
   console.log(`\n────── Order→JE integration: ${outcomes.length - failed.length}/${outcomes.length} passed ──────`);
@@ -754,6 +788,9 @@ async function teardown(): Promise<void> {
     for (const t of payTriggers) await exec(`ENABLE TRIGGER ALL ON ${ORD_SCHEMA}.[${t}]`);
   }
   if (createdProviderIds.length) await exec(`DELETE FROM ${ORD_SCHEMA}.PaymentProvider WHERE ID IN (${createdProviderIds.map(id => `'${id}'`).join(',')})`);
+  // Entitlements (F7): grants FK OrderLine (delete before orders); entitlements FK Product (before products).
+  if (createdGrantIds.length) await exec(`DELETE FROM ${ORD_SCHEMA}.EntitlementGrant WHERE ID IN (${createdGrantIds.map(id => `'${id}'`).join(',')})`);
+  if (createdEntitlementIds.length) await exec(`DELETE FROM ${ORD_SCHEMA}.ProductEntitlement WHERE ID IN (${createdEntitlementIds.map(id => `'${id}'`).join(',')})`);
   const orderList = createdOrderIds.map(id => `'${id}'`).join(',');
   if (orderList) {
     // Posted/Confirmed orders freeze their lines (delete-block trigger) — disable it for teardown,

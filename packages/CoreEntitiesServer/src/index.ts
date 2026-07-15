@@ -27,6 +27,8 @@ export { CapturePaymentOperation, LoadCapturePaymentOperation } from './CaptureP
 export type { CapturePaymentInput, CapturePaymentOutput } from './CapturePaymentOperation.js';
 export { CreateRevRecScheduleOperation, LoadCreateRevRecScheduleOperation } from './CreateRevRecScheduleOperation.js';
 export type { CreateRevRecScheduleInput, CreateRevRecScheduleOutput } from './CreateRevRecScheduleOperation.js';
+export { GrantEntitlementsOperation, LoadGrantEntitlementsOperation } from './GrantEntitlementsOperation.js';
+export type { GrantEntitlementsInput, GrantEntitlementsOutput } from './GrantEntitlementsOperation.js';
 export { queueOrderBooking, loadOrderLines } from './orderBooking.js';
 export type { OrderBookingResult } from './orderBooking.js';
 
@@ -39,6 +41,7 @@ import { LoadBizAppsOrdersPaymentLineServer } from './PaymentLineEntityServer.js
 import { LoadPaymentProviders } from './PaymentProviderBase.js';
 import { LoadCapturePaymentOperation } from './CapturePaymentOperation.js';
 import { LoadCreateRevRecScheduleOperation } from './CreateRevRecScheduleOperation.js';
+import { LoadGrantEntitlementsOperation } from './GrantEntitlementsOperation.js';
 
 export function LoadBizAppsOrdersEntitiesServer(): void {
   // Tree-shaking anchors — the bootstrap invokes these so bundlers can't drop the @RegisterClass side effects.
@@ -51,4 +54,5 @@ export function LoadBizAppsOrdersEntitiesServer(): void {
   LoadPaymentProviders();
   LoadCapturePaymentOperation();
   LoadCreateRevRecScheduleOperation();
+  LoadGrantEntitlementsOperation();
 }
