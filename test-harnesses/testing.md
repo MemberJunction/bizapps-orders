@@ -112,6 +112,22 @@ any-JE-exists ADOPTION guard is retired to a **defensive assert** (refuse-don't-
   uses the identical `BaseRemotableOperation` pattern; the op itself is proven in-process at T2 (O8/O10) and the
   browser confirm path at T3. A dedicated op-over-GraphQL smoke is a cheap future add if desired.
 
+---
+### 2026-07-15 — F1 lifecycle engine (transition matrix, totals, customer rule, DueDate, fulfillment)
+The centerpiece: the pure rules live in orders-engine-base (browser+server shared), wired into the entity servers.
+- **T1** `orderLifecycle.test` **19/19** — ALL 36 status pairs vs the DAG (forward skips legal, backward rejected,
+  Voided only from Draft/Quoted, terminals); totals math (discount clamp, credit-memo negative balance);
+  payment-status (WrittenOff preserved); DueDate rollover.
+- **T2** `server/order-to-je` **15/15** — O1–O10 booking/unit-of-work stay green (orders now carry a customer +
+  RequiresFulfillment=true → hold at Posted); O5 idempotency rewritten (Posted→Confirmed is a rejected backward
+  move now); **L1** transition gate (backward rejected), **L2** customer-required (blocked, no JE), **L3** totals
+  materialization + discount, **L4** DueDate from terms, **L5** fulfillment auto-advance (no-fulfillment → Fulfilled).
+- **Intentional coverage:** F1 gates run in OrderEntityServer.Save (server-side), so they hold identically over
+  GraphQL — the confirm-over-GraphQL path is proven by `order-to-je-api` (44/44); a dedicated F1-over-GraphQL
+  re-assert is a cheap future add. Booking now credits revenue NET of discount (computeLineNet).
+- **Known follow-ups (F1 fulfillment queue):** the per-line Fulfiller flip Pending→Fulfilled + last-line
+  auto-advance to Fulfilled is OrderLine-save-driven and role-gated (F6/A2) — engine hook TBD; logged for circle-back.
+
 **Run-order note (2026-07-14):** `order-to-je` asserts ZERO stray Pending JEs at bootstrap (buildBatch
 is global), and the DEMO seeds legitimately create Pending JEs (3 confirmed demo orders). So: run the
 tier-2 harnesses BEFORE seeding demo data (the drop-schema loop naturally gives that order), or sweep
