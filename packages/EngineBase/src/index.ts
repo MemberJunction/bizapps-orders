@@ -8,6 +8,8 @@ export { buildOrderJournalDrafts, OrderDraftError } from './orderJournalDraft.js
 export type { ResolvedOrderLine, OrderJournalContext, OrderDraftInputs } from './orderJournalDraft.js';
 export { buildPaymentJournalDraft, PaymentDraftError } from './paymentJournalDraft.js';
 export type { PaymentDraftInputs } from './paymentJournalDraft.js';
+export { computeRecognitionDates } from './revrec.js';
+export type { RevRecShape, RevRecWaterfallInput } from './revrec.js';
 export { resolveProductPrice } from './pricing.js';
 export type {
   ProductPriceRow,

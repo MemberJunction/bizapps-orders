@@ -29,9 +29,9 @@ import '@memberjunction/server-bootstrap-lite';
 import '@mj-biz-apps/common-entities';
 import type { mjBizAppsCommonOrganizationEntity } from '@mj-biz-apps/common-entities';
 import '@mj-biz-apps/accounting-entities';
-import { CreateJournalEntriesOperation } from '@mj-biz-apps/accounting-core-entities-server';
+import { CreateJournalEntriesOperation, MaterializeScheduledEntriesOperation } from '@mj-biz-apps/accounting-core-entities-server';
 import '@mj-biz-apps/orders-entities';
-import { CapturePaymentOperation, ConfirmOrderOperation, OrdersEngine, ReversalOrderOperation, type ConfirmOrderOutput } from '@mj-biz-apps/orders-core-entities-server';
+import { CapturePaymentOperation, ConfirmOrderOperation, CreateRevRecScheduleOperation, OrdersEngine, ReversalOrderOperation, type ConfirmOrderOutput } from '@mj-biz-apps/orders-core-entities-server';
 import type {
   mjBizAppsAccountingAccountingCompanyProfileEntity,
   mjBizAppsAccountingGLAccountLinkEntity,
@@ -86,6 +86,7 @@ const createdJEIds: string[] = [];
 const createdPaymentIds: string[] = [];
 const createdPaymentLineIds: string[] = [];
 const createdProviderIds: string[] = [];
+const createdSJEIds: string[] = [];
 const createdLinkIds: string[] = [];
 const createdProductIds: string[] = [];
 const createdTypeIds: string[] = [];
@@ -670,6 +671,45 @@ async function main(): Promise<void> {
     assert(je.header.EntryType === 'Refund', `EntryType Refund, got ${je.header.EntryType}`);
   });
 
+  // ─── F4 rev-rec bridge: deferred line → CreateRevRecSchedule → dated DefRev→Revenue releases → materialize ───
+  await test('F4 rev-rec bridge — a deferred ServicePeriod line schedules 12 dated releases; materialize fires the due ones', async () => {
+    const md = new Metadata();
+    // Deferred + ServicePeriod product, linked to BOTH Deferred Revenue (booking) and Sales (release).
+    const prod = await md.GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, user);
+    prod.NewRecord(); prod.Name = uid(); prod.ProductTypeID = typeId; prod.RevenueRecognitionType = 'Deferred'; prod.DeferredRecognitionShape = 'ServicePeriod';
+    assert(await prod.Save(), `deferred product save failed: ${prod.LatestResult?.CompleteMessage}`); createdProductIds.push(prod.ID);
+    await createLink(productsEntityId, prod.ID, 'Deferred Revenue', coA.defRevGL);
+    await createLink(productsEntityId, prod.ID, 'Sales', coA.revGL);
+    // Order + line with a 1-year service window (12 monthly anniversaries), total 1200.
+    const order = await md.GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
+    order.NewRecord(); order.OrderNumber = uid(); order.OrderDate = new Date(); order.Status = 'Draft'; order.CustomerOrganizationID = CUSTOMER_ORG_ID;
+    assert(await order.Save(), 'order saves'); createdOrderIds.push(order.ID);
+    const line = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+    line.NewRecord(); line.OrderID = order.ID; line.ProductID = prod.ID; line.LineNumber = 1; line.Quantity = 1; line.UnitPrice = 1200;
+    line.ServicePeriodStart = new Date('2026-01-01T00:00:00.000Z'); line.ServicePeriodEnd = new Date('2026-12-31T00:00:00.000Z');
+    assert(await line.Save(), 'line saves');
+    const conf = await confirmOrder(order.ID);
+    assert(conf.saved, 'deferred order books (Dr AR / Cr DefRev)');
+    // Bridge: build the release schedule.
+    const sched = await new CreateRevRecScheduleOperation().Execute({ OrderLineID: line.ID }, { user });
+    assert(sched.Output?.Success && sched.Output?.Scheduled, `rev-rec schedule should be created: ${JSON.stringify(sched.Output?.Errors)}`);
+    const sjeIds = sched.Output!.ScheduledEntryIDs ?? [];
+    createdSJEIds.push(...sjeIds);
+    assert(sjeIds.length === 12, `expected 12 monthly releases, got ${sjeIds.length}`);
+    const sum = (await pool.request().query(`SELECT SUM(TotalAmount) s FROM ${ACC_SCHEMA}.ScheduledJournalEntry WHERE ID IN (${sjeIds.map(i => `'${i}'`).join(',')})`)).recordset[0].s;
+    assert(near(Number(sum), 1200), `the 12 releases must sum to 1200, got ${sum}`);
+    // Each release is Dr DefRev / Cr Sales (revenue earned).
+    const firstLines = (await pool.request().query(`SELECT li.GLAccountID, li.DebitAmount, li.CreditAmount FROM ${ACC_SCHEMA}.ScheduledJournalEntryLineItem li WHERE li.ScheduledJournalEntryID='${sjeIds[0]}'`)).recordset;
+    assert(firstLines.some(l => (l.GLAccountID as string).toUpperCase() === coA.defRevGL.toUpperCase() && Number(l.DebitAmount) > 0), 'release debits Deferred Revenue');
+    assert(firstLines.some(l => (l.GLAccountID as string).toUpperCase() === coA.revGL.toUpperCase() && Number(l.CreditAmount) > 0), 'release credits Sales/Revenue');
+    // Materialize through Mar 15 → the Jan/Feb/Mar releases become Pending JEs (3 of 12).
+    const mat = await new MaterializeScheduledEntriesOperation().Execute({ AsOf: '2026-03-15T00:00:00.000Z' }, { user });
+    // (other tests' SJEs may exist; assert AT LEAST our 3 fired by checking our schedule's Generated count)
+    const gen = (await pool.request().query(`SELECT COUNT(*) n FROM ${ACC_SCHEMA}.ScheduledJournalEntry WHERE ID IN (${sjeIds.map(i => `'${i}'`).join(',')}) AND Status='Generated'`)).recordset[0].n;
+    assert(Number(gen) === 3, `Jan/Feb/Mar (3) of our releases should materialize, got ${gen}`);
+    for (const r of (mat.Output?.JournalEntryIDs ?? [])) if (!createdJEIds.includes(r)) createdJEIds.push(r);
+  });
+
   await teardown();
   const failed = outcomes.filter(o => !o.Passed);
   console.log(`\n────── Order→JE integration: ${outcomes.length - failed.length}/${outcomes.length} passed ──────`);
@@ -679,6 +719,19 @@ async function main(): Promise<void> {
 
 async function teardown(): Promise<void> {
   const exec = async (q: string) => { try { await teardownPool.request().query(q); } catch (e) { console.log(`      teardown warn: ${(e instanceof Error ? e.message : String(e)).split('\n')[0]}`); } };
+  // Scheduled JEs (F4) FIRST — their GeneratedJournalEntryID FKs the materialized JE, so they must
+  // be deleted BEFORE the JEs. Lock triggers block deletes; disable them.
+  const sjeList = createdSJEIds.map(id => `'${id}'`).join(',');
+  if (sjeList) {
+    const sjeTriggers = ['ScheduledJournalEntryLineItem', 'ScheduledJournalEntry'];
+    try {
+      for (const t of sjeTriggers) await exec(`DISABLE TRIGGER ALL ON ${ACC_SCHEMA}.${t}`);
+      await exec(`DELETE FROM ${ACC_SCHEMA}.ScheduledJournalEntryLineItem WHERE ScheduledJournalEntryID IN (${sjeList})`);
+      await exec(`DELETE FROM ${ACC_SCHEMA}.ScheduledJournalEntry WHERE ID IN (${sjeList})`);
+    } finally {
+      for (const t of sjeTriggers) await exec(`ENABLE TRIGGER ALL ON ${ACC_SCHEMA}.${t}`);
+    }
+  }
   const jeList = createdJEIds.map(id => `'${id}'`).join(',');
   const toggled = ['JournalEntryLine', 'JournalEntry'];
   try {
