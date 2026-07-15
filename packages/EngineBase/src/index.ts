@@ -30,6 +30,7 @@ export {
   computeBalance,
   derivePaymentStatus,
   deriveDueDate,
+  isOverdue,
   orderTotalGrossFromLines,
 } from './orderLifecycle.js';
 export type { OrderStatus, OrderPaymentStatus, TransitionCheck } from './orderLifecycle.js';

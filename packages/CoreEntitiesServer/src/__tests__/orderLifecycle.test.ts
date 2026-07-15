@@ -14,6 +14,7 @@ import {
   computeBalance,
   derivePaymentStatus,
   deriveDueDate,
+  isOverdue,
   type OrderStatus,
 } from '@mj-biz-apps/orders-engine-base';
 
@@ -116,6 +117,27 @@ describe('order lifecycle — payment status derivation', () => {
   it('never overrides an explicit WrittenOff', () => {
     expect(derivePaymentStatus(400, 0, 'WrittenOff')).toBe('WrittenOff');
     expect(derivePaymentStatus(400, 400, 'WrittenOff')).toBe('WrittenOff');
+  });
+});
+
+describe('order lifecycle — isOverdue (F3.6, time-derived)', () => {
+  const now = new Date('2026-07-15T00:00:00Z');
+  const past = new Date('2026-07-01T00:00:00Z');
+  const future = new Date('2026-08-01T00:00:00Z');
+  it('overdue when past due date + open balance', () => {
+    expect(isOverdue(past, 100, now)).toBe(true);
+  });
+  it('NOT overdue when the due date is in the future', () => {
+    expect(isOverdue(future, 100, now)).toBe(false);
+  });
+  it('NOT overdue when the balance is zero (paid)', () => {
+    expect(isOverdue(past, 0, now)).toBe(false);
+  });
+  it('NOT overdue when there is no due date', () => {
+    expect(isOverdue(null, 100, now)).toBe(false);
+  });
+  it('NEVER overdue when WrittenOff', () => {
+    expect(isOverdue(past, 100, now, 'WrittenOff')).toBe(false);
   });
 });
 

@@ -106,6 +106,21 @@ export function derivePaymentStatus(
 }
 
 /**
+ * Is an order overdue as of a date (F3.6 dunning · Q-a: Overdue is TIME-DERIVED, never a stored flag)?
+ * True when it has a due date in the past AND an open balance. A WrittenOff balance is not "overdue".
+ */
+export function isOverdue(
+  dueDate: Date | null | undefined,
+  balance: number | null | undefined,
+  asOf: Date,
+  paymentStatus?: OrderPaymentStatus | null,
+): boolean {
+  if (paymentStatus === 'WrittenOff') return false;
+  if (dueDate == null) return false;
+  return new Date(dueDate).getTime() < asOf.getTime() && (balance ?? 0) > 0.005;
+}
+
+/**
  * Derive the DueDate from a base date + the payment terms' net days (F1.4). Returns null when no
  * terms apply (caller then leaves any manually-supplied DueDate untouched). Date-only (UTC).
  */
