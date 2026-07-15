@@ -64,7 +64,8 @@ const num = (v: unknown): number => (v == null ? 0 : Number(v));
 
 // ─── fixture (in-process catalog provisioning) ───────────────────────────────────
 interface CompanyGL { id: string; arGL: string; revGL: string; defRevGL: string }
-interface OrderFixture { runTag: string; coA: CompanyGL; coB: CompanyGL; products: { immA: string; defA: string; immB: string; unlinkedA: string } }
+interface OrderFixture { runTag: string; coA: CompanyGL; coB: CompanyGL; products: { immA: string; defA: string; immB: string; unlinkedA: string }; customerOrgId: string }
+let CUSTOMER_ORG_ID = ''; // set from the fixture in main() — the order customer + AR CounterpartyOrganizationID
 
 function fixtureSetup(): OrderFixture {
   const out = execFileSync(TSX, [FIXTURE, 'setup'], { cwd: WORKTREE_ROOT, encoding: 'utf8', timeout: 300_000 });
@@ -124,7 +125,7 @@ async function createOrder(apiKey: string, runTag: string, seq: number, lines: O
   const created = await gql<{ CreatemjBizAppsOrdersOrder: OrderRow }>(
     apiKey,
     `mutation Create($input: CreatemjBizAppsOrdersOrderInput!) { CreatemjBizAppsOrdersOrder(input: $input) { ID Status } }`,
-    { input: { OrderNumber: orderNumber, OrderDate: orderDate, Status: 'Draft', Description: `${runTag} api harness` } },
+    { input: { OrderNumber: orderNumber, OrderDate: orderDate, Status: 'Draft', CustomerOrganizationID: CUSTOMER_ORG_ID, Description: `${runTag} api harness` } },
   );
   const orderId = created.CreatemjBizAppsOrdersOrder.ID;
   let n = 1;
@@ -262,9 +263,15 @@ async function scenarioO5(apiKey: string, fx: OrderFixture): Promise<void> {
   const first = await confirmOrder(apiKey, orderId);
   const firstJEID = first.data?.UpdatemjBizAppsOrdersOrder?.JournalEntryID;
   check('O5: first confirm books a JE', !!firstJEID, JSON.stringify(first.errors ?? first.data));
-  const again = await confirmOrder(apiKey, orderId);
+  // F1: the order is now Posted; re-setting Status='Confirmed' would be an ILLEGAL backward move.
+  // Idempotency = a benign re-save (no status change) books no second JE.
+  const again = await gqlRaw<{ UpdatemjBizAppsOrdersOrder: OrderRow }>(
+    apiKey,
+    `mutation Update($input: UpdatemjBizAppsOrdersOrderInput!) { UpdatemjBizAppsOrdersOrder(input: $input) { ID Status JournalEntryID } }`,
+    { input: { ID: orderId, Description: `${fx.runTag} reconfirm-noop` } },
+  );
   const againOrder = again.data?.UpdatemjBizAppsOrdersOrder;
-  check('O5: re-confirm succeeds without error', !again.errors?.length && !!againOrder, JSON.stringify(again.errors));
+  check('O5: benign re-save succeeds', !again.errors?.length && !!againOrder, JSON.stringify(again.errors));
   check('O5: JournalEntryID unchanged', !!firstJEID && againOrder?.JournalEntryID === firstJEID, `${firstJEID} vs ${againOrder?.JournalEntryID}`);
   const jes = await runView<{ ID: string }>(apiKey, JE_ENTITY, `OrderID='${orderId}'`, ['ID']);
   check('O5: exactly one JE exists for the order', jes.length === 1, `got ${jes.length}`);
@@ -292,7 +299,8 @@ async function main(): Promise<void> {
 
   console.log('Provisioning companies + catalog via order-to-je-fixture (in-process)…');
   const fx = fixtureSetup();
-  console.log(`  fixture ${fx.runTag}: coA ${fx.coA.id}, coB ${fx.coB.id}`);
+  CUSTOMER_ORG_ID = fx.customerOrgId;
+  console.log(`  fixture ${fx.runTag}: coA ${fx.coA.id}, coB ${fx.coB.id}, customer ${fx.customerOrgId}`);
 
   try {
     await scenarioO1(apiKey, fx);
