@@ -127,7 +127,10 @@ packages/MJExplorer/src/environments/environment.development.ts
 packages/MJExplorer/src/environments/environment.staging.ts
 packages/MJExplorer/src/environments/environment.ts
 Schema Files/
-/docs/
+# /docs/ was a template-inherited ignore for generated doc output; keep ignoring loose
+# generated files but track the hand-authored standing UI design layer (2026-07-15).
+/docs/*
+!/docs/ui-design/
 SQL Scripts/generated/
 **/SQL Scripts/generated/
 *.old
