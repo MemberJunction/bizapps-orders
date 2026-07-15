@@ -37,17 +37,24 @@ import type {
   mjBizAppsOrdersOrderEntity,
   mjBizAppsOrdersOrderLineEntity,
   mjBizAppsOrdersPaymentTermsTypeEntity,
+  mjBizAppsOrdersPriceListEntity,
+  mjBizAppsOrdersPriceTierEntity,
   mjBizAppsOrdersProductCategoryEntity,
   mjBizAppsOrdersProductEntity,
+  mjBizAppsOrdersProductPriceEntity,
   mjBizAppsOrdersProductTypeEntity,
 } from '@mj-biz-apps/orders-entities';
 import { buildOrderJournalDrafts, type ResolvedOrderLine } from './orderJournalDraft.js';
 import { computeLineNet } from './orderLifecycle.js';
+import { resolveProductPrice, type ResolvePriceResult } from './pricing.js';
 
 const PRODUCT_TYPES_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const PRODUCT_CATEGORIES_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 const PRODUCTS_ENTITY = 'MJ_BizApps_Orders: Products';
 const PAYMENT_TERMS_TYPES_ENTITY = 'MJ_BizApps_Orders: Payment Terms Types';
+const PRODUCT_PRICES_ENTITY = 'MJ_BizApps_Orders: Product Prices';
+const PRICE_TIERS_ENTITY = 'MJ_BizApps_Orders: Price Tiers';
+const PRICE_LISTS_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 const COMPANIES_ENTITY = 'MJ: Companies';
 
 const ROLE_ACCOUNTS_RECEIVABLE = 'Accounts Receivable';
@@ -75,6 +82,9 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
   private _productCategories: mjBizAppsOrdersProductCategoryEntity[] = [];
   private _products: mjBizAppsOrdersProductEntity[] = [];
   private _paymentTermsTypes: mjBizAppsOrdersPaymentTermsTypeEntity[] = [];
+  private _productPrices: mjBizAppsOrdersProductPriceEntity[] = [];
+  private _priceTiers: mjBizAppsOrdersPriceTierEntity[] = [];
+  private _priceLists: mjBizAppsOrdersPriceListEntity[] = [];
   private _entityIdCache = new Map<string, string>();
 
   public static get Instance(): OrdersEngineBase {
@@ -87,6 +97,9 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
       { PropertyName: '_productCategories', EntityName: PRODUCT_CATEGORIES_ENTITY },
       { PropertyName: '_products', EntityName: PRODUCTS_ENTITY },
       { PropertyName: '_paymentTermsTypes', EntityName: PAYMENT_TERMS_TYPES_ENTITY },
+      { PropertyName: '_productPrices', EntityName: PRODUCT_PRICES_ENTITY },
+      { PropertyName: '_priceTiers', EntityName: PRICE_TIERS_ENTITY },
+      { PropertyName: '_priceLists', EntityName: PRICE_LISTS_ENTITY },
     ];
     const result = await this.Load(params, provider as IMetadataProvider, forceRefresh ?? false, contextUser);
     // Resolution reads accounting's link/account caches — keep them loaded in lockstep.
@@ -133,6 +146,46 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
     if (!termsTypeID) return null;
     const key = uuidKey(termsTypeID);
     return this.PaymentTermsTypes.find(t => uuidKey(t.ID) === key)?.NetDays ?? null;
+  }
+
+  // ─── pricing (F9) ──────────────────────────────────────────────────────────
+  public get ProductPrices(): mjBizAppsOrdersProductPriceEntity[] {
+    return this.GetConfigData<mjBizAppsOrdersProductPriceEntity>('_productPrices');
+  }
+  public get PriceTiers(): mjBizAppsOrdersPriceTierEntity[] {
+    return this.GetConfigData<mjBizAppsOrdersPriceTierEntity>('_priceTiers');
+  }
+  public get PriceLists(): mjBizAppsOrdersPriceListEntity[] {
+    return this.GetConfigData<mjBizAppsOrdersPriceListEntity>('_priceLists');
+  }
+
+  /**
+   * Resolve a suggested unit price for (product, qty, date) per the F9 precedence (BO-D33). Returns
+   * `{ Amount: null, Source: 'DirectEntry' }` when no rule applies — the caller keeps the typed
+   * UnitPrice. Never blocks. Delegates the selection to the pure `resolveProductPrice`.
+   */
+  public ResolvePrice(productID: string, quantity: number, asOfDate: Date, priceListID?: string | null): ResolvePriceResult {
+    const key = uuidKey(productID);
+    const productPrices = this.ProductPrices.filter(p => uuidKey(p.ProductID) === key).map(p => ({
+      ID: p.ID,
+      PriceListID: p.PriceListID,
+      PricingModel: p.PricingModel,
+      Amount: p.Amount,
+      MinQuantity: p.MinQuantity,
+      MaxQuantity: p.MaxQuantity,
+      EffectiveFrom: p.EffectiveFrom,
+      EffectiveTo: p.EffectiveTo,
+    }));
+    const ppKeys = new Set(productPrices.map(p => uuidKey(p.ID)));
+    const priceTiers = this.PriceTiers.filter(t => ppKeys.has(uuidKey(t.ProductPriceID))).map(t => ({
+      ProductPriceID: t.ProductPriceID,
+      MinQuantity: t.MinQuantity,
+      MaxQuantity: t.MaxQuantity,
+      Amount: t.Amount,
+      SortOrder: t.SortOrder,
+    }));
+    const priceLists = this.PriceLists.map(l => ({ ID: l.ID, IsActive: l.IsActive, EffectiveFrom: l.EffectiveFrom, EffectiveTo: l.EffectiveTo }));
+    return resolveProductPrice({ Quantity: quantity, AsOfDate: asOfDate, PriceListID: priceListID ?? null, ProductPrices: productPrices, PriceTiers: priceTiers, PriceLists: priceLists });
   }
 
   // ─── account resolution ────────────────────────────────────────────────────
