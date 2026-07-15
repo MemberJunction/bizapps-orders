@@ -12,6 +12,12 @@ module.exports = {
   // packages/Entities/package.json "name".
   entityPackageName: '@mj-biz-apps/orders-entities',
 
+  // Extra schema info CodeGen can't infer from the DB alone. Declares this app's
+  // IS-A (Table-Per-Type) inheritance relationships EXPLICITLY (EventProduct→Product,
+  // EventOrderLine→OrderLine) so __mj.Entity.ParentID is set from config — independent
+  // of CodeGen's schema-shape auto-detection. See codegen-schema-info.json.
+  additionalSchemaInfo: 'codegen-schema-info.json',
+
   output: [
     { type: 'SQL', directory: './SQL Scripts/generated', appendOutputCode: true },
     {

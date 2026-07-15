@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.memberjunction.org/codegen-schema-info/v1.json",
+  "description": "Additional schema info consumed by `mj codegen` (CodeGenLib additionalSchemaInfo). Declares IS-A (Table-Per-Type) inheritance relationships EXPLICITLY so CodeGen sets __mj.Entity.ParentID from config — it mirrors the parent's fields as virtual fields on the child and JOINs the parent in the child's base view, and (via LogSQLAndExecute) serializes the ParentID UPDATE into the CodeGen_Run migration so a clean deploy sets it too (#3004). This does NOT depend on CodeGen's schema-shape auto-detection (which can't reliably exclude non-IS-A tables that share the same single-PK-is-also-FK shape); the explicit declaration always wins.",
+  "ISARelationships": [
+    {
+      "_comment": "EventProduct IS-A Product (Table-Per-Type): EventProduct's single PK (ID) is also an FK to Product.ID. ChildEntity + ParentEntity use BASE TABLE names + SchemaName so the binding is independent of the entity-name prefix; CodeGen matches by Name OR (BaseTable + SchemaName).",
+      "ChildEntity": "EventProduct",
+      "ParentEntity": "Product",
+      "SchemaName": "__mj_BizAppsOrders"
+    },
+    {
+      "_comment": "EventOrderLine IS-A OrderLine (same Table-Per-Type shape: EventOrderLine.ID PK is also an FK to OrderLine.ID).",
+      "ChildEntity": "EventOrderLine",
+      "ParentEntity": "OrderLine",
+      "SchemaName": "__mj_BizAppsOrders"
+    }
+  ]
+}
