@@ -30,7 +30,7 @@ import '@mj-biz-apps/common-entities';
 import '@mj-biz-apps/accounting-entities';
 import { CreateJournalEntriesOperation } from '@mj-biz-apps/accounting-core-entities-server';
 import '@mj-biz-apps/orders-entities';
-import { ConfirmOrderOperation, OrdersEngine, type ConfirmOrderOutput } from '@mj-biz-apps/orders-core-entities-server';
+import { ConfirmOrderOperation, OrdersEngine, ReversalOrderOperation, type ConfirmOrderOutput } from '@mj-biz-apps/orders-core-entities-server';
 import type {
   mjBizAppsAccountingAccountingCompanyProfileEntity,
   mjBizAppsAccountingGLAccountLinkEntity,
@@ -542,6 +542,48 @@ async function main(): Promise<void> {
     assert(db.Status === 'Fulfilled', `persisted status should be Fulfilled, got ${db.Status}`);
     const count = (await pool.request().query(`SELECT COUNT(*) n FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}'`)).recordset[0].n;
     assert(Number(count) === 1, `fulfillment adds NO JE — exactly the one booking JE, got ${count}`);
+  });
+
+  // ─── F2 reversals: reversal order books the mirror JE; partial-reversal stacking; over-reversal rejected ───
+  await test('R1 reversal order — books the MIRROR JE (Cr AR / Dr revenue); the pair NETS TO ZERO', async () => {
+    const srcId = await createOrder([{ productId: pImmA, qty: 2, price: 100 }]); // 200
+    const src = await confirmOrder(srcId);
+    assert(src.saved && !!src.order.JournalEntryID, 'source order books');
+    const rev = await new ReversalOrderOperation().Execute({ SourceOrderID: srcId, OrderType: 'Return' }, { user });
+    const revOrderId = rev.Output?.ReversalOrderID;
+    assert(rev.Output?.Success && !!revOrderId, `reversal creation should succeed: ${JSON.stringify(rev.Output?.Errors)}`);
+    createdOrderIds.push(revOrderId!);
+    const revConf = await confirmOrder(revOrderId!);
+    assert(revConf.saved, 'reversal order confirms + books');
+    const revJEs = await readOrderJEs(revOrderId!);
+    assert(revJEs.length === 1, `reversal should book exactly 1 JE, got ${revJEs.length}`);
+    const revJE = await readJE(revJEs[0].ID);
+    assert(near(creditFor(revJE.lines, coA.arGL), 200), `reversal Cr AR should be 200, got ${creditFor(revJE.lines, coA.arGL)}`);
+    assert(near(debitFor(revJE.lines, coA.revGL), 200), `reversal Dr Sales should be 200, got ${debitFor(revJE.lines, coA.revGL)}`);
+    const orig = await readJE(src.order.JournalEntryID!);
+    const netAR = (debitFor(orig.lines, coA.arGL) - creditFor(orig.lines, coA.arGL)) + (debitFor(revJE.lines, coA.arGL) - creditFor(revJE.lines, coA.arGL));
+    const netRev = (debitFor(orig.lines, coA.revGL) - creditFor(orig.lines, coA.revGL)) + (debitFor(revJE.lines, coA.revGL) - creditFor(revJE.lines, coA.revGL));
+    assert(near(netAR, 0) && near(netRev, 0), `the original + reversal must net to ZERO per account (AR ${netAR}, Rev ${netRev})`);
+  });
+
+  await test('R2 partial reversal — stacks to the remainder; over-reversal is REJECTED', async () => {
+    const srcId = await createOrder([{ productId: pImmA, qty: 5, price: 10 }]);
+    assert((await confirmOrder(srcId)).saved, 'source order books');
+    const srcLine = (await pool.request().query(`SELECT ID FROM ${ORD_SCHEMA}.OrderLine WHERE OrderID='${srcId}'`)).recordset[0].ID as string;
+    const r1 = await new ReversalOrderOperation().Execute({ SourceOrderID: srcId, LineSlices: [{ SourceOrderLineID: srcLine, Quantity: 2 }] }, { user });
+    assert(r1.Output?.Success, `partial reversal of 2 should succeed: ${JSON.stringify(r1.Output?.Errors)}`);
+    createdOrderIds.push(r1.Output!.ReversalOrderID!);
+    const over = await new ReversalOrderOperation().Execute({ SourceOrderID: srcId, LineSlices: [{ SourceOrderLineID: srcLine, Quantity: 4 }] }, { user });
+    assert(!over.Output?.Success, 'over-reversal (4 > remaining 3) must be rejected');
+    const r3 = await new ReversalOrderOperation().Execute({ SourceOrderID: srcId, LineSlices: [{ SourceOrderLineID: srcLine, Quantity: 3 }] }, { user });
+    assert(r3.Output?.Success, `reversing the remaining 3 should succeed: ${JSON.stringify(r3.Output?.Errors)}`);
+    createdOrderIds.push(r3.Output!.ReversalOrderID!);
+  });
+
+  await test('R3 reversal guard — an UNBOOKED (Draft) order cannot be reversed', async () => {
+    const draftId = await createOrder([{ productId: pImmA, qty: 1, price: 10 }]); // never confirmed
+    const rev = await new ReversalOrderOperation().Execute({ SourceOrderID: draftId, OrderType: 'Return' }, { user });
+    assert(!rev.Output?.Success, 'reversing an unbooked order must be rejected');
   });
 
   await teardown();

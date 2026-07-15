@@ -205,18 +205,48 @@ describe('buildOrderJournalDrafts — per-company split (MOD-11)', () => {
   });
 });
 
+describe('buildOrderJournalDrafts — reversals (signed amounts, F2)', () => {
+  it('books a full reversal as the MIRROR image: Cr AR / Dr revenue, balanced', () => {
+    const [d] = buildOrderJournalDrafts(inputs([line({ LineIndex: 0, Amount: -250 })], [[CO_A, AR_A]]));
+    expect(credits(d)).toEqual([{ GLAccountID: AR_A, CreditAmount: 250 }]); // AR credited — we owe the customer
+    expect(debits(d)).toHaveLength(1);
+    expect(debits(d)[0].GLAccountID).toBe(SALES_A);
+    expect(debits(d)[0].DebitAmount).toBe(250); // revenue debited — reversed
+    expect(isBalanced(d)).toBe(true);
+  });
+
+  it('a partial reversal (mixed +/- lines) nets correctly and balances', () => {
+    const [d] = buildOrderJournalDrafts(inputs([
+      line({ LineIndex: 0, Amount: 100, RevenueAccountID: SALES_A }),
+      line({ LineIndex: 1, Amount: -30, RevenueAccountID: SALES_A }),
+    ], [[CO_A, AR_A]]));
+    expect(debits(d).find(l => l.GLAccountID === AR_A)?.DebitAmount).toBe(70); // net 70 owed → Dr AR
+    expect(credits(d).find(l => l.GLAccountID === SALES_A)?.CreditAmount).toBe(100);
+    expect(debits(d).find(l => l.GLAccountID === SALES_A)?.DebitAmount).toBe(30);
+    expect(isBalanced(d)).toBe(true);
+  });
+
+  it('a reversal and its original NET TO ZERO across the pair (per account)', () => {
+    const [orig] = buildOrderJournalDrafts(inputs([line({ LineIndex: 0, Amount: 250 })], [[CO_A, AR_A]]));
+    const [rev] = buildOrderJournalDrafts(inputs([line({ LineIndex: 0, Amount: -250 })], [[CO_A, AR_A]]));
+    const net = (gl: string) =>
+      sum([orig, rev].flatMap(d => d.Lines.filter(l => l.GLAccountID === gl).map(l => (l.DebitAmount ?? 0) - (l.CreditAmount ?? 0))));
+    expect(net(AR_A)).toBe(0);
+    expect(net(SALES_A)).toBe(0);
+  });
+});
+
 describe('buildOrderJournalDrafts — structural errors', () => {
   it('throws OrderDraftError on an order with no lines', () => {
     expect(() => buildOrderJournalDrafts(inputs([], [[CO_A, AR_A]]))).toThrow(OrderDraftError);
   });
 
-  it('throws OrderDraftError on a non-positive line amount (0 and negative)', () => {
+  it('throws OrderDraftError on a ZERO line amount (a negative amount is legal — reversals, F2)', () => {
     expect(() => buildOrderJournalDrafts(inputs([line({ LineIndex: 0, Amount: 0 })], [[CO_A, AR_A]]))).toThrow(
       OrderDraftError
     );
-    expect(() => buildOrderJournalDrafts(inputs([line({ LineIndex: 0, Amount: -5 })], [[CO_A, AR_A]]))).toThrow(
-      OrderDraftError
-    );
+    // negative is NOT an error anymore — it books the mirror image (asserted in the reversals suite).
+    expect(() => buildOrderJournalDrafts(inputs([line({ LineIndex: 0, Amount: -5 })], [[CO_A, AR_A]]))).not.toThrow();
   });
 
   it('throws OrderDraftError when ANY company lacks a resolved AR account (even mid-split)', () => {

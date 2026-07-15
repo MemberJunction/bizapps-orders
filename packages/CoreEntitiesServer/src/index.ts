@@ -17,12 +17,15 @@ export { OrderEntityServer, LoadBizAppsOrdersOrderServer } from './OrderEntitySe
 export { OrderLineEntityServer, LoadBizAppsOrdersOrderLineServer } from './OrderLineEntityServer.js';
 export { ConfirmOrderOperation, LoadConfirmOrderOperation } from './ConfirmOrderOperation.js';
 export type { ConfirmOrderInput, ConfirmOrderOutput } from './ConfirmOrderOperation.js';
+export { ReversalOrderOperation, LoadReversalOrderOperation } from './ReversalOrderOperation.js';
+export type { CreateReversalOrderInput, CreateReversalOrderOutput } from './ReversalOrderOperation.js';
 export { queueOrderBooking, loadOrderLines } from './orderBooking.js';
 export type { OrderBookingResult } from './orderBooking.js';
 
 import { LoadBizAppsOrdersOrderServer } from './OrderEntityServer.js';
 import { LoadBizAppsOrdersOrderLineServer } from './OrderLineEntityServer.js';
 import { LoadConfirmOrderOperation } from './ConfirmOrderOperation.js';
+import { LoadReversalOrderOperation } from './ReversalOrderOperation.js';
 
 export function LoadBizAppsOrdersEntitiesServer(): void {
   // Importing this module registered OrderEntityServer + OrderLineEntityServer + ConfirmOrderOperation
@@ -31,4 +34,5 @@ export function LoadBizAppsOrdersEntitiesServer(): void {
   LoadBizAppsOrdersOrderServer();
   LoadBizAppsOrdersOrderLineServer();
   LoadConfirmOrderOperation();
+  LoadReversalOrderOperation();
 }

@@ -81,22 +81,31 @@ function sumAmountByCompany(lines: ResolvedOrderLine[]): Map<string, number> {
   return totals;
 }
 
-/** One credit line per order line, to its resolved revenue account. */
-function buildCreditLines(lines: ResolvedOrderLine[]): JournalEntryLineDraft[] {
+/**
+ * One revenue line per order line, on the SIGN-correct side (F2 reversals): a normal (positive)
+ * line CREDITS revenue; a reversal (negative) line DEBITS revenue by the magnitude (a JE line
+ * carries exactly one side, strictly > 0 — the contract). So a Return/CreditMemo order books the
+ * mirror image of the original.
+ */
+function buildRevenueLines(lines: ResolvedOrderLine[]): JournalEntryLineDraft[] {
   return lines.map(line => ({
     GLAccountID: line.RevenueAccountID,
-    CreditAmount: line.Amount,
+    ...revenueSide(line.Amount),
     OrderLineID: line.OrderLineID,
     Description: line.Description,
   }));
 }
 
-/** One AR debit line per company, for that company's total. Fails if an AR account is missing. */
-function buildDebitLines(
+/**
+ * One AR line per company, on the SIGN-correct side: a positive company total DEBITS AR (the
+ * customer owes); a negative total (a net reversal) CREDITS AR (we owe the customer — a credit
+ * memo). Fails if an AR account is missing.
+ */
+function buildArLines(
   totalsByCompany: Map<string, number>,
   arAccountByCompany: Map<string, string>
 ): JournalEntryLineDraft[] {
-  const debits: JournalEntryLineDraft[] = [];
+  const arLines: JournalEntryLineDraft[] = [];
   for (const [companyID, total] of totalsByCompany) {
     const arAccountID = arAccountByCompany.get(companyID);
     if (!arAccountID) {
@@ -104,20 +113,31 @@ function buildDebitLines(
         `No Accounts Receivable account resolved for company ${companyID}; cannot book the order.`
       );
     }
-    debits.push({ GLAccountID: arAccountID, DebitAmount: total });
+    // AR mirrors revenue: positive company total → Dr AR (customer owes); negative → Cr AR (credit memo).
+    arLines.push({ GLAccountID: arAccountID, ...arSide(total) });
   }
-  return debits;
+  return arLines;
 }
 
-/** Reject empty orders and non-positive line amounts before assembling anything. */
+/** Revenue side for a signed amount: Cr for a normal sale (positive), Dr for a reversal (negative). */
+function revenueSide(amount: number): { DebitAmount: number } | { CreditAmount: number } {
+  return amount >= 0 ? { CreditAmount: amount } : { DebitAmount: -amount };
+}
+
+/** AR side for a signed company total: Dr when the customer owes (positive), Cr for a credit memo (negative). */
+function arSide(amount: number): { DebitAmount: number } | { CreditAmount: number } {
+  return amount >= 0 ? { DebitAmount: amount } : { CreditAmount: -amount };
+}
+
+/** Reject empty orders and ZERO-amount lines before assembling anything. Negatives are legal (reversals). */
 function assertLinesValid(lines: ResolvedOrderLine[]): void {
   if (lines.length === 0) {
     throw new OrderDraftError('Cannot book an order with no lines.');
   }
   for (const line of lines) {
-    if (!(line.Amount > 0)) {
+    if (line.Amount === 0 || Number.isNaN(line.Amount)) {
       throw new OrderDraftError(
-        `Order line ${line.LineIndex} has a non-positive amount (${line.Amount}); every booked line must be > 0.`
+        `Order line ${line.LineIndex} has a zero/NaN amount (${line.Amount}); every booked line must be non-zero.`
       );
     }
   }
@@ -147,14 +167,14 @@ export function buildOrderJournalDrafts(inputs: OrderDraftInputs): JournalEntryD
   const drafts: JournalEntryDraft[] = [];
   for (const [, companyLines] of groupLinesByCompany(Lines)) {
     const totalsByCompany = sumAmountByCompany(companyLines);
-    const debitLines = buildDebitLines(totalsByCompany, ArAccountByCompany);
-    const creditLines = buildCreditLines(companyLines);
+    const arLines = buildArLines(totalsByCompany, ArAccountByCompany);
+    const revenueLines = buildRevenueLines(companyLines);
     drafts.push({
       EffectiveDate: Context.EffectiveDate,
       EntryType: Context.EntryType,
       OrderID: Context.OrderID,
       Description: Context.Description,
-      Lines: [...debitLines, ...creditLines],
+      Lines: [...arLines, ...revenueLines],
     });
   }
   return drafts;
