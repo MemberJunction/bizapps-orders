@@ -128,6 +128,26 @@ The centerpiece: the pure rules live in orders-engine-base (browser+server share
 - **Known follow-ups (F1 fulfillment queue):** the per-line Fulfiller flip Pending→Fulfilled + last-line
   auto-advance to Fulfilled is OrderLine-save-driven and role-gated (F6/A2) — engine hook TBD; logged for circle-back.
 
+---
+### 2026-07-15 — FEATURE WAVE COMPLETE (F2 · F3 · F9 · F4 · F7 · F3.6). Unified harness order-to-je = 24/24.
+`order-to-je.ts` is now the single orders behavior harness (tier-2, live DB): O1-O10 booking + F1.2b unit
+of work · L1-L5 F1 lifecycle · **R1-R3 F2 reversals** (mirror JE + net-zero, partial stacking, unbooked
+guard) · **P1-P4 F3 payments** (Manual capture Dr Cash/Cr AR customer-tagged, Stripe-STUB capture op,
+cash application + over-application reject, refund mirror) · **F4 rev-rec bridge** (deferred line → 12
+dated releases → materialize) · **E1 F7 entitlement grants**. Tier-1 (vitest, 58): orderJournalDraft 17
+(+reversals) · orderLifecycle 24 (+isOverdue) · paymentJournalDraft 6 · pricing 6 · revrec 5.
+- **F9 pricing** T1 pricing 6/6 (resolveProductPrice precedence; never-blocking). **F3.6 dunning** T1
+  isOverdue 5/5 + Orders.GetOverdueWorklist (read-only over the predicate).
+- **Tier-3 (over GraphQL, MJAPI :4030)** — final integration on the full F1-F4 dist: **order-to-je-api
+  44/44** (confirm/booking over GraphQL, real customer Org + fulfillment-hold), accounting engine-op-api
+  8/8, accounting **readmodels-api 29/29** (AR-by-customer / aging / DefRev-rollforward views FED by the
+  order-to-cash flow — the F3 CounterpartyOrganizationID threading was the enabler).
+- **Cross-app ops added:** Orders.ConfirmOrder · Orders.CreateReversalOrder · Orders.CapturePayment ·
+  Orders.CreateRevRecSchedule · Orders.GrantEntitlements · Orders.GetOverdueWorklist · (acct)
+  Accounting.QueueJournalEntries · CreateScheduledJournalEntries · MaterializeDueScheduledEntries.
+- **B2 dashboards** (AR-Aging = TrialBalanceAR "Aging" tab, DefRev-Rollforward = RevenueTax) already
+  existed; my feature work fed their read models (validated readmodels-api 29/29). Deferrals: plans/DEFERRALS.md.
+
 **Run-order note (2026-07-14):** `order-to-je` asserts ZERO stray Pending JEs at bootstrap (buildBatch
 is global), and the DEMO seeds legitimately create Pending JEs (3 confirmed demo orders). So: run the
 tier-2 harnesses BEFORE seeding demo data (the drop-schema loop naturally gives that order), or sweep
