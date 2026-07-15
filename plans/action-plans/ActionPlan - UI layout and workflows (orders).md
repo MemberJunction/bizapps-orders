@@ -27,6 +27,12 @@
 5. **Mobile/laptop-width tolerance:** compact layouts, no fixed 1080p assumptions (Matt).
 6. All colors via `--mj-*` design tokens; `@if/@for`; `inject()`; PascalCase publics — house rules.
 
+**Shared components (cross-app — 2026-07-15 gap analysis, Marcelo-approved):** this plan consumes a set
+also consumed by the accounting UI plan §0 — approval inbox (tasks-backed) · list-screen scaffold (grid +
+time window + keyset + slide-in) · schedule/waterfall viewer · GL-resolution preview widget · cross-app
+deep-link service · status stepper/lifecycle chips · money strip · role-gating seam · Customer A/R view.
+Build each ONCE. **Open ruling: physical home for shared UI code — bizapps-common's Angular package? (Marcelo.)**
+
 ## 1. Compose / edit Order (Robert's top feedback + Amith's 2026-07-11 UX direction)
 
 - **Full-WINDOW order form** (Amith, resolving old Q2): composing/editing an order takes the full window —
@@ -48,6 +54,9 @@
   computed); per-line service-period dates VISIBLE when the product is Deferred (UPD-2); per-line
   fulfillment status chip when relevant. Deferred lines show a "recognition" affordance (F4 schedule
   preview) answering Robert's "how is Deferred determined / what moves it to revenue?" — show, don't tell.
+- **Price resolution display (B.2 — added 2026-07-15, F9-gated):** the line editor autofills the resolved
+  price with a source badge ("PriceList Standard · tier 10+"); manual edit flips an "overridden" marker
+  (BO-D33 precedence: direct entry wins).
 - **Status control:** a stepper showing the fixed stage order with **skip-ahead allowed** (MOD-10) — clicking
   Confirmed from Draft is legal; illegal moves disabled with tooltip reasons (from F1's matrix — the same
   declarative table drives UI affordance and server enforcement so they can't drift).
@@ -85,6 +94,17 @@ New screens, same idioms:
 - **Payment list** on the order detail (slide-in shows PaymentLines: what cleared this order, when, by what
   payment) and on the customer view (payments by customer).
 - **Refund flow** from a captured payment: amount (≤ remaining), reason → reversal payment + JE (F3.4).
+- **Apply-credit-to-order (D.5 — added 2026-07-15):** from a negative-balance credit order, an
+  "Apply credit…" action opens the SAME application panel in credit mode (customer's open orders with
+  balances, amount-per-order, running remainder) — one component, two modes. Write-off stays deferred (Q4).
+- **Payment-method vault (F.9 — added 2026-07-15):** per-customer masked-methods panel here and on the
+  Customer A/R view (§5): list (brand/last4/expiry), default toggle, remove with confirm; "Add" is
+  provider-hosted tokenization only, enabled when Stripe REAL (F.4) is live and hidden for manual-only
+  deployments. No PAN entry ever renders in our UI.
+- **Stripe status surfaces (F.4 — added 2026-07-15, lands with F3.5b):** PaymentIntent lifecycle chip
+  (RequiresPayment / Processing / Succeeded / Failed) on payment rows + the order form's Payments tab;
+  failed-intent retry affordance. Hosted-checkout return/cancel is LXP-side — orders shows the resulting
+  state only. Webhook receiver (F.10) has no UI.
 
 ## 5. Customer A/R view (Jeremy's sub-ledger, order-side surface)
 
@@ -116,6 +136,39 @@ inline** (Amith), and a **deep link** from that tab navigates to the accounting 
 (Marcelo's GUI-review fix — no more improvised embedded accounting card). Symmetrically, accounting's JE
 detail links back to the originating order (JournalEntryLink lineage).
 
+## 9. Sales rules — admin, editor, approval surfacing (H.1–H.4 — added 2026-07-15; F8 unblocked)
+
+- **Admin list:** house grid over `SalesRule` (name, scope/condition summary, routed authority, active,
+  last-fired).
+- **Editor v1 — form-based builder (ruled 2026-07-15):** condition pickers (order total threshold,
+  product/category, customer org, discount %) + authority routing (role picker), with a plain-language
+  sentence preview ("Orders over $10k route to Sales Manager for approval"). No free-form expression
+  language in v1.
+- **Order-side surfacing:** the status stepper (§1) gains a "Pending approval" state; Confirm shows a
+  blocking banner with the approval-task link; approve → Confirm proceeds, reject → back to Draft with
+  the reason shown. Reviewer side = the shared approval inbox (§0).
+
+## 10. Pricing admin (B.1 — added 2026-07-15)
+
+- PriceList grid → slide-in with a ProductPrice child grid (product, pricing model, fee type, effective
+  from/to) + inline PriceTier editor (qty breaks) for tiered rows.
+- Overlapping-effective-date conflicts surface as row warnings; "duplicate list" action for
+  season/segment rollovers.
+
+## 11. Subscriptions & rev-rec visibility (G.1–G.4 — added 2026-07-15)
+
+- Subscriptions list (customer, plan, status, current term, next renewal) → slide-in: the
+  SubscriptionEvent timeline, linked orders, and the shared rev-rec **waterfall viewer**
+  (recognized-to-date / deferred / remaining; per-line materialization status).
+- §1's line-editor recognition affordance opens this same viewer scoped to the line — one viewer, two
+  entry points.
+
+## 12. Entitlement grants view (I.1 — added 2026-07-15)
+
+- Read-only grid over `EntitlementGrant` (beneficiary, product, entitlement, status, source order line,
+  granted/expires), filter presets by customer + product, deep links to order line and product.
+  Provisioning/enforcement stays deferred (I.3).
+
 ## Sequencing
 
 1. Compose/edit Order full-space + field set + status stepper + Void/Reverse affordances (needs S1+F1/F2)
@@ -125,6 +178,7 @@ detail links back to the originating order (JournalEntryLink lineage).
 5. Product form rev-rec clarity (S3)
 6. Fulfillment queue (F1.6 + roles)
 7. LiveDashboardBase adoption as the shared substrate lands (Live Page System plan)
+8. 2026-07-15 additions (§9–§12 + the §1/§4 additions): sequenced at the mockup-cycle scoping (wave Q10).
 
 ## Questions for Marcelo
 
