@@ -6,3 +6,17 @@ export { OrdersEngineBase } from './OrdersEngineBase.js';
 export type { ResolvedAccount, OrderDraftBuildResult } from './OrdersEngineBase.js';
 export { buildOrderJournalDrafts, OrderDraftError } from './orderJournalDraft.js';
 export type { ResolvedOrderLine, OrderJournalContext, OrderDraftInputs } from './orderJournalDraft.js';
+export {
+  AllowedTransitions,
+  BOOKED_STATUSES,
+  isBookedStatus,
+  validateTransition,
+  computeLineNet,
+  computeLineGross,
+  computeOrderTotalGross,
+  computeBalance,
+  derivePaymentStatus,
+  deriveDueDate,
+  orderTotalGrossFromLines,
+} from './orderLifecycle.js';
+export type { OrderStatus, OrderPaymentStatus, TransitionCheck } from './orderLifecycle.js';
