@@ -19,6 +19,12 @@ export { ConfirmOrderOperation, LoadConfirmOrderOperation } from './ConfirmOrder
 export type { ConfirmOrderInput, ConfirmOrderOutput } from './ConfirmOrderOperation.js';
 export { ReversalOrderOperation, LoadReversalOrderOperation } from './ReversalOrderOperation.js';
 export type { CreateReversalOrderInput, CreateReversalOrderOutput } from './ReversalOrderOperation.js';
+export { PaymentEntityServer, LoadBizAppsOrdersPaymentServer } from './PaymentEntityServer.js';
+export { PaymentLineEntityServer, LoadBizAppsOrdersPaymentLineServer, recomputeOrderPaid } from './PaymentLineEntityServer.js';
+export { BasePaymentProvider, ManualPaymentProvider, StripePaymentProvider, LoadPaymentProviders } from './PaymentProviderBase.js';
+export type { PaymentProviderType, PaymentCaptureRequest, PaymentCaptureResult } from './PaymentProviderBase.js';
+export { CapturePaymentOperation, LoadCapturePaymentOperation } from './CapturePaymentOperation.js';
+export type { CapturePaymentInput, CapturePaymentOutput } from './CapturePaymentOperation.js';
 export { queueOrderBooking, loadOrderLines } from './orderBooking.js';
 export type { OrderBookingResult } from './orderBooking.js';
 
@@ -26,13 +32,19 @@ import { LoadBizAppsOrdersOrderServer } from './OrderEntityServer.js';
 import { LoadBizAppsOrdersOrderLineServer } from './OrderLineEntityServer.js';
 import { LoadConfirmOrderOperation } from './ConfirmOrderOperation.js';
 import { LoadReversalOrderOperation } from './ReversalOrderOperation.js';
+import { LoadBizAppsOrdersPaymentServer } from './PaymentEntityServer.js';
+import { LoadBizAppsOrdersPaymentLineServer } from './PaymentLineEntityServer.js';
+import { LoadPaymentProviders } from './PaymentProviderBase.js';
+import { LoadCapturePaymentOperation } from './CapturePaymentOperation.js';
 
 export function LoadBizAppsOrdersEntitiesServer(): void {
-  // Importing this module registered OrderEntityServer + OrderLineEntityServer + ConfirmOrderOperation
-  // (via the exports above); these calls are the tree-shaking anchors the bootstrap invokes so
-  // bundlers can't drop the @RegisterClass side effects.
+  // Tree-shaking anchors — the bootstrap invokes these so bundlers can't drop the @RegisterClass side effects.
   LoadBizAppsOrdersOrderServer();
   LoadBizAppsOrdersOrderLineServer();
   LoadConfirmOrderOperation();
   LoadReversalOrderOperation();
+  LoadBizAppsOrdersPaymentServer();
+  LoadBizAppsOrdersPaymentLineServer();
+  LoadPaymentProviders();
+  LoadCapturePaymentOperation();
 }

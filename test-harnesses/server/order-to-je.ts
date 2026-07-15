@@ -27,10 +27,11 @@ import { Metadata, RunView, UserInfo } from '@memberjunction/core';
 import { setupSQLServerClient, SQLServerProviderConfigData, UserCache } from '@memberjunction/sqlserver-dataprovider';
 import '@memberjunction/server-bootstrap-lite';
 import '@mj-biz-apps/common-entities';
+import type { mjBizAppsCommonOrganizationEntity } from '@mj-biz-apps/common-entities';
 import '@mj-biz-apps/accounting-entities';
 import { CreateJournalEntriesOperation } from '@mj-biz-apps/accounting-core-entities-server';
 import '@mj-biz-apps/orders-entities';
-import { ConfirmOrderOperation, OrdersEngine, ReversalOrderOperation, type ConfirmOrderOutput } from '@mj-biz-apps/orders-core-entities-server';
+import { CapturePaymentOperation, ConfirmOrderOperation, OrdersEngine, ReversalOrderOperation, type ConfirmOrderOutput } from '@mj-biz-apps/orders-core-entities-server';
 import type {
   mjBizAppsAccountingAccountingCompanyProfileEntity,
   mjBizAppsAccountingGLAccountLinkEntity,
@@ -38,6 +39,9 @@ import type {
 import type {
   mjBizAppsOrdersOrderEntity,
   mjBizAppsOrdersOrderLineEntity,
+  mjBizAppsOrdersPaymentEntity,
+  mjBizAppsOrdersPaymentLineEntity,
+  mjBizAppsOrdersPaymentProviderEntity,
   mjBizAppsOrdersProductEntity,
   mjBizAppsOrdersProductTypeEntity,
 } from '@mj-biz-apps/orders-entities';
@@ -53,15 +57,18 @@ const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+const PAYMENT_ENTITY = 'MJ_BizApps_Orders: Payments';
+const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
+const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
+const ORGANIZATION_ENTITY = 'MJ_BizApps_Common: Organizations';
 const COMPANIES_ENTITY = 'MJ: Companies';
 
 const RUN_TAG = `ORD2JE-${Date.now()}`;
 let seq = 0;
 const uid = () => `${RUN_TAG}-${seq++}`;
-// Soft ref (no FK) — a stable fixture customer so orders pass the F1 customer-required gate. This
-// harness's product type RequiresFulfillment=true so orders HOLD at Posted (fulfillment is covered
-// in order-lifecycle.ts); the JE booking is identical either way.
-const CUSTOMER_ORG_ID = 'A0000000-0000-4000-8000-00000000C0DE';
+// A REAL bizapps-common Organization created at bootstrap — the order's customer AND the AR-line
+// CounterpartyOrganizationID (which has an FK to __mj_BizAppsCommon.Organization). Set in main().
+let CUSTOMER_ORG_ID = '';
 
 interface Outcome { Name: string; Passed: boolean; Ms: number; Error?: string }
 const outcomes: Outcome[] = [];
@@ -73,9 +80,12 @@ async function test(name: string, fn: () => Promise<void>): Promise<void> {
 function assert(cond: boolean, message: string): void { if (!cond) throw new Error(message); }
 const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
 
-interface Company { id: string; arGL: string; revGL: string; defRevGL: string }
+interface Company { id: string; arGL: string; revGL: string; defRevGL: string; cashGL: string }
 const createdOrderIds: string[] = [];
 const createdJEIds: string[] = [];
+const createdPaymentIds: string[] = [];
+const createdPaymentLineIds: string[] = [];
+const createdProviderIds: string[] = [];
 const createdLinkIds: string[] = [];
 const createdProductIds: string[] = [];
 const createdTypeIds: string[] = [];
@@ -103,9 +113,9 @@ async function createCompany(currencyCode: string): Promise<Company> {
   const glRes = await rv.RunView<{ ID: string; Code: string }>(
     { EntityName: GL_ENTITY, ExtraFilter: `CompanyID='${id}'`, Fields: ['ID', 'Code'], ResultType: 'simple' }, user);
   const byCode = new Map((glRes.Results ?? []).map(r => [r.Code, r.ID]));
-  const arGL = byCode.get('11201'), revGL = byCode.get('40100'), defRevGL = byCode.get('21301');
-  if (!arGL || !revGL || !defRevGL) throw new Error('seeded GL accounts (11201/40100/21301) not found');
-  const co: Company = { id, arGL, revGL, defRevGL };
+  const arGL = byCode.get('11201'), revGL = byCode.get('40100'), defRevGL = byCode.get('21301'), cashGL = byCode.get('11101');
+  if (!arGL || !revGL || !defRevGL || !cashGL) throw new Error('seeded GL accounts (11201/40100/21301/11101) not found');
+  const co: Company = { id, arGL, revGL, defRevGL, cashGL };
   companies.push(co);
   return co;
 }
@@ -261,6 +271,12 @@ async function bootstrap(): Promise<void> {
 async function main(): Promise<void> {
   console.log('\n══════ Order → Journal Entry integration (bizapps-orders → bizapps-accounting) ══════');
   await bootstrap();
+  // A REAL customer Organization — the AR-line CounterpartyOrganizationID has an FK to it.
+  const customerOrg = await new Metadata().GetEntityObject<mjBizAppsCommonOrganizationEntity>(ORGANIZATION_ENTITY, user);
+  customerOrg.NewRecord();
+  customerOrg.Name = `${RUN_TAG} Customer`;
+  if (!(await customerOrg.Save())) throw new Error(`customer org save failed: ${customerOrg.LatestResult?.CompleteMessage}`);
+  CUSTOMER_ORG_ID = customerOrg.ID;
   const rv = new RunView();
   const currencyCode = (await rv.RunView<{ Code: string }>({ EntityName: CURRENCY_ENTITY, Fields: ['Code'], MaxRows: 1, ResultType: 'simple' }, user)).Results?.[0]?.Code;
   if (!currencyCode) throw new Error('no currency resolved');
@@ -275,6 +291,7 @@ async function main(): Promise<void> {
   // Company AR defaults (company-level links).
   await createLink(companiesEntityId, coA.id, 'Accounts Receivable', coA.arGL);
   await createLink(companiesEntityId, coB.id, 'Accounts Receivable', coB.arGL);
+  await createLink(companiesEntityId, coA.id, 'Cash', coA.cashGL); // F3 payments land here (company-level Cash role)
 
   await test('O1 single-company immediate → Dr AR / Cr Sales, balanced, lineage stamped', async () => {
     const orderId = await createOrder([{ productId: pImmA, qty: 2, price: 100 }]);
@@ -586,6 +603,73 @@ async function main(): Promise<void> {
     assert(!rev.Output?.Success, 'reversing an unbooked order must be rejected');
   });
 
+  // ─── F3 payments: capture → Cash/AR JE (customer-tagged) · provider stub · cash application · refund ───
+  const newPayment = async (over: Partial<{ Amount: number; Method: mjBizAppsOrdersPaymentEntity['Method']; Status: mjBizAppsOrdersPaymentEntity['Status']; ProviderID: string }>): Promise<mjBizAppsOrdersPaymentEntity> => {
+    const p = await new Metadata().GetEntityObject<mjBizAppsOrdersPaymentEntity>(PAYMENT_ENTITY, user);
+    p.NewRecord();
+    p.PaymentNumber = uid(); p.ReceivingCompanyID = coA.id; p.CustomerOrganizationID = CUSTOMER_ORG_ID;
+    p.PaymentDate = new Date(); p.Method = over.Method ?? 'Cash'; p.Amount = over.Amount ?? 100; p.Status = over.Status ?? 'Captured';
+    if (over.ProviderID) p.PaymentProviderID = over.ProviderID;
+    return p;
+  };
+
+  await test('P1 payment capture (Manual) — Dr Cash / Cr A/R, customer-tagged, balanced, EntryType PaymentReceipt', async () => {
+    const p = await newPayment({ Amount: 200, Method: 'Cash', Status: 'Captured' });
+    assert(await p.Save(), `payment capture/book failed: ${p.LatestResult?.CompleteMessage}`);
+    createdPaymentIds.push(p.ID);
+    assert(!!p.JournalEntryID, 'capture should stamp JournalEntryID');
+    createdJEIds.push(p.JournalEntryID!);
+    const je = await readJE(p.JournalEntryID!);
+    assert(near(debitFor(je.lines, coA.cashGL), 200), `Dr Cash 200, got ${debitFor(je.lines, coA.cashGL)}`);
+    assert(near(creditFor(je.lines, coA.arGL), 200), `Cr AR 200, got ${creditFor(je.lines, coA.arGL)}`);
+    assert(je.header.EntryType === 'PaymentReceipt', `EntryType PaymentReceipt, got ${je.header.EntryType}`);
+    const arCp = (await pool.request().query(`SELECT TOP 1 CounterpartyOrganizationID cp FROM ${ACC_SCHEMA}.JournalEntryLine WHERE JournalEntryID='${p.JournalEntryID}' AND GLAccountID='${coA.arGL}'`)).recordset[0];
+    assert((arCp?.cp ?? '').toUpperCase() === CUSTOMER_ORG_ID.toUpperCase(), `AR line must be tagged with the customer, got ${arCp?.cp}`);
+  });
+
+  await test('P2 CapturePaymentOperation (Stripe STUB) — captures, books, stamps a stub ProviderChargeID', async () => {
+    const prov = await new Metadata().GetEntityObject<mjBizAppsOrdersPaymentProviderEntity>(PAYMENT_PROVIDER_ENTITY, user);
+    prov.NewRecord(); prov.ProviderType = 'Stripe'; prov.CompanyID = coA.id; prov.Name = uid(); prov.IsActive = true;
+    assert(await prov.Save(), `provider save failed: ${prov.LatestResult?.CompleteMessage}`);
+    createdProviderIds.push(prov.ID);
+    const p = await newPayment({ Amount: 150, Method: 'CreditCard', Status: 'Pending', ProviderID: prov.ID });
+    assert(await p.Save(), 'pending payment saves');
+    createdPaymentIds.push(p.ID);
+    const cap = await new CapturePaymentOperation().Execute({ PaymentID: p.ID }, { user });
+    assert(cap.Output?.Success, `capture should succeed: ${JSON.stringify(cap.Output?.Errors)}`);
+    assert((cap.Output?.ProviderChargeID ?? '').startsWith('stub_ch_'), `Stripe stub charge id expected, got ${cap.Output?.ProviderChargeID}`);
+    assert(!!cap.Output?.JournalEntryID, 'capture books a JE');
+    createdJEIds.push(cap.Output!.JournalEntryID!);
+  });
+
+  await test('P3 cash application — Order AmountPaid/Balance/PaymentStatus maintained; over-application REJECTED', async () => {
+    const orderId = await createOrder([{ productId: pImmA, qty: 1, price: 100 }]);
+    assert((await confirmOrder(orderId)).saved, 'order books');
+    const p = await newPayment({ Amount: 100, Method: 'Cash', Status: 'Captured' });
+    assert(await p.Save(), 'payment books'); createdPaymentIds.push(p.ID);
+    if (p.JournalEntryID) createdJEIds.push(p.JournalEntryID);
+    const pl = await new Metadata().GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(PAYMENT_LINE_ENTITY, user);
+    pl.NewRecord(); pl.PaymentID = p.ID; pl.OrderID = orderId; pl.Amount = 100;
+    assert(await pl.Save(), `application failed: ${pl.LatestResult?.CompleteMessage}`); createdPaymentLineIds.push(pl.ID);
+    const ord = (await pool.request().query(`SELECT AmountPaid, Balance, PaymentStatus FROM ${ORD_SCHEMA}.[Order] WHERE ID='${orderId}'`)).recordset[0];
+    assert(near(Number(ord.AmountPaid), 100), `AmountPaid 100, got ${ord.AmountPaid}`);
+    assert(near(Number(ord.Balance), 0), `Balance 0, got ${ord.Balance}`);
+    assert(ord.PaymentStatus === 'Paid', `PaymentStatus Paid, got ${ord.PaymentStatus}`);
+    const pl2 = await new Metadata().GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(PAYMENT_LINE_ENTITY, user);
+    pl2.NewRecord(); pl2.PaymentID = p.ID; pl2.OrderID = orderId; pl2.Amount = 50;
+    assert(!(await pl2.Save()), 'over-application (100+50 > payment 100) must be rejected');
+  });
+
+  await test('P4 refund payment (negative amount) — books the MIRROR JE (Cr Cash / Dr A/R), EntryType Refund', async () => {
+    const p = await newPayment({ Amount: -80, Method: 'Refund', Status: 'Captured' });
+    assert(await p.Save(), `refund book failed: ${p.LatestResult?.CompleteMessage}`); createdPaymentIds.push(p.ID);
+    assert(!!p.JournalEntryID, 'refund books a JE'); createdJEIds.push(p.JournalEntryID!);
+    const je = await readJE(p.JournalEntryID!);
+    assert(near(creditFor(je.lines, coA.cashGL), 80), `Cr Cash 80, got ${creditFor(je.lines, coA.cashGL)}`);
+    assert(near(debitFor(je.lines, coA.arGL), 80), `Dr AR 80, got ${debitFor(je.lines, coA.arGL)}`);
+    assert(je.header.EntryType === 'Refund', `EntryType Refund, got ${je.header.EntryType}`);
+  });
+
   await teardown();
   const failed = outcomes.filter(o => !o.Passed);
   console.log(`\n────── Order→JE integration: ${outcomes.length - failed.length}/${outcomes.length} passed ──────`);
@@ -607,6 +691,16 @@ async function teardown(): Promise<void> {
   } finally {
     for (const t of toggled) await exec(`ENABLE TRIGGER ALL ON ${ACC_SCHEMA}.${t}`);
   }
+  // Payments (F3): the capture-freeze trigger blocks deletes; disable it. PaymentLine FKs Order+Payment.
+  const payTriggers = ['PaymentLine', 'Payment'];
+  try {
+    for (const t of payTriggers) await exec(`DISABLE TRIGGER ALL ON ${ORD_SCHEMA}.[${t}]`);
+    if (createdPaymentLineIds.length) await exec(`DELETE FROM ${ORD_SCHEMA}.PaymentLine WHERE ID IN (${createdPaymentLineIds.map(id => `'${id}'`).join(',')})`);
+    if (createdPaymentIds.length) await exec(`DELETE FROM ${ORD_SCHEMA}.Payment WHERE ID IN (${createdPaymentIds.map(id => `'${id}'`).join(',')})`);
+  } finally {
+    for (const t of payTriggers) await exec(`ENABLE TRIGGER ALL ON ${ORD_SCHEMA}.[${t}]`);
+  }
+  if (createdProviderIds.length) await exec(`DELETE FROM ${ORD_SCHEMA}.PaymentProvider WHERE ID IN (${createdProviderIds.map(id => `'${id}'`).join(',')})`);
   const orderList = createdOrderIds.map(id => `'${id}'`).join(',');
   if (orderList) {
     // Posted/Confirmed orders freeze their lines (delete-block trigger) — disable it for teardown,
@@ -629,6 +723,7 @@ async function teardown(): Promise<void> {
     await exec(`DELETE FROM __mj_BizAppsAccounting.JournalEntrySequence WHERE CompanyID='${co.id}'`); // per-company JE sequence rows (MOD-12)
     await exec(`DELETE FROM __mj.Company WHERE ID='${co.id}'`);
   }
+  if (CUSTOMER_ORG_ID) await exec(`DELETE FROM __mj_BizAppsCommon.Organization WHERE ID='${CUSTOMER_ORG_ID}'`);
 }
 
 void main();

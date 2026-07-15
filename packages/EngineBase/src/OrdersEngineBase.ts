@@ -224,6 +224,7 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
         EffectiveDate: toISODate(asOfDate),
         EntryType: 'OrderBooking',
         OrderID: order.ID,
+        CounterpartyOrganizationID: order.CustomerOrganizationID ?? undefined,
         Description: `Order ${order.OrderNumber}`,
       },
     });

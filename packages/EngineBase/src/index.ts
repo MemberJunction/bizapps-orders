@@ -6,6 +6,8 @@ export { OrdersEngineBase } from './OrdersEngineBase.js';
 export type { ResolvedAccount, OrderDraftBuildResult } from './OrdersEngineBase.js';
 export { buildOrderJournalDrafts, OrderDraftError } from './orderJournalDraft.js';
 export type { ResolvedOrderLine, OrderJournalContext, OrderDraftInputs } from './orderJournalDraft.js';
+export { buildPaymentJournalDraft, PaymentDraftError } from './paymentJournalDraft.js';
+export type { PaymentDraftInputs } from './paymentJournalDraft.js';
 export {
   AllowedTransitions,
   BOOKED_STATUSES,

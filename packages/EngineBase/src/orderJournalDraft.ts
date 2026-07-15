@@ -49,6 +49,8 @@ export interface OrderJournalContext {
   EntryType: JournalEntryDraft['EntryType'];
   /** Soft lineage ref back to the originating order. */
   OrderID?: string;
+  /** The order's customer — tagged on the AR line for AR-by-customer (vw_AROpenByCustomer). */
+  CounterpartyOrganizationID?: string;
   Description?: string;
 }
 
@@ -103,7 +105,8 @@ function buildRevenueLines(lines: ResolvedOrderLine[]): JournalEntryLineDraft[] 
  */
 function buildArLines(
   totalsByCompany: Map<string, number>,
-  arAccountByCompany: Map<string, string>
+  arAccountByCompany: Map<string, string>,
+  counterpartyOrganizationID?: string
 ): JournalEntryLineDraft[] {
   const arLines: JournalEntryLineDraft[] = [];
   for (const [companyID, total] of totalsByCompany) {
@@ -114,7 +117,7 @@ function buildArLines(
       );
     }
     // AR mirrors revenue: positive company total → Dr AR (customer owes); negative → Cr AR (credit memo).
-    arLines.push({ GLAccountID: arAccountID, ...arSide(total) });
+    arLines.push({ GLAccountID: arAccountID, ...arSide(total), CounterpartyOrganizationID: counterpartyOrganizationID });
   }
   return arLines;
 }
@@ -167,7 +170,7 @@ export function buildOrderJournalDrafts(inputs: OrderDraftInputs): JournalEntryD
   const drafts: JournalEntryDraft[] = [];
   for (const [, companyLines] of groupLinesByCompany(Lines)) {
     const totalsByCompany = sumAmountByCompany(companyLines);
-    const arLines = buildArLines(totalsByCompany, ArAccountByCompany);
+    const arLines = buildArLines(totalsByCompany, ArAccountByCompany, Context.CounterpartyOrganizationID);
     const revenueLines = buildRevenueLines(companyLines);
     drafts.push({
       EffectiveDate: Context.EffectiveDate,
