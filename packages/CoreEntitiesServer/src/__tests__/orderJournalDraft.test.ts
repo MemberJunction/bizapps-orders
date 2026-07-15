@@ -9,7 +9,7 @@ import {
   OrderDraftError,
   type ResolvedOrderLine,
   type OrderDraftInputs,
-} from '../orderJournalDraft.js';
+} from '@mj-biz-apps/orders-engine-base';
 import type { JournalEntryDraft } from '@mj-biz-apps/accounting-engine-base';
 
 const CO_A = '11111111-1111-1111-1111-111111111111';

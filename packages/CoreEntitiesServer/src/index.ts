@@ -2,21 +2,17 @@
  * @mj-biz-apps/orders-core-entities-server — server-side Orders logic.
  *
  * Exports ONLY what this package defines (MJ rule 5 — no re-exports from other packages):
- *   - OrdersEngine        — catalog cache + GL-account resolver (product → category → company)
+ *   - OrdersEngine        — thin server wrapper over OrdersEngineBase (@mj-biz-apps/orders-engine-base)
  *   - OrderEntityServer    — books the balanced JE into accounting on first Confirmed
- *   - the pure order → JE draft builder + its contract
+ *   - ConfirmOrderOperation + orderBooking — the F1.2b Confirm unit of work
+ *
+ * The catalog cache, GL resolution, and the pure order→JE draft builder now live in the browser-safe
+ * @mj-biz-apps/orders-engine-base (F0); import those from there, not from here.
  *
  * LoadBizAppsOrdersEntitiesServer is the tree-shaking anchor the server bootstrap calls; the
  * static re-export of OrderEntityServer below is what fires its @RegisterClass decorator.
  */
 export { OrdersEngine } from './OrdersEngine.js';
-export type { ResolvedAccount, OrderDraftBuildResult } from './OrdersEngine.js';
-export { buildOrderJournalDrafts, OrderDraftError } from './orderJournalDraft.js';
-export type {
-  ResolvedOrderLine,
-  OrderJournalContext,
-  OrderDraftInputs,
-} from './orderJournalDraft.js';
 export { OrderEntityServer, LoadBizAppsOrdersOrderServer } from './OrderEntityServer.js';
 export { ConfirmOrderOperation, LoadConfirmOrderOperation } from './ConfirmOrderOperation.js';
 export type { ConfirmOrderInput, ConfirmOrderOutput } from './ConfirmOrderOperation.js';

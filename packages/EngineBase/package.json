@@ -21,7 +21,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "^1.0.0"
+    "@mj-biz-apps/orders-entities": "^1.0.0",
+    "@mj-biz-apps/accounting-engine-base": "^1.0.0"
   },
   "peerDependencies": {
     "@memberjunction/core": "^5.44.0",

@@ -19,6 +19,7 @@ rationale · revisit trigger. Remove a row only when the item ships (note the pl
 | Stripe REAL integration — recon + forensics log + idempotency stress suite (the DEEP half) | Phase C/H; Marcelo 2026-07-14 | **Stub-first, then the checkout subset (Marcelo 2026-07-14, LXP D8):** F3.5's success-stub ships FIRST and stays the default test provider; then the LXP-checkout-critical subset (PaymentIntent lifecycle + hosted checkout + webhook→capture) UN-DEFERS into F3 for LH4I launch. Reconciliation/forensics/stress remain deferred | Stripe integration research done + LXP launch window |
 | CDP data migration (§13) | master §13 (aidp Stage 4) | external program dependency | aidp Stage 4 starts |
 | Customer portal / storefront | §15 Q9 / §16 | out of v1 by master | v2 scoping |
+| Lightweight BROWSER catalog config (lazy/paged products) for OrdersEngineBase | F0 engine split (2026-07-15) | `OrdersEngineBase.Config` now caches ALL products/categories (needed for booking resolution); fine for v1 catalogs, but a very large catalog would bloat the browser bundle/cache | a real catalog grows large enough to matter in the Explorer |
 
 > **Struck 2026-07-14 (Marcelo):** *Pricing BUILD* — un-deferred (MOD-6 revised): tables → S5, engine →
 > F9; UnitPrice direct entry stays the precedence base so baseline testing is never blocked.
