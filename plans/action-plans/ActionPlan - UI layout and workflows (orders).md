@@ -27,11 +27,14 @@
 5. **Mobile/laptop-width tolerance:** compact layouts, no fixed 1080p assumptions (Matt).
 6. All colors via `--mj-*` design tokens; `@if/@for`; `inject()`; PascalCase publics — house rules.
 
-**Shared components (cross-app — 2026-07-15 gap analysis, Marcelo-approved):** this plan consumes a set
-also consumed by the accounting UI plan §0 — approval inbox (tasks-backed) · list-screen scaffold (grid +
-time window + keyset + slide-in) · schedule/waterfall viewer · GL-resolution preview widget · cross-app
-deep-link service · status stepper/lifecycle chips · money strip · role-gating seam · Customer A/R view.
-Build each ONCE. **Open ruling: physical home for shared UI code — bizapps-common's Angular package? (Marcelo.)**
+**Shared components (placements ruled 2026-07-15):** orders IMPORTS from accounting (dependency
+direction: common → accounting → orders) — the domain trio (schedule/waterfall viewer ·
+GL-resolution preview · Customer A/R base view, which orders wraps with its verbs) plus the
+framework-clean set PARKED there for iteration speed (approval inbox, list-screen scaffold,
+role-gating directive, cross-app deep-link helper — targets + triggers in accounting
+`plans/TRANSFER-BACKLOG.md`). Orders OWNS: status stepper + money strip (single consumer today —
+local, no premature abstraction; MJ-base candidacy tracked in the component inventory). Build each
+shared thing ONCE.
 
 ## 1. Compose / edit Order (Robert's top feedback + Amith's 2026-07-11 UX direction)
 

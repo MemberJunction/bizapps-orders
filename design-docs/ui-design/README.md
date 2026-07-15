@@ -1,9 +1,11 @@
-# docs/ui-design/ — standing UI design (bizapps-orders)
+# design-docs/ui-design/ — standing UI design (bizapps-orders)
 
 The STANDING (present-tense) UI design layer for this app: what the UI is, plus the assets used to
-design what it becomes. Convention: `~/MJDev/shared-plans/ui-design-system.md`. Split rule (ruled
-2026-07-15): standing design artifacts live here in `docs/`; UI **work** is planned and executed
-from `plans/action-plans/` (`ActionPlan - UI …`), keyed to `plans/FEATURE-LIST.md` IDs.
+design what it becomes. Convention: `~/MJDev/shared-plans/ui-design-system.md`. Split rules (ruled
+2026-07-15): standing design artifacts live in `design-docs/` — the hand-authored documentation
+home (`docs/` stays reserved for GENERATED doc output, per the MJ template's `/docs/` ignore); UI
+**work** is planned and executed from `plans/action-plans/` (`ActionPlan - UI …`), keyed to
+`plans/FEATURE-LIST.md` IDs.
 
 | Path | What it is |
 |---|---|
@@ -21,11 +23,13 @@ Homes: this app · `bizapps-common` (genuinely cross-app UI) · `bizapps-tasks` 
 
 | Component | Home | Status | Consumers | MJ-base candidate? |
 |---|---|---|---|---|
-| Status stepper (fixed stages, legal-skip moves, disabled+tooltip) | this app (proposed 2026-07-15) | Planned | ORD compose form (only real consumer today) | **YES — flag Matt** (generic state-machine stepper) |
-| Money/totals strip (TotalGross/AmountPaid/Balance/status chip) | this app | Planned | ORD form tabs + A/R views | maybe later (too small to abstract yet) |
-| List-screen scaffold (AG grid + time window + keyset + slide-in) | bizapps-common (interim, proposed) | Planned | every list screen, both apps | **YES — flag Matt** (every MJ app wants this) |
-| Role-gating directive/guard (over MJ Unified Permissions) | bizapps-common (interim, proposed) | Planned | both apps (fulfiller queue, approve buttons, admin) | **YES — flag Matt** (permissions engine is already MJ core) |
-| Cross-app deep-link helper (navigate to another open app's resource) | bizapps-common (interim, proposed) | Planned | ORD §8 ↔ ACC §3 | **YES — flag Matt** (open-app routing is an MJ concern) |
+| Status stepper (fixed stages, legal-skip moves, disabled+tooltip) | this app (ruled 2026-07-15) | Planned | ORD compose form (only real consumer today) | **YES — flag Matt** (generic state-machine stepper) |
+| Money/totals strip (TotalGross/AmountPaid/Balance/status chip) | this app (ruled) | Planned | ORD form tabs + A/R views | maybe later (too small to abstract yet) |
+
+Consumed-not-owned: the accounting-homed domain trio (waterfall viewer, GL-resolution preview,
+Customer A/R base view) and the framework-clean set parked in accounting (approval inbox, list
+scaffold, role directive, deep-link helper) are inventoried in accounting's
+`design-docs/ui-design/README.md`; transfer targets in accounting `plans/TRANSFER-BACKLOG.md`.
 
 ## Standing design record
 
