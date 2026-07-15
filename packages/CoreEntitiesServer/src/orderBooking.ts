@@ -20,6 +20,7 @@
 import { IMetadataProvider, RunView, UserInfo } from '@memberjunction/core';
 import { AccountingEngine } from '@mj-biz-apps/accounting-core-entities-server';
 import type { JEValidationError, JournalEntryDraft } from '@mj-biz-apps/accounting-engine-base';
+import { deriveDueDate } from '@mj-biz-apps/orders-engine-base';
 import type {
   mjBizAppsOrdersOrderEntity,
   mjBizAppsOrdersOrderLineEntity,
@@ -63,6 +64,13 @@ export async function queueOrderBooking(
   user: UserInfo | undefined,
   provider: IMetadataProvider,
 ): Promise<OrderBookingResult> {
+  // Pre-booking gates shared by BOTH confirm entry points (direct save + the op).
+  if (order.Status === 'Voided') {
+    return { Success: false, JournalEntryIDs: [], Errors: [`Order ${order.OrderNumber} is Voided; it cannot be confirmed/booked.`] };
+  }
+  if (!order.CustomerOrganizationID) {
+    return { Success: false, JournalEntryIDs: [], Errors: [`Order ${order.OrderNumber} requires a customer (CustomerOrganizationID) to confirm.`] };
+  }
   const drafts = await resolveDrafts(order, lines, user);
   if (!drafts) {
     return { Success: false, JournalEntryIDs: [], Errors: [`Order ${order.OrderNumber}: no bookable drafts resolved.`] };
@@ -72,10 +80,48 @@ export async function queueOrderBooking(
     return { Success: false, JournalEntryIDs: [], Errors: (q.Errors ?? []).map(formatError) };
   }
   const ids = (q.Queued ?? []).map(x => x.JournalEntryID);
+  const now = new Date();
   order.Status = 'Posted';
-  order.ConfirmedAt = new Date();
+  order.ConfirmedAt = now;
+  order.PostedAt = now;
   if (ids.length === 1) order.JournalEntryID = ids[0];
+  applyDueDate(order);
+  await applyFulfillment(order, lines, tg);
   return { Success: true, JournalEntryIDs: ids, Errors: [] };
+}
+
+/** DueDate at Confirm/Post (F1.4): base (PostedAt || OrderDate) + terms' net days, unless manually set. */
+function applyDueDate(order: mjBizAppsOrdersOrderEntity): void {
+  if (order.DueDate) return; // a manually-supplied DueDate is respected
+  const netDays = OrdersEngine.Instance.Base.NetDaysForTerms(order.PaymentTermsTypeID);
+  const due = deriveDueDate(order.PostedAt ?? order.OrderDate ?? new Date(), netDays);
+  if (due) order.DueDate = due;
+}
+
+/**
+ * Fulfillment auto-advance on reaching Posted (UPD-3 / MOD-8, no JE either way): if NO line's product
+ * type requires fulfillment, auto-advance the order to Fulfilled; otherwise hold at Posted and mark
+ * each fulfillment-required line 'Pending' (queued onto the SAME unit of work). The per-line Fulfiller
+ * flip Pending→Fulfilled (and the last-line auto-advance) is OrderLine-save-driven (F1 fulfillment queue).
+ */
+async function applyFulfillment(
+  order: mjBizAppsOrdersOrderEntity,
+  lines: mjBizAppsOrdersOrderLineEntity[],
+  tg: Awaited<ReturnType<IMetadataProvider['CreateTransactionGroup']>>,
+): Promise<void> {
+  const base = OrdersEngine.Instance.Base;
+  const requiredLines = lines.filter(l => base.RequiresFulfillment(l.ProductID));
+  if (requiredLines.length === 0) {
+    order.Status = 'Fulfilled'; // nothing to fulfill → complete now (no JE)
+    return;
+  }
+  for (const line of requiredLines) {
+    if (line.FulfillmentStatus !== 'Pending') {
+      line.FulfillmentStatus = 'Pending';
+      line.TransactionGroup = tg; // commit the fulfillment marker in the same atomic unit of work
+      await line.Save();
+    }
+  }
 }
 
 /** Build the per-company drafts, healing cross-process cache staleness with one forced refresh. */

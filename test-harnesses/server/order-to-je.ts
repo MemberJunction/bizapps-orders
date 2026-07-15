@@ -58,6 +58,10 @@ const COMPANIES_ENTITY = 'MJ: Companies';
 const RUN_TAG = `ORD2JE-${Date.now()}`;
 let seq = 0;
 const uid = () => `${RUN_TAG}-${seq++}`;
+// Soft ref (no FK) — a stable fixture customer so orders pass the F1 customer-required gate. This
+// harness's product type RequiresFulfillment=true so orders HOLD at Posted (fulfillment is covered
+// in order-lifecycle.ts); the JE booking is identical either way.
+const CUSTOMER_ORG_ID = 'A0000000-0000-4000-8000-00000000C0DE';
 
 interface Outcome { Name: string; Passed: boolean; Ms: number; Error?: string }
 const outcomes: Outcome[] = [];
@@ -122,11 +126,12 @@ async function createLink(entityId: string, recordId: string, roleName: string, 
   createdLinkIds.push(id);
 }
 
-async function createProductType(): Promise<string> {
+async function createProductType(requiresFulfillment = true): Promise<string> {
   const md = new Metadata();
   const pt = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, user);
   pt.NewRecord();
   pt.Name = uid();
+  pt.RequiresFulfillment = requiresFulfillment;
   const id = pt.ID;
   if (!(await pt.Save())) throw new Error(`product type save failed: ${pt.LatestResult?.CompleteMessage ?? 'unknown'}`);
   createdTypeIds.push(id);
@@ -157,13 +162,14 @@ async function createLinkedProduct(
   return id;
 }
 
-async function createOrder(lines: Array<{ productId: string; qty: number; price: number }>): Promise<string> {
+async function createOrder(lines: Array<{ productId: string; qty: number; price: number; discount?: number }>): Promise<string> {
   const md = new Metadata();
   const order = await md.GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
   order.NewRecord();
   order.OrderNumber = uid();
   order.OrderDate = new Date();
   order.Status = 'Draft';
+  order.CustomerOrganizationID = CUSTOMER_ORG_ID; // F1 customer-required gate
   const id = order.ID;
   if (!(await order.Save())) throw new Error(`order save failed: ${order.LatestResult?.CompleteMessage ?? 'unknown'}`);
   createdOrderIds.push(id);
@@ -176,6 +182,7 @@ async function createOrder(lines: Array<{ productId: string; qty: number; price:
     line.LineNumber = n++;
     line.Quantity = l.qty;
     line.UnitPrice = l.price;
+    if (l.discount != null) line.DiscountPct = l.discount;
     if (!(await line.Save())) throw new Error(`line save failed: ${line.LatestResult?.CompleteMessage ?? 'unknown'}`);
   }
   return id;
@@ -332,14 +339,20 @@ async function main(): Promise<void> {
     assert(dbStatus.JournalEntryID == null, 'order should have no JournalEntryID');
   });
 
-  await test('O5 idempotency — re-Save a booked order books no second JE set (order-level guard)', async () => {
+  await test('O5 idempotency — re-saving a booked order books no second JE (order-level guard, F1)', async () => {
     const orderId = await createOrder([{ productId: pImmA, qty: 1, price: 75 }]);
     const first = await confirmOrder(orderId);
     assert(first.saved && !!first.order.JournalEntryID, 'first confirm books a JE');
     assert(!!first.order.ConfirmedAt, 'ConfirmedAt stamped on first booking');
-    const again = await confirmOrder(orderId);
-    assert(again.saved, 're-save should succeed');
-    assert(again.order.JournalEntryID === first.order.JournalEntryID, 'JournalEntryID unchanged');
+    // F1: a booked order is Posted; re-setting Status='Confirmed' would be an ILLEGAL backward move
+    // (transition gate). Idempotency = a plain RE-SAVE of the booked order books nothing new.
+    const reload = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
+    await reload.Load(orderId);
+    assert(reload.Status === 'Posted', `booked order should be persisted Posted, got ${reload.Status}`);
+    const resaved = await reload.Save();
+    assert(resaved, 're-save of a booked order should succeed (no-op, no re-book)');
+    assert(reload.JournalEntryID === first.order.JournalEntryID, 'JournalEntryID unchanged');
+    assert(reload.Status === 'Posted', 'order stays Posted after re-save');
     const count = (await pool.request().query(`SELECT COUNT(*) n FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}'`)).recordset[0].n;
     assert(Number(count) === 1, `exactly one JE should exist for the order, got ${count}`);
   });
@@ -449,6 +462,86 @@ async function main(): Promise<void> {
       await teardownPool.request().query(`DROP TRIGGER ${ORD_SCHEMA}.${trg}`);
       process.removeListener('uncaughtException', swallowTGCrash);
     }
+  });
+
+  // ─── F1 lifecycle: transition gate · customer rule · totals · DueDate · fulfillment auto-advance ───
+  await test('L1 transition gate — a backward move (Quoted → Draft) is REJECTED; Draft → Quoted is legal', async () => {
+    const orderId = await createOrder([{ productId: pImmA, qty: 1, price: 10 }]);
+    const toQuoted = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
+    await toQuoted.Load(orderId); toQuoted.Status = 'Quoted';
+    assert(await toQuoted.Save(), 'Draft → Quoted must be legal');
+    const back = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
+    await back.Load(orderId); back.Status = 'Draft';
+    assert(!(await back.Save()), 'Quoted → Draft (backward) must be rejected by the transition gate');
+    const db = (await pool.request().query(`SELECT Status FROM ${ORD_SCHEMA}.[Order] WHERE ID='${orderId}'`)).recordset[0];
+    assert(db.Status === 'Quoted', `order should remain Quoted, got ${db.Status}`);
+  });
+
+  await test('L2 customer rule — confirming an order with NO customer is BLOCKED (no JE, not Posted)', async () => {
+    const md = new Metadata();
+    const order = await md.GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
+    order.NewRecord(); order.OrderNumber = uid(); order.OrderDate = new Date(); order.Status = 'Draft';
+    assert(await order.Save(), 'draft with no customer saves');
+    createdOrderIds.push(order.ID);
+    const line = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+    line.NewRecord(); line.OrderID = order.ID; line.ProductID = pImmA; line.LineNumber = 1; line.Quantity = 1; line.UnitPrice = 50;
+    assert(await line.Save(), 'line saves');
+    const conf = await md.GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
+    await conf.Load(order.ID); conf.Status = 'Confirmed';
+    assert(!(await conf.Save()), 'confirm without a CustomerOrganizationID must be blocked');
+    const db = (await pool.request().query(`SELECT Status FROM ${ORD_SCHEMA}.[Order] WHERE ID='${order.ID}'`)).recordset[0];
+    assert(db.Status !== 'Posted' && db.Status !== 'Fulfilled', `blocked order must not advance, got ${db.Status}`);
+    const count = (await pool.request().query(`SELECT COUNT(*) n FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${order.ID}'`)).recordset[0].n;
+    assert(Number(count) === 0, `no JE for a customer-blocked confirm, got ${count}`);
+  });
+
+  await test('L3 totals — a discounted line materializes LineTotalNet/Gross + Order TotalGross/Balance/PaymentStatus', async () => {
+    const orderId = await createOrder([{ productId: pImmA, qty: 2, price: 100, discount: 0.1 }]); // net 180
+    // Re-save the order (Draft) to trigger the order-level totals recompute over its lines.
+    const o = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
+    await o.Load(orderId); assert(await o.Save(), 'draft re-save recomputes totals');
+    const line = (await pool.request().query(`SELECT LineTotalNet, LineTotalGross FROM ${ORD_SCHEMA}.OrderLine WHERE OrderID='${orderId}'`)).recordset[0];
+    assert(near(Number(line.LineTotalNet), 180), `LineTotalNet should be 180 (2×100×0.9), got ${line.LineTotalNet}`);
+    assert(near(Number(line.LineTotalGross), 180), `LineTotalGross should be 180 (tax 0), got ${line.LineTotalGross}`);
+    const ord = (await pool.request().query(`SELECT TotalGross, Balance, PaymentStatus FROM ${ORD_SCHEMA}.[Order] WHERE ID='${orderId}'`)).recordset[0];
+    assert(near(Number(ord.TotalGross), 180), `Order.TotalGross should be 180, got ${ord.TotalGross}`);
+    assert(near(Number(ord.Balance), 180), `Order.Balance should be 180 (nothing paid), got ${ord.Balance}`);
+    assert(ord.PaymentStatus === 'Unpaid', `PaymentStatus should be Unpaid, got ${ord.PaymentStatus}`);
+  });
+
+  await test('L4 DueDate — derived at Confirm from PaymentTermsType.NetDays (base + net days)', async () => {
+    const terms = (await new RunView().RunView<{ ID: string; NetDays: number }>(
+      { EntityName: 'MJ_BizApps_Orders: Payment Terms Types', ExtraFilter: 'NetDays > 0', Fields: ['ID', 'NetDays'], OrderBy: 'NetDays ASC', ResultType: 'simple' }, user)).Results?.[0];
+    assert(!!terms, 'a seeded PaymentTermsType with NetDays>0 must exist');
+    const orderDate = new Date('2026-07-01T00:00:00.000Z');
+    const md = new Metadata();
+    const order = await md.GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
+    order.NewRecord(); order.OrderNumber = uid(); order.OrderDate = orderDate; order.Status = 'Draft';
+    order.CustomerOrganizationID = CUSTOMER_ORG_ID; order.PaymentTermsTypeID = terms!.ID;
+    assert(await order.Save(), 'draft saves'); createdOrderIds.push(order.ID);
+    const l = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+    l.NewRecord(); l.OrderID = order.ID; l.ProductID = pImmA; l.LineNumber = 1; l.Quantity = 1; l.UnitPrice = 100;
+    assert(await l.Save(), 'line saves');
+    const { saved, order: booked } = await confirmOrder(order.ID);
+    assert(saved, 'confirm should succeed');
+    assert(!!booked.DueDate, 'DueDate should be derived');
+    // base is PostedAt (≈ now) per the plan; assert the delta from base equals NetDays (date-only).
+    const due = new Date(booked.DueDate!); const base = new Date(booked.PostedAt ?? orderDate);
+    const deltaDays = Math.round((Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate()) - Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate())) / 86400000);
+    assert(deltaDays === terms!.NetDays, `DueDate should be base + ${terms!.NetDays}d, got Δ${deltaDays}d`);
+  });
+
+  await test('L5 fulfillment — a NO-fulfillment order auto-advances Posted → Fulfilled (no extra JE, MOD-8)', async () => {
+    const noFulfillType = await createProductType(false);
+    const pNoFulfill = await createLinkedProduct(noFulfillType, coA, 'Immediate');
+    const orderId = await createOrder([{ productId: pNoFulfill, qty: 1, price: 60 }]);
+    const { saved, order } = await confirmOrder(orderId);
+    assert(saved, 'confirm should succeed');
+    assert(order.Status === 'Fulfilled', `no-fulfillment order should auto-advance to Fulfilled, got ${order.Status}`);
+    const db = (await pool.request().query(`SELECT Status FROM ${ORD_SCHEMA}.[Order] WHERE ID='${orderId}'`)).recordset[0];
+    assert(db.Status === 'Fulfilled', `persisted status should be Fulfilled, got ${db.Status}`);
+    const count = (await pool.request().query(`SELECT COUNT(*) n FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}'`)).recordset[0].n;
+    assert(Number(count) === 1, `fulfillment adds NO JE — exactly the one booking JE, got ${count}`);
   });
 
   await teardown();

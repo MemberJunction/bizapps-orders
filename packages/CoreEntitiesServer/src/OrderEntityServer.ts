@@ -23,6 +23,16 @@
  */
 import { BaseEntity, EntitySaveOptions, IMetadataProvider, LogError, RunView, UserInfo } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import {
+  computeBalance,
+  computeLineGross,
+  computeLineNet,
+  computeOrderTotalGross,
+  derivePaymentStatus,
+  isBookedStatus,
+  validateTransition,
+  type OrderStatus,
+} from '@mj-biz-apps/orders-engine-base';
 import { mjBizAppsOrdersOrderEntity } from '@mj-biz-apps/orders-entities';
 import { loadOrderLines, queueOrderBooking } from './orderBooking.js';
 
@@ -31,21 +41,70 @@ const ACCOUNTING_JE_ENTITY = 'MJ_BizApps_Accounting: Journal Entries';
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Orders')
 export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
   public override async Save(options?: EntitySaveOptions): Promise<boolean> {
-    // Direct-confirm entry: compose the atomic unit of work ONLY when no caller owns the TG.
-    // (When the op owns it, `this.TransactionGroup` is set and booking already happened — just queue.)
-    if (this.shouldBookJournalEntries() && !this.TransactionGroup) {
+    // When a caller owns the unit of work (the op set this.TransactionGroup), it already validated +
+    // composed everything — just queue the row. The F1 gates below run for a DIRECT save only.
+    if (this.TransactionGroup) return super.Save(options);
+
+    // F1 transition gate — reject an illegal status change before any effect.
+    const gate = this.gateStatusTransition();
+    if (!gate.ok) {
+      LogError(`OrderEntityServer: order ${this.OrderNumber}: ${gate.reason}`);
+      return false;
+    }
+    // F1.3 totals — recompute while the order is still editable (frozen after booking by the schema trigger).
+    await this.recomputeTotalsIfEditable();
+    // MOD-9b backdating seam — pass-through (any future timing rule detects by date, never a period FK).
+    this.validatePostingDate();
+
+    // Direct-confirm entry: compose the atomic unit of work when reaching a booked state.
+    if (this.shouldBookJournalEntries()) {
       return this.confirmAtomically(options);
     }
     return super.Save(options);
   }
 
   /**
-   * Book once — the ORDER-LEVEL idempotency guard (F1.2): a booked order has ConfirmedAt set
-   * (always) and JournalEntryID set (single-JE case only). A failed prior attempt left both null,
-   * so it retries here.
+   * Book once — the ORDER-LEVEL idempotency guard (F1.2). Fires on reaching ANY booked state
+   * (Confirmed/Posted/Fulfilled — MOD-10 prerequisite effects, so a forward skip still books) when
+   * not yet booked (no JournalEntryID, no ConfirmedAt).
    */
   private shouldBookJournalEntries(): boolean {
-    return this.Status === 'Confirmed' && !this.JournalEntryID && !this.ConfirmedAt;
+    return isBookedStatus(this.Status) && !this.JournalEntryID && !this.ConfirmedAt;
+  }
+
+  /** Validate a status CHANGE on an existing order against the lifecycle DAG (F1.1). */
+  private gateStatusTransition(): { ok: boolean; reason?: string } {
+    const field = this.GetFieldByName('Status');
+    if (!field?.Dirty) return { ok: true }; // no status change (non-status edit / idempotent save)
+    const from = field.OldValue as OrderStatus | null | undefined;
+    if (from == null) return { ok: true }; // a create (no prior state) is not a transition
+    const check = validateTransition(from, this.Status);
+    return check.Allowed ? { ok: true } : { ok: false, reason: check.Reason ?? 'illegal status transition' };
+  }
+
+  /**
+   * Recompute the order-level totals from its lines (F1.3) — only while the order is still editable
+   * (its persisted status is unbooked). TotalGross = Σ line gross; Balance = TotalGross − AmountPaid;
+   * PaymentStatus derived (never overriding an explicit WrittenOff). After booking the schema trigger
+   * freezes TotalGross, so we skip to avoid tripping it.
+   */
+  private async recomputeTotalsIfEditable(): Promise<void> {
+    const from = this.GetFieldByName('Status')?.OldValue as OrderStatus | null | undefined;
+    if (from != null && isBookedStatus(from)) return; // already booked → frozen
+    const lines = await loadOrderLines(this.ID, this.ContextCurrentUser);
+    const grosses = lines.map(l => computeLineGross(computeLineNet(l.Quantity, l.UnitPrice, l.DiscountPct), l.LineTax));
+    this.TotalGross = computeOrderTotalGross(grosses);
+    this.Balance = computeBalance(this.TotalGross, this.AmountPaid);
+    this.PaymentStatus = derivePaymentStatus(this.TotalGross, this.AmountPaid, this.PaymentStatus);
+  }
+
+  /**
+   * Backdating seam (MOD-9b, FINAL): OrderDate is freely settable and the JE bears it — NO guard.
+   * Kept as the single seam so a FUTURE timing rule attaches here and detects by DATE (periods were
+   * removed, MOD-1); today it is intentionally a pass-through.
+   */
+  private validatePostingDate(): void {
+    /* intentional pass-through — see MOD-9b */
   }
 
   /**

@@ -36,15 +36,18 @@ import type { JournalEntryDraft } from '@mj-biz-apps/accounting-engine-base';
 import type {
   mjBizAppsOrdersOrderEntity,
   mjBizAppsOrdersOrderLineEntity,
+  mjBizAppsOrdersPaymentTermsTypeEntity,
   mjBizAppsOrdersProductCategoryEntity,
   mjBizAppsOrdersProductEntity,
   mjBizAppsOrdersProductTypeEntity,
 } from '@mj-biz-apps/orders-entities';
 import { buildOrderJournalDrafts, type ResolvedOrderLine } from './orderJournalDraft.js';
+import { computeLineNet } from './orderLifecycle.js';
 
 const PRODUCT_TYPES_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const PRODUCT_CATEGORIES_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 const PRODUCTS_ENTITY = 'MJ_BizApps_Orders: Products';
+const PAYMENT_TERMS_TYPES_ENTITY = 'MJ_BizApps_Orders: Payment Terms Types';
 const COMPANIES_ENTITY = 'MJ: Companies';
 
 const ROLE_ACCOUNTS_RECEIVABLE = 'Accounts Receivable';
@@ -71,6 +74,7 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
   private _productTypes: mjBizAppsOrdersProductTypeEntity[] = [];
   private _productCategories: mjBizAppsOrdersProductCategoryEntity[] = [];
   private _products: mjBizAppsOrdersProductEntity[] = [];
+  private _paymentTermsTypes: mjBizAppsOrdersPaymentTermsTypeEntity[] = [];
   private _entityIdCache = new Map<string, string>();
 
   public static get Instance(): OrdersEngineBase {
@@ -82,6 +86,7 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
       { PropertyName: '_productTypes', EntityName: PRODUCT_TYPES_ENTITY },
       { PropertyName: '_productCategories', EntityName: PRODUCT_CATEGORIES_ENTITY },
       { PropertyName: '_products', EntityName: PRODUCTS_ENTITY },
+      { PropertyName: '_paymentTermsTypes', EntityName: PAYMENT_TERMS_TYPES_ENTITY },
     ];
     const result = await this.Load(params, provider as IMetadataProvider, forceRefresh ?? false, contextUser);
     // Resolution reads accounting's link/account caches — keep them loaded in lockstep.
@@ -100,6 +105,10 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
     return this.GetConfigData<mjBizAppsOrdersProductEntity>('_products');
   }
 
+  public get PaymentTermsTypes(): mjBizAppsOrdersPaymentTermsTypeEntity[] {
+    return this.GetConfigData<mjBizAppsOrdersPaymentTermsTypeEntity>('_paymentTermsTypes');
+  }
+
   public ProductByID(id: string): mjBizAppsOrdersProductEntity | undefined {
     const key = uuidKey(id);
     return this.Products.find(p => uuidKey(p.ID) === key);
@@ -107,6 +116,23 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
   public ProductCategoryByID(id: string): mjBizAppsOrdersProductCategoryEntity | undefined {
     const key = uuidKey(id);
     return this.ProductCategories.find(c => uuidKey(c.ID) === key);
+  }
+  public ProductTypeByID(id: string): mjBizAppsOrdersProductTypeEntity | undefined {
+    const key = uuidKey(id);
+    return this.ProductTypes.find(t => uuidKey(t.ID) === key);
+  }
+
+  /** Does the product's type require physical fulfillment (F1.6 / UPD-3)? False when unknown. */
+  public RequiresFulfillment(productID: string): boolean {
+    const typeID = this.ProductByID(productID)?.ProductTypeID;
+    return typeID ? (this.ProductTypeByID(typeID)?.RequiresFulfillment ?? false) : false;
+  }
+
+  /** The payment terms' net-days (F1.4 DueDate derivation); null when no/unknown terms. */
+  public NetDaysForTerms(termsTypeID: string | null | undefined): number | null {
+    if (!termsTypeID) return null;
+    const key = uuidKey(termsTypeID);
+    return this.PaymentTermsTypes.find(t => uuidKey(t.ID) === key)?.NetDays ?? null;
   }
 
   // ─── account resolution ────────────────────────────────────────────────────
@@ -226,7 +252,8 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
       resolved.push({
         LineIndex: index,
         OrderLineID: line.ID,
-        Amount: Number(line.Quantity) * Number(line.UnitPrice),
+        // Book revenue NET of trade discount (F1); tax is separate (S4, deferred). AR = revenue in v1.
+        Amount: computeLineNet(Number(line.Quantity), Number(line.UnitPrice), line.DiscountPct),
         RevenueAccountID: account.GLAccountID,
         CompanyID: account.CompanyID,
         Description: line.Description ?? undefined,

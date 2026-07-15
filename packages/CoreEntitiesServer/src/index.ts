@@ -14,18 +14,21 @@
  */
 export { OrdersEngine } from './OrdersEngine.js';
 export { OrderEntityServer, LoadBizAppsOrdersOrderServer } from './OrderEntityServer.js';
+export { OrderLineEntityServer, LoadBizAppsOrdersOrderLineServer } from './OrderLineEntityServer.js';
 export { ConfirmOrderOperation, LoadConfirmOrderOperation } from './ConfirmOrderOperation.js';
 export type { ConfirmOrderInput, ConfirmOrderOutput } from './ConfirmOrderOperation.js';
 export { queueOrderBooking, loadOrderLines } from './orderBooking.js';
 export type { OrderBookingResult } from './orderBooking.js';
 
 import { LoadBizAppsOrdersOrderServer } from './OrderEntityServer.js';
+import { LoadBizAppsOrdersOrderLineServer } from './OrderLineEntityServer.js';
 import { LoadConfirmOrderOperation } from './ConfirmOrderOperation.js';
 
 export function LoadBizAppsOrdersEntitiesServer(): void {
-  // Importing this module registered OrderEntityServer + ConfirmOrderOperation (via the exports
-  // above); these calls are the tree-shaking anchors the bootstrap invokes so bundlers can't drop
-  // the @RegisterClass side effects.
+  // Importing this module registered OrderEntityServer + OrderLineEntityServer + ConfirmOrderOperation
+  // (via the exports above); these calls are the tree-shaking anchors the bootstrap invokes so
+  // bundlers can't drop the @RegisterClass side effects.
   LoadBizAppsOrdersOrderServer();
+  LoadBizAppsOrdersOrderLineServer();
   LoadConfirmOrderOperation();
 }
