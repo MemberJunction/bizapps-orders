@@ -87,6 +87,31 @@ curl -s -X POST http://localhost:4050/ -H "Content-Type: application/json" \
   their tests land with F1. Payment/Subscription/pricing engine behavior = F3/F4/F9. Tier 4/5 GUI specs
   for the new forms = UI plan wave. `order-to-glposted` re-run pending in the final sweep (below).
 
+---
+### 2026-07-15 — F1.2b Confirm UNIT OF WORK (atomic order-row + JE set)
+The order's status/guard-field update now commits in the SAME TransactionGroup as its per-company JE
+set — order + all JEs, or nothing. New `Orders.ConfirmOrder` remotable op (in-process + over GraphQL)
+composes the unit of work server-side; a direct order Save to 'Confirmed' self-composes the identical
+atomic unit of work (`OrderEntityServer` — guard `shouldBook && !TransactionGroup`). The interim
+any-JE-exists ADOPTION guard is retired to a **defensive assert** (refuse-don't-adopt). Accounting adds
+`AccountingEngine.QueueJournalEntries` (validate + queue onto a caller-owned TG, no Submit).
+
+- **T1** unchanged (pure draft logic): orderJournalDraft **14/14** ✓ · acct EngineBase **39/39** ✓ · acct CoreEntitiesServer **39/39** ✓.
+- **T2** `server/order-to-je` **10/10** ✓ (2026-07-15): O1–O6 direct-save path still atomic; **O7 REWRITTEN** to the
+  refuse-don't-adopt semantics (pre-existing JEs for an unbooked order → confirm REFUSED, both entry points);
+  **O8** op-path atomic booking; **O9** JE-failure rolls back the order row; **O10** order-row failure ROLLS BACK
+  the JEs (temp-trigger injection at Submit + the MJ-core TG-crash guard) — proves ONE transaction, BOTH directions.
+  Teardown now disables the OrderLine/Order freeze triggers. Accounting `engine-runtime` **16/16** ✓ (CreateJournalEntries
+  refactor — extracted validate/queue privates — unaffected).
+- **T3** `api/order-to-je-api` **44/44** ✓ (2026-07-15): the confirm-over-GraphQL path (entity Update → server-side
+  OrderEntityServer.Save → atomic booking) proven post-F1.2b. Fixed 3 pre-existing STALE MOD-11/12 assertions
+  (per-company `JE-{CompanyCode}-{FY}-{seq}` numbering regex; O2 reworked to per-company: 2 JEs, JournalEntryID NULL,
+  per-company balance + single-company purity).
+- **Intentional coverage (not a gap):** `Orders.ConfirmOrder` **over GraphQL** (ExecuteRemoteOperation) is logically
+  covered — the code-only remotable-op-over-GraphQL mechanism is proven by accounting `engine-op-api` 8/8, and this op
+  uses the identical `BaseRemotableOperation` pattern; the op itself is proven in-process at T2 (O8/O10) and the
+  browser confirm path at T3. A dedicated op-over-GraphQL smoke is a cheap future add if desired.
+
 **Run-order note (2026-07-14):** `order-to-je` asserts ZERO stray Pending JEs at bootstrap (buildBatch
 is global), and the DEMO seeds legitimately create Pending JEs (3 confirmed demo orders). So: run the
 tier-2 harnesses BEFORE seeding demo data (the drop-schema loop naturally gives that order), or sweep
