@@ -30,7 +30,7 @@ import '@mj-biz-apps/common-entities';
 import '@mj-biz-apps/accounting-entities';
 import { CreateJournalEntriesOperation } from '@mj-biz-apps/accounting-core-entities-server';
 import '@mj-biz-apps/orders-entities';
-import { OrdersEngine } from '@mj-biz-apps/orders-core-entities-server';
+import { ConfirmOrderOperation, OrdersEngine, type ConfirmOrderOutput } from '@mj-biz-apps/orders-core-entities-server';
 import type {
   mjBizAppsAccountingAccountingCompanyProfileEntity,
   mjBizAppsAccountingGLAccountLinkEntity,
@@ -196,6 +196,20 @@ async function confirmOrder(orderId: string): Promise<{ saved: boolean; order: m
   return { saved, order };
 }
 
+/** Confirm an order through the Orders.ConfirmOrder remotable op (the F1.2b unit of work). */
+async function confirmOrderViaOp(orderId: string): Promise<{ result: ConfirmOrderOutput; order: mjBizAppsOrdersOrderEntity }> {
+  const exec = await new ConfirmOrderOperation().Execute({ OrderID: orderId }, { user });
+  const result: ConfirmOrderOutput = exec.Output ?? { Success: false, Errors: [exec.ErrorMessage ?? 'no output'] };
+  if (result.Success) {
+    const jes = (await pool.request().query(`SELECT ID FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}'`)).recordset as Array<{ ID: string }>;
+    for (const r of jes) if (!createdJEIds.includes(r.ID)) createdJEIds.push(r.ID);
+  }
+  const md = new Metadata();
+  const order = await md.GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
+  await order.Load(orderId);
+  return { result, order };
+}
+
 /** All JEs booked for an order (per-company set), with header fields for assertions. */
 async function readOrderJEs(orderId: string): Promise<Array<{ ID: string; CompanyID: string; EntryNumber: string }>> {
   const rows = (await pool.request().query(`SELECT ID, CompanyID, EntryNumber FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}' ORDER BY EntryNumber`)).recordset;
@@ -347,15 +361,14 @@ async function main(): Promise<void> {
     assert(codes.size === 2, `the two companies' entries should carry DIFFERENT company codes, got ${[...codes].join(',')}`);
   });
 
-  await test('O7 crash-recovery guard — pre-existing JEs for the order are ADOPTED, never double-booked', async () => {
-    // Simulates the failure window before the F1.2b unit-of-work rework: a prior attempt's JE set
-    // committed but the ORDER row save failed (no ConfirmedAt persisted). A re-Confirm must adopt
-    // the existing entries instead of booking a second set.
+  await test('O7 defensive assert — pre-existing JEs for an UNBOOKED order REFUSE the confirm (no double-book, F1.2b)', async () => {
+    // F1.2b retired the any-JE-exists ADOPTION guard: with the order row + JE set now committing in
+    // ONE transaction, a booked-but-unposted order can no longer occur. If JEs somehow pre-exist for
+    // an unbooked order, the confirm REFUSES (rather than silently adopting) so an operator
+    // reconciles — proven for BOTH entry points (direct save AND the op).
     const orderId = await createOrder([{ productId: pImmA, qty: 1, price: 55 }]);
-    // Book a JE for this order OUT-OF-BAND (as if a prior attempt committed it).
-    const md2 = new Metadata();
     await OrdersEngine.Instance.Config(false, user);
-    const order0 = await md2.GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
+    const order0 = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, user);
     await order0.Load(orderId);
     const lines0 = (await new RunView().RunView<mjBizAppsOrdersOrderLineEntity>(
       { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderID='${orderId}'`, ResultType: 'entity_object' }, user)).Results ?? [];
@@ -365,13 +378,77 @@ async function main(): Promise<void> {
     const preId = preOp.Output?.Results?.[0]?.JournalEntryID;
     assert(!!preId, `fixture pre-booking failed: ${JSON.stringify(preOp.Output?.Errors)}`);
     createdJEIds.push(preId!);
-    // Now Confirm through the entity server — it must ADOPT, not re-book.
-    const { saved, order } = await confirmOrder(orderId);
-    assert(saved, 're-confirm should succeed');
-    assert(order.JournalEntryID?.toUpperCase() === preId!.toUpperCase(), 'the EXISTING JE must be adopted as JournalEntryID');
-    assert(!!order.ConfirmedAt, 'ConfirmedAt stamped on adoption');
+    // Direct-save path REFUSES.
+    const direct = await confirmOrder(orderId);
+    assert(!direct.saved, 'direct-save confirm must REFUSE when JEs pre-exist (defensive assert, not adoption)');
+    // Op path REFUSES too.
+    const viaOp = await confirmOrderViaOp(orderId);
+    assert(!viaOp.result.Success, 'op confirm must REFUSE when JEs pre-exist (defensive assert)');
     const count = (await pool.request().query(`SELECT COUNT(*) n FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}'`)).recordset[0].n;
-    assert(Number(count) === 1, `exactly ONE JE must exist after recovery (no double-booking), got ${count}`);
+    assert(Number(count) === 1, `exactly ONE (the pre-existing) JE must remain — no double-book, got ${count}`);
+    const dbStatus = (await pool.request().query(`SELECT Status FROM ${ORD_SCHEMA}.[Order] WHERE ID='${orderId}'`)).recordset[0];
+    assert(dbStatus.Status !== 'Posted', `order must NOT be Posted after a refused confirm, got ${dbStatus.Status}`);
+  });
+
+  await test('O8 ConfirmOrder op — books atomically: order → Posted + one JE in a single unit of work', async () => {
+    const orderId = await createOrder([{ productId: pImmA, qty: 3, price: 100 }]);
+    const { result, order } = await confirmOrderViaOp(orderId);
+    assert(result.Success, `op confirm should succeed: ${JSON.stringify(result.Errors)}`);
+    assert(result.Status === 'Posted', `op result Status should be Posted, got ${result.Status}`);
+    assert((result.JournalEntryIDs ?? []).length === 1, `single-company order → one JE ID, got ${(result.JournalEntryIDs ?? []).length}`);
+    assert(order.Status === 'Posted', `order should be PERSISTED Posted, got ${order.Status}`);
+    assert(!!order.ConfirmedAt, 'ConfirmedAt stamped');
+    assert(order.JournalEntryID?.toUpperCase() === result.JournalEntryIDs![0].toUpperCase(), 'order.JournalEntryID matches the booked JE (single-company)');
+    const je = await readJE(order.JournalEntryID!);
+    assert(near(debitFor(je.lines, coA.arGL), 300) && near(creditFor(je.lines, coA.revGL), 300), 'Dr AR 300 = Cr Sales 300');
+    assert(je.header.Status === 'Pending', 'booked JE is Pending in the subledger');
+  });
+
+  await test('O9 ConfirmOrder op — JE failure rolls back the order row (unresolvable account → nothing written)', async () => {
+    const orderId = await createOrder([{ productId: pUnlinked, qty: 1, price: 99 }]);
+    const { result } = await confirmOrderViaOp(orderId);
+    assert(!result.Success, 'op confirm must fail on an unresolvable account');
+    const db = (await pool.request().query(`SELECT Status, JournalEntryID, ConfirmedAt FROM ${ORD_SCHEMA}.[Order] WHERE ID='${orderId}'`)).recordset[0];
+    assert(db.Status !== 'Posted' && db.Status !== 'Confirmed', `order must NOT advance, got ${db.Status}`);
+    assert(db.JournalEntryID == null && db.ConfirmedAt == null, 'order must stay unbooked (no JournalEntryID / ConfirmedAt)');
+    const count = (await pool.request().query(`SELECT COUNT(*) n FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}'`)).recordset[0].n;
+    assert(Number(count) === 0, `no JE may exist after a failed confirm, got ${count}`);
+  });
+
+  await test('O10 ConfirmOrder op — order-row failure ROLLS BACK the JEs (one transaction, both directions)', async () => {
+    // The crux of F1.2b: the order row + JE set are ONE unit of work. Force the ORDER ROW update to
+    // fail at commit while the JEs are valid+queued (a temp trigger THROWs when this order flips to
+    // Posted). If the unit of work is truly atomic, the queued JEs MUST roll back with it → ZERO JEs.
+    const orderId = await createOrder([{ productId: pImmA, qty: 1, price: 42 }]);
+    const trg = `trg_test_f12b_${seq++}`;
+    await teardownPool.request().query(
+      `CREATE TRIGGER ${ORD_SCHEMA}.${trg} ON ${ORD_SCHEMA}.[Order] AFTER UPDATE AS BEGIN ` +
+        `IF EXISTS (SELECT 1 FROM inserted WHERE ID='${orderId}' AND Status='Posted') ` +
+        `THROW 50999, 'test-forced order-row failure (F1.2b O10)', 1; END`
+    );
+    // ⚠ MJ-CORE BUG GUARD (instance BUGS.md): a failed TransactionGroup makes each queued entity's
+    // rxjs subscriber re-throw on a fresh tick → uncaughtException. The rollback + typed result are
+    // CORRECT; only the out-of-band re-throw is broken. Swallow exactly that error for this test.
+    const swallowTGCrash = (e: Error): void => {
+      if (/Transaction rolled back due to operation failure/.test(e?.message ?? '')) return; // known MJ-core bug
+      throw e;
+    };
+    process.on('uncaughtException', swallowTGCrash);
+    let confirmSucceeded = false;
+    try {
+      const { result } = await confirmOrderViaOp(orderId);
+      confirmSucceeded = result.Success;
+      await new Promise(res => setTimeout(res, 100)); // let the deferred rxjs re-throw fire under the guard
+      assert(!confirmSucceeded, 'confirm must NOT succeed when the order-row commit fails');
+      const db = (await pool.request().query(`SELECT Status, ConfirmedAt, JournalEntryID FROM ${ORD_SCHEMA}.[Order] WHERE ID='${orderId}'`)).recordset[0];
+      assert(db.Status !== 'Posted', `the order-row change must have rolled back, got ${db.Status}`);
+      assert(db.ConfirmedAt == null && db.JournalEntryID == null, 'ConfirmedAt / JournalEntryID must not persist after rollback');
+      const count = (await pool.request().query(`SELECT COUNT(*) n FROM ${ACC_SCHEMA}.JournalEntry WHERE OrderID='${orderId}'`)).recordset[0].n;
+      assert(Number(count) === 0, `the JEs must roll back WITH the failed order row (ZERO JEs) — proves one transaction, got ${count}`);
+    } finally {
+      await teardownPool.request().query(`DROP TRIGGER ${ORD_SCHEMA}.${trg}`);
+      process.removeListener('uncaughtException', swallowTGCrash);
+    }
   });
 
   await teardown();
@@ -397,8 +474,16 @@ async function teardown(): Promise<void> {
   }
   const orderList = createdOrderIds.map(id => `'${id}'`).join(',');
   if (orderList) {
-    await exec(`DELETE FROM ${ORD_SCHEMA}.OrderLine WHERE OrderID IN (${orderList})`);
-    await exec(`DELETE FROM ${ORD_SCHEMA}.[Order] WHERE ID IN (${orderList})`);
+    // Posted/Confirmed orders freeze their lines (delete-block trigger) — disable it for teardown,
+    // same as the JE triggers above.
+    const ordTriggers = ['OrderLine', 'Order'];
+    try {
+      for (const t of ordTriggers) await exec(`DISABLE TRIGGER ALL ON ${ORD_SCHEMA}.[${t}]`);
+      await exec(`DELETE FROM ${ORD_SCHEMA}.OrderLine WHERE OrderID IN (${orderList})`);
+      await exec(`DELETE FROM ${ORD_SCHEMA}.[Order] WHERE ID IN (${orderList})`);
+    } finally {
+      for (const t of ordTriggers) await exec(`ENABLE TRIGGER ALL ON ${ORD_SCHEMA}.[${t}]`);
+    }
   }
   if (createdLinkIds.length) await exec(`DELETE FROM ${ACC_SCHEMA}.GLAccountLink WHERE ID IN (${createdLinkIds.map(id => `'${id}'`).join(',')})`);
   if (createdProductIds.length) await exec(`DELETE FROM ${ORD_SCHEMA}.Product WHERE ID IN (${createdProductIds.map(id => `'${id}'`).join(',')})`);
