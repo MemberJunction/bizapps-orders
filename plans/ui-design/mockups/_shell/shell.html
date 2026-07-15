@@ -1,0 +1,64 @@
+<!doctype html>
+<!-- ============================================================================
+  _shell — the ONE retained reference mockup (ui-design-system.md §3.2).
+  Clone this file as the skeleton for every new mockup/variant.
+  STATUS: kit-derived from MJ tokens + documented chrome conventions.
+  ⚠ TODO (first mockup session): ground against live Explorer screenshots of
+  THIS app's dashboards (Playwright headless, channel:'chrome', via the
+  instance magic link) and correct any chrome drift, then remove this banner.
+============================================================================ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>_shell — bizapps-orders mockup skeleton</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../../style-kit/mj-mock.css">
+</head>
+<body>
+<div class="mjm-shell">
+  <nav class="mjm-nav">
+    <div class="brand"><i class="fa-solid fa-cubes"></i> MJ Explorer</div>
+    <a href="#" class="active"><i class="fa-solid fa-file-invoice-dollar"></i> Orders Console</a>
+    <a href="#"><i class="fa-solid fa-clock-rotate-left"></i> Order History</a>
+    <a href="#"><i class="fa-solid fa-table-columns"></i> Order Management</a>
+    <a href="#"><i class="fa-solid fa-box-open"></i> Product Catalog</a>
+    <a href="#"><i class="fa-solid fa-sitemap"></i> Categories</a>
+    <a href="#"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
+  </nav>
+  <div class="mjm-main">
+    <div class="mjm-page">
+      <header class="mjm-page-header">
+        <h1>Orders Console</h1>
+        <span class="meta"><span class="mjm-chip mjm-chip--info">Demo Co.</span></span>
+        <span class="actions">
+          <button class="mjm-btn mjm-btn--outline"><i class="fa-solid fa-filter"></i> Filters</button>
+          <button class="mjm-btn mjm-btn--primary"><i class="fa-solid fa-plus"></i> New Order</button>
+        </span>
+      </header>
+      <div class="mjm-toolbar">
+        <input class="mjm-input" style="width:280px" placeholder="Search orders…">
+        <select class="mjm-select"><option>All statuses</option><option>Draft</option><option>Confirmed</option><option>Posted</option></select>
+        <span class="mjm-muted" style="margin-left:auto">42 orders</span>
+      </div>
+      <main class="mjm-page-body">
+        <div class="mjm-grid-3" style="margin-bottom:var(--mj-space-6)">
+          <div class="mjm-card mjm-stat"><span class="value">$128,450</span><span class="label">Open A/R</span></div>
+          <div class="mjm-card mjm-stat"><span class="value">17</span><span class="label">Unpaid orders</span></div>
+          <div class="mjm-card mjm-stat"><span class="value">3</span><span class="label">Overdue</span></div>
+        </div>
+        <table class="mjm-grid">
+          <thead><tr><th>Order #</th><th>Customer</th><th>Status</th><th>Payment</th><th class="num">Total</th><th class="num">Balance</th><th>Due</th></tr></thead>
+          <tbody>
+            <tr><td class="mjm-mono">ORD-1042</td><td>Acme Corp</td><td><span class="mjm-chip mjm-chip--success">Posted</span></td><td><span class="mjm-chip mjm-chip--warning">Partially paid</span></td><td class="num">$15,099.00</td><td class="num">$5,099.00</td><td>2026-08-01</td></tr>
+            <tr><td class="mjm-mono">ORD-1041</td><td>Globex</td><td><span class="mjm-chip mjm-chip--info">Confirmed</span></td><td><span class="mjm-chip mjm-chip--neutral">Unpaid</span></td><td class="num">$2,400.00</td><td class="num">$2,400.00</td><td>2026-07-30</td></tr>
+            <tr><td class="mjm-mono">ORD-1040</td><td>Initech</td><td><span class="mjm-chip mjm-chip--neutral">Draft</span></td><td>—</td><td class="num">$860.00</td><td class="num">—</td><td>—</td></tr>
+            <tr><td class="mjm-mono">ORD-1039</td><td>Umbrella</td><td><span class="mjm-chip mjm-chip--success">Fulfilled</span></td><td><span class="mjm-chip mjm-chip--error">Overdue</span></td><td class="num">$12,000.00</td><td class="num">$12,000.00</td><td>2026-06-30</td></tr>
+          </tbody>
+        </table>
+      </main>
+    </div>
+  </div>
+</div>
+</body>
+</html>

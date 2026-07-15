@@ -14,6 +14,8 @@ This folder follows the repo planning system (`~/MJDev/shared-plans/repo-plannin
 | `completed/` | Finished (or abandoned) action plans. |
 | `meetings/` | Transcripts + distilled per-meeting decision notes (incl. the 07-02 engine-meeting amendment). **Meetings are inputs, never authority** — a decision only becomes the plan as a MOD, Update, or Extension. |
 | `supporting-documents/` | Reference material that is neither plan nor meeting (ERDs, analyses, external-system exports). |
+| `FEATURE-LIST.md` | **Derived feature registry** (adopted 2026-07-15): stable outline IDs + statuses, generated from the plan chain; git-pinned derivation header = the staleness check. Never an authority — the plan chain wins. Convention: `~/MJDev/shared-plans/feature-list-amendment.md`. |
+| `ui-design/` | **UI module** (adopted 2026-07-15): `UI-FEATURE-LIST.md` (UI coverage keyed to FEATURE-LIST IDs), `style-kit/` (mj-mock.css + provenance pin), `mockups/` (ephemeral; only `_shell/` persists between cycles). Convention: `~/MJDev/shared-plans/ui-design-system.md`. |
 
 **Migration map (2026-07-10)** — old paths → new, for stale references in older docs:
 - `plans/bizapps-orders-master.md` → `plans/MASTER-PLAN.md`
