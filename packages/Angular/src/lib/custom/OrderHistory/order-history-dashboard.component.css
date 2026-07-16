@@ -13,7 +13,7 @@
 .oh-field input[type="date"] { min-width: 140px; }
 
 /* product multi-select popover */
-.oh-products { position: relative; }
+.oh-products { position: relative; z-index: 50; }
 .oh-products__btn { display: inline-flex; align-items: center; gap: 8px; min-width: 160px; justify-content: space-between; }
 .oh-products__menu {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: 20;

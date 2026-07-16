@@ -110,7 +110,7 @@
           <tbody>
             @for (o of FilteredOrders; track o.ID) {
               <tr class="oh-row">
-                <td class="oh-ordnum">{{ o.OrderNumber }}</td>
+                <td class="oh-ordnum">{{ o.Description || o.OrderNumber }}</td>
                 <td><span class="oh-pill" [attr.data-status]="o.Status">{{ o.Status }}</span></td>
                 <td>{{ o.OrderDate ? (o.OrderDate | date:'yyyy-MM-dd') : '—' }}</td>
                 <td>{{ o.CustomerName }}</td>

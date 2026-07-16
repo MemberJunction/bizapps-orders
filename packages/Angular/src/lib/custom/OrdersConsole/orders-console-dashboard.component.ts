@@ -38,6 +38,7 @@ interface DraftLine {
 interface OrderRow {
   ID: string;
   OrderNumber: string;
+  Description: string | null;
   OrderDate: Date | null;
   Status: OrderStatus;
   JournalEntryID: string | null;
@@ -137,9 +138,9 @@ export class OrdersConsoleDashboardComponent extends BaseDashboard {
 
   private async loadRecentOrders(): Promise<void> {
     const rv = new RunView();
-    const res = await rv.RunView<{ ID: string; OrderNumber: string; OrderDate: Date; Status: OrderStatus; JournalEntryID: string | null }>({
+    const res = await rv.RunView<{ ID: string; OrderNumber: string; Description: string | null; OrderDate: Date; Status: OrderStatus; JournalEntryID: string | null }>({
       EntityName: ORDER_ENTITY,
-      Fields: ['ID', 'OrderNumber', 'OrderDate', 'Status', 'JournalEntryID'],
+      Fields: ['ID', 'OrderNumber', 'Description', 'OrderDate', 'Status', 'JournalEntryID'],
       OrderBy: '__mj_CreatedAt DESC',
       MaxRows: 25,
       ResultType: 'simple',
@@ -149,6 +150,7 @@ export class OrdersConsoleDashboardComponent extends BaseDashboard {
     this.RecentOrders = rows.map(r => ({
       ID: r.ID,
       OrderNumber: r.OrderNumber,
+      Description: r.Description,
       OrderDate: r.OrderDate,
       Status: r.Status,
       JournalEntryID: r.JournalEntryID,
@@ -239,8 +241,24 @@ export class OrdersConsoleDashboardComponent extends BaseDashboard {
     this.cdr.markForCheck();
   }
 
-  /** Create the order + lines, then flip to Confirmed (which books the JE server-side). */
-  public async ConfirmOrder(): Promise<void> {
+  /** Confirmation dialog state — shown before a create-as-Confirmed books a JE. */
+  public ConfirmVisible = false;
+
+  /** Entry point from the button. Creating as Confirmed books a JE (irreversible), so confirm first. */
+  public ConfirmOrder(): void {
+    if (!this.CanConfirm || this.Booking) return;
+    if (this.CreateStage === 'Confirmed') {
+      this.ConfirmVisible = true;
+      this.cdr.markForCheck();
+    } else {
+      void this.doConfirmOrder();
+    }
+  }
+  public OnConfirmProceed(): void { this.ConfirmVisible = false; void this.doConfirmOrder(); }
+  public OnConfirmCancel(): void { this.ConfirmVisible = false; this.cdr.markForCheck(); }
+
+  /** Create the order + lines, then finalize at the chosen stage (Confirmed → books the JE server-side). */
+  private async doConfirmOrder(): Promise<void> {
     if (!this.CanConfirm) return;
     this.Booking = true;
     this.ActionMessage = null;

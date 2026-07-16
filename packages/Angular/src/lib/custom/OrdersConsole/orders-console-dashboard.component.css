@@ -56,9 +56,6 @@
   gap: 10px;
   align-items: flex-end;
   flex-wrap: wrap;
-  padding: 14px;
-  background: var(--mj-bg-surface-sunken);
-  border-radius: 10px;
   margin-bottom: 16px;
 }
 .oc-field { display: flex; flex-direction: column; gap: 4px; }
@@ -206,3 +203,6 @@
 .oc-stage .mj-input { min-width: 130px; }
 .oc-stage__hint { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 0.78rem; color: var(--mj-text-muted); }
 .oc-stage__hint i { color: var(--mj-brand-primary); }
+.oc-confirmbox { display: flex; gap: 12px; align-items: flex-start; }
+.oc-confirmbox__icon { font-size: 1.5rem; color: var(--mj-status-warning-text); margin-top: 2px; }
+.oc-confirmbox__msg { margin: 0; color: var(--mj-text-primary); line-height: 1.5; }

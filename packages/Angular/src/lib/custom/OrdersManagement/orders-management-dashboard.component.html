@@ -62,7 +62,7 @@
                     <div class="om-card" [class.om-card--active]="SelectedOrderID === o.ID" [class.om-card--busy]="IsMoving(o)"
                          role="button" tabindex="0" (click)="SelectOrder(o)">
                       <div class="om-card__top">
-                        <span class="om-card__num">{{ o.OrderNumber }}</span>
+                        <span class="om-card__num">{{ o.Description || o.OrderNumber }}</span>
                         @if (NeedsAttention(o)) {
                           <button class="om-card__warn" title="Not posted to accounting — click for details"
                                   (click)="OpenWarning(o); $event.stopPropagation()">

@@ -18,6 +18,7 @@ const ORG_ENTITY = 'MJ_BizApps_Common: Organizations';
 export interface OrderRow {
   ID: string;
   OrderNumber: string;
+  Description: string | null;
   OrderDate: Date | null;
   Status: OrderStatus;
   CustomerOrganizationID: string | null;
@@ -214,7 +215,7 @@ export class OrderHistoryDashboardComponent extends BaseDashboard {
   }
 
   private toRow(
-    o: { ID: string; OrderNumber: string; OrderDate: Date | null; Status: OrderStatus; CustomerOrganizationID: string | null; JournalEntryID: string | null },
+    o: { ID: string; OrderNumber: string; Description: string | null; OrderDate: Date | null; Status: OrderStatus; CustomerOrganizationID: string | null; JournalEntryID: string | null },
     agg: Map<string, { total: number; count: number; products: Map<string, string> }>,
   ): OrderRow {
     const a = agg.get(o.ID);
@@ -230,9 +231,9 @@ export class OrderHistoryDashboardComponent extends BaseDashboard {
 
   private customerNames = new Map<string, string>();
 
-  private async loadOrders(): Promise<Array<{ ID: string; OrderNumber: string; OrderDate: Date | null; Status: OrderStatus; CustomerOrganizationID: string | null; JournalEntryID: string | null }>> {
-    const res = await this.runView().RunView<{ ID: string; OrderNumber: string; OrderDate: string | null; Status: OrderStatus; CustomerOrganizationID: string | null; JournalEntryID: string | null }>(
-      { EntityName: ORDER_ENTITY, Fields: ['ID', 'OrderNumber', 'OrderDate', 'Status', 'CustomerOrganizationID', 'JournalEntryID'], OrderBy: 'OrderDate DESC', ResultType: 'simple' }, this.contextUser());
+  private async loadOrders(): Promise<Array<{ ID: string; OrderNumber: string; Description: string | null; OrderDate: Date | null; Status: OrderStatus; CustomerOrganizationID: string | null; JournalEntryID: string | null }>> {
+    const res = await this.runView().RunView<{ ID: string; OrderNumber: string; Description: string | null; OrderDate: string | null; Status: OrderStatus; CustomerOrganizationID: string | null; JournalEntryID: string | null }>(
+      { EntityName: ORDER_ENTITY, Fields: ['ID', 'OrderNumber', 'Description', 'OrderDate', 'Status', 'CustomerOrganizationID', 'JournalEntryID'], OrderBy: 'OrderDate DESC', ResultType: 'simple' }, this.contextUser());
     return (res.Results ?? []).map(o => ({ ...o, OrderDate: o.OrderDate ? new Date(o.OrderDate) : null }));
   }
 

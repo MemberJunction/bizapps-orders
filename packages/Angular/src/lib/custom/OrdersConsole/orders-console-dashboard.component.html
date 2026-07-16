@@ -158,7 +158,7 @@
               @for (o of RecentOrders; track o.ID) {
                 <li class="oc-order" [class.oc-order--open]="SelectedOrderID === o.ID">
                   <button class="oc-order__row" (click)="ViewOrderJE(o)">
-                    <span class="oc-order__num">{{ o.OrderNumber }}</span>
+                    <span class="oc-order__num">{{ o.Description || o.OrderNumber }}</span>
                     <span class="oc-pill" [attr.data-variant]="StatusVariant(o.Status)">{{ o.Status }}</span>
                     <span class="oc-order__total">{{ o.Total | number:'1.2-2' }}</span>
                     @if (o.JournalEntryID) {
@@ -198,3 +198,18 @@
     }
   </mj-page-body>
 </mj-page-layout>
+
+<!-- Confirm before a create-as-Confirmed books a journal entry into accounting (irreversible). -->
+<mj-dialog [Visible]="ConfirmVisible" Title="Confirm &amp; book order" [Width]="460" (Close)="OnConfirmCancel()">
+  <div class="oc-confirmbox">
+    <i class="oc-confirmbox__icon fa-solid fa-triangle-exclamation"></i>
+    <p class="oc-confirmbox__msg">
+      Creating this order as <strong>Confirmed</strong> books a balanced journal entry into the accounting
+      system immediately. This cannot be undone.
+    </p>
+  </div>
+  <mj-dialog-actions>
+    <button mjButton variant="primary" size="sm" (click)="OnConfirmProceed()"><i class="fa-solid fa-circle-check"></i> Confirm &amp; book</button>
+    <button mjButton variant="flat" size="sm" (click)="OnConfirmCancel()">Cancel</button>
+  </mj-dialog-actions>
+</mj-dialog>
