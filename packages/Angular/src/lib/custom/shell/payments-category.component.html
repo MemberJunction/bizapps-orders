@@ -12,6 +12,9 @@
 
     <mj-left-nav-content>
       @switch (ActivePageId) {
+        @case ('dashboard') {
+          <mj-payments-dashboard-page></mj-payments-dashboard-page>
+        }
         @case ('all-payments') {
           <mj-all-payments-page></mj-all-payments-page>
         }

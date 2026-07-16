@@ -1,0 +1,28 @@
+<!-- Shared template for the category dashboards (§8.6 step 6). Cheap stats only — §0. -->
+<mj-page-header-interior [Title]="Title" [Subtitle]="Subtitle">
+  <div actions>
+    <mj-refresh-button [Loading]="IsLoading" (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+</mj-page-header-interior>
+
+@if (LoadError) {
+  <mj-alert Variant="error" [Message]="LoadError"></mj-alert>
+}
+
+<div class="dash-stats">
+  @for (s of Stats; track s.Id) {
+    <div class="dash-stat" [class.dash-stat--warn]="s.Warn" [title]="s.Tooltip">
+      <i [class]="s.Icon" aria-hidden="true"></i>
+      <span class="dash-stat__value">{{ StatValue(s) }}</span>
+      <span class="dash-stat__label">{{ s.Label }}</span>
+    </div>
+  } @empty {
+    @if (!IsLoading) {
+      <mj-empty-state Icon="fa-solid fa-chart-simple" Title="No stats to show" Message="Nothing could be counted for the current scope."></mj-empty-state>
+    }
+  }
+</div>
+
+@if (IsLoading) {
+  <mj-loading text="Counting…"></mj-loading>
+}

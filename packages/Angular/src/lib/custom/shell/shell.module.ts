@@ -44,6 +44,8 @@ import { OrderDetailPanelComponent } from './pages/order-detail-panel.component'
 import { PaymentEntryPageComponent } from './pages/payment-entry.page';
 import { CustomerARPageComponent } from './pages/customer-ar.page';
 import { CatalogPageComponent } from './pages/catalog.page';
+import { OrdersDashboardPageComponent } from './pages/orders-dashboard.page';
+import { PaymentsDashboardPageComponent } from './pages/payments-dashboard.page';
 import { CategoriesPageComponent } from './pages/categories.page';
 import { PricingPageComponent } from './pages/pricing.page';
 import { GLMappingPageComponent } from './pages/gl-mapping.page';
@@ -68,6 +70,8 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
 @NgModule({
   declarations: [
     OrderEditorPageComponent,
+    OrdersDashboardPageComponent,
+    PaymentsDashboardPageComponent,
     CatalogPageComponent,
     CategoriesPageComponent,
     PricingPageComponent,
@@ -118,6 +122,8 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
   ],
   exports: [
     OrderEditorPageComponent,
+    OrdersDashboardPageComponent,
+    PaymentsDashboardPageComponent,
     CatalogPageComponent,
     CategoriesPageComponent,
     PricingPageComponent,

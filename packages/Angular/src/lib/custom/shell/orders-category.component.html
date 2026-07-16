@@ -18,6 +18,9 @@
       @switch (ActivePageId) {
         <!-- §6-style migration: these existing dashboards are HOSTED here so the nav swap costs no
              working screen. Each is replaced by its §13 page as the wave reaches it. -->
+        @case ('dashboard') {
+          <mj-orders-dashboard-page></mj-orders-dashboard-page>
+        }
         @case ('all-orders') {
           <mj-all-orders-page></mj-all-orders-page>
         }

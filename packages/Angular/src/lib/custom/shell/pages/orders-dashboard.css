@@ -1,0 +1,12 @@
+/* Shared category-dashboard styles. Design tokens only. */
+:host { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 14px; }
+.dash-stats { display: flex; gap: 12px; flex-wrap: wrap; }
+.dash-stat {
+  display: flex; flex-direction: column; gap: 2px; min-width: 170px; padding: 14px 16px;
+  border: 1px solid var(--mj-border-default); border-radius: 10px; background: var(--mj-bg-surface-card);
+}
+.dash-stat i { color: var(--mj-brand-primary); font-size: 14px; }
+.dash-stat--warn { border-color: color-mix(in srgb, var(--mj-status-warning) 45%, transparent); background: color-mix(in srgb, var(--mj-status-warning) 7%, var(--mj-bg-surface-card)); }
+.dash-stat--warn i { color: var(--mj-status-warning); }
+.dash-stat__value { font-size: 26px; font-weight: 700; color: var(--mj-text-primary); font-variant-numeric: tabular-nums; }
+.dash-stat__label { font-size: 12px; color: var(--mj-text-muted); }
