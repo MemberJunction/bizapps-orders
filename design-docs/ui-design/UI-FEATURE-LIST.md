@@ -20,12 +20,12 @@
 | B.1 | Pricing tables admin | Not started | Pricing admin screen (PriceList/ProductPrice/PriceTier) | — | UI plan §10 |
 | B.2 | Price resolution in order entry (suggested price + source badge) | Not started | Compose Order line editor | — | UI plan §1 (F9-gated) |
 | B.3 | Coupon entry + redemption display | Not started (S7 gated) | Compose Order / checkout | — | Coupons plan (UI section) |
-| C.1–C.5 | Compose/edit Order (full field set, lines grid, totals strip, status stepper w/ skip) | In build ◇ | OrdersConsole dashboard | — | UI plan §1 |
+| C.1–C.5 | Compose/edit Order (full field set, lines grid, totals strip, status stepper w/ skip) | In build ◇ · nav-shell redesign: Mockups-in-review | OrdersConsole dashboard | mockups/nav-shell-orders-dashboard.html | UI plan §1 |
 | C.6 | Backdating (OrderDate entry) | In build ◇ | Compose Order | — | UI plan §1 |
 | C.7–C.8 | Fulfillment auto-advance display + fulfillment queue | Not started (C.8 deferred) | Fulfillment queue screen | — | UI plan §7 |
 | C.9 | Order History + moving-window filter presets | Implemented ◇ (shipped per MOD-9c; validation cite pending 65b) | OrderHistory dashboard | — | UI plan §3 |
 | C.10–C.11 | ExternalDocumentNumber + service period fields | In build ◇ | Compose Order / generated forms | — | UI plan §1 |
-| D.1–D.3 | Order-as-invoice A/R display (balance, due date, overdue chip) | In build ◇ | OrdersConsole + OrdersManagement | — | UI plan §1/§2 |
+| D.1–D.3 | Order-as-invoice A/R display (balance, due date, overdue chip) | In build ◇ · nav-shell redesign: Mockups-in-review | OrdersConsole + OrdersManagement | mockups/nav-shell-orders-dashboard.html | UI plan §1/§2 |
 | D.4–D.5 | Credit memo creation + settlement flows (reversal · refund · apply-credit) | Not started | reversal flow + shared application panel | — | UI plan §1/§4 |
 | D.6–D.7 | Statements / rendered bill delivery | N/A — no UI yet (deferred features) | — | — | — |
 | E.1–E.7 | JE booking visibility (booked-JE links from order) | Not started | cross-app navigation | — | UI plan §8 |

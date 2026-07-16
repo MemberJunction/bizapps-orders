@@ -1,0 +1,219 @@
+<!doctype html>
+<!-- ============================================================================
+  MOCKUP (ephemeral) · cycle 2026-07-15 · Orders — main DASHBOARD
+  Same nav shell as the accounting mockups (IDENTICAL shared component by
+  design): top nav = CATEGORIES (Orders · Payments · Products · Reports) ·
+  collapsible icon rail = dedicated sub-pages · app-wide company scope chip.
+  Demonstrates: status-summary strip · personal dashboard cards · the ORDER
+  DETAIL SLIDE-IN (money strip, status stepper, lines, payments, and the
+  Accounting section with "Open in Accounting ↗" — JEs viewed in their
+  natural home, never duplicated here).
+  INTERACTIVE: hamburger collapses rail · click an order row to open the
+  slide-in. Order CREATION is deliberately NOT on this page — it's the
+  dedicated "New order" rail item (full detailed form, per direction).
+============================================================================ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Orders · dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../style-kit/mj-mock.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
+.x-app{display:flex;flex-direction:column;height:100vh}
+.x-topnav{display:flex;align-items:center;gap:6px;height:52px;padding:0 16px;background:var(--mj-bg-surface);border-bottom:1px solid var(--mj-border-default);flex:none}
+.x-brand{display:flex;align-items:center;gap:9px;font-weight:700;margin-right:22px;white-space:nowrap;font-size:14.5px}
+.x-brand i{color:var(--mj-brand-primary);font-size:17px}
+.x-brand .app{color:var(--mj-text-muted);font-weight:500}
+.x-tabs{display:flex;gap:2px;height:100%}
+.x-tab{display:flex;align-items:center;gap:7px;padding:0 15px;color:var(--mj-text-secondary);text-decoration:none;font-weight:500;font-size:13.5px;border-bottom:3px solid transparent;border-top:3px solid transparent}
+.x-tab:hover{color:var(--mj-text-primary);background:var(--mj-bg-surface-hover)}
+.x-tab.active{color:var(--mj-brand-primary);border-bottom-color:var(--mj-brand-primary);font-weight:600}
+.x-topnav .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.x-scope{display:flex;align-items:center;gap:7px;padding:5px 11px;border:1px solid var(--mj-border-default);border-radius:999px;background:var(--mj-bg-surface-card);font-size:12.5px;color:var(--mj-text-secondary);cursor:pointer}
+.x-scope b{color:var(--mj-text-primary)}
+.x-iconbtn{border:none;background:none;color:var(--mj-text-secondary);font-size:15px;cursor:pointer;padding:7px;border-radius:7px}
+.x-iconbtn:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-avatar{width:30px;height:30px;border-radius:50%;background:var(--mj-brand-primary);color:var(--mj-text-inverse,#fff);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+.x-body{display:flex;flex:1;min-height:0}
+.x-rail{width:230px;flex:none;background:var(--mj-bg-surface);border-right:1px solid var(--mj-border-default);display:flex;flex-direction:column;padding:8px;gap:2px;transition:width .18s ease;overflow-x:hidden;overflow-y:auto}
+.x-rail.collapsed{width:56px}
+.x-rail-group{margin:14px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:.08em;color:var(--mj-text-muted);padding:0 10px;white-space:nowrap}
+.x-rail.collapsed .x-rail-group{visibility:hidden;height:8px;margin:8px 0 0}
+.x-rail a{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;color:var(--mj-text-secondary);text-decoration:none;font-size:13.5px;white-space:nowrap}
+.x-rail a i{width:18px;text-align:center;font-size:14px;flex:none}
+.x-rail a:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-rail a.active{background:color-mix(in srgb,var(--mj-brand-primary) 10%,transparent);color:var(--mj-brand-primary);font-weight:600}
+.x-rail.collapsed a .lbl,.x-rail.collapsed .x-badge{display:none}
+.x-badge{margin-left:auto;background:var(--mj-status-error);color:#fff;border-radius:999px;font-size:10.5px;padding:1px 7px;font-weight:700}
+.x-content{flex:1;min-width:0;overflow:auto;padding:20px 24px}
+.x-pagehead{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.x-pagehead h1{font-size:19px;margin:0}
+.x-pagehead .actions{margin-left:auto;display:flex;gap:8px}
+.x-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+.x-card-title{font-size:13px;font-weight:700;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.x-card-title .more{margin-left:auto;font-size:12px;font-weight:500;color:var(--mj-brand-primary);text-decoration:none}
+tr.clickable{cursor:pointer}
+tr.clickable:hover td{background:var(--mj-bg-surface-hover)}
+.x-statusstrip{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+.x-status{display:flex;flex-direction:column;gap:3px;padding:10px 14px;border:1px solid var(--mj-border-default);border-radius:10px;background:var(--mj-bg-surface-card);cursor:pointer}
+.x-status:hover{background:var(--mj-bg-surface-hover)}
+.x-status .n{font-size:18px;font-weight:700}
+.x-status .l{font-size:11.5px;color:var(--mj-text-muted)}
+.x-status.hot{border-color:color-mix(in srgb,var(--mj-status-warning) 50%,transparent)}
+.x-slide{position:fixed;top:0;right:-560px;width:540px;max-width:94vw;height:100vh;background:var(--mj-bg-surface-elevated,var(--mj-bg-surface));border-left:1px solid var(--mj-border-default);box-shadow:-12px 0 32px rgba(0,0,0,.16);display:flex;flex-direction:column;transition:right .22s ease;z-index:60}
+.x-slide.open{right:0}
+.x-slide header{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--mj-border-default)}
+.x-slide header h2{font-size:15px;margin:0}
+.x-slide .sbody{flex:1;overflow:auto;padding:16px 18px;display:flex;flex-direction:column;gap:16px}
+.x-slide footer{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--mj-border-default)}
+.x-overlay{position:fixed;inset:0;background:rgba(15,23,42,.35);opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
+.x-overlay.show{opacity:1;pointer-events:auto}
+.x-sect{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted);margin:0}
+.x-money{display:grid;grid-template-columns:1fr 1fr 1fr auto;border:1px solid var(--mj-border-default);border-radius:10px;overflow:hidden}
+.x-money>div{padding:10px 14px;border-right:1px solid var(--mj-border-default)}
+.x-money>div:last-child{border-right:none;display:flex;align-items:center;padding:10px 14px}
+.x-money .l{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted)}
+.x-money .v{font-size:15.5px;font-weight:700}
+.x-steps{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.x-step{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid var(--mj-border-default);color:var(--mj-text-muted)}
+.x-step.done{background:color-mix(in srgb,var(--mj-status-success) 12%,transparent);border-color:color-mix(in srgb,var(--mj-status-success) 40%,transparent);color:var(--mj-status-success-text,var(--mj-status-success))}
+.x-step.cur{background:color-mix(in srgb,var(--mj-brand-primary) 12%,transparent);border-color:var(--mj-brand-primary);color:var(--mj-brand-primary)}
+.x-steps .sep{color:var(--mj-text-disabled);font-size:10px}
+.x-acct{border:1px solid var(--mj-border-default);border-radius:10px;padding:12px 14px;background:var(--mj-bg-surface-card);display:flex;flex-direction:column;gap:8px}
+.x-acct .row{display:flex;align-items:center;gap:8px;font-size:13px}
+</style>
+</head>
+<body>
+<div class="x-app">
+
+  <nav class="x-topnav">
+    <span class="x-brand"><i class="fa-solid fa-cubes"></i> MJ <span class="app">/ Orders</span></span>
+    <div class="x-tabs">
+      <a class="x-tab active" href="#"><i class="fa-solid fa-file-invoice-dollar"></i> Orders</a>
+      <a class="x-tab" href="#"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
+      <a class="x-tab" href="#"><i class="fa-solid fa-box-open"></i> Products</a>
+      <a class="x-tab" href="#"><i class="fa-solid fa-chart-column"></i> Reports</a>
+    </div>
+    <div class="right">
+      <span class="x-scope"><i class="fa-solid fa-building"></i> Scope: <b>Demo Co. +2</b> <i class="fa-solid fa-chevron-down" style="font-size:10px"></i></span>
+      <button class="x-iconbtn" title="Search"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <button class="x-iconbtn" title="Notifications"><i class="fa-regular fa-bell"></i></button>
+      <span class="x-avatar">MT</span>
+    </div>
+  </nav>
+
+  <div class="x-body">
+    <aside class="x-rail" id="rail">
+      <button class="x-iconbtn" onclick="rail()" title="Collapse / expand" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
+      <div class="x-rail-group">MAIN</div>
+      <a class="active" href="#"><i class="fa-solid fa-gauge-high"></i><span class="lbl">Dashboard</span></a>
+      <a href="#"><i class="fa-solid fa-table-list"></i><span class="lbl">All orders</span></a>
+      <a href="#"><i class="fa-solid fa-plus"></i><span class="lbl">New order</span></a>
+      <a href="#"><i class="fa-solid fa-table-columns"></i><span class="lbl">Status board</span></a>
+      <div class="x-rail-group">WORK</div>
+      <a href="#"><i class="fa-solid fa-dolly"></i><span class="lbl">Fulfillment queue</span></a>
+      <a href="#"><i class="fa-solid fa-hourglass-half"></i><span class="lbl">Overdue worklist</span><span class="x-badge">3</span></a>
+    </aside>
+
+    <main class="x-content">
+      <div class="x-pagehead">
+        <h1>Orders</h1>
+        <span class="mjm-chip mjm-chip--info">Last 30 days</span>
+        <span class="actions">
+          <button class="mjm-btn mjm-btn--outline"><i class="fa-solid fa-filter"></i> Filters</button>
+          <button class="mjm-btn mjm-btn--primary"><i class="fa-solid fa-plus"></i> New order</button>
+        </span>
+      </div>
+
+      <div class="x-stats">
+        <div class="mjm-card mjm-stat"><span class="value">$128,450</span><span class="label">Open A/R</span></div>
+        <div class="mjm-card mjm-stat"><span class="value">17</span><span class="label">Unpaid orders</span></div>
+        <div class="mjm-card mjm-stat"><span class="value">3</span><span class="label">Overdue</span></div>
+        <div class="mjm-card mjm-stat"><span class="value">24</span><span class="label">Orders this week</span></div>
+      </div>
+
+      <div class="x-statusstrip">
+        <div class="x-status"><span class="n">5</span><span class="l">Draft</span></div>
+        <div class="x-status"><span class="n">3</span><span class="l">Quoted</span></div>
+        <div class="x-status hot"><span class="n">9</span><span class="l">Confirmed</span></div>
+        <div class="x-status hot"><span class="n">12</span><span class="l">Posted</span></div>
+        <div class="x-status"><span class="n">41</span><span class="l">Fulfilled (30d)</span></div>
+      </div>
+
+      <div class="mjm-card">
+        <p class="x-card-title"><i class="fa-solid fa-clock-rotate-left"></i> My recent orders <a class="more" href="#">See all orders →</a></p>
+        <table class="mjm-grid">
+          <thead><tr><th>Order #</th><th>Customer</th><th>Status</th><th>Payment</th><th class="num">Total</th><th class="num">Balance</th><th>Due</th></tr></thead>
+          <tbody>
+            <tr class="clickable" onclick="slide(true)"><td class="mjm-mono">ORD-1042</td><td>Acme Corp</td><td><span class="mjm-chip mjm-chip--success">Posted</span></td><td><span class="mjm-chip mjm-chip--warning">Partially paid</span></td><td class="num">$15,099.00</td><td class="num">$5,099.00</td><td>2026-08-01</td></tr>
+            <tr class="clickable" onclick="slide(true)"><td class="mjm-mono">ORD-1041</td><td>Globex</td><td><span class="mjm-chip mjm-chip--info">Confirmed</span></td><td><span class="mjm-chip mjm-chip--neutral">Unpaid</span></td><td class="num">$2,400.00</td><td class="num">$2,400.00</td><td>2026-07-30</td></tr>
+            <tr class="clickable" onclick="slide(true)"><td class="mjm-mono">ORD-1040</td><td>Initech</td><td><span class="mjm-chip mjm-chip--neutral">Draft</span></td><td>—</td><td class="num">$860.00</td><td class="num">—</td><td>—</td></tr>
+            <tr class="clickable" onclick="slide(true)"><td class="mjm-mono">ORD-1039</td><td>Umbrella</td><td><span class="mjm-chip mjm-chip--success">Fulfilled</span></td><td><span class="mjm-chip mjm-chip--error">Overdue</span></td><td class="num">$12,000.00</td><td class="num">$12,000.00</td><td>2026-06-30</td></tr>
+            <tr class="clickable" onclick="slide(true)"><td class="mjm-mono">ORD-1038</td><td>Stark Industries</td><td><span class="mjm-chip mjm-chip--success">Fulfilled</span></td><td><span class="mjm-chip mjm-chip--success">Paid</span></td><td class="num">$7,300.00</td><td class="num">—</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div class="x-overlay" id="ovl" onclick="slide(false)"></div>
+<aside class="x-slide" id="slide">
+  <header>
+    <h2 class="mjm-mono">ORD-1042</h2>
+    <span>Acme Corp</span>
+    <button class="x-iconbtn" style="margin-left:auto" onclick="slide(false)"><i class="fa-solid fa-xmark"></i></button>
+  </header>
+  <div class="sbody">
+    <div class="x-steps">
+      <span class="x-step done"><i class="fa-solid fa-check"></i> Draft</span><span class="sep">›</span>
+      <span class="x-step done"><i class="fa-solid fa-check"></i> Quoted</span><span class="sep">›</span>
+      <span class="x-step done"><i class="fa-solid fa-check"></i> Confirmed</span><span class="sep">›</span>
+      <span class="x-step cur">Posted</span><span class="sep">›</span>
+      <span class="x-step" title="Auto-advances when all lines fulfilled">Fulfilled</span>
+    </div>
+    <div class="x-money">
+      <div><span class="l">TOTAL</span><br><span class="v">$15,099.00</span></div>
+      <div><span class="l">PAID</span><br><span class="v">$10,000.00</span></div>
+      <div><span class="l">BALANCE</span><br><span class="v">$5,099.00</span></div>
+      <div><span class="mjm-chip mjm-chip--warning">Partially paid</span></div>
+    </div>
+    <p class="x-sect">LINES</p>
+    <table class="mjm-grid">
+      <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Unit</th><th class="num">Total</th><th>Rev rec</th></tr></thead>
+      <tbody>
+        <tr><td>Annual membership</td><td class="num">10</td><td class="num">$1,200.00</td><td class="num">$12,000.00</td><td><span class="mjm-chip mjm-chip--info">Deferred · svc period</span></td></tr>
+        <tr><td>Conference ticket</td><td class="num">3</td><td class="num">$1,033.00</td><td class="num">$3,099.00</td><td><span class="mjm-chip mjm-chip--neutral">Point-in-time</span></td></tr>
+      </tbody>
+    </table>
+    <p class="x-sect">PAYMENTS (2)</p>
+    <table class="mjm-grid">
+      <thead><tr><th>Payment</th><th>Date</th><th>Method</th><th class="num">Applied</th></tr></thead>
+      <tbody>
+        <tr><td class="mjm-mono">PMT-3311</td><td>2026-07-15</td><td>Wire</td><td class="num">$8,000.00</td></tr>
+        <tr><td class="mjm-mono">PMT-3298</td><td>2026-07-11</td><td>Check</td><td class="num">$2,000.00</td></tr>
+      </tbody>
+    </table>
+    <p class="x-sect">ACCOUNTING</p>
+    <div class="x-acct">
+      <div class="row"><i class="fa-solid fa-book" style="color:var(--mj-brand-primary)"></i><span class="mjm-mono">JE-DEMO-2026-00871</span><span class="mjm-chip mjm-chip--neutral">Pending</span><span class="mjm-muted" style="font-size:12px">booking JE · $15,099.00</span></div>
+      <div class="row"><i class="fa-solid fa-book" style="color:var(--mj-brand-primary)"></i><span class="mjm-mono">JE-DEMO-2026-00870</span><span class="mjm-chip mjm-chip--info">Batched</span><span class="mjm-muted" style="font-size:12px">payment capture · $10,000.00</span></div>
+      <div class="row" style="margin-top:2px"><button class="mjm-btn mjm-btn--sm mjm-btn--outline"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open in Accounting</button><span class="mjm-muted" style="font-size:11.5px">JEs live in accounting — viewed in their natural home, never duplicated here.</span></div>
+    </div>
+  </div>
+  <footer>
+    <button class="mjm-btn mjm-btn--primary"><i class="fa-solid fa-pen"></i> Edit order</button>
+    <button class="mjm-btn mjm-btn--outline"><i class="fa-solid fa-rotate-left"></i> Create reversal…</button>
+    <button class="mjm-btn mjm-btn--flat" style="margin-left:auto" onclick="slide(false)">Close</button>
+  </footer>
+</aside>
+
+<script>
+function rail(){document.getElementById('rail').classList.toggle('collapsed')}
+function slide(o){document.getElementById('slide').classList.toggle('open',o);document.getElementById('ovl').classList.toggle('show',o)}
+</script>
+</body>
+</html>
