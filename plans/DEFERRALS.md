@@ -39,3 +39,24 @@ rationale · revisit trigger. Remove a row only when the item ships (note the pl
 > this deferral now has a REAL consumer and a clock. The S4 Option-A-vs-B structure decision is a
 > HIGH-PRIORITY open question with Robert (`plans/QUESTIONS.md#q21`); revisit trigger updated:
 > Robert's structure ruling OR the LXP launch-scope call (A7), whichever first.
+
+---
+
+### Company-scope semantics for multi-company orders — deferred 2026-07-16
+
+- **Source:** found building the orders shell (UI plan §13.0); ruled deferred by Marcelo same day.
+- **The problem:** `Order` carries **no CompanyID** — it is multi-company via each line's resolved
+  `GLAccount.CompanyID` (this repo's CLAUDE.md; MOD-11/MOD-12). The UI plan's §13.0 scope chip
+  therefore **cannot** filter the Orders category with a simple `CompanyID IN (…)` clause, because
+  there is no such column to compare.
+- **Marcelo's ruling on the target model (2026-07-16):** a record falls into the scope of **every
+  company related to it** — an order whose lines span two companies appears in *both* companies'
+  scopes. The same model applies to accounting's multi-company batches (which will typically be
+  filtered to one company at a time, but can be expanded). Implementation implication: an
+  EXISTS-over-lines predicate (line → product/GL account → company), not a column compare.
+- **Interim, agreed OK:** the **Orders category is UNSCOPED**; **Payments** scope by
+  `ReceivingCompanyID` and **Products** by `OwningCompanyID` (both real columns). The rail still
+  carries the chip — it simply does not claim to filter what it cannot.
+- **Revisit trigger:** the post-GUI-overhaul scoping pass ("scoping is a problem we will solve
+  later"). Pair with accounting's matching DEFERRALS rows (multi-currency batch totals + the same
+  scope-semantics question) — they share the "what does the current company mean" decision.
