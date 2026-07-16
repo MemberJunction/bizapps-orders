@@ -37,5 +37,5 @@ rationale · revisit trigger. Remove a row only when the item ships (note the pl
 > become a blocker). **⚠ LXP dependency recorded (their D13/A4):** the LXP expects Orders to compute
 > sales/use tax at checkout (~30-day launch window) and long-term wants a rate/exemption package — so
 > this deferral now has a REAL consumer and a clock. The S4 Option-A-vs-B structure decision is a
-> HIGH-PRIORITY open question with Robert (instance QUESTIONS.md Q21); revisit trigger updated:
+> HIGH-PRIORITY open question with Robert (`plans/QUESTIONS.md#q21`); revisit trigger updated:
 > Robert's structure ruling OR the LXP launch-scope call (A7), whichever first.

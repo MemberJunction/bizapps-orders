@@ -1,46 +1,179 @@
 # QUESTIONS — bizapps-orders (plans-level question stock)
 
-> Structured per the questions convention (`~/MJDev/shared-plans/questions-convention.md`):
-> stable append-only body + two derived indexes; entry template modeled on Q22/Q24. **A question
-> lives in exactly ONE file** — this repo's active questions are currently homed in the instance
-> stock (`~/MJDev/instances/accounting-engine-dev/QUESTIONS.md`), created there during this
-> development wave; the indexes below link across (convention rule 8). NEW repo-scoped questions
-> raised outside an instance context get appended HERE as `OQ1`, `OQ2`, … in the template format.
+> Structured per the questions convention (`~/MJDev/shared-plans/questions-convention.md`): stable
+> append-only body + two derived indexes; entry template modeled on Q22/Q24 (ratified 2026-07-16).
+> **Migrated 2026-07-16 from the instance stock** (`instances/accounting-engine-dev/QUESTIONS.md`)
+> so questions are COMMITTED and survive instance deletion — original IDs + anchors preserved
+> (never renumber). New questions append with the next free Qn. Body order: OPEN (priority) then
+> frozen records. OPEN entries are freely editable; ANSWERED/WITHDRAWN/CLOSED are frozen.
+> Distribution copies for the team: `~/MJDev/reports/team-questions-2026-07-16/`.
 
-## Index — by priority
+## Index — by priority (open only)
 
 | Ask order | Q | Ask | Status |
 |---|---|---|---|
-| 1 | [Q21](../../../../../../QUESTIONS.md#q21)* | Robert — order tax structure (Option A vs B; LXP ~30-day clock) | OPEN ★HIGH |
-| 2 | S7 coupons schema review (action plan) | Robert — bless/amend Coupon + CouponRedemption | OPEN HIGH |
-| 3 | [Q2](../../../../../../QUESTIONS.md#q2)* | Robert — order owning-company field + company revenue default | OPEN (narrowed) |
-| 4 | C.12 order numbering (BACKLOG roster) | Jeremy — single vs dual sequence + ExternalDocumentNumber semantics | OPEN |
-| 5 | F4 renewals + cadence (BACKLOG roster) | Jeremy/Robert — renewals spawn Draft vs auto-Confirm · Amith — rev-rec cadence | OPEN |
-| 6 | [Q10](../../../../../../QUESTIONS.md#q10)* | Marcelo — branch strategy + diverged main (internal) | OPEN |
+| 1 | [Q21](#q21) | Robert — order tax structure (LXP ~30-day clock) | OPEN ★HIGH |
+| 2 | [Q2](#q2) | Robert — order owning-company field + revenue default | OPEN (narrowed) |
+| 3 | [Q10](#q10) | Marcelo — branch strategy + diverged main (internal) | OPEN |
 
-\* homed in the instance stock: `~/MJDev/instances/accounting-engine-dev/QUESTIONS.md`
-(relative links resolve from this worktree; distribution copies:
-`~/MJDev/reports/team-questions-2026-07-16/`).
+(Also open, tracked in the repo BACKLOG decision-needed roster: S7 coupons schema review — Robert ·
+C.12 order numbering — Jeremy · renewals spawn mode — Jeremy/Robert · rev-rec cadence — Amith ·
+invoice delivery + open-AR cutover — park with owners. Distribution doc:
+`~/MJDev/reports/team-questions-2026-07-16/ORDERS-QUESTIONS.md`.)
 
 ## Index — by feature
 
-| Feature | Open questions gating/shaping it |
+| Feature | Questions |
 |---|---|
-| B.3 coupons | S7 schema review (Robert) |
-| C.1/J.1 order company shape | Q2 |
-| C.12 order numbering | Jeremy (roster) |
-| G.5/G.6 renewals · G.2–G.4 rev-rec | F4 items (roster) |
-| K.1 tax structure | Q21 ★ |
-| D.7 invoice delivery · N.2 cutover | park-with-owners items (roster; see distribution doc) |
-| (cross-cutting / process) | Q10 |
+| C.1/J.1 order company shape | [Q2](#q2) |
+| C.2 status semantics (Posted meaning; status split) | [Q1](#q1)✓, [Q11](#q11)✓ |
+| G.10 fulfillment ↔ rev-rec | [Q16](#q16)✓, [T48](#t48)✓ |
+| K.1 tax structure | [Q21](#q21) ★ |
+| (cross-cutting / process) | [Q10](#q10) |
 
-## Questions (append-only body — repo-scoped entries)
+✓ = answered (frozen record)
 
-_None yet. Template (Q22/Q24 model):_
+## Questions (append-only body)
 
+<a id="q21"></a>
+### Q21 · Tax structure for orders — ask Robert — added 2026-07-14 (reformatted 2026-07-16)
+- **Status:** OPEN ★HIGH
+- **Who to ask:** Robert (structure ruling); Amith context optional (he made the LXP D13 call)
+- **Features:** ORD-K.1 (tax structure decision — gates K.2 / S4)
+- **Background (self-contained):** Order tax is currently DEFERRED (Marcelo: complexity; baseline
+  first — no stub). The schema already anticipates both candidate shapes: S1 ships
+  `LineTax`/`LineTotalGross`, so either option slots in without reworking totals or JE booking.
+- **What motivates this now:** the LXP decided 2026-07-14 that **Orders computes sales/use tax at
+  checkout** (their D13) with a **~30-day launch window**, and long-term wants a sales-&-use-tax
+  rate/exemption package (their A4, assigned Marcelo/Robert) — the structure choice needs a ruling
+  so the deferral can end cleanly when scheduled.
+- **The question for Robert:** (1) which structure — **Option A** (tax as an order line of a `Tax`
+  ProductType: zero schema, seeds + engine only; jurisdiction reporting via accounting's existing
+  tax tables at remittance) vs **Option B** (the master plan's durable shape: `ProductTaxCategory`,
+  `Product.ProductTaxCategoryID`, `OrderLineTaxLine` per-jurisdiction breakdown, pluggable
+  `TaxCalculationProvider` accounting-side) vs **A now → B** when provider work schedules (the
+  schema plan's standing recommendation)? (2) is any tax launch-REQUIRED for LH4I, or can launch
+  run tax-exempt/manual? (LH4I = 3 fixed digital tiers — low jurisdiction complexity, but
+  nexus/digital-goods taxability is a real accountant question.) (3) long-term rate-package
+  posture: build vs buy (provider integration)?
+- **Context to share:** `meetings/2026-07-14 - LXP Requirements.md` D13/A4/§7.
+- **Additional context (for a verifying agent):** `plans/action-plans/ActionPlan - Schema
+  alignment...md` §4 (S4 options) · `plans/DEFERRALS.md` tax note.
+- **Answer:** _(pending)_
+
+
+<a id="q2"></a>
+### Q2 · Company context on the Order — ask Robert — 2026-07-08 (narrowed 2026-07-13; reformatted 2026-07-16)
+- **Status:** OPEN — NARROWED: the JE-splitting half is RESOLVED (Marcelo ruled, validating Robert's
+  model + the original masters: booking emits ONE JE PER COMPANY — orders MOD-11 / accounting MOD-12;
+  Amith's CH-2 reversed on lock-fidelity rationale; residual Amith sanity-check noted in the MODs)
+- **Who to ask:** Robert
+- **Features:** ORD-C.1 (order entity shape), ORD-J.1 (multi-company orders)
+- **Background (self-contained):** `Order` deliberately has NO company column — an order is
+  multi-company through each line's resolved `GLAccount.CompanyID` (MOD-3); resolution walks
+  product → category tree → company default. Consequence (Amith's "Izzy" example, OQ-I): a
+  company-LEVEL revenue default can't be reached when a product/category link misses, because
+  there's no company on the order to resolve against.
+- **The question for Robert:** (1) does Order carry an OWNING-company field? (He leans yes — "a
+  company owns an order"; if yes, that's an S1 amendment against MOD-3's no-company-columns.)
+  (2) how should the company-level revenue default resolve when a product/category link misses —
+  require reaching a link at product/category level (current behavior, fails loudly at Confirm),
+  or resolve via the new owning-company field?
+- **Context to share:** the GL-mapping mockup page (the loud unresolved-mapping tripwire current
+  behavior produces).
+- **Additional context (for a verifying agent):** amendment OQ-I; `OrdersEngine.ResolveAccount`.
+- **Answer:** _(pending)_
+
+<a id="q10"></a>
+### Q10 · Orders branch strategy + diverged main — ask Marcelo — 2026-07-08 (reformatted 2026-07-16)
+- **Status:** OPEN (internal process — not for team distribution)
+- **Who to ask:** Marcelo
+- **Features:** cross-cutting (process)
+- **Background (self-contained):** accounting PRs target `next`; the orders repo's intended target
+  is unstated, and the local `origin/main` in the central clone is diverged (ahead 13 / behind 14).
+- **The question for Marcelo:** (1) orders PRs target `next` or `main`? (2) is the diverged local
+  `main` intentional — reset it before any main-targeted work?
+- **Additional context (for a verifying agent):** `repos/apps/bizapps-orders` clone is on `main`
+  (diverged); the instance worktree is on `feature/accounting-integration`.
+- **Answer:** _(pending)_
+
+<a id="q1"></a>
+### [ANSWERED] Q1 — Order "Posted": posted to GL/ERP, or to the accounting subledger? — 2026-07-08
+- Status: ANSWERED
+- Ask: Robert
+- Asked by: accounting-engine-dev agent (2026-07-08)
+- Where: bizapps-orders + bizapps-accounting · accounting-engine-dev · feature/accounting-integration, feature/je-entry-engine
+- Question: JEs already book on the first transition to `Confirmed`. What does the order-status **`Posted`** mean — posted to the **GL/ERP** (after batch dispatch → JE `GLPosted`) or posted to the **accounting subledger** (JE booked/`Pending` on Confirm)? And what should advance an order `Confirmed → Posted` (a link-back from accounting, a manual step, or does the status collapse)?
+- Context to share: Orders currently books the JE on Confirm and leaves the order at `Confirmed`; nothing advances it to `Posted`. Amendment S4 supersedes BO-D8's "`Posted` is the commit."
+- Additional context: `plans/2026-07-02-engine-meeting-amendment.md` (S4); `OrderEntityServer` books on `Confirmed`; JE lifecycle Pending→Batched→GLPosted proven in `order-to-glposted.ts`.
+- Answer: **Robert + Marcelo's notes (2026-07-08 meeting):** `Posted` = **the journal entries are IN the accounting subledger** (created on Confirm). NOT batching, NOT GL-posting (`Batched` = the GL lock). `Confirmed` triggers the posting op, so Confirmed→Posted is near-instant. Keep the flow **linear** for v1 (each stage required; can't Fulfill before Posted; Void only from Draft/Quoted, else reversing/credit order). => task #20 is unblocked: the order should reach `Posted` once the JE books. Recorded in `bizapps-orders/plans/2026-07-08-robert-meeting-decisions.md` D1. See Q11 for the deferred order-status/financial-status split.
+
+<a id="q11"></a>
+### [ANSWERED] Q11 — Split order-status vs financial-status? (fulfillment vs GL are independent) — 2026-07-08
+- Status: ANSWERED (deferred for v1)
+- Ask: Robert
+- Asked by: accounting-engine-dev agent (2026-07-08)
+- Where: bizapps-orders · accounting-engine-dev · feature/accounting-integration
+- Question: Robert flagged (2026-07-08) that **fulfillment** and **financial (GL)** progress are independent concerns, so the single overloaded `Order.Status` may want to become **two fields**: an order status (draft/quoted/confirmed/fulfilled/voided) + a **financial status** (created/posted/…/batched). He leaned toward keeping the single **linear** flow for v1 and revisiting. Do we split now or keep the single status for v1? If split, what are the financial-status values (does it include `Batched`)?
+- Context to share: Today `Order.Status` is one linear list (Draft→Quoted→Confirmed→Posted→Fulfilled/Voided) that overloads order + financial progress. An order can conceptually be fulfilled independent of GL/batch progress.
+- Additional context: 2026-07-08 transcript (~12:10–13:45); `bizapps-orders/plans/2026-07-08-robert-meeting-decisions.md` D2. Deferred for v1; kept linear per D1.
+- Answer: **Marcelo (2026-07-08): DEFER for v1 — keep the single linear `Order.Status`; revisit the order-status / financial-status split post-baseline.**
+
+<a id="q16"></a>
+### [ANSWERED] Q16 — Fulfilled stage ↔ deferred revenue: what does moving an order to Fulfilled do? — 2026-07-08
+- Status: ANSWERED (Robert, 2026-07-09)
+- Answer: **Robert (2026-07-09): fulfillment and revenue recognition are DISCONNECTED.** Fulfillment = the
+  delivery-of-value event (physical: product in hand + boxed + shipping label; electronic/contract: can be
+  immediate — auto-fulfill when no line needs physical fulfillment). It is NOT the deferred-revenue recognition
+  trigger. **Deferred revenue is recognized by SCHEDULED TRANSACTIONS**, not the Fulfilled flip: a scheduled
+  transaction moves an amount out of Deferred Revenue into Revenue on its date — one per event (conference =
+  event date) or one per month (subscription = 1/12, GAAP monthly buckets). Three things create JEs: orders,
+  payments, scheduled transactions. So: **do NOT book a recognition JE on Posted→Fulfilled** (the earlier intent
+  is superseded); keep the Fulfilled UI as a delivery-of-value marker. This validates accounting's planned
+  **AD-11 `ScheduledJournalEntry`** rev-rec engine (backlogged; the methodology is owned by Orders/subscriptions
+  upstream). See `bizapps-orders/plans/2026-07-09-robert-meeting-decisions.md` D-O1.
+- Ask: Robert — **tomorrow's meeting** (Marcelo won't recall the details cold — context below)
+- Asked by: accounting-engine-dev agent (Task 30, orders kanban) · feature/accounting-integration
+- Where: bizapps-orders + bizapps-accounting · accounting-engine-dev · feature/accounting-integration, feature/je-entry-engine
+- Question: The order lifecycle ends Draft→Quoted→Confirmed→Posted→**Fulfilled**. Marcelo's intent: moving an order
+  **Posted → Fulfilled** should **recognize (move over) any DEFERRED revenue that is NOT on a scheduled recognition
+  system**. We need Robert to define the accounting mechanics: (a) When an order confirms, deferred-revenue products
+  post to a **Deferred Revenue** liability (not Revenue). At **Fulfilled**, for products WITHOUT a rev-rec schedule,
+  should the system book a recognition JE (**Dr Deferred Revenue / Cr Revenue**) for the full deferred amount? (b) How
+  do we tell "scheduled" vs "recognize-at-fulfillment" — off `Product.RevenueRecognitionType`, or a separate flag? (c)
+  Is **Fulfilled** the correct trigger for this recognition, or should recognition be independent of the order's
+  fulfillment status? (d) What happens to scheduled deferred revenue at fulfillment — nothing (the schedule owns it)?
+- Context to share: Orders books a balanced JE on first **Confirmed** (Dr AR / Cr Revenue-or-Deferred-Revenue per line).
+  "Immediate" revenue goes to Revenue; "deferred" goes to a Deferred Revenue liability. There is (as yet) no rev-rec
+  schedule engine wired, so deferred amounts currently just sit in the liability. Marcelo wants **Fulfilled** to be the
+  point where un-scheduled deferred revenue gets recognized. He asked to capture this so he doesn't forget it before
+  the meeting.
+- Additional context: `Product.RevenueRecognitionType` (the generated union); `orderJournalDraft.ts` (Dr/Cr assembly);
+  accounting's Deferred Revenue account + the (planned) rev-rec schedule. Drives Task 30 (the Posted→Fulfilled
+  confirmation dialog wording + whether fulfillment books a JE).
+- Answer: _(see top of entry)_
+
+<a id="t48"></a>
+### [ANSWERED] T48 — Fulfilled → deferred-revenue JE contradicts Robert ruling D-O1 (Task 48) — 2026-07-10 → 2026-07-13
+- Status: ANSWERED (Robert 2026-07-13 meeting ruling; Marcelo adopted + directed this update)
+- Raised: 2026-07-10 · branch: feature/accounting-integration (bizapps-orders) · instance: accounting-engine-dev
+- Question (original): should Posted→Fulfilled recognize deferred revenue by booking a NEW journal entry,
+  contradicting Robert's D-O1 (fulfillment DISCONNECTED from revenue recognition)?
+- Answer: **D-O1 stands — do NOT book a recognition JE on the Fulfilled flip.** Robert's 2026-07-13 ruling
+  (MOD-11 / `meetings/2026-07-13-robert-meeting-decisions.md` D1) specifies the mechanism definitively:
+  deferred + scheduled revenue is recognized via **FORWARD-DATED scheduled journal entries created up-front
+  at booking-lock** — a $1,200 annual sub yields 12 × $100 entries dated on the monthly anniversaries; an
+  event product yields ONE entry dated the event date; each is a Dr Deferred Revenue / Cr Revenue transfer
+  that materializes when its date arrives and is picked up by batches by date window. Marcelo: "so much
+  simpler… a much better approach" — adopted. The Fulfilled-recognition JE + side-panel display from the
+  original Task 48 ask will NOT be built; the order side panel can instead SHOW the line's scheduled-entry
+  waterfall (orders UI plan §1/§6, feature plan F4).
+
+
+## Entry template (Q22/Q24 model — ratified 2026-07-16)
 ```markdown
-<a id="oq1"></a>
-### OQ1 · <title> — ask <person> — added <date>
+<a id="qN"></a>
+### QN · <title> — ask <person> — added <date>
 - **Status:** OPEN
 - **Who to ask:** …
 - **Features:** <FEATURE-LIST IDs>
