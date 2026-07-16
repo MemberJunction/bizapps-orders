@@ -1,0 +1,23 @@
+/* All orders (§13.1). Height chain: switched into <mj-left-nav-content>, so it declares its own
+   flex-column host — MJ's grid host is height:100% and collapses to 0 without it. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.ao__search {
+  width: 280px;
+}
+
+.ao__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--mj-text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}

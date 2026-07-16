@@ -1,0 +1,110 @@
+/* Status board (§13.1). Height chain: declares its own flex-column host. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.sb__board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+}
+/* Laptop-width tolerance (§0): 2-up rather than four crushed columns. */
+@media (max-width: 1100px) {
+  .sb__board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.sb__col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sb__colhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mj-text-secondary);
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--mj-border-default);
+}
+.sb__n {
+  margin-left: auto;
+  background: var(--mj-bg-surface-sunken);
+  color: var(--mj-text-secondary);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+}
+
+.sb__card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 11px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 9px;
+  background: var(--mj-bg-surface-card);
+  cursor: pointer;
+}
+.sb__card:hover {
+  background: var(--mj-bg-surface-hover);
+}
+.sb__cardtop {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.sb__num {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--mj-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb__amt {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--mj-text-primary);
+  white-space: nowrap;
+}
+.sb__note {
+  font-size: 11px;
+  color: var(--mj-text-muted);
+}
+.sb__note--overdue {
+  color: var(--mj-status-error-text);
+  font-weight: 600;
+}
+
+.sb__more,
+.sb__empty {
+  margin: 0;
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--mj-text-muted);
+  padding: 6px 0;
+}
+.sb__error {
+  margin: 0;
+  color: var(--mj-status-error-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}

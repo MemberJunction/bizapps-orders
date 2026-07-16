@@ -1,0 +1,93 @@
+<mj-slide-panel [Visible]="Visible" Title="Order" (Closed)="Close()">
+  @if (IsLoading) {
+    <mj-loading text="Loading the order…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="od__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else if (Header; as h) {
+    <div class="od">
+      <div class="od__chips">
+        <mj-stat-badge [Label]="h.OrderNumber" Icon="fa-solid fa-file-invoice-dollar" Variant="default"></mj-stat-badge>
+        <mj-stat-badge [Label]="h.Status" [Variant]="StatusVariant(h.Status)"></mj-stat-badge>
+        @if (h.PaymentStatus) {
+          <mj-stat-badge [Label]="h.PaymentStatus" [Variant]="StatusVariant(h.PaymentStatus)"></mj-stat-badge>
+        }
+      </div>
+
+      <!-- Money strip — the same three numbers the editor shows, so the two never disagree. -->
+      <div class="od__money">
+        <div><span class="l">TOTAL</span><span class="v">{{ h.TotalGross | currency }}</span></div>
+        <div><span class="l">PAID</span><span class="v">{{ h.AmountPaid ? (h.AmountPaid | currency) : '—' }}</span></div>
+        <div><span class="l">BALANCE</span><span class="v">{{ h.Balance | currency }}</span></div>
+      </div>
+
+      <dl class="od__facts">
+        <dt>Order date</dt>
+        <!-- DATE column (no zone) — render UTC or it shifts a day west of UTC. -->
+        <dd>{{ h.OrderDate | date: 'mediumDate' : 'UTC' }}</dd>
+        <dt>Due</dt>
+        <dd>{{ h.DueDate ? (h.DueDate | date: 'mediumDate' : 'UTC') : '—' }}</dd>
+        @if (h.ExternalDocumentNumber) {
+          <dt>External doc №</dt>
+          <dd>{{ h.ExternalDocumentNumber }}</dd>
+        }
+        @if (h.Description) {
+          <dt>Description</dt>
+          <dd>{{ h.Description }}</dd>
+        }
+      </dl>
+
+      <h4 class="od__h">Lines</h4>
+      @if (Lines.length === 0) {
+        <p class="od__muted">This order has no lines.</p>
+      } @else {
+        <table class="od__grid">
+          <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Total</th><th>Service period</th></tr></thead>
+          <tbody>
+            @for (l of Lines; track l.ID) {
+              <tr>
+                <td>{{ l.Product }}</td>
+                <td class="num">{{ l.Quantity }}</td>
+                <td class="num">{{ l.LineTotalNet | currency }}</td>
+                <td>
+                  @if (l.ServicePeriodStart) {
+                    {{ l.ServicePeriodStart | date: 'yyyy-MM-dd' : 'UTC' }} – {{ l.ServicePeriodEnd | date: 'yyyy-MM-dd' : 'UTC' }}
+                  } @else {
+                    <span class="od__muted">—</span>
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+
+      <h4 class="od__h">Payments</h4>
+      @if (Payments.length === 0) {
+        <p class="od__muted">No payments applied to this order.</p>
+      } @else {
+        <table class="od__grid">
+          <tbody>
+            @for (p of Payments; track p.ID) {
+              <tr>
+                <td>{{ p.PaymentNumber }}</td>
+                <td>{{ p.Method }}</td>
+                <td class="num">{{ p.Amount | currency }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+
+      <h4 class="od__h">Accounting</h4>
+      @if (h.JournalEntryID) {
+        <!-- The cross-app deep link: orders LINKS to accounting's JE, never renders GL data itself. -->
+        <p class="od__je">
+          <i class="fa-solid fa-book" aria-hidden="true"></i>
+          This order is booked. Its journal entry lives in Accounting → Journal Entries.
+        </p>
+      } @else {
+        <p class="od__muted">Not booked yet — Confirm the order to book its journal entries.</p>
+      }
+    </div>
+  }
+</mj-slide-panel>

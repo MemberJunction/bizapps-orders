@@ -1,0 +1,57 @@
+<mj-page-header-interior Title="Status board" Subtitle="The working pipeline — Drafts and terminal states live in All orders.">
+  <div meta>
+    <mj-stat-badge [Label]="TotalLabel" Icon="fa-solid fa-layer-group" Variant="info"></mj-stat-badge>
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+  <div toolbar>
+    <select class="mj-input" [(ngModel)]="TimeWindow" (ngModelChange)="OnFilterChanged()">
+      @for (w of TimeWindows; track w.Id) {
+        <option [ngValue]="w.Id">{{ w.Label }}</option>
+      }
+    </select>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  @if (IsLoading) {
+    <mj-loading text="Loading the board…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="sb__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else {
+    <div class="sb__board">
+      @for (col of Columns; track col.Status) {
+        <div class="sb__col">
+          <div class="sb__colhead">
+            <i [class]="col.Icon" aria-hidden="true"></i>
+            {{ col.Status }}
+            <span class="sb__n">{{ col.Count }}</span>
+          </div>
+          @for (card of col.Cards; track card.ID) {
+            <button class="sb__card" (click)="OnCardClicked(card.ID)">
+              <span class="sb__cardtop">
+                <span class="sb__num">{{ card.OrderNumber }}</span>
+                <span class="sb__amt">{{ card.TotalGross | currency }}</span>
+              </span>
+              <span class="sb__note" [class.sb__note--overdue]="IsOverdue(card)">{{ CardNote(card) }}</span>
+            </button>
+          }
+          @if (col.Hidden > 0) {
+            <!-- The header count is the TRUE total; this says plainly what is not drawn. -->
+            <p class="sb__more">+ {{ col.Hidden }} more…</p>
+          }
+          @if (col.Count === 0) {
+            <p class="sb__empty">Nothing here</p>
+          }
+        </div>
+      }
+    </div>
+  }
+</mj-page-body>
+
+<mj-order-detail-panel
+  [OrderID]="SelectedID"
+  (Closed)="OnDetailClosed()"
+  (Changed)="OnDetailChanged()">
+</mj-order-detail-panel>

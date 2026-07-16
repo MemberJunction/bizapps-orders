@@ -36,6 +36,9 @@ import { ProductCatalogModule } from '../ProductCatalog/product-catalog.module';
 import { ProductCategoryTreeModule } from '../ProductCategoryTree/product-category-tree.module';
 
 import { OrderEditorPageComponent } from './pages/order-editor.page';
+import { AllOrdersPageComponent } from './pages/all-orders.page';
+import { StatusBoardPageComponent } from './pages/status-board.page';
+import { OrderDetailPanelComponent } from './pages/order-detail-panel.component';
 import { OrdersCategoryComponent } from './orders-category.component';
 import { OrdersCategoryResourceComponent } from './orders-category-resource.component';
 import { PaymentsCategoryComponent } from './payments-category.component';
@@ -55,6 +58,9 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
 @NgModule({
   declarations: [
     OrderEditorPageComponent,
+    AllOrdersPageComponent,
+    StatusBoardPageComponent,
+    OrderDetailPanelComponent,
     OrdersCategoryComponent,
     OrdersCategoryResourceComponent,
     PaymentsCategoryComponent,
@@ -92,6 +98,9 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
   ],
   exports: [
     OrderEditorPageComponent,
+    AllOrdersPageComponent,
+    StatusBoardPageComponent,
+    OrderDetailPanelComponent,
     OrdersCategoryComponent,
     OrdersCategoryResourceComponent,
     PaymentsCategoryComponent,

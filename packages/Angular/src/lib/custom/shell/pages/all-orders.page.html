@@ -1,0 +1,65 @@
+<mj-page-header-interior Title="All orders" Subtitle="Every order — filter, search, and open one in the editor.">
+  <div meta>
+    <!-- Honest about what the rail chip does NOT do here: an order has no company (MOD-11/MOD-12). -->
+    <mj-stat-badge
+      Label="All companies"
+      Icon="fa-solid fa-building"
+      Variant="default"
+      title="Orders are multi-company — an order belongs to every company its lines resolve to — so this list is not filtered by the company scope chip. See plans/DEFERRALS.md.">
+    </mj-stat-badge>
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+  <div toolbar>
+    <input class="mj-input ao__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search order №, description, external doc №…" />
+    <select class="mj-input" [(ngModel)]="TimeWindow" (ngModelChange)="OnFilterChanged()">
+      @for (w of TimeWindows; track w.Id) {
+        <option [ngValue]="w.Id">{{ w.Label }}</option>
+      }
+    </select>
+    <select class="mj-input" [(ngModel)]="StatusFilter" (ngModelChange)="OnFilterChanged()">
+      <option value="All">All statuses</option>
+      @for (s of Statuses; track s) {
+        <option [ngValue]="s">{{ s }}</option>
+      }
+    </select>
+    <select class="mj-input" [(ngModel)]="PaymentFilter" (ngModelChange)="OnFilterChanged()">
+      <option value="All">All payment states</option>
+      @for (p of PaymentStatuses; track p) {
+        <option [ngValue]="p">{{ p }}</option>
+      }
+    </select>
+    <label class="ao__toggle">
+      <input type="checkbox" [(ngModel)]="OnlyMine" (ngModelChange)="OnFilterChanged()" />
+      Only mine
+    </label>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  <!-- PaginationMode="client" deliberately: MJ's infinite mode gates its empty state on
+       `rowData.length`, which infinite never populates, so a populated grid renders "No data".
+       Logged upstream (MJ-UPSTREAM.md); client mode is the workaround both apps use. -->
+  <mj-entity-data-grid
+    [Params]="GridParams"
+    [Columns]="Columns"
+    PaginationMode="client"
+    [PageSize]="100"
+    [ShowPager]="true"
+    [AllowSorting]="true"
+    [ShowToolbar]="false"
+    [SelectionMode]="'single'"
+    KeyField="ID"
+    StateKey="mj.bizappsord.grid.allOrders.v1"
+    [AutoPersistState]="true"
+    Height="auto"
+    (AfterRowClick)="OnRowClicked($event.rowKey)">
+  </mj-entity-data-grid>
+</mj-page-body>
+
+<mj-order-detail-panel
+  [OrderID]="SelectedID"
+  (Closed)="OnDetailClosed()"
+  (Changed)="OnDetailChanged()">
+</mj-order-detail-panel>
