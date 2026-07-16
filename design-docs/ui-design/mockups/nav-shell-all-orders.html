@@ -1,0 +1,165 @@
+<!doctype html>
+<!-- ============================================================================
+  MOCKUP (ephemeral) · cycle 2026-07-15 · Orders — ALL ORDERS
+  The million-order archival grid: filter toolbar (window presets, status,
+  Only-mine toggle, server search), EXPANDABLE drop-down rows (lines +
+  payments inline), pop-out (↗) to the order editor, keyset Load more.
+  INTERACTIVE: carets expand rows · hamburger collapses the rail.
+============================================================================ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Orders · All orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../style-kit/mj-mock.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
+.x-app{display:flex;flex-direction:column;height:100vh}
+.x-topnav{display:flex;align-items:center;gap:6px;height:52px;padding:0 16px;background:var(--mj-bg-surface);border-bottom:1px solid var(--mj-border-default);flex:none}
+.x-brand{display:flex;align-items:center;gap:9px;font-weight:700;margin-right:22px;white-space:nowrap;font-size:14.5px}
+.x-brand i{color:var(--mj-brand-primary);font-size:17px}
+.x-brand .app{color:var(--mj-text-muted);font-weight:500}
+.x-tabs{display:flex;gap:2px;height:100%}
+.x-tab{display:flex;align-items:center;gap:7px;padding:0 15px;color:var(--mj-text-secondary);text-decoration:none;font-weight:500;font-size:13.5px;border-bottom:3px solid transparent;border-top:3px solid transparent}
+.x-tab:hover{color:var(--mj-text-primary);background:var(--mj-bg-surface-hover)}
+.x-tab.active{color:var(--mj-brand-primary);border-bottom-color:var(--mj-brand-primary);font-weight:600}
+.x-topnav .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.x-iconbtn{border:none;background:none;color:var(--mj-text-secondary);font-size:15px;cursor:pointer;padding:7px;border-radius:7px}
+.x-iconbtn:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-avatar{width:30px;height:30px;border-radius:50%;background:var(--mj-brand-primary);color:var(--mj-text-inverse,#fff);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+.x-body{display:flex;flex:1;min-height:0}
+.x-rail{width:230px;flex:none;background:var(--mj-bg-surface);border-right:1px solid var(--mj-border-default);display:flex;flex-direction:column;padding:8px;gap:2px;transition:width .18s ease;overflow-x:hidden;overflow-y:auto}
+.x-rail.collapsed{width:56px}
+.x-rail-group{margin:14px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:.08em;color:var(--mj-text-muted);padding:0 10px;white-space:nowrap}
+.x-rail.collapsed .x-rail-group{visibility:hidden;height:8px;margin:8px 0 0}
+.x-rail a{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;color:var(--mj-text-secondary);text-decoration:none;font-size:13.5px;white-space:nowrap}
+.x-rail a i{width:18px;text-align:center;font-size:14px;flex:none}
+.x-rail a:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-rail a.active{background:color-mix(in srgb,var(--mj-brand-primary) 10%,transparent);color:var(--mj-brand-primary);font-weight:600}
+.x-rail.collapsed a .lbl,.x-rail.collapsed .x-badge{display:none}
+.x-badge{margin-left:auto;background:var(--mj-status-error);color:#fff;border-radius:999px;font-size:10.5px;padding:1px 7px;font-weight:700}
+.x-scopechip{display:flex;align-items:center;gap:9px;margin:4px 2px 0;padding:8px 10px;border:1px solid var(--mj-border-default);border-radius:8px;background:var(--mj-bg-surface-card);font-size:12.5px;cursor:pointer;white-space:nowrap}
+.x-scopechip i{color:var(--mj-brand-primary)}
+.x-rail.collapsed .x-scopechip .lbl{display:none}
+.x-content{flex:1;min-width:0;overflow:auto;padding:20px 24px}
+.x-pagehead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.x-pagehead h1{font-size:19px;margin:0}
+.x-pagehead .actions{margin-left:auto;display:flex;gap:8px}
+.x-filterbar{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.x-filterbar .count{margin-left:auto;font-size:12.5px;color:var(--mj-text-muted)}
+.x-toggle{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--mj-border-default);border-radius:999px;font-size:11.5px;font-weight:600;cursor:pointer;color:var(--mj-text-secondary)}
+tr.mainrow:hover td{background:var(--mj-bg-surface-hover)}
+.caret{cursor:pointer;color:var(--mj-text-muted);width:26px;text-align:center}
+.caret i{transition:transform .15s}
+tr.expanded .caret i{transform:rotate(90deg)}
+tr.linesrow{display:none}
+tr.linesrow.show{display:table-row}
+tr.linesrow>td{background:var(--mj-bg-surface-sunken,var(--mj-bg-surface-card));padding:10px 14px 14px 40px}
+.x-sub{display:grid;grid-template-columns:1.3fr 1fr;gap:16px}
+.x-sub table{margin:0}
+.x-sub .h{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted);margin:0 0 6px}
+.rowicons{display:flex;gap:2px;justify-content:flex-end}
+.x-loadmore{display:flex;justify-content:center;padding:14px}
+</style>
+</head>
+<body>
+<div class="x-app">
+  <nav class="x-topnav">
+    <span class="x-brand"><i class="fa-solid fa-cubes"></i> MJ <span class="app">/ Orders</span></span>
+    <div class="x-tabs">
+      <a class="x-tab active" href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-file-invoice-dollar"></i> Orders</a>
+      <a class="x-tab" href="nav-shell-payments.html"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
+      <a class="x-tab" href="nav-shell-products.html"><i class="fa-solid fa-box-open"></i> Products</a>
+      <a class="x-tab" href="#"><i class="fa-solid fa-chart-column"></i> Reports</a>
+    </div>
+    <div class="right">
+      <button class="x-iconbtn"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <button class="x-iconbtn"><i class="fa-regular fa-bell"></i></button>
+      <span class="x-avatar">MT</span>
+    </div>
+  </nav>
+
+  <div class="x-body">
+    <aside class="x-rail" id="rail">
+      <button class="x-iconbtn" onclick="rail()" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
+      <div class="x-scopechip"><i class="fa-solid fa-building"></i><span class="lbl">Scope: <b>Demo Co. +2</b></span></div>
+      <div class="x-rail-group">MAIN</div>
+      <a href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-gauge-high"></i><span class="lbl">Dashboard</span></a>
+      <a class="active" href="#"><i class="fa-solid fa-table-list"></i><span class="lbl">All orders</span></a>
+      <a href="nav-shell-order-editor.html"><i class="fa-solid fa-diagram-project"></i><span class="lbl">Order editor</span></a>
+      <a href="nav-shell-status-board.html"><i class="fa-solid fa-table-columns"></i><span class="lbl">Status board</span></a>
+      <div class="x-rail-group">WORK</div>
+      <a href="#"><i class="fa-solid fa-dolly"></i><span class="lbl">Fulfillment queue</span></a>
+      <a href="#"><i class="fa-solid fa-hourglass-half"></i><span class="lbl">Overdue worklist</span><span class="x-badge">3</span></a>
+      <a href="#"><i class="fa-solid fa-rotate"></i><span class="lbl">Subscriptions &amp; renewals</span></a>
+    </aside>
+
+    <main class="x-content">
+      <div class="x-pagehead">
+        <h1>All orders</h1>
+        <span class="actions">
+          <button class="mjm-btn mjm-btn--outline"><i class="fa-solid fa-filter"></i> Filters</button>
+          <a class="mjm-btn mjm-btn--primary" href="nav-shell-order-editor.html"><i class="fa-solid fa-plus"></i> New order</a>
+        </span>
+      </div>
+
+      <div class="x-filterbar">
+        <input class="mjm-input" style="width:260px" placeholder="Search order #, customer, external doc № (server)…">
+        <select class="mjm-select"><option>Last 30 days</option><option>Last 7 days</option><option>This quarter</option><option>Custom…</option></select>
+        <select class="mjm-select"><option>All statuses</option><option>Draft</option><option>Quoted</option><option>Confirmed</option><option>Posted</option><option>Fulfilled</option></select>
+        <select class="mjm-select"><option>All payment states</option><option>Unpaid</option><option>Partially paid</option><option>Paid</option><option>Overdue</option></select>
+        <span class="x-toggle"><i class="fa-solid fa-user"></i> Only mine</span>
+        <span class="count">3,412 orders · showing 50 (keyset paged)</span>
+      </div>
+
+      <table class="mjm-grid">
+        <thead><tr><th></th><th>Order #</th><th>Customer</th><th>Date</th><th>Status</th><th>Payment</th><th class="num">Total</th><th class="num">Balance</th><th>Due</th><th></th></tr></thead>
+        <tbody>
+          <tr class="mainrow" id="o1"><td class="caret" onclick="exp('o1')"><i class="fa-solid fa-chevron-right"></i></td><td class="mjm-mono">ORD-1042</td><td>Acme Corp</td><td>2026-07-15</td><td><span class="mjm-chip mjm-chip--success">Posted</span></td><td><span class="mjm-chip mjm-chip--warning">Partially paid</span></td><td class="num">$15,099.00</td><td class="num">$5,099.00</td><td>2026-08-01</td>
+            <td class="rowicons"><button class="x-iconbtn" title="Quick view (modal)"><i class="fa-regular fa-eye"></i></button><a class="x-iconbtn" href="nav-shell-order-editor.html" title="Open in order editor"><i class="fa-solid fa-arrow-up-right-from-square"></i></a></td></tr>
+          <tr class="linesrow" id="o1x"><td colspan="10"><div class="x-sub">
+            <div><p class="h">LINES</p>
+              <table class="mjm-grid"><thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Total</th><th>Rev rec</th></tr></thead>
+              <tbody>
+                <tr><td>Annual membership</td><td class="num">10</td><td class="num">12,000.00</td><td><span class="mjm-chip mjm-chip--info">Deferred</span></td></tr>
+                <tr><td>Conference ticket</td><td class="num">3</td><td class="num">3,099.00</td><td><span class="mjm-chip mjm-chip--neutral">Point-in-time</span></td></tr>
+              </tbody></table></div>
+            <div><p class="h">PAYMENTS · ACCOUNTING</p>
+              <table class="mjm-grid"><tbody>
+                <tr><td class="mjm-mono">PMT-3311</td><td>Wire</td><td class="num">8,000.00</td></tr>
+                <tr><td class="mjm-mono">PMT-3298</td><td>Check</td><td class="num">2,000.00</td></tr>
+                <tr><td colspan="3"><i class="fa-solid fa-book" style="color:var(--mj-brand-primary)"></i> <span class="mjm-mono">JE-DEMO-2026-00871</span> · <a href="#" style="color:var(--mj-brand-primary)">Open in Accounting ↗</a></td></tr>
+              </tbody></table></div>
+          </div></td></tr>
+
+          <tr class="mainrow" id="o2"><td class="caret" onclick="exp('o2')"><i class="fa-solid fa-chevron-right"></i></td><td class="mjm-mono">ORD-1041</td><td>Globex</td><td>2026-07-14</td><td><span class="mjm-chip mjm-chip--info">Confirmed</span></td><td><span class="mjm-chip mjm-chip--neutral">Unpaid</span></td><td class="num">$2,400.00</td><td class="num">$2,400.00</td><td>2026-07-30</td>
+            <td class="rowicons"><button class="x-iconbtn" title="Quick view (modal)"><i class="fa-regular fa-eye"></i></button><a class="x-iconbtn" href="nav-shell-order-editor.html" title="Open in order editor"><i class="fa-solid fa-arrow-up-right-from-square"></i></a></td></tr>
+          <tr class="linesrow" id="o2x"><td colspan="10"><div class="x-sub">
+            <div><p class="h">LINES</p>
+              <table class="mjm-grid"><tbody><tr><td>Membership renewal</td><td class="num">2</td><td class="num">2,400.00</td><td><span class="mjm-chip mjm-chip--info">Deferred</span></td></tr></tbody></table></div>
+            <div><p class="h">PAYMENTS · ACCOUNTING</p>
+              <table class="mjm-grid"><tbody><tr><td colspan="3" class="mjm-muted">No payments · <i class="fa-solid fa-book" style="color:var(--mj-brand-primary)"></i> <span class="mjm-mono">JE-DEMO-2026-00869</span> · <a href="#" style="color:var(--mj-brand-primary)">Open in Accounting ↗</a></td></tr></tbody></table></div>
+          </div></td></tr>
+
+          <tr class="mainrow" id="o3"><td class="caret" onclick="exp('o3')"><i class="fa-solid fa-chevron-right"></i></td><td class="mjm-mono">ORD-1039</td><td>Umbrella</td><td>2026-06-12</td><td><span class="mjm-chip mjm-chip--success">Fulfilled</span></td><td><span class="mjm-chip mjm-chip--error">Overdue</span></td><td class="num">$12,000.00</td><td class="num">$12,000.00</td><td>2026-06-30</td>
+            <td class="rowicons"><button class="x-iconbtn" title="Quick view (modal)"><i class="fa-regular fa-eye"></i></button><a class="x-iconbtn" href="nav-shell-order-editor.html" title="Open in order editor"><i class="fa-solid fa-arrow-up-right-from-square"></i></a></td></tr>
+          <tr class="linesrow" id="o3x"><td colspan="10"><div class="x-sub">
+            <div><p class="h">LINES</p>
+              <table class="mjm-grid"><tbody><tr><td>Event sponsorship</td><td class="num">1</td><td class="num">12,000.00</td><td><span class="mjm-chip mjm-chip--neutral">Point-in-time</span></td></tr></tbody></table></div>
+            <div><p class="h">PAYMENTS · ACCOUNTING</p>
+              <table class="mjm-grid"><tbody><tr><td colspan="3" class="mjm-muted">No payments · in dunning worklist (grace: 7d) · <a href="#" style="color:var(--mj-brand-primary)">Open in Accounting ↗</a></td></tr></tbody></table></div>
+          </div></td></tr>
+        </tbody>
+      </table>
+      <div class="x-loadmore"><button class="mjm-btn mjm-btn--outline">Load more (keyset)</button></div>
+    </main>
+  </div>
+</div>
+<script>
+function rail(){document.getElementById('rail').classList.toggle('collapsed')}
+function exp(id){document.getElementById(id).classList.toggle('expanded');document.getElementById(id+'x').classList.toggle('show')}
+</script>
+</body>
+</html>

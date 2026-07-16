@@ -1,0 +1,135 @@
+<!doctype html>
+<!-- ============================================================================
+  MOCKUP (ephemeral) · cycle 2026-07-15 · Orders — STATUS BOARD
+  The trimmed board (plan §2): WORKING statuses only (Quoted/Confirmed/
+  Posted/Fulfilled — Drafts + terminal states live in All orders), time
+  window default, compact cards. Cards open the quick-view modal; pop-out
+  to the order editor. Board-vs-accordion is decided by USE, not upfront.
+============================================================================ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Orders · Status board</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../style-kit/mj-mock.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
+.x-app{display:flex;flex-direction:column;height:100vh}
+.x-topnav{display:flex;align-items:center;gap:6px;height:52px;padding:0 16px;background:var(--mj-bg-surface);border-bottom:1px solid var(--mj-border-default);flex:none}
+.x-brand{display:flex;align-items:center;gap:9px;font-weight:700;margin-right:22px;white-space:nowrap;font-size:14.5px}
+.x-brand i{color:var(--mj-brand-primary);font-size:17px}
+.x-brand .app{color:var(--mj-text-muted);font-weight:500}
+.x-tabs{display:flex;gap:2px;height:100%}
+.x-tab{display:flex;align-items:center;gap:7px;padding:0 15px;color:var(--mj-text-secondary);text-decoration:none;font-weight:500;font-size:13.5px;border-bottom:3px solid transparent;border-top:3px solid transparent}
+.x-tab:hover{color:var(--mj-text-primary);background:var(--mj-bg-surface-hover)}
+.x-tab.active{color:var(--mj-brand-primary);border-bottom-color:var(--mj-brand-primary);font-weight:600}
+.x-topnav .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.x-iconbtn{border:none;background:none;color:var(--mj-text-secondary);font-size:15px;cursor:pointer;padding:7px;border-radius:7px}
+.x-iconbtn:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-avatar{width:30px;height:30px;border-radius:50%;background:var(--mj-brand-primary);color:var(--mj-text-inverse,#fff);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+.x-body{display:flex;flex:1;min-height:0}
+.x-rail{width:230px;flex:none;background:var(--mj-bg-surface);border-right:1px solid var(--mj-border-default);display:flex;flex-direction:column;padding:8px;gap:2px;transition:width .18s ease;overflow-x:hidden;overflow-y:auto}
+.x-rail.collapsed{width:56px}
+.x-rail-group{margin:14px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:.08em;color:var(--mj-text-muted);padding:0 10px;white-space:nowrap}
+.x-rail.collapsed .x-rail-group{visibility:hidden;height:8px;margin:8px 0 0}
+.x-rail a{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;color:var(--mj-text-secondary);text-decoration:none;font-size:13.5px;white-space:nowrap}
+.x-rail a i{width:18px;text-align:center;font-size:14px;flex:none}
+.x-rail a:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-rail a.active{background:color-mix(in srgb,var(--mj-brand-primary) 10%,transparent);color:var(--mj-brand-primary);font-weight:600}
+.x-rail.collapsed a .lbl,.x-rail.collapsed .x-badge{display:none}
+.x-badge{margin-left:auto;background:var(--mj-status-error);color:#fff;border-radius:999px;font-size:10.5px;padding:1px 7px;font-weight:700}
+.x-scopechip{display:flex;align-items:center;gap:9px;margin:4px 2px 0;padding:8px 10px;border:1px solid var(--mj-border-default);border-radius:8px;background:var(--mj-bg-surface-card);font-size:12.5px;cursor:pointer;white-space:nowrap}
+.x-scopechip i{color:var(--mj-brand-primary)}
+.x-rail.collapsed .x-scopechip .lbl{display:none}
+.x-content{flex:1;min-width:0;overflow:auto;padding:20px 24px}
+.x-pagehead{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.x-pagehead h1{font-size:19px;margin:0}
+.x-pagehead .actions{margin-left:auto;display:flex;gap:8px}
+.x-board{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:start}
+.x-col{background:var(--mj-bg-surface-card);border:1px solid var(--mj-border-default);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.x-colhead{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:2px 4px}
+.x-colhead .n{margin-left:auto;color:var(--mj-text-muted);font-weight:600}
+.x-cardo{background:var(--mj-bg-surface);border:1px solid var(--mj-border-default);border-radius:9px;padding:9px 11px;font-size:12.5px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
+.x-cardo:hover{border-color:var(--mj-brand-primary)}
+.x-cardo .t{display:flex;gap:8px;align-items:center}
+.x-cardo .amt{margin-left:auto;font-weight:700}
+.x-cardo .s{font-size:11px;color:var(--mj-text-muted)}
+</style>
+</head>
+<body>
+<div class="x-app">
+  <nav class="x-topnav">
+    <span class="x-brand"><i class="fa-solid fa-cubes"></i> MJ <span class="app">/ Orders</span></span>
+    <div class="x-tabs">
+      <a class="x-tab active" href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-file-invoice-dollar"></i> Orders</a>
+      <a class="x-tab" href="nav-shell-payments.html"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
+      <a class="x-tab" href="nav-shell-products.html"><i class="fa-solid fa-box-open"></i> Products</a>
+      <a class="x-tab" href="#"><i class="fa-solid fa-chart-column"></i> Reports</a>
+    </div>
+    <div class="right">
+      <button class="x-iconbtn"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <button class="x-iconbtn"><i class="fa-regular fa-bell"></i></button>
+      <span class="x-avatar">MT</span>
+    </div>
+  </nav>
+
+  <div class="x-body">
+    <aside class="x-rail" id="rail">
+      <button class="x-iconbtn" onclick="rail()" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
+      <div class="x-scopechip"><i class="fa-solid fa-building"></i><span class="lbl">Scope: <b>Demo Co. +2</b></span></div>
+      <div class="x-rail-group">MAIN</div>
+      <a href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-gauge-high"></i><span class="lbl">Dashboard</span></a>
+      <a href="nav-shell-all-orders.html"><i class="fa-solid fa-table-list"></i><span class="lbl">All orders</span></a>
+      <a href="nav-shell-order-editor.html"><i class="fa-solid fa-diagram-project"></i><span class="lbl">Order editor</span></a>
+      <a class="active" href="#"><i class="fa-solid fa-table-columns"></i><span class="lbl">Status board</span></a>
+      <div class="x-rail-group">WORK</div>
+      <a href="#"><i class="fa-solid fa-dolly"></i><span class="lbl">Fulfillment queue</span></a>
+      <a href="#"><i class="fa-solid fa-hourglass-half"></i><span class="lbl">Overdue worklist</span><span class="x-badge">3</span></a>
+      <a href="#"><i class="fa-solid fa-rotate"></i><span class="lbl">Subscriptions &amp; renewals</span></a>
+    </aside>
+
+    <main class="x-content">
+      <div class="x-pagehead">
+        <h1>Status board</h1>
+        <span class="mjm-chip mjm-chip--info">This week</span>
+        <span class="actions">
+          <select class="mjm-select"><option>This week</option><option>Last 7 days</option><option>This month</option></select>
+          <button class="mjm-btn mjm-btn--outline"><i class="fa-solid fa-filter"></i> Filters</button>
+        </span>
+      </div>
+
+      <div class="x-board">
+        <div class="x-col">
+          <div class="x-colhead"><i class="fa-solid fa-file-signature" style="color:var(--mj-text-muted)"></i> Quoted <span class="n">3</span></div>
+          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1044</span><span class="amt">$5,400</span></span><span class="s">Initech · quoted 07-14</span></div>
+          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1043</span><span class="amt">$1,150</span></span><span class="s">Globex · quoted 07-14</span></div>
+          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1037</span><span class="amt">$920</span></span><span class="s">Hooli · quoted 07-12</span></div>
+        </div>
+        <div class="x-col">
+          <div class="x-colhead"><i class="fa-solid fa-check" style="color:var(--mj-brand-primary)"></i> Confirmed <span class="n">9</span></div>
+          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1041</span><span class="amt">$2,400</span></span><span class="s">Globex · JE booked · unpaid</span></div>
+          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1036</span><span class="amt">$7,800</span></span><span class="s">Acme Corp · partially paid</span></div>
+          <div class="x-cardo"><span class="s" style="text-align:center">+ 7 more…</span></div>
+        </div>
+        <div class="x-col">
+          <div class="x-colhead"><i class="fa-solid fa-paper-plane" style="color:var(--mj-status-success)"></i> Posted <span class="n">12</span></div>
+          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1042</span><span class="amt">$15,099</span></span><span class="s">Acme Corp · due 08-01 · bal $5,099</span></div>
+          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1040</span><span class="amt">$860</span></span><span class="s">Initech · awaiting fulfillment</span></div>
+          <div class="x-cardo"><span class="s" style="text-align:center">+ 10 more…</span></div>
+        </div>
+        <div class="x-col">
+          <div class="x-colhead"><i class="fa-solid fa-box-check fa-box" style="color:var(--mj-status-success)"></i> Fulfilled <span class="n">41</span></div>
+          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1039</span><span class="amt">$12,000</span></span><span class="s">Umbrella · <span style="color:var(--mj-status-error)">overdue</span></span></div>
+          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1038</span><span class="amt">$7,300</span></span><span class="s">Stark Industries · paid ✓</span></div>
+          <div class="x-cardo"><span class="s" style="text-align:center">+ 39 more…</span></div>
+        </div>
+      </div>
+      <p class="mjm-muted" style="font-size:12px;margin-top:12px"><i class="fa-solid fa-circle-info"></i> Working statuses only — Drafts and terminal states live in All orders. Cards open the quick-view modal; pop-out (↗) to the order editor. Board vs Matt's accordion sketch: decided by USE after the trim (plan §2).</p>
+    </main>
+  </div>
+</div>
+<script>function rail(){document.getElementById('rail').classList.toggle('collapsed')}</script>
+</body>
+</html>

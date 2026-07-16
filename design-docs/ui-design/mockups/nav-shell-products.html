@@ -1,0 +1,142 @@
+<!doctype html>
+<!-- ============================================================================
+  MOCKUP (ephemeral) · cycle 2026-07-15 · Orders — PRODUCTS category
+  Rail = Catalog (active) · Categories · Pricing · GL mapping. Catalog grid
+  with rev-rec chips; EXPANDABLE rows show the GL-RESOLUTION PREVIEW (the
+  shared accounting widget: "Revenue → 4000 via category Software") so
+  missing-map problems are visible BEFORE Confirm fails. Category-level
+  defaults (Marcelo: classify categories as revenue/JE types) live under
+  Categories; PriceList/tier admin under Pricing (plan §10).
+  INTERACTIVE: carets expand rows · hamburger collapses the rail.
+============================================================================ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Orders · Product catalog</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../style-kit/mj-mock.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
+.x-app{display:flex;flex-direction:column;height:100vh}
+.x-topnav{display:flex;align-items:center;gap:6px;height:52px;padding:0 16px;background:var(--mj-bg-surface);border-bottom:1px solid var(--mj-border-default);flex:none}
+.x-brand{display:flex;align-items:center;gap:9px;font-weight:700;margin-right:22px;white-space:nowrap;font-size:14.5px}
+.x-brand i{color:var(--mj-brand-primary);font-size:17px}
+.x-brand .app{color:var(--mj-text-muted);font-weight:500}
+.x-tabs{display:flex;gap:2px;height:100%}
+.x-tab{display:flex;align-items:center;gap:7px;padding:0 15px;color:var(--mj-text-secondary);text-decoration:none;font-weight:500;font-size:13.5px;border-bottom:3px solid transparent;border-top:3px solid transparent}
+.x-tab:hover{color:var(--mj-text-primary);background:var(--mj-bg-surface-hover)}
+.x-tab.active{color:var(--mj-brand-primary);border-bottom-color:var(--mj-brand-primary);font-weight:600}
+.x-topnav .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.x-iconbtn{border:none;background:none;color:var(--mj-text-secondary);font-size:15px;cursor:pointer;padding:7px;border-radius:7px}
+.x-iconbtn:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-avatar{width:30px;height:30px;border-radius:50%;background:var(--mj-brand-primary);color:var(--mj-text-inverse,#fff);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+.x-body{display:flex;flex:1;min-height:0}
+.x-rail{width:230px;flex:none;background:var(--mj-bg-surface);border-right:1px solid var(--mj-border-default);display:flex;flex-direction:column;padding:8px;gap:2px;transition:width .18s ease;overflow-x:hidden;overflow-y:auto}
+.x-rail.collapsed{width:56px}
+.x-rail-group{margin:14px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:.08em;color:var(--mj-text-muted);padding:0 10px;white-space:nowrap}
+.x-rail.collapsed .x-rail-group{visibility:hidden;height:8px;margin:8px 0 0}
+.x-rail a{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;color:var(--mj-text-secondary);text-decoration:none;font-size:13.5px;white-space:nowrap}
+.x-rail a i{width:18px;text-align:center;font-size:14px;flex:none}
+.x-rail a:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-rail a.active{background:color-mix(in srgb,var(--mj-brand-primary) 10%,transparent);color:var(--mj-brand-primary);font-weight:600}
+.x-rail.collapsed a .lbl{display:none}
+.x-scopechip{display:flex;align-items:center;gap:9px;margin:4px 2px 0;padding:8px 10px;border:1px solid var(--mj-border-default);border-radius:8px;background:var(--mj-bg-surface-card);font-size:12.5px;cursor:pointer;white-space:nowrap}
+.x-scopechip i{color:var(--mj-brand-primary)}
+.x-rail.collapsed .x-scopechip .lbl{display:none}
+.x-content{flex:1;min-width:0;overflow:auto;padding:20px 24px}
+.x-pagehead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.x-pagehead h1{font-size:19px;margin:0}
+.x-pagehead .actions{margin-left:auto;display:flex;gap:8px}
+.x-filterbar{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+tr.mainrow:hover td{background:var(--mj-bg-surface-hover)}
+.caret{cursor:pointer;color:var(--mj-text-muted);width:26px;text-align:center}
+.caret i{transition:transform .15s}
+tr.expanded .caret i{transform:rotate(90deg)}
+tr.linesrow{display:none}
+tr.linesrow.show{display:table-row}
+tr.linesrow>td{background:var(--mj-bg-surface-sunken,var(--mj-bg-surface-card));padding:12px 14px 14px 40px}
+.x-resolve{display:flex;flex-direction:column;gap:6px;font-size:12.5px}
+.x-resolve .row{display:flex;align-items:center;gap:8px}
+.x-resolve .via{color:var(--mj-text-muted);font-size:11.5px}
+</style>
+</head>
+<body>
+<div class="x-app">
+  <nav class="x-topnav">
+    <span class="x-brand"><i class="fa-solid fa-cubes"></i> MJ <span class="app">/ Orders</span></span>
+    <div class="x-tabs">
+      <a class="x-tab" href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-file-invoice-dollar"></i> Orders</a>
+      <a class="x-tab" href="nav-shell-payments.html"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
+      <a class="x-tab active" href="#"><i class="fa-solid fa-box-open"></i> Products</a>
+      <a class="x-tab" href="#"><i class="fa-solid fa-chart-column"></i> Reports</a>
+    </div>
+    <div class="right">
+      <button class="x-iconbtn"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <button class="x-iconbtn"><i class="fa-regular fa-bell"></i></button>
+      <span class="x-avatar">MT</span>
+    </div>
+  </nav>
+
+  <div class="x-body">
+    <aside class="x-rail" id="rail">
+      <button class="x-iconbtn" onclick="rail()" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
+      <div class="x-scopechip"><i class="fa-solid fa-building"></i><span class="lbl">Scope: <b>Demo Co. +2</b></span></div>
+      <div class="x-rail-group">MAIN</div>
+      <a class="active" href="#"><i class="fa-solid fa-box-open"></i><span class="lbl">Catalog</span></a>
+      <a href="#"><i class="fa-solid fa-sitemap"></i><span class="lbl">Categories</span></a>
+      <a href="#"><i class="fa-solid fa-tags"></i><span class="lbl">Pricing</span></a>
+      <a href="#"><i class="fa-solid fa-link"></i><span class="lbl">GL mapping</span></a>
+    </aside>
+
+    <main class="x-content">
+      <div class="x-pagehead">
+        <h1>Product catalog</h1>
+        <span class="actions">
+          <button class="mjm-btn mjm-btn--outline"><i class="fa-solid fa-filter"></i> Filters</button>
+          <button class="mjm-btn mjm-btn--primary"><i class="fa-solid fa-plus"></i> Add product</button>
+        </span>
+      </div>
+
+      <div class="x-filterbar">
+        <input class="mjm-input" style="width:240px" placeholder="Search SKU or name…">
+        <select class="mjm-select"><option>All categories</option><option>Memberships</option><option>Events</option><option>Retail</option></select>
+        <select class="mjm-select"><option>All types</option><option>Membership</option><option>Event</option><option>PhysicalGood</option></select>
+      </div>
+
+      <table class="mjm-grid">
+        <thead><tr><th></th><th>SKU</th><th>Product</th><th>Category</th><th>Type</th><th class="num">List price</th><th>Rev rec</th><th>GL map</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr class="mainrow" id="p1"><td class="caret" onclick="exp('p1')"><i class="fa-solid fa-chevron-right"></i></td><td class="mjm-mono">MEM-ANN</td><td>Annual membership</td><td>Memberships</td><td>Membership</td><td class="num">$1,200.00</td><td><span class="mjm-chip mjm-chip--info">Deferred · svc period</span></td><td><span class="mjm-chip mjm-chip--success">resolved</span></td><td><span class="mjm-chip mjm-chip--success">Active</span></td></tr>
+          <tr class="linesrow" id="p1x"><td colspan="9"><div class="x-resolve">
+            <span style="font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted)">GL RESOLUTION (read-only preview — the shared accounting widget)</span>
+            <span class="row"><i class="fa-solid fa-arrow-right" style="color:var(--mj-status-success)"></i> Revenue → <span class="mjm-mono">4000 · Sales</span> <span class="via">via category "Memberships"</span></span>
+            <span class="row"><i class="fa-solid fa-arrow-right" style="color:var(--mj-status-success)"></i> Deferred revenue → <span class="mjm-mono">2400 · Deferred revenue</span> <span class="via">via category "Memberships"</span></span>
+            <span class="row"><i class="fa-solid fa-arrow-right" style="color:var(--mj-status-success)"></i> A/R → <span class="mjm-mono">1100 · A/R</span> <span class="via">via company default (Demo Co.)</span></span>
+            <span class="via">Category-level defaults classify revenue/JE type once for every product in the category (Marcelo direction) — manage in <b>GL mapping</b>.</span>
+          </div></td></tr>
+
+          <tr class="mainrow" id="p2"><td class="caret" onclick="exp('p2')"><i class="fa-solid fa-chevron-right"></i></td><td class="mjm-mono">EVT-CONF</td><td>Conference ticket</td><td>Events</td><td>Event</td><td class="num">$1,100.00</td><td><span class="mjm-chip mjm-chip--neutral">Point-in-time</span></td><td><span class="mjm-chip mjm-chip--error">missing Revenue</span></td><td><span class="mjm-chip mjm-chip--success">Active</span></td></tr>
+          <tr class="linesrow" id="p2x"><td colspan="9"><div class="x-resolve">
+            <span style="font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted)">GL RESOLUTION</span>
+            <span class="row"><i class="fa-solid fa-circle-exclamation" style="color:var(--mj-status-error)"></i> Revenue → <b>UNRESOLVED</b> <span class="via">no link on product, category "Events", or company default — Confirm will fail LOUDLY on orders with this line</span></span>
+            <span class="row"><i class="fa-solid fa-arrow-right" style="color:var(--mj-status-success)"></i> A/R → <span class="mjm-mono">1100 · A/R</span> <span class="via">via company default</span></span>
+            <span class="row"><a href="#" style="color:var(--mj-brand-primary)"><i class="fa-solid fa-wrench"></i> Fix in GL mapping</a></span>
+          </div></td></tr>
+
+          <tr class="mainrow" id="p3"><td class="caret" onclick="exp('p3')"><i class="fa-solid fa-chevron-right"></i></td><td class="mjm-mono">RET-CHZ01</td><td>Artisan cheese box</td><td>Retail</td><td>PhysicalGood <span class="mjm-muted" style="font-size:11px">(requires fulfillment)</span></td><td class="num">$86.00</td><td><span class="mjm-chip mjm-chip--neutral">Point-in-time</span></td><td><span class="mjm-chip mjm-chip--success">resolved</span></td><td><span class="mjm-chip mjm-chip--success">Active</span></td></tr>
+          <tr class="linesrow" id="p3x"><td colspan="9"><div class="x-resolve">
+            <span class="row"><i class="fa-solid fa-arrow-right" style="color:var(--mj-status-success)"></i> Revenue → <span class="mjm-mono">4100 · Retail sales</span> <span class="via">via product link (overrides category)</span></span>
+          </div></td></tr>
+        </tbody>
+      </table>
+    </main>
+  </div>
+</div>
+<script>
+function rail(){document.getElementById('rail').classList.toggle('collapsed')}
+function exp(id){document.getElementById(id).classList.toggle('expanded');document.getElementById(id+'x').classList.toggle('show')}
+</script>
+</body>
+</html>

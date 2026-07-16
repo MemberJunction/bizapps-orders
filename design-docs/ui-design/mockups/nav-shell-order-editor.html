@@ -1,0 +1,194 @@
+<!doctype html>
+<!-- ============================================================================
+  MOCKUP (ephemeral) · cycle 2026-07-15 · Orders — ORDER EDITOR (round 3)
+  The full-window tabbed order form (Amith direction, plan §1) as a tabbed
+  WORKSPACE (session-scoped tabs like the batch/JE workspaces). Always
+  visible: the money strip + status stepper. Inner tabs: Details · Lines
+  (shown) · Bill-To/Ship-To · Payments · Accounting. Demonstrates: the line
+  editor (resolved-price source badge B.2, service-period on Deferred,
+  rev-rec chips), skip-ahead stepper, Void vs Create-reversal affordances,
+  and the LOUD Confirm-failure banner with the fix-in-Accounting deep link.
+  INTERACTIVE: hamburger collapses the rail; inner tabs are illustrative.
+============================================================================ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Orders · Order editor</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../style-kit/mj-mock.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
+.x-app{display:flex;flex-direction:column;height:100vh}
+.x-topnav{display:flex;align-items:center;gap:6px;height:52px;padding:0 16px;background:var(--mj-bg-surface);border-bottom:1px solid var(--mj-border-default);flex:none}
+.x-brand{display:flex;align-items:center;gap:9px;font-weight:700;margin-right:22px;white-space:nowrap;font-size:14.5px}
+.x-brand i{color:var(--mj-brand-primary);font-size:17px}
+.x-brand .app{color:var(--mj-text-muted);font-weight:500}
+.x-tabs{display:flex;gap:2px;height:100%}
+.x-tab{display:flex;align-items:center;gap:7px;padding:0 15px;color:var(--mj-text-secondary);text-decoration:none;font-weight:500;font-size:13.5px;border-bottom:3px solid transparent;border-top:3px solid transparent}
+.x-tab:hover{color:var(--mj-text-primary);background:var(--mj-bg-surface-hover)}
+.x-tab.active{color:var(--mj-brand-primary);border-bottom-color:var(--mj-brand-primary);font-weight:600}
+.x-topnav .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.x-iconbtn{border:none;background:none;color:var(--mj-text-secondary);font-size:15px;cursor:pointer;padding:7px;border-radius:7px}
+.x-iconbtn:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-avatar{width:30px;height:30px;border-radius:50%;background:var(--mj-brand-primary);color:var(--mj-text-inverse,#fff);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+.x-body{display:flex;flex:1;min-height:0}
+.x-rail{width:230px;flex:none;background:var(--mj-bg-surface);border-right:1px solid var(--mj-border-default);display:flex;flex-direction:column;padding:8px;gap:2px;transition:width .18s ease;overflow-x:hidden;overflow-y:auto}
+.x-rail.collapsed{width:56px}
+.x-rail-group{margin:14px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:.08em;color:var(--mj-text-muted);padding:0 10px;white-space:nowrap}
+.x-rail.collapsed .x-rail-group{visibility:hidden;height:8px;margin:8px 0 0}
+.x-rail a{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;color:var(--mj-text-secondary);text-decoration:none;font-size:13.5px;white-space:nowrap}
+.x-rail a i{width:18px;text-align:center;font-size:14px;flex:none}
+.x-rail a:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-rail a.active{background:color-mix(in srgb,var(--mj-brand-primary) 10%,transparent);color:var(--mj-brand-primary);font-weight:600}
+.x-rail.collapsed a .lbl,.x-rail.collapsed .x-badge{display:none}
+.x-badge{margin-left:auto;background:var(--mj-status-error);color:#fff;border-radius:999px;font-size:10.5px;padding:1px 7px;font-weight:700}
+.x-scopechip{display:flex;align-items:center;gap:9px;margin:4px 2px 0;padding:8px 10px;border:1px solid var(--mj-border-default);border-radius:8px;background:var(--mj-bg-surface-card);font-size:12.5px;cursor:pointer;white-space:nowrap}
+.x-scopechip i{color:var(--mj-brand-primary)}
+.x-rail.collapsed .x-scopechip .lbl{display:none}
+.x-content{flex:1;min-width:0;overflow:auto;padding:16px 24px 20px;display:flex;flex-direction:column}
+.x-pagehead{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.x-pagehead h1{font-size:19px;margin:0}
+.x-pagehead .actions{margin-left:auto;display:flex;gap:8px}
+.x-wstabs{display:flex;gap:6px;align-items:flex-end;border-bottom:1px solid var(--mj-border-default);margin-bottom:12px}
+.x-wstab{display:flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--mj-border-default);border-bottom:none;border-radius:9px 9px 0 0;background:var(--mj-bg-surface-card);font-size:12.5px;color:var(--mj-text-secondary);cursor:pointer}
+.x-wstab.active{background:var(--mj-bg-surface);color:var(--mj-text-primary);font-weight:600;position:relative;top:1px}
+.x-wstab .x{color:var(--mj-text-disabled);font-size:11px}
+.x-wstab.add{border-style:dashed;color:var(--mj-text-muted)}
+.x-sessionnote{font-size:11px;color:var(--mj-text-muted);margin-left:auto;align-self:center}
+.x-steps{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+.x-step{display:flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:11.5px;font-weight:600;border:1px solid var(--mj-border-default);color:var(--mj-text-muted);cursor:pointer}
+.x-step.done{background:color-mix(in srgb,var(--mj-status-success) 12%,transparent);border-color:color-mix(in srgb,var(--mj-status-success) 40%,transparent);color:var(--mj-status-success-text,var(--mj-status-success))}
+.x-step.cur{background:color-mix(in srgb,var(--mj-brand-primary) 12%,transparent);border-color:var(--mj-brand-primary);color:var(--mj-brand-primary)}
+.x-step.disabled{opacity:.45;cursor:not-allowed}
+.x-steps .sep{color:var(--mj-text-disabled);font-size:10px}
+.x-money{display:grid;grid-template-columns:1fr 1fr 1fr auto;border:1px solid var(--mj-border-default);border-radius:10px;overflow:hidden;margin:10px 0 12px}
+.x-money>div{padding:9px 14px;border-right:1px solid var(--mj-border-default)}
+.x-money>div:last-child{border-right:none;display:flex;align-items:center}
+.x-money .l{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted)}
+.x-money .v{font-size:15px;font-weight:700}
+.x-innertabs{display:flex;gap:2px;border-bottom:1px solid var(--mj-border-default);margin-bottom:12px}
+.x-itab{padding:8px 14px;font-size:13px;color:var(--mj-text-secondary);border-bottom:3px solid transparent;cursor:pointer}
+.x-itab.active{color:var(--mj-brand-primary);border-bottom-color:var(--mj-brand-primary);font-weight:600}
+.x-fail{display:flex;align-items:center;gap:10px;padding:11px 14px;border-radius:9px;background:color-mix(in srgb,var(--mj-status-error) 9%,var(--mj-bg-surface));border:1px solid color-mix(in srgb,var(--mj-status-error) 40%,transparent);font-size:12.5px;margin-bottom:12px}
+.addline{color:var(--mj-brand-primary);font-size:12.5px;cursor:pointer}
+.x-footer{display:flex;gap:8px;align-items:center;padding-top:12px}
+.pricebadge{font-size:10.5px;color:var(--mj-text-muted);display:block}
+</style>
+</head>
+<body>
+<div class="x-app">
+  <nav class="x-topnav">
+    <span class="x-brand"><i class="fa-solid fa-cubes"></i> MJ <span class="app">/ Orders</span></span>
+    <div class="x-tabs">
+      <a class="x-tab active" href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-file-invoice-dollar"></i> Orders</a>
+      <a class="x-tab" href="nav-shell-payments.html"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
+      <a class="x-tab" href="nav-shell-products.html"><i class="fa-solid fa-box-open"></i> Products</a>
+      <a class="x-tab" href="#"><i class="fa-solid fa-chart-column"></i> Reports</a>
+    </div>
+    <div class="right">
+      <button class="x-iconbtn"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <button class="x-iconbtn"><i class="fa-regular fa-bell"></i></button>
+      <span class="x-avatar">MT</span>
+    </div>
+  </nav>
+
+  <div class="x-body">
+    <aside class="x-rail" id="rail">
+      <button class="x-iconbtn" onclick="rail()" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
+      <div class="x-scopechip"><i class="fa-solid fa-building"></i><span class="lbl">Scope: <b>Demo Co. +2</b></span></div>
+      <div class="x-rail-group">MAIN</div>
+      <a href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-gauge-high"></i><span class="lbl">Dashboard</span></a>
+      <a href="nav-shell-all-orders.html"><i class="fa-solid fa-table-list"></i><span class="lbl">All orders</span></a>
+      <a class="active" href="#"><i class="fa-solid fa-diagram-project"></i><span class="lbl">Order editor</span></a>
+      <a href="nav-shell-status-board.html"><i class="fa-solid fa-table-columns"></i><span class="lbl">Status board</span></a>
+      <div class="x-rail-group">WORK</div>
+      <a href="#"><i class="fa-solid fa-dolly"></i><span class="lbl">Fulfillment queue</span></a>
+      <a href="#"><i class="fa-solid fa-hourglass-half"></i><span class="lbl">Overdue worklist</span><span class="x-badge">3</span></a>
+      <a href="#"><i class="fa-solid fa-rotate"></i><span class="lbl">Subscriptions &amp; renewals</span></a>
+    </aside>
+
+    <main class="x-content">
+      <div class="x-pagehead">
+        <h1>Order editor</h1>
+        <span class="mjm-chip mjm-chip--neutral">Draft</span>
+        <span class="actions">
+          <button class="mjm-btn mjm-btn--outline"><i class="fa-solid fa-ban"></i> Void order…</button>
+          <button class="mjm-btn mjm-btn--primary"><i class="fa-solid fa-check"></i> Confirm order</button>
+        </span>
+      </div>
+
+      <div class="x-wstabs">
+        <span class="x-wstab active"><i class="fa-solid fa-pen-ruler"></i> New order (draft) <i class="fa-solid fa-xmark x"></i></span>
+        <span class="x-wstab"><i class="fa-solid fa-file-invoice-dollar"></i> ORD-1042 <i class="fa-solid fa-xmark x"></i></span>
+        <span class="x-wstab add"><i class="fa-solid fa-plus"></i> New</span>
+        <span class="x-sessionnote"><i class="fa-solid fa-circle-info"></i> Tabs keep progress this session — drafts not DB-persisted (v1).</span>
+      </div>
+
+      <div class="x-steps">
+        <span class="x-step cur">Draft</span><span class="sep">›</span>
+        <span class="x-step" title="Optional — skip-ahead is legal (MOD-10)">Quoted</span><span class="sep">›</span>
+        <span class="x-step" title="Books the JE on first Confirm">Confirmed</span><span class="sep">›</span>
+        <span class="x-step disabled" title="Illegal from Draft: must Confirm first (F1 matrix drives both UI and server)">Posted</span><span class="sep">›</span>
+        <span class="x-step disabled" title="Auto-advances when no line requires fulfillment">Fulfilled</span>
+      </div>
+
+      <div class="x-money">
+        <div><span class="l">TOTAL</span><br><span class="v">$15,099.00</span></div>
+        <div><span class="l">PAID</span><br><span class="v">—</span></div>
+        <div><span class="l">BALANCE</span><br><span class="v">$15,099.00</span></div>
+        <div style="padding:9px 14px"><span class="mjm-chip mjm-chip--neutral">Unpaid</span></div>
+      </div>
+
+      <div class="x-fail"><i class="fa-solid fa-circle-exclamation" style="color:var(--mj-status-error)"></i>
+        <span><b>Confirm blocked:</b> line 2 (Conference ticket) has no <b>Revenue</b> account mapping for its category.
+        <a href="#" style="color:var(--mj-brand-primary)">Fix in Accounting → Account links</a> (admins only), then retry.</span>
+      </div>
+
+      <div class="x-innertabs">
+        <span class="x-itab">Details</span>
+        <span class="x-itab active">Lines</span>
+        <span class="x-itab">Bill-To / Ship-To</span>
+        <span class="x-itab">Payments</span>
+        <span class="x-itab">Accounting</span>
+      </div>
+
+      <table class="mjm-grid">
+        <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Disc %</th><th class="num">Line total</th><th>Rev rec</th><th>Service period</th><th style="width:34px"></th></tr></thead>
+        <tbody>
+          <tr>
+            <td><input class="mjm-input" value="Annual membership" style="width:100%"></td>
+            <td><input class="mjm-input" value="10" style="width:64px;text-align:right"></td>
+            <td><input class="mjm-input" value="1,200.00" style="width:100px;text-align:right"><span class="pricebadge" title="B.2: resolved price + source; manual edit flips to 'overridden' (direct entry wins, BO-D33)"><i class="fa-solid fa-tag"></i> PriceList Standard · tier 10+</span></td>
+            <td><input class="mjm-input" value="0" style="width:56px;text-align:right"></td>
+            <td class="num">$12,000.00</td>
+            <td><span class="mjm-chip mjm-chip--info">Deferred · svc period</span> <a href="#" title="Recognition preview (waterfall viewer)" style="font-size:11px;color:var(--mj-brand-primary)">preview</a></td>
+            <td><input class="mjm-input" type="date" value="2026-08-01" style="width:120px"> – <input class="mjm-input" type="date" value="2027-07-31" style="width:120px"></td>
+            <td><button class="x-iconbtn"><i class="fa-regular fa-trash-can"></i></button></td>
+          </tr>
+          <tr>
+            <td><input class="mjm-input" value="Conference ticket" style="width:100%"></td>
+            <td><input class="mjm-input" value="3" style="width:64px;text-align:right"></td>
+            <td><input class="mjm-input" value="1,033.00" style="width:100px;text-align:right"><span class="pricebadge" style="color:var(--mj-status-warning-text,var(--mj-status-warning))"><i class="fa-solid fa-pen"></i> overridden (direct entry)</span></td>
+            <td><input class="mjm-input" value="0" style="width:56px;text-align:right"></td>
+            <td class="num">$3,099.00</td>
+            <td><span class="mjm-chip mjm-chip--neutral">Point-in-time</span></td>
+            <td class="mjm-muted">—</td>
+            <td><button class="x-iconbtn"><i class="fa-regular fa-trash-can"></i></button></td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="addline" style="margin:8px 0 0"><i class="fa-solid fa-plus"></i> Add line</p>
+
+      <div class="x-footer">
+        <button class="mjm-btn mjm-btn--primary"><i class="fa-regular fa-floppy-disk"></i> Save order</button>
+        <button class="mjm-btn mjm-btn--flat">Discard draft</button>
+        <span class="mjm-muted" style="margin-left:auto;font-size:12px">Post-Confirm, "Void" becomes "Create reversal…" (F2: pick lines → preview credit order). Details tab: customer org/contact, sales rep, dates, terms, external doc №.</span>
+      </div>
+    </main>
+  </div>
+</div>
+<script>function rail(){document.getElementById('rail').classList.toggle('collapsed')}</script>
+</body>
+</html>
