@@ -48,6 +48,10 @@ body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
 .x-rail a.active{background:color-mix(in srgb,var(--mj-brand-primary) 10%,transparent);color:var(--mj-brand-primary);font-weight:600}
 .x-rail.collapsed a .lbl,.x-rail.collapsed .x-badge{display:none}
 .x-badge{margin-left:auto;background:var(--mj-status-error);color:#fff;border-radius:999px;font-size:10.5px;padding:1px 7px;font-weight:700}
+.x-scopechip{display:flex;align-items:center;gap:9px;margin:4px 2px 0;padding:8px 10px;border:1px solid var(--mj-border-default);border-radius:8px;background:var(--mj-bg-surface-card);font-size:12.5px;cursor:pointer;white-space:nowrap}
+.x-scopechip i{color:var(--mj-brand-primary)}
+.x-rail.collapsed .x-scopechip .lbl{display:none}
+.x-toggle{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border:1px solid var(--mj-brand-primary);border-radius:999px;background:color-mix(in srgb,var(--mj-brand-primary) 10%,transparent);color:var(--mj-brand-primary);font-size:11.5px;font-weight:600;cursor:pointer}
 .x-content{flex:1;min-width:0;overflow:auto;padding:20px 24px}
 .x-pagehead{display:flex;align-items:center;gap:12px;margin-bottom:16px}
 .x-pagehead h1{font-size:19px;margin:0}
@@ -98,7 +102,6 @@ tr.clickable:hover td{background:var(--mj-bg-surface-hover)}
       <a class="x-tab" href="#"><i class="fa-solid fa-chart-column"></i> Reports</a>
     </div>
     <div class="right">
-      <span class="x-scope"><i class="fa-solid fa-building"></i> Scope: <b>Demo Co. +2</b> <i class="fa-solid fa-chevron-down" style="font-size:10px"></i></span>
       <button class="x-iconbtn" title="Search"><i class="fa-solid fa-magnifying-glass"></i></button>
       <button class="x-iconbtn" title="Notifications"><i class="fa-regular fa-bell"></i></button>
       <span class="x-avatar">MT</span>
@@ -108,14 +111,16 @@ tr.clickable:hover td{background:var(--mj-bg-surface-hover)}
   <div class="x-body">
     <aside class="x-rail" id="rail">
       <button class="x-iconbtn" onclick="rail()" title="Collapse / expand" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
+      <div class="x-scopechip" title="App-wide company scope (persisted per user); interim home while an Explorer header-widget slot is proposed upstream"><i class="fa-solid fa-building"></i><span class="lbl">Scope: <b>Demo Co. +2</b></span></div>
       <div class="x-rail-group">MAIN</div>
       <a class="active" href="#"><i class="fa-solid fa-gauge-high"></i><span class="lbl">Dashboard</span></a>
       <a href="#"><i class="fa-solid fa-table-list"></i><span class="lbl">All orders</span></a>
-      <a href="#"><i class="fa-solid fa-plus"></i><span class="lbl">New order</span></a>
+      <a href="#"><i class="fa-solid fa-diagram-project"></i><span class="lbl">Order editor</span></a>
       <a href="#"><i class="fa-solid fa-table-columns"></i><span class="lbl">Status board</span></a>
       <div class="x-rail-group">WORK</div>
       <a href="#"><i class="fa-solid fa-dolly"></i><span class="lbl">Fulfillment queue</span></a>
       <a href="#"><i class="fa-solid fa-hourglass-half"></i><span class="lbl">Overdue worklist</span><span class="x-badge">3</span></a>
+      <a href="#"><i class="fa-solid fa-rotate"></i><span class="lbl">Subscriptions &amp; renewals</span></a>
     </aside>
 
     <main class="x-content">
@@ -144,7 +149,9 @@ tr.clickable:hover td{background:var(--mj-bg-surface-hover)}
       </div>
 
       <div class="mjm-card">
-        <p class="x-card-title"><i class="fa-solid fa-clock-rotate-left"></i> My recent orders <a class="more" href="#">See all orders →</a></p>
+        <p class="x-card-title"><i class="fa-solid fa-clock-rotate-left"></i> Recent orders
+          <span class="x-toggle" title="Toggle between everything in scope and just yours"><i class="fa-solid fa-user"></i> Only mine</span>
+          <a class="more" href="#">See all orders →</a></p>
         <table class="mjm-grid">
           <thead><tr><th>Order #</th><th>Customer</th><th>Status</th><th>Payment</th><th class="num">Total</th><th class="num">Balance</th><th>Due</th></tr></thead>
           <tbody>
@@ -165,7 +172,8 @@ tr.clickable:hover td{background:var(--mj-bg-surface-hover)}
   <header>
     <h2 class="mjm-mono">ORD-1042</h2>
     <span>Acme Corp</span>
-    <button class="x-iconbtn" style="margin-left:auto" onclick="slide(false)"><i class="fa-solid fa-xmark"></i></button>
+    <button class="x-iconbtn" style="margin-left:auto" title="Open in order editor (full-window form)"><i class="fa-solid fa-arrow-up-right-from-square"></i></button>
+    <button class="x-iconbtn" onclick="slide(false)"><i class="fa-solid fa-xmark"></i></button>
   </header>
   <div class="sbody">
     <div class="x-steps">

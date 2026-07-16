@@ -36,6 +36,16 @@ role-gating directive, cross-app deep-link helper — targets + triggers in acco
 local, no premature abstraction; MJ-base candidacy tracked in the component inventory). Build each
 shared thing ONCE.
 
+**Mockup round 1 rulings (Marcelo, 2026-07-15 — bind the build; full list in the accounting UI
+plan §0, identical shell):** top-nav categories (= Explorer app nav items) + collapsible nav rail;
+no creation items in the rail; Filters + top-right create button per page; modal = quick baseline
+with a pop-out (↗) to the full-depth home (order create modal → **Order editor**, the §1
+full-window tabbed form); slide-in = quick view w/ pop-out; dashboards show "Recent orders" with
+an "Only mine" toggle (not mine-only); expensive stats precomputed-on-schedule only; company scope
+chip = rail-top (app-owned) pending an Explorer header-widget slot upstream. **Subscriptions &
+renewals live in ORDERS** (a renewal materializes as an order; payments sees only the resulting
+payment) — rail item under WORK, §11 surfaces.
+
 ## 1. Compose / edit Order (Robert's top feedback + Amith's 2026-07-11 UX direction)
 
 - **Full-WINDOW order form** (Amith, resolving old Q2): composing/editing an order takes the full window —
