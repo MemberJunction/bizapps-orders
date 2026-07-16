@@ -1,0 +1,80 @@
+<mj-page-header-interior Title="Customer A/R" Subtitle="Who owes what — the A/R position and the orders behind it.">
+  <div meta>
+    <mj-stat-badge [Label]="Customers.length + ' customers with a balance'" Icon="fa-solid fa-users" Variant="info"></mj-stat-badge>
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  @if (IsLoading) {
+    <mj-loading text="Loading the A/R book…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="car__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else if (Customers.length === 0) {
+    <mj-empty-state
+      Icon="fa-solid fa-check"
+      Title="Nothing outstanding"
+      Message="No customer has an open A/R balance in the companies you have in scope.">
+    </mj-empty-state>
+  } @else {
+    <div class="car">
+      <!-- Who to chase, biggest first. -->
+      <aside class="car__list">
+        @for (c of Customers; track c.CustomerOrganizationID) {
+          <button class="car__item" [class.car__item--sel]="IsSelected(c)" (click)="OnCustomerSelected(c.CustomerOrganizationID)">
+            <span class="car__cname">{{ c.CustomerName }}</span>
+            <span class="car__cbal">{{ c.TotalOpen | currency }}</span>
+          </button>
+        }
+      </aside>
+
+      <section class="car__detail">
+        <!-- Accounting's component. The numbers are its; orders only hosts them. -->
+        <mj-customer-ar-base [View]="Selected"></mj-customer-ar-base>
+
+        <!-- Orders' own half: the orders behind the balance + the verbs. -->
+        <p class="car__h">Open orders</p>
+        @if (IsLoadingOrders) {
+          <mj-loading text="Loading open orders…"></mj-loading>
+        } @else if (OpenOrders.length === 0) {
+          <p class="car__muted">
+            No open orders for this customer — their balance comes from journal entries booked
+            outside the order pipeline.
+          </p>
+        } @else {
+          <div class="car__gridwrap">
+            <table class="car__grid">
+              <thead><tr><th>Order №</th><th>Status</th><th>Due</th><th class="num">Balance</th></tr></thead>
+              <tbody>
+                @for (o of OpenOrders; track o.ID) {
+                  <tr>
+                    <td>{{ o.OrderNumber }}</td>
+                    <td>{{ o.Status }}</td>
+                    <td>
+                      @if (o.DueDate) {
+                        {{ o.DueDate | date: 'yyyy-MM-dd' : 'UTC' }}
+                        @if (IsOverdue(o)) {
+                          <span class="car__overdue">overdue</span>
+                        }
+                      } @else {
+                        <span class="car__muted">—</span>
+                      }
+                    </td>
+                    <td class="num">{{ o.Balance | currency }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="car__hint">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            To take money against these, use <b>Payments → Payment entry</b> — it applies a payment
+            across a customer's open orders oldest-first.
+          </p>
+        }
+      </section>
+    </div>
+  }
+</mj-page-body>

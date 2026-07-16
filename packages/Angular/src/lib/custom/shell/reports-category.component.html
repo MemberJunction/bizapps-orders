@@ -12,6 +12,13 @@
 
     <mj-left-nav-content>
       @switch (ActivePageId) {
+        @case ('customer-ar') {
+          <mj-customer-ar-page></mj-customer-ar-page>
+        }
+        @case ('overdue') {
+          <!-- The SAME component the Orders rail renders — one page, two nav entries (§13.4). -->
+          <mj-overdue-worklist-page></mj-overdue-worklist-page>
+        }
         @default {
           <mj-shell-page-pending [PageName]="PendingPageName(ActivePageId)"></mj-shell-page-pending>
         }

@@ -1,0 +1,59 @@
+<mj-page-header-interior Title="Overdue worklist" Subtitle="Booked orders past their due date with money still open.">
+  <div meta>
+    @if (Rows.length > 0) {
+      <mj-stat-badge [Label]="Rows.length + ' overdue'" Icon="fa-solid fa-triangle-exclamation" Variant="error"></mj-stat-badge>
+      <mj-stat-badge [Label]="(TotalOverdue | currency) + ' outstanding'" Icon="fa-solid fa-sack-dollar" Variant="warning"></mj-stat-badge>
+    } @else {
+      <mj-stat-badge Label="Nothing overdue" Icon="fa-solid fa-check" Variant="success"></mj-stat-badge>
+    }
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  @if (IsLoading) {
+    <mj-loading text="Loading the worklist…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="ow__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else if (Rows.length === 0) {
+    <mj-empty-state
+      Icon="fa-solid fa-check"
+      Title="Nothing overdue"
+      Message="No booked order is past its due date with an open balance.">
+    </mj-empty-state>
+  } @else {
+    <div class="ow">
+      <p class="ow__asof">
+        <i class="fa-solid fa-clock" aria-hidden="true"></i>
+        Overdue as of {{ AsOf | date: 'medium' }} — computed live from due dates and balances, not a stored flag.
+      </p>
+      <div class="ow__gridwrap">
+        <table class="ow__grid">
+          <thead>
+            <tr><th>Order №</th><th>Customer</th><th>Due</th><th class="num">Days overdue</th><th>Bucket</th><th class="num">Balance</th></tr>
+          </thead>
+          <tbody>
+            @for (r of Rows; track r.OrderID) {
+              <tr>
+                <td>{{ r.OrderNumber }}</td>
+                <td>{{ r.Customer }}</td>
+                <!-- DueDate is a DATE (no zone) — render UTC or it shifts a day west of UTC. -->
+                <td>{{ r.DueDate ? (r.DueDate | date: 'yyyy-MM-dd' : 'UTC') : '—' }}</td>
+                <td class="num">{{ r.DaysOverdue }}</td>
+                <td><mj-stat-badge [Label]="r.Bucket" [Variant]="BucketVariant(r.Bucket)"></mj-stat-badge></td>
+                <td class="num ow__bal">{{ r.Balance | currency }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <p class="ow__hint">
+        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+        To take money against these, use <b>Payments → Payment entry</b>; for the customer's full
+        position see <b>Reports → Customer A/R</b>. Reminder delivery (email / bill.com) is not built.
+      </p>
+    </div>
+  }
+</mj-page-body>

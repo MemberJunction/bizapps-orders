@@ -1,0 +1,131 @@
+/* Customer A/R (§13.4). Height chain: declares its own flex-column host. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.car {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 14px;
+  min-height: 0;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .car {
+    grid-template-columns: 1fr;
+  }
+}
+
+.car__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+  min-height: 0;
+  max-height: 100%;
+}
+.car__item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 11px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 9px;
+  background: var(--mj-bg-surface-card);
+  cursor: pointer;
+}
+.car__item:hover {
+  background: var(--mj-bg-surface-hover);
+}
+.car__item--sel {
+  border-color: var(--mj-brand-primary);
+  background: color-mix(in srgb, var(--mj-brand-primary) 8%, transparent);
+}
+.car__cname {
+  font-size: 12.5px;
+  color: var(--mj-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.car__cbal {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--mj-text-primary);
+  white-space: nowrap;
+}
+
+.car__detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.car__h {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+}
+
+.car__gridwrap {
+  overflow-x: auto;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+}
+.car__grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.car__grid th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--mj-border-default);
+}
+.car__grid td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+}
+.car__grid th.num,
+.car__grid td.num {
+  text-align: right;
+}
+.car__overdue {
+  margin-left: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--mj-status-error-text);
+}
+
+.car__muted,
+.car__hint {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.car__error {
+  margin: 0;
+  color: var(--mj-status-error-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
