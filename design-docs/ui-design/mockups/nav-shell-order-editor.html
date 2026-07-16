@@ -83,9 +83,9 @@ body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
     <span class="x-brand"><i class="fa-solid fa-cubes"></i> MJ <span class="app">/ Orders</span></span>
     <div class="x-tabs">
       <a class="x-tab active" href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-file-invoice-dollar"></i> Orders</a>
-      <a class="x-tab" href="nav-shell-payments.html"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
+      <a class="x-tab" href="nav-shell-payments-dashboard.html"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
       <a class="x-tab" href="nav-shell-products.html"><i class="fa-solid fa-box-open"></i> Products</a>
-      <a class="x-tab" href="#"><i class="fa-solid fa-chart-column"></i> Reports</a>
+      <a class="x-tab" href="nav-shell-customer-ar.html"><i class="fa-solid fa-chart-column"></i> Reports</a>
     </div>
     <div class="right">
       <button class="x-iconbtn"><i class="fa-solid fa-magnifying-glass"></i></button>
@@ -96,17 +96,17 @@ body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
 
   <div class="x-body">
     <aside class="x-rail" id="rail">
-      <button class="x-iconbtn" onclick="rail()" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
-      <div class="x-scopechip"><i class="fa-solid fa-building"></i><span class="lbl">Scope: <b>Demo Co. +2</b></span></div>
+      <button class="x-iconbtn" onclick="rail()" title="Collapse / expand" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
+      <div class="x-scopechip" title="App-wide company scope (persisted per user); interim home while an Explorer header-widget slot is proposed upstream"><i class="fa-solid fa-building"></i><span class="lbl">Scope: <b>Demo Co. +2</b></span></div>
       <div class="x-rail-group">MAIN</div>
       <a href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-gauge-high"></i><span class="lbl">Dashboard</span></a>
       <a href="nav-shell-all-orders.html"><i class="fa-solid fa-table-list"></i><span class="lbl">All orders</span></a>
       <a class="active" href="#"><i class="fa-solid fa-diagram-project"></i><span class="lbl">Order editor</span></a>
       <a href="nav-shell-status-board.html"><i class="fa-solid fa-table-columns"></i><span class="lbl">Status board</span></a>
       <div class="x-rail-group">WORK</div>
-      <a href="#"><i class="fa-solid fa-dolly"></i><span class="lbl">Fulfillment queue</span></a>
-      <a href="#"><i class="fa-solid fa-hourglass-half"></i><span class="lbl">Overdue worklist</span><span class="x-badge">3</span></a>
-      <a href="#"><i class="fa-solid fa-rotate"></i><span class="lbl">Subscriptions &amp; renewals</span></a>
+      <a href="nav-shell-fulfillment-queue.html"><i class="fa-solid fa-dolly"></i><span class="lbl">Fulfillment queue</span></a>
+      <a href="nav-shell-overdue-worklist.html"><i class="fa-solid fa-hourglass-half"></i><span class="lbl">Overdue worklist</span><span class="x-badge">3</span></a>
+      <a href="nav-shell-subscriptions.html"><i class="fa-solid fa-rotate"></i><span class="lbl">Subscriptions &amp; renewals</span></a>
     </aside>
 
     <main class="x-content">

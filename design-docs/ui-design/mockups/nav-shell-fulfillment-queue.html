@@ -1,16 +1,13 @@
 <!doctype html>
 <!-- ============================================================================
-  MOCKUP (ephemeral) · cycle 2026-07-15 · Orders — STATUS BOARD
-  The trimmed board (plan §2): WORKING statuses only (Quoted/Confirmed/
-  Posted/Fulfilled — Drafts + terminal states live in All orders), time
-  window default, compact cards. Cards open the quick-view modal; pop-out
-  to the order editor. Board-vs-accordion is decided by USE, not upfront.
+  MOCKUP (ephemeral) · cycle 2026-07-15 · Orders — Fulfillment queue
+  Generated as part of the fully-fleshed shareable set (every nav link works).
 ============================================================================ -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mockup — Orders · Status board</title>
+<title>Mockup — Orders · Fulfillment queue</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="../style-kit/mj-mock.css">
 <style>
@@ -44,18 +41,31 @@ body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
 .x-scopechip i{color:var(--mj-brand-primary)}
 .x-rail.collapsed .x-scopechip .lbl{display:none}
 .x-content{flex:1;min-width:0;overflow:auto;padding:20px 24px}
-.x-pagehead{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.x-pagehead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
 .x-pagehead h1{font-size:19px;margin:0}
 .x-pagehead .actions{margin-left:auto;display:flex;gap:8px}
-.x-board{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:start}
-.x-col{background:var(--mj-bg-surface-card);border:1px solid var(--mj-border-default);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px}
-.x-colhead{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;padding:2px 4px}
-.x-colhead .n{margin-left:auto;color:var(--mj-text-muted);font-weight:600}
-.x-cardo{background:var(--mj-bg-surface);border:1px solid var(--mj-border-default);border-radius:9px;padding:9px 11px;font-size:12.5px;cursor:pointer;display:flex;flex-direction:column;gap:3px}
-.x-cardo:hover{border-color:var(--mj-brand-primary)}
-.x-cardo .t{display:flex;gap:8px;align-items:center}
-.x-cardo .amt{margin-left:auto;font-weight:700}
-.x-cardo .s{font-size:11px;color:var(--mj-text-muted)}
+.x-filterbar{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.x-filterbar .count{margin-left:auto;font-size:12.5px;color:var(--mj-text-muted)}
+.x-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+.x-card-title{font-size:13px;font-weight:700;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.x-card-title .more{margin-left:auto;font-size:12px;font-weight:500;color:var(--mj-brand-primary);text-decoration:none}
+.x-kv{display:grid;grid-template-columns:150px 1fr;row-gap:6px;font-size:13px;margin:0}
+.x-kv dt{color:var(--mj-text-muted)}
+.x-kv dd{margin:0}
+.x-sect{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted);margin:0 0 6px}
+.x-note{font-size:12px;color:var(--mj-text-muted);margin-top:12px}
+tr.hoverable:hover td,tbody tr:hover td{background:var(--mj-bg-surface-hover)}
+tfoot td{font-weight:700;border-top:2px solid var(--mj-border-strong,var(--mj-border-default))}
+.x-inboxitem{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--mj-border-default);border-left:3px solid var(--mj-status-warning);border-radius:9px;background:var(--mj-bg-surface-card);margin-bottom:10px}
+.x-inboxitem .t{font-size:13px;font-weight:600}
+.x-inboxitem .s{font-size:11.5px;color:var(--mj-text-muted)}
+.x-inboxitem .mjm-btn{margin-left:auto}
+.x-money{display:grid;grid-template-columns:1fr 1fr 1fr auto;border:1px solid var(--mj-border-default);border-radius:10px;overflow:hidden;margin:0 0 14px}
+.x-money>div{padding:9px 14px;border-right:1px solid var(--mj-border-default)}
+.x-money>div:last-child{border-right:none;display:flex;align-items:center}
+.x-money .l{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted)}
+.x-money .v{font-size:15px;font-weight:700}
+.x-cols2{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;align-items:start}
 </style>
 </head>
 <body>
@@ -69,12 +79,11 @@ body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
       <a class="x-tab" href="nav-shell-customer-ar.html"><i class="fa-solid fa-chart-column"></i> Reports</a>
     </div>
     <div class="right">
-      <button class="x-iconbtn"><i class="fa-solid fa-magnifying-glass"></i></button>
-      <button class="x-iconbtn"><i class="fa-regular fa-bell"></i></button>
+      <button class="x-iconbtn" title="Search"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <button class="x-iconbtn" title="Notifications"><i class="fa-regular fa-bell"></i></button>
       <span class="x-avatar">MT</span>
     </div>
   </nav>
-
   <div class="x-body">
     <aside class="x-rail" id="rail">
       <button class="x-iconbtn" onclick="rail()" title="Collapse / expand" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
@@ -83,50 +92,24 @@ body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
       <a href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-gauge-high"></i><span class="lbl">Dashboard</span></a>
       <a href="nav-shell-all-orders.html"><i class="fa-solid fa-table-list"></i><span class="lbl">All orders</span></a>
       <a href="nav-shell-order-editor.html"><i class="fa-solid fa-diagram-project"></i><span class="lbl">Order editor</span></a>
-      <a class="active" href="#"><i class="fa-solid fa-table-columns"></i><span class="lbl">Status board</span></a>
+      <a href="nav-shell-status-board.html"><i class="fa-solid fa-table-columns"></i><span class="lbl">Status board</span></a>
       <div class="x-rail-group">WORK</div>
-      <a href="nav-shell-fulfillment-queue.html"><i class="fa-solid fa-dolly"></i><span class="lbl">Fulfillment queue</span></a>
+      <a class="active" href="#"><i class="fa-solid fa-dolly"></i><span class="lbl">Fulfillment queue</span></a>
       <a href="nav-shell-overdue-worklist.html"><i class="fa-solid fa-hourglass-half"></i><span class="lbl">Overdue worklist</span><span class="x-badge">3</span></a>
       <a href="nav-shell-subscriptions.html"><i class="fa-solid fa-rotate"></i><span class="lbl">Subscriptions &amp; renewals</span></a>
     </aside>
-
     <main class="x-content">
       <div class="x-pagehead">
-        <h1>Status board</h1>
-        <span class="mjm-chip mjm-chip--info">This week</span>
-        <span class="actions">
-          <select class="mjm-select"><option>This week</option><option>Last 7 days</option><option>This month</option></select>
-          <button class="mjm-btn mjm-btn--outline"><i class="fa-solid fa-filter"></i> Filters</button>
-        </span>
+        <h1>Fulfillment queue</h1><span class="mjm-chip mjm-chip--info">Posted orders · lines pending</span>
       </div>
-
-      <div class="x-board">
-        <div class="x-col">
-          <div class="x-colhead"><i class="fa-solid fa-file-signature" style="color:var(--mj-text-muted)"></i> Quoted <span class="n">3</span></div>
-          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1044</span><span class="amt">$5,400</span></span><span class="s">Initech · quoted 07-14</span></div>
-          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1043</span><span class="amt">$1,150</span></span><span class="s">Globex · quoted 07-14</span></div>
-          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1037</span><span class="amt">$920</span></span><span class="s">Hooli · quoted 07-12</span></div>
-        </div>
-        <div class="x-col">
-          <div class="x-colhead"><i class="fa-solid fa-check" style="color:var(--mj-brand-primary)"></i> Confirmed <span class="n">9</span></div>
-          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1041</span><span class="amt">$2,400</span></span><span class="s">Globex · JE booked · unpaid</span></div>
-          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1036</span><span class="amt">$7,800</span></span><span class="s">Acme Corp · partially paid</span></div>
-          <div class="x-cardo"><span class="s" style="text-align:center">+ 7 more…</span></div>
-        </div>
-        <div class="x-col">
-          <div class="x-colhead"><i class="fa-solid fa-paper-plane" style="color:var(--mj-status-success)"></i> Posted <span class="n">12</span></div>
-          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1042</span><span class="amt">$15,099</span></span><span class="s">Acme Corp · due 08-01 · bal $5,099</span></div>
-          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1040</span><span class="amt">$860</span></span><span class="s">Initech · awaiting fulfillment</span></div>
-          <div class="x-cardo"><span class="s" style="text-align:center">+ 10 more…</span></div>
-        </div>
-        <div class="x-col">
-          <div class="x-colhead"><i class="fa-solid fa-box-check fa-box" style="color:var(--mj-status-success)"></i> Fulfilled <span class="n">41</span></div>
-          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1039</span><span class="amt">$12,000</span></span><span class="s">Umbrella · <span style="color:var(--mj-status-error)">overdue</span></span></div>
-          <div class="x-cardo"><span class="t"><span class="mjm-mono">ORD-1038</span><span class="amt">$7,300</span></span><span class="s">Stark Industries · paid ✓</span></div>
-          <div class="x-cardo"><span class="s" style="text-align:center">+ 39 more…</span></div>
-        </div>
-      </div>
-      <p class="mjm-muted" style="font-size:12px;margin-top:12px"><i class="fa-solid fa-circle-info"></i> Working statuses only — Drafts and terminal states live in All orders. Cards open the quick-view modal; pop-out (↗) to the order editor. Board vs Matt's accordion sketch: decided by USE after the trim (plan §2).</p>
+      <table class="mjm-grid">
+        <thead><tr><th>Order</th><th>Customer</th><th>Line</th><th class="num">Qty</th><th>Ship to</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          <tr><td class="mjm-mono">ORD-1040</td><td>Initech</td><td>Artisan cheese box</td><td class="num">10</td><td>Chicago, IL</td><td><span class="mjm-chip mjm-chip--warning">Pending</span></td><td><button class="mjm-btn mjm-btn--sm mjm-btn--primary">Mark fulfilled</button></td></tr>
+          <tr><td class="mjm-mono">ORD-1036</td><td>Acme Corp</td><td>Welcome kit</td><td class="num">25</td><td>Austin, TX</td><td><span class="mjm-chip mjm-chip--warning">Pending</span></td><td><button class="mjm-btn mjm-btn--sm mjm-btn--primary">Mark fulfilled</button></td></tr>
+        </tbody>
+      </table>
+      <p class="x-note"><i class="fa-solid fa-circle-info"></i> Visible to the Fulfiller role (role-gated seam; A2). When an order's LAST pending line is fulfilled it auto-advances to Fulfilled — no JE fires on that flip (MOD-8: fulfillment ↔ rev-rec disconnected). No logistics depth here (BizAppsInventory later).</p>
     </main>
   </div>
 </div>

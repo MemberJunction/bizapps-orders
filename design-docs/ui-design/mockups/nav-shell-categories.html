@@ -1,0 +1,115 @@
+<!doctype html>
+<!-- ============================================================================
+  MOCKUP (ephemeral) · cycle 2026-07-15 · Orders — Categories (classification defaults)
+  Generated as part of the fully-fleshed shareable set (every nav link works).
+============================================================================ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup — Orders · Categories (classification defaults)</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../style-kit/mj-mock.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
+.x-app{display:flex;flex-direction:column;height:100vh}
+.x-topnav{display:flex;align-items:center;gap:6px;height:52px;padding:0 16px;background:var(--mj-bg-surface);border-bottom:1px solid var(--mj-border-default);flex:none}
+.x-brand{display:flex;align-items:center;gap:9px;font-weight:700;margin-right:22px;white-space:nowrap;font-size:14.5px}
+.x-brand i{color:var(--mj-brand-primary);font-size:17px}
+.x-brand .app{color:var(--mj-text-muted);font-weight:500}
+.x-tabs{display:flex;gap:2px;height:100%}
+.x-tab{display:flex;align-items:center;gap:7px;padding:0 15px;color:var(--mj-text-secondary);text-decoration:none;font-weight:500;font-size:13.5px;border-bottom:3px solid transparent;border-top:3px solid transparent}
+.x-tab:hover{color:var(--mj-text-primary);background:var(--mj-bg-surface-hover)}
+.x-tab.active{color:var(--mj-brand-primary);border-bottom-color:var(--mj-brand-primary);font-weight:600}
+.x-topnav .right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.x-iconbtn{border:none;background:none;color:var(--mj-text-secondary);font-size:15px;cursor:pointer;padding:7px;border-radius:7px}
+.x-iconbtn:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-avatar{width:30px;height:30px;border-radius:50%;background:var(--mj-brand-primary);color:var(--mj-text-inverse,#fff);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600}
+.x-body{display:flex;flex:1;min-height:0}
+.x-rail{width:230px;flex:none;background:var(--mj-bg-surface);border-right:1px solid var(--mj-border-default);display:flex;flex-direction:column;padding:8px;gap:2px;transition:width .18s ease;overflow-x:hidden;overflow-y:auto}
+.x-rail.collapsed{width:56px}
+.x-rail-group{margin:14px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:.08em;color:var(--mj-text-muted);padding:0 10px;white-space:nowrap}
+.x-rail.collapsed .x-rail-group{visibility:hidden;height:8px;margin:8px 0 0}
+.x-rail a{display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:8px;color:var(--mj-text-secondary);text-decoration:none;font-size:13.5px;white-space:nowrap}
+.x-rail a i{width:18px;text-align:center;font-size:14px;flex:none}
+.x-rail a:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
+.x-rail a.active{background:color-mix(in srgb,var(--mj-brand-primary) 10%,transparent);color:var(--mj-brand-primary);font-weight:600}
+.x-rail.collapsed a .lbl,.x-rail.collapsed .x-badge{display:none}
+.x-badge{margin-left:auto;background:var(--mj-status-error);color:#fff;border-radius:999px;font-size:10.5px;padding:1px 7px;font-weight:700}
+.x-scopechip{display:flex;align-items:center;gap:9px;margin:4px 2px 0;padding:8px 10px;border:1px solid var(--mj-border-default);border-radius:8px;background:var(--mj-bg-surface-card);font-size:12.5px;cursor:pointer;white-space:nowrap}
+.x-scopechip i{color:var(--mj-brand-primary)}
+.x-rail.collapsed .x-scopechip .lbl{display:none}
+.x-content{flex:1;min-width:0;overflow:auto;padding:20px 24px}
+.x-pagehead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.x-pagehead h1{font-size:19px;margin:0}
+.x-pagehead .actions{margin-left:auto;display:flex;gap:8px}
+.x-filterbar{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.x-filterbar .count{margin-left:auto;font-size:12.5px;color:var(--mj-text-muted)}
+.x-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+.x-card-title{font-size:13px;font-weight:700;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.x-card-title .more{margin-left:auto;font-size:12px;font-weight:500;color:var(--mj-brand-primary);text-decoration:none}
+.x-kv{display:grid;grid-template-columns:150px 1fr;row-gap:6px;font-size:13px;margin:0}
+.x-kv dt{color:var(--mj-text-muted)}
+.x-kv dd{margin:0}
+.x-sect{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted);margin:0 0 6px}
+.x-note{font-size:12px;color:var(--mj-text-muted);margin-top:12px}
+tr.hoverable:hover td,tbody tr:hover td{background:var(--mj-bg-surface-hover)}
+tfoot td{font-weight:700;border-top:2px solid var(--mj-border-strong,var(--mj-border-default))}
+.x-inboxitem{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--mj-border-default);border-left:3px solid var(--mj-status-warning);border-radius:9px;background:var(--mj-bg-surface-card);margin-bottom:10px}
+.x-inboxitem .t{font-size:13px;font-weight:600}
+.x-inboxitem .s{font-size:11.5px;color:var(--mj-text-muted)}
+.x-inboxitem .mjm-btn{margin-left:auto}
+.x-money{display:grid;grid-template-columns:1fr 1fr 1fr auto;border:1px solid var(--mj-border-default);border-radius:10px;overflow:hidden;margin:0 0 14px}
+.x-money>div{padding:9px 14px;border-right:1px solid var(--mj-border-default)}
+.x-money>div:last-child{border-right:none;display:flex;align-items:center}
+.x-money .l{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted)}
+.x-money .v{font-size:15px;font-weight:700}
+.x-cols2{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;align-items:start}
+</style>
+</head>
+<body>
+<div class="x-app">
+  <nav class="x-topnav">
+    <span class="x-brand"><i class="fa-solid fa-cubes"></i> MJ <span class="app">/ Orders</span></span>
+    <div class="x-tabs">
+      <a class="x-tab" href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-file-invoice-dollar"></i> Orders</a>
+      <a class="x-tab" href="nav-shell-payments-dashboard.html"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
+      <a class="x-tab active" href="nav-shell-products.html"><i class="fa-solid fa-box-open"></i> Products</a>
+      <a class="x-tab" href="nav-shell-customer-ar.html"><i class="fa-solid fa-chart-column"></i> Reports</a>
+    </div>
+    <div class="right">
+      <button class="x-iconbtn" title="Search"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <button class="x-iconbtn" title="Notifications"><i class="fa-regular fa-bell"></i></button>
+      <span class="x-avatar">MT</span>
+    </div>
+  </nav>
+  <div class="x-body">
+    <aside class="x-rail" id="rail">
+      <button class="x-iconbtn" onclick="rail()" title="Collapse / expand" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
+      <div class="x-scopechip" title="App-wide company scope (persisted per user); interim home while an Explorer header-widget slot is proposed upstream"><i class="fa-solid fa-building"></i><span class="lbl">Scope: <b>Demo Co. +2</b></span></div>
+      <div class="x-rail-group">MAIN</div>
+      <a href="nav-shell-products.html"><i class="fa-solid fa-box-open"></i><span class="lbl">Catalog</span></a>
+      <a class="active" href="#"><i class="fa-solid fa-sitemap"></i><span class="lbl">Categories</span></a>
+      <a href="nav-shell-pricing.html"><i class="fa-solid fa-tags"></i><span class="lbl">Pricing</span></a>
+      <a href="nav-shell-gl-mapping.html"><i class="fa-solid fa-link"></i><span class="lbl">GL mapping</span></a>
+    </aside>
+    <main class="x-content">
+      <div class="x-pagehead">
+        <h1>Product categories</h1><span class="actions"><button class="mjm-btn mjm-btn--primary"><i class="fa-solid fa-plus"></i> New category</button></span>
+      </div>
+      <table class="mjm-grid">
+        <thead><tr><th>Category</th><th class="num">Products</th><th>Default rev-rec</th><th>Revenue account (via links)</th><th>Default JE pattern</th></tr></thead>
+        <tbody>
+          <tr><td><b>Memberships</b></td><td class="num">4</td><td><span class="mjm-chip mjm-chip--info">Deferred · svc period</span></td><td class="mjm-mono">4000 · Sales</td><td>A/R ↔ DefRev, recognize by schedule</td></tr>
+          <tr><td><b>Events</b></td><td class="num">7</td><td><span class="mjm-chip mjm-chip--neutral">Point-in-time</span></td><td><span class="mjm-chip mjm-chip--error">no Revenue link</span></td><td>A/R ↔ Revenue at event date</td></tr>
+          <tr><td><b>Retail</b></td><td class="num">12</td><td><span class="mjm-chip mjm-chip--neutral">Point-in-time</span></td><td class="mjm-mono">4100 · Retail sales</td><td>A/R ↔ Revenue at Confirm</td></tr>
+        </tbody>
+      </table>
+      <p class="x-note"><i class="fa-solid fa-circle-info"></i> Categories classify defaults ONCE for every product in them (Marcelo direction): rev-rec type, revenue account (via the accounting GLAccountLink pointing at the category), and the resulting JE pattern. A product-level link overrides its category. Fix missing links in <a href="nav-shell-gl-mapping.html" style="color:var(--mj-brand-primary)">GL mapping</a>.</p>
+    </main>
+  </div>
+</div>
+<script>function rail(){document.getElementById('rail').classList.toggle('collapsed')}</script>
+</body>
+</html>

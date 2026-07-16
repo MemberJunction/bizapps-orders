@@ -1,18 +1,13 @@
 <!doctype html>
 <!-- ============================================================================
-  MOCKUP (ephemeral) · cycle 2026-07-15 · Orders — PAYMENTS category
-  Jeremy's daily workflow (plan §4 — design review with him before build):
-  payment entry (left) + the APPLICATION PANEL (right): the customer's open
-  orders with amount-to-apply per order, auto-apply oldest-first, running
-  unapplied remainder. The SAME panel serves apply-credit mode (D.5, one
-  component two modes). Rail: All payments · Payment entry (active) ·
-  Refunds & reversals · Payment methods (vault, F.9 — add gated on Stripe).
+  MOCKUP (ephemeral) · cycle 2026-07-15 · Orders — Payments dashboard
+  Generated as part of the fully-fleshed shareable set (every nav link works).
 ============================================================================ -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mockup — Orders · Payments (entry + application)</title>
+<title>Mockup — Orders · Payments dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <link rel="stylesheet" href="../style-kit/mj-mock.css">
 <style>
@@ -40,18 +35,37 @@ body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
 .x-rail a i{width:18px;text-align:center;font-size:14px;flex:none}
 .x-rail a:hover{background:var(--mj-bg-surface-hover);color:var(--mj-text-primary)}
 .x-rail a.active{background:color-mix(in srgb,var(--mj-brand-primary) 10%,transparent);color:var(--mj-brand-primary);font-weight:600}
-.x-rail.collapsed a .lbl{display:none}
+.x-rail.collapsed a .lbl,.x-rail.collapsed .x-badge{display:none}
+.x-badge{margin-left:auto;background:var(--mj-status-error);color:#fff;border-radius:999px;font-size:10.5px;padding:1px 7px;font-weight:700}
 .x-scopechip{display:flex;align-items:center;gap:9px;margin:4px 2px 0;padding:8px 10px;border:1px solid var(--mj-border-default);border-radius:8px;background:var(--mj-bg-surface-card);font-size:12.5px;cursor:pointer;white-space:nowrap}
 .x-scopechip i{color:var(--mj-brand-primary)}
 .x-rail.collapsed .x-scopechip .lbl{display:none}
 .x-content{flex:1;min-width:0;overflow:auto;padding:20px 24px}
 .x-pagehead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
 .x-pagehead h1{font-size:19px;margin:0}
-.x-cols{display:grid;grid-template-columns:320px 1fr;gap:14px;align-items:start}
+.x-pagehead .actions{margin-left:auto;display:flex;gap:8px}
+.x-filterbar{display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.x-filterbar .count{margin-left:auto;font-size:12.5px;color:var(--mj-text-muted)}
+.x-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
 .x-card-title{font-size:13px;font-weight:700;margin:0 0 10px;display:flex;align-items:center;gap:8px}
-.x-form label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mj-text-secondary);margin-bottom:12px}
-.x-remainder{display:flex;gap:16px;align-items:center;padding:10px 14px;border:1px solid var(--mj-border-default);border-radius:10px;background:var(--mj-bg-surface-card);margin:12px 0;font-size:12.5px}
-.x-remainder b{font-size:14px}
+.x-card-title .more{margin-left:auto;font-size:12px;font-weight:500;color:var(--mj-brand-primary);text-decoration:none}
+.x-kv{display:grid;grid-template-columns:150px 1fr;row-gap:6px;font-size:13px;margin:0}
+.x-kv dt{color:var(--mj-text-muted)}
+.x-kv dd{margin:0}
+.x-sect{font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted);margin:0 0 6px}
+.x-note{font-size:12px;color:var(--mj-text-muted);margin-top:12px}
+tr.hoverable:hover td,tbody tr:hover td{background:var(--mj-bg-surface-hover)}
+tfoot td{font-weight:700;border-top:2px solid var(--mj-border-strong,var(--mj-border-default))}
+.x-inboxitem{display:flex;align-items:center;gap:12px;padding:11px 14px;border:1px solid var(--mj-border-default);border-left:3px solid var(--mj-status-warning);border-radius:9px;background:var(--mj-bg-surface-card);margin-bottom:10px}
+.x-inboxitem .t{font-size:13px;font-weight:600}
+.x-inboxitem .s{font-size:11.5px;color:var(--mj-text-muted)}
+.x-inboxitem .mjm-btn{margin-left:auto}
+.x-money{display:grid;grid-template-columns:1fr 1fr 1fr auto;border:1px solid var(--mj-border-default);border-radius:10px;overflow:hidden;margin:0 0 14px}
+.x-money>div{padding:9px 14px;border-right:1px solid var(--mj-border-default)}
+.x-money>div:last-child{border-right:none;display:flex;align-items:center}
+.x-money .l{font-size:10.5px;font-weight:700;letter-spacing:.06em;color:var(--mj-text-muted)}
+.x-money .v{font-size:15px;font-weight:700}
+.x-cols2{display:grid;grid-template-columns:1.5fr 1fr;gap:14px;align-items:start}
 </style>
 </head>
 <body>
@@ -60,72 +74,50 @@ body{margin:0;background:var(--mj-bg-page);color:var(--mj-text-primary)}
     <span class="x-brand"><i class="fa-solid fa-cubes"></i> MJ <span class="app">/ Orders</span></span>
     <div class="x-tabs">
       <a class="x-tab" href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-file-invoice-dollar"></i> Orders</a>
-      <a class="x-tab active" href="nav-shell-payments-dashboard.html"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
+      <a class="x-tab active" href="#"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
       <a class="x-tab" href="nav-shell-products.html"><i class="fa-solid fa-box-open"></i> Products</a>
       <a class="x-tab" href="nav-shell-customer-ar.html"><i class="fa-solid fa-chart-column"></i> Reports</a>
     </div>
     <div class="right">
-      <button class="x-iconbtn"><i class="fa-solid fa-magnifying-glass"></i></button>
-      <button class="x-iconbtn"><i class="fa-regular fa-bell"></i></button>
+      <button class="x-iconbtn" title="Search"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <button class="x-iconbtn" title="Notifications"><i class="fa-regular fa-bell"></i></button>
       <span class="x-avatar">MT</span>
     </div>
   </nav>
-
   <div class="x-body">
     <aside class="x-rail" id="rail">
       <button class="x-iconbtn" onclick="rail()" title="Collapse / expand" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
       <div class="x-scopechip" title="App-wide company scope (persisted per user); interim home while an Explorer header-widget slot is proposed upstream"><i class="fa-solid fa-building"></i><span class="lbl">Scope: <b>Demo Co. +2</b></span></div>
       <div class="x-rail-group">MAIN</div>
-      <a href="nav-shell-payments-dashboard.html"><i class="fa-solid fa-gauge-high"></i><span class="lbl">Dashboard</span></a>
+      <a class="active" href="#"><i class="fa-solid fa-gauge-high"></i><span class="lbl">Dashboard</span></a>
       <a href="nav-shell-all-payments.html"><i class="fa-solid fa-table-list"></i><span class="lbl">All payments</span></a>
-      <a class="active" href="#"><i class="fa-solid fa-plus"></i><span class="lbl">Payment entry</span></a>
+      <a href="nav-shell-payments.html"><i class="fa-solid fa-plus"></i><span class="lbl">Payment entry</span></a>
       <div class="x-rail-group">WORK</div>
       <a href="nav-shell-refunds.html"><i class="fa-solid fa-rotate-left"></i><span class="lbl">Refunds &amp; reversals</span></a>
       <a href="nav-shell-payment-methods.html"><i class="fa-regular fa-credit-card"></i><span class="lbl">Payment methods</span></a>
     </aside>
-
     <main class="x-content">
       <div class="x-pagehead">
-        <h1>Payment entry</h1>
-        <span class="mjm-chip mjm-chip--neutral">Manual provider (Wire / ACH / Check / Cash)</span>
+        <h1>Payments</h1><span class="mjm-chip mjm-chip--info">Last 30 days</span><span class="actions"><button class="mjm-btn mjm-btn--outline"><i class="fa-solid fa-filter"></i> Filters</button><a class="mjm-btn mjm-btn--primary" href="nav-shell-payments.html"><i class="fa-solid fa-plus"></i> Record payment</a></span>
       </div>
-
-      <div class="x-cols">
-        <div class="mjm-card x-form">
-          <p class="x-card-title"><i class="fa-solid fa-money-check-dollar"></i> Payment</p>
-          <label>Customer <input class="mjm-input" value="Acme Corp"></label>
-          <label>Amount <input class="mjm-input" value="10,000.00" style="text-align:right"></label>
-          <label>Method <select class="mjm-select"><option>Wire</option><option>ACH</option><option>Check</option><option>Cash</option></select></label>
-          <label>Date received <input class="mjm-input" type="date" value="2026-07-15"></label>
-          <label>Receiving company <select class="mjm-select"><option>Demo Co.</option><option>Cheese Co.</option></select></label>
-          <label>Reference № <input class="mjm-input" placeholder="Wire ref / check №"></label>
-        </div>
-
-        <div class="mjm-card">
-          <p class="x-card-title"><i class="fa-solid fa-arrows-down-to-line"></i> Apply to open orders — Acme Corp
-            <button class="mjm-btn mjm-btn--sm mjm-btn--outline" style="margin-left:auto"><i class="fa-solid fa-wand-magic-sparkles"></i> Auto-apply oldest first</button>
-          </p>
-          <table class="mjm-grid">
-            <thead><tr><th>Order #</th><th>Due</th><th class="num">Balance</th><th class="num" style="width:150px">Apply</th></tr></thead>
-            <tbody>
-              <tr><td class="mjm-mono">ORD-1029</td><td>2026-06-20 <span class="mjm-chip mjm-chip--error">overdue</span></td><td class="num">$4,901.00</td><td><input class="mjm-input" value="4,901.00" style="width:100%;text-align:right"></td></tr>
-              <tr><td class="mjm-mono">ORD-1042</td><td>2026-08-01</td><td class="num">$5,099.00</td><td><input class="mjm-input" value="5,099.00" style="width:100%;text-align:right"></td></tr>
-              <tr><td class="mjm-mono">ORD-1051</td><td>2026-08-15</td><td class="num">$3,250.00</td><td><input class="mjm-input" value="0.00" style="width:100%;text-align:right"></td></tr>
-            </tbody>
-          </table>
-          <div class="x-remainder">
-            <span>Payment <b>$10,000.00</b></span>
-            <span>Applied <b>$10,000.00</b></span>
-            <span class="mjm-chip mjm-chip--success">Fully applied — $0.00 unapplied</span>
-            <span class="mjm-muted" style="margin-left:auto;font-size:11.5px">Same panel runs apply-credit mode from a negative-balance order (D.5)</span>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="mjm-btn mjm-btn--primary"><i class="fa-solid fa-check"></i> Record payment</button>
-            <button class="mjm-btn mjm-btn--flat" style="margin-left:auto">Cancel</button>
-          </div>
-        </div>
+      <div class="x-stats">
+        <div class="mjm-card mjm-stat"><span class="value">$64,120</span><span class="label">Received (30d)</span></div>
+        <div class="mjm-card mjm-stat"><span class="value">$1,240</span><span class="label">Unapplied</span></div>
+        <div class="mjm-card mjm-stat"><span class="value">2</span><span class="label">Refunds (30d)</span></div>
+        <div class="mjm-card mjm-stat"><span class="value">0</span><span class="label">Failed intents</span></div>
       </div>
-      <p class="mjm-muted" style="font-size:12px;margin-top:12px"><i class="fa-solid fa-circle-info"></i> Recording books the capture JE (Dr Cash net / Cr A/R). Stripe REAL (F.4) adds PaymentIntent lifecycle chips + retry on payment rows; hosted checkout is LXP-side. Payment methods (vault, F.9): masked list + default + remove; "Add" enabled only when Stripe REAL is live.</p>
+      <div class="mjm-card">
+        <p class="x-card-title"><i class="fa-solid fa-clock-rotate-left"></i> Recent payments <a class="more" href="nav-shell-all-payments.html">See all payments →</a></p>
+        <table class="mjm-grid">
+          <thead><tr><th>Payment</th><th>Customer</th><th>Method</th><th>Date</th><th class="num">Amount</th><th class="num">Applied</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td class="mjm-mono">PMT-3311</td><td>Acme Corp</td><td>Wire</td><td>2026-07-15</td><td class="num">$8,000.00</td><td class="num">$8,000.00</td><td><span class="mjm-chip mjm-chip--success">Captured</span></td></tr>
+            <tr><td class="mjm-mono">PMT-3310</td><td>Globex</td><td>Check</td><td>2026-07-15</td><td class="num">$1,240.00</td><td class="num">$0.00</td><td><span class="mjm-chip mjm-chip--warning">Unapplied</span></td></tr>
+            <tr><td class="mjm-mono">PMT-3298</td><td>Acme Corp</td><td>Check</td><td>2026-07-11</td><td class="num">$2,000.00</td><td class="num">$2,000.00</td><td><span class="mjm-chip mjm-chip--success">Captured</span></td></tr>
+            <tr><td class="mjm-mono">PMT-3290r</td><td>Initech</td><td>Wire (refund)</td><td>2026-07-10</td><td class="num">($430.00)</td><td class="num">($430.00)</td><td><span class="mjm-chip mjm-chip--error">Refund</span></td></tr>
+          </tbody>
+        </table>
+      </div>
     </main>
   </div>
 </div>

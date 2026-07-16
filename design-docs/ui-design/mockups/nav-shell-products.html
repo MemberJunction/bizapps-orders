@@ -68,9 +68,9 @@ tr.linesrow>td{background:var(--mj-bg-surface-sunken,var(--mj-bg-surface-card));
     <span class="x-brand"><i class="fa-solid fa-cubes"></i> MJ <span class="app">/ Orders</span></span>
     <div class="x-tabs">
       <a class="x-tab" href="nav-shell-orders-dashboard.html"><i class="fa-solid fa-file-invoice-dollar"></i> Orders</a>
-      <a class="x-tab" href="nav-shell-payments.html"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
+      <a class="x-tab" href="nav-shell-payments-dashboard.html"><i class="fa-solid fa-money-check-dollar"></i> Payments</a>
       <a class="x-tab active" href="#"><i class="fa-solid fa-box-open"></i> Products</a>
-      <a class="x-tab" href="#"><i class="fa-solid fa-chart-column"></i> Reports</a>
+      <a class="x-tab" href="nav-shell-customer-ar.html"><i class="fa-solid fa-chart-column"></i> Reports</a>
     </div>
     <div class="right">
       <button class="x-iconbtn"><i class="fa-solid fa-magnifying-glass"></i></button>
@@ -81,13 +81,13 @@ tr.linesrow>td{background:var(--mj-bg-surface-sunken,var(--mj-bg-surface-card));
 
   <div class="x-body">
     <aside class="x-rail" id="rail">
-      <button class="x-iconbtn" onclick="rail()" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
-      <div class="x-scopechip"><i class="fa-solid fa-building"></i><span class="lbl">Scope: <b>Demo Co. +2</b></span></div>
+      <button class="x-iconbtn" onclick="rail()" title="Collapse / expand" style="align-self:flex-start"><i class="fa-solid fa-bars"></i></button>
+      <div class="x-scopechip" title="App-wide company scope (persisted per user); interim home while an Explorer header-widget slot is proposed upstream"><i class="fa-solid fa-building"></i><span class="lbl">Scope: <b>Demo Co. +2</b></span></div>
       <div class="x-rail-group">MAIN</div>
       <a class="active" href="#"><i class="fa-solid fa-box-open"></i><span class="lbl">Catalog</span></a>
-      <a href="#"><i class="fa-solid fa-sitemap"></i><span class="lbl">Categories</span></a>
-      <a href="#"><i class="fa-solid fa-tags"></i><span class="lbl">Pricing</span></a>
-      <a href="#"><i class="fa-solid fa-link"></i><span class="lbl">GL mapping</span></a>
+      <a href="nav-shell-categories.html"><i class="fa-solid fa-sitemap"></i><span class="lbl">Categories</span></a>
+      <a href="nav-shell-pricing.html"><i class="fa-solid fa-tags"></i><span class="lbl">Pricing</span></a>
+      <a href="nav-shell-gl-mapping.html"><i class="fa-solid fa-link"></i><span class="lbl">GL mapping</span></a>
     </aside>
 
     <main class="x-content">
