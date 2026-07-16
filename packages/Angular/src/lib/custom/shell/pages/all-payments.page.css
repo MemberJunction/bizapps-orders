@@ -1,0 +1,12 @@
+/* All payments (§13.2). Height chain: declares its own flex-column host. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.ap__search {
+  width: 260px;
+}

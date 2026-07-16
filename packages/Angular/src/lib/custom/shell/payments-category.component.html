@@ -12,6 +12,12 @@
 
     <mj-left-nav-content>
       @switch (ActivePageId) {
+        @case ('all-payments') {
+          <mj-all-payments-page></mj-all-payments-page>
+        }
+        @case ('entry') {
+          <mj-payment-entry-page></mj-payment-entry-page>
+        }
         @default {
           <mj-shell-page-pending [PageName]="PendingPageName(ActivePageId)"></mj-shell-page-pending>
         }

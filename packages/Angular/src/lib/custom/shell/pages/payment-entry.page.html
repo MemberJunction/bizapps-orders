@@ -1,0 +1,142 @@
+<mj-page-header-interior Title="Payment entry" Subtitle="Record money in, then say which invoices it clears.">
+  <div meta>
+    <mj-stat-badge Label="Manual provider (Wire / ACH / Check / Cash)" Icon="fa-solid fa-money-check-dollar" Variant="default"></mj-stat-badge>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  <div class="pe">
+    @if (LoadError) {
+      <p class="pe__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+    }
+
+    <div class="pe__cols">
+      <!-- The payment itself. -->
+      <section class="pe__card">
+        <p class="pe__cardtitle"><i class="fa-solid fa-money-check-dollar" aria-hidden="true"></i> Payment</p>
+
+        <label class="pe__field">
+          <span>Customer</span>
+          <select class="mj-input" [(ngModel)]="CustomerID" (ngModelChange)="OnCustomerChanged()">
+            <option [ngValue]="null">Pick a customer…</option>
+            @for (c of Customers; track c.ID) {
+              <option [ngValue]="c.ID">{{ c.Name }}</option>
+            }
+          </select>
+        </label>
+
+        <label class="pe__field">
+          <span>Amount</span>
+          <input class="mj-input num" [(ngModel)]="Amount" (ngModelChange)="OnAllocationChanged()" inputmode="decimal" placeholder="0.00" />
+        </label>
+
+        <label class="pe__field">
+          <span>Method</span>
+          <select class="mj-input" [(ngModel)]="Method">
+            @for (m of Methods; track m) {
+              <option [ngValue]="m">{{ m }}</option>
+            }
+          </select>
+        </label>
+
+        <label class="pe__field">
+          <span>Date received</span>
+          <input class="mj-input" type="date" [(ngModel)]="PaymentDate" />
+        </label>
+
+        <label class="pe__field">
+          <span>Receiving company</span>
+          <select class="mj-input" [(ngModel)]="ReceivingCompanyID">
+            <option [ngValue]="null">Pick a company…</option>
+            @for (c of Companies; track c.ID) {
+              <option [ngValue]="c.ID">{{ c.Name }}</option>
+            }
+          </select>
+        </label>
+
+        <label class="pe__field">
+          <!-- Payment has no ReferenceNumber column; this is its Description. Labelled for what the
+               operator is recording, stored where it actually fits. -->
+          <span>Reference № <span class="pe__hint">(stored as the payment's description)</span></span>
+          <input class="mj-input" [(ngModel)]="Reference" placeholder="Wire ref / check №" />
+        </label>
+      </section>
+
+      <!-- Where it goes. -->
+      <section class="pe__card">
+        <p class="pe__cardtitle">
+          <i class="fa-solid fa-arrows-down-to-line" aria-hidden="true"></i>
+          Apply to open orders
+          <button class="mj-btn mj-btn--outline pe__auto" (click)="AutoApply()" [disabled]="!CustomerID || PaymentAmount <= 0">
+            <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Auto-apply oldest first
+          </button>
+        </p>
+
+        @if (!CustomerID) {
+          <p class="pe__muted">Pick a customer to see their open orders.</p>
+        } @else if (IsLoadingOrders) {
+          <mj-loading text="Loading open orders…"></mj-loading>
+        } @else if (OpenOrders.length === 0) {
+          <p class="pe__muted">This customer has no open orders — the whole payment will sit unapplied.</p>
+        } @else {
+          <div class="pe__gridwrap">
+            <table class="pe__grid">
+              <thead><tr><th>Order №</th><th>Due</th><th class="num">Balance</th><th class="num">Apply</th></tr></thead>
+              <tbody>
+                @for (o of OpenOrders; track o.OrderID) {
+                  <tr>
+                    <td>{{ o.OrderNumber }}</td>
+                    <td>
+                      @if (o.DueDate) {
+                        {{ o.DueDate | date: 'yyyy-MM-dd' : 'UTC' }}
+                        @if (IsOverdue(o)) {
+                          <span class="pe__overdue">overdue</span>
+                        }
+                      } @else {
+                        <span class="pe__muted">—</span>
+                      }
+                    </td>
+                    <td class="num">{{ o.Balance | currency }}</td>
+                    <td class="num">
+                      <input class="mj-input num" [(ngModel)]="Allocation[o.OrderID]" (ngModelChange)="OnAllocationChanged()" inputmode="decimal" />
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+
+          <div class="pe__remainder">
+            <span>Payment <b>{{ PaymentAmount | currency }}</b></span>
+            <span>Applied <b>{{ Applied | currency }}</b></span>
+            <mj-stat-badge
+              [Label]="RemainderLabel"
+              [Variant]="IsFullyApplied ? 'success' : (Unapplied < 0 ? 'error' : 'warning')">
+            </mj-stat-badge>
+          </div>
+        }
+
+        <div class="pe__footer">
+          <button class="mj-btn mj-btn--primary" (click)="Record()" [disabled]="!CanRecord" [title]="RecordBlockedReason ?? 'Record this payment'">
+            @if (IsRecording) {
+              <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Recording…
+            } @else {
+              <i class="fa-solid fa-check" aria-hidden="true"></i> Record payment
+            }
+          </button>
+          <span class="pe__footnote">
+            The payment and its allocations save together; recording then captures it and books the
+            journal entry. An unapplied remainder is fine — it is money received, just not allocated.
+          </span>
+        </div>
+
+        @if (RecordBlockedReason) {
+          <p class="pe__hintline"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> {{ RecordBlockedReason }}</p>
+        }
+        @if (ActionMessage) {
+          <p class="pe__msg" [class.pe__msg--error]="ActionIsError" role="status">{{ ActionMessage }}</p>
+        }
+      </section>
+    </div>
+  </div>
+</mj-page-body>

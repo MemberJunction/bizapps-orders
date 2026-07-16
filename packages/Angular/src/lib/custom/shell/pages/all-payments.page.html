@@ -1,0 +1,41 @@
+<mj-page-header-interior Title="All payments" Subtitle="Money in — every payment, filtered to your company scope.">
+  <div meta>
+    <mj-stat-badge [Label]="ScopeLabel" Icon="fa-solid fa-building" Variant="default"></mj-stat-badge>
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+  <div toolbar>
+    <input class="mj-input ap__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search payment №, reference…" />
+    <select class="mj-input" [(ngModel)]="TimeWindow" (ngModelChange)="OnFilterChanged()">
+      @for (w of TimeWindows; track w.Id) {
+        <option [ngValue]="w.Id">{{ w.Label }}</option>
+      }
+    </select>
+    <select class="mj-input" [(ngModel)]="StatusFilter" (ngModelChange)="OnFilterChanged()">
+      <option value="All">All statuses</option>
+      @for (s of Statuses; track s) {
+        <option [ngValue]="s">{{ s }}</option>
+      }
+    </select>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  <!-- PaginationMode="client": MJ's infinite mode renders "No data" over populated rows
+       (MJ-UPSTREAM.md). Same workaround as every other list in the suite. -->
+  <mj-entity-data-grid
+    [Params]="GridParams"
+    [Columns]="Columns"
+    PaginationMode="client"
+    [PageSize]="100"
+    [ShowPager]="true"
+    [AllowSorting]="true"
+    [ShowToolbar]="false"
+    [SelectionMode]="'single'"
+    KeyField="ID"
+    StateKey="mj.bizappsord.grid.allPayments.v1"
+    [AutoPersistState]="true"
+    Height="auto">
+  </mj-entity-data-grid>
+</mj-page-body>

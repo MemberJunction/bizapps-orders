@@ -1,0 +1,164 @@
+/* Payment entry (§13.2). Height chain: declares its own flex-column host. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.pe {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.pe__cols {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+/* Laptop-width tolerance (§0): stack rather than crush the application grid. */
+@media (max-width: 1100px) {
+  .pe__cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pe__card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  background: var(--mj-bg-surface-card);
+  min-width: 0;
+}
+.pe__cardtitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mj-text-secondary);
+}
+.pe__cardtitle i {
+  color: var(--mj-brand-primary);
+}
+.pe__auto {
+  margin-left: auto;
+}
+
+.pe__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--mj-text-secondary);
+}
+.pe__field .num {
+  text-align: right;
+}
+.pe__hint {
+  color: var(--mj-text-muted);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.pe__gridwrap {
+  overflow-x: auto;
+}
+.pe__grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pe__grid th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--mj-border-default);
+  white-space: nowrap;
+}
+.pe__grid td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+}
+.pe__grid th.num,
+.pe__grid td.num {
+  text-align: right;
+}
+.pe__grid td.num .mj-input {
+  width: 130px;
+  text-align: right;
+}
+.pe__overdue {
+  margin-left: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--mj-status-error-text);
+}
+
+.pe__remainder {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 9px;
+  background: var(--mj-bg-surface);
+  font-size: 12.5px;
+}
+.pe__remainder b {
+  font-size: 14px;
+  color: var(--mj-text-primary);
+}
+
+.pe__footer {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.pe__footnote {
+  font-size: 11.5px;
+  color: var(--mj-text-muted);
+  max-width: 52ch;
+}
+.pe__muted,
+.pe__hintline {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pe__msg {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--mj-text-secondary);
+}
+.pe__msg--error,
+.pe__error {
+  color: var(--mj-status-error-text);
+}
+.pe__error {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
