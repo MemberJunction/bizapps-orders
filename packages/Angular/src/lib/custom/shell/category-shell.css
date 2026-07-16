@@ -1,0 +1,22 @@
+/* Shared layout for the category shells.
+
+   The rail-beside-content layout is MJ's, not ours: <mj-page-body [Flex]="true" [Padding]="false"
+   Direction="row"> + <mj-left-nav> + <mj-left-nav-content>, exactly as MJ's own admin-container
+   does it. `Direction="row"` alone is inert — without [Flex]="true" the body never becomes a flex
+   container, so the rail stacks ABOVE the content and the content pane inherits no height (which
+   also starves an AG grid inside it). This file therefore owns almost nothing: the host sizing and
+   the responsive collapse. See explorer-chrome-conventions §10. */
+
+:host {
+  display: block;
+  height: 100%;
+}
+
+/* mj-left-nav becomes an off-canvas drawer at <=700px; stack the body at the same breakpoint so
+   its in-flow section switcher sits ABOVE the content rather than competing for width. This is the
+   consumer responsibility documented on mj-left-nav. */
+@media (max-width: 700px) {
+  :host ::ng-deep mj-page-body > .mj-page-body {
+    flex-direction: column;
+  }
+}

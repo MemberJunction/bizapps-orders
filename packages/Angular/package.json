@@ -17,7 +17,9 @@
   "dependencies": {
     "@mj-biz-apps/orders-engine-base": "^1.0.0",
     "@mj-biz-apps/orders-entities": "^1.0.0",
-    "@mj-biz-apps/accounting-entities": "^1.0.0"
+    "@mj-biz-apps/accounting-entities": "^1.0.0",
+    "@mj-biz-apps/accounting-ng": "^1.0.0",
+    "@mj-biz-apps/accounting-engine-base": "^1.0.0"
   },
   "peerDependencies": {
     "@angular/common": "^21.0.0",

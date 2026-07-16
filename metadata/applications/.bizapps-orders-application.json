@@ -8,38 +8,31 @@
     "DefaultSequence": 2020,
     "DefaultNavItems": [
       {
-        "Label": "Orders Console",
+        "Label": "Orders",
         "Icon": "fa-solid fa-cart-shopping",
         "ResourceType": "Custom",
-        "DriverClass": "OrdersConsoleResource",
+        "DriverClass": "OrdersCategoryResource",
         "isDefault": true
       },
       {
-        "Label": "Orders",
-        "Icon": "fa-solid fa-receipt",
+        "Label": "Payments",
+        "Icon": "fa-solid fa-money-check-dollar",
         "ResourceType": "Custom",
-        "DriverClass": "OrdersManagementResource",
+        "DriverClass": "PaymentsCategoryResource",
         "isDefault": false
       },
       {
-        "Label": "Order History",
-        "Icon": "fa-solid fa-clock-rotate-left",
-        "ResourceType": "Custom",
-        "DriverClass": "OrderHistoryResource",
-        "isDefault": false
-      },
-      {
-        "Label": "Product Catalog",
+        "Label": "Products",
         "Icon": "fa-solid fa-box",
         "ResourceType": "Custom",
-        "DriverClass": "ProductCatalogResource",
+        "DriverClass": "ProductsCategoryResource",
         "isDefault": false
       },
       {
-        "Label": "Product Categories",
-        "Icon": "fa-solid fa-sitemap",
+        "Label": "Reports",
+        "Icon": "fa-solid fa-chart-column",
         "ResourceType": "Custom",
-        "DriverClass": "ProductCategoryTreeResource",
+        "DriverClass": "OrdersReportsCategoryResource",
         "isDefault": false
       }
     ]
@@ -48,7 +41,7 @@
     "ID": "765AB04C-3AB0-4ADB-A9BD-5CC9BB38C2EF"
   },
   "sync": {
-    "lastModified": "2026-07-09T04:21:49.582Z",
-    "checksum": "5002b1b5efcf85ee373db8c26fe3ca84e80364af4e2fce25683ecb952cc84416"
+    "lastModified": "2026-07-16T20:20:13.949Z",
+    "checksum": "08a7c4f9011e54436ea993c1e476b0dcf1c1c6ebec7e5ea2cdbf73ff5ef6333f"
   }
 }

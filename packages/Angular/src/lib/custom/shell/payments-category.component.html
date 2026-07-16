@@ -1,0 +1,21 @@
+<mj-page-layout>
+  <mj-page-body [Flex]="true" [Padding]="false" Direction="row">
+    <mj-left-nav
+      [Sections]="RailSections"
+      [ActiveId]="ActivePageId"
+      [MobileTitle]="CategoryTitle"
+      (ItemClicked)="OnRailItemClicked($event)">
+      <div header>
+        <mj-company-scope-chip></mj-company-scope-chip>
+      </div>
+    </mj-left-nav>
+
+    <mj-left-nav-content>
+      @switch (ActivePageId) {
+        @default {
+          <mj-shell-page-pending [PageName]="PendingPageName(ActivePageId)"></mj-shell-page-pending>
+        }
+      }
+    </mj-left-nav-content>
+  </mj-page-body>
+</mj-page-layout>

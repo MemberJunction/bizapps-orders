@@ -1,0 +1,28 @@
+<mj-page-layout>
+  <mj-page-body [Flex]="true" [Padding]="false" Direction="row">
+    <mj-left-nav
+      [Sections]="RailSections"
+      [ActiveId]="ActivePageId"
+      [MobileTitle]="CategoryTitle"
+      (ItemClicked)="OnRailItemClicked($event)">
+      <div header>
+        <mj-company-scope-chip></mj-company-scope-chip>
+      </div>
+    </mj-left-nav>
+
+    <mj-left-nav-content>
+      @switch (ActivePageId) {
+        <!-- §6-style migration: existing dashboards hosted here until their §13.3 pages land. -->
+        @case ('catalog') {
+          <mj-product-catalog-dashboard></mj-product-catalog-dashboard>
+        }
+        @case ('categories') {
+          <mj-product-category-tree-dashboard></mj-product-category-tree-dashboard>
+        }
+        @default {
+          <mj-shell-page-pending [PageName]="PendingPageName(ActivePageId)"></mj-shell-page-pending>
+        }
+      }
+    </mj-left-nav-content>
+  </mj-page-body>
+</mj-page-layout>

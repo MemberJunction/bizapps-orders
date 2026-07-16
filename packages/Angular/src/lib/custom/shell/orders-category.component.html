@@ -1,0 +1,36 @@
+<mj-page-layout>
+  <mj-page-body [Flex]="true" [Padding]="false" Direction="row">
+    <!-- MJ's canonical left rail (§13 MJ-wins). The scope chip rides its [header] slot.
+         NOTE: the chip scopes Payments + Products (which carry a company column). An Order has NO
+         CompanyID — it is multi-company via its lines' resolved GL accounts — so this category's
+         lists are deliberately unscoped. -->
+    <mj-left-nav
+      [Sections]="RailSections"
+      [ActiveId]="ActivePageId"
+      [MobileTitle]="CategoryTitle"
+      (ItemClicked)="OnRailItemClicked($event)">
+      <div header>
+        <mj-company-scope-chip></mj-company-scope-chip>
+      </div>
+    </mj-left-nav>
+
+    <mj-left-nav-content>
+      @switch (ActivePageId) {
+        <!-- §6-style migration: these existing dashboards are HOSTED here so the nav swap costs no
+             working screen. Each is replaced by its §13 page as the wave reaches it. -->
+        @case ('all-orders') {
+          <mj-order-history-dashboard></mj-order-history-dashboard>
+        }
+        @case ('status-board') {
+          <mj-orders-management-dashboard></mj-orders-management-dashboard>
+        }
+        @case ('editor') {
+          <mj-orders-console-dashboard></mj-orders-console-dashboard>
+        }
+        @default {
+          <mj-shell-page-pending [PageName]="PendingPageName(ActivePageId)"></mj-shell-page-pending>
+        }
+      }
+    </mj-left-nav-content>
+  </mj-page-body>
+</mj-page-layout>

@@ -30,7 +30,19 @@ import { LoadProductCategoryTreeResource } from './lib/custom/ProductCategoryTre
 import './lib/custom/OrderHistory/order-history.module';
 import { LoadOrderHistoryResource } from './lib/custom/OrderHistory/order-history-resource.component';
 
+// UI wave §13.0 — category shells (Explorer app nav items -> mj-left-nav + pages).
+import './lib/custom/shell/shell.module';
+import { LoadOrdersCategory } from './lib/custom/shell/orders-category.component';
+import { LoadOrdersCategoryResource } from './lib/custom/shell/orders-category-resource.component';
+import { LoadPaymentsCategory } from './lib/custom/shell/payments-category.component';
+import { LoadPaymentsCategoryResource } from './lib/custom/shell/payments-category-resource.component';
+import { LoadProductsCategory } from './lib/custom/shell/products-category.component';
+import { LoadProductsCategoryResource } from './lib/custom/shell/products-category-resource.component';
+import { LoadOrdersReportsCategory } from './lib/custom/shell/reports-category.component';
+import { LoadOrdersReportsCategoryResource } from './lib/custom/shell/reports-category-resource.component';
+
 export { GeneratedFormsModule } from './lib/generated/generated-forms.module';
+export { OrdersShellModule } from './lib/custom/shell/shell.module';
 export { OrdersConsoleModule } from './lib/custom/OrdersConsole/orders-console.module';
 export { OrdersManagementModule } from './lib/custom/OrdersManagement/orders-management.module';
 export { ProductCatalogModule } from './lib/custom/ProductCatalog/product-catalog.module';
@@ -51,4 +63,14 @@ export function LoadBizAppsOrdersClient(): void {
   LoadProductCatalogResource();
   LoadProductCategoryTreeResource();
   LoadOrderHistoryResource();
+
+  // UI wave §13.0 — the four category shells + their Explorer resource shims.
+  LoadOrdersCategory();
+  LoadOrdersCategoryResource();
+  LoadPaymentsCategory();
+  LoadPaymentsCategoryResource();
+  LoadProductsCategory();
+  LoadProductsCategoryResource();
+  LoadOrdersReportsCategory();
+  LoadOrdersReportsCategoryResource();
 }
