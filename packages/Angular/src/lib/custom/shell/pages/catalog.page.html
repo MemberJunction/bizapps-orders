@@ -1,0 +1,97 @@
+<mj-page-header-interior Title="Catalog" Subtitle="Products, how they recognise revenue, and where they book.">
+  <div meta>
+    @if (UnmappedCount > 0) {
+      <!-- The headline. An unmapped product is an order that will fail at Confirm. -->
+      <mj-stat-badge
+        [Label]="UnmappedCount + ' product' + (UnmappedCount === 1 ? '' : 's') + ' will fail at Confirm'"
+        Icon="fa-solid fa-triangle-exclamation"
+        Variant="error">
+      </mj-stat-badge>
+    } @else {
+      <mj-stat-badge Label="All products resolve to an account" Icon="fa-solid fa-check" Variant="success"></mj-stat-badge>
+    }
+    <mj-stat-badge [Label]="Rows.length + ' products'" Icon="fa-solid fa-box" Variant="default"></mj-stat-badge>
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+  <div toolbar>
+    <input class="mj-input cat__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search name or SKU…" />
+    <label class="cat__toggle">
+      <input type="checkbox" [(ngModel)]="ShowUnmappedOnly" (ngModelChange)="OnFilterChanged()" />
+      Only products that won't resolve
+    </label>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  @if (IsLoading) {
+    <mj-loading text="Loading the catalog…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="cat__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else {
+    @if (UnmappedCount > 0) {
+      <div class="cat__warn" role="alert">
+        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+        <div>
+          <b>{{ UnmappedCount }} product{{ UnmappedCount === 1 ? '' : 's' }} has no GL account for its revenue role.</b>
+          Confirming an order containing one will be BLOCKED. Fix the mapping in
+          <b>Accounting → Accounts → Account links</b> (admins only) — link the product, its category,
+          or the owning company's default.
+        </div>
+      </div>
+    }
+
+    <div class="cat__gridwrap">
+      <table class="cat__grid">
+        <thead>
+          <tr>
+            <th>Product</th><th>SKU</th><th>Category</th><th>Type</th>
+            <th>Revenue recognition</th><th>Books to</th><th>Active</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (r of Filtered; track r.ID) {
+            <tr [class.cat__row--bad]="!r.ResolvedCode" [class.cat__row--sel]="IsSelected(r)">
+              <td>{{ r.Name }}</td>
+              <td>{{ r.SKU || '—' }}</td>
+              <td>{{ r.Category }}</td>
+              <td>{{ r.Type }}</td>
+              <td>
+                <mj-stat-badge [Label]="r.RevenueRecognitionType" [Variant]="RevRecVariant(r)"></mj-stat-badge>
+                <span class="cat__help" [title]="RevRecHelp(r)">{{ RevRecHelp(r) }}</span>
+              </td>
+              <td>
+                @if (r.ResolvedCode) {
+                  <span class="cat__acct">{{ r.ResolvedCode }} {{ r.ResolvedName }}</span>
+                  <span class="cat__role">{{ r.Role }}</span>
+                } @else {
+                  <span class="cat__unmapped">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                    no {{ r.Role }} account
+                  </span>
+                }
+              </td>
+              <td>{{ r.IsActive ? 'Yes' : 'No' }}</td>
+              <td>
+                <button class="mj-btn mj-btn--flat" (click)="ShowWhy(r)" title="Why does it book there?">Why?</button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      @if (Filtered.length === 0) {
+        <p class="cat__empty">No products match.</p>
+      }
+    </div>
+  }
+</mj-page-body>
+
+<!-- Accounting's component renders the chain — imported, not rebuilt (§0). -->
+<mj-slide-panel [Visible]="!!SelectedID" Title="How this product resolves" (Closed)="CloseWhy()">
+  <mj-gl-resolution-preview [Result]="Preview"></mj-gl-resolution-preview>
+  <p class="cat__panelhint">
+    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+    This is the same product → category → company walk the booking engine performs at Confirm.
+  </p>
+</mj-slide-panel>

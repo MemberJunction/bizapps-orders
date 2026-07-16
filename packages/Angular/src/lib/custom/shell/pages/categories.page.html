@@ -1,0 +1,48 @@
+<mj-page-header-interior Title="Categories" Subtitle="The category tree — and what each level contributes to GL resolution.">
+  <div meta>
+    <mj-stat-badge [Label]="Nodes.length + ' categories'" Icon="fa-solid fa-sitemap" Variant="default"></mj-stat-badge>
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  @if (IsLoading) {
+    <mj-loading text="Loading categories…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="cg__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else if (Nodes.length === 0) {
+    <mj-empty-state Icon="fa-solid fa-sitemap" Title="No categories" Message="No product categories are defined."></mj-empty-state>
+  } @else {
+    <p class="cg__note">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      Booking walks a product's category chain UPWARD looking for a GL link in its revenue role — so
+      a link here is the fallback that keeps every product beneath it bookable.
+    </p>
+    <div class="cg__gridwrap">
+      <table class="cg__grid">
+        <thead><tr><th>Category</th><th>Code</th><th class="num">Products</th><th>GL links at this level</th><th>Active</th></tr></thead>
+        <tbody>
+          @for (n of Nodes; track n.ID) {
+            <tr>
+              <td><span [style.padding-left]="Indent(n)">{{ n.Name }}</span></td>
+              <td>{{ n.Code || '—' }}</td>
+              <td class="num">{{ n.ProductCount }}</td>
+              <td>
+                @if (n.Links.length === 0) {
+                  <span class="cg__muted">— (products fall through to a higher level or the company default)</span>
+                } @else {
+                  @for (l of n.Links; track l.Role) {
+                    <span class="cg__link">{{ l.Role }} → {{ l.Code }} {{ l.Name }}</span>
+                  }
+                }
+              </td>
+              <td>{{ n.IsActive ? 'Yes' : 'No' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</mj-page-body>

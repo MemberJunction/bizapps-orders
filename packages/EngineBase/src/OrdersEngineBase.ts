@@ -248,8 +248,16 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
     return null;
   }
 
-  /** The revenue role a product books to, from its recognition type. */
-  private revenueRole(product: mjBizAppsOrdersProductEntity): string {
+  /**
+   * The revenue role a product books to, from its recognition type.
+   *
+   * PUBLIC because the Products catalog (§13.3) shows "where will this book, and does it resolve?"
+   * BEFORE an order is confirmed — and it must ask the same question booking asks. A UI copy of
+   * `Deferred ? 'Deferred Revenue' : 'Sales'` would be a second definition of the rule, free to
+   * drift from the one the ledger actually uses, which would make the catalog's tripwire lie in
+   * exactly the case it exists to catch.
+   */
+  public RevenueRoleFor(product: mjBizAppsOrdersProductEntity): string {
     return product.RevenueRecognitionType === 'Deferred' ? ROLE_DEFERRED_REVENUE : ROLE_SALES;
   }
 
@@ -297,7 +305,7 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
         errors.push(`Line ${index}: unknown product ${line.ProductID}.`);
         return;
       }
-      const role = this.revenueRole(product);
+      const role = this.RevenueRoleFor(product);
       const account = this.ResolveAccount(line.ProductID, role, asOfDate);
       if (!account) {
         errors.push(`Line ${index}: no "${role}" account resolved for product "${product.Name}".`);

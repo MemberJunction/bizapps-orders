@@ -1,0 +1,85 @@
+<mj-page-header-interior Title="Pricing" Subtitle="Price lists, their product prices, and the tiers beneath them.">
+  <div meta>
+    @if (OverlapCount > 0) {
+      <mj-stat-badge [Label]="OverlapCount + ' overlapping price rule' + (OverlapCount === 1 ? '' : 's')" Icon="fa-solid fa-triangle-exclamation" Variant="warning"></mj-stat-badge>
+    }
+    <mj-stat-badge [Label]="Lists.length + ' price lists'" Icon="fa-solid fa-tags" Variant="default"></mj-stat-badge>
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  @if (IsLoading) {
+    <mj-loading text="Loading pricing…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="pr__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else if (Lists.length === 0) {
+    <mj-empty-state Icon="fa-solid fa-tags" Title="No price lists" Message="No price lists are defined — the order editor will fall back to product default prices or direct entry."></mj-empty-state>
+  } @else {
+    <div class="pr">
+      <aside class="pr__lists">
+        @for (l of Lists; track l.ID) {
+          <button class="pr__list" [class.pr__list--sel]="IsListSelected(l)" (click)="SelectList(l.ID)">
+            <span class="pr__lname">{{ l.Name }}</span>
+            <span class="pr__lmeta">{{ l.Code }} · {{ l.PriceCount }} price{{ l.PriceCount === 1 ? '' : 's' }}{{ l.IsActive ? '' : ' · inactive' }}</span>
+          </button>
+        }
+      </aside>
+
+      <section class="pr__detail">
+        @if (OverlapCount > 0) {
+          <div class="pr__warn" role="alert">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            <div>
+              <b>{{ OverlapCount }} price rule{{ OverlapCount === 1 ? '' : 's' }} overlap another for the same product.</b>
+              When more than one rule is eligible for a quantity on a date, price resolution picks one
+              by its own precedence — the order editor will use it silently. Narrow the quantity bands
+              or the date windows so only one rule can apply.
+            </div>
+          </div>
+        }
+
+        @if (Prices.length === 0) {
+          <p class="pr__muted">This price list has no product prices.</p>
+        } @else {
+          <div class="pr__gridwrap">
+            <table class="pr__grid">
+              <thead><tr><th>Product</th><th>Model</th><th>Qty band</th><th class="num">Amount</th><th>Effective</th><th>Tiers</th></tr></thead>
+              <tbody>
+                @for (p of Prices; track p.ID) {
+                  <tr [class.pr__row--warn]="p.Overlaps">
+                    <td>
+                      {{ p.Product }}
+                      @if (p.Overlaps) {
+                        <span class="pr__overlap">overlaps another rule</span>
+                      }
+                    </td>
+                    <td>{{ p.PricingModel }}</td>
+                    <td>{{ QtyBand(p) }}</td>
+                    <td class="num">{{ p.Amount | currency }}</td>
+                    <!-- DATE columns (no zone) — render UTC or they shift a day west of UTC. -->
+                    <td>
+                      {{ p.EffectiveFrom | date: 'yyyy-MM-dd' : 'UTC' }}
+                      → {{ p.EffectiveTo ? (p.EffectiveTo | date: 'yyyy-MM-dd' : 'UTC') : 'open' }}
+                    </td>
+                    <td>
+                      @if (p.Tiers.length === 0) {
+                        <span class="pr__muted">—</span>
+                      } @else {
+                        @for (t of p.Tiers; track t.MinQuantity) {
+                          <span class="pr__tier">{{ t.MinQuantity }}{{ t.MaxQuantity == null ? '+' : '–' + t.MaxQuantity }} @ {{ t.Amount | currency }}</span>
+                        }
+                      }
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+    </div>
+  }
+</mj-page-body>

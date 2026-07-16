@@ -1,0 +1,57 @@
+<mj-page-header-interior Title="GL mapping" Subtitle="What each product books to — read-only; the links live in Accounting.">
+  <div meta>
+    @if (UnresolvedCount > 0) {
+      <mj-stat-badge [Label]="UnresolvedCount + ' unresolved'" Icon="fa-solid fa-triangle-exclamation" Variant="error"></mj-stat-badge>
+    } @else {
+      <mj-stat-badge Label="All resolved" Icon="fa-solid fa-check" Variant="success"></mj-stat-badge>
+    }
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+  <div toolbar>
+    <label class="glm__toggle">
+      <input type="checkbox" [(ngModel)]="ShowUnresolvedOnly" />
+      Only unresolved
+    </label>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  @if (IsLoading) {
+    <mj-loading text="Resolving mappings…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="glm__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else {
+    <p class="glm__note">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      Read-only by design — GL links are accounting's. To change one, go to
+      <b>Accounting → Accounts → Account links ↗</b>. This page shows what booking will do today.
+    </p>
+
+    <div class="glm__gridwrap">
+      <table class="glm__grid">
+        <thead><tr><th>Product</th><th>Role</th><th>Books to</th><th>Resolved at</th></tr></thead>
+        <tbody>
+          @for (r of Filtered; track r.ProductID) {
+            <tr [class.glm__row--bad]="!r.Code">
+              <td>{{ r.Product }}</td>
+              <td>{{ r.Role }}</td>
+              <td>
+                @if (r.Code) {
+                  <b>{{ r.Code }}</b> {{ r.Name }}
+                } @else {
+                  <span class="glm__none"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> nothing — Confirm will be blocked</span>
+                }
+              </td>
+              <td class="glm__where">{{ r.ResolvedAt }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+      @if (Filtered.length === 0) {
+        <p class="glm__empty">Nothing to show.</p>
+      }
+    </div>
+  }
+</mj-page-body>

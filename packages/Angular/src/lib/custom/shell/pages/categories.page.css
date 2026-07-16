@@ -1,0 +1,68 @@
+/* Products → Categories (§13.3). Height chain: declares its own flex-column host. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.cg__note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cg__gridwrap {
+  overflow: auto;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  min-height: 0;
+}
+.cg__grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.cg__grid th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--mj-border-default);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--mj-bg-surface);
+}
+.cg__grid td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+  vertical-align: top;
+}
+.cg__grid th.num,
+.cg__grid td.num {
+  text-align: right;
+}
+.cg__link {
+  display: block;
+  font-size: 12px;
+  color: var(--mj-text-primary);
+}
+.cg__muted {
+  color: var(--mj-text-muted);
+  font-size: 12px;
+}
+.cg__error {
+  margin: 0;
+  color: var(--mj-status-error-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}

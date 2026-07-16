@@ -14,10 +14,16 @@
       @switch (ActivePageId) {
         <!-- §6-style migration: existing dashboards hosted here until their §13.3 pages land. -->
         @case ('catalog') {
-          <mj-product-catalog-dashboard></mj-product-catalog-dashboard>
+          <mj-catalog-page></mj-catalog-page>
         }
         @case ('categories') {
-          <mj-product-category-tree-dashboard></mj-product-category-tree-dashboard>
+          <mj-categories-page></mj-categories-page>
+        }
+        @case ('pricing') {
+          <mj-pricing-page></mj-pricing-page>
+        }
+        @case ('gl-mapping') {
+          <mj-gl-mapping-page></mj-gl-mapping-page>
         }
         @default {
           <mj-shell-page-pending [PageName]="PendingPageName(ActivePageId)"></mj-shell-page-pending>

@@ -26,6 +26,7 @@ import {
   ShellPagePendingComponent,
   WorkspaceTabStripComponent,
   CustomerARBaseComponent,
+  GlResolutionPreviewComponent,
 } from '@mj-biz-apps/accounting-ng';
 
 // The categories HOST these existing dashboards so swapping the app nav to the §13 shape costs no
@@ -42,6 +43,10 @@ import { StatusBoardPageComponent } from './pages/status-board.page';
 import { OrderDetailPanelComponent } from './pages/order-detail-panel.component';
 import { PaymentEntryPageComponent } from './pages/payment-entry.page';
 import { CustomerARPageComponent } from './pages/customer-ar.page';
+import { CatalogPageComponent } from './pages/catalog.page';
+import { CategoriesPageComponent } from './pages/categories.page';
+import { PricingPageComponent } from './pages/pricing.page';
+import { GLMappingPageComponent } from './pages/gl-mapping.page';
 import { OverdueWorklistPageComponent } from './pages/overdue-worklist.page';
 import { AllPaymentsPageComponent } from './pages/all-payments.page';
 import { OrdersCategoryComponent } from './orders-category.component';
@@ -63,6 +68,10 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
 @NgModule({
   declarations: [
     OrderEditorPageComponent,
+    CatalogPageComponent,
+    CategoriesPageComponent,
+    PricingPageComponent,
+    GLMappingPageComponent,
     CustomerARPageComponent,
     OverdueWorklistPageComponent,
     PaymentEntryPageComponent,
@@ -105,9 +114,14 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
     ShellPagePendingComponent,
     WorkspaceTabStripComponent,
     CustomerARBaseComponent, // accounting-homed A/R numbers (§13.4)
+    GlResolutionPreviewComponent, // accounting-homed GL chain rendering (§13.3)
   ],
   exports: [
     OrderEditorPageComponent,
+    CatalogPageComponent,
+    CategoriesPageComponent,
+    PricingPageComponent,
+    GLMappingPageComponent,
     CustomerARPageComponent,
     OverdueWorklistPageComponent,
     PaymentEntryPageComponent,

@@ -1,0 +1,117 @@
+/* Products → Catalog (§13.3). Height chain: declares its own flex-column host. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.cat__search {
+  width: 240px;
+}
+.cat__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--mj-text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cat__warn {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--mj-status-error-border);
+  background: var(--mj-status-error-bg);
+  color: var(--mj-status-error-text);
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.cat__gridwrap {
+  overflow: auto;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  min-height: 0;
+}
+.cat__grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.cat__grid th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--mj-border-default);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--mj-bg-surface);
+}
+.cat__grid td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+  vertical-align: top;
+}
+/* A product that cannot resolve reads as a problem — it IS one. */
+.cat__row--bad td {
+  background: color-mix(in srgb, var(--mj-status-error) 6%, transparent);
+}
+.cat__row--sel td {
+  background: color-mix(in srgb, var(--mj-brand-primary) 8%, transparent);
+}
+
+.cat__help {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--mj-text-muted);
+  max-width: 34ch;
+}
+.cat__acct {
+  display: block;
+  font-weight: 600;
+  color: var(--mj-text-primary);
+}
+.cat__role {
+  display: block;
+  font-size: 10.5px;
+  color: var(--mj-text-muted);
+}
+.cat__unmapped {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--mj-status-error-text);
+}
+
+.cat__empty,
+.cat__error {
+  margin: 0;
+  padding: 10px;
+  font-size: 12.5px;
+  color: var(--mj-text-muted);
+}
+.cat__error {
+  color: var(--mj-status-error-text);
+}
+.cat__panelhint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
