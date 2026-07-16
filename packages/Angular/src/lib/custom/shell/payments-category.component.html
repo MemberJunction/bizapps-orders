@@ -21,6 +21,12 @@
         @case ('entry') {
           <mj-payment-entry-page></mj-payment-entry-page>
         }
+        @case ('refunds') {
+          <mj-refunds-page></mj-refunds-page>
+        }
+        @case ('methods') {
+          <mj-payment-methods-page></mj-payment-methods-page>
+        }
         @default {
           <mj-shell-page-pending [PageName]="PendingPageName(ActivePageId)"></mj-shell-page-pending>
         }

@@ -1,0 +1,79 @@
+<mj-page-header-interior Title="Fulfillment queue" Subtitle="Posted orders with lines still to fulfil.">
+  <div meta>
+    @if (PendingCount > 0) {
+      <mj-stat-badge [Label]="PendingCount + ' line' + (PendingCount === 1 ? '' : 's') + ' to fulfil'" Icon="fa-solid fa-truck-fast" Variant="warning"></mj-stat-badge>
+    } @else {
+      <mj-stat-badge Label="Nothing to fulfil" Icon="fa-solid fa-check" Variant="success"></mj-stat-badge>
+    }
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  <!-- The role gate §13.1 asks for does not exist yet. Say so rather than imply this is gated. -->
+  <div class="fq__notice" role="note">
+    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+    <div>
+      <b>Not role-gated yet.</b> This screen is specified for the Fulfiller role, but roles (A2) are
+      not built — so anyone who can see this page can mark lines fulfilled. The gate lands with A2.
+    </div>
+  </div>
+
+  @if (IsLoading) {
+    <mj-loading text="Loading the queue…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="fq__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else if (Orders.length === 0) {
+    <mj-empty-state Icon="fa-solid fa-check" Title="Nothing to fulfil" Message="No Posted order has an outstanding line that requires fulfillment."></mj-empty-state>
+  } @else {
+    <div class="fq__list">
+      @for (o of Orders; track o.ID) {
+        <section class="fq__order">
+          <p class="fq__ohead">
+            <span class="fq__onum">{{ o.OrderNumber }}</span>
+            <span class="fq__ometa">{{ o.Customer || 'No customer' }} · {{ o.OrderDate | date: 'mediumDate' : 'UTC' }}</span>
+          </p>
+          <table class="fq__grid">
+            <tbody>
+              @for (l of o.Lines; track l.ID) {
+                <tr [class.fq__row--na]="!l.RequiresFulfillment">
+                  <td>{{ l.Product }}</td>
+                  <td class="num">×{{ l.Quantity }}</td>
+                  <td>
+                    @if (!l.RequiresFulfillment) {
+                      <span class="fq__muted">nothing to ship</span>
+                    } @else {
+                      <mj-stat-badge [Label]="l.FulfillmentStatus || 'Pending'" [Variant]="l.FulfillmentStatus === 'Fulfilled' ? 'success' : 'warning'"></mj-stat-badge>
+                    }
+                  </td>
+                  <td class="fq__act">
+                    @if (l.RequiresFulfillment && l.FulfillmentStatus !== 'Fulfilled') {
+                      <button class="mj-btn mj-btn--outline" (click)="MarkFulfilled(o, l)" [disabled]="!CanFulfil(l)">
+                        @if (BusyLineID === l.ID) {
+                          <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Marking…
+                        } @else {
+                          <i class="fa-solid fa-check" aria-hidden="true"></i> Mark fulfilled
+                        }
+                      </button>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </section>
+      }
+    </div>
+    <p class="fq__hint">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      The order advances to Fulfilled on the server once every line that needs shipping is done —
+      this page does not advance it itself.
+    </p>
+  }
+
+  @if (ActionMessage) {
+    <p class="fq__msg" [class.fq__msg--error]="ActionIsError" role="status">{{ ActionMessage }}</p>
+  }
+</mj-page-body>

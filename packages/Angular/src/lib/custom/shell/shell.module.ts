@@ -44,6 +44,10 @@ import { OrderDetailPanelComponent } from './pages/order-detail-panel.component'
 import { PaymentEntryPageComponent } from './pages/payment-entry.page';
 import { CustomerARPageComponent } from './pages/customer-ar.page';
 import { CatalogPageComponent } from './pages/catalog.page';
+import { FulfillmentQueuePageComponent } from './pages/fulfillment-queue.page';
+import { RefundsPageComponent } from './pages/refunds.page';
+import { PaymentMethodsPageComponent } from './pages/payment-methods.page';
+import { SubscriptionsPageComponent } from './pages/subscriptions.page';
 import { OrdersDashboardPageComponent } from './pages/orders-dashboard.page';
 import { PaymentsDashboardPageComponent } from './pages/payments-dashboard.page';
 import { CategoriesPageComponent } from './pages/categories.page';
@@ -70,6 +74,10 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
 @NgModule({
   declarations: [
     OrderEditorPageComponent,
+    FulfillmentQueuePageComponent,
+    RefundsPageComponent,
+    PaymentMethodsPageComponent,
+    SubscriptionsPageComponent,
     OrdersDashboardPageComponent,
     PaymentsDashboardPageComponent,
     CatalogPageComponent,
@@ -122,6 +130,10 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
   ],
   exports: [
     OrderEditorPageComponent,
+    FulfillmentQueuePageComponent,
+    RefundsPageComponent,
+    PaymentMethodsPageComponent,
+    SubscriptionsPageComponent,
     OrdersDashboardPageComponent,
     PaymentsDashboardPageComponent,
     CatalogPageComponent,

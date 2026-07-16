@@ -1,0 +1,59 @@
+<mj-page-header-interior Title="Refunds & reversals" Subtitle="Captured payments and the reversals against them.">
+  <div meta>
+    <mj-stat-badge [Label]="Rows.length + ' payments'" Icon="fa-solid fa-money-check-dollar" Variant="default"></mj-stat-badge>
+    @if (RefundedCount > 0) {
+      <mj-stat-badge [Label]="RefundedCount + ' refunded'" Icon="fa-solid fa-rotate-left" Variant="warning"></mj-stat-badge>
+    }
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  <!-- The gap, stated. A refund moves real money and books a reversing JE; there is no operation
+       for it, and faking one from the browser would bypass both. -->
+  <div class="rf__notice" role="note">
+    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+    <div>
+      <b>History only — issuing a refund is not built.</b>
+      A refund pays money back and books a reversing journal entry, and there is no server operation
+      that does it (F3.4). Doing it from the browser would skip the provider call and the atomic
+      booking, so the action waits for that operation rather than being approximated here.
+    </div>
+  </div>
+
+  @if (IsLoading) {
+    <mj-loading text="Loading payments…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="rf__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else if (Rows.length === 0) {
+    <mj-empty-state Icon="fa-solid fa-rotate-left" Title="No captured payments" Message="Nothing has been captured in the companies you have in scope, so there is nothing to refund."></mj-empty-state>
+  } @else {
+    <div class="rf__gridwrap">
+      <table class="rf__grid">
+        <thead><tr><th>Payment №</th><th>Date</th><th>Method</th><th class="num">Amount</th><th>Status</th><th>Reversal</th></tr></thead>
+        <tbody>
+          @for (r of Rows; track r.ID) {
+            <tr>
+              <td>{{ r.PaymentNumber }}</td>
+              <td>{{ r.PaymentDate | date: 'yyyy-MM-dd' : 'UTC' }}</td>
+              <td>{{ r.Method }}</td>
+              <td class="num">{{ r.Amount | currency }}</td>
+              <td><mj-stat-badge [Label]="r.Status" [Variant]="StatusVariant(r.Status)"></mj-stat-badge></td>
+              <td>
+                @if (r.ReversesPaymentID) {
+                  <span class="rf__chain">this IS a reversal</span>
+                } @else if (r.ReversedBy) {
+                  <span class="rf__chain">reversed by {{ r.ReversedBy }}</span>
+                } @else {
+                  <span class="rf__muted">—</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</mj-page-body>

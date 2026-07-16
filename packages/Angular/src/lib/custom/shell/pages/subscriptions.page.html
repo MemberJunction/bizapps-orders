@@ -1,0 +1,87 @@
+<mj-page-header-interior Title="Subscriptions & renewals" Subtitle="Recurring commitments and what has happened to them.">
+  <div meta>
+    <mj-stat-badge [Label]="Rows.length + ' subscriptions'" Icon="fa-solid fa-rotate" Variant="default"></mj-stat-badge>
+    @if (ActiveCount > 0) {
+      <mj-stat-badge [Label]="ActiveCount + ' active'" Icon="fa-solid fa-check" Variant="success"></mj-stat-badge>
+    }
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  @if (IsLoading) {
+    <mj-loading text="Loading subscriptions…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="sb__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else if (Rows.length === 0) {
+    <mj-empty-state Icon="fa-solid fa-rotate" Title="No subscriptions" Message="No subscriptions exist yet. They are created when an order line for a subscription product is booked."></mj-empty-state>
+  } @else {
+    <div class="su__gridwrap">
+      <table class="su__grid">
+        <thead><tr><th>Subscription №</th><th>Product</th><th>Status</th><th>Current period</th><th>Next renewal</th><th></th></tr></thead>
+        <tbody>
+          @for (r of Rows; track r.ID) {
+            <tr>
+              <td>{{ r.SubscriptionNumber }}</td>
+              <td>{{ r.Product || '—' }}</td>
+              <td><mj-stat-badge [Label]="r.Status" [Variant]="StatusVariant(r.Status)"></mj-stat-badge></td>
+              <!-- DATE columns (no zone) — render UTC or they shift a day west of UTC. -->
+              <td>{{ r.CurrentPeriodStart | date: 'yyyy-MM-dd' : 'UTC' }} → {{ r.CurrentPeriodEnd | date: 'yyyy-MM-dd' : 'UTC' }}</td>
+              <td>
+                {{ r.CurrentPeriodEnd | date: 'yyyy-MM-dd' : 'UTC' }}
+                @if (IsRenewingSoon(r)) {
+                  <span class="su__soon">within 30 days</span>
+                }
+              </td>
+              <td><button class="mj-btn mj-btn--flat" (click)="Select(r.ID)">Timeline</button></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</mj-page-body>
+
+<mj-slide-panel [Visible]="!!SelectedID" Title="Subscription timeline" (Closed)="Close()">
+  @if (Selected; as s) {
+    <div class="su__panel">
+      <div class="su__chips">
+        <mj-stat-badge [Label]="s.SubscriptionNumber" Icon="fa-solid fa-rotate" Variant="default"></mj-stat-badge>
+        <mj-stat-badge [Label]="s.Status" [Variant]="StatusVariant(s.Status)"></mj-stat-badge>
+      </div>
+      <dl class="su__facts">
+        <dt>Product</dt><dd>{{ s.Product || '—' }}</dd>
+        <dt>Started</dt><dd>{{ s.StartDate | date: 'mediumDate' : 'UTC' }}</dd>
+        <dt>Current period</dt><dd>{{ s.CurrentPeriodStart | date: 'yyyy-MM-dd' : 'UTC' }} → {{ s.CurrentPeriodEnd | date: 'yyyy-MM-dd' : 'UTC' }}</dd>
+        @if (s.EndDate) {
+          <dt>Ended</dt><dd>{{ s.EndDate | date: 'mediumDate' : 'UTC' }}</dd>
+        }
+      </dl>
+
+      <h4 class="su__h">History</h4>
+      @if (IsLoadingEvents) {
+        <mj-loading text="Loading events…"></mj-loading>
+      } @else if (Events.length === 0) {
+        <p class="su__muted">No events recorded for this subscription.</p>
+      } @else {
+        <ul class="su__timeline">
+          @for (e of Events; track e.ID) {
+            <li class="su__event">
+              <mj-stat-badge [Label]="e.EventType" [Variant]="EventVariant(e.EventType)"></mj-stat-badge>
+              <!-- OccurredAt IS an instant — local time is correct here, unlike a DATE column. -->
+              <span class="su__when">{{ e.OccurredAt | date: 'medium' }}</span>
+            </li>
+          }
+        </ul>
+      }
+
+      <p class="su__gap">
+        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+        The revenue-recognition waterfall (§11) is not shown here — it belongs with rev-rec, which is
+        accounting-homed and not yet built as a shared component.
+      </p>
+    </div>
+  }
+</mj-slide-panel>

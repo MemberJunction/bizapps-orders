@@ -1,0 +1,60 @@
+<mj-page-header-interior Title="Payment methods" Subtitle="Stored customer payment methods (the F.9 vault).">
+  <div meta>
+    <mj-stat-badge [Label]="Rows.length + ' stored'" Icon="fa-regular fa-credit-card" Variant="default"></mj-stat-badge>
+  </div>
+  <div actions>
+    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  <div class="pm__notice" role="note">
+    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+    <div>
+      <b>Read-only — adding a method is not built.</b>
+      Storing a card requires the Stripe integration (F.4), which is not live, so there is no vault
+      write path to expose. Card numbers are never entered or displayed here: the system stores only
+      the brand, type, expiry and the provider's own token.
+    </div>
+  </div>
+
+  @if (IsLoading) {
+    <mj-loading text="Loading payment methods…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="pm__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else if (Rows.length === 0) {
+    <mj-empty-state
+      Icon="fa-regular fa-credit-card"
+      Title="No stored payment methods"
+      Message="No customer has a payment method on file. Methods appear here once the Stripe integration (F.4) is live and customers save one.">
+    </mj-empty-state>
+  } @else {
+    <div class="pm__gridwrap">
+      <table class="pm__grid">
+        <thead><tr><th>Brand</th><th>Type</th><th>Expiry</th><th>Default</th><th>Active</th></tr></thead>
+        <tbody>
+          @for (r of Rows; track r.ID) {
+            <tr>
+              <td>{{ r.Brand || '—' }}</td>
+              <td>{{ r.MethodType || '—' }}</td>
+              <td>
+                {{ Expiry(r) }}
+                @if (IsExpired(r)) {
+                  <span class="pm__expired">expired</span>
+                }
+              </td>
+              <td>
+                @if (r.IsDefault) {
+                  <mj-stat-badge Label="Default" Icon="fa-solid fa-star" Variant="info"></mj-stat-badge>
+                } @else {
+                  <span class="pm__muted">—</span>
+                }
+              </td>
+              <td>{{ r.IsActive ? 'Yes' : 'No' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</mj-page-body>
