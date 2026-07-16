@@ -1,11 +1,16 @@
 # QUESTIONS — bizapps-orders (plans-level question stock)
 
 > Structured per the questions convention (`~/MJDev/shared-plans/questions-convention.md`): stable
-> append-only body + two derived indexes; entry template modeled on Q22/Q24 (ratified 2026-07-16).
-> **Migrated 2026-07-16 from the instance stock** (`instances/accounting-engine-dev/QUESTIONS.md`)
-> so questions are COMMITTED and survive instance deletion — original IDs + anchors preserved
-> (never renumber). New questions append with the next free Qn. Body order: OPEN (priority) then
-> frozen records. OPEN entries are freely editable; ANSWERED/WITHDRAWN/CLOSED are frozen.
+> append-only body + ONE derived priority index. **ANSWER-FIRST (restructured 2026-07-16, Marcelo
+> ruling):** new entries LEAD with a **Proposed solution** (the action we are implementing) and
+> PROCEED with it by default — the question is supporting info for the **Requested reviewer**;
+> mark **⏸ HOLD** only where proceeding is expensive to reverse. Field order for NEW entries:
+> Status · Requested reviewer · Features · Proposed solution · The question · Context to share ·
+> What motivates this now (opt) · Fixed constraints (opt) · Additional context · Answer. Existing
+> OPEN entries adopt the new shape when next touched; frozen entries are never edited. Trivially
+> reversible micro-decisions do NOT get entries — they go in the active action plan's "Decisions
+> taken" list. **Migrated 2026-07-16 from the instance stock** — original IDs + anchors preserved
+> (never renumber); new questions append with the next free Qn.
 > Distribution copies for the team: `~/MJDev/reports/team-questions-2026-07-16/`.
 
 ## Index — by priority (open only)
@@ -21,17 +26,8 @@ C.12 order numbering — Jeremy · renewals spawn mode — Jeremy/Robert · rev-
 invoice delivery + open-AR cutover — park with owners. Distribution doc:
 `~/MJDev/reports/team-questions-2026-07-16/ORDERS-QUESTIONS.md`.)
 
-## Index — by feature
-
-| Feature | Questions |
-|---|---|
-| C.1/J.1 order company shape | [Q2](#q2) |
-| C.2 status semantics (Posted meaning; status split) | [Q1](#q1)✓, [Q11](#q11)✓ |
-| G.10 fulfillment ↔ rev-rec | [Q16](#q16)✓, [T48](#t48)✓ |
-| K.1 tax structure | [Q21](#q21) ★ |
-| (cross-cutting / process) | [Q10](#q10) |
-
-✓ = answered (frozen record)
+*(Feature index removed 2026-07-16 per convention — each entry's **Features** field is the
+queryable surface for "which questions touch feature X".)*
 
 ## Questions (append-only body)
 
