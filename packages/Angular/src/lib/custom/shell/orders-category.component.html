@@ -25,7 +25,7 @@
           <mj-orders-management-dashboard></mj-orders-management-dashboard>
         }
         @case ('editor') {
-          <mj-orders-console-dashboard></mj-orders-console-dashboard>
+          <mj-order-editor-page></mj-order-editor-page>
         }
         @default {
           <mj-shell-page-pending [PageName]="PendingPageName(ActivePageId)"></mj-shell-page-pending>

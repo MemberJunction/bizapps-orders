@@ -1,0 +1,277 @@
+/* Order editor (§13.1). Adapted from the approved mockup's .x-* stand-ins — design tokens only.
+   Height chain: this page is switched into <mj-left-nav-content>, so it declares its own
+   flex-column host, or MJ's grid hosts inside it collapse to zero height. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.oe {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.oe__session {
+  margin: 0;
+  font-size: 12px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Status stepper. */
+.oe__steps {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+}
+.oe__step {
+  padding: 5px 12px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 999px;
+  color: var(--mj-text-secondary);
+  background: var(--mj-bg-surface-card);
+  white-space: nowrap;
+}
+.oe__step--cur {
+  background: var(--mj-brand-primary);
+  border-color: var(--mj-brand-primary);
+  color: var(--mj-text-inverse, #fff);
+  font-weight: 600;
+}
+/* An illegal move per the F1 matrix — visibly unavailable, with the server's own reason on hover. */
+.oe__step--blocked {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.oe__sep {
+  color: var(--mj-text-disabled);
+}
+
+/* Always-visible money strip. */
+.oe__money {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--mj-bg-surface-card);
+}
+.oe__money > div {
+  padding: 9px 14px;
+  border-right: 1px solid var(--mj-border-default);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.oe__money > div:last-child {
+  border-right: none;
+  justify-content: center;
+}
+.oe__money .l {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--mj-text-muted);
+}
+.oe__money .v {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--mj-text-primary);
+}
+
+/* Confirm-failure banner — the loudest thing on the page, by design. */
+.oe__fail {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 14px;
+  border: 1px solid var(--mj-status-error-border);
+  background: var(--mj-status-error-bg);
+  color: var(--mj-status-error-text);
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.oe__failline {
+  margin-top: 2px;
+}
+.oe__fixhint {
+  margin-top: 6px;
+  color: var(--mj-text-secondary);
+}
+
+/* Inner tabs. */
+.oe__itabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--mj-border-default);
+}
+.oe__itab {
+  border: none;
+  background: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--mj-text-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+.oe__itab:hover {
+  color: var(--mj-text-primary);
+  background: var(--mj-bg-surface-hover);
+}
+.oe__itab--active {
+  color: var(--mj-brand-primary);
+  border-bottom-color: var(--mj-brand-primary);
+  font-weight: 600;
+}
+
+/* Line grid. */
+.oe__gridwrap {
+  overflow-x: auto;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+}
+.oe__grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.oe__grid th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--mj-border-default);
+  white-space: nowrap;
+}
+.oe__grid td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+  vertical-align: middle;
+}
+.oe__grid th.num,
+.oe__grid td.num {
+  text-align: right;
+}
+.oe__grid input.num {
+  text-align: right;
+}
+.oe__grid input.qty {
+  width: 72px;
+}
+.oe__grid .mj-input {
+  width: 100%;
+  min-width: 90px;
+}
+.oe__linetotal {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.oe__rowact {
+  width: 44px;
+  text-align: center;
+}
+.oe__row--bad td {
+  background: color-mix(in srgb, var(--mj-status-warning) 7%, transparent);
+}
+.oe__issuerow td {
+  padding: 4px 10px 8px;
+  font-size: 12px;
+  color: var(--mj-status-warning-text);
+  background: color-mix(in srgb, var(--mj-status-warning) 7%, transparent);
+}
+.oe__addline {
+  align-self: flex-start;
+}
+.oe__muted {
+  color: var(--mj-text-muted);
+}
+.oe__period {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.oe__period .mj-input {
+  min-width: 130px;
+}
+
+/* Price-source badge (B.2 / BO-D33). */
+.oe__pricebadge {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: var(--mj-text-muted);
+  white-space: nowrap;
+}
+.oe__pricebadge--override {
+  color: var(--mj-status-warning-text);
+}
+
+/* Details form. */
+.oe__form {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+@media (max-width: 1100px) {
+  .oe__form {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.oe__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--mj-text-secondary);
+  min-width: 0;
+}
+.oe__field--wide {
+  grid-column: span 2;
+}
+
+/* Verbs. */
+.oe__footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.oe__footnote {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--mj-text-muted);
+  max-width: 52ch;
+}
+.oe__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.oe__msg {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--mj-text-secondary);
+}
+.oe__msg--error {
+  color: var(--mj-status-error-text);
+}

@@ -1,0 +1,245 @@
+<mj-page-header-interior Title="Order editor" Subtitle="Compose an order. Drafts live in tabs for this session.">
+  <div meta>
+    <mj-stat-badge [Label]="Draft?.Status ?? 'Draft'" [Variant]="StatusVariant"></mj-stat-badge>
+    @if (Draft?.OrderNumber) {
+      <mj-stat-badge [Label]="Draft!.OrderNumber!" Icon="fa-solid fa-file-invoice-dollar" Variant="default"></mj-stat-badge>
+    }
+  </div>
+  <div actions>
+    <button class="mj-btn mj-btn--outline" [disabled]="!IsSaved" [title]="IsLocked ? 'Reverse this booked order' : 'Void this order'">
+      <i class="fa-solid fa-ban" aria-hidden="true"></i> {{ VoidVerbLabel }}
+    </button>
+    <button class="mj-btn mj-btn--primary" (click)="Confirm()" [disabled]="!CanConfirm" [title]="ConfirmBlockedReason ?? 'Confirm and book this order'">
+      @if (IsConfirming) {
+        <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Confirming…
+      } @else {
+        <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm order
+      }
+    </button>
+    <button class="mj-btn mj-btn--outline" (click)="openNewDraft()">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i> New order
+    </button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body [Flex]="true" [Padding]="true">
+  <div class="oe">
+    <mj-workspace-tab-strip
+      [Tabs]="Tabs"
+      [ActiveId]="ActiveTabId"
+      (TabSelected)="SelectTab($event)"
+      (TabClosed)="CloseTab($event)"
+      (NewRequested)="openNewDraft()">
+    </mj-workspace-tab-strip>
+    <p class="oe__session">
+      <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+      Tabs keep your progress for this session — drafts are not saved to the database until you save (v1).
+    </p>
+
+    @if (Draft; as d) {
+      <!-- Status stepper. Enabled/disabled + tooltips come straight from the F1 matrix, so this
+           can never offer a move the server would refuse. -->
+      <div class="oe__steps" role="list">
+        @for (s of Steps; track s.Status; let last = $last) {
+          <span
+            role="listitem"
+            class="oe__step"
+            [class.oe__step--cur]="s.Current"
+            [class.oe__step--blocked]="!s.Current && !s.Reachable"
+            [title]="s.BlockedReason ?? (s.Current ? 'Current status' : 'Legal next status')">
+            {{ s.Status }}
+          </span>
+          @if (!last) {
+            <span class="oe__sep" aria-hidden="true">›</span>
+          }
+        }
+      </div>
+
+      <!-- Always-visible money strip. -->
+      <div class="oe__money">
+        <div><span class="l">TOTAL</span><span class="v">{{ Money.Total | currency }}</span></div>
+        <div><span class="l">PAID</span><span class="v">{{ Money.Paid ? (Money.Paid | currency) : '—' }}</span></div>
+        <div><span class="l">BALANCE</span><span class="v">{{ Money.Balance | currency }}</span></div>
+        <div class="chip"><mj-stat-badge [Label]="Money.PaymentStatus" [Variant]="PaymentVariant"></mj-stat-badge></div>
+      </div>
+
+      <!-- The Confirm-failure banner (§13.1): loud, names the cause, and links to the fix. -->
+      @if (ConfirmErrors.length) {
+        <div class="oe__fail" role="alert">
+          <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+          <div>
+            <b>Confirm blocked.</b>
+            @for (e of ConfirmErrors; track e) {
+              <div class="oe__failline">{{ e }}</div>
+            }
+            @if (ShowAccountLinksFix) {
+              <div class="oe__fixhint">
+                This looks like a missing GL account mapping. Fix it in
+                <b>Accounting → Accounts → Account links</b> (admins only), then retry Confirm.
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Inner tabs (Q2 FINAL). -->
+      <div class="oe__itabs" role="tablist">
+        @for (t of [
+          { id: 'details', label: 'Details' },
+          { id: 'lines', label: 'Lines' },
+          { id: 'addresses', label: 'Bill-To / Ship-To' },
+          { id: 'payments', label: 'Payments' },
+          { id: 'accounting', label: 'Accounting' }
+        ]; track t.id) {
+          <button
+            role="tab"
+            class="oe__itab"
+            [class.oe__itab--active]="ActiveTab === t.id"
+            [attr.aria-selected]="ActiveTab === t.id"
+            (click)="GoToTab($any(t.id))">
+            {{ t.label }}
+          </button>
+        }
+      </div>
+
+      @switch (ActiveTab) {
+        @case ('lines') {
+          <div class="oe__gridwrap">
+            <table class="oe__grid">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th class="num">Qty</th>
+                  <th class="num">Unit price</th>
+                  <th class="num">Disc %</th>
+                  <th class="num">Line total</th>
+                  <th>Rev rec</th>
+                  <th>Service period</th>
+                  <th class="oe__rowact"></th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (line of d.Lines; track line.Key; let i = $index) {
+                  <tr [class.oe__row--bad]="LineIssue(line)">
+                    <td>
+                      <select class="mj-input" [(ngModel)]="line.ProductID" (ngModelChange)="OnProductChanged(line)" [disabled]="IsLocked">
+                        <option [ngValue]="null">Pick a product…</option>
+                        @for (p of ProductOptions; track p.ID) {
+                          <option [ngValue]="p.ID">{{ p.Label }}</option>
+                        }
+                      </select>
+                    </td>
+                    <td class="num">
+                      <input class="mj-input num qty" [(ngModel)]="line.Quantity" (ngModelChange)="OnQuantityChanged(line)" [disabled]="IsLocked" inputmode="decimal" />
+                    </td>
+                    <td class="num">
+                      <input class="mj-input num" [(ngModel)]="line.UnitPrice" (ngModelChange)="OnUnitPriceChanged(line)" [disabled]="IsLocked" inputmode="decimal" />
+                      @if (PriceBadge(line); as badge) {
+                        <span class="oe__pricebadge" [class.oe__pricebadge--override]="badge.Overridden">
+                          <i class="fa-solid" [class.fa-tag]="!badge.Overridden" [class.fa-pen]="badge.Overridden" aria-hidden="true"></i>
+                          {{ badge.Text }}
+                        </span>
+                      }
+                    </td>
+                    <td class="num">
+                      <input class="mj-input num qty" [(ngModel)]="line.DiscountPct" (ngModelChange)="touch()" [disabled]="IsLocked" inputmode="decimal" />
+                    </td>
+                    <td class="num oe__linetotal">{{ LineNet(line) | currency }}</td>
+                    <td>
+                      @if (IsDeferredLine(line)) {
+                        <mj-stat-badge Label="Deferred · svc period" Variant="info"></mj-stat-badge>
+                      } @else if (line.ProductID) {
+                        <mj-stat-badge Label="Point-in-time" Variant="default"></mj-stat-badge>
+                      } @else {
+                        <span class="oe__muted">—</span>
+                      }
+                    </td>
+                    <td>
+                      @if (IsDeferredLine(line)) {
+                        <span class="oe__period">
+                          <input class="mj-input" type="date" [(ngModel)]="line.ServicePeriodStart" (ngModelChange)="touch()" [disabled]="IsLocked" />
+                          –
+                          <input class="mj-input" type="date" [(ngModel)]="line.ServicePeriodEnd" (ngModelChange)="touch()" [disabled]="IsLocked" />
+                        </span>
+                      } @else {
+                        <span class="oe__muted">—</span>
+                      }
+                    </td>
+                    <td class="oe__rowact">
+                      <button class="mj-btn mj-btn--flat" (click)="RemoveLine(line.Key)" [disabled]="IsLocked" title="Remove this line" aria-label="Remove this line">
+                        <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                      </button>
+                    </td>
+                  </tr>
+                  @if (LineIssue(line)) {
+                    <tr class="oe__issuerow">
+                      <td colspan="8"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ LineIssue(line) }}</td>
+                    </tr>
+                  }
+                }
+              </tbody>
+            </table>
+          </div>
+          @if (!IsLocked) {
+            <button class="mj-btn mj-btn--flat oe__addline" (click)="AddLine()">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i> Add line
+            </button>
+          }
+        }
+
+        @case ('details') {
+          <fieldset class="oe__form" [disabled]="IsLocked">
+            <label class="oe__field">
+              <span>Order date</span>
+              <input class="mj-input" type="date" [(ngModel)]="d.OrderDate" (ngModelChange)="touch()" />
+            </label>
+            <label class="oe__field">
+              <span>Due date</span>
+              <input class="mj-input" type="date" [(ngModel)]="d.DueDate" (ngModelChange)="touch()" />
+            </label>
+            <label class="oe__field">
+              <span>External document №</span>
+              <input class="mj-input" [(ngModel)]="d.ExternalDocumentNumber" (ngModelChange)="touch()" placeholder="e.g. the bill.com reference" />
+            </label>
+            <label class="oe__field oe__field--wide">
+              <span>Description</span>
+              <input class="mj-input" [(ngModel)]="d.Description" (ngModelChange)="touch()" placeholder="What is this order for?" />
+            </label>
+          </fieldset>
+        }
+
+        @default {
+          <mj-empty-state
+            Icon="fa-solid fa-helmet-safety"
+            Title="Not built yet"
+            Message="This tab is part of the approved design and is being built in the current UI wave. It is listed here so the editor matches the agreed shape.">
+          </mj-empty-state>
+        }
+      }
+
+      <!-- Verbs. -->
+      <div class="oe__footer">
+        <button class="mj-btn mj-btn--primary" (click)="Save()" [disabled]="!CanSave" [title]="SaveBlockedReason ?? 'Save this order'">
+          @if (IsSaving) {
+            <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Saving…
+          } @else {
+            <i class="fa-regular fa-floppy-disk" aria-hidden="true"></i> Save order
+          }
+        </button>
+        <button class="mj-btn mj-btn--flat" (click)="Discard()">Discard draft</button>
+        <span class="oe__footnote">
+          The order and all its lines save in one transaction. Confirm books its journal entries —
+          post-Confirm, corrections go through a reversal order.
+        </span>
+      </div>
+
+      @if (SaveBlockedReason && !IsLocked) {
+        <p class="oe__hint"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> {{ SaveBlockedReason }}</p>
+      }
+    }
+
+    @if (ActionMessage) {
+      <p class="oe__msg" [class.oe__msg--error]="ActionIsError" role="status">{{ ActionMessage }}</p>
+    }
+  </div>
+</mj-page-body>
