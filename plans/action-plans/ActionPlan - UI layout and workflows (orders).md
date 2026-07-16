@@ -1,6 +1,8 @@
 # Plan — UI layout & workflows (orders)
 
-> **Status:** ACTIVE (approved for execution — Marcelo review completed 2026-07-14) · **Created:** 2026-07-11
+> **Status:** ACTIVE (approved for execution — Marcelo review completed 2026-07-14; **mockup set
+> approved + converted to per-screen build specs 2026-07-16 — §13 is the operative implementation
+> spec**) · **Created:** 2026-07-11
 > **Implements:** BACKLOG items "Order form: surface the full field set", "Compose Order takes the full
 > available space", "Void affordance ≠ delete"; UPD-2/UPD-3 surfacing; the UI consequences of MOD-7/MOD-10.
 > **Sources:** meetings/2026-07-10--Robert-demo-feedback.md, meetings/07102026 - Matt & Marcelo GUI Review.md,
@@ -182,6 +184,132 @@ detail links back to the originating order (JournalEntryLink lineage).
   granted/expires), filter presets by customer + product, deep links to order line and product.
   Provisioning/enforcement stays deferred (I.3).
 
+## 13. Mockup conversion — per-screen build specs (2026-07-16, binds the build)
+
+> The full interactive mockup set (`design-docs/ui-design/mockups/nav-shell-*.html`, 17 linked
+> pages, committed) was APPROVED for implementation by Marcelo 2026-07-16 ("run with it"). This
+> section is the authoritative per-screen spec; §§1–12 remain the feature-level intent it
+> implements. **Mockup retention:** `mockups/` is RETAINED as the build agents' visual reference
+> until this plan's build completes, then deleted (frame improvements fold into `shell/` first).
+>
+> **MJ-wins rule (binds every screen):** where MJ base already ships the idiom — page chrome, form
+> slide-in, AG grid, `mj-loading`, dialogs, `--mj-*` tokens — USE IT. Mockups are directionally
+> binding (layout, hierarchy, content, flows), not pixel-binding; `.mjm-*`/`.x-*` classes never
+> ship. Element doctrine + navigation map: `design-docs/ui-design/README.md` (standing design
+> record) — identical shell rules to accounting's UI plan §8.0 (shared nav-rail + workspace-tab
+> framework, imported from accounting where parked).
+
+### 13.0 App shell (build FIRST)
+
+- **Top-nav categories = Explorer app nav items** (`DefaultNavItems`): **Orders · Payments ·
+  Products · Reports**. Category shells host the shared nav rail + routed pages.
+- Rail configs (from the approved mockups):
+
+| Category | MAIN | Second group |
+|---|---|---|
+| Orders | Dashboard · All orders · Order editor · Status board | WORK: Fulfillment queue · Overdue worklist (badge) · Subscriptions & renewals |
+| Payments | Dashboard · All payments · Payment entry | WORK: Refunds & reversals · Payment methods |
+| Products | Catalog · Categories · Pricing · GL mapping | — |
+| Reports | Customer A/R · Overdue & dunning | — |
+
+- **Company scope chip** (rail-top, same component + UserInfoEngine persistence as accounting;
+  key `mj.bizappsord.companyScope.v1`).
+- **Workspace-tab framework** (session-scoped, imported from accounting's parked component): used
+  by the Order editor — draft orders keep state until tab close / session end, NOT DB-persisted
+  in v1.
+
+### 13.1 Orders category (7 pages)
+
+- **Orders Dashboard** (`nav-shell-orders-dashboard.html`) — stat cards (open orders, awaiting
+  fulfillment, overdue balance, this-month total — cheap counts only; heavy trends precomputed or
+  omitted) + needs-attention list + **"Recent orders" with an "Only mine" toggle** (round-1 ruling:
+  not mine-only).
+- **All orders** (`nav-shell-all-orders.html`) — §3 Order History built to idiom: house grid, all
+  statuses, time-window default, keyset Load-more, server search, saved filter presets; row
+  slide-in (identity, lines, money strip, payment status) with ↗ "Open in editor".
+- **Order editor** (`nav-shell-order-editor.html`) — §1 in full: session-tabbed workspace (New +
+  in-progress drafts); **status stepper** with skip-ahead (MOD-10) + disabled/tooltip illegal moves
+  (F1 matrix); **always-visible money strip** (TOTAL / PAID / BALANCE + payment-status chip);
+  five tabs **Details · Lines · Bill-To/Ship-To · Payments · Accounting** (Q2 tab set now FINAL,
+  mockup-approved). Line editor: product picker, qty, unit price, disc %, live totals; **price
+  source badge** ("PriceList Standard · tier 10+") flipping to "overridden (direct entry)" on
+  manual edit (B.2/BO-D33); rev-rec column + service-period dates on Deferred lines (UPD-2) with
+  the recognition-preview affordance (waterfall viewer, §11). Header verbs: Void order… (Draft/
+  Quoted; becomes "Create reversal…" post-Confirm, F2) · Confirm order. **Confirm-failure UX:**
+  LOUD blocking banner naming the line + missing role, with the "Fix in Accounting → Account
+  links" deep link (admins), then retry.
+- **Status board** (`nav-shell-status-board.html`) — §2 trimmed to working statuses
+  (Quoted/Confirmed/Posted/Fulfilled), time window, compact cards, click → slide-in, server search
+  + keyset. Accordion alternative (§2/Q1) evaluated by use after trim — not built now.
+- **Fulfillment queue** (`nav-shell-fulfillment-queue.html`) — §7 as specced: Posted orders with
+  pending lines, Fulfiller-role gated (shared role-gating directive), per-line "Mark fulfilled",
+  auto-advance when all lines done.
+- **Overdue worklist** (`nav-shell-overdue-worklist.html`) — the weekly-overdue workflow (§5's
+  verb side): overdue orders grid (customer, balance, days overdue, aging bucket), row → Customer
+  A/R deep link + payment-entry shortcut. Also reachable from Reports ("Overdue & dunning").
+- **Subscriptions & renewals** (`nav-shell-subscriptions.html`) — §11 as specced: list (customer,
+  plan, status, current term, next renewal) → slide-in with SubscriptionEvent timeline, linked
+  orders, shared **waterfall viewer**.
+
+### 13.2 Payments category (5 pages)
+
+- **Payments Dashboard** (`nav-shell-payments-dashboard.html`) — stat cards (payments this month,
+  unapplied balance, failed intents, refunds pending) + recent payments + needs-attention.
+- **All payments** (`nav-shell-all-payments.html`) — house grid (payment №, date, customer, method,
+  amount, applied/unapplied, status incl. F.4 PaymentIntent lifecycle chip), time window, keyset;
+  row slide-in → PaymentLines (which orders it cleared) + refund affordance.
+- **Payment entry** (`nav-shell-payments.html`) — §4's Jeremy workflow: entry form (amount, method,
+  date, receiving company, customer) + the **application panel** (open orders w/ balances,
+  amount-to-apply per order, oldest-first auto-suggest, running unapplied remainder). SAME
+  component serves credit mode (D.5 apply-credit). Design review w/ Jeremy = round-2 of this
+  mockup (Q4 resolved: the mockup IS the wireframe for that conversation; build proceeds, iterate
+  on his feedback).
+- **Refunds & reversals** (`nav-shell-refunds.html`) — §4's refund flow: captured payments grid,
+  refund action (amount ≤ remaining, reason → reversal payment + JE, F3.4), reversal history.
+- **Payment methods** (`nav-shell-payment-methods.html`) — F.9 vault: per-customer masked methods
+  (brand/last4/expiry), default toggle, remove w/ confirm; **"Add" disabled pending Stripe REAL
+  (F.4)** and hidden for manual-only deployments. No PAN entry ever renders.
+
+### 13.3 Products category (4 pages)
+
+- **Catalog** (`nav-shell-products.html`) — §6: product grid (name, type, category, rev-rec type,
+  price, active); expandable rows / slide-in show the **GL-resolution preview** ("Revenue → 4000
+  Sales via category Software") with an **unresolved-mapping tripwire chip** so missing maps are
+  visible BEFORE Confirm fails; RevenueRecognitionType + DeferredRecognitionShape prominent with
+  plain-language helper text (UPD-2, Robert's clarity ask).
+- **Categories** (`nav-shell-categories.html`) — category tree + per-category classification
+  defaults (rev-rec defaults, GL-link inheritance shown via the same resolution preview).
+- **Pricing** (`nav-shell-pricing.html`) — §10 as specced: PriceList grid → slide-in w/
+  ProductPrice child grid + inline PriceTier editor; overlap warnings; duplicate-list action.
+- **GL mapping** (`nav-shell-gl-mapping.html`) — read-only order-side view of resolved
+  GLAccountLink roles per product/category (§6), with "Fix in Accounting ↗" deep links (the
+  authoritative editor lives in accounting's Account links page — JEs/GL data is never duplicated
+  in orders, only linked).
+
+### 13.4 Reports category (1 page + crosslink)
+
+- **Customer A/R** (`nav-shell-customer-ar.html`) — §5 as specced: the accounting-homed **Customer
+  A/R base view** (identity block, open orders w/ balances, payment history, aging strip from
+  `vw_ARAging`, total balance) wrapped with orders' verbs (record payment, open order, dunning
+  note). Q3 RESOLVED by mockup approval: **homed in orders' Reports category**, base component
+  imported from accounting; accounting links to it.
+- **Overdue & dunning** = crosslink to the Overdue worklist (13.1) — one page, two nav entries.
+
+### 13.5 Build sequencing (resolves wave Q10 for this app)
+
+1. **Shell** (13.0) — nav items + category shells + rail configs + scope chip (rail + workspace-tab
+   framework imported from accounting once its Phase-1 lands; coordinate).
+2. **Order editor** (13.1) — the anchor screen (S1 + F1/F2 dependent); stepper + money strip built
+   here (orders-local).
+3. **All orders + Status board trim** — list idiom clones from accounting's scaffold.
+4. **Payment entry + All payments** (S2 + F3; iterate with Jeremy on the built v1).
+5. **Customer A/R + Overdue worklist** (read models flowing).
+6. **Products category** (S3/S5 fields; GL-resolution preview imported from accounting).
+7. **Refunds, Payment methods, Subscriptions, Fulfillment queue** — as their features (F3.4, F.9,
+   G.*, F1.6) land.
+8. **Dashboards** last within each category (cheap stats only); sales-rules (§9) + grants (§12)
+   surfaces ride their feature plans (no mockup this round — mock at their build).
+
 ## Sequencing
 
 1. Compose/edit Order full-space + field set + status stepper + Void/Reverse affordances (needs S1+F1/F2)
@@ -193,16 +321,21 @@ detail links back to the originating order (JournalEntryLink lineage).
 7. LiveDashboardBase adoption as the shared substrate lands (Live Page System plan)
 8. 2026-07-15 additions (§9–§12 + the §1/§4 additions): sequenced at the mockup-cycle scoping (wave Q10).
 
+**Superseded 2026-07-16: §13.5 is the operative build order** (per-screen, shell-first).
+
 ## Questions for Marcelo
 
 1. **Board vs accordion (§2):** trim-and-keep-board (my lean) or adopt Matt's accordion sketch now?
+   **RESOLVED 2026-07-16 by mockup approval: trimmed board ships (§13.1); accordion re-evaluated by
+   use.**
 2. ~~Compose full-space: route page vs maximized slide-in?~~ **RESOLVED 2026-07-11 (Amith): full-window
-   tabbed order form** (§1). Remaining detail only: exact tab set/order — current proposal Details ·
-   Lines · Bill-To/Ship-To · Payments · Accounting.
-3. **Customer A/R view home:** orders app, accounting app, or both (shared component)? It straddles the
-   boundary — data is accounting views, workflow is orders. I lean **shared component in orders** (Jeremy's
-   entry point is invoices/payments) with accounting linking to it.
-4. **Payment entry design review with Jeremy before building (§4)** — want me to prep a mock/wireframe for
-   that conversation, or build v0 first and iterate on the real thing (Robert's build-see-correct posture)?
-5. UI work owner: these screens go to the other agents (per your division) — should this plan stay
-   suggestions-level (current form) or do you want per-screen component-level specs written before handoff?
+   tabbed order form** (§1). Tab set/order **FINAL 2026-07-16 (mockup-approved):** Details · Lines ·
+   Bill-To/Ship-To · Payments · Accounting.
+3. **Customer A/R view home:** ~~orders app, accounting app, or both?~~ **RESOLVED 2026-07-16 by
+   mockup approval: orders Reports category hosts the page; the read-only base component is
+   accounting-homed (§0 placement ruling) and orders wraps it with its verbs (§13.4).**
+4. **Payment entry design review with Jeremy (§4):** **RESOLVED 2026-07-16 — the approved mockup
+   (`nav-shell-payments.html`) is the wireframe for that conversation; build v1 from it and iterate
+   on Jeremy's feedback against the real thing.**
+5. UI work owner: ~~suggestions-level or per-screen specs before handoff?~~ **RESOLVED 2026-07-16:
+   per-screen specs written (§13) — this plan is the build handoff.**
