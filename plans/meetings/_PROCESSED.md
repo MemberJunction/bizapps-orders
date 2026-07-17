@@ -46,3 +46,9 @@ DIRECT launch wiring + Teams-first contingency), **MOD-3 revised** (Order.Compan
 OS7 review-blocked), **UPD-9** (RenewalSpawnStatus), **UPD-10** (email-first delivery + open-AR
 cutover rule); **Q2/Q21 ANSWERED**; **Q22** (LH4I launch-scope sitting) minted;
 **`ROADMAP-lxp-launch.md`** created; FEATURE-LIST trued up.
+
+### 2026-07-17 - Amith Demo Feedback.md — ✅ PROCESSED 2026-07-17 (Task 98a)
+Orders landing: **forms-first ruling block in UI plan §13** (Entity Forms for Order/Payment/
+Subscription/Product; dashboard-shared widgets; no custom pop-ups — Amith's explicit orders
+comment; Order editor = pilot). Robert owns detailed Products/Orders/Payments/Subs flow work with
+Marcelo. Accounting-side landings in that repo's `_PROCESSED.md`.

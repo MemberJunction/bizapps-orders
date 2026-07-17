@@ -199,6 +199,23 @@ detail links back to the originating order (JournalEntryLink lineage).
 > record) — identical shell rules to accounting's UI plan §8.0 (shared nav-rail + workspace-tab
 > framework, imported from accounting where parked).
 
+> ⚠ **2026-07-17 Amith demo-feedback ruling — FORMS ARE THE BASIS OF THE UI (binds all §13 work).**
+> His explicit comment for Orders/Payments/Subs: *"build Entity Forms for each that are first
+> class and use those entity forms from the dashboard, **not custom pop-up things like you have**…
+> that is how MJE was designed with reusable core widgets."* Concretely: (1) every core entity
+> (Order, Payment, Subscription, Product) gets a **first-class MJ Entity Form** (extend the
+> generated form, `@RegisterClass(BaseFormComponent, …)`, per MJ's Forms Architecture guide),
+> composed of **reusable widgets the dashboards embed directly** — drill-in form and dashboard
+> panel are the same components. (2) Where §13 specs say modal/slide-in, the CONTENT is the entity
+> form via MJ's form host (`forms.open()` / `<mj-form-dialog>` / `<mj-form-slide-in>` +
+> `EntityFormConfig`) — never a bespoke popup. The **Order editor (13.1's anchor) is the pilot**:
+> its tab set (Details · Lines · Bill-To/Ship-To · Payments · Accounting) becomes the Order
+> entity form's shape, reused everywhere the order opens. (3) Existing custom pop-ups get
+> migrated to this shape as their screens are touched. (4) Robert works the detailed
+> Products/Orders/Payments/Subs flows with Marcelo — expect flow-level revisions to land as plan
+> edits, not re-litigation. Source: `meetings/2026-07-17 - Amith Demo Feedback.md`; accounting
+> counterpart block in its UI plan §8.
+
 ### 13.0 App shell (build FIRST)
 
 - **Top-nav categories = Explorer app nav items** (`DefaultNavItems`): **Orders · Payments ·
