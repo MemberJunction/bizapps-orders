@@ -2,12 +2,28 @@
   <div meta>
     <mj-stat-badge [Label]="TotalLabel" Icon="fa-solid fa-layer-group" Variant="info"></mj-stat-badge>
   </div>
+  <!-- ONE line: the drop-downs together (Marcelo's standing rule). No search bar: a board's cards are
+       the pipeline in the window, not a corpus to search — All orders is the searchable surface. -->
   <div toolbar>
-    <select class="mj-input" [(ngModel)]="TimeWindow" (ngModelChange)="OnFilterChanged()">
-      @for (w of TimeWindows; track w.Id) {
-        <option [ngValue]="w.Id">{{ w.Label }}</option>
-      }
-    </select>
+    <div class="sb__filters">
+      <select class="mj-input sb__sel" [(ngModel)]="TimeWindow" (ngModelChange)="OnWindowChanged()" aria-label="Time window">
+        @for (w of TimeWindows; track w.Id) {
+          <option [ngValue]="w.Id">{{ w.Label }}</option>
+        }
+      </select>
+      <select class="mj-input sb__sel" [(ngModel)]="FilterStatus" (ngModelChange)="OnScopeChanged()" aria-label="Status">
+        <option value="">All statuses</option>
+        @for (s of StatusOptions; track s) {
+          <option [ngValue]="s">{{ s }}</option>
+        }
+      </select>
+      <select class="mj-input sb__sel" [(ngModel)]="FilterCompanyID" (ngModelChange)="OnScopeChanged()" aria-label="Company">
+        <option value="">All companies</option>
+        @for (c of CompanyOptions; track c.ID) {
+          <option [ngValue]="c.ID">{{ c.Name }}</option>
+        }
+      </select>
+    </div>
   </div>
 </mj-page-header-interior>
 
@@ -17,32 +33,89 @@
   } @else if (LoadError) {
     <p class="sb__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
   } @else {
-    <div class="sb__board">
-      @for (col of Columns; track col.Status) {
-        <div class="sb__col">
-          <div class="sb__colhead">
-            <i [class]="col.Icon" aria-hidden="true"></i>
-            {{ col.Status }}
-            <span class="sb__n">{{ col.Count }}</span>
-          </div>
-          @for (card of col.Cards; track card.ID) {
-            <button class="sb__card" (click)="OnCardClicked(card.ID)">
-              <span class="sb__cardtop">
-                <span class="sb__num">{{ card.OrderNumber }}</span>
-                <span class="sb__amt">{{ card.TotalGross | currency }}</span>
-              </span>
-              <span class="sb__note" [class.sb__note--overdue]="IsOverdue(card)">{{ CardNote(card) }}</span>
-            </button>
-          }
-          @if (col.Hidden > 0) {
-            <!-- The header count is the TRUE total; this says plainly what is not drawn. -->
-            <p class="sb__more">+ {{ col.Hidden }} more…</p>
-          }
-          @if (col.Count === 0) {
-            <p class="sb__empty">Nothing here</p>
-          }
-        </div>
+    <!-- The whole board is ONE card against the page: it reads as a single object, like the other
+         reworked screens. -->
+    <div class="sb__surface">
+      @if (ActionError) {
+        <p class="sb__error sb__error--action" role="alert">
+          <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ ActionError }}
+        </p>
       }
+      <div class="sb__board">
+        @for (col of Columns; track col.Status) {
+          <div class="sb__col">
+            <div class="sb__colhead">
+              <i [class]="col.Icon" aria-hidden="true"></i>
+              {{ col.Status }}
+              <span class="sb__n">{{ col.Count }}</span>
+            </div>
+            <!-- Every card is rendered; the column scrolls. No truncation, no "+ N more…". -->
+            <div class="sb__colbody">
+              @for (card of col.Cards; track card.ID) {
+                <div class="sb__card" [class.sb__card--busy]="BusyID === card.ID">
+                  <button class="sb__cardmain" (click)="OnCardClicked(card.ID)" [disabled]="BusyID === card.ID">
+                    <span class="sb__cardtop">
+                      <span class="sb__num">{{ card.OrderNumber }}</span>
+                      <span class="sb__amt">{{ card.TotalGross | currency }}</span>
+                    </span>
+                    <span class="sb__note" [class.sb__note--overdue]="IsOverdue(card)">
+                      @if (card.PaymentStatus) {
+                        <span>{{ card.PaymentStatus }}</span>
+                      }
+                      @if (ShowDue(card)) {
+                        @if (card.PaymentStatus) {
+                          <span> · </span>
+                        }
+                        @if (IsOverdue(card)) {
+                          <span>overdue</span>
+                        } @else {
+                          <!-- DATE column: no timezone, so render it in UTC. -->
+                          <span>due {{ card.DueDate | date: 'MMM d, y' : 'UTC' }}</span>
+                        }
+                      }
+                    </span>
+                  </button>
+
+                  <button
+                    class="sb__kebab"
+                    (click)="ToggleMenu(card.ID)"
+                    [disabled]="BusyID === card.ID"
+                    [attr.aria-expanded]="OpenMenuID === card.ID"
+                    [attr.aria-label]="'Manage ' + card.OrderNumber">
+                    @if (BusyID === card.ID) {
+                      <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+                    } @else {
+                      <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
+                    }
+                  </button>
+
+                  <!-- The menu expands INLINE rather than floating: the column is an overflow
+                       scroller, which would clip an absolutely-positioned menu. -->
+                  @if (OpenMenuID === card.ID) {
+                    <div class="sb__menu" role="menu">
+                      <button class="sb__menuitem" role="menuitem" (click)="OnCardClicked(card.ID)">
+                        <i class="fa-solid fa-eye" aria-hidden="true"></i> Open
+                      </button>
+                      <button class="sb__menuitem" role="menuitem" (click)="EditCard(card.ID)">
+                        <i class="fa-solid fa-pen" aria-hidden="true"></i> Edit
+                      </button>
+                      @if (CanConfirm(card)) {
+                        <!-- Confirm routes through Orders.ConfirmOrder — it books the journal entry. -->
+                        <button class="sb__menuitem" role="menuitem" (click)="ConfirmCard(card)">
+                          <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm &amp; book
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+              @if (col.Count === 0) {
+                <p class="sb__empty">Nothing here</p>
+              }
+            </div>
+          </div>
+        }
+      </div>
     </div>
   }
 </mj-page-body-interior>

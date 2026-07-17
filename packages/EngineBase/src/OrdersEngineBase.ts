@@ -292,7 +292,26 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
     return { Drafts: drafts, Errors: [] };
   }
 
-  /** Resolve each line's revenue account (product → category). Collects errors, never throws. */
+  /**
+   * Resolve each line's revenue account by the FULL hierarchy: product → category chain → the
+   * product's owning company. Collects errors, never throws.
+   *
+   * ⚠ The company tier was previously dead here: this called `ResolveAccount(productID, role,
+   * asOfDate)` — three args — while the fallback company is the optional FOURTH. So booking was
+   * really "product → category → fail", and the company defaults every deployment is seeded with
+   * were never consulted. The Catalog's "will it book?" tripwire DID pass the fallback, so the
+   * screen was strictly more optimistic than booking: a product could read as resolved and still
+   * fail at Confirm. Same engine method, different arguments — the worst kind of divergence,
+   * because it looks shared. (Marcelo 2026-07-16: "the front end is supposed to be kind of a thin
+   * wrapper when it comes to mirroring server functionality.")
+   *
+   * NOTE the company tier is only reachable for a product that HAS an OwningCompanyID (it is
+   * nullable). A company-less product still resolves by product/category link only — which is
+   * correct today, because the company is currently derived FROM the resolved account
+   * (see `accountFromLink`). That derivation is itself under review: deriving the company from the
+   * account inverts cause and effect, and it collapses companies that share books via
+   * `ParentAccountingCompanyID`. See plans/QUESTIONS.md + plans/BACKLOG.md (account-vs-role links).
+   */
   private resolveRevenueLines(
     lines: mjBizAppsOrdersOrderLineEntity[],
     asOfDate: Date,
@@ -306,7 +325,9 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
         return;
       }
       const role = this.RevenueRoleFor(product);
-      const account = this.ResolveAccount(line.ProductID, role, asOfDate);
+      // The 4th argument is the fix: the product's owning company is the last tier of the
+      // documented hierarchy (product → category → company). Omitting it silently skipped it.
+      const account = this.ResolveAccount(line.ProductID, role, asOfDate, product.OwningCompanyID ?? undefined);
       if (!account) {
         errors.push(`Line ${index}: no "${role}" account resolved for product "${product.Name}".`);
         return;

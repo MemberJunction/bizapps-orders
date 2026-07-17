@@ -1,31 +1,51 @@
-/* Status board (§13.1). Height chain: declares its own flex-column host. */
+/* Status board (§13.1).
+ *
+ * Height: `mj-page-body-interior` is display:block, so a `flex:1` child here is a NO-OP that
+ * collapses to zero height — the board would render as nothing. Nothing in this file depends on a
+ * height chain from the parent: the card sizes to its content, and the SCROLL bound lives on the
+ * column body as an explicit `max-height`. That is why the board survives a block-layout parent. */
 
 :host {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  min-height: 0;
+  display: block;
 }
 
-.sb__board {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  min-height: 0;
-  overflow-y: auto;
+/* Filters — one line, drop-downs side by side (Marcelo). Mirrors All orders' `.ao__filters`. */
+.sb__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
-/* Laptop-width tolerance (§0): 2-up rather than four crushed columns. */
-@media (max-width: 1100px) {
-  .sb__board {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+.sb__sel {
+  min-width: 150px;
+}
+
+/* The whole Kanban board in ONE card, surface against the page. */
+.sb__surface {
+  background: var(--mj-bg-surface);
+  border: 1px solid var(--mj-border-default);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+/* The board scrolls HORIZONTALLY. Both axes are set explicitly: per the CSS overflow spec a
+ * `visible` axis paired with a non-`visible` one computes to `auto`, so leaving overflow-y alone
+ * would silently make the board scroll vertically too and fight the columns' own scrollers. */
+.sb__board {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .sb__col {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-width: 0;
+  /* Fixed track width is what gives the board something to scroll: four columns never crush. */
+  flex: 0 0 264px;
+  min-width: 264px;
 }
 
 .sb__colhead {
@@ -49,20 +69,45 @@
   font-size: 11px;
 }
 
+/* Each column scrolls VERTICALLY inside a bounded height — every card is reachable, none hidden.
+ * The bound is viewport-relative rather than inherited, so it holds under a block-layout parent.
+ * Both axes explicit again (the overflow-spec computation above). */
+.sb__colbody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(62vh, 720px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 3px;
+}
+
 .sb__card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 9px;
+  background: var(--mj-bg-surface-card);
+}
+.sb__card:hover {
+  background: var(--mj-bg-surface-hover);
+}
+.sb__card--busy {
+  opacity: 0.65;
+}
+
+.sb__cardmain {
   display: flex;
   flex-direction: column;
   gap: 3px;
   width: 100%;
   text-align: left;
-  padding: 9px 11px;
-  border: 1px solid var(--mj-border-default);
-  border-radius: 9px;
-  background: var(--mj-bg-surface-card);
+  padding: 9px 4px 9px 11px;
+  border: none;
+  background: none;
   cursor: pointer;
-}
-.sb__card:hover {
-  background: var(--mj-bg-surface-hover);
 }
 .sb__cardtop {
   display: flex;
@@ -93,7 +138,48 @@
   font-weight: 600;
 }
 
-.sb__more,
+/* Manage the order from the board. */
+.sb__kebab {
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--mj-text-muted);
+  padding: 9px 9px 0 4px;
+  font-size: 12px;
+  line-height: 1;
+}
+.sb__kebab:hover {
+  color: var(--mj-text-primary);
+}
+
+/* Inline, not floating: the column is an overflow scroller and would clip an absolute menu. */
+.sb__menu {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--mj-border-subtle);
+  padding: 4px;
+  gap: 2px;
+}
+.sb__menuitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 5px 7px;
+  font-size: 11.5px;
+  color: var(--mj-text-secondary);
+}
+.sb__menuitem:hover {
+  background: var(--mj-bg-surface-sunken);
+  color: var(--mj-text-primary);
+}
+
 .sb__empty {
   margin: 0;
   text-align: center;
@@ -107,4 +193,13 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
+}
+.sb__error--action {
+  display: flex;
+  background: var(--mj-status-error-bg);
+  border: 1px solid var(--mj-status-error-border);
+  border-radius: 8px;
+  padding: 8px 11px;
+  margin-bottom: 10px;
+  font-size: 12px;
 }

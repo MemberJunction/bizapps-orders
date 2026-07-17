@@ -41,15 +41,9 @@
   background: var(--mj-bg-surface-card);
 }
 
-/* The strip sets overflow-x:auto for horizontal tab overflow. Per CSS, a non-visible overflow on one
-   axis computes the OTHER axis to auto — so its tabs' -1px bottom overlap (how the active tab sits on
-   the rule) spilled past the content box and raised a VERTICAL scrollbar on a single row of tabs.
-   Clip that axis: horizontal overflow still scrolls, vertical cannot. Fixed here, in the consumer's
-   CSS, so the shared strip component is untouched. */
-.oe__cardhead ::ng-deep .ws-tabs {
-  overflow-y: hidden;
-}
-
+/* The tab strip's own CSS owns its overflow + gutter now (see workspace-tab-strip.component.css):
+   the overflow-x/overflow-y computed-value trap and the left indent are fixed once, at the source,
+   so all four consumers inherit them instead of each carrying a copy of the workaround. */
 /* Card body — the ONLY scroll container on this page, which is what the footer sticks to. */
 .oe__body {
   flex: 1;

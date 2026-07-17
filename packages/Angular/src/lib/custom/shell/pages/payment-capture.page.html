@@ -1,0 +1,281 @@
+<mj-page-header-interior>
+  <div meta>
+    @if (Payment) {
+      <mj-stat-badge [Label]="Payment.PaymentNumber" Icon="fa-solid fa-receipt" Variant="default"></mj-stat-badge>
+      <mj-stat-badge [Label]="Payment.Status" Icon="fa-solid fa-circle-check" Variant="default"></mj-stat-badge>
+      <mj-stat-badge
+        [Label]="RemainderLabel"
+        Icon="fa-solid fa-scale-balanced"
+        [Variant]="IsFullyApplied ? 'success' : (Unapplied < 0 ? 'error' : 'warning')">
+      </mj-stat-badge>
+    } @else {
+      <mj-stat-badge Label="Unapplied payments awaiting application" Icon="fa-solid fa-inbox" Variant="default"></mj-stat-badge>
+    }
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body-interior>
+  <div class="pc">
+    @if (LoadError) {
+      <p class="pc__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+    }
+
+    @if (IsLoading) {
+      <mj-loading text="Loading…"></mj-loading>
+    } @else if (!PaymentID) {
+      <!-- ─── PICKER: no payment chosen ─────────────────────────────────────── -->
+      <section class="pc__card">
+        <p class="pc__cardtitle"><i class="fa-solid fa-inbox" aria-hidden="true"></i> Payments waiting to be applied</p>
+
+        @if (Capturable.length === 0) {
+          <!-- The honest empty state. There is no payment data in this database yet, so this is the
+               first thing anyone sees — it explains rather than spins. -->
+          <div class="pc__empty">
+            <i class="fa-solid fa-inbox pc__emptyicon" aria-hidden="true"></i>
+            <p class="pc__emptytitle">Nothing is waiting to be applied.</p>
+            <p class="pc__emptybody">
+              This workspace lists payments that have <b>arrived</b> but that nobody has yet assigned to
+              orders — money sitting unapplied. A payment appears here while
+              <b>Σ of its applications &lt; its amount</b>.
+            </p>
+            <p class="pc__emptybody">
+              Nothing is listed because either no payments have been recorded, or every recorded payment is
+              already fully applied. Record one on <b>Payment entry</b>, or open an existing payment from
+              <b>All payments</b>, and it will appear here with its unapplied remainder.
+            </p>
+          </div>
+        } @else {
+          <div class="pc__gridwrap">
+            <table class="pc__grid">
+              <thead>
+                <tr>
+                  <th>Payment №</th>
+                  <th>Date</th>
+                  <th>Customer</th>
+                  <th>Method</th>
+                  <th>Status</th>
+                  <th class="num">Amount</th>
+                  <th class="num">Unapplied</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of Capturable; track row.Payment.ID) {
+                  <tr>
+                    <td>{{ row.Payment.PaymentNumber }}</td>
+                    <td>{{ row.Payment.PaymentDate | date: 'yyyy-MM-dd' : 'UTC' }}</td>
+                    <td>{{ row.CustomerName }}</td>
+                    <td>{{ row.Payment.Method }}</td>
+                    <td>{{ row.Payment.Status }}</td>
+                    <td class="num">{{ row.Payment.Amount | currency }}</td>
+                    <td class="num pc__strong">{{ row.Unapplied | currency }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="pc__footnote">
+            The shell opens one of these into this workspace by passing its payment id. Selecting from
+            this list is not wired yet — that navigation belongs to the shell, not to this page.
+          </p>
+        }
+      </section>
+    } @else if (Payment) {
+      <!-- ─── WORKSPACE: one payment, one customer's open orders ─────────────── -->
+      <div class="pc__cols">
+        <!-- The payment. -->
+        <section class="pc__card">
+          <p class="pc__cardtitle"><i class="fa-solid fa-money-check-dollar" aria-hidden="true"></i> The payment</p>
+
+          <div class="pc__facts">
+            <div class="pc__fact"><span>Payment №</span><b>{{ Payment.PaymentNumber }}</b></div>
+            <div class="pc__fact"><span>Amount</span><b class="pc__big">{{ Payment.Amount | currency }}</b></div>
+            <div class="pc__fact">
+              <span>Date received</span><b>{{ Payment.PaymentDate | date: 'yyyy-MM-dd' : 'UTC' }}</b>
+            </div>
+            <div class="pc__fact"><span>Customer</span><b>{{ CustomerName ?? '(no customer on this payment)' }}</b></div>
+            <div class="pc__fact"><span>Method</span><b>{{ Payment.Method }}</b></div>
+            <div class="pc__fact"><span>Status</span><b>{{ Payment.Status }}</b></div>
+            <div class="pc__fact"><span>Received by</span><b>{{ Payment.ReceivingCompany }}</b></div>
+            @if (Payment.ProcessingFeeAmount) {
+              <div class="pc__fact"><span>Processing fee</span><b>{{ Payment.ProcessingFeeAmount | currency }}</b></div>
+              <div class="pc__fact"><span>Net cash</span><b>{{ Payment.NetAmount | currency }}</b></div>
+            }
+            <div class="pc__fact">
+              <span>Provider</span><b>{{ Payment.PaymentProvider ?? 'Manual — no provider linked' }}</b>
+            </div>
+            <div class="pc__fact">
+              <!-- ProviderChargeID is the real column; there is no generic "provider reference" field. -->
+              <span>Provider charge ref</span><b>{{ Payment.ProviderChargeID ?? '—' }}</b>
+            </div>
+            @if (Payment.Description) {
+              <div class="pc__fact"><span>Description</span><b>{{ Payment.Description }}</b></div>
+            }
+            <div class="pc__fact"><span>Journal entry</span><b>{{ Payment.JournalEntryID ? 'booked' : 'not booked' }}</b></div>
+          </div>
+
+          <div class="pc__split">
+            <div class="pc__splitrow">
+              <span>Already applied</span><b>{{ AlreadyApplied | currency }}</b>
+            </div>
+            <div class="pc__splitrow pc__splitrow--accent">
+              <span>Available to apply</span><b>{{ AvailableToApply | currency }}</b>
+            </div>
+          </div>
+
+          @if (ExistingLines.length) {
+            <p class="pc__muted">
+              <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+              {{ ExistingLines.length }} application(s) already recorded against this payment. Only the
+              amount still available can be allocated below.
+            </p>
+          }
+        </section>
+
+        <!-- The customer's open orders + the act. -->
+        <section class="pc__card">
+          <p class="pc__cardtitle">
+            <i class="fa-solid fa-arrows-down-to-line" aria-hidden="true"></i>
+            Apply to open orders
+            <span class="pc__spacer"></span>
+            <button class="mj-btn mj-btn--outline" (click)="AutoApply()" [disabled]="AvailableToApply <= 0 || OpenOrders.length === 0">
+              <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Auto-allocate oldest first
+            </button>
+            <button class="mj-btn mj-btn--outline" (click)="ClearAllocation()" [disabled]="Applied === 0">
+              <i class="fa-solid fa-eraser" aria-hidden="true"></i> Clear
+            </button>
+          </p>
+
+          @if (!Payment.CustomerOrganizationID) {
+            <div class="pc__empty">
+              <i class="fa-solid fa-user-slash pc__emptyicon" aria-hidden="true"></i>
+              <p class="pc__emptytitle">This payment names no customer.</p>
+              <p class="pc__emptybody">
+                <code>CustomerOrganizationID</code> is null (the schema allows it for anonymous /
+                e-commerce payments), so there is no set of open orders to choose from. Set the customer
+                on the payment first.
+              </p>
+            </div>
+          } @else if (OpenOrders.length === 0) {
+            <div class="pc__empty">
+              <i class="fa-solid fa-circle-check pc__emptyicon" aria-hidden="true"></i>
+              <p class="pc__emptytitle">{{ CustomerName ?? 'This customer' }} has no open orders.</p>
+              <p class="pc__emptybody">
+                An order is listed here while it is Confirmed, Posted, or Fulfilled <b>and</b> its
+                <b>Balance</b> is still above zero. Nothing matches, so this payment has nothing to clear —
+                the whole {{ AvailableToApply | currency }} stays unapplied (money on account), which is a
+                real state, not an error.
+              </p>
+            </div>
+          } @else {
+            <div class="pc__gridwrap">
+              <table class="pc__grid">
+                <thead>
+                  <tr>
+                    <th>Order №</th>
+                    <th>Ordered</th>
+                    <th>Due</th>
+                    <th>Status</th>
+                    <th class="num">Total</th>
+                    <th class="num">Paid</th>
+                    <th class="num">Balance</th>
+                    <th class="num">Apply</th>
+                    <th class="num">Left</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (o of OpenOrders; track o.ID) {
+                    <tr [class.pc__row--overdue]="IsOverdue(o)">
+                      <td>{{ o.OrderNumber }}</td>
+                      <td>{{ o.OrderDate | date: 'yyyy-MM-dd' : 'UTC' }}</td>
+                      <td>
+                        @if (o.DueDate) {
+                          {{ o.DueDate | date: 'yyyy-MM-dd' : 'UTC' }}
+                          @if (IsOverdue(o)) {
+                            <span class="pc__overdue">overdue</span>
+                          }
+                        } @else {
+                          <span class="pc__muted">—</span>
+                        }
+                      </td>
+                      <td>
+                        {{ o.Status }}
+                        <span class="pc__sub">{{ o.PaymentStatus }}</span>
+                      </td>
+                      <td class="num">{{ o.TotalGross | currency }}</td>
+                      <td class="num">{{ o.AmountPaid | currency }}</td>
+                      <td class="num pc__strong">{{ o.Balance | currency }}</td>
+                      <td class="num">
+                        <input
+                          class="mj-input num"
+                          [(ngModel)]="Allocation[o.ID]"
+                          (ngModelChange)="OnAllocationChanged()"
+                          inputmode="decimal"
+                          [attr.aria-label]="'Amount to apply to order ' + o.OrderNumber" />
+                      </td>
+                      <td class="num" [class.pc__neg]="RemainingFor(o) < 0">{{ RemainingFor(o) | currency }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+
+            <div class="pc__remainder">
+              <span>Available <b>{{ AvailableToApply | currency }}</b></span>
+              <span>Allocating <b>{{ Applied | currency }}</b></span>
+              <mj-stat-badge
+                [Label]="RemainderLabel"
+                [Variant]="IsFullyApplied ? 'success' : (Unapplied < 0 ? 'error' : 'warning')">
+              </mj-stat-badge>
+            </div>
+          }
+
+          <!-- Confirm LEFT, per MJ's convention. -->
+          <div class="pc__footer">
+            <button class="mj-btn mj-btn--primary" (click)="Apply()" [disabled]="!CanApply" [title]="ApplyBlockedReason ?? 'Apply this payment'">
+              @if (IsApplying) {
+                <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Applying…
+              } @else {
+                <i class="fa-solid fa-check" aria-hidden="true"></i> Apply payment
+              }
+            </button>
+          </div>
+
+          <!-- The atomicity disclosure. This is a claim about the write, so it is stated plainly and
+               permanently — not buried in a tooltip. -->
+          <p class="pc__warn" role="note">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            <span>
+              <b>Each allocation is saved separately — this is not one all-or-nothing write.</b>
+              There is no server-side apply operation to route it through, so if one order fails the
+              earlier ones stay applied. Every line's result is reported below. No journal entry is
+              booked by applying (the ledger entry happens when the payment is captured), so a partial
+              run means a partial <i>application</i>, never a half-booked ledger.
+            </span>
+          </p>
+
+          @if (ApplyBlockedReason) {
+            <p class="pc__hintline"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> {{ ApplyBlockedReason }}</p>
+          }
+          @if (ActionMessage) {
+            <p class="pc__msg" [class.pc__msg--error]="ActionIsError" role="status">{{ ActionMessage }}</p>
+          }
+          @if (Outcomes.length) {
+            <ul class="pc__outcomes">
+              @for (o of Outcomes; track o.OrderNumber) {
+                <li [class.pc__outcome--failed]="!o.Saved">
+                  <i class="fa-solid" [class.fa-check]="o.Saved" [class.fa-xmark]="!o.Saved" aria-hidden="true"></i>
+                  {{ o.OrderNumber }} — {{ o.Amount | currency }}
+                  @if (o.Saved) {
+                    applied
+                  } @else {
+                    NOT applied: {{ o.Error }}
+                  }
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      </div>
+    }
+  </div>
+</mj-page-body-interior>

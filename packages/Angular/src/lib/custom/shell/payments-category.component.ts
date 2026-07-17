@@ -6,7 +6,7 @@ import { MJLeftNavSection } from '@memberjunction/ng-ui-components';
 import { CategoryShellBase, PageRefreshService } from '@mj-biz-apps/accounting-ng';
 
 /** Page ids for this category's rail. Local to the shell — not routes. */
-export type PaymentsPageId = 'dashboard' | 'all-payments' | 'entry' | 'refunds' | 'methods';
+export type PaymentsPageId = 'dashboard' | 'all-payments' | 'entry' | 'capture' | 'refunds' | 'methods';
 
 /**
  * Payments category shell (orders UI plan §13.0 / §13.2).
@@ -44,6 +44,8 @@ export class PaymentsCategoryComponent extends CategoryShellBase {
           { id: 'dashboard', label: 'Dashboard', icon: 'fa-solid fa-gauge-high' },
           { id: 'all-payments', label: 'All payments', icon: 'fa-solid fa-table-list' },
           { id: 'entry', label: 'Payment entry', icon: 'fa-solid fa-money-check-dollar' },
+          // Money has arrived but nobody has said which orders it pays — the accountant's bench.
+          { id: 'capture', label: 'Apply payments', icon: 'fa-solid fa-link' },
         ],
       },
       {

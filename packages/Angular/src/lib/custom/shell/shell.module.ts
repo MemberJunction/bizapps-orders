@@ -44,6 +44,7 @@ import { AllOrdersPageComponent } from './pages/all-orders.page';
 import { StatusBoardPageComponent } from './pages/status-board.page';
 import { OrderDetailPanelComponent } from './pages/order-detail-panel.component';
 import { PaymentEntryPageComponent } from './pages/payment-entry.page';
+import { PaymentCapturePageComponent } from './pages/payment-capture.page';
 import { CustomerARPageComponent } from './pages/customer-ar.page';
 import { CatalogPageComponent } from './pages/catalog.page';
 import { FulfillmentQueuePageComponent } from './pages/fulfillment-queue.page';
@@ -93,6 +94,7 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
     CustomerARPageComponent,
     OverdueWorklistPageComponent,
     PaymentEntryPageComponent,
+    PaymentCapturePageComponent,
     AllPaymentsPageComponent,
     AllOrdersPageComponent,
     StatusBoardPageComponent,
@@ -153,6 +155,7 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
     CustomerARPageComponent,
     OverdueWorklistPageComponent,
     PaymentEntryPageComponent,
+    PaymentCapturePageComponent,
     AllPaymentsPageComponent,
     AllOrdersPageComponent,
     StatusBoardPageComponent,

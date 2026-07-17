@@ -1,16 +1,22 @@
 /* Order detail slide-in (§13.1) — design tokens only. */
 
+/* The panel's internal gutters live HERE: mj-slide-panel's .sp-body has no padding of its own, so
+   without this the content sits flush against the panel edge and the header rule. 24px sides match
+   the panel header's own gutter; the 16px top lifts the chips clear of the header rule. */
 .od {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 16px 24px 24px;
   font-size: 13px;
 }
 
-.od__chips {
+.od__chips,
+.od__actions {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
 .od__money {
@@ -92,6 +98,21 @@
 .od__grid th.num,
 .od__grid td.num {
   text-align: right;
+  /* Tabular figures so the money columns align on the decimal. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.od__linedesc {
+  font-size: 11.5px;
+  color: var(--mj-text-muted);
+  margin-top: 2px;
+}
+
+.od__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  word-break: break-all;
 }
 
 .od__muted {

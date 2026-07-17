@@ -1,38 +1,68 @@
-<mj-slide-panel [Visible]="Visible" Title="Order" (Closed)="Close()">
-  @if (IsLoading) {
-    <mj-loading text="Loading the order…"></mj-loading>
-  } @else if (LoadError) {
-    <p class="od__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
-  } @else if (Header; as h) {
-    <div class="od">
+<mj-slide-panel [Visible]="Visible" [Title]="Title" (Closed)="Close()">
+  <!-- .od owns the panel's internal gutters: mj-slide-panel's .sp-body has NO padding of its own,
+       so without this everything (text AND the chips) sits flush against the panel edge and the
+       header rule. Gutters match the panel header's own 16px/24px rhythm. -->
+  <div class="od">
+    @if (IsLoading) {
+      <mj-loading text="Loading the order…"></mj-loading>
+    } @else if (LoadError) {
+      <p class="od__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+    } @else if (Header; as h) {
+      <!-- State strip — below the header rule with real breathing room, never flush against it. -->
       <div class="od__chips">
         <mj-stat-badge [Label]="h.OrderNumber" Icon="fa-solid fa-file-invoice-dollar" Variant="default"></mj-stat-badge>
         <mj-stat-badge [Label]="h.Status" [Variant]="StatusVariant(h.Status)"></mj-stat-badge>
-        @if (h.PaymentStatus) {
-          <mj-stat-badge [Label]="h.PaymentStatus" [Variant]="StatusVariant(h.PaymentStatus)"></mj-stat-badge>
+        <mj-stat-badge [Label]="h.PaymentStatus" [Variant]="StatusVariant(h.PaymentStatus)"></mj-stat-badge>
+        @if (h.OrderType !== 'Sale') {
+          <mj-stat-badge [Label]="h.OrderType" Icon="fa-solid fa-rotate-left" Variant="warning"></mj-stat-badge>
         }
       </div>
 
-      <!-- Money strip — the same three numbers the editor shows, so the two never disagree. -->
+      <!-- Pop-out (↗): opens the full order AND closes this panel, so the record isn't left behind it. -->
+      <div class="od__actions">
+        <button type="button" mjButton Variant="outline" Size="sm" (click)="PopOut()" title="Open the full order (closes this panel)">
+          <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Open full
+        </button>
+      </div>
+
+      <!-- Money strip — the STORED TotalGross / AmountPaid / Balance, the same three numbers the
+           editor shows, read from the same columns, so the two can never disagree. -->
       <div class="od__money">
         <div><span class="l">TOTAL</span><span class="v">{{ h.TotalGross | currency }}</span></div>
         <div><span class="l">PAID</span><span class="v">{{ h.AmountPaid ? (h.AmountPaid | currency) : '—' }}</span></div>
         <div><span class="l">BALANCE</span><span class="v">{{ h.Balance | currency }}</span></div>
       </div>
 
+      <h4 class="od__h">Order</h4>
       <dl class="od__facts">
+        <dt>Customer</dt>
+        <dd>{{ CustomerName ?? (h.CustomerOrganizationID ? '(unknown organization)' : '—') }}</dd>
+        <dt>Type</dt>
+        <dd>{{ h.OrderType }}</dd>
         <dt>Order date</dt>
         <!-- DATE column (no zone) — render UTC or it shifts a day west of UTC. -->
         <dd>{{ h.OrderDate | date: 'mediumDate' : 'UTC' }}</dd>
+        <dt>Terms</dt>
+        <dd>{{ h.PaymentTermsType ?? '—' }}</dd>
         <dt>Due</dt>
         <dd>{{ h.DueDate ? (h.DueDate | date: 'mediumDate' : 'UTC') : '—' }}</dd>
-        @if (h.ExternalDocumentNumber) {
-          <dt>External doc №</dt>
-          <dd>{{ h.ExternalDocumentNumber }}</dd>
+        @if (h.RequestedDeliveryDate) {
+          <dt>Requested delivery</dt>
+          <dd>{{ h.RequestedDeliveryDate | date: 'mediumDate' : 'UTC' }}</dd>
+        }
+        <dt>External doc №</dt>
+        <dd>{{ h.ExternalDocumentNumber || '—' }}</dd>
+        @if (h.SalesRepUser) {
+          <dt>Sales rep</dt>
+          <dd>{{ h.SalesRepUser }}</dd>
         }
         @if (h.Description) {
           <dt>Description</dt>
           <dd>{{ h.Description }}</dd>
+        }
+        @if (h.Notes) {
+          <dt>Notes</dt>
+          <dd>{{ h.Notes }}</dd>
         }
       </dl>
 
@@ -41,20 +71,36 @@
         <p class="od__muted">This order has no lines.</p>
       } @else {
         <table class="od__grid">
-          <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Total</th><th>Service period</th></tr></thead>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Product</th>
+              <th class="num">Qty</th>
+              <th class="num">Unit price</th>
+              <th class="num">Disc.</th>
+              <th class="num">Net</th>
+            </tr>
+          </thead>
           <tbody>
             @for (l of Lines; track l.ID) {
               <tr>
-                <td>{{ l.Product }}</td>
-                <td class="num">{{ l.Quantity }}</td>
-                <td class="num">{{ l.LineTotalNet | currency }}</td>
+                <td>{{ l.LineNumber }}</td>
                 <td>
+                  <div>{{ l.Product }}</div>
+                  @if (l.Description) {
+                    <div class="od__linedesc">{{ l.Description }}</div>
+                  }
                   @if (l.ServicePeriodStart) {
-                    {{ l.ServicePeriodStart | date: 'yyyy-MM-dd' : 'UTC' }} – {{ l.ServicePeriodEnd | date: 'yyyy-MM-dd' : 'UTC' }}
-                  } @else {
-                    <span class="od__muted">—</span>
+                    <div class="od__linedesc">
+                      Service {{ l.ServicePeriodStart | date: 'yyyy-MM-dd' : 'UTC' }} – {{ l.ServicePeriodEnd | date: 'yyyy-MM-dd' : 'UTC' }}
+                    </div>
                   }
                 </td>
+                <td class="num">{{ l.Quantity | number: '1.0-4' }}</td>
+                <td class="num">{{ l.UnitPrice | currency }}</td>
+                <!-- DiscountPct is stored as a fraction (0.10 = 10%) — the percent pipe reads it as-is. -->
+                <td class="num">{{ l.DiscountPct ? (l.DiscountPct | percent: '1.0-2') : '—' }}</td>
+                <td class="num">{{ l.LineTotalNet | currency }}</td>
               </tr>
             }
           </tbody>
@@ -85,9 +131,26 @@
           <i class="fa-solid fa-book" aria-hidden="true"></i>
           This order is booked. Its journal entry lives in Accounting → Journal Entries.
         </p>
+        <dl class="od__facts">
+          <dt>Journal entry</dt>
+          <dd class="od__mono">{{ h.JournalEntryID }}</dd>
+          @if (h.ConfirmedAt) {
+            <dt>Confirmed</dt>
+            <!-- datetimeoffset = an INSTANT → local zone, no 'UTC' arg. -->
+            <dd>{{ h.ConfirmedAt | date: 'medium' }}</dd>
+          }
+          @if (h.PostedAt) {
+            <dt>Posted</dt>
+            <dd>{{ h.PostedAt | date: 'medium' }}</dd>
+          }
+          @if (h.PostedByUser) {
+            <dt>Posted by</dt>
+            <dd>{{ h.PostedByUser }}</dd>
+          }
+        </dl>
       } @else {
         <p class="od__muted">Not booked yet — Confirm the order to book its journal entries.</p>
       }
-    </div>
-  }
+    }
+  </div>
 </mj-slide-panel>

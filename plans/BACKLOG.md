@@ -61,3 +61,32 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
 - **Then:** the Refunds page's action lights up (the grid + reversal chain already exist), and its
   "history only" notice comes out.
 - **Effort:** ~one operation + its guards; the UI is already built around it.
+
+---
+
+## Create an order directly into `Fulfilled` — needs a Remote Operation, not a status write
+- **Added:** 2026-07-16 · **Source:** Marcelo, GUI review of the order editor — *"able to create an order
+  into posted and fulfilled should be fine. Creating one into voided is a problem... it sounds like creating
+  one into posted or fulfilled would require server work so that it flows through the confirm first, and we
+  check that it actually posts, and then we move it to fulfilled... creating in the posted, you don't need...
+  you should just be able to create in the confirm. There's no reason to create in the posted. Confirmed
+  flows to posted... we should leave fulfilled in there grayed out for now. But eventually, we're gonna wanna
+  be able to create into fulfilled, and you should just backlog the actual feature to allow that to happen
+  where we'd have to go and create a, like, remotable op that does that as your transaction and all that."*
+- **Shipped now (UI wave):** the editor's start-status picker offers Draft / Quoted / **Confirmed**;
+  Confirmed routes through the existing `Orders.ConfirmOrder` remote operation so the balanced JE is still
+  booked atomically. **Posted / Fulfilled / Voided are offered but disabled with a reason.**
+- **Why a plain status write is not acceptable:** `OrderEntityServer` books the journal entry on the
+  transition to `Confirmed`. Writing `Status = 'Posted'` (or `'Fulfilled'`) from the browser would skip that
+  hook entirely and produce a posted order with **no journal entry** — silently unbalanced books, with no
+  error. TransactionGroups do not cross the GraphQL boundary, so the unit of work cannot be composed client
+  side. This is exactly why Confirm is a server op.
+- **Per Marcelo's own reasoning, `Posted` is NOT wanted as a start status** — Confirmed flows to Posted, so
+  offering it buys nothing. **`Voided` is explicitly out** ("creating one into voided is a problem").
+- **The feature:** an `Orders.CreateOrderInState` (or `Orders.FulfillOrder`) remote operation that, in ONE
+  TransactionGroup: creates the order → runs the real Confirm path (booking the JE, honouring every existing
+  block, e.g. an unresolved GL mapping) → **verifies it actually posted** → advances to `Fulfilled`. Any
+  failure rolls the whole thing back; a blocked Confirm surfaces the same `Errors` the editor already renders.
+- **Then:** the editor un-greys `Fulfilled` and routes it at the op. The picker + its blocked-reason map are
+  already in place, so the UI change is one line.
+- **Related:** the atomic refund op (above) — same pattern, same reason.

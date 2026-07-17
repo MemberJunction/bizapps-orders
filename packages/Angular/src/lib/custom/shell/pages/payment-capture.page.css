@@ -1,0 +1,294 @@
+/* Payment capture workspace.
+ *
+ * Height chain: `mj-page-body-interior` is display:block, so `flex:1` on a child is a NO-OP and
+ * collapses to zero height. The host declares its own flex column with an explicit height instead. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.pc {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.pc__cols {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+/* Laptop width: stack rather than crush the allocation grid. */
+@media (max-width: 1180px) {
+  .pc__cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pc__card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  background: var(--mj-bg-surface-card);
+  min-width: 0;
+}
+.pc__cardtitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mj-text-secondary);
+}
+.pc__cardtitle i {
+  color: var(--mj-brand-primary);
+}
+.pc__spacer {
+  margin-left: auto;
+}
+
+/* ─── the payment's facts ─────────────────────────────────────────────────── */
+
+.pc__facts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pc__fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--mj-text-secondary);
+}
+.pc__fact b {
+  color: var(--mj-text-primary);
+  text-align: right;
+  word-break: break-word;
+}
+.pc__big {
+  font-size: 18px;
+}
+
+.pc__split {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 12px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 9px;
+  background: var(--mj-bg-surface);
+}
+.pc__splitrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12.5px;
+  color: var(--mj-text-secondary);
+}
+.pc__splitrow b {
+  color: var(--mj-text-primary);
+}
+.pc__splitrow--accent b {
+  font-size: 16px;
+  color: var(--mj-brand-primary);
+}
+
+/* ─── grids ───────────────────────────────────────────────────────────────── */
+
+.pc__gridwrap {
+  overflow-x: auto;
+}
+.pc__grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pc__grid th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--mj-border-default);
+  white-space: nowrap;
+}
+.pc__grid td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+  white-space: nowrap;
+}
+.pc__grid th.num,
+.pc__grid td.num {
+  text-align: right;
+}
+.pc__grid td.num .mj-input {
+  width: 120px;
+  text-align: right;
+}
+.pc__row--overdue {
+  background: color-mix(in srgb, var(--mj-status-error) 6%, transparent);
+}
+.pc__strong {
+  font-weight: 700;
+  color: var(--mj-text-primary);
+}
+.pc__neg {
+  color: var(--mj-status-error-text);
+  font-weight: 700;
+}
+.pc__overdue {
+  margin-left: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--mj-status-error-text);
+}
+.pc__sub {
+  margin-left: 6px;
+  font-size: 10.5px;
+  color: var(--mj-text-muted);
+}
+
+.pc__remainder {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 9px;
+  background: var(--mj-bg-surface);
+  font-size: 12.5px;
+  color: var(--mj-text-secondary);
+}
+.pc__remainder b {
+  font-size: 14px;
+  color: var(--mj-text-primary);
+}
+
+/* ─── empty states (the most likely first impression — make them explain) ──── */
+
+.pc__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 26px 18px;
+  text-align: center;
+  border: 1px dashed var(--mj-border-default);
+  border-radius: 10px;
+  background: var(--mj-bg-surface);
+}
+.pc__emptyicon {
+  font-size: 26px;
+  color: var(--mj-text-disabled);
+}
+.pc__emptytitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--mj-text-primary);
+}
+.pc__emptybody {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--mj-text-muted);
+}
+.pc__emptybody code {
+  font-size: 11.5px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--mj-bg-surface-sunken);
+  color: var(--mj-text-secondary);
+}
+
+/* ─── footer / messages ───────────────────────────────────────────────────── */
+
+.pc__footer {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.pc__footnote {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--mj-text-muted);
+}
+.pc__warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--mj-status-warning-border);
+  border-radius: 9px;
+  background: var(--mj-status-warning-bg);
+  color: var(--mj-status-warning-text);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.pc__muted,
+.pc__hintline {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.pc__msg {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--mj-text-secondary);
+}
+.pc__msg--error,
+.pc__error {
+  color: var(--mj-status-error-text);
+}
+.pc__error {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pc__outcomes {
+  margin: 0;
+  padding-left: 4px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--mj-text-secondary);
+}
+.pc__outcomes i {
+  margin-right: 6px;
+  color: var(--mj-status-success);
+}
+.pc__outcome--failed {
+  color: var(--mj-status-error-text);
+}
+.pc__outcome--failed i {
+  color: var(--mj-status-error);
+}

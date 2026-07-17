@@ -44,6 +44,9 @@
         @case ('all-payments') {
           <mj-all-payments-page></mj-all-payments-page>
         }
+        @case ('capture') {
+          <mj-payment-capture-page [PaymentID]="PageParam"></mj-payment-capture-page>
+        }
         @case ('entry') {
           <mj-payment-entry-page></mj-payment-entry-page>
         }
