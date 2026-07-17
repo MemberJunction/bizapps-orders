@@ -682,6 +682,33 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
     return lineNet(line);
   }
 
+  /**
+   * True when `tab` holds a required field the user has not filled — drives the red dot on the tab
+   * (Marcelo 2026-07-17: *"we can't have the user searching through tabs for required fields… the
+   * tabs with required fields need a little red dot to indicate they have unfilled required fields"*).
+   *
+   * This is the SAVE-required floor ONLY — the DB NOT-NULL, user-supplied fields. It is deliberately
+   * NOT the confirm-required set (a resolvable GL account, a customer, etc.), which already has its
+   * own surface in `ConfirmErrors`: a draft is legitimately saveable long before it is confirmable,
+   * so red-dotting confirm rules would flag a perfectly valid draft the user isn't trying to confirm
+   * yet. A locked (posted/confirmed) order is already valid, so it never dots.
+   *   lines   → at least one line, each with a product AND a positive quantity
+   *   details → an order date (NOT NULL; defaulted on a new draft, but the user can clear it)
+   * addresses / payments / accounting carry no save-required user field, so they never dot.
+   */
+  public TabHasUnfilledRequired(tab: OrderEditorTab): boolean {
+    const d = this.Draft;
+    if (!d || this.IsLocked) return false;
+    switch (tab) {
+      case 'lines':
+        return d.Lines.length === 0 || d.Lines.some((l) => !l.ProductID || !(Number(l.Quantity) > 0));
+      case 'details':
+        return !d.OrderDate;
+      default:
+        return false;
+    }
+  }
+
   /** Deferred-revenue lines carry a service period (UPD-2). */
   public IsDeferredLine(line: OrderDraftLine): boolean {
     if (!line.ProductID) return false;

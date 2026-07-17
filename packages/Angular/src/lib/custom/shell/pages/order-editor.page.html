@@ -97,7 +97,7 @@
                 @if (ShowAccountLinksFix) {
                   <div class="oe__fixhint">
                     This looks like a missing GL account mapping.
-                    <button class="mj-btn mj-btn--outline oe__fixbtn" (click)="FixInAccounting()">
+                    <button type="button" mjButton variant="outline" size="sm" class="oe__fixbtn" (click)="FixInAccounting()">
                       <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
                       Fix in Accounting → Account links
                     </button>
@@ -118,6 +118,12 @@
                 [attr.aria-selected]="ActiveTab === t.id"
                 (click)="GoToTab(t.id)">
                 {{ t.label }}
+                <!-- Red dot = this tab has an unfilled REQUIRED field, so the user never has to open
+                     each tab hunting for what's missing (Marcelo 2026-07-17). Save-required only. -->
+                @if (TabHasUnfilledRequired(t.id)) {
+                  <span class="oe__itab-dot" role="img" aria-label="has unfilled required fields"
+                        title="This tab has a required field that isn't filled in"></span>
+                }
               </button>
             }
           </div>
@@ -128,8 +134,8 @@
                 <table class="oe__grid mjsh-table">
                   <thead>
                     <tr>
-                      <th>Product</th>
-                      <th class="num">Qty</th>
+                      <th>Product <span class="oe__req" title="Required" aria-label="required">*</span></th>
+                      <th class="num">Qty <span class="oe__req" title="Required" aria-label="required">*</span></th>
                       <th class="num">Unit price</th>
                       <th class="num">Disc %</th>
                       <th class="num">Line total</th>
@@ -186,7 +192,7 @@
                           }
                         </td>
                         <td class="oe__rowact">
-                          <button class="mj-btn mj-btn--flat" (click)="RemoveLine(line.Key)" [disabled]="IsLocked" title="Remove this line" aria-label="Remove this line">
+                          <button type="button" mjButton variant="flat" size="sm" (click)="RemoveLine(line.Key)" [disabled]="IsLocked" title="Remove this line" aria-label="Remove this line">
                             <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
                           </button>
                         </td>
@@ -201,7 +207,7 @@
                 </table>
               </div>
               @if (!IsLocked) {
-                <button class="mj-btn mj-btn--flat oe__addline" (click)="AddLine()">
+                <button type="button" mjButton variant="flat" size="sm" class="oe__addline" (click)="AddLine()">
                   <i class="fa-solid fa-plus" aria-hidden="true"></i> Add line
                 </button>
               }
@@ -219,7 +225,7 @@
                   </select>
                 </label>
                 <label class="oe__field">
-                  <span>Order date</span>
+                  <span>Order date <span class="oe__req" title="Required" aria-label="required">*</span></span>
                   <input class="mj-input" type="date" [(ngModel)]="d.OrderDate" (ngModelChange)="touch()" />
                 </label>
                 <label class="oe__field">
@@ -335,14 +341,14 @@
           <!-- The verbs. Sticky to the bottom of the SCROLLING card body, so they are never
                something you have to go looking for. Affirmative left, destructive right (MJ). -->
           <div class="oe__footer">
-            <button class="mj-btn mj-btn--primary" (click)="Save()" [disabled]="!CanSave" [title]="SaveBlockedReason ?? 'Save this order'">
+            <button type="button" mjButton variant="primary" (click)="Save()" [disabled]="!CanSave" [title]="SaveBlockedReason ?? 'Save this order'">
               @if (IsSaving) {
                 <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Saving…
               } @else {
                 <i class="fa-regular fa-floppy-disk" aria-hidden="true"></i> {{ SaveVerbLabel }}
               }
             </button>
-            <button class="mj-btn mj-btn--outline" (click)="Confirm()" [disabled]="!CanConfirm" [title]="ConfirmBlockedReason ?? 'Confirm and book this order'">
+            <button type="button" mjButton variant="outline" (click)="Confirm()" [disabled]="!CanConfirm" [title]="ConfirmBlockedReason ?? 'Confirm and book this order'">
               @if (IsConfirming) {
                 <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Confirming…
               } @else {
@@ -353,10 +359,10 @@
               The order and all its lines save in one transaction. Confirm books its journal entries —
               post-Confirm, corrections go through a reversal order.
             </span>
-            <button class="mj-btn mj-btn--flat" (click)="Discard()" title="Close this tab and drop its unsaved changes">
+            <button type="button" mjButton variant="flat" (click)="Discard()" title="Close this tab and drop its unsaved changes">
               Discard draft
             </button>
-            <button class="mj-btn mj-btn--outline" [disabled]="!IsSaved" [title]="IsLocked ? 'Reverse this booked order' : 'Void this order'">
+            <button type="button" mjButton variant="outline" [disabled]="!IsSaved" [title]="IsLocked ? 'Reverse this booked order' : 'Void this order'">
               <i class="fa-solid fa-ban" aria-hidden="true"></i> {{ VoidVerbLabel }}
             </button>
           </div>

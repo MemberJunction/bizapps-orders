@@ -166,6 +166,26 @@
   font-weight: 600;
 }
 
+/* Red dot on a tab whose required field isn't filled — so the user sees at a glance which tab needs
+   attention instead of opening each one. inline-block after the label; the tab keeps its own colour. */
+.oe__itab-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--mj-status-error);
+  vertical-align: middle;
+}
+
+/* The required-field asterisk. Uses the error token, but it is a marker, not an error state — it just
+   says "this must be filled". Bold + slightly raised so it reads as an annotation on the label. */
+.oe__req {
+  color: var(--mj-status-error);
+  font-weight: 700;
+  margin-left: 1px;
+}
+
 /* Line grid. */
 .oe__gridwrap {
   border: 1px solid var(--mj-border-default);
