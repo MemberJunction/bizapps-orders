@@ -1,6 +1,6 @@
 # FEATURE-LIST — bizapps-orders
 
-> Derived from the plan chain @ `PENDING-REPIN` (2026-07-17) · MODs through MOD-13 · UPDs through UPD-10
+> Derived from the plan chain @ `09c7da5` (2026-07-17) · MODs through MOD-13 · UPDs through UPD-10
 > Staleness check: git log 2aa2ea2.. -- plans/MASTER-PLAN.md plans/MASTER-PLAN-MODIFICATIONS.md plans/MASTER-PLAN-UPDATES.md
 >
 > DERIVED document — the plan chain (MASTER-PLAN + MODs + UPDs) is the authority; when they disagree,
