@@ -13,7 +13,7 @@
     <mj-stat-badge [Label]="Rows.length + ' products'" Icon="fa-solid fa-box" Variant="default"></mj-stat-badge>
   </div>
   <div toolbar>
-    <input class="mj-input cat__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search name or SKU…" />
+    <input class="mj-input cat__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search name, SKU or ID…" />
     <label class="cat__toggle">
       <input type="checkbox" [(ngModel)]="ShowUnmappedOnly" (ngModelChange)="OnFilterChanged()" />
       Only products that won't resolve
@@ -77,7 +77,11 @@
               </td>
               <td>{{ r.IsActive ? 'Yes' : 'No' }}</td>
               <td>
-                <button class="mj-btn mj-btn--flat" (click)="ShowWhy(r)" title="Why does it book there?">Why?</button>
+                <button class="mj-btn mj-btn--flat" (click)="ShowWhy(r)" title="Show the product → category → company resolution chain">
+                  <i class="fa-solid fa-diagram-project" aria-hidden="true"></i>
+                  Resolution pattern
+                  <i class="fa-solid fa-angles-left" aria-hidden="true"></i>
+                </button>
               </td>
             </tr>
           }

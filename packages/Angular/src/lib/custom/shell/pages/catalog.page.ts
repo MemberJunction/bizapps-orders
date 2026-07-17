@@ -128,7 +128,14 @@ export class CatalogPageComponent extends BaseAngularComponent implements OnInit
     return this.Rows.filter((r) => {
       if (this.ShowUnmappedOnly && r.ResolvedCode) return false;
       if (!q) return true;
-      return r.Name.toLowerCase().includes(q) || (r.SKU ?? '').toLowerCase().includes(q);
+      // Name + SKU lead — what a human knows. ID matches too, for anyone pasting one from a log
+      // or an error; Marcelo: "our database IDs are meaningless to them", but they ARE how systems
+      // reference each other, so it is additive, never the primary handle.
+      return (
+        r.Name.toLowerCase().includes(q) ||
+        (r.SKU ?? '').toLowerCase().includes(q) ||
+        r.ID.toLowerCase().includes(q)
+      );
     });
   }
 
