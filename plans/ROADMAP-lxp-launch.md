@@ -52,7 +52,7 @@ do them BEFORE building more on top.*
 | V1.1 | `Order.CompanyID` + `Product`/`Subscription` company renames + company-default resolution rung | MOD-3 rev. (Q2) | S1 amendment; tripwire stays |
 | V1.2 | `OrderJournalEntry` junction (real FKs) replaces `Order.JournalEntryID`; idempotency = order-already-booked | UPD-7 / MOD-11 | |
 | V1.3 | Single-company batches: batch header CompanyID, line company dropped, triggers folded, `buildBatch(companyId, dateFilter)` | ACC MOD-15 | Jeremy's 2 conditions surface in config/UI |
-| V1.4 | Per-JE posting dates: netting key (GLAccount × dims × EffectiveDate); no batch date | ACC MOD-16 | |
+| V1.4 | Batch `PostingDate` (singular, accountant-set; one aggregated JE per batch; netting key GLAccount × dims) + closed-period HOLD/flag exceptions | ACC MOD-16 (rev. — Amith model, Q37) | |
 | V1.5 | Forward-dated rev-rec JEs replace ScheduledJournalEntry (+ default cutoff=today filter; correcting-order netting) | MOD-12 / ACC MOD-17 | retires the G.3/G.4 + ACC E.1–E.5 as-built |
 | V1.6 | Approval-decider enforcement: `recordDecision` requires Accounting Approver for the batch's company (minimal `UserCompanyRole` table) | Q6/Q22 answers | REQUIRED "before anything beyond dev" — Robert. Full RLS stays later (K.2) |
 
@@ -94,6 +94,14 @@ Avalara-class tax + exemption certs · seats/Model-2 readiness (design-for only)
 admin tooling (mostly LXP-owned; A5/A6).
 
 ---
+
+## Slice-ordering influences (Marcelo, 2026-07-17)
+
+- **Dashboards ship as-is** — Amith: "don't put too much more work into this… improve based on
+  user feedback." UI polish is de-prioritized; correctness tiers (V0–V2) and the forms-first work
+  (UPD-11/acct UPD-3) take the slots.
+- **The forms design pass** (UPD-11.4) slots before the form-family build-out — it shapes every
+  drill-in surface, so running it early prevents rework across V2 screens.
 
 ## Standing risks the date must price in
 

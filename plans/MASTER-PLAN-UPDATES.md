@@ -172,3 +172,24 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
   Timing rides aidp Stage 4.
 - **Why / source:** Robert OQD, `meetings/2026-07-16 - marcelo-questions-draft-answers.md`.
 - **Status:** Accepted (delivery = lean; cutover = ruled, Jeremy identifies the set).
+
+## UPD-11 — Forms-first UX: MJ Entity Forms are the basis of the UI (Orders/Payments/Subs/Products) (2026-07-17, Amith)
+- **Amends:** the app's UX approach (records the binding UI-architecture direction the action
+  plans execute). Refines — does not replace — the element doctrine.
+- **Change:** Amith's explicit orders comment: *"build Entity Forms for each that are first class
+  and use those entity forms from the dashboard, **not custom pop-up things like you have**…
+  that is how MJE was designed with reusable core widgets."* Concretely: (1) first-class MJ
+  Entity Forms for Order / Payment / Subscription / Product (extend the generated forms;
+  reference implementation per Amith: **the agents app's forms**), composed of reusable widgets
+  the dashboards embed directly; (2) modal/slide-in content = the entity form via MJ's form host
+  (`forms.open()` / `<mj-form-dialog>` / `<mj-form-slide-in>` + `EntityFormConfig`) — existing
+  custom pop-ups migrate as screens are touched; (3) **the Order editor is the pilot** — its tab
+  set (Details · Lines · Bill-To/Ship-To · Payments · Accounting) becomes the Order entity form's
+  shape, reused everywhere the order opens; (4) **forms design pass first** (Marcelo): mockup +
+  discussion round to design the form FAMILY — similar data structures handled the same way
+  without over-standardizing; base pattern + specialization ("medium to medium-low start" today);
+  (5) Robert works the detailed Products/Orders/Payments/Subs flows with Marcelo — revisions land
+  as plan edits.
+- **Why / source:** `meetings/2026-07-17 - Amith Demo Feedback.md`; Marcelo 2026-07-17 (promote
+  to the plan chain — action plans are ephemeral). Accounting counterpart: accounting UPD-3.
+- **Status:** Accepted.

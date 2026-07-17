@@ -18,7 +18,8 @@
 | Ask order | Q | Ask | Status |
 |---|---|---|---|
 | 1 | [Q22](#q22) | Marcelo→Robert/Jeremy/John/Ethan — LH4I launch-scope sitting (BAO date · tax-at-launch · coupon surfaces) | OPEN — proceeding ★HIGH |
-| 2 | [Q10](#q10) | Marcelo — branch strategy + diverged main (internal) | OPEN |
+| 2 | [Q23](#q23) | Robert — cross-company order visibility (proceeding: involved companies can SEE) | OPEN — proceeding |
+| 3 | [Q10](#q10) | Marcelo — branch strategy + diverged main (internal) | OPEN |
 | — | [Q21](#q21) | tax structure — ANSWERED (Option B durable shape; engine = buy; finance calls → Q22) | ANSWERED |
 | — | [Q2](#q2) | owning-company field — ANSWERED (add Order.CompanyID; resolution rung; renames) | ANSWERED |
 
@@ -231,4 +232,31 @@ queryable surface for "which questions touch feature X".)*
   item."
 - **Additional context (for a verifying agent):** UPD-8 (coupon launch path), MOD-13, accounting
   MOD-18.
+- **Answer:** _(pending)_
+
+<a id="q23"></a>
+### Q23 · Cross-company order visibility — if an order owned by Company A contains Company B's products, can B's users see it? — review: Robert — added 2026-07-17
+- **Status:** OPEN — proceeding
+- **Requested reviewer:** Robert (pairs with the `UserCompanyRole`/RLS design he owns — acct Q22
+  answer; Jeremy input welcome on accounting-parity expectations)
+- **Features:** ORD-C.1 (Order.CompanyID), ORD-M.1 (orders RLS), ORD-J.1 (multi-company orders)
+- **Proposed solution (what we are implementing):** **YES — every INVOLVED company can see the
+  order.** With `Order.CompanyID` now the owning company (MOD-3 rev.), visibility scoping should
+  key on *involvement*, not just ownership: a user may see an order when their granted companies
+  (per the `UserCompanyRole` table) include the owning company OR any company that owns a line
+  (via the line's resolved account / the per-company JEs). Rationale: B's accountants must be able
+  to trace B's revenue and B's JE legs back to the source order; hiding the order from them breaks
+  drill-through and reconciliation. The RLS filter shape is an involved-companies subquery
+  (owning-company column + line-company derivation); write access can stay owner-scoped even
+  while read is involvement-scoped.
+- **The question for Robert:** (1) Confirm involvement-based READ visibility (vs owner-only).
+  (2) Should WRITE (edit/confirm/void) be owner-company-scoped only? (Our lean: yes.) (3) Does the
+  line-company derivation need materializing (a stored per-line company) for the RLS filter to be
+  efficient, or is the resolved-account join acceptable? (Ties into his Izzy/ACR dig.)
+- **Context to share:** acct Q22/Q24 answers (`UserCompanyRole` design); MOD-3 revision;
+  MOD-11 (one JE per company).
+- **What motivates this now:** `Order.CompanyID` lands with the V1 schema amendments — the RLS
+  story should be designed against the same shape.
+- **Additional context (for a verifying agent):** orders MOD-3/MOD-11; acct MOD-15;
+  `OrdersEngine.ResolveAccount`.
 - **Answer:** _(pending)_

@@ -200,6 +200,9 @@ detail links back to the originating order (JournalEntryLink lineage).
 > framework, imported from accounting where parked).
 
 > ⚠ **2026-07-17 Amith demo-feedback ruling — FORMS ARE THE BASIS OF THE UI (binds all §13 work).**
+> **Recorded in the plan chain as UPD-11** (the authority; this block is its working copy). A
+> **forms DESIGN PASS precedes the family build-out** (Marcelo — ui-dev-loop mockups + discussion;
+> base pattern + specialization). Reference implementation per Amith: the agents app's forms.
 > His explicit comment for Orders/Payments/Subs: *"build Entity Forms for each that are first
 > class and use those entity forms from the dashboard, **not custom pop-up things like you have**…
 > that is how MJE was designed with reusable core widgets."* Concretely: (1) every core entity
