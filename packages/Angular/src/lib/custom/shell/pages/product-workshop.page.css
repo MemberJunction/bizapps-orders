@@ -1,0 +1,201 @@
+/* Products → Product workshop.
+   Height chain: the host declares its own flex column. NOTE `mj-page-body-interior` is
+   display:block — a `flex:1` child of it is a no-op that collapses to zero height, so the scrolling
+   panel below is sized with min-height/max-height, never flex:1. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.pw__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.pw__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.pw__actions--left {
+  justify-content: flex-start;
+  margin-top: 12px;
+}
+
+.pw__panel {
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  padding: 16px;
+  overflow: auto;
+  /* Sized, not flexed — see the note at the top of this file. */
+  min-height: 320px;
+  max-height: calc(100vh - 260px);
+}
+
+.pw__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px 18px;
+  align-items: start;
+}
+
+.pw__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+.pw__field--wide {
+  grid-column: 1 / -1;
+}
+
+.pw__label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+}
+.pw__req {
+  color: var(--mj-status-error-text);
+}
+
+.pw__field input[type='text'],
+.pw__field input[type='number'],
+.pw__field input[type='date'],
+.pw__field select,
+.pw__field textarea {
+  font: inherit;
+  font-size: 13px;
+  color: var(--mj-text-primary);
+  background: var(--mj-bg-surface);
+  border: 1px solid var(--mj-border-default);
+  border-radius: 7px;
+  padding: 6px 8px;
+  width: 100%;
+  min-width: 0;
+}
+.pw__field textarea {
+  resize: vertical;
+}
+.pw__field input:disabled,
+.pw__field select:disabled,
+.pw__field textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pw__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.pw__check input[type='checkbox'] {
+  margin: 0;
+}
+
+.pw__hint {
+  font-size: 11.5px;
+  color: var(--mj-text-muted);
+  line-height: 1.4;
+}
+
+.pw__note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pw__ok {
+  font-size: 12px;
+  color: var(--mj-status-success-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pw__error {
+  margin: 0 0 10px;
+  color: var(--mj-status-error-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.pw__warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 8px;
+  font-size: 11.5px;
+  color: var(--mj-status-warning-text);
+}
+
+/* ─── GL links grid (same shape as the categories grid) ─────────────────── */
+
+.pw__gridwrap {
+  overflow: auto;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  min-height: 0;
+  margin-top: 12px;
+}
+.pw__grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pw__grid th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--mj-border-default);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--mj-bg-surface);
+}
+.pw__grid td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+  vertical-align: top;
+}
+.pw__rowactions {
+  white-space: nowrap;
+  text-align: right;
+}
+.pw__muted {
+  color: var(--mj-text-muted);
+  font-size: 12px;
+}
+.pw__mono {
+  font-family: var(--mj-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.pw__linkeditor {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  background: var(--mj-bg-subtle, transparent);
+}
+.pw__linkeditor-title {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mj-text-primary);
+}

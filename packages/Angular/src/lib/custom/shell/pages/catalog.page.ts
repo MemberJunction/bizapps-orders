@@ -1,4 +1,4 @@
-import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit, OnDestroy } from '@angular/core';
+import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit, OnDestroy, Output, EventEmitter } from '@angular/core';
 import { BaseAngularComponent } from '@memberjunction/ng-base-types';
 import { PageRefreshService } from '@mj-biz-apps/accounting-ng';
 import { UUIDsEqual } from '@memberjunction/global';
@@ -8,7 +8,13 @@ import { CompanyScopeService, CrossAppLinkService, type GlResolutionResult, type
 // between packages — import from the source that defines it).
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
 import { OrdersEngineBase } from '@mj-biz-apps/orders-engine-base';
-import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersProductSchema, type mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
+
+/** A drop-down option. `ID` is a real UUID except for the sentinel `NoneKey`. */
+export interface CatalogFilterOption {
+  ID: string;
+  Name: string;
+}
 
 /** A catalog row, flattened so the template does no entity work. */
 export interface CatalogRow {
@@ -20,7 +26,12 @@ export interface CatalogRow {
   RevenueRecognitionType: string;
   DeferredRecognitionShape: string | null;
   IsActive: boolean;
-  Status: string;
+  /** Derived from the entity — a migration widening the CHECK must break the build, not drop an option. */
+  Status: mjBizAppsOrdersProductEntity['Status'];
+  /** The raw FKs the filters compare against (nullable exactly as the columns are). */
+  OwningCompanyID: string | null;
+  ProductTypeID: string;
+  ProductCategoryID: string | null;
   /** The GL role this product books revenue to — the engine's rule, not a local copy. */
   Role: string;
   /** Null = it does NOT resolve → this product fails at Confirm. The tripwire. */
@@ -61,12 +72,48 @@ export class CatalogPageComponent extends BaseAngularComponent implements OnInit
   private links = inject(CrossAppLinkService);
   public Scope = inject(CompanyScopeService);
 
+  /**
+   * Asks the shell to open the Product workshop on a product — `null` for a brand-new one.
+   *
+   * The catalog answers "what do we sell, and will it book?"; changing the answer is the workshop's
+   * job. Emitting rather than navigating keeps that a SHELL decision: page switching inside a
+   * category is local state (Explorer resources are not routed components), so the shell owns it.
+   */
+  @Output() OpenProduct = new EventEmitter<string | null>();
+
   public NavError: string | null = null;
   public Rows: CatalogRow[] = [];
   public IsLoading = false;
   public LoadError: string | null = null;
   public Search = '';
   public ShowUnmappedOnly = false;
+
+  /**
+   * Sentinel option value for "this nullable FK is null".
+   *
+   * `OwningCompanyID` and `ProductCategoryID` are both nullable, and an unowned product is SHARED,
+   * not broken — so it must stay reachable from the filter bar rather than being silently hidden
+   * behind every company choice.
+   */
+  public readonly NoneKey = '__none__';
+
+  /** '' = the "All …" default on each drop-down. */
+  public FilterCompanyID = '';
+  public FilterTypeID = '';
+  public FilterCategoryID = '';
+  /** Derived union (never hand-copied) + '' for "All statuses". */
+  public FilterStatus: mjBizAppsOrdersProductEntity['Status'] | '' = '';
+
+  /** Option lists, built once per load so the template doesn't rebuild them each CD pass. */
+  public CompanyOptions: CatalogFilterOption[] = [];
+  public TypeOptions: CatalogFilterOption[] = [];
+  public CategoryOptions: CatalogFilterOption[] = [];
+  /**
+   * The Status list read OFF the generated Zod schema — the same CHECK-constraint-derived source
+   * CodeGen writes the TS union from. Add a value to the CHECK and this drop-down grows by itself.
+   */
+  public readonly StatusOptions: readonly mjBizAppsOrdersProductEntity['Status'][] =
+    mjBizAppsOrdersProductSchema.shape.Status.options.map((o) => o.value);
 
   /** The product whose resolution chain is open in the slide-in. */
   public SelectedID: string | null = null;
@@ -86,6 +133,7 @@ export class CatalogPageComponent extends BaseAngularComponent implements OnInit
       const engine = OrdersEngineBase.Instance;
       await engine.Config(false, this.ProviderToUse.CurrentUser, this.ProviderToUse);
       this.Rows = engine.Products.map((p) => this.toRow(p, engine)).sort((a, b) => a.Name.localeCompare(b.Name));
+      this.buildFilterOptions(engine);
     } catch (e) {
       this.LoadError = e instanceof Error ? e.message : String(e);
       this.Rows = [];
@@ -112,7 +160,29 @@ export class CatalogPageComponent extends BaseAngularComponent implements OnInit
       Role: role,
       ResolvedCode: account?.Code ?? null,
       ResolvedName: account?.Name ?? null,
+      OwningCompanyID: p.OwningCompanyID,
+      ProductTypeID: p.ProductTypeID,
+      ProductCategoryID: p.ProductCategoryID,
     };
+  }
+
+  /**
+   * The drop-down sources — every one of them is an EXISTING cache, not a new round-trip:
+   * companies from the app-wide `CompanyScopeService` roster (loaded above), types + categories
+   * from `OrdersEngineBase`'s own caches. The "(no …)" sentinels exist because both FKs are
+   * nullable and those products are shared, not defective.
+   */
+  private buildFilterOptions(engine: OrdersEngineBase): void {
+    const byName = (a: CatalogFilterOption, b: CatalogFilterOption): number => a.Name.localeCompare(b.Name);
+    this.CompanyOptions = [
+      ...this.Scope.Companies.map((c) => ({ ID: c.ID, Name: c.Name })).sort(byName),
+      { ID: this.NoneKey, Name: 'No owning company (shared)' },
+    ];
+    this.TypeOptions = engine.ProductTypes.map((t) => ({ ID: t.ID, Name: t.Name })).sort(byName);
+    this.CategoryOptions = [
+      ...engine.ProductCategories.map((c) => ({ ID: c.ID, Name: c.Name })).sort(byName),
+      { ID: this.NoneKey, Name: 'No category' },
+    ];
   }
 
   ngOnDestroy(): void {
@@ -123,23 +193,53 @@ export class CatalogPageComponent extends BaseAngularComponent implements OnInit
     void this.load();
   }
 
+  /** Everything filters CLIENT-SIDE off the engine's cached products — no round-trip per keystroke. */
   public get Filtered(): CatalogRow[] {
     const q = this.Search.trim().toLowerCase();
-    return this.Rows.filter((r) => {
-      if (this.ShowUnmappedOnly && r.ResolvedCode) return false;
-      if (!q) return true;
-      // Name + SKU lead — what a human knows. ID matches too, for anyone pasting one from a log
-      // or an error; Marcelo: "our database IDs are meaningless to them", but they ARE how systems
-      // reference each other, so it is additive, never the primary handle.
-      return (
-        r.Name.toLowerCase().includes(q) ||
-        (r.SKU ?? '').toLowerCase().includes(q) ||
-        r.ID.toLowerCase().includes(q)
-      );
-    });
+    return this.Rows.filter((r) => this.matchesFilters(r) && this.matchesSearch(r, q));
   }
 
-  /** The headline: how many products would fail at Confirm today. */
+  private matchesFilters(row: CatalogRow): boolean {
+    if (this.ShowUnmappedOnly && row.ResolvedCode) return false;
+    if (!this.matchesNullableID(row.OwningCompanyID, this.FilterCompanyID)) return false;
+    if (!this.matchesNullableID(row.ProductCategoryID, this.FilterCategoryID)) return false;
+    // ProductTypeID is REQUIRED — no null case to handle.
+    if (this.FilterTypeID && !UUIDsEqual(row.ProductTypeID, this.FilterTypeID)) return false;
+    if (this.FilterStatus && row.Status !== this.FilterStatus) return false;
+    return true;
+  }
+
+  /**
+   * '' = all · `NoneKey` = only the rows whose FK is null · otherwise a UUID compare.
+   *
+   * `UUIDsEqual`, never `===`: SQL Server hands these back uppercase, so a raw `===` against a
+   * drop-down value would silently match NOTHING.
+   */
+  private matchesNullableID(value: string | null, filter: string): boolean {
+    if (!filter) return true;
+    if (filter === this.NoneKey) return value === null;
+    return value !== null && UUIDsEqual(value, filter);
+  }
+
+  private matchesSearch(row: CatalogRow, q: string): boolean {
+    if (!q) return true;
+    // Name + SKU lead — what a human knows. ID matches too, for anyone pasting one from a log
+    // or an error; Marcelo: "our database IDs are meaningless to them", but they ARE how systems
+    // reference each other, so it is additive, never the primary handle.
+    return (
+      row.Name.toLowerCase().includes(q) ||
+      (row.SKU ?? '').toLowerCase().includes(q) ||
+      row.ID.toLowerCase().includes(q)
+    );
+  }
+
+  /**
+   * The headline: how many products would fail at Confirm today.
+   *
+   * DELIBERATELY counted over the WHOLE catalog (`Rows`), never the filtered set — a tripwire a
+   * filter can mute is not a tripwire. The banner says so in words so the number is never misread
+   * as "what's in the grid below".
+   */
   public get UnmappedCount(): number {
     return this.Rows.filter((r) => !r.ResolvedCode).length;
   }

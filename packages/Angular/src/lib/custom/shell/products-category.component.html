@@ -40,10 +40,18 @@
       @switch (ActivePageId) {
         <!-- §6-style migration: existing dashboards hosted here until their §13.3 pages land. -->
         @case ('catalog') {
-          <mj-catalog-page></mj-catalog-page>
+          <!-- Catalog's Edit/New hand the workshop a product id through the shell (PageParam) —
+               page switching inside a category is local state, so there is no route to carry it. -->
+          <mj-catalog-page (OpenProduct)="GoToPage('workshop', $event)"></mj-catalog-page>
+        }
+        @case ('workshop') {
+          <mj-product-workshop-page [ProductID]="PageParam"></mj-product-workshop-page>
         }
         @case ('categories') {
           <mj-categories-page></mj-categories-page>
+        }
+        @case ('types') {
+          <mj-product-types-page></mj-product-types-page>
         }
         @case ('pricing') {
           <mj-pricing-page></mj-pricing-page>

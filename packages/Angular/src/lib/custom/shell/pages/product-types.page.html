@@ -1,0 +1,192 @@
+<mj-page-header-interior>
+  <div meta>
+    <mj-stat-badge [Label]="Rows.length + ' types'" Icon="fa-solid fa-shapes" Variant="default"></mj-stat-badge>
+    <mj-stat-badge [Label]="InUseCount + ' in use'" Icon="fa-solid fa-box" Variant="info"></mj-stat-badge>
+  </div>
+  <div actions>
+    <button class="mj-btn mj-btn--primary" (click)="New()" [disabled]="IsLoading">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i> New type
+    </button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body-interior>
+  <p class="pt__note">
+    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+    Every product must carry a type — <code>ProductTypeID</code> is required — so a type has to exist
+    before a product can. The product count is what tells you whether a type is safe to retire.
+  </p>
+
+  @if (IsLoading) {
+    <mj-loading text="Loading product types…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="pt__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else {
+    <div class="pt__bar">
+      <input
+        class="mj-input pt__search"
+        type="search"
+        [(ngModel)]="Search"
+        placeholder="Search by name, code or ID…"
+        aria-label="Search product types by name, code or ID" />
+      <select class="mj-input pt__select" [(ngModel)]="Filter" aria-label="Filter by active state">
+        <option value="all">All types</option>
+        <option value="active">Active only</option>
+        <option value="inactive">Inactive only</option>
+      </select>
+      <select class="mj-input pt__select" [(ngModel)]="Sort" aria-label="Sort by">
+        <option value="name">Sort: name</option>
+        <option value="code">Sort: code</option>
+        <option value="products">Sort: most products</option>
+      </select>
+    </div>
+
+    @if (Rows.length === 0) {
+      <mj-empty-state
+        Icon="fa-solid fa-shapes"
+        Title="No product types"
+        Message="No product types are defined. Create one — a product cannot be created without a type.">
+      </mj-empty-state>
+    } @else if (VisibleRows.length === 0) {
+      <mj-empty-state
+        Icon="fa-solid fa-magnifying-glass"
+        Title="No matching types"
+        Message="No product type matches this search and filter.">
+      </mj-empty-state>
+    } @else {
+      <div class="pt__gridwrap">
+        <table class="pt__grid">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Code</th>
+              <th>Behavior class</th>
+              <th class="num">Products</th>
+              <th>Active</th>
+              <th>ID</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of VisibleRows; track r.ID) {
+              <tr class="pt__row" (click)="Edit(r)" [class.pt__row--inactive]="!r.IsActive">
+                <td class="pt__name">{{ r.Name }}</td>
+                <td>{{ r.Code || '—' }}</td>
+                <td>{{ r.BehaviorClass || '—' }}</td>
+                <td class="num">{{ r.ProductCount }}</td>
+                <td>{{ r.IsActive ? 'Yes' : 'No' }}</td>
+                <td class="pt__id">{{ r.ID }}</td>
+                <td class="pt__editcell">
+                  <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+
+  @if (Draft) {
+    <div class="pt__scrim" role="dialog" aria-modal="true" aria-label="Edit product type">
+      <div class="pt__dialog">
+        <h2 class="pt__dlgtitle">{{ Draft.ID ? 'Edit product type' : 'New product type' }}</h2>
+
+        @if (SaveError) {
+          <p class="pt__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ SaveError }}</p>
+        }
+
+        <div class="pt__form">
+          <label class="pt__field">
+            <span class="pt__label">Name <span class="pt__req">required</span></span>
+            <input class="mj-input" [(ngModel)]="Draft.Name" placeholder="e.g. Membership" />
+          </label>
+
+          <label class="pt__field">
+            <span class="pt__label">Code</span>
+            <input class="mj-input" [(ngModel)]="Draft.Code" placeholder="e.g. Membership" />
+            <span class="pt__help">Stable machine code (Event, Membership, PhysicalGood…). Unique when present.</span>
+          </label>
+
+          <label class="pt__field pt__field--wide">
+            <span class="pt__label">Description</span>
+            <textarea class="mj-textarea" rows="2" [(ngModel)]="Draft.Description"></textarea>
+          </label>
+
+          <label class="pt__field">
+            <span class="pt__label">Default revenue recognition</span>
+            <select class="mj-input" [(ngModel)]="Draft.DefaultRevenueRecognitionType">
+              <option [ngValue]="null">— none —</option>
+              @for (o of RecognitionOptions; track o) {
+                <option [ngValue]="o">{{ o }}</option>
+              }
+            </select>
+            <span class="pt__help">Stamped onto new products of this type.</span>
+          </label>
+
+          <label class="pt__field">
+            <span class="pt__label">Default subscription type</span>
+            <select class="mj-input" [(ngModel)]="Draft.DefaultSubscriptionType">
+              @for (o of SubscriptionOptions; track o) {
+                <option [ngValue]="o">{{ o }}</option>
+              }
+            </select>
+            <span class="pt__help">Subscription semantics stamped onto new products of this type.</span>
+          </label>
+
+          <label class="pt__field">
+            <span class="pt__label">Behavior class</span>
+            <input class="mj-input" [(ngModel)]="Draft.BehaviorClass" placeholder="e.g. EventProductBehavior" />
+            <span class="pt__help">ClassFactory key of the ProductBehavior plugin. A product's own BehaviorClass overrides it; default behavior when blank.</span>
+          </label>
+
+          <label class="pt__field">
+            <span class="pt__label">Product extension entity</span>
+            <input class="mj-input" [(ngModel)]="Draft.ProductExtensionEntity" placeholder="e.g. MJ_BizApps_Orders: Event Products" />
+            <span class="pt__help">MJ entity name of the IsA Product-level extension. Blank = no extension.</span>
+          </label>
+
+          <label class="pt__field">
+            <span class="pt__label">Order line extension entity</span>
+            <input class="mj-input" [(ngModel)]="Draft.OrderLineExtensionEntity" placeholder="e.g. MJ_BizApps_Orders: Event Order Lines" />
+            <span class="pt__help">MJ entity name of the IsA OrderLine-level extension. Blank = no extension.</span>
+          </label>
+
+          <div class="pt__field pt__field--wide pt__flags">
+            <label class="pt__flag">
+              <input class="mj-checkbox" type="checkbox" [(ngModel)]="Draft.RequiresFulfillment" />
+              <span>Requires fulfillment <span class="pt__help">— orders holding a line of this type stay at Posted until it is fulfilled.</span></span>
+            </label>
+            <label class="pt__flag">
+              <input class="mj-checkbox" type="checkbox" [(ngModel)]="Draft.DefaultIsTaxable" />
+              <span>Default is taxable <span class="pt__help">— taxability stamped onto new products of this type.</span></span>
+            </label>
+            <label class="pt__flag">
+              <input class="mj-checkbox" type="checkbox" [(ngModel)]="Draft.IsBillableRecurring" />
+              <span>Bills recurring <span class="pt__help">— products of this type bill on a recurring cadence.</span></span>
+            </label>
+            <label class="pt__flag">
+              <input class="mj-checkbox" type="checkbox" [(ngModel)]="Draft.IsActive" />
+              <span>Active <span class="pt__help">— an inactive type stops being selectable for new products.</span></span>
+            </label>
+          </div>
+        </div>
+
+        @if (Draft.ID && !Draft.IsActive && DraftProductCount > 0) {
+          <p class="pt__warn" role="note">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            {{ DraftProductCount }} product(s) already use this type. Deactivating it keeps them working —
+            they resolve their behavior as before — but the type stops being selectable for new products.
+          </p>
+        }
+
+        <div class="pt__dlgactions">
+          <button class="mj-btn mj-btn--primary" (click)="Save()" [disabled]="!CanSave">
+            {{ IsSaving ? 'Saving…' : 'Save' }}
+          </button>
+          <button class="mj-btn mj-btn--outline" (click)="Cancel()" [disabled]="IsSaving">Cancel</button>
+        </div>
+      </div>
+    </div>
+  }
+</mj-page-body-interior>

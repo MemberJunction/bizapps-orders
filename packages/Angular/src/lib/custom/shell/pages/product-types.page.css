@@ -1,0 +1,200 @@
+/* Products → Types: the CRUD roster for Product Types. Mirrors categories.page.css.
+   NOTE: mj-page-body-interior is display:block, so a `flex:1` child would be a no-op and collapse
+   to zero height. Everything below is sized with explicit height / max-height instead. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.pt__note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pt__note code {
+  font-size: 11.5px;
+  color: var(--mj-text-secondary);
+}
+
+.pt__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.pt__search {
+  min-width: 260px;
+  flex: 0 1 340px;
+}
+.pt__select {
+  width: auto;
+  min-width: 150px;
+}
+
+.pt__gridwrap {
+  overflow: auto;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  min-height: 0;
+  max-height: calc(100vh - 260px);
+}
+.pt__grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pt__grid th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--mj-border-default);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--mj-bg-surface);
+}
+.pt__grid td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+  vertical-align: top;
+  color: var(--mj-text-primary);
+}
+.pt__grid th.num,
+.pt__grid td.num {
+  text-align: right;
+}
+.pt__row {
+  cursor: pointer;
+}
+.pt__row:hover {
+  background: var(--mj-bg-surface-hover);
+}
+.pt__row--inactive .pt__name {
+  color: var(--mj-text-muted);
+}
+.pt__name {
+  font-weight: 600;
+}
+.pt__id {
+  font-size: 11px;
+  color: var(--mj-text-muted);
+  white-space: nowrap;
+}
+.pt__editcell {
+  color: var(--mj-text-muted);
+  text-align: right;
+}
+
+/* ── editor dialog ───────────────────────────────────────────────────────────── */
+
+.pt__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--mj-bg-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.pt__dialog {
+  background: var(--mj-bg-surface);
+  border: 1px solid var(--mj-border-default);
+  border-radius: 12px;
+  padding: 18px;
+  width: min(760px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+}
+.pt__dlgtitle {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--mj-text-primary);
+}
+.pt__form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.pt__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.pt__field--wide {
+  grid-column: 1 / -1;
+}
+.pt__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mj-text-secondary);
+}
+.pt__req {
+  color: var(--mj-status-error-text);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.pt__help {
+  font-size: 11.5px;
+  color: var(--mj-text-muted);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.pt__flags {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  border-top: 1px solid var(--mj-border-subtle);
+  padding-top: 12px;
+}
+.pt__flag {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--mj-text-primary);
+  cursor: pointer;
+}
+
+.pt__warn {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--mj-status-warning);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--mj-status-warning) 8%, var(--mj-bg-surface));
+  color: var(--mj-text-primary);
+  font-size: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.pt__dlgactions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.pt__error {
+  margin: 0 0 10px;
+  color: var(--mj-status-error-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}

@@ -53,6 +53,8 @@ import { SubscriptionsPageComponent } from './pages/subscriptions.page';
 import { OrdersDashboardPageComponent } from './pages/orders-dashboard.page';
 import { PaymentsDashboardPageComponent } from './pages/payments-dashboard.page';
 import { CategoriesPageComponent } from './pages/categories.page';
+import { ProductWorkshopPageComponent } from './pages/product-workshop.page';
+import { ProductTypesPageComponent } from './pages/product-types.page';
 import { PricingPageComponent } from './pages/pricing.page';
 import { GLMappingPageComponent } from './pages/gl-mapping.page';
 import { OverdueWorklistPageComponent } from './pages/overdue-worklist.page';
@@ -84,6 +86,8 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
     PaymentsDashboardPageComponent,
     CatalogPageComponent,
     CategoriesPageComponent,
+    ProductWorkshopPageComponent,
+    ProductTypesPageComponent,
     PricingPageComponent,
     GLMappingPageComponent,
     CustomerARPageComponent,
@@ -142,6 +146,8 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
     PaymentsDashboardPageComponent,
     CatalogPageComponent,
     CategoriesPageComponent,
+    ProductWorkshopPageComponent,
+    ProductTypesPageComponent,
     PricingPageComponent,
     GLMappingPageComponent,
     CustomerARPageComponent,

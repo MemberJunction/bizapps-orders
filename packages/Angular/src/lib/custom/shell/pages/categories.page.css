@@ -1,4 +1,6 @@
-/* Products → Categories (§13.3). Height chain: declares its own flex-column host. */
+/* Products → Categories (§13.3). Height chain: declares its own flex-column host.
+   NOTE: mj-page-body-interior is display:block — a `flex:1` child inside it is a no-op and would
+   collapse to zero height. Everything below sizes with height/min-height, never flex:1. */
 
 :host {
   display: flex;
@@ -11,6 +13,45 @@
   margin: 0 0 10px;
   font-size: 12px;
   color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cg__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+.cg__search {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 260px;
+  color: var(--mj-text-muted);
+}
+.cg__search .mj-input {
+  min-width: 230px;
+}
+.cg__ctl {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cg__ctl-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+}
+
+.cg__mode {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--mj-text-secondary);
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -50,6 +91,27 @@
 .cg__grid td.num {
   text-align: right;
 }
+.cg__row {
+  cursor: pointer;
+}
+.cg__row:hover {
+  background: var(--mj-bg-surface-hover);
+}
+.cg__row--editing {
+  background: var(--mj-bg-surface-active);
+}
+.cg__name {
+  display: inline-block;
+  color: var(--mj-text-primary);
+}
+.cg__name--orphan {
+  color: var(--mj-status-warning-text);
+}
+.cg__id {
+  font-size: 11px;
+  color: var(--mj-text-muted);
+  white-space: nowrap;
+}
 .cg__link {
   display: block;
   font-size: 12px;
@@ -65,4 +127,71 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
+}
+
+/* ---- editor ------------------------------------------------------------------------------- */
+
+.cg__editor {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mj-bg-overlay);
+  padding: 20px;
+}
+.cg__editor-card {
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--mj-bg-surface);
+  border: 1px solid var(--mj-border-default);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+.cg__editor-title {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--mj-text-primary);
+}
+.cg__field {
+  margin: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cg__field--inline {
+  flex-direction: row;
+  align-items: center;
+}
+.cg__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mj-text-secondary);
+}
+.cg__req {
+  margin-left: 5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--mj-status-warning-text);
+}
+.cg__hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* MJ dialog convention: confirm on the LEFT, Cancel on the RIGHT (opposite of Windows). */
+.cg__editor-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
 }

@@ -1,6 +1,11 @@
 <mj-page-header-interior>
   <div meta>
-    <mj-stat-badge [Label]="Nodes.length + ' categories'" Icon="fa-solid fa-sitemap" Variant="default"></mj-stat-badge>
+    <mj-stat-badge [Label]="ResultSummary" Icon="fa-solid fa-sitemap" Variant="default"></mj-stat-badge>
+  </div>
+  <div actions>
+    <button class="mj-btn mj-btn--primary" (click)="NewCategory()" title="Create a new product category">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i> New category
+    </button>
   </div>
 </mj-page-header-interior>
 
@@ -9,37 +14,180 @@
     <mj-loading text="Loading categories…"></mj-loading>
   } @else if (LoadError) {
     <p class="cg__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
-  } @else if (Nodes.length === 0) {
-    <mj-empty-state Icon="fa-solid fa-sitemap" Title="No categories" Message="No product categories are defined."></mj-empty-state>
   } @else {
     <p class="cg__note">
       <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
       Booking walks a product's category chain UPWARD looking for a GL link in its revenue role — so
       a link here is the fallback that keeps every product beneath it bookable.
     </p>
-    <div class="cg__gridwrap">
-      <table class="cg__grid">
-        <thead><tr><th>Category</th><th>Code</th><th class="num">Products</th><th>GL links at this level</th><th>Active</th></tr></thead>
-        <tbody>
-          @for (n of Nodes; track n.ID) {
+
+    <div class="cg__toolbar">
+      <label class="cg__search">
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input
+          class="mj-input"
+          type="search"
+          [(ngModel)]="SearchText"
+          (ngModelChange)="OnSearchChanged()"
+          placeholder="Search by name, code, or ID"
+          aria-label="Search categories by name, code, or ID"
+        />
+      </label>
+
+      <label class="cg__ctl">
+        <span class="cg__ctl-label">Status</span>
+        <select class="mj-input" [(ngModel)]="ActiveFilter" (ngModelChange)="OnFilterChanged()" aria-label="Filter by status">
+          <option value="all">All</option>
+          <option value="active">Active only</option>
+          <option value="inactive">Inactive only</option>
+        </select>
+      </label>
+
+      <label class="cg__ctl">
+        <span class="cg__ctl-label">GL link</span>
+        <select class="mj-input" [(ngModel)]="GLFilter" (ngModelChange)="OnFilterChanged()" aria-label="Filter by GL link">
+          <option value="all">All</option>
+          <option value="linked">Has a GL link</option>
+          <option value="unlinked">No GL link</option>
+        </select>
+      </label>
+
+      <label class="cg__ctl">
+        <span class="cg__ctl-label">Sort</span>
+        <select class="mj-input" [(ngModel)]="SortKey" (ngModelChange)="OnSortChanged()" aria-label="Sort categories">
+          <option value="name">Name</option>
+          <option value="code">Code</option>
+          <option value="products">Product count</option>
+        </select>
+      </label>
+
+      @if (HasViewNarrowing) {
+        <button class="mj-btn mj-btn--outline" (click)="ClearView()" title="Clear the search and filters">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i> Clear
+        </button>
+      }
+    </div>
+
+    @if (IsFlatMode) {
+      <p class="cg__mode">
+        <i class="fa-solid fa-list" aria-hidden="true"></i>
+        Flat list — a search or filter is active. The tree is hidden on purpose: a matched category
+        must not disappear underneath a parent that didn't match. Clear the search/filters for the tree.
+      </p>
+    }
+
+    @if (Nodes.length === 0) {
+      @if (HasViewNarrowing) {
+        <mj-empty-state
+          Icon="fa-solid fa-magnifying-glass"
+          Title="No matching categories"
+          Message="No category matches this search and filter combination."
+        ></mj-empty-state>
+      } @else {
+        <mj-empty-state
+          Icon="fa-solid fa-sitemap"
+          Title="No categories"
+          Message="No product categories are defined. Use New category to create the first one."
+        ></mj-empty-state>
+      }
+    } @else {
+      <div class="cg__gridwrap">
+        <table class="cg__grid">
+          <thead>
             <tr>
-              <td><span [style.padding-left]="Indent(n)">{{ n.Name }}</span></td>
-              <td>{{ n.Code || '—' }}</td>
-              <td class="num">{{ n.ProductCount }}</td>
-              <td>
-                @if (n.Links.length === 0) {
-                  <span class="cg__muted">— (products fall through to a higher level or the company default)</span>
-                } @else {
-                  @for (l of n.Links; track l.Role) {
-                    <span class="cg__link">{{ l.Role }} → {{ l.Code }} {{ l.Name }}</span>
-                  }
-                }
-              </td>
-              <td>{{ n.IsActive ? 'Yes' : 'No' }}</td>
+              <th>Category</th>
+              <th>Code</th>
+              <th class="num">Products</th>
+              <th>GL links at this level</th>
+              <th>Active</th>
+              <th>ID</th>
             </tr>
-          }
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            @for (n of Nodes; track n.ID) {
+              <tr class="cg__row" [class.cg__row--editing]="IsEditing(n)" (click)="EditCategory(n)" [title]="'Edit ' + n.RawName">
+                <td>
+                  <span [style.padding-left]="Indent(n)" class="cg__name" [class.cg__name--orphan]="n.IsOrphan">{{ n.Name }}</span>
+                </td>
+                <td>{{ n.Code || '—' }}</td>
+                <td class="num">{{ n.ProductCount }}</td>
+                <td>
+                  @if (n.Links.length === 0) {
+                    <span class="cg__muted">— (products fall through to a higher level or the company default)</span>
+                  } @else {
+                    @for (l of n.Links; track l.Role) {
+                      <span class="cg__link">{{ l.Role }} → {{ l.Code }} {{ l.Name }}</span>
+                    }
+                  }
+                </td>
+                <td>{{ n.IsActive ? 'Yes' : 'No' }}</td>
+                <td><span class="cg__id">{{ n.ID }}</span></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+
+  @if (EditorOpen) {
+    <div class="cg__editor" role="dialog" aria-modal="true" aria-label="Category editor">
+      <div class="cg__editor-card">
+        <h3 class="cg__editor-title">{{ EditorTitle }}</h3>
+
+        <div class="cg__field">
+          <label class="cg__label" for="cg-name">Name <span class="cg__req">required</span></label>
+          <input id="cg-name" class="mj-input" [(ngModel)]="Draft.Name" placeholder="What a human calls this category" />
+        </div>
+
+        <div class="cg__field">
+          <label class="cg__label" for="cg-code">Code</label>
+          <input id="cg-code" class="mj-input" [(ngModel)]="Draft.Code" maxlength="40" placeholder="Stable machine code — unique when present" />
+        </div>
+
+        <div class="cg__field">
+          <label class="cg__label" for="cg-parent">Parent</label>
+          <select id="cg-parent" class="mj-input" [(ngModel)]="Draft.ParentID">
+            <option value="">— none (a root category) —</option>
+            @for (p of ParentOptions; track p.ID) {
+              <option [value]="p.ID">{{ p.Label }}</option>
+            }
+          </select>
+          <p class="cg__hint">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            This category and everything beneath it are omitted — a category cannot be its own ancestor.
+          </p>
+        </div>
+
+        <div class="cg__field">
+          <label class="cg__label" for="cg-desc">Description</label>
+          <textarea id="cg-desc" class="mj-textarea" rows="3" [(ngModel)]="Draft.Description"></textarea>
+        </div>
+
+        <div class="cg__field cg__field--inline">
+          <label class="cg__label" for="cg-active">
+            <input id="cg-active" class="mj-checkbox" type="checkbox" [(ngModel)]="Draft.IsActive" /> Active
+          </label>
+        </div>
+
+        @if (EditorError) {
+          <p class="cg__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ EditorError }}</p>
+        }
+        @if (SaveBlockedReason) {
+          <p class="cg__hint"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> {{ SaveBlockedReason }}</p>
+        }
+
+        <div class="cg__editor-actions">
+          <button class="mj-btn mj-btn--primary" (click)="Save()" [disabled]="!CanSave" [title]="SaveBlockedReason ?? 'Save this category'">
+            @if (EditorSaving) {
+              <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Saving…
+            } @else {
+              <i class="fa-regular fa-floppy-disk" aria-hidden="true"></i> Save
+            }
+          </button>
+          <button class="mj-btn mj-btn--outline" (click)="CancelEditor()" [disabled]="EditorSaving">Cancel</button>
+        </div>
+      </div>
     </div>
   }
 </mj-page-body-interior>

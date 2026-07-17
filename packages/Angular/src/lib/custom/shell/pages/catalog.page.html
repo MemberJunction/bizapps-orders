@@ -12,7 +12,41 @@
     }
     <mj-stat-badge [Label]="Rows.length + ' products'" Icon="fa-solid fa-box" Variant="default"></mj-stat-badge>
   </div>
-  <div toolbar>
+  <div actions>
+    <!-- Marcelo's rule from the batches review, applied here: every section's landing page gets a
+         New-X button ("the dashboard should have buttons to create new elements that go in that
+         section"). null = the workshop opens in create mode. -->
+    <button class="mj-btn mj-btn--primary" (click)="OpenProduct.emit(null)">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i>
+      New product
+    </button>
+  </div>
+  <!-- All drop-downs on ONE line, search to their right (Marcelo's all-orders filter-bar rule). -->
+  <div toolbar class="cat__filters">
+    <select class="mj-input cat__select" aria-label="Filter by company" [(ngModel)]="FilterCompanyID" (ngModelChange)="OnFilterChanged()">
+      <option value="">All companies</option>
+      @for (c of CompanyOptions; track c.ID) {
+        <option [value]="c.ID">{{ c.Name }}</option>
+      }
+    </select>
+    <select class="mj-input cat__select" aria-label="Filter by type" [(ngModel)]="FilterTypeID" (ngModelChange)="OnFilterChanged()">
+      <option value="">All types</option>
+      @for (t of TypeOptions; track t.ID) {
+        <option [value]="t.ID">{{ t.Name }}</option>
+      }
+    </select>
+    <select class="mj-input cat__select" aria-label="Filter by category" [(ngModel)]="FilterCategoryID" (ngModelChange)="OnFilterChanged()">
+      <option value="">All categories</option>
+      @for (c of CategoryOptions; track c.ID) {
+        <option [value]="c.ID">{{ c.Name }}</option>
+      }
+    </select>
+    <select class="mj-input cat__select" aria-label="Filter by status" [(ngModel)]="FilterStatus" (ngModelChange)="OnFilterChanged()">
+      <option value="">All statuses</option>
+      @for (s of StatusOptions; track s) {
+        <option [value]="s">{{ s }}</option>
+      }
+    </select>
     <input class="mj-input cat__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search name, SKU or ID…" />
     <label class="cat__toggle">
       <input type="checkbox" [(ngModel)]="ShowUnmappedOnly" (ngModelChange)="OnFilterChanged()" />
@@ -34,6 +68,7 @@
           <b>{{ UnmappedCount }} product{{ UnmappedCount === 1 ? '' : 's' }} has no GL account for its revenue role.</b>
           Confirming an order containing one will be BLOCKED — link the product, its category, or
           the owning company's default (admins only).
+          <span class="cat__warnscope">Counted across the whole catalog — the filters above do not change this number.</span>
           <button class="mj-btn mj-btn--outline cat__fixbtn" (click)="FixInAccounting()">
             <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
             Fix in Accounting → Account links
@@ -76,7 +111,14 @@
                 }
               </td>
               <td>{{ r.IsActive ? 'Yes' : 'No' }}</td>
-              <td>
+              <td class="cat__actions">
+                <!-- Marcelo: "we don't have the ability to edit products in the products catalog.
+                     Like, where is the ability to create a product?" The catalog reports; the
+                     workshop changes. This is the door between them. -->
+                <button class="mj-btn mj-btn--flat" (click)="OpenProduct.emit(r.ID)" title="Open this product in the workshop to edit it">
+                  <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                  Edit
+                </button>
                 <button class="mj-btn mj-btn--flat" (click)="ShowWhy(r)" title="Show the product → category → company resolution chain">
                   <i class="fa-solid fa-diagram-project" aria-hidden="true"></i>
                   Resolution pattern
