@@ -1,4 +1,7 @@
-<mj-page-header-interior></mj-page-header-interior>
+<!-- No <mj-page-header-interior>: the order's identity rides in the card's own head (beside the tabs)
+     and its verbs are pinned to the card's foot, so an interior header had nothing left to carry —
+     and an empty one still paints its card chrome, which reads as a blank bubble. The body's top
+     padding is compensated in the CSS, since MJ tightens it assuming a header sits above it. -->
 
 <mj-page-body-interior>
   <!-- ONE card holds the whole editor: tab strip in the head, fields in the scrolling body, verbs
