@@ -6,8 +6,6 @@ import { MJStatBadgeVariant } from '@memberjunction/ng-ui-components';
 import { WorkspaceTabStore, type WorkspaceTab, CrossAppLinkService } from '@mj-biz-apps/accounting-ng';
 import {
   OrdersEngineBase,
-  AllowedTransitions,
-  validateTransition,
   resolveProductPrice,
   type OrderStatus,
   type PriceSource,
@@ -36,13 +34,47 @@ const NO_PRICE_RULE = '__no-price-rule__';
 /** The editor's inner tabs (Q2 FINAL, mockup-approved). */
 export type OrderEditorTab = 'details' | 'lines' | 'addresses' | 'payments' | 'accounting';
 
-/** One step in the header stepper. */
-export interface StatusStep {
-  Status: OrderStatus;
-  Current: boolean;
-  Reachable: boolean;
-  /** Why this step can't be jumped to — the disabled tooltip. */
-  BlockedReason: string | null;
+/** Every value the Status CHECK allows, derived — never hand-copied (root CLAUDE.md rule 2c). */
+export type OrderStatusValue = mjBizAppsOrdersOrderEntity['Status'];
+/** Every value the OrderType CHECK allows, derived from the entity for the same reason. */
+export type OrderTypeValue = mjBizAppsOrdersOrderEntity['OrderType'];
+
+/**
+ * Why a start-status is unavailable, or `null` when it can be picked.
+ *
+ * A `Record` keyed by the DERIVED union is deliberate: when a migration widens the Status CHECK and
+ * CodeGen regrows the union, this object stops compiling until someone decides whether the new value
+ * is safe to start an order in. A hand-written array would silently drop it instead.
+ */
+const START_STATUS_BLOCKED: Record<OrderStatusValue, string | null> = {
+  Draft: null,
+  Quoted: null,
+  // Selectable — but it does NOT write Status='Confirmed'. Save books through Orders.ConfirmOrder.
+  Confirmed: null,
+  Posted: 'Posted is reached by posting a Confirmed order — it cannot be an order’s starting status here.',
+  Fulfilled: 'Fulfilled is reached by fulfilling a Posted order — it cannot be an order’s starting status here.',
+  Voided: 'Void an order with the Void button once it exists — an order cannot start out Voided.',
+};
+
+/** Display labels for the OrderType picker, keyed by the derived union (same exhaustiveness win). */
+const ORDER_TYPE_LABEL: Record<OrderTypeValue, string> = {
+  Sale: 'Sale',
+  Return: 'Return',
+  Cancellation: 'Cancellation',
+  Amendment: 'Amendment',
+  CreditMemoOrder: 'Credit memo order',
+};
+
+/** One row of the start-status drop-down. */
+export interface StatusOption {
+  Value: OrderStatusValue;
+  Blocked: string | null;
+}
+
+/** One row of the order-type drop-down. */
+export interface OrderTypeOption {
+  Value: OrderTypeValue;
+  Label: string;
 }
 
 /** A product offered by the picker — flattened so the template does no entity work. */
@@ -50,6 +82,45 @@ export interface ProductOption {
   ID: string;
   Label: string;
 }
+
+/** A payment-terms option, flattened off the engine's cache. */
+export interface TermsOption {
+  ID: string;
+  Label: string;
+}
+
+/**
+ * The Order columns the shared `OrderDraftState` doesn't carry.
+ *
+ * `OrderDraftState` (./order-draft) is the shared, unit-tested shape behind the money math and the
+ * submit rules; it deliberately holds only what those pure functions read. The rest of the Order's
+ * writable surface lives here and is composed onto it with an intersection, so the editor can expose
+ * every option without widening the tier-1 contract that other code depends on.
+ */
+export interface OrderDraftExtras {
+  /**
+   * The status the operator wants this order to START in — NOT the order's current status.
+   *
+   * These are two different things and conflating them is a data-integrity bug: `Status` is what is
+   * (or will be) persisted, while `StartStatus` is an intent that `Save` interprets. Picking
+   * `Confirmed` here does not write `Status='Confirmed'` — see `Save`.
+   */
+  StartStatus: OrderStatusValue;
+  OrderType: OrderTypeValue;
+  CustomerPersonID: string | null;
+  SalesRepUserID: string | null;
+  BillToAddressID: string | null;
+  ShipToAddressID: string | null;
+  ContractID: string | null;
+  ApprovalTaskID: string | null;
+  RequestedDeliveryDate: string | null;
+  ReversesOrderID: string | null;
+  ReversalReason: string;
+  Notes: string;
+}
+
+/** The editor's full per-tab draft: the shared pure state plus this screen's extra columns. */
+export type OrderDraft = OrderDraftState & OrderDraftExtras;
 
 /**
  * Order editor (orders UI plan §13.1) — the anchor screen and the full-depth target of every order
@@ -82,9 +153,18 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
   private cdr = inject(ChangeDetectorRef);
   private links = inject(CrossAppLinkService);
 
-  private tabs = new WorkspaceTabStore<OrderDraftState>();
+  private tabs = new WorkspaceTabStore<OrderDraft>();
   private client = new OrderEditorClient();
   private keySeq = 0;
+
+  /** The inner tabs, typed — so the template needs no `$any` to hand an id back. */
+  public readonly InnerTabs: ReadonlyArray<{ id: OrderEditorTab; label: string }> = [
+    { id: 'details', label: 'Details' },
+    { id: 'lines', label: 'Lines' },
+    { id: 'addresses', label: 'Bill-To / Ship-To' },
+    { id: 'payments', label: 'Payments' },
+    { id: 'accounting', label: 'Accounting' },
+  ];
 
   public ActiveTab: OrderEditorTab = 'lines';
   public IsSaving = false;
@@ -115,7 +195,7 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
   public get ActiveTabId(): string | null {
     return this.tabs.ActiveId;
   }
-  public get Draft(): OrderDraftState | null {
+  public get Draft(): OrderDraft | null {
     return this.tabs.ActiveTab?.State ?? null;
   }
   public get IsSaved(): boolean {
@@ -161,15 +241,27 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
     this.cdr.markForCheck();
   }
 
-  private defaultDraft(): OrderDraftState {
+  private defaultDraft(): OrderDraft {
     return {
       Status: 'Draft',
+      StartStatus: 'Draft',
+      OrderType: 'Sale',
       CustomerOrganizationID: null,
+      CustomerPersonID: null,
+      SalesRepUserID: null,
+      BillToAddressID: null,
+      ShipToAddressID: null,
+      ContractID: null,
+      ApprovalTaskID: null,
       OrderDate: new Date().toISOString().slice(0, 10),
+      RequestedDeliveryDate: null,
       DueDate: null,
       PaymentTermsTypeID: null,
       ExternalDocumentNumber: '',
       Description: '',
+      Notes: '',
+      ReversesOrderID: null,
+      ReversalReason: '',
       AmountPaid: 0,
       PaymentStatus: null,
       Lines: [this.newLine()],
@@ -348,27 +440,59 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
     }
   }
 
-  // ─── status stepper (the F1 matrix, rendered) ──────────────────────────────
+  // ─── status (a picker, not a stepper) ──────────────────────────────────────
 
   /**
-   * The stepper. Reachability comes from `validateTransition` — the SAME function the server calls —
-   * so a step is enabled here exactly when the server would accept it, and its tooltip is the
-   * server's own reason. Skip-ahead (Draft → Confirmed/Posted) is legal (MOD-10) and falls out of
-   * the matrix for free rather than being special-cased.
+   * The start-status drop-down's options.
+   *
+   * Replaces the old arrow stepper, which promised motion this screen doesn't do: the editor is
+   * where an order is COMPOSED, so the only status question it can answer is "which status should
+   * this order begin life in?".
+   *
+   * `Confirmed` is offered but is NOT a status write — see `Save`. `Posted`/`Fulfilled`/`Voided` are
+   * offered-but-disabled with their reason rather than hidden, so the full lifecycle stays legible
+   * and a disabled option teaches instead of vanishing.
    */
-  public get Steps(): StatusStep[] {
-    const current = this.Draft?.Status ?? 'Draft';
-    const flow: OrderStatus[] = ['Draft', 'Quoted', 'Confirmed', 'Posted', 'Fulfilled'];
-    return flow.map((status) => {
-      if (status === current) return { Status: status, Current: true, Reachable: false, BlockedReason: null };
-      const check = validateTransition(current, status);
-      return {
-        Status: status,
-        Current: false,
-        Reachable: check.Allowed,
-        BlockedReason: check.Allowed ? null : (check.Reason ?? null),
-      };
-    });
+  public get StatusOptions(): StatusOption[] {
+    return (Object.keys(START_STATUS_BLOCKED) as OrderStatusValue[]).map((value) => ({
+      Value: value,
+      Blocked: START_STATUS_BLOCKED[value],
+    }));
+  }
+
+  public get OrderTypeOptions(): OrderTypeOption[] {
+    return (Object.keys(ORDER_TYPE_LABEL) as OrderTypeValue[]).map((value) => ({
+      Value: value,
+      Label: ORDER_TYPE_LABEL[value],
+    }));
+  }
+
+  /** Payment terms, off the engine's cache — a real picker, not a UUID field. */
+  public get TermsOptions(): TermsOption[] {
+    return OrdersEngineBase.Instance.PaymentTermsTypes.map((t) => ({ ID: t.ID, Label: t.Name })).sort((a, b) =>
+      a.Label.localeCompare(b.Label),
+    );
+  }
+
+  /**
+   * The start-status picker only applies to an order that doesn't exist yet. Once saved, status is
+   * owned by the verbs (Confirm books a JE; Void reverses) — a drop-down that silently re-wrote a
+   * live order's status would bypass every one of those rules.
+   */
+  public get CanPickStartStatus(): boolean {
+    return !this.IsSaved && !this.IsLocked;
+  }
+
+  /** What picking `Confirmed` actually means, said out loud next to the control. */
+  public get StartStatusNote(): string | null {
+    if (!this.CanPickStartStatus) return 'Status is set by the actions below once the order exists.';
+    if (this.Draft?.StartStatus === 'Confirmed')
+      return 'Saving will create the order and then Confirm it — booking its journal entries.';
+    return null;
+  }
+
+  public OnStartStatusChanged(): void {
+    this.touch();
   }
 
   public get StatusVariant(): MJStatBadgeVariant {
@@ -405,17 +529,32 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
     return this.Issues[0] ?? null;
   }
 
+  /** An existing order is being updated; a new one is being created. Different verb, same button. */
+  public get SaveVerbLabel(): string {
+    return this.IsSaved ? 'Save updates' : 'Save order';
+  }
+
   /**
-   * Save the order + its lines in ONE transaction.
+   * Save the order + its lines in ONE transaction, then — if the operator asked for the order to
+   * start `Confirmed` — book it through the SAME Confirm path the button uses.
    *
    * `entity.TransactionGroup = tg; await entity.Save()` QUEUES rather than commits, and the queued
    * order's ID is available immediately — so the lines can chain their OrderID inside the same
    * transaction. `tg.Submit()` commits everything or nothing: a header with no lines is not a state
    * this editor can produce.
+   *
+   * On the Confirm path this deliberately persists `Draft`/`Quoted` and then calls
+   * `Orders.ConfirmOrder`. Writing `Status='Confirmed'` from here would produce a Confirmed order
+   * with no journal entry — the exact silent corruption the remote operation exists to prevent —
+   * because only the server can put the order row and its journal entries in one TransactionGroup.
    */
   public async Save(): Promise<void> {
     const d = this.Draft;
     if (!d || !this.CanSave) return;
+
+    // Read the intent BEFORE the write: `Save` is what turns "start it Confirmed" into a booking.
+    const bookAfterSave = !d.OrderID && d.StartStatus === 'Confirmed';
+    if (!d.OrderID) d.Status = this.persistableStartStatus(d.StartStatus);
 
     this.IsSaving = true;
     this.clearMessages();
@@ -427,14 +566,7 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
       const order = await md.GetEntityObject<mjBizAppsOrdersOrderEntity>(ORDER_ENTITY, this.ProviderToUse.CurrentUser);
       if (d.OrderID) await order.Load(d.OrderID);
       else order.NewRecord();
-      order.OrderType = 'Sale';
-      order.Status = d.Status;
-      order.OrderDate = new Date(d.OrderDate);
-      order.CustomerOrganizationID = d.CustomerOrganizationID;
-      order.PaymentTermsTypeID = d.PaymentTermsTypeID;
-      order.DueDate = d.DueDate ? new Date(d.DueDate) : null;
-      order.ExternalDocumentNumber = d.ExternalDocumentNumber.trim() || null;
-      order.Description = d.Description.trim() || null;
+      this.applyDraftToOrder(d, order);
       order.TransactionGroup = tg;
       await order.Save();
 
@@ -452,15 +584,60 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
       this.ActionIsError = false;
     } catch (e) {
       this.setError(e instanceof Error ? e.message : String(e));
+      return;
     } finally {
       this.IsSaving = false;
       this.cdr.markForCheck();
     }
+
+    // The order now exists as a Draft/Quoted. Confirm is a SECOND, server-atomic step — if it is
+    // blocked, the order survives as a draft and the banner says why, which is recoverable. The
+    // alternative (a client-written "Confirmed" with no JE) would not be.
+    if (bookAfterSave) await this.Confirm();
+  }
+
+  /**
+   * What actually gets written for a requested start status.
+   *
+   * Only Draft/Quoted are ever persisted directly. `Confirmed` maps to `Draft` here because the
+   * booking happens right after, through the remote operation; every other value is unreachable
+   * (the drop-down disables it) and falls back to the safest status rather than being trusted.
+   */
+  private persistableStartStatus(requested: OrderStatusValue): OrderStatus {
+    return requested === 'Quoted' ? 'Quoted' : 'Draft';
+  }
+
+  /** Copy the whole editable surface onto the entity. Server-materialized columns are never touched. */
+  private applyDraftToOrder(d: OrderDraft, order: mjBizAppsOrdersOrderEntity): void {
+    order.OrderType = d.OrderType;
+    order.Status = d.Status;
+    order.OrderDate = new Date(d.OrderDate);
+    order.RequestedDeliveryDate = d.RequestedDeliveryDate ? new Date(d.RequestedDeliveryDate) : null;
+    order.DueDate = d.DueDate ? new Date(d.DueDate) : null;
+    order.CustomerOrganizationID = this.blankToNull(d.CustomerOrganizationID);
+    order.CustomerPersonID = this.blankToNull(d.CustomerPersonID);
+    order.SalesRepUserID = this.blankToNull(d.SalesRepUserID);
+    order.BillToAddressID = this.blankToNull(d.BillToAddressID);
+    order.ShipToAddressID = this.blankToNull(d.ShipToAddressID);
+    order.PaymentTermsTypeID = this.blankToNull(d.PaymentTermsTypeID);
+    order.ContractID = this.blankToNull(d.ContractID);
+    order.ApprovalTaskID = this.blankToNull(d.ApprovalTaskID);
+    order.ReversesOrderID = this.blankToNull(d.ReversesOrderID);
+    order.ReversalReason = this.blankToNull(d.ReversalReason);
+    order.ExternalDocumentNumber = this.blankToNull(d.ExternalDocumentNumber);
+    order.Description = this.blankToNull(d.Description);
+    order.Notes = this.blankToNull(d.Notes);
+  }
+
+  /** An empty text box means "no value", not an empty string — nullable columns want NULL. */
+  private blankToNull(value: string | null): string | null {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
   }
 
   /** Queue each live line onto the same transaction, chaining the (already-available) order id. */
   private async queueLines(
-    d: OrderDraftState,
+    d: OrderDraft,
     orderId: string,
     md: Metadata,
     tg: Awaited<ReturnType<typeof this.ProviderToUse.CreateTransactionGroup>>,

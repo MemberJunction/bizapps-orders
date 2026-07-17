@@ -10,13 +10,119 @@
   min-height: 0;
 }
 
+/* ─── the split button + its open-existing picker ───────────────────────── */
+
+.pw__split {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 2px;
+}
+.pw__split-toggle {
+  padding-left: 9px;
+  padding-right: 9px;
+}
+
+/* GitHub's repo-switcher shape: compact card, search pinned at the top, list below. */
+.pw__picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 320px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  background: var(--mj-bg-surface-elevated, var(--mj-bg-surface));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+  overflow: hidden;
+}
+
+.pw__picker-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--mj-border-default);
+  color: var(--mj-text-muted);
+}
+.pw__picker-search input {
+  font: inherit;
+  font-size: 13px;
+  flex: 1;
+  min-width: 0;
+  color: var(--mj-text-primary);
+  background: var(--mj-bg-surface);
+  border: 1px solid var(--mj-border-default);
+  border-radius: 7px;
+  padding: 5px 8px;
+}
+
+.pw__picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 280px;
+  overflow: auto;
+}
+.pw__picker-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  color: var(--mj-text-primary);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.pw__picker-item:hover,
+.pw__picker-item:focus-visible {
+  background: var(--mj-bg-surface-hover);
+}
+.pw__picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pw__picker-sku {
+  font-size: 11.5px;
+  color: var(--mj-text-muted);
+  font-family: var(--mj-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+.pw__picker-open {
+  font-size: 11px;
+  color: var(--mj-status-success-text);
+  white-space: nowrap;
+}
+.pw__picker-none {
+  padding: 12px 10px;
+  font-size: 12px;
+  color: var(--mj-text-muted);
+}
+
+/* ─── the active product's bar ───────────────────────────────────────────── */
+
 .pw__bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  margin: 10px 0;
+}
+.pw__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mj-text-primary);
 }
 
 .pw__actions {
@@ -32,12 +138,92 @@
 .pw__panel {
   border: 1px solid var(--mj-border-default);
   border-radius: 10px;
-  padding: 16px;
+  padding: 8px 16px 16px;
   overflow: auto;
   /* Sized, not flexed — see the note at the top of this file. */
   min-height: 320px;
-  max-height: calc(100vh - 260px);
+  max-height: calc(100vh - 300px);
 }
+
+/* ─── disclosure sections (label + rule across, chevron) ─────────────────── */
+
+.pw__section + .pw__section {
+  margin-top: 4px;
+}
+
+/* The header row: "text and then the line that goes across" — a divider you can click, not a
+   boxed accordion panel. */
+.pw__dt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 12px 2px;
+  cursor: pointer;
+  color: var(--mj-text-primary);
+}
+.pw__dt:hover .pw__dt-label,
+.pw__dt:focus-visible .pw__dt-label {
+  color: var(--mj-brand-primary);
+}
+.pw__dt:focus-visible {
+  outline: 2px solid var(--mj-border-focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.pw__dt-chev {
+  font-size: 10px;
+  color: var(--mj-text-muted);
+  transition: transform 120ms ease-in-out;
+}
+.pw__dt-chev--open {
+  transform: rotate(90deg);
+}
+
+.pw__dt-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The rule runs across whatever width the label leaves. */
+.pw__dt-rule {
+  flex: 1;
+  height: 1px;
+  min-width: 16px;
+  background: var(--mj-border-default);
+}
+
+/* Rides on the header OPEN OR CLOSED — a folded section must never hide a problem. */
+.pw__dt-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--mj-status-warning-text);
+  background: var(--mj-status-warning-bg);
+  border: 1px solid var(--mj-status-warning-border);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.pw__body {
+  padding: 4px 0 14px 19px;
+}
+
+/* ─── fields ─────────────────────────────────────────────────────────────── */
 
 .pw__fields {
   display: grid;

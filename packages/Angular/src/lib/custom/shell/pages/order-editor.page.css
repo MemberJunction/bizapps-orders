@@ -9,11 +9,74 @@
   min-height: 0;
 }
 
+/* <mj-page-body-interior> is display:block and owns the page background + gutter. It is a flex item
+   of :host, so it has a DEFINITE height — which is what lets .oe below resolve height:100% and give
+   the card a real box to live in. (flex:1 on a child of the body-interior would be a no-op and
+   collapse to zero — the body is block, not flex.) */
 .oe {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* THE card. One surface holding head → body → footer, distinct from the body's --mj-bg-page. */
+.oe__card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--mj-bg-surface);
+  border: 1px solid var(--mj-border-default);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* Card header section — the tab strip lives here, sitting in the card rather than floating above it.
+   Deliberately NO horizontal padding: the strip's own bottom border is the rule under the tabs and
+   it must run edge to edge across the card. */
+.oe__cardhead {
+  flex: 0 0 auto;
+  padding-top: 6px;
+  background: var(--mj-bg-surface-card);
+}
+
+/* The strip sets overflow-x:auto for horizontal tab overflow. Per CSS, a non-visible overflow on one
+   axis computes the OTHER axis to auto — so its tabs' -1px bottom overlap (how the active tab sits on
+   the rule) spilled past the content box and raised a VERTICAL scrollbar on a single row of tabs.
+   Clip that axis: horizontal overflow still scrolls, vertical cannot. Fixed here, in the consumer's
+   CSS, so the shared strip component is untouched. */
+.oe__cardhead ::ng-deep .ws-tabs {
+  overflow-y: hidden;
+}
+
+/* Card body — the ONLY scroll container on this page, which is what the footer sticks to. */
+.oe__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 0;
+  padding: 12px 14px 0;
+}
+
+/* Identity row: the order number + the status control, together. Status belongs next to the thing
+   that sets it, not in a header capsule of its own. */
+.oe__ident {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.oe__identspacer {
+  flex: 1;
+}
+.oe__field--status {
+  min-width: 220px;
+}
+.oe__field--status .mj-input {
+  width: 100%;
 }
 
 .oe__session {
@@ -25,37 +88,6 @@
   gap: 6px;
 }
 
-/* Status stepper. */
-.oe__steps {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 12.5px;
-}
-.oe__step {
-  padding: 5px 12px;
-  border: 1px solid var(--mj-border-default);
-  border-radius: 999px;
-  color: var(--mj-text-secondary);
-  background: var(--mj-bg-surface-card);
-  white-space: nowrap;
-}
-.oe__step--cur {
-  background: var(--mj-brand-primary);
-  border-color: var(--mj-brand-primary);
-  color: var(--mj-text-inverse, #fff);
-  font-weight: 600;
-}
-/* An illegal move per the F1 matrix — visibly unavailable, with the server's own reason on hover. */
-.oe__step--blocked {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.oe__sep {
-  color: var(--mj-text-disabled);
-}
-
 /* Always-visible money strip. */
 .oe__money {
   display: grid;
@@ -64,6 +96,7 @@
   border-radius: 10px;
   overflow: hidden;
   background: var(--mj-bg-surface-card);
+  flex: 0 0 auto;
 }
 .oe__money > div {
   padding: 9px 14px;
@@ -100,6 +133,7 @@
   border-radius: 10px;
   font-size: 12.5px;
   line-height: 1.5;
+  flex: 0 0 auto;
 }
 .oe__failline {
   margin-top: 2px;
@@ -114,6 +148,9 @@
   display: flex;
   gap: 2px;
   border-bottom: 1px solid var(--mj-border-default);
+  flex: 0 0 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .oe__itab {
   border: none;
@@ -123,6 +160,7 @@
   color: var(--mj-text-secondary);
   cursor: pointer;
   border-bottom: 2px solid transparent;
+  white-space: nowrap;
 }
 .oe__itab:hover {
   color: var(--mj-text-primary);
@@ -139,6 +177,7 @@
   overflow-x: auto;
   border: 1px solid var(--mj-border-default);
   border-radius: 10px;
+  flex: 0 0 auto;
 }
 .oe__grid {
   width: 100%;
@@ -220,7 +259,7 @@
   color: var(--mj-status-warning-text);
 }
 
-/* Details form. */
+/* Field forms. */
 .oe__form {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -228,11 +267,21 @@
   border: none;
   padding: 0;
   margin: 0;
+  flex: 0 0 auto;
 }
 @media (max-width: 1100px) {
   .oe__form {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+.oe__legend {
+  grid-column: 1 / -1;
+  padding: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
 }
 .oe__field {
   display: flex;
@@ -245,19 +294,32 @@
 .oe__field--wide {
   grid-column: span 2;
 }
+.oe__field .mj-textarea {
+  width: 100%;
+  resize: vertical;
+}
 
-/* Verbs. */
+/* The verbs — pinned to the bottom of the scrolling body so they are always reachable. */
 .oe__footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  /* margin-top:auto keeps the bar at the foot when the content is shorter than the card; the
+     negative side margins let its top rule span the card's full width despite the body's gutter. */
+  margin: auto -14px 0;
+  padding: 10px 14px;
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
+  background: var(--mj-bg-surface);
+  border-top: 1px solid var(--mj-border-default);
 }
 .oe__footnote {
   margin-left: auto;
   font-size: 12px;
   color: var(--mj-text-muted);
-  max-width: 52ch;
+  max-width: 44ch;
 }
 .oe__hint {
   margin: 0;
@@ -266,11 +328,13 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 0 0 auto;
 }
 .oe__msg {
   margin: 0;
   font-size: 12.5px;
   color: var(--mj-text-secondary);
+  flex: 0 0 auto;
 }
 .oe__msg--error {
   color: var(--mj-status-error-text);

@@ -1,12 +1,64 @@
 <mj-page-header-interior>
   <div meta>
-    <mj-stat-badge
-      [Label]="IsNew ? 'New product' : Draft.Status"
-      Icon="fa-solid fa-box"
-      [Variant]="IsNew ? 'default' : 'default'"></mj-stat-badge>
-    @if (Dirty) {
-      <mj-stat-badge Label="Unsaved changes" Icon="fa-solid fa-pen" Variant="warning"></mj-stat-badge>
+    @if (ActiveState; as s) {
+      <mj-stat-badge [Label]="IsNew ? 'New product' : s.Draft.Status" Icon="fa-solid fa-box" Variant="default"></mj-stat-badge>
+      @if (Tabs.length) {
+        <mj-stat-badge [Label]="Tabs.length + (Tabs.length === 1 ? ' open product' : ' open products')" Icon="fa-solid fa-layer-group" Variant="default"></mj-stat-badge>
+      }
     }
+  </div>
+  <div actions>
+    <!-- The split button: [ New product ][ ▾ ]. The ▾ half opens the open-existing picker. -->
+    <div class="pw__split" (click)="$event.stopPropagation()">
+      <button type="button" mjButton class="pw__split-main" (click)="OpenNewDraft()">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> New product
+      </button>
+      <button
+        type="button"
+        mjButton
+        variant="outline"
+        class="pw__split-toggle"
+        [attr.aria-expanded]="PickerOpen"
+        aria-haspopup="dialog"
+        aria-label="Open an existing product"
+        title="Open an existing product"
+        (click)="TogglePicker()">
+        <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+      </button>
+
+      @if (PickerOpen) {
+        <!-- GitHub's repository-switcher shape: compact card, search pinned at the top, list below. -->
+        <div class="pw__picker" role="dialog" aria-label="Open an existing product">
+          <div class="pw__picker-search">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input
+              #pickerSearch
+              type="text"
+              [(ngModel)]="PickerSearch"
+              (ngModelChange)="OnPickerSearchChanged()"
+              placeholder="Search by name, SKU or ID…"
+              aria-label="Search products" />
+          </div>
+          <ul class="pw__picker-list">
+            @for (row of PickerRows; track row.ID) {
+              <li>
+                <button type="button" class="pw__picker-item" (click)="PickProduct(row)">
+                  <span class="pw__picker-name">{{ row.Name }}</span>
+                  @if (row.SKU) {
+                    <span class="pw__picker-sku">{{ row.SKU }}</span>
+                  }
+                  @if (row.AlreadyOpen) {
+                    <span class="pw__picker-open"><i class="fa-solid fa-check" aria-hidden="true"></i> open</span>
+                  }
+                </button>
+              </li>
+            } @empty {
+              <li class="pw__picker-none">No product matches “{{ PickerSearch }}”.</li>
+            }
+          </ul>
+        </div>
+      }
+    </div>
   </div>
 </mj-page-header-interior>
 
@@ -25,365 +77,477 @@
         Message="A product cannot be created without a product type — add one under Products → Product types first."></mj-alert>
     }
 
-    <div class="pw__bar">
-      <mj-workspace-tab-strip
-        [Tabs]="Tabs"
-        [ActiveId]="ActiveTabId"
-        [ShowNewTab]="false"
-        (TabSelected)="SelectTab($event)">
-      </mj-workspace-tab-strip>
-      <div class="pw__actions">
-        @if (SaveMessage) {
-          <span class="pw__ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> {{ SaveMessage }}</span>
-        }
-        <button type="button" mjButton [disabled]="!CanSave" (click)="Save()">
-          <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
-          {{ IsSaving ? 'Saving…' : IsNew ? 'Create product' : 'Save product' }}
-        </button>
+    <!-- Tabs are OPEN PRODUCTS, not sections of one product. -->
+    <mj-workspace-tab-strip
+      [Tabs]="Tabs"
+      [ActiveId]="ActiveTabId"
+      [ShowNewTab]="true"
+      NewTabLabel="New product"
+      (TabSelected)="SelectTab($event)"
+      (TabClosed)="CloseTab($event)"
+      (NewTabRequested)="OpenNewDraft()">
+    </mj-workspace-tab-strip>
+
+    @if (ActiveState; as s) {
+      <div class="pw__bar">
+        <span class="pw__crumb">
+          <i class="fa-solid fa-box" aria-hidden="true"></i>
+          {{ s.Draft.Name.trim() || 'New product' }}
+        </span>
+        <div class="pw__actions">
+          @if (s.SaveMessage) {
+            <span class="pw__ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> {{ s.SaveMessage }}</span>
+          }
+          <button type="button" mjButton [disabled]="!CanSave" (click)="Save()">
+            <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+            {{ IsSaving ? 'Saving…' : IsNew ? 'Create product' : 'Save product' }}
+          </button>
+        </div>
       </div>
-    </div>
 
-    @if (SaveError) {
-      <p class="pw__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ SaveError }}</p>
-    }
-
-    <div class="pw__panel">
-      <!-- ─── General ─────────────────────────────────────────────────────── -->
-      @if (ActiveTabId === 'general') {
-        <div class="pw__fields">
-          <label class="pw__field">
-            <span class="pw__label">Name <b class="pw__req">*</b></span>
-            <input type="text" [(ngModel)]="Draft.Name" (ngModelChange)="MarkDirty()" maxlength="200" placeholder="Product name" />
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">SKU</span>
-            <input type="text" [(ngModel)]="Draft.SKU" (ngModelChange)="MarkDirty()" maxlength="80" placeholder="Optional — unique when present" />
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">Product type <b class="pw__req">*</b></span>
-            <select [(ngModel)]="Draft.ProductTypeID" (ngModelChange)="MarkDirty()" [disabled]="NoProductTypes">
-              <option [ngValue]="null">— select a product type —</option>
-              @for (t of ProductTypes; track t.ID) {
-                <option [ngValue]="t.ID">{{ t.Label }}</option>
-              }
-            </select>
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">Category</span>
-            <select [(ngModel)]="Draft.ProductCategoryID" (ngModelChange)="MarkDirty()">
-              <option [ngValue]="null">— none —</option>
-              @for (c of Categories; track c.ID) {
-                <option [ngValue]="c.ID">{{ c.Label }}</option>
-              }
-            </select>
-            <span class="pw__hint">The category chain is what booking falls back to when the product has no GL link of its own.</span>
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">Owning company</span>
-            <select [(ngModel)]="Draft.OwningCompanyID" (ngModelChange)="OnOwningCompanyChanged()">
-              <option [ngValue]="null">— none —</option>
-              @for (c of Companies; track c.ID) {
-                <option [ngValue]="c.ID">{{ c.Label }}</option>
-              }
-            </select>
-            <span class="pw__hint">The subsidiary this product's revenue accrues to. It also marks which GL accounts are preferred on the GL accounts tab.</span>
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">Status</span>
-            <select [(ngModel)]="Draft.Status" (ngModelChange)="MarkDirty()">
-              @for (s of StatusOptions; track s) {
-                <option [ngValue]="s">{{ s }}</option>
-              }
-            </select>
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">Successor product</span>
-            <select [(ngModel)]="Draft.SuccessorProductID" (ngModelChange)="MarkDirty()">
-              <option [ngValue]="null">— none —</option>
-              @for (p of SuccessorProducts; track p.ID) {
-                <option [ngValue]="p.ID">{{ p.Label }}</option>
-              }
-            </select>
-            <span class="pw__hint">What replaces this product once it is Discontinued or EOL.</span>
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">Available from</span>
-            <input type="date" [(ngModel)]="Draft.AvailableFrom" (ngModelChange)="MarkDirty()" />
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">Available to</span>
-            <input type="date" [(ngModel)]="Draft.AvailableTo" (ngModelChange)="MarkDirty()" />
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">Active</span>
-            <span class="pw__check">
-              <input type="checkbox" [(ngModel)]="Draft.IsActive" (ngModelChange)="MarkDirty()" />
-              <span class="pw__hint">Whether the product is active and orderable.</span>
-            </span>
-          </label>
-
-          <label class="pw__field pw__field--wide">
-            <span class="pw__label">Description</span>
-            <textarea rows="4" [(ngModel)]="Draft.Description" (ngModelChange)="MarkDirty()"></textarea>
-          </label>
-        </div>
+      @if (s.SaveError) {
+        <p class="pw__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ s.SaveError }}</p>
       }
 
-      <!-- ─── Revenue ─────────────────────────────────────────────────────── -->
-      @if (ActiveTabId === 'revenue') {
-        <div class="pw__fields">
-          <label class="pw__field">
-            <span class="pw__label">Revenue recognition</span>
-            <select [(ngModel)]="Draft.RevenueRecognitionType" (ngModelChange)="MarkDirty()">
-              @for (r of RevenueRecognitionOptions; track r) {
-                <option [ngValue]="r">{{ r }}</option>
-              }
-            </select>
-            <span class="pw__hint">
-              Immediate credits <b>Sales</b>; Deferred credits <b>Deferred Revenue</b>. This drives the credit side of the
-              order-booking journal entry — and therefore which GL role must resolve on the GL accounts tab.
-            </span>
-          </label>
+      <div class="pw__panel">
+        <!-- ─── General ───────────────────────────────────────────────────── -->
+        <section class="pw__section">
+          <button
+            type="button"
+            class="pw__dt"
+            [attr.aria-expanded]="IsSectionOpen('general')"
+            aria-controls="pw-sec-general"
+            (click)="ToggleSection('general')">
+            <i class="pw__dt-chev fa-solid fa-chevron-right" [class.pw__dt-chev--open]="IsSectionOpen('general')" aria-hidden="true"></i>
+            <span class="pw__dt-label"><i class="fa-solid fa-box" aria-hidden="true"></i> General</span>
+            @if (SectionIssues('general') > 0) {
+              <!-- A collapsed section must never hide a problem — the marker rides on the header. -->
+              <span class="pw__dt-dot" [title]="SectionIssueTitle('general')">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ SectionIssues('general') }}
+              </span>
+            }
+            <span class="pw__dt-rule" aria-hidden="true"></span>
+          </button>
 
-          <label class="pw__field">
-            <span class="pw__label">Deferred recognition shape</span>
-            <select [(ngModel)]="Draft.DeferredRecognitionShape" (ngModelChange)="MarkDirty()" [disabled]="!IsDeferred">
-              <option [ngValue]="null">— none —</option>
-              @for (s of DeferredShapeOptions; track s) {
-                <option [ngValue]="s">{{ s }}</option>
-              }
-            </select>
-            <span class="pw__hint">
-              @if (IsDeferred) {
-                SingleDate recognizes 100% on the event date; ServicePeriod spreads over the line's service dates.
-              } @else {
-                Only meaningful for a Deferred product — set Revenue recognition to Deferred to choose a shape.
-              }
-            </span>
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">Standalone selling price</span>
-            <input type="number" step="0.0001" [(ngModel)]="Draft.StandaloneSellingPrice" (ngModelChange)="MarkDirty()" />
-            <span class="pw__hint">Used by ASC 606 bundle revenue allocation (fields now, allocation engine later).</span>
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">Taxable</span>
-            <span class="pw__check">
-              <input type="checkbox" [(ngModel)]="Draft.IsTaxable" (ngModelChange)="MarkDirty()" />
-              <span class="pw__hint">Whether this product is subject to tax.</span>
-            </span>
-          </label>
-        </div>
-      }
-
-      <!-- ─── Subscription ────────────────────────────────────────────────── -->
-      @if (ActiveTabId === 'subscription') {
-        <div class="pw__fields">
-          <label class="pw__field">
-            <span class="pw__label">Subscription type</span>
-            <select [(ngModel)]="Draft.SubscriptionType" (ngModelChange)="MarkDirty()">
-              @for (s of SubscriptionTypeOptions; track s) {
-                <option [ngValue]="s">{{ s }}</option>
-              }
-            </select>
-            <span class="pw__hint">Drives find-or-extend-or-create of a Subscription when an order is confirmed.</span>
-          </label>
-
-          @if (!HasSubscription) {
-            <p class="pw__note pw__field--wide">
-              <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-              This product creates no subscription, so the billing cycle and term below do not apply. Choose
-              <b>Standard</b> or <b>Membership</b> above to set them.
-            </p>
-          }
-
-          <label class="pw__field">
-            <span class="pw__label">Default billing cycle</span>
-            <select [(ngModel)]="Draft.DefaultBillingCycle" (ngModelChange)="MarkDirty()" [disabled]="!HasSubscription">
-              <option [ngValue]="null">— none —</option>
-              @for (b of BillingCycleOptions; track b) {
-                <option [ngValue]="b">{{ b }}</option>
-              }
-            </select>
-          </label>
-
-          <label class="pw__field">
-            <span class="pw__label">Default term (months)</span>
-            <input
-              type="number"
-              step="1"
-              min="0"
-              [(ngModel)]="Draft.DefaultSubscriptionTermMonths"
-              (ngModelChange)="MarkDirty()"
-              [disabled]="!HasSubscription" />
-          </label>
-        </div>
-      }
-
-      <!-- ─── GL accounts ─────────────────────────────────────────────────── -->
-      @if (ActiveTabId === 'gl') {
-        @if (IsNew) {
-          <mj-empty-state
-            Icon="fa-solid fa-diagram-project"
-            Title="Save the product first"
-            Message="A GL account link points at a saved product record. Create the product, then link its accounts here."></mj-empty-state>
-        } @else {
-          <p class="pw__note">
-            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-            Booking resolves this product's <b>{{ RevenueRole }}</b> account by walking the product → its category chain →
-            its company. A link here overrides the chain; no link is fine as long as something above resolves.
-          </p>
-
-          <!-- The chain, rendered by accounting's shared preview — never re-rendered here. -->
-          <mj-gl-resolution-preview [Result]="Resolution"></mj-gl-resolution-preview>
-
-          @if (LinkError) {
-            <p class="pw__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LinkError }}</p>
-          }
-
-          <div class="pw__gridwrap">
-            <table class="pw__grid">
-              <thead>
-                <tr><th>Role</th><th>Account</th><th>Status</th><th>From</th><th>To</th><th>Comments</th><th></th></tr>
-              </thead>
-              <tbody>
-                @for (l of Links; track l.ID) {
-                  <tr>
-                    <td>{{ l.RoleName }}</td>
-                    <td>
-                      <span class="pw__mono">{{ l.AccountCode }}</span> {{ l.AccountName }}
-                      @if (CompanyMismatch(l)) {
-                        <span class="pw__warn" [title]="'This account does not belong to ' + OwningCompanyName">
-                          <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                          not associated with {{ OwningCompanyName }}
-                        </span>
-                      }
-                    </td>
-                    <td>{{ l.Status }}</td>
-                    <td>{{ l.StartedAt ? (l.StartedAt | date: 'mediumDate' : 'UTC') : 'open' }}</td>
-                    <td>{{ l.EndedAt ? (l.EndedAt | date: 'mediumDate' : 'UTC') : 'open' }}</td>
-                    <td class="pw__muted">{{ l.Comments || '—' }}</td>
-                    <td class="pw__rowactions">
-                      <button type="button" mjButton variant="outline" (click)="EditLink(l)" [disabled]="IsSavingLink">Edit</button>
-                      <button type="button" mjButton variant="outline" (click)="RemoveLink(l)" [disabled]="IsSavingLink">Remove</button>
-                    </td>
-                  </tr>
-                } @empty {
-                  <tr>
-                    <td colspan="7" class="pw__muted">
-                      No GL link on this product — it books through its category chain or its company default (see the chain above).
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-
-          @if (!LinkDraft) {
-            <div class="pw__actions pw__actions--left">
-              <button type="button" mjButton (click)="AddLink()" [disabled]="IsSavingLink">
-                <i class="fa-solid fa-plus" aria-hidden="true"></i> Add GL account link
-              </button>
-            </div>
-          } @else {
-            <div class="pw__linkeditor">
-              <h4 class="pw__linkeditor-title">{{ LinkDraft.ID ? 'Edit GL account link' : 'New GL account link' }}</h4>
+          @if (IsSectionOpen('general')) {
+            <div class="pw__body" id="pw-sec-general">
               <div class="pw__fields">
                 <label class="pw__field">
-                  <span class="pw__label">Role <b class="pw__req">*</b></span>
-                  <select [(ngModel)]="LinkDraft.GLAccountRoleID">
-                    <option [ngValue]="null">— select a role —</option>
-                    @for (r of Roles; track r.ID) {
-                      <option [ngValue]="r.ID">{{ r.Label }}</option>
+                  <span class="pw__label">Name <b class="pw__req">*</b></span>
+                  <input type="text" [(ngModel)]="s.Draft.Name" (ngModelChange)="MarkDirty()" maxlength="200" placeholder="Product name" />
+                </label>
+
+                <label class="pw__field">
+                  <span class="pw__label">SKU</span>
+                  <input type="text" [(ngModel)]="s.Draft.SKU" (ngModelChange)="MarkDirty()" maxlength="80" placeholder="Optional — unique when present" />
+                </label>
+
+                <label class="pw__field">
+                  <span class="pw__label">Product type <b class="pw__req">*</b></span>
+                  <select [(ngModel)]="s.Draft.ProductTypeID" (ngModelChange)="MarkDirty()" [disabled]="NoProductTypes">
+                    <option [ngValue]="null">— select a product type —</option>
+                    @for (t of ProductTypes; track t.ID) {
+                      <option [ngValue]="t.ID">{{ t.Label }}</option>
                     }
                   </select>
                 </label>
 
                 <label class="pw__field">
-                  <span class="pw__label">GL account <b class="pw__req">*</b></span>
-                  <select [(ngModel)]="LinkDraft.GLAccountID">
-                    <option [ngValue]="null">— select an account —</option>
-                    @for (a of Accounts; track a.ID) {
-                      <option [ngValue]="a.ID">{{ a.Label }}{{ a.MatchesOwningCompany ? ' ★' : '' }}</option>
+                  <span class="pw__label">Category</span>
+                  <select [(ngModel)]="s.Draft.ProductCategoryID" (ngModelChange)="MarkDirty()">
+                    <option [ngValue]="null">— none —</option>
+                    @for (c of Categories; track c.ID) {
+                      <option [ngValue]="c.ID">{{ c.Label }}</option>
                     }
                   </select>
-                  @if (Draft.OwningCompanyID) {
-                    <span class="pw__hint">★ = an account of {{ OwningCompanyName }}, this product's owning company.</span>
-                  }
+                  <span class="pw__hint">The category chain is what booking falls back to when the product has no GL link of its own.</span>
+                </label>
+
+                <label class="pw__field">
+                  <span class="pw__label">Owning company</span>
+                  <select [(ngModel)]="s.Draft.OwningCompanyID" (ngModelChange)="OnOwningCompanyChanged()">
+                    <option [ngValue]="null">— none —</option>
+                    @for (c of Companies; track c.ID) {
+                      <option [ngValue]="c.ID">{{ c.Label }}</option>
+                    }
+                  </select>
+                  <span class="pw__hint">The subsidiary this product's revenue accrues to. It also marks which GL accounts are preferred in the GL accounts section.</span>
                 </label>
 
                 <label class="pw__field">
                   <span class="pw__label">Status</span>
-                  <select [(ngModel)]="LinkDraft.Status">
-                    @for (s of LinkStatusOptions; track s) {
-                      <option [ngValue]="s">{{ s }}</option>
+                  <select [(ngModel)]="s.Draft.Status" (ngModelChange)="MarkDirty()">
+                    @for (st of StatusOptions; track st) {
+                      <option [ngValue]="st">{{ st }}</option>
                     }
                   </select>
-                  <span class="pw__hint">Only Active links are used by resolution; Pending is entered-but-not-yet-in-force.</span>
                 </label>
 
                 <label class="pw__field">
-                  <span class="pw__label">Effective from</span>
-                  <input type="date" [(ngModel)]="LinkDraft.StartedAt" />
-                  <span class="pw__hint">Empty = open start.</span>
+                  <span class="pw__label">Successor product</span>
+                  <select [(ngModel)]="s.Draft.SuccessorProductID" (ngModelChange)="MarkDirty()">
+                    <option [ngValue]="null">— none —</option>
+                    @for (p of SuccessorProducts; track p.ID) {
+                      <option [ngValue]="p.ID">{{ p.Label }}</option>
+                    }
+                  </select>
+                  <span class="pw__hint">What replaces this product once it is Discontinued or EOL.</span>
                 </label>
 
                 <label class="pw__field">
-                  <span class="pw__label">Effective to</span>
-                  <input type="date" [(ngModel)]="LinkDraft.EndedAt" />
-                  <span class="pw__hint">Empty = open end.</span>
+                  <span class="pw__label">Available from</span>
+                  <input type="date" [(ngModel)]="s.Draft.AvailableFrom" (ngModelChange)="MarkDirty()" />
+                </label>
+
+                <label class="pw__field">
+                  <span class="pw__label">Available to</span>
+                  <input type="date" [(ngModel)]="s.Draft.AvailableTo" (ngModelChange)="MarkDirty()" />
+                </label>
+
+                <label class="pw__field">
+                  <span class="pw__label">Active</span>
+                  <span class="pw__check">
+                    <input type="checkbox" [(ngModel)]="s.Draft.IsActive" (ngModelChange)="MarkDirty()" />
+                    <span class="pw__hint">Whether the product is active and orderable.</span>
+                  </span>
                 </label>
 
                 <label class="pw__field pw__field--wide">
-                  <span class="pw__label">Comments</span>
-                  <input type="text" [(ngModel)]="LinkDraft.Comments" placeholder="Why this mapping exists / changed" />
+                  <span class="pw__label">Description</span>
+                  <textarea rows="4" [(ngModel)]="s.Draft.Description" (ngModelChange)="MarkDirty()"></textarea>
                 </label>
-              </div>
-
-              @if (DraftLinkCompanyMismatch) {
-                <!-- Advisory, never blocking — the company/account rule does not exist yet. -->
-                <mj-alert
-                  Variant="warning"
-                  Title="Account is not associated with this product's owning company"
-                  [Message]="'The chosen account does not belong to ' + OwningCompanyName + '. This is a warning, not a block — the company/account rules are not defined yet, so the link will save.'"></mj-alert>
-              }
-
-              <div class="pw__actions pw__actions--left">
-                <button type="button" mjButton [disabled]="!CanSaveLink" (click)="SaveLink()">
-                  {{ IsSavingLink ? 'Saving…' : 'Save link' }}
-                </button>
-                <button type="button" mjButton variant="outline" (click)="CancelLink()" [disabled]="IsSavingLink">Cancel</button>
               </div>
             </div>
           }
-        }
-      }
+        </section>
 
-      <!-- ─── Advanced ────────────────────────────────────────────────────── -->
-      @if (ActiveTabId === 'advanced') {
-        <div class="pw__fields">
-          <label class="pw__field pw__field--wide">
-            <span class="pw__label">Behavior class</span>
-            <input type="text" [(ngModel)]="Draft.BehaviorClass" (ngModelChange)="MarkDirty()" maxlength="100" placeholder="Leave empty to inherit" />
-            <span class="pw__hint">
-              The <b>ClassFactory key</b> of this product's ProductBehavior plugin — the registered class name the engine
-              instantiates for it. Leave it empty and the product falls back to its product type's behavior class, and
-              then to the default. Only set it to override the behavior for this one product.
-            </span>
-          </label>
-        </div>
-      }
-    </div>
+        <!-- ─── Revenue ───────────────────────────────────────────────────── -->
+        <section class="pw__section">
+          <button
+            type="button"
+            class="pw__dt"
+            [attr.aria-expanded]="IsSectionOpen('revenue')"
+            aria-controls="pw-sec-revenue"
+            (click)="ToggleSection('revenue')">
+            <i class="pw__dt-chev fa-solid fa-chevron-right" [class.pw__dt-chev--open]="IsSectionOpen('revenue')" aria-hidden="true"></i>
+            <span class="pw__dt-label"><i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Revenue</span>
+            @if (SectionIssues('revenue') > 0) {
+              <span class="pw__dt-dot" [title]="SectionIssueTitle('revenue')">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ SectionIssues('revenue') }}
+              </span>
+            }
+            <span class="pw__dt-rule" aria-hidden="true"></span>
+          </button>
+
+          @if (IsSectionOpen('revenue')) {
+            <div class="pw__body" id="pw-sec-revenue">
+              <div class="pw__fields">
+                <label class="pw__field">
+                  <span class="pw__label">Revenue recognition</span>
+                  <select [(ngModel)]="s.Draft.RevenueRecognitionType" (ngModelChange)="MarkDirty()">
+                    @for (r of RevenueRecognitionOptions; track r) {
+                      <option [ngValue]="r">{{ r }}</option>
+                    }
+                  </select>
+                  <span class="pw__hint">
+                    Immediate credits <b>Sales</b>; Deferred credits <b>Deferred Revenue</b>. This drives the credit side of the
+                    order-booking journal entry — and therefore which GL role must resolve in the GL accounts section.
+                  </span>
+                </label>
+
+                <label class="pw__field">
+                  <span class="pw__label">Deferred recognition shape</span>
+                  <select [(ngModel)]="s.Draft.DeferredRecognitionShape" (ngModelChange)="MarkDirty()" [disabled]="!IsDeferred">
+                    <option [ngValue]="null">— none —</option>
+                    @for (sh of DeferredShapeOptions; track sh) {
+                      <option [ngValue]="sh">{{ sh }}</option>
+                    }
+                  </select>
+                  <span class="pw__hint">
+                    @if (IsDeferred) {
+                      SingleDate recognizes 100% on the event date; ServicePeriod spreads over the line's service dates.
+                    } @else {
+                      Only meaningful for a Deferred product — set Revenue recognition to Deferred to choose a shape.
+                    }
+                  </span>
+                </label>
+
+                <label class="pw__field">
+                  <span class="pw__label">Standalone selling price</span>
+                  <input type="number" step="0.0001" [(ngModel)]="s.Draft.StandaloneSellingPrice" (ngModelChange)="MarkDirty()" />
+                  <span class="pw__hint">Used by ASC 606 bundle revenue allocation (fields now, allocation engine later).</span>
+                </label>
+
+                <label class="pw__field">
+                  <span class="pw__label">Taxable</span>
+                  <span class="pw__check">
+                    <input type="checkbox" [(ngModel)]="s.Draft.IsTaxable" (ngModelChange)="MarkDirty()" />
+                    <span class="pw__hint">Whether this product is subject to tax.</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+          }
+        </section>
+
+        <!-- ─── Subscription ──────────────────────────────────────────────── -->
+        <section class="pw__section">
+          <button
+            type="button"
+            class="pw__dt"
+            [attr.aria-expanded]="IsSectionOpen('subscription')"
+            aria-controls="pw-sec-subscription"
+            (click)="ToggleSection('subscription')">
+            <i class="pw__dt-chev fa-solid fa-chevron-right" [class.pw__dt-chev--open]="IsSectionOpen('subscription')" aria-hidden="true"></i>
+            <span class="pw__dt-label"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Subscription</span>
+            @if (SectionIssues('subscription') > 0) {
+              <span class="pw__dt-dot" [title]="SectionIssueTitle('subscription')">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ SectionIssues('subscription') }}
+              </span>
+            }
+            <span class="pw__dt-rule" aria-hidden="true"></span>
+          </button>
+
+          @if (IsSectionOpen('subscription')) {
+            <div class="pw__body" id="pw-sec-subscription">
+              <div class="pw__fields">
+                <label class="pw__field">
+                  <span class="pw__label">Subscription type</span>
+                  <select [(ngModel)]="s.Draft.SubscriptionType" (ngModelChange)="MarkDirty()">
+                    @for (sub of SubscriptionTypeOptions; track sub) {
+                      <option [ngValue]="sub">{{ sub }}</option>
+                    }
+                  </select>
+                  <span class="pw__hint">Drives find-or-extend-or-create of a Subscription when an order is confirmed.</span>
+                </label>
+
+                @if (!HasSubscription) {
+                  <p class="pw__note pw__field--wide">
+                    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    This product creates no subscription, so the billing cycle and term below do not apply. Choose
+                    <b>Standard</b> or <b>Membership</b> above to set them.
+                  </p>
+                }
+
+                <label class="pw__field">
+                  <span class="pw__label">Default billing cycle</span>
+                  <select [(ngModel)]="s.Draft.DefaultBillingCycle" (ngModelChange)="MarkDirty()" [disabled]="!HasSubscription">
+                    <option [ngValue]="null">— none —</option>
+                    @for (b of BillingCycleOptions; track b) {
+                      <option [ngValue]="b">{{ b }}</option>
+                    }
+                  </select>
+                </label>
+
+                <label class="pw__field">
+                  <span class="pw__label">Default term (months)</span>
+                  <input
+                    type="number"
+                    step="1"
+                    min="0"
+                    [(ngModel)]="s.Draft.DefaultSubscriptionTermMonths"
+                    (ngModelChange)="MarkDirty()"
+                    [disabled]="!HasSubscription" />
+                </label>
+              </div>
+            </div>
+          }
+        </section>
+
+        <!-- ─── GL accounts ───────────────────────────────────────────────── -->
+        <section class="pw__section">
+          <button
+            type="button"
+            class="pw__dt"
+            [attr.aria-expanded]="IsSectionOpen('gl')"
+            aria-controls="pw-sec-gl"
+            (click)="ToggleSection('gl')">
+            <i class="pw__dt-chev fa-solid fa-chevron-right" [class.pw__dt-chev--open]="IsSectionOpen('gl')" aria-hidden="true"></i>
+            <span class="pw__dt-label"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i> GL accounts</span>
+            @if (SectionIssues('gl') > 0) {
+              <span class="pw__dt-dot" [title]="SectionIssueTitle('gl')">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ SectionIssues('gl') }}
+              </span>
+            }
+            <span class="pw__dt-rule" aria-hidden="true"></span>
+          </button>
+
+          @if (IsSectionOpen('gl')) {
+            <div class="pw__body" id="pw-sec-gl">
+              @if (IsNew) {
+                <mj-empty-state
+                  Icon="fa-solid fa-diagram-project"
+                  Title="Save the product first"
+                  Message="A GL account link points at a saved product record. Create the product, then link its accounts here."></mj-empty-state>
+              } @else {
+                <p class="pw__note">
+                  <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                  Booking resolves this product's <b>{{ RevenueRole }}</b> account by walking the product → its category chain →
+                  its company. A link here overrides the chain; no link is fine as long as something above resolves.
+                </p>
+
+                <!-- The chain, rendered by accounting's shared preview — never re-rendered here. -->
+                <mj-gl-resolution-preview [Result]="s.Resolution"></mj-gl-resolution-preview>
+
+                @if (s.LinkError) {
+                  <p class="pw__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ s.LinkError }}</p>
+                }
+
+                <div class="pw__gridwrap">
+                  <table class="pw__grid">
+                    <thead>
+                      <tr><th>Role</th><th>Account</th><th>Status</th><th>From</th><th>To</th><th>Comments</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                      @for (l of s.Links; track l.ID) {
+                        <tr>
+                          <td>{{ l.RoleName }}</td>
+                          <td>
+                            <span class="pw__mono">{{ l.AccountCode }}</span> {{ l.AccountName }}
+                            @if (CompanyMismatch(l)) {
+                              <span class="pw__warn" [title]="'This account does not belong to ' + OwningCompanyName">
+                                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                                not associated with {{ OwningCompanyName }}
+                              </span>
+                            }
+                          </td>
+                          <td>{{ l.Status }}</td>
+                          <td>{{ l.StartedAt ? (l.StartedAt | date: 'mediumDate' : 'UTC') : 'open' }}</td>
+                          <td>{{ l.EndedAt ? (l.EndedAt | date: 'mediumDate' : 'UTC') : 'open' }}</td>
+                          <td class="pw__muted">{{ l.Comments || '—' }}</td>
+                          <td class="pw__rowactions">
+                            <button type="button" mjButton variant="outline" (click)="EditLink(l)" [disabled]="IsSavingLink">Edit</button>
+                            <button type="button" mjButton variant="outline" (click)="RemoveLink(l)" [disabled]="IsSavingLink">Remove</button>
+                          </td>
+                        </tr>
+                      } @empty {
+                        <tr>
+                          <td colspan="7" class="pw__muted">
+                            No GL link on this product — it books through its category chain or its company default (see the chain above).
+                          </td>
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+
+                @if (!s.LinkDraft) {
+                  <div class="pw__actions pw__actions--left">
+                    <button type="button" mjButton (click)="AddLink()" [disabled]="IsSavingLink">
+                      <i class="fa-solid fa-plus" aria-hidden="true"></i> Add GL account link
+                    </button>
+                  </div>
+                } @else {
+                  <div class="pw__linkeditor">
+                    <h4 class="pw__linkeditor-title">{{ s.LinkDraft.ID ? 'Edit GL account link' : 'New GL account link' }}</h4>
+                    <div class="pw__fields">
+                      <label class="pw__field">
+                        <span class="pw__label">Role <b class="pw__req">*</b></span>
+                        <select [(ngModel)]="s.LinkDraft.GLAccountRoleID">
+                          <option [ngValue]="null">— select a role —</option>
+                          @for (r of Roles; track r.ID) {
+                            <option [ngValue]="r.ID">{{ r.Label }}</option>
+                          }
+                        </select>
+                      </label>
+
+                      <label class="pw__field">
+                        <span class="pw__label">GL account <b class="pw__req">*</b></span>
+                        <select [(ngModel)]="s.LinkDraft.GLAccountID">
+                          <option [ngValue]="null">— select an account —</option>
+                          @for (a of Accounts; track a.ID) {
+                            <option [ngValue]="a.ID">{{ a.Label }}{{ a.MatchesOwningCompany ? ' ★' : '' }}</option>
+                          }
+                        </select>
+                        @if (s.Draft.OwningCompanyID) {
+                          <span class="pw__hint">★ = an account of {{ OwningCompanyName }}, this product's owning company.</span>
+                        }
+                      </label>
+
+                      <label class="pw__field">
+                        <span class="pw__label">Status</span>
+                        <select [(ngModel)]="s.LinkDraft.Status">
+                          @for (ls of LinkStatusOptions; track ls) {
+                            <option [ngValue]="ls">{{ ls }}</option>
+                          }
+                        </select>
+                        <span class="pw__hint">Only Active links are used by resolution; Pending is entered-but-not-yet-in-force.</span>
+                      </label>
+
+                      <label class="pw__field">
+                        <span class="pw__label">Effective from</span>
+                        <input type="date" [(ngModel)]="s.LinkDraft.StartedAt" />
+                        <span class="pw__hint">Empty = open start.</span>
+                      </label>
+
+                      <label class="pw__field">
+                        <span class="pw__label">Effective to</span>
+                        <input type="date" [(ngModel)]="s.LinkDraft.EndedAt" />
+                        <span class="pw__hint">Empty = open end.</span>
+                      </label>
+
+                      <label class="pw__field pw__field--wide">
+                        <span class="pw__label">Comments</span>
+                        <input type="text" [(ngModel)]="s.LinkDraft.Comments" placeholder="Why this mapping exists / changed" />
+                      </label>
+                    </div>
+
+                    @if (DraftLinkCompanyMismatch) {
+                      <!-- Advisory, never blocking — the company/account rule does not exist yet. -->
+                      <mj-alert
+                        Variant="warning"
+                        Title="Account is not associated with this product's owning company"
+                        [Message]="'The chosen account does not belong to ' + OwningCompanyName + '. This is a warning, not a block — the company/account rules are not defined yet, so the link will save.'"></mj-alert>
+                    }
+
+                    <div class="pw__actions pw__actions--left">
+                      <button type="button" mjButton [disabled]="!CanSaveLink" (click)="SaveLink()">
+                        {{ IsSavingLink ? 'Saving…' : 'Save link' }}
+                      </button>
+                      <button type="button" mjButton variant="outline" (click)="CancelLink()" [disabled]="IsSavingLink">Cancel</button>
+                    </div>
+                  </div>
+                }
+              }
+            </div>
+          }
+        </section>
+
+        <!-- ─── Advanced ──────────────────────────────────────────────────── -->
+        <section class="pw__section">
+          <button
+            type="button"
+            class="pw__dt"
+            [attr.aria-expanded]="IsSectionOpen('advanced')"
+            aria-controls="pw-sec-advanced"
+            (click)="ToggleSection('advanced')">
+            <i class="pw__dt-chev fa-solid fa-chevron-right" [class.pw__dt-chev--open]="IsSectionOpen('advanced')" aria-hidden="true"></i>
+            <span class="pw__dt-label"><i class="fa-solid fa-gears" aria-hidden="true"></i> Advanced</span>
+            <span class="pw__dt-rule" aria-hidden="true"></span>
+          </button>
+
+          @if (IsSectionOpen('advanced')) {
+            <div class="pw__body" id="pw-sec-advanced">
+              <div class="pw__fields">
+                <label class="pw__field pw__field--wide">
+                  <span class="pw__label">Behavior class</span>
+                  <input type="text" [(ngModel)]="s.Draft.BehaviorClass" (ngModelChange)="MarkDirty()" maxlength="100" placeholder="Leave empty to inherit" />
+                  <span class="pw__hint">
+                    The <b>ClassFactory key</b> of this product's ProductBehavior plugin — the registered class name the engine
+                    instantiates for it. Leave it empty and the product falls back to its product type's behavior class, and
+                    then to the default. Only set it to override the behavior for this one product.
+                  </span>
+                </label>
+              </div>
+            </div>
+          }
+        </section>
+      </div>
+    } @else {
+      <mj-empty-state
+        Icon="fa-solid fa-box-open"
+        Title="No product open"
+        Message="Each tab above is a product you are working on. Start one with New product, or use the ▾ next to it to open an existing product."></mj-empty-state>
+    }
   }
 </mj-page-body-interior>
