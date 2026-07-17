@@ -57,11 +57,18 @@
   gap: 6px;
 }
 
+/* THE TABLE SCROLLS — not the page. `position: sticky` on the thead only sticks relative to a
+   SCROLLING ancestor. This region had `overflow: auto` but NO bounded height, so nothing scrolled
+   here: the PAGE scrolled and rows rode up OVER the header. The real height is what makes the
+   sticky header work. Both axes are set explicitly — per the overflow spec a `visible` axis next
+   to a non-`visible` one computes to `auto`, so setting one axis would silently scroll both. */
 .cg__gridwrap {
-  overflow: auto;
+  height: min(68vh, 900px);
+  min-height: 320px;
+  overflow-x: auto;
+  overflow-y: auto;
   border: 1px solid var(--mj-border-default);
   border-radius: 10px;
-  min-height: 0;
 }
 .cg__grid {
   width: 100%;
@@ -80,6 +87,9 @@
   white-space: nowrap;
   position: sticky;
   top: 0;
+  /* Opaque surface token + a z-index: rows scroll UNDER this and would otherwise
+     show through. */
+  z-index: 2;
   background: var(--mj-bg-surface);
 }
 .cg__grid td {

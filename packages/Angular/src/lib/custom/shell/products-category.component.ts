@@ -44,7 +44,7 @@ export class ProductsCategoryComponent extends CategoryShellBase {
         // The mockup's Products rail has ONE unlabelled group — MJLeftNavSection.label is optional
         // (omit it; `null` is a type error).
         items: [
-          { id: 'catalog', label: 'Catalog', icon: 'fa-solid fa-box' },
+          { id: 'catalog', label: 'Product catalog', icon: 'fa-solid fa-box' },
           // The create/edit surface. Catalog answers "what do we sell and will it book?";
           // the workshop is where you change the answer.
           { id: 'workshop', label: 'Product workshop', icon: 'fa-solid fa-screwdriver-wrench' },

@@ -88,7 +88,8 @@
   }
 
   @if (Draft) {
-    <div class="ptt__scrim" role="dialog" aria-modal="true" aria-label="Edit payment terms type">
+    <div class="ptt__scrim" role="dialog" aria-modal="true" aria-label="Edit payment terms type"
+      mjDismissableDialog [mjDismissableDialogDirty]="IsDirty" (Dismiss)="Cancel()">
       <div class="ptt__dialog">
         <h2 class="ptt__dlgtitle">{{ Draft.ID ? 'Edit payment terms type' : 'New payment terms type' }}</h2>
 

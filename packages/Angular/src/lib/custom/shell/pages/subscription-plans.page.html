@@ -90,7 +90,8 @@
   }
 
   @if (Draft) {
-    <div class="sp__scrim" role="dialog" aria-modal="true" aria-label="Edit subscription plan">
+    <div class="sp__scrim" role="dialog" aria-modal="true" aria-label="Edit subscription plan"
+      mjDismissableDialog [mjDismissableDialogDirty]="IsDirty" (Dismiss)="Cancel()">
       <div class="sp__dialog">
         <h2 class="sp__dlgtitle">{{ Draft.ID ? 'Edit subscription plan' : 'New subscription plan' }}</h2>
 

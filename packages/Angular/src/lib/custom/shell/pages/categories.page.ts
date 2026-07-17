@@ -103,7 +103,24 @@ export class CategoriesPageComponent extends BaseAngularComponent implements OnI
   public EditorOpen = false;
   public EditorSaving = false;
   public EditorError: string | null = null;
-  public Draft: CategoryDraft = CategoriesPageComponent.emptyDraft();
+  private draftValue: CategoryDraft = CategoriesPageComponent.emptyDraft();
+  /** JSON of the draft as it was OPENED — `IsDirty` is this vs. the live object. */
+  private draftBaseline = JSON.stringify(CategoriesPageComponent.emptyDraft());
+  /**
+   * The editor's working copy. Assigning one snapshots it, so dirty-tracking cannot be forgotten at
+   * a new call site — `ngModel` mutates this object's fields, it never reassigns the draft.
+   */
+  public get Draft(): CategoryDraft {
+    return this.draftValue;
+  }
+  public set Draft(value: CategoryDraft) {
+    this.draftValue = value;
+    this.draftBaseline = JSON.stringify(value);
+  }
+  /** True when the open editor holds unsaved edits — what gates the dismiss confirm. */
+  public get IsDirty(): boolean {
+    return this.EditorOpen && JSON.stringify(this.draftValue) !== this.draftBaseline;
+  }
   public ParentOptions: ParentOption[] = [];
 
   async ngOnInit(): Promise<void> {

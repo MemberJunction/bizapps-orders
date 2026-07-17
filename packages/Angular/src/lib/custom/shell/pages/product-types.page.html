@@ -88,7 +88,8 @@
   }
 
   @if (Draft) {
-    <div class="pt__scrim" role="dialog" aria-modal="true" aria-label="Edit product type">
+    <div class="pt__scrim" role="dialog" aria-modal="true" aria-label="Edit product type"
+      mjDismissableDialog [mjDismissableDialogDirty]="IsDirty" (Dismiss)="Cancel()">
       <div class="pt__dialog">
         <h2 class="pt__dlgtitle">{{ Draft.ID ? 'Edit product type' : 'New product type' }}</h2>
 

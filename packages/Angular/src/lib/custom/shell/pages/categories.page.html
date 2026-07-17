@@ -131,7 +131,8 @@
   }
 
   @if (EditorOpen) {
-    <div class="cg__editor" role="dialog" aria-modal="true" aria-label="Category editor">
+    <div class="cg__editor" role="dialog" aria-modal="true" aria-label="Category editor"
+      mjDismissableDialog [mjDismissableDialogDirty]="IsDirty" (Dismiss)="CancelEditor()">
       <div class="cg__editor-card">
         <h3 class="cg__editor-title">{{ EditorTitle }}</h3>
 

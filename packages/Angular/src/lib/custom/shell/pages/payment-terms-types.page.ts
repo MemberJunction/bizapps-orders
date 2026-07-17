@@ -74,7 +74,24 @@ export class PaymentTermsTypesPageComponent extends BaseAngularComponent impleme
   public Filter: ActiveFilter = 'all';
   public Sort: SortKey = 'name';
 
-  public Draft: PaymentTermsTypeDraft | null = null;
+  private draftValue: PaymentTermsTypeDraft | null = null;
+  /** JSON of the draft as it was OPENED — `IsDirty` is this vs. the live object. */
+  private draftBaseline = '';
+  /**
+   * The editor's working copy. Assigning one snapshots it, so dirty-tracking cannot be forgotten at
+   * a new call site — `ngModel` mutates this object's fields, it never reassigns the draft.
+   */
+  public get Draft(): PaymentTermsTypeDraft | null {
+    return this.draftValue;
+  }
+  public set Draft(value: PaymentTermsTypeDraft | null) {
+    this.draftValue = value;
+    this.draftBaseline = value === null ? '' : JSON.stringify(value);
+  }
+  /** True when the open editor holds unsaved edits — what gates the dismiss confirm. */
+  public get IsDirty(): boolean {
+    return this.draftValue !== null && JSON.stringify(this.draftValue) !== this.draftBaseline;
+  }
   public IsSaving = false;
   public SaveError: string | null = null;
 

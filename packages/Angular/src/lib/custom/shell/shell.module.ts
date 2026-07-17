@@ -29,6 +29,7 @@ import {
   WorkspaceTabStripComponent,
   CustomerARBaseComponent,
   GlResolutionPreviewComponent,
+  DismissableDialogDirective,
 } from '@mj-biz-apps/accounting-ng';
 
 // The categories HOST these existing dashboards so swapping the app nav to the §13 shape costs no
@@ -139,6 +140,8 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
     MjSlidePanelComponent,
     MJAlertComponent,
     CompanyScopeChipComponent,
+    // Backdrop-click + Escape dismissal (confirm-on-dirty) for the roster editors' scrims.
+    DismissableDialogDirective,
     ShellPagePendingComponent,
     WorkspaceTabStripComponent,
     CustomerARBaseComponent, // accounting-homed A/R numbers (§13.4)
