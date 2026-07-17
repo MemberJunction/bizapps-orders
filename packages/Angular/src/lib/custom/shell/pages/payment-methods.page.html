@@ -2,9 +2,6 @@
   <div meta>
     <mj-stat-badge [Label]="Rows.length + ' stored'" Icon="fa-regular fa-credit-card" Variant="default"></mj-stat-badge>
   </div>
-  <div actions>
-    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
-  </div>
 </mj-page-header-interior>
 
 <mj-page-body-interior>
@@ -12,9 +9,10 @@
     <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
     <div>
       <b>Read-only — adding a method is not built.</b>
-      Storing a card requires the Stripe integration (F.4), which is not live, so there is no vault
-      write path to expose. Card numbers are never entered or displayed here: the system stores only
-      the brand, type, expiry and the provider's own token.
+      This is the BO-D46 token vault: it holds Stripe's token plus brand / last-4 / expiry — never
+      the card number, which stays with Stripe. It exists so subscriptions and repeat charges can
+      bill on file without re-collecting. Saving a method requires the Stripe integration (F.4),
+      which is not live, so there is no write path to expose yet.
     </div>
   </div>
 
@@ -31,11 +29,11 @@
   } @else {
     <div class="pm__gridwrap">
       <table class="pm__grid">
-        <thead><tr><th>Brand</th><th>Type</th><th>Expiry</th><th>Default</th><th>Active</th></tr></thead>
+        <thead><tr><th>Instrument</th><th>Type</th><th>Expiry</th><th>Default</th><th>Active</th></tr></thead>
         <tbody>
           @for (r of Rows; track r.ID) {
             <tr>
-              <td>{{ r.Brand || '—' }}</td>
+              <td>{{ Masked(r) }}</td>
               <td>{{ r.MethodType || '—' }}</td>
               <td>
                 {{ Expiry(r) }}

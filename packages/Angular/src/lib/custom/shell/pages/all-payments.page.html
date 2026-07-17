@@ -2,9 +2,6 @@
   <div meta>
     <mj-stat-badge [Label]="ScopeLabel" Icon="fa-solid fa-building" Variant="default"></mj-stat-badge>
   </div>
-  <div actions>
-    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
-  </div>
   <div toolbar>
     <input class="mj-input ap__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search payment №, reference…" />
     <select class="mj-input" [(ngModel)]="TimeWindow" (ngModelChange)="OnFilterChanged()">

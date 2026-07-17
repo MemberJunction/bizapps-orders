@@ -2,9 +2,6 @@
   <div meta>
     <mj-stat-badge [Label]="TotalLabel" Icon="fa-solid fa-layer-group" Variant="info"></mj-stat-badge>
   </div>
-  <div actions>
-    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
-  </div>
   <div toolbar>
     <select class="mj-input" [(ngModel)]="TimeWindow" (ngModelChange)="OnFilterChanged()">
       @for (w of TimeWindows; track w.Id) {

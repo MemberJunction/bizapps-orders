@@ -12,9 +12,6 @@
     }
     <mj-stat-badge [Label]="Rows.length + ' products'" Icon="fa-solid fa-box" Variant="default"></mj-stat-badge>
   </div>
-  <div actions>
-    <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
-  </div>
   <div toolbar>
     <input class="mj-input cat__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search name or SKU…" />
     <label class="cat__toggle">

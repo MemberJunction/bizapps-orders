@@ -41,3 +41,31 @@
 :host ::ng-deep mj-page-header .mj-page-header-title {
   font-size: var(--mj-text-lg);
 }
+
+/* ── Header controls: UNIFORM VERTICAL SIZING ────────────────────────────────
+   Marcelo: the refresh button and the scope chip were different heights. "We need to pick one
+   sizing... the padding above and below those elements must be the same. Uniform vertical sizing,
+   uniform padding above and below. The horizontal doesn't matter, but the vertical sizing does."
+
+   So: one height for every control in the header bar, applied at the bar level rather than per
+   control — a per-control fix would drift again the next time one is added. Horizontal padding is
+   deliberately left to each control (a chip wants more than an icon button). */
+:host ::ng-deep mj-page-header .mj-page-header__actions > *,
+:host ::ng-deep mj-page-header [actions] > * {
+  --mj-shell-control-h: 30px;
+  height: var(--mj-shell-control-h);
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+}
+:host ::ng-deep mj-page-header [actions] mj-refresh-button button,
+:host ::ng-deep mj-page-header [actions] .mj-btn,
+:host ::ng-deep mj-page-header [actions] mj-company-scope-chip > *,
+:host ::ng-deep mj-page-header [actions] mj-stat-badge > * {
+  height: 100%;
+  padding-top: 0;
+  padding-bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+}

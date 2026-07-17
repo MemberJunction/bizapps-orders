@@ -2,9 +2,6 @@
      Both the Orders and the Payments dashboard render this: the stat strip is driven by `Stats`, the
      cards by `Cards`, so the two pages differ only in what they put in those arrays. -->
 <mj-page-header-interior>
-  <div actions>
-    <mj-refresh-button [Loading]="IsLoading" (Clicked)="Refresh()"></mj-refresh-button>
-  </div>
 </mj-page-header-interior>
 
 <!-- Scrollable body — <mj-page-body-interior> owns the gutters that keep the stat cards off the
