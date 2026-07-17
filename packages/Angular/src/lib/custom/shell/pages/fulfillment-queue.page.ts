@@ -1,6 +1,7 @@
-import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit } from '@angular/core';
+import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit, OnDestroy } from '@angular/core';
 import { Metadata, RunView } from '@memberjunction/core';
 import { BaseAngularComponent } from '@memberjunction/ng-base-types';
+import { PageRefreshService } from '@mj-biz-apps/accounting-ng';
 import { OrdersEngineBase } from '@mj-biz-apps/orders-engine-base';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 
@@ -42,8 +43,11 @@ export interface FulfillmentOrder {
   styleUrls: ['./fulfillment-queue.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class FulfillmentQueuePageComponent extends BaseAngularComponent implements OnInit {
+export class FulfillmentQueuePageComponent extends BaseAngularComponent implements OnInit, OnDestroy {
   private cdr = inject(ChangeDetectorRef);
+  /** The shell header's Refresh reaches this page only while it is the mounted one. */
+  private pageRefresh = inject(PageRefreshService);
+  private refreshSub: { unsubscribe: () => void } | null = null;
 
   public Orders: FulfillmentOrder[] = [];
   public IsLoading = false;
@@ -53,9 +57,14 @@ export class FulfillmentQueuePageComponent extends BaseAngularComponent implemen
   public ActionIsError = false;
 
   async ngOnInit(): Promise<void> {
+    this.refreshSub = this.pageRefresh.OnRefresh(() => this.Refresh());
     await this.load();
   }
 
+  ngOnDestroy(): void {
+    // Unsubscribing is what keeps the header's Refresh page-aware: a destroyed page stops counting.
+    this.refreshSub?.unsubscribe();
+  }
   public Refresh(): void {
     void this.load();
   }

@@ -3,7 +3,7 @@ import { RegisterClass } from '@memberjunction/global';
 import { BaseDashboard } from '@memberjunction/ng-shared';
 import { ResourceData } from '@memberjunction/core-entities';
 import { MJLeftNavSection } from '@memberjunction/ng-ui-components';
-import { CategoryShellBase } from '@mj-biz-apps/accounting-ng';
+import { CategoryShellBase, PageRefreshService } from '@mj-biz-apps/accounting-ng';
 
 /** Page ids for this category's rail. Local to the shell — not routes. */
 export type OrdersReportsPageId = 'customer-ar' | 'overdue';
@@ -23,10 +23,16 @@ export type OrdersReportsPageId = 'customer-ar' | 'overdue';
   templateUrl: './reports-category.component.html',
   styleUrls: ['./category-shell.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // Per-shell, NOT root: Explorer keeps tabs alive, so two open categories would
+  // otherwise refresh each other's page.
+  providers: [PageRefreshService],
 })
 @RegisterClass(BaseDashboard, 'OrdersReportsCategoryDashboard')
 export class OrdersReportsCategoryComponent extends CategoryShellBase {
   public CategoryTitle = 'Reports';
+  public override get CategoryIcon(): string {
+    return 'fa-solid fa-chart-column';
+  }
   protected get DefaultPageId(): string {
     return 'customer-ar';
   }

@@ -4,7 +4,7 @@ import { BaseDashboard } from '@memberjunction/ng-shared';
 import { ResourceData } from '@memberjunction/core-entities';
 import { type IRemoteOperationProvider } from '@memberjunction/core';
 import { MJLeftNavSection } from '@memberjunction/ng-ui-components';
-import { CategoryShellBase } from '@mj-biz-apps/accounting-ng';
+import { CategoryShellBase, PageRefreshService, type ShellHeaderStat } from '@mj-biz-apps/accounting-ng';
 import { OverdueWorklistClient } from './pages/overdue-worklist.client';
 
 /** Page ids for this category's rail. Local to the shell — not routes. */
@@ -35,16 +35,38 @@ export type OrdersPageId =
   templateUrl: './orders-category.component.html',
   styleUrls: ['./category-shell.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // Per-shell, NOT root: Explorer keeps tabs alive, so two open categories would
+  // otherwise refresh each other's page.
+  providers: [PageRefreshService],
 })
 @RegisterClass(BaseDashboard, 'OrdersCategoryDashboard')
 export class OrdersCategoryComponent extends CategoryShellBase {
   public CategoryTitle = 'Orders';
+  public override get CategoryIcon(): string {
+    return 'fa-solid fa-cart-shopping';
+  }
   protected get DefaultPageId(): string {
     return 'all-orders';
   }
 
   /** Rail badge: how many orders are overdue right now. */
   public OverdueCount = 0;
+
+  /**
+   * The category's through-line. Overdue is the one number that matters on every orders page, and
+   * it comes from the SAME op the rail badge calls — so the header, the badge and the worklist
+   * cannot disagree.
+   */
+  public override get HeaderStats(): ShellHeaderStat[] {
+    return this.OverdueCount > 0
+      ? [{
+          Label: `${this.OverdueCount} overdue`,
+          Icon: 'fa-solid fa-triangle-exclamation',
+          Variant: 'error',
+          Tooltip: 'Booked orders past their due date with an open balance — computed live, not a stored flag.',
+        }]
+      : [{ Label: 'Nothing overdue', Icon: 'fa-solid fa-check', Variant: 'success', Tooltip: 'No booked order is past due with an open balance.' }];
+  }
 
   public get RailSections(): MJLeftNavSection[] {
     return [

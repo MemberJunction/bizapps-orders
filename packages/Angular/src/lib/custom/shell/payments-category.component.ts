@@ -3,7 +3,7 @@ import { RegisterClass } from '@memberjunction/global';
 import { BaseDashboard } from '@memberjunction/ng-shared';
 import { ResourceData } from '@memberjunction/core-entities';
 import { MJLeftNavSection } from '@memberjunction/ng-ui-components';
-import { CategoryShellBase } from '@mj-biz-apps/accounting-ng';
+import { CategoryShellBase, PageRefreshService } from '@mj-biz-apps/accounting-ng';
 
 /** Page ids for this category's rail. Local to the shell — not routes. */
 export type PaymentsPageId = 'dashboard' | 'all-payments' | 'entry' | 'refunds' | 'methods';
@@ -22,10 +22,16 @@ export type PaymentsPageId = 'dashboard' | 'all-payments' | 'entry' | 'refunds' 
   templateUrl: './payments-category.component.html',
   styleUrls: ['./category-shell.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // Per-shell, NOT root: Explorer keeps tabs alive, so two open categories would
+  // otherwise refresh each other's page.
+  providers: [PageRefreshService],
 })
 @RegisterClass(BaseDashboard, 'PaymentsCategoryDashboard')
 export class PaymentsCategoryComponent extends CategoryShellBase {
   public CategoryTitle = 'Payments';
+  public override get CategoryIcon(): string {
+    return 'fa-solid fa-money-check-dollar';
+  }
   protected get DefaultPageId(): string {
     return 'all-payments';
   }

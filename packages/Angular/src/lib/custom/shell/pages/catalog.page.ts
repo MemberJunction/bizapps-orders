@@ -1,5 +1,6 @@
-import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit } from '@angular/core';
+import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit, OnDestroy } from '@angular/core';
 import { BaseAngularComponent } from '@memberjunction/ng-base-types';
+import { PageRefreshService } from '@mj-biz-apps/accounting-ng';
 import { UUIDsEqual } from '@memberjunction/global';
 import { MJStatBadgeVariant } from '@memberjunction/ng-ui-components';
 import { CompanyScopeService, CrossAppLinkService, type GlResolutionResult, type GlResolutionStep } from '@mj-biz-apps/accounting-ng';
@@ -52,8 +53,11 @@ export interface CatalogRow {
   styleUrls: ['./catalog.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class CatalogPageComponent extends BaseAngularComponent implements OnInit {
+export class CatalogPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {
   private cdr = inject(ChangeDetectorRef);
+  /** The shell header's Refresh reaches this page only while it is the mounted one. */
+  private pageRefresh = inject(PageRefreshService);
+  private refreshSub: { unsubscribe: () => void } | null = null;
   private links = inject(CrossAppLinkService);
   public Scope = inject(CompanyScopeService);
 
@@ -69,6 +73,7 @@ export class CatalogPageComponent extends BaseAngularComponent implements OnInit
   public Preview: GlResolutionResult | null = null;
 
   async ngOnInit(): Promise<void> {
+    this.refreshSub = this.pageRefresh.OnRefresh(() => this.Refresh());
     await this.load();
   }
 
@@ -110,6 +115,10 @@ export class CatalogPageComponent extends BaseAngularComponent implements OnInit
     };
   }
 
+  ngOnDestroy(): void {
+    // Unsubscribing is what keeps the header's Refresh page-aware: a destroyed page stops counting.
+    this.refreshSub?.unsubscribe();
+  }
   public Refresh(): void {
     void this.load();
   }

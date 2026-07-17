@@ -20,3 +20,24 @@
     flex-direction: column;
   }
 }
+
+/* ── Header density (LOCAL OVERRIDE — temporary) ──────────────────────────────
+   Marcelo: the stock header "needs to be smaller... it's just too thick. It's taking up a lot of
+   space and it's not doing much" — the user already knows the section (top nav) and the page (rail),
+   so the title earns little vertical space.
+
+   MJ's <mj-page-header> has no density input (only Title/Icon/Subtitle). It DOES already compact
+   itself at <=768px — tighter padding, smaller icon — so this simply applies that same treatment at
+   every width. Requested upstream as a `Dense` input (MJ-UPSTREAM.md); DELETE this block when it
+   lands, rather than letting a local override of shared chrome become permanent. */
+:host ::ng-deep mj-page-header .mj-page-header-row--primary {
+  padding-top: var(--mj-space-2);
+  padding-bottom: var(--mj-space-2);
+}
+:host ::ng-deep mj-page-header .mj-page-header-icon {
+  height: 28px;
+  width: 28px;
+}
+:host ::ng-deep mj-page-header .mj-page-header-title {
+  font-size: var(--mj-text-lg);
+}

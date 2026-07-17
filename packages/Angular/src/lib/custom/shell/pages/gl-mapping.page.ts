@@ -1,5 +1,6 @@
-import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit } from '@angular/core';
+import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit, OnDestroy } from '@angular/core';
 import { BaseAngularComponent } from '@memberjunction/ng-base-types';
+import { PageRefreshService } from '@mj-biz-apps/accounting-ng';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
 import { OrdersEngineBase } from '@mj-biz-apps/orders-engine-base';
 
@@ -31,8 +32,11 @@ export interface MappingRow {
   styleUrls: ['./gl-mapping.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class GLMappingPageComponent extends BaseAngularComponent implements OnInit {
+export class GLMappingPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {
   private cdr = inject(ChangeDetectorRef);
+  /** The shell header's Refresh reaches this page only while it is the mounted one. */
+  private pageRefresh = inject(PageRefreshService);
+  private refreshSub: { unsubscribe: () => void } | null = null;
 
   public Rows: MappingRow[] = [];
   public IsLoading = false;
@@ -40,9 +44,14 @@ export class GLMappingPageComponent extends BaseAngularComponent implements OnIn
   public ShowUnresolvedOnly = false;
 
   async ngOnInit(): Promise<void> {
+    this.refreshSub = this.pageRefresh.OnRefresh(() => this.Refresh());
     await this.load();
   }
 
+  ngOnDestroy(): void {
+    // Unsubscribing is what keeps the header's Refresh page-aware: a destroyed page stops counting.
+    this.refreshSub?.unsubscribe();
+  }
   public Refresh(): void {
     void this.load();
   }

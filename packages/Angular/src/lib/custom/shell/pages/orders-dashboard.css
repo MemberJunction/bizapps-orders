@@ -10,3 +10,74 @@
 .dash-stat--warn i { color: var(--mj-status-warning); }
 .dash-stat__value { font-size: 26px; font-weight: 700; color: var(--mj-text-primary); font-variant-numeric: tabular-nums; }
 .dash-stat__label { font-size: 12px; color: var(--mj-text-muted); }
+
+/* ---- List cards -------------------------------------------------------------------------------
+   Each list gets its own card: a small header, then the rows within it. Auto-fit columns so the
+   pair sits side by side on a wide viewport and stacks on a narrow one without a media query.
+   NOTE: no `flex: 1` anywhere below — the parent <mj-page-body-interior> is display:block, and a
+   flex child of a block parent is ignored (the card would collapse to zero height). */
+.dash-cards {
+  display: grid; gap: 14px; margin-top: 2px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+.dash-card {
+  border: 1px solid var(--mj-border-default); border-radius: 10px;
+  background: var(--mj-bg-surface); overflow: hidden;
+}
+.dash-card__head {
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+  border-bottom: 1px solid var(--mj-border-subtle); background: var(--mj-bg-surface-card);
+}
+.dash-card__head-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0;
+  background: color-mix(in srgb, var(--mj-brand-primary) 14%, var(--mj-bg-surface));
+}
+.dash-card__head-icon i { font-size: 12px; color: var(--mj-brand-primary); }
+.dash-card__title { margin: 0; font-size: 13px; font-weight: 600; color: var(--mj-text-primary); }
+.dash-card__count {
+  margin-left: auto; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+  color: var(--mj-text-secondary); background: var(--mj-bg-surface-sunken);
+}
+.dash-card__body { padding: 6px; }
+.dash-card__empty {
+  margin: 0; padding: 18px 10px; text-align: center;
+  font-size: 12px; color: var(--mj-text-muted);
+}
+.dash-card__empty i { margin-right: 6px; color: var(--mj-text-disabled); }
+
+.dash-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 8px; border-radius: 8px;
+}
+.dash-row + .dash-row { border-top: 1px solid var(--mj-border-subtle); border-radius: 0; }
+.dash-row__icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
+  background: color-mix(in srgb, var(--mj-brand-primary) 12%, var(--mj-bg-surface));
+}
+.dash-row__icon i { font-size: 11px; color: var(--mj-brand-primary); }
+.dash-row__text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.dash-row__primary {
+  font-size: 13px; font-weight: 600; color: var(--mj-text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dash-row__secondary {
+  font-size: 11px; color: var(--mj-text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dash-row__right {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 1px;
+  margin-left: auto; padding-left: 8px; flex-shrink: 0;
+}
+.dash-row__value {
+  font-size: 13px; font-weight: 600; color: var(--mj-text-primary); font-variant-numeric: tabular-nums;
+}
+.dash-row__date { font-size: 11px; color: var(--mj-text-muted); }
+
+/* Overdue rows: the same warning treatment the stat cards use, so "attention" reads identically
+   wherever it appears on the page. */
+.dash-row--warn { background: color-mix(in srgb, var(--mj-status-warning) 7%, transparent); }
+.dash-row--warn .dash-row__icon { background: color-mix(in srgb, var(--mj-status-warning) 16%, var(--mj-bg-surface)); }
+.dash-row--warn .dash-row__icon i { color: var(--mj-status-warning); }
+.dash-row--warn .dash-row__secondary { color: var(--mj-status-warning-text); }

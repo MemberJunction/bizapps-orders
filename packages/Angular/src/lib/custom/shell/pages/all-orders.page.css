@@ -21,3 +21,34 @@
   white-space: nowrap;
   cursor: pointer;
 }
+
+/* Filters: ONE line — drop-downs together, search to their right. `flex-wrap: wrap` is kept only so
+   a narrow viewport degrades instead of clipping; at laptop width and up this is a single row. */
+.ao__filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.ao__sel {
+  min-width: 150px;
+  flex: 0 0 auto;
+}
+/* Search sits last and takes the slack, so the drop-downs stay tight together on the left. */
+.ao__search {
+  flex: 1 1 220px;
+  min-width: 200px;
+  margin-left: auto;
+}
+
+/* The grid FILLS the body rather than floating scrunched at the bottom.
+   height (not flex): the parent <mj-page-body-interior> is display:block, so a flex child is a
+   no-op and collapses to zero — the bug that blanked All journal entries. 100% resolves against
+   body-interior's flex-derived height. */
+.ao__grid {
+  height: 100%;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+}

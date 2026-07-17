@@ -11,33 +11,38 @@
   <div actions>
     <mj-refresh-button (Clicked)="Refresh()"></mj-refresh-button>
   </div>
+  <!-- ONE line: the drop-downs together, search to their right (Marcelo). Filters are interactive
+       but NOT while you are reading the table, so they must not cost vertical space. -->
   <div toolbar>
-    <input class="mj-input ao__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search order №, description, external doc №…" />
-    <select class="mj-input" [(ngModel)]="TimeWindow" (ngModelChange)="OnFilterChanged()">
-      @for (w of TimeWindows; track w.Id) {
-        <option [ngValue]="w.Id">{{ w.Label }}</option>
-      }
-    </select>
-    <select class="mj-input" [(ngModel)]="StatusFilter" (ngModelChange)="OnFilterChanged()">
-      <option value="All">All statuses</option>
-      @for (s of Statuses; track s) {
-        <option [ngValue]="s">{{ s }}</option>
-      }
-    </select>
-    <select class="mj-input" [(ngModel)]="PaymentFilter" (ngModelChange)="OnFilterChanged()">
-      <option value="All">All payment states</option>
-      @for (p of PaymentStatuses; track p) {
-        <option [ngValue]="p">{{ p }}</option>
-      }
-    </select>
-    <label class="ao__toggle">
-      <input type="checkbox" [(ngModel)]="OnlyMine" (ngModelChange)="OnFilterChanged()" />
-      Only mine
-    </label>
+    <div class="ao__filters">
+      <select class="mj-input ao__sel" [(ngModel)]="TimeWindow" (ngModelChange)="OnFilterChanged()" aria-label="Time window">
+        @for (w of TimeWindows; track w.Id) {
+          <option [ngValue]="w.Id">{{ w.Label }}</option>
+        }
+      </select>
+      <select class="mj-input ao__sel" [(ngModel)]="StatusFilter" (ngModelChange)="OnFilterChanged()" aria-label="Status">
+        <option value="All">All statuses</option>
+        @for (s of Statuses; track s) {
+          <option [ngValue]="s">{{ s }}</option>
+        }
+      </select>
+      <select class="mj-input ao__sel" [(ngModel)]="PaymentFilter" (ngModelChange)="OnFilterChanged()" aria-label="Payment state">
+        <option value="All">All payment states</option>
+        @for (p of PaymentStatuses; track p) {
+          <option [ngValue]="p">{{ p }}</option>
+        }
+      </select>
+      <label class="ao__toggle">
+        <input type="checkbox" [(ngModel)]="OnlyMine" (ngModelChange)="OnFilterChanged()" />
+        Only mine
+      </label>
+      <input class="mj-input ao__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search order №, description, external doc №…" />
+    </div>
   </div>
 </mj-page-header-interior>
 
 <mj-page-body-interior>
+  <div class="ao__grid">
   <!-- PaginationMode="client" deliberately: MJ's infinite mode gates its empty state on
        `rowData.length`, which infinite never populates, so a populated grid renders "No data".
        Logged upstream (MJ-UPSTREAM.md); client mode is the workaround both apps use. -->
@@ -56,6 +61,7 @@
     Height="auto"
     (AfterRowClick)="OnRowClicked($event.rowKey)">
   </mj-entity-data-grid>
+  </div>
 </mj-page-body-interior>
 
 <mj-order-detail-panel

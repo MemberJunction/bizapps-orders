@@ -1,15 +1,20 @@
-<!-- Shared template for the category dashboards (§8.6 step 6). Cheap stats only — §0. -->
+<!-- Shared template for the category dashboards (§8.6 step 6). Cheap stats + small lists only — §0.
+     Both the Orders and the Payments dashboard render this: the stat strip is driven by `Stats`, the
+     cards by `Cards`, so the two pages differ only in what they put in those arrays. -->
 <mj-page-header-interior>
   <div actions>
     <mj-refresh-button [Loading]="IsLoading" (Clicked)="Refresh()"></mj-refresh-button>
   </div>
 </mj-page-header-interior>
 
-@if (LoadError) {
-  <mj-alert Variant="error" [Message]="LoadError"></mj-alert>
-}
+<!-- Scrollable body — <mj-page-body-interior> owns the gutters that keep the stat cards off the
+     nav rail. It is display:block, so children size with height, never flex. -->
+<mj-page-body-interior>
+  @if (LoadError) {
+    <mj-alert Variant="error" [Message]="LoadError"></mj-alert>
+  }
 
-<div class="dash-stats">
+  <div class="dash-stats">
   @for (s of Stats; track s.Id) {
     <div class="dash-stat" [class.dash-stat--warn]="s.Warn" [title]="s.Tooltip">
       <i [class]="s.Icon" aria-hidden="true"></i>
@@ -23,6 +28,51 @@
   }
 </div>
 
-@if (IsLoading) {
-  <mj-loading text="Counting…"></mj-loading>
-}
+  <!-- The list cards. A GRID, not a flex column: this sits inside <mj-page-body-interior>, which is
+       display:block — a `flex: 1` child of a block parent is a no-op and collapses the card to zero
+       height. The grid sizes from its own content, which is what we want here anyway. -->
+  @if (Cards.length) {
+    <div class="dash-cards">
+      @for (card of Cards; track card.Id) {
+        <section class="dash-card">
+          <header class="dash-card__head">
+            <span class="dash-card__head-icon"><i [class]="card.Icon" aria-hidden="true"></i></span>
+            <h3 class="dash-card__title">{{ card.Title }}</h3>
+            <span class="dash-card__count">{{ card.Count }}</span>
+          </header>
+
+          <div class="dash-card__body">
+            @for (item of card.Items; track item.Id) {
+              <div class="dash-row" [class.dash-row--warn]="item.Warn">
+                <span class="dash-row__icon"><i [class]="item.Icon" aria-hidden="true"></i></span>
+                <span class="dash-row__text">
+                  <span class="dash-row__primary">{{ item.Primary }}</span>
+                  <span class="dash-row__secondary">{{ item.Secondary }}</span>
+                </span>
+                <span class="dash-row__right">
+                  @if (item.Value !== null) {
+                    <span class="dash-row__value">{{ item.Value }}</span>
+                  }
+                  @if (item.Date) {
+                    <!-- DATE column — the 'UTC' argument is required, else it shifts a day west. -->
+                    <span class="dash-row__date">{{ item.Date | date: 'mediumDate' : 'UTC' }}</span>
+                  }
+                </span>
+              </div>
+            } @empty {
+              @if (!IsLoading) {
+                <p class="dash-card__empty">
+                  <i [class]="card.EmptyIcon" aria-hidden="true"></i> {{ card.EmptyMessage }}
+                </p>
+              }
+            }
+          </div>
+        </section>
+      }
+    </div>
+  }
+
+  @if (IsLoading) {
+    <mj-loading text="Counting…"></mj-loading>
+  }
+</mj-page-body-interior>

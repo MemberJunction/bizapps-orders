@@ -1,14 +1,32 @@
 <mj-page-layout>
-  <!-- Page header — FULL WIDTH, ABOVE the rail (Marcelo 2026-07-16). This is MJ's canonical shell
-       shape (admin-container) and it is what makes the header stay put while the body scrolls:
-       mj-page-layout is overflow:hidden, the header is a natural-height sibling, and the body owns
-       overflow-y:auto.
+  <!-- FULL WIDTH, ABOVE the rail — MJ's canonical shell shape (admin-container), and what makes the
+       header stay put while the body scrolls: mj-page-layout is overflow:hidden, the header is a
+       natural-height sibling, and the body owns overflow-y:auto. Deliberately TIGHT: one line, no
+       subtitle, no stacking. -->
+  <!-- Header = the CATEGORY (Marcelo 2026-07-16): the sub-page name is already the rail's active
+       item inches away, so restating it bought nothing; the category is the context that ISN'T
+       otherwise on screen. That frees the bar to carry things worth the space: the company scope,
+       category-level composite stats that stay meaningful across every sub-page, and one refresh in
+       a reliable place instead of repeated in every body.
 
-       Title is the ACTIVE PAGE, not the category — the category is already the active item in
-       Explorer's top nav, so repeating it here would waste the line. Deliberately TIGHT: no
-       Subtitle, no [meta], no stacking — one line, per "that header is meant to say, here's the
-       page you're on". Per-page actions/filters live in the interior card below. -->
-  <mj-page-header [Title]="ActivePageLabel" [Icon]="ActivePageIcon"></mj-page-header>
+       Chips + scope ride [actions] rather than [meta] because [meta] renders BELOW the identity —
+       a second line, which is exactly the wasted space this header exists to avoid. Requested
+       upstream as an inline-meta placement (MJ-UPSTREAM.md); they move to [meta] when it lands. -->
+  <mj-page-header [Title]="CategoryTitle" [Icon]="CategoryIcon">
+    <div actions>
+      <mj-company-scope-chip></mj-company-scope-chip>
+      @for (s of HeaderStats; track s.Label) {
+        <mj-stat-badge [Label]="s.Label" [Icon]="s.Icon ?? ''" [Variant]="s.Variant ?? 'default'" [title]="s.Tooltip ?? ''"></mj-stat-badge>
+      }
+      <!-- Refreshes ONLY the page in the body — not the rail, not other pages in this category.
+           Exactly one page is instantiated by the @switch below, so it is the only subscriber
+           (see PageRefreshService). Hidden when the mounted page has nothing to reload, rather
+           than offering a button that does nothing. -->
+      @if (CanRefreshActivePage) {
+        <mj-refresh-button (Clicked)="RefreshActivePage()"></mj-refresh-button>
+      }
+    </div>
+  </mj-page-header>
 
   <mj-page-body [Flex]="true" [Padding]="false" Direction="row">
     <mj-left-nav
@@ -16,9 +34,6 @@
       [ActiveId]="ActivePageId"
       [MobileTitle]="CategoryTitle"
       (ItemClicked)="OnRailItemClicked($event)">
-      <div header>
-        <mj-company-scope-chip></mj-company-scope-chip>
-      </div>
     </mj-left-nav>
 
     <mj-left-nav-content>

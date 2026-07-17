@@ -1,6 +1,7 @@
-import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit } from '@angular/core';
+import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit, OnDestroy } from '@angular/core';
 import { RunView } from '@memberjunction/core';
 import { BaseAngularComponent } from '@memberjunction/ng-base-types';
+import { PageRefreshService } from '@mj-biz-apps/accounting-ng';
 import { TIME_WINDOWS, type TimeWindowId, timeWindowFilter, andFilters } from '@mj-biz-apps/accounting-ng';
 import type { mjBizAppsOrdersOrderEntity } from '@mj-biz-apps/orders-entities';
 
@@ -54,8 +55,11 @@ export interface BoardColumn {
   styleUrls: ['./status-board.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class StatusBoardPageComponent extends BaseAngularComponent implements OnInit {
+export class StatusBoardPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {
   private cdr = inject(ChangeDetectorRef);
+  /** The shell header's Refresh reaches this page only while it is the mounted one. */
+  private pageRefresh = inject(PageRefreshService);
+  private refreshSub: { unsubscribe: () => void } | null = null;
 
   public readonly TimeWindows = TIME_WINDOWS;
   public TimeWindow: TimeWindowId = 'last30';
@@ -75,11 +79,16 @@ export class StatusBoardPageComponent extends BaseAngularComponent implements On
   };
 
   ngOnInit(): void {
+    this.refreshSub = this.pageRefresh.OnRefresh(() => this.Refresh());
     void this.load();
   }
 
   public OnFilterChanged(): void {
     void this.load();
+  }
+  ngOnDestroy(): void {
+    // Unsubscribing is what keeps the header's Refresh page-aware: a destroyed page stops counting.
+    this.refreshSub?.unsubscribe();
   }
   public Refresh(): void {
     void this.load();
