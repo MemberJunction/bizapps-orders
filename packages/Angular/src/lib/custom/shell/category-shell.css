@@ -52,17 +52,22 @@
    deliberately left to each control (a chip wants more than an icon button). */
 :host ::ng-deep mj-page-header .mj-page-header__actions > *,
 :host ::ng-deep mj-page-header [actions] > * {
-  --mj-shell-control-h: 30px;
-  height: var(--mj-shell-control-h);
+  --mj-shell-control-h: 32px; /* = MJ's own .mj-btn--sm min-height. Match MJ; don't fork it. */
+  min-height: var(--mj-shell-control-h);
   display: inline-flex;
   align-items: center;
   box-sizing: border-box;
 }
+/* NOTE the .mj-btn selector is deliberately ABSENT here. mjButton owns the button's
+   appearance (there is a CI gate on exactly this), and overriding it forks MJ's styling
+   silently: MJ's own .mj-btn--sm is min-height:32px AND grows to 44px under a small-screen
+   media query — the WCAG touch-target minimum. Forcing height on it would squash that back
+   down on a phone, quietly undoing MJ's accessibility accommodation for the sake of 2px.
+   So the button is left native at MJ's `sm` size, and the OTHER controls match IT. */
 :host ::ng-deep mj-page-header [actions] mj-refresh-button button,
-:host ::ng-deep mj-page-header [actions] .mj-btn,
 :host ::ng-deep mj-page-header [actions] mj-company-scope-chip > *,
 :host ::ng-deep mj-page-header [actions] mj-stat-badge > * {
-  height: 100%;
+  height: var(--mj-shell-control-h);
   padding-top: 0;
   padding-bottom: 0;
   display: inline-flex;
