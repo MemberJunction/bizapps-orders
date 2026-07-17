@@ -1,4 +1,4 @@
-<mj-page-header-interior Title="Fulfillment queue" Subtitle="Posted orders with lines still to fulfil.">
+<mj-page-header-interior>
   <div meta>
     @if (PendingCount > 0) {
       <mj-stat-badge [Label]="PendingCount + ' line' + (PendingCount === 1 ? '' : 's') + ' to fulfil'" Icon="fa-solid fa-truck-fast" Variant="warning"></mj-stat-badge>

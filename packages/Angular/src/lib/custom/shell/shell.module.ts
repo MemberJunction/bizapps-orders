@@ -7,6 +7,7 @@ import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import {
   MJButtonDirective,
   MJPageLayoutComponent,
+  MJPageHeaderComponent,
   MJPageBodyComponent,
   MJPageHeaderInteriorComponent,
   MJPageBodyInteriorComponent,
@@ -114,6 +115,7 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
     ProductCategoryTreeModule,
     MJButtonDirective,
     MJPageLayoutComponent,
+    MJPageHeaderComponent,
     MJPageBodyComponent,
     MJPageHeaderInteriorComponent,
     MJPageBodyInteriorComponent,

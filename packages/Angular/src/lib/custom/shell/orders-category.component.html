@@ -1,4 +1,15 @@
 <mj-page-layout>
+  <!-- Page header — FULL WIDTH, ABOVE the rail (Marcelo 2026-07-16). This is MJ's canonical shell
+       shape (admin-container) and it is what makes the header stay put while the body scrolls:
+       mj-page-layout is overflow:hidden, the header is a natural-height sibling, and the body owns
+       overflow-y:auto.
+
+       Title is the ACTIVE PAGE, not the category — the category is already the active item in
+       Explorer's top nav, so repeating it here would waste the line. Deliberately TIGHT: no
+       Subtitle, no [meta], no stacking — one line, per "that header is meant to say, here's the
+       page you're on". Per-page actions/filters live in the interior card below. -->
+  <mj-page-header [Title]="ActivePageLabel" [Icon]="ActivePageIcon"></mj-page-header>
+
   <mj-page-body [Flex]="true" [Padding]="false" Direction="row">
     <!-- MJ's canonical left rail (§13 MJ-wins). The scope chip rides its [header] slot.
          NOTE: the chip scopes Payments + Products (which carry a company column). An Order has NO
