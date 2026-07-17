@@ -37,7 +37,7 @@
 
 | ID | Feature | Status | Source |
 |---|---|---|---|
-| C.1 | Order/OrderLine entities; per-line company via resolved account + `Order.CompanyID` OWNING-company header (+ `Product`/`Subscription` company-column renames; company-default resolution rung) | Shipped / Building — Q2 schema amendment pending | §4.2, MOD-3 (rev. 2026-07-16); S1 |
+| C.1 | Order/OrderLine entities; per-line company from the PRODUCT's `CompanyID` + `Order.CompanyID` OWNING-company header (doc/visibility only; + renames; product-company-default resolution rung) | Shipped / Building — MOD-3 rev-2 rework pending | §4.2, MOD-3 (rev-2 2026-07-17); S1 |
 | C.2 | Status flow Draft→Quoted→Confirmed→Posted→Fulfilled; transition matrix + validation | Shipped ◇ | BO-D8 + MOD-1; F1 |
 | C.3 | Forward status skipping (Quoted optional; effects still enforced) | Shipped ◇ | MOD-10; F1.1 |
 | C.4 | Void only from Draft/Quoted; after Confirm → reversing/credit order | Shipped ◇ | MOD-7; F1/F2 |
@@ -67,7 +67,7 @@
 | ID | Feature | Status | Source |
 |---|---|---|---|
 | E.1 | Book JEs on FIRST transition to Confirmed (idempotent; failure blocks Confirm) | Shipped | MOD-1; OrderEntityServer |
-| E.2 | One JE PER COMPANY at booking (split by resolved `GLAccount.CompanyID`) | Shipped ◇ | MOD-11; F1/F0 |
+| E.2 | One JE PER COMPANY at booking — split by the line's PRODUCT company (accounts validated same-company per acct Q38 lean) | Shipped ◇ (as-built splits by resolved account — rework to product-company basis pending) | MOD-11 + MOD-3 rev-2 |
 | E.3 | Atomic all-or-none booking via `Accounting.CreateJournalEntries` (one TransactionGroup) | Shipped | MOD-5 + F1.2b (proven E5 rollback) |
 | E.4 | Lineage: soft refs (`JournalEntry.OrderID` etc.) + polymorphic `JournalEntryLink` | Shipped | §7 |
 | E.8 | `OrderJournalEntry` junction entity (OrderID + JournalEntryID, real FKs) replaces the single `Order.JournalEntryID` | Planned — with the MOD-11/F1 rework | UPD-7 |
@@ -166,4 +166,4 @@
 | ID | Feature | Status | Source |
 |---|---|---|---|
 | O.1 | OrdersEngineBase (client-safe) + server-only OrdersEngine split | Shipped ◇ | UPD-5; F0 |
-| O.2 | Account resolution (product → category tree → company default) via accounting engine | Shipped | MOD-2; OrdersEngine.ResolveAccount |
+| O.2 | Account resolution (product → category tree → PRODUCT-company default) via accounting engine; ⚠ perf/complexity deep dive backlogged | Shipped (as-built) / rework pending (MOD-3 rev-2 anchor) | MOD-2; MOD-3 rev-2; OrdersEngine.ResolveAccount |

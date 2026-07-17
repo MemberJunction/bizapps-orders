@@ -193,3 +193,23 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
 - **Why / source:** `meetings/2026-07-17 - Amith Demo Feedback.md`; Marcelo 2026-07-17 (promote
   to the plan chain — action plans are ephemeral). Accounting counterpart: accounting UPD-3.
 - **Status:** Accepted.
+
+## UPD-12 — List idiom refinement: column-header filters + opt-in column sort; header card = time-span + presets only (2026-07-17)
+- **Amends:** the §0 house grid idiom (UI plans' AG-grid list rule) — refinement, intent unchanged.
+- **Change:** (a) **Per-column filtering moves into the column headers** — small filter icons at
+  the top of each column open that column's value selector; **click-to-sort on headers**, with
+  sortability an explicit per-column opt-in (not every column sorts). Reference implementation:
+  Marcelo's colleague's grid in **CDP (github.com/BlueCypress/CDP), the ATS system** — pull it up
+  during the list/forms design pass. Note: AG Grid supports this natively (floating filters /
+  header filter menus + per-column `sortable`), so this is configuration of the existing idiom,
+  not a new component. (b) **The filter card above the table shrinks to what columns can't
+  carry:** the time-span control + a small set of high-value PRESET chips per list. Suggested
+  presets from the schema (design-pass inputs, not final): Orders lists — Overdue
+  (`Balance>0 AND DueDate<now`) · Unpaid · Confirmed-not-Posted · my orders; Order History —
+  the shipped moving-window presets; JE lists (accounting) — Unbatched/Pending · Manual awaiting
+  approval · Batched · this month; Batches — Open · Awaiting approval · Dispatch failed. Presets
+  are saved-filter shortcuts, not new machinery (User-View-backed where the surface uses
+  `ng-entity-viewer`).
+- **Why / source:** Marcelo 2026-07-17 (colleague's CDP/ATS grid demo); plan-affecting UI advice
+  → recorded in the chain per the standing rule. Accounting counterpart: accounting UPD-4.
+- **Status:** Accepted — lands with the list screens + the forms/list design pass.

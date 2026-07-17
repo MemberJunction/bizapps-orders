@@ -29,27 +29,36 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
 - **Why / source:** 07-02 amendment S3; accounting MOD-10.
 - **Status:** Implemented (schema + resolver).
 
-## MOD-3 — Order gains a header `CompanyID` (owning company); OrderLine stays company-free — resolved via the line's GLAccount (2026-07-02; revised 2026-07-16 per Q2 answer)
-- **Supersedes:** BO-D5's `OrderLine.CompanyID` mechanism (the multi-company INTENT stands).
-- **Change (current, edited in place per ledger hygiene):** (a) **`Order.CompanyID` IS added** —
-  the OWNING company (owns the customer relationship + the document, defaulted from the sales
-  channel); its extended property states: *owning company — does NOT override line-level revenue
-  ownership*. (b) OrderLine still carries **no** company column — each line's revenue-owning
-  company = the resolved `GLAccount.CompanyID` at booking time (unchanged). (c) **Naming ruled
-  schema-wide:** `Product.OwningCompanyID` and `Subscription.OwningCompanyID` rename to plain
-  **`CompanyID`** (each table has exactly one `__mj.Company` FK; customer orgs are
-  `CustomerOrganizationID` → BizAppsCommon.Organization, so no ambiguity); role-qualified names
-  stay only where the role is the point (`Payment.ReceivingCompanyID`, etc.). (d) **Account
-  resolution walk gains a final rung:** product → category tree → **owning-company default**
-  (resolves against `Order.CompanyID` when no product/category link matches — Amith's "Izzy"
-  small-adopter case); if even that misses, **fail loudly** (the unresolved-mapping tripwire
-  stays).
-- **Evolution note:** the original 2026-07-02 ruling was NO company columns at either level;
-  Robert's Q2 answer (2026-07-16 draft-answers doc) adds the header field as an S1 amendment —
-  the master "was never fully company-free" (BO-D5 line company, BO-D6 primary receiving company).
-- **Why / source:** 07-02 amendment S5; Robert Q2 answer,
-  `meetings/2026-07-16 - marcelo-questions-draft-answers.md`.
-- **Status:** Implemented (baseline) + **schema amendment pending** (Order.CompanyID + renames + resolution rung).
+## MOD-3 — Order gains a header `CompanyID` (owning company); the LINE's company derives from the PRODUCT (2026-07-02; rev. 2026-07-16 per Q2; rev-2 2026-07-17 Marcelo)
+- **Supersedes:** BO-D5's `OrderLine.CompanyID` mechanism (the multi-company INTENT stands) and
+  this entry's own earlier "line company = resolved `GLAccount.CompanyID`" derivation.
+- **Change (current, edited in place per ledger hygiene):**
+  (a) **`Order.CompanyID` IS added** — the OWNING company (owns the customer relationship + the
+  document, defaulted from the sales channel). It is the **document/ownership/visibility** anchor
+  (cross-company visibility = [Q23](QUESTIONS.md#q23)); it does **NOT** drive GL resolution and
+  does NOT override line-level revenue ownership.
+  (b) **The line's company derives from the PRODUCT** — `Product.CompanyID` (Marcelo rev-2,
+  2026-07-17: "the line in the order should derive the company from the product, not the
+  account"). Every product is owned by a company; the resolved account is expected to belong to
+  that SAME company (the consistency invariant — accounting [Q38], lean: mismatch disallowed).
+  The earlier resolved-account derivation inverts cause and effect: the account follows from the
+  product's company, not the other way round.
+  (c) **Naming ruled schema-wide:** `Product.OwningCompanyID` and `Subscription.OwningCompanyID`
+  rename to plain **`CompanyID`**; role-qualified names stay only where the role is the point
+  (`Payment.ReceivingCompanyID`, etc.).
+  (d) **Account resolution walks against the PRODUCT's company:** product link → category tree →
+  **the product-company's default** (rev-2 refinement of Robert's Q2 answer, which had the final
+  rung resolving against `Order.CompanyID` — flag the delta to Robert). Amith's "Izzy" case still
+  works (single-company adopter: product company = order company). If even the company-default
+  rung misses, **fail loudly** (tripwire stays).
+  (e) ⚠ **Deep-dive flag (Marcelo):** the resolution path is a coming **performance + complexity
+  pain point** — a dedicated deep dive is BACKLOGged before it's load-bearing at volume.
+- **Evolution note:** 2026-07-02 = no company columns; Q2 answer (2026-07-16) added the header +
+  renames + a rung; rev-2 (2026-07-17) moved line-company derivation and the resolution anchor to
+  the product.
+- **Why / source:** 07-02 amendment S5; Robert Q2 answer; Marcelo rev-2 ruling 2026-07-17.
+- **Status:** Implemented (baseline) + **schema/engine amendment pending** (Order.CompanyID +
+  renames + product-company derivation + resolution rework — roadmap V1.1).
 
 ## MOD-4 — Currency/FX deferred from the v1 baseline (2026-07-02)
 - **Supersedes:** BO-D22's v1 timing (the design — rates from accounting, per-transaction snapshot — stands).

@@ -7,6 +7,15 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
 
 ## Tasks
 
+- [ ] **GL account-resolution deep dive (performance + complexity)** — Marcelo flag 2026-07-17
+      (MOD-3 rev-2): the product → category → company-default walk, per-line at booking, across
+      multi-company orders, is "going to become a performance and complexity pain point that's
+      going to require a deep dive." Scope: resolution caching strategy (OrdersEngine catalog
+      cache coverage), whether line company should be materialized as a stored column for RLS/
+      query efficiency (orders Q23 sub-q 3), the Q38 same-company invariant's enforcement cost,
+      and category tree shape (company-specific vs per-company routing). Revisit trigger: before
+      resolution is load-bearing at real volume (V2 exit), or the Q38/Q31 sitting landing.
+
 - [x] ~~**Order form: surface the full field set**~~ — PROMOTED 2026-07-11 →
       `action-plans/ActionPlan - UI layout and workflows (orders).md` §1.
 - [x] ~~**Compose Order takes the full available space**~~ — PROMOTED 2026-07-11 → UI action plan §1.

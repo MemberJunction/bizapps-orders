@@ -497,11 +497,13 @@ Same DB structure, two behaviors; order entry chooses per add.
 
 ### 4.2 Order + OrderLine (with multi-company)
 
-> ⚠ **MODIFIED by MOD-3 (revised 2026-07-16, Q2 answer):** `OrderLine.CompanyID` below is superseded —
-> each line's company is resolved via its `GLAccount.CompanyID` at booking time. **`Order.CompanyID`
-> (owning company) IS added** per Robert's Q2 ruling (defaulted from sales channel; does NOT override
-> line-level revenue ownership; final resolution rung = owning-company default; tripwire stays;
-> `Product`/`Subscription.OwningCompanyID` rename to plain `CompanyID`).
+> ⚠ **MODIFIED by MOD-3 (rev-2 2026-07-17):** `OrderLine.CompanyID` below is superseded — each
+> line's company derives from **the PRODUCT's `CompanyID`** (Marcelo rev-2; the resolved account
+> must belong to the same company — acct Q38 invariant, lean: mismatch disallowed).
+> **`Order.CompanyID` (owning company) IS added** per Robert's Q2 ruling — document/ownership/
+> visibility anchor only, never GL resolution; resolution walks product → category → the
+> PRODUCT-company default; tripwire stays; `Product`/`Subscription.OwningCompanyID` rename to
+> plain `CompanyID`.
 > **MOD-4:** the CurrencyCode/FX fields are deferred from the baseline. **MOD-1/MOD-7:** JEs book on the
 > first `Confirmed` (not Posted); Confirmed/Posted/Fulfilled cannot be Voided (reversing/credit order
 > instead). Original text retained below — the FIELD SET here is otherwise the target shape for the
