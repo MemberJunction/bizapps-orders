@@ -370,6 +370,7 @@ export class ProductWorkshopPageComponent extends BaseAngularComponent implement
       const state = this.emptyState();
       state.ProductID = p.ID;
       state.Draft = ProductWorkshopPageComponent.DraftFromProduct(p);
+      ProductWorkshopPageComponent.ApplySectionDefaults(state);
       this.tabs.Open({
         Id: `pw-${++this.keySeq}-${NormalizeUUID(p.ID)}`,
         Label: p.Name || 'New product',
@@ -438,11 +439,12 @@ export class ProductWorkshopPageComponent extends BaseAngularComponent implement
     return this.ActiveState?.OpenSections[id] === true;
   }
 
-  public ToggleSection(id: ProductSectionId): void {
+  /** Wired to `mj-accordion-panel`'s `(ExpandedChange)`. Independent disclosures: any number may be
+   *  open at once (his explicit call) — the panels are not a single-select accordion. */
+  public SetSectionOpen(id: ProductSectionId, open: boolean): void {
     const state = this.ActiveState;
     if (!state) return;
-    // Disclosure, not accordion: any number may be open at once (his explicit call).
-    state.OpenSections[id] = !state.OpenSections[id];
+    state.OpenSections[id] = open;
     this.cdr.markForCheck();
   }
 
@@ -1031,23 +1033,49 @@ export class ProductWorkshopPageComponent extends BaseAngularComponent implement
     };
   }
 
-  /** A fresh tab payload: General open, the rest collapsed. */
+  /** A fresh tab payload. The section defaults are set by `ApplySectionDefaults`. */
   private emptyState(): ProductDraftState {
     const draft = ProductWorkshopPageComponent.EmptyDraft();
     // A single product type is the only possible answer — pre-select it rather than making the
     // user open a one-item dropdown.
     if (this.ProductTypes.length === 1) draft.ProductTypeID = this.ProductTypes[0].ID;
-    return {
+    const state: ProductDraftState = {
       ProductID: null,
       Draft: draft,
       Links: [],
       LinkDraft: null,
       LinkError: null,
       Resolution: null,
-      OpenSections: { general: true, revenue: false, subscription: false, gl: false, advanced: false },
+      OpenSections: { general: true, revenue: true, subscription: false, gl: false, advanced: false },
       SaveError: null,
       SaveMessage: null,
     };
+    ProductWorkshopPageComponent.ApplySectionDefaults(state);
+    return state;
+  }
+
+  /**
+   * Which sections a tab OPENS with — "show people what they need and consolidate what they don't"
+   * (his words), not a fixed guess.
+   *
+   *  - **General** and **Revenue** are always open: they carry the required fields and the
+   *    recognition choice that drives which GL role has to resolve. Nothing there may be hidden.
+   *  - **Subscription** is CONTEXT-SENSITIVE — open only when the product actually is one
+   *    (`SubscriptionType !== 'None'`). For a non-subscription product every control in it is
+   *    inert, so opening it would be noise; for a subscription product it is exactly what you came
+   *    to edit. This is what answers his "probably should be open, but maybe not".
+   *  - **GL accounts** and **Advanced** start collapsed: accounts are not changed on every product
+   *    (the resolution chain usually answers), and Advanced is a per-product behavior override.
+   *
+   * A collapsed section still flags its own issues on the header (see `SectionIssues`), so a closed
+   * default can never hide a problem.
+   */
+  private static ApplySectionDefaults(state: ProductDraftState): void {
+    state.OpenSections.general = true;
+    state.OpenSections.revenue = true;
+    state.OpenSections.subscription = state.Draft.SubscriptionType !== 'None';
+    state.OpenSections.gl = false;
+    state.OpenSections.advanced = false;
   }
 
   private static EmptyDraft(): ProductDraft {

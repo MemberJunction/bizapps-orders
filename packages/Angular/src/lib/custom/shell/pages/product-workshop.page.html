@@ -111,26 +111,23 @@
 
       <div class="pw__panel">
         <!-- ─── General ───────────────────────────────────────────────────── -->
-        <section class="pw__section">
-          <button
-            type="button"
-            class="pw__dt"
-            [attr.aria-expanded]="IsSectionOpen('general')"
-            aria-controls="pw-sec-general"
-            (click)="ToggleSection('general')">
-            <i class="pw__dt-chev fa-solid fa-chevron-right" [class.pw__dt-chev--open]="IsSectionOpen('general')" aria-hidden="true"></i>
-            <span class="pw__dt-label"><i class="fa-solid fa-box" aria-hidden="true"></i> General</span>
+        <!-- MJ's own disclosure panel. [Bare] drops its box chrome so it reads as a header + rule
+             inside the card that already provides the chrome — and we get MJ's keyboard + aria
+             (aria-expanded / aria-controls / aria-labelledby) instead of hand-rolling it. -->
+        <mj-accordion-panel [Bare]="true" [Expanded]="IsSectionOpen('general')" (ExpandedChange)="SetSectionOpen('general', $event)">
+          <ng-template mjAccordionTitle>
+            <span class="pw__sec-label"><i class="fa-solid fa-box" aria-hidden="true"></i> General</span>
             @if (SectionIssues('general') > 0) {
-              <!-- A collapsed section must never hide a problem — the marker rides on the header. -->
-              <span class="pw__dt-dot" [title]="SectionIssueTitle('general')">
+              <!-- Passive state, so it lives in the TITLE (mjAccordionActions is for interactive
+                   controls). It renders whether the panel is open or closed — a collapsed section
+                   must never hide a problem. -->
+              <span class="pw__badge" [title]="SectionIssueTitle('general')">
                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ SectionIssues('general') }}
               </span>
             }
-            <span class="pw__dt-rule" aria-hidden="true"></span>
-          </button>
+          </ng-template>
 
-          @if (IsSectionOpen('general')) {
-            <div class="pw__body" id="pw-sec-general">
+          <ng-template mjAccordionBody>
               <div class="pw__fields">
                 <label class="pw__field">
                   <span class="pw__label">Name <b class="pw__req">*</b></span>
@@ -217,30 +214,21 @@
                   <textarea rows="4" [(ngModel)]="s.Draft.Description" (ngModelChange)="MarkDirty()"></textarea>
                 </label>
               </div>
-            </div>
-          }
-        </section>
+          </ng-template>
+        </mj-accordion-panel>
 
         <!-- ─── Revenue ───────────────────────────────────────────────────── -->
-        <section class="pw__section">
-          <button
-            type="button"
-            class="pw__dt"
-            [attr.aria-expanded]="IsSectionOpen('revenue')"
-            aria-controls="pw-sec-revenue"
-            (click)="ToggleSection('revenue')">
-            <i class="pw__dt-chev fa-solid fa-chevron-right" [class.pw__dt-chev--open]="IsSectionOpen('revenue')" aria-hidden="true"></i>
-            <span class="pw__dt-label"><i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Revenue</span>
+        <mj-accordion-panel [Bare]="true" [Expanded]="IsSectionOpen('revenue')" (ExpandedChange)="SetSectionOpen('revenue', $event)">
+          <ng-template mjAccordionTitle>
+            <span class="pw__sec-label"><i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Revenue</span>
             @if (SectionIssues('revenue') > 0) {
-              <span class="pw__dt-dot" [title]="SectionIssueTitle('revenue')">
+              <span class="pw__badge" [title]="SectionIssueTitle('revenue')">
                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ SectionIssues('revenue') }}
               </span>
             }
-            <span class="pw__dt-rule" aria-hidden="true"></span>
-          </button>
+          </ng-template>
 
-          @if (IsSectionOpen('revenue')) {
-            <div class="pw__body" id="pw-sec-revenue">
+          <ng-template mjAccordionBody>
               <div class="pw__fields">
                 <label class="pw__field">
                   <span class="pw__label">Revenue recognition</span>
@@ -286,30 +274,24 @@
                   </span>
                 </label>
               </div>
-            </div>
-          }
-        </section>
+          </ng-template>
+        </mj-accordion-panel>
 
         <!-- ─── Subscription ──────────────────────────────────────────────── -->
-        <section class="pw__section">
-          <button
-            type="button"
-            class="pw__dt"
-            [attr.aria-expanded]="IsSectionOpen('subscription')"
-            aria-controls="pw-sec-subscription"
-            (click)="ToggleSection('subscription')">
-            <i class="pw__dt-chev fa-solid fa-chevron-right" [class.pw__dt-chev--open]="IsSectionOpen('subscription')" aria-hidden="true"></i>
-            <span class="pw__dt-label"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Subscription</span>
+        <mj-accordion-panel
+          [Bare]="true"
+          [Expanded]="IsSectionOpen('subscription')"
+          (ExpandedChange)="SetSectionOpen('subscription', $event)">
+          <ng-template mjAccordionTitle>
+            <span class="pw__sec-label"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i> Subscription</span>
             @if (SectionIssues('subscription') > 0) {
-              <span class="pw__dt-dot" [title]="SectionIssueTitle('subscription')">
+              <span class="pw__badge" [title]="SectionIssueTitle('subscription')">
                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ SectionIssues('subscription') }}
               </span>
             }
-            <span class="pw__dt-rule" aria-hidden="true"></span>
-          </button>
+          </ng-template>
 
-          @if (IsSectionOpen('subscription')) {
-            <div class="pw__body" id="pw-sec-subscription">
+          <ng-template mjAccordionBody>
               <div class="pw__fields">
                 <label class="pw__field">
                   <span class="pw__label">Subscription type</span>
@@ -350,30 +332,21 @@
                     [disabled]="!HasSubscription" />
                 </label>
               </div>
-            </div>
-          }
-        </section>
+          </ng-template>
+        </mj-accordion-panel>
 
         <!-- ─── GL accounts ───────────────────────────────────────────────── -->
-        <section class="pw__section">
-          <button
-            type="button"
-            class="pw__dt"
-            [attr.aria-expanded]="IsSectionOpen('gl')"
-            aria-controls="pw-sec-gl"
-            (click)="ToggleSection('gl')">
-            <i class="pw__dt-chev fa-solid fa-chevron-right" [class.pw__dt-chev--open]="IsSectionOpen('gl')" aria-hidden="true"></i>
-            <span class="pw__dt-label"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i> GL accounts</span>
+        <mj-accordion-panel [Bare]="true" [Expanded]="IsSectionOpen('gl')" (ExpandedChange)="SetSectionOpen('gl', $event)">
+          <ng-template mjAccordionTitle>
+            <span class="pw__sec-label"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i> GL accounts</span>
             @if (SectionIssues('gl') > 0) {
-              <span class="pw__dt-dot" [title]="SectionIssueTitle('gl')">
+              <span class="pw__badge" [title]="SectionIssueTitle('gl')">
                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ SectionIssues('gl') }}
               </span>
             }
-            <span class="pw__dt-rule" aria-hidden="true"></span>
-          </button>
+          </ng-template>
 
-          @if (IsSectionOpen('gl')) {
-            <div class="pw__body" id="pw-sec-gl">
+          <ng-template mjAccordionBody>
               @if (IsNew) {
                 <mj-empty-state
                   Icon="fa-solid fa-diagram-project"
@@ -509,25 +482,16 @@
                   </div>
                 }
               }
-            </div>
-          }
-        </section>
+          </ng-template>
+        </mj-accordion-panel>
 
         <!-- ─── Advanced ──────────────────────────────────────────────────── -->
-        <section class="pw__section">
-          <button
-            type="button"
-            class="pw__dt"
-            [attr.aria-expanded]="IsSectionOpen('advanced')"
-            aria-controls="pw-sec-advanced"
-            (click)="ToggleSection('advanced')">
-            <i class="pw__dt-chev fa-solid fa-chevron-right" [class.pw__dt-chev--open]="IsSectionOpen('advanced')" aria-hidden="true"></i>
-            <span class="pw__dt-label"><i class="fa-solid fa-gears" aria-hidden="true"></i> Advanced</span>
-            <span class="pw__dt-rule" aria-hidden="true"></span>
-          </button>
+        <mj-accordion-panel [Bare]="true" [Expanded]="IsSectionOpen('advanced')" (ExpandedChange)="SetSectionOpen('advanced', $event)">
+          <ng-template mjAccordionTitle>
+            <span class="pw__sec-label"><i class="fa-solid fa-gears" aria-hidden="true"></i> Advanced</span>
+          </ng-template>
 
-          @if (IsSectionOpen('advanced')) {
-            <div class="pw__body" id="pw-sec-advanced">
+          <ng-template mjAccordionBody>
               <div class="pw__fields">
                 <label class="pw__field pw__field--wide">
                   <span class="pw__label">Behavior class</span>
@@ -539,9 +503,8 @@
                   </span>
                 </label>
               </div>
-            </div>
-          }
-        </section>
+          </ng-template>
+        </mj-accordion-panel>
       </div>
     } @else {
       <mj-empty-state

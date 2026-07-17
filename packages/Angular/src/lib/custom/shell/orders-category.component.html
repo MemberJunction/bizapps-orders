@@ -63,7 +63,7 @@
           <mj-all-orders-page></mj-all-orders-page>
         }
         @case ('status-board') {
-          <mj-status-board-page></mj-status-board-page>
+          <mj-status-board-page (OpenOrder)="GoToPage('editor', $event)"></mj-status-board-page>
         }
         @case ('overdue') {
           <mj-overdue-worklist-page></mj-overdue-worklist-page>
@@ -78,7 +78,7 @@
           <mj-subscription-plans-page></mj-subscription-plans-page>
         }
         @case ('editor') {
-          <mj-order-editor-page></mj-order-editor-page>
+          <mj-order-editor-page [OrderID]="PageParam"></mj-order-editor-page>
         }
         @default {
           <mj-shell-page-pending [PageName]="PendingPageName(ActivePageId)"></mj-shell-page-pending>

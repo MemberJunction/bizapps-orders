@@ -1,13 +1,23 @@
-import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit } from '@angular/core';
+import {
+  Component,
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  inject,
+  Input,
+  OnChanges,
+  OnInit,
+  SimpleChanges,
+} from '@angular/core';
 import { Metadata, RunView, type IRemoteOperationProvider } from '@memberjunction/core';
 import { BaseAngularComponent } from '@memberjunction/ng-base-types';
-import { UUIDsEqual } from '@memberjunction/global';
+import { UUIDsEqual, NormalizeUUID } from '@memberjunction/global';
 import { MJStatBadgeVariant } from '@memberjunction/ng-ui-components';
 import { WorkspaceTabStore, type WorkspaceTab, CrossAppLinkService } from '@mj-biz-apps/accounting-ng';
 import {
   OrdersEngineBase,
   resolveProductPrice,
   type OrderStatus,
+  type OrderPaymentStatus,
   type PriceSource,
 } from '@mj-biz-apps/orders-engine-base';
 import type { mjBizAppsOrdersOrderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
@@ -30,6 +40,16 @@ const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
 /** Sentinel PriceNote meaning "the catalog had no price for this", as opposed to a user override. */
 const NO_PRICE_RULE = '__no-price-rule__';
+
+/**
+ * Sentinel PriceNote meaning "this price came off the SAVED order", as opposed to a user override.
+ *
+ * A loaded line's UnitPrice is whatever was persisted; the editor did not resolve it now and has no
+ * business claiming the operator overrode anything. Without this the badge would read "overridden
+ * (direct entry)" for every loaded line — an accusation of an edit nobody made (the same mistake
+ * `NO_PRICE_RULE` exists to avoid on the other side).
+ */
+const SAVED_PRICE = '__saved-price__';
 
 /** The editor's inner tabs (Q2 FINAL, mockup-approved). */
 export type OrderEditorTab = 'details' | 'lines' | 'addresses' | 'payments' | 'accounting';
@@ -123,6 +143,51 @@ export interface OrderDraftExtras {
 export type OrderDraft = OrderDraftState & OrderDraftExtras;
 
 /**
+ * The Order columns the open-an-existing-order read asks for.
+ *
+ * Value-list fields reuse the DERIVED unions above rather than restating them (rule 2c). Dates are
+ * `string | Date` because a `simple` RunView hands back whatever the transport produced — `toDraftDate`
+ * is the one place that is normalized.
+ */
+interface OrderRaw {
+  ID: string;
+  OrderNumber: string;
+  Status: OrderStatusValue;
+  OrderType: OrderTypeValue;
+  OrderDate: string | Date;
+  RequestedDeliveryDate: string | Date | null;
+  DueDate: string | Date | null;
+  CustomerOrganizationID: string | null;
+  CustomerPersonID: string | null;
+  SalesRepUserID: string | null;
+  BillToAddressID: string | null;
+  ShipToAddressID: string | null;
+  PaymentTermsTypeID: string | null;
+  ContractID: string | null;
+  ApprovalTaskID: string | null;
+  ReversesOrderID: string | null;
+  ReversalReason: string | null;
+  ExternalDocumentNumber: string | null;
+  Description: string | null;
+  Notes: string | null;
+  AmountPaid: number;
+  PaymentStatus: OrderPaymentStatus | null;
+}
+
+/** The Order Line columns the same read asks for, in the same batch. */
+interface OrderLineRaw {
+  ID: string;
+  ProductID: string;
+  LineNumber: number;
+  Quantity: number;
+  UnitPrice: number;
+  /** The STORED fraction (0–1), not the percent the grid shows — see `discountPercentText`. */
+  DiscountPct: number;
+  ServicePeriodStart: string | Date | null;
+  ServicePeriodEnd: string | Date | null;
+}
+
+/**
  * Order editor (orders UI plan §13.1) — the anchor screen and the full-depth target of every order
  * pop-out. A workspace, not a modal: an order with a line editor fails the element doctrine's
  * encapsulation test.
@@ -149,13 +214,28 @@ export type OrderDraft = OrderDraftState & OrderDraftExtras;
   styleUrls: ['./order-editor.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class OrderEditorPageComponent extends BaseAngularComponent implements OnInit {
+export class OrderEditorPageComponent extends BaseAngularComponent implements OnInit, OnChanges {
   private cdr = inject(ChangeDetectorRef);
   private links = inject(CrossAppLinkService);
 
   private tabs = new WorkspaceTabStore<OrderDraft>();
   private client = new OrderEditorClient();
   private keySeq = 0;
+
+  /** False until the catalog engine is configured; an @Input that arrives before then parks. */
+  private ready = false;
+  private pendingOpen: { OrderID: string | null } | null = null;
+
+  /**
+   * Null = "compose a fresh order". A non-null id OPENS OR FOCUSES that order's tab — it never
+   * replaces the page's content. The shell REUSES this instance across page switches, hence
+   * OnChanges (the same contract `product-workshop.page.ts` implements for products).
+   */
+  @Input() OrderID: string | null = null;
+
+  public IsLoading = false;
+  /** Why an order could not be opened. Rendered in the card — never a silently blank editor. */
+  public LoadError: string | null = null;
 
   /** The inner tabs, typed — so the template needs no `$any` to hand an id back. */
   public readonly InnerTabs: ReadonlyArray<{ id: OrderEditorTab; label: string }> = [
@@ -180,11 +260,49 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
     void this.init();
   }
 
+  /** The shell reuses this instance, so a changed id must OPEN OR FOCUS — never clobber the page. */
+  async ngOnChanges(changes: SimpleChanges): Promise<void> {
+    const change = changes['OrderID'];
+    // init() applies the FIRST value; acting on it here too would double-open the same order.
+    if (!change || change.isFirstChange()) return;
+    await this.applyInput(this.OrderID);
+  }
+
   private async init(): Promise<void> {
     // The catalog + price data the line editor resolves against. Cached by the engine — one load,
     // no per-keystroke round-trip.
     await OrdersEngineBase.Instance.Config(false, this.ProviderToUse.CurrentUser, this.ProviderToUse);
-    this.openNewDraft();
+    this.ready = true;
+    const first = this.pendingOpen ? this.pendingOpen.OrderID : this.OrderID;
+    this.pendingOpen = null;
+    await this.applyInput(first);
+  }
+
+  /** The open-or-focus rule for the shell's `OrderID`. */
+  private async applyInput(orderID: string | null): Promise<void> {
+    if (!this.ready) {
+      // The input beat the engine here — park it and let init() apply it once the catalog is up.
+      this.pendingOpen = { OrderID: orderID };
+      return;
+    }
+    if (!orderID) {
+      this.openNewDraft();
+      return;
+    }
+    if (this.focusOrderTab(orderID)) return; // already open — focus it, never a duplicate tab
+    await this.openOrder(orderID);
+  }
+
+  /** True when a tab for that order already existed (and is now active). */
+  private focusOrderTab(orderID: string): boolean {
+    // UUIDsEqual, never === : SQL Server hands UUIDs back uppercase, so === silently matches nothing
+    // and every Edit click would open yet another tab on the same order.
+    const existing = this.tabs.Tabs.find((t) => !!t.State.OrderID && UUIDsEqual(t.State.OrderID, orderID));
+    if (!existing) return false;
+    this.tabs.Activate(existing.Id);
+    this.clearMessages();
+    this.cdr.markForCheck();
+    return true;
   }
 
   // ─── tabs ──────────────────────────────────────────────────────────────────
@@ -272,6 +390,163 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
     return newOrderLine(`ol-${++this.keySeq}`);
   }
 
+  // ─── open an existing order ────────────────────────────────────────────────
+
+  /**
+   * Load ONE order + its lines into a NEW tab (the caller has already ruled out a duplicate).
+   *
+   * The header and the lines are read in a SINGLE batched `RunViews` — two sequential reads (let
+   * alone a read per line) would be a round-trip tax for data that is always wanted together.
+   */
+  private async openOrder(orderID: string): Promise<void> {
+    this.IsLoading = true;
+    this.LoadError = null;
+    this.clearMessages();
+    this.cdr.markForCheck();
+    try {
+      const { Order, Lines } = await this.readOrder(orderID);
+      const state = this.draftFromOrder(Order, Lines);
+      this.tabs.Open({
+        Id: `order-${++this.keySeq}-${NormalizeUUID(Order.ID)}`,
+        Label: this.orderTabLabel(Order),
+        Icon: 'fa-solid fa-file-invoice-dollar',
+        // 'complete' = a SAVED order; 'draft' is reserved for something not yet in the database.
+        Status: 'complete',
+        State: state,
+      });
+      // The tab store owns the caption; renameActiveTab is the one place it is written.
+      this.renameActiveTab(this.orderTabLabel(Order));
+    } catch (e) {
+      this.LoadError = e instanceof Error ? e.message : String(e);
+    } finally {
+      this.IsLoading = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  /**
+   * The order + its lines, in one batched round-trip.
+   *
+   * `RunViews` reports a logical failure by returning `Success:false` — it does NOT throw — so both
+   * results are checked, and a missing order is an explicit error rather than an empty editor.
+   */
+  private async readOrder(orderID: string): Promise<{ Order: OrderRaw; Lines: OrderLineRaw[] }> {
+    const rv = new RunView();
+    const [orderResult, lineResult] = await rv.RunViews<OrderRaw | OrderLineRaw>(
+      [
+        {
+          EntityName: ORDER_ENTITY,
+          ExtraFilter: `ID='${orderID}'`,
+          // Read-only: 'simple' avoids building BaseEntity objects the draft never mutates. The save
+          // path re-Loads the record it is about to write (see Save), so nothing here needs to be one.
+          ResultType: 'simple',
+        },
+        {
+          EntityName: ORDER_LINE_ENTITY,
+          ExtraFilter: `OrderID='${orderID}'`,
+          OrderBy: 'LineNumber ASC',
+          ResultType: 'simple',
+        },
+      ],
+      this.ProviderToUse.CurrentUser,
+    );
+
+    if (!orderResult.Success) throw new Error(orderResult.ErrorMessage ?? 'The order could not be read.');
+    if (!lineResult.Success) throw new Error(lineResult.ErrorMessage ?? 'The order’s lines could not be read.');
+
+    const orders = orderResult.Results as OrderRaw[];
+    const order = orders[0];
+    if (!order) throw new Error(`Order ${orderID} was not found — it may have been deleted.`);
+    return { Order: order, Lines: lineResult.Results as OrderLineRaw[] };
+  }
+
+  /** Map a saved order + its lines onto the editor's draft shape. */
+  private draftFromOrder(o: OrderRaw, lines: OrderLineRaw[]): OrderDraft {
+    return {
+      OrderID: o.ID,
+      OrderNumber: o.OrderNumber,
+      Status: o.Status,
+      // The picker is hidden for a saved order (CanPickStartStatus is false once OrderID is set), so
+      // this is only ever an inert echo of where the order already is — never a lever on it.
+      StartStatus: o.Status,
+      OrderType: o.OrderType,
+      CustomerOrganizationID: o.CustomerOrganizationID,
+      CustomerPersonID: o.CustomerPersonID,
+      SalesRepUserID: o.SalesRepUserID,
+      BillToAddressID: o.BillToAddressID,
+      ShipToAddressID: o.ShipToAddressID,
+      ContractID: o.ContractID,
+      ApprovalTaskID: o.ApprovalTaskID,
+      OrderDate: this.toDraftDate(o.OrderDate) ?? new Date().toISOString().slice(0, 10),
+      RequestedDeliveryDate: this.toDraftDate(o.RequestedDeliveryDate),
+      DueDate: this.toDraftDate(o.DueDate),
+      PaymentTermsTypeID: o.PaymentTermsTypeID,
+      ExternalDocumentNumber: o.ExternalDocumentNumber ?? '',
+      Description: o.Description ?? '',
+      Notes: o.Notes ?? '',
+      ReversesOrderID: o.ReversesOrderID,
+      ReversalReason: o.ReversalReason ?? '',
+      AmountPaid: o.AmountPaid ?? 0,
+      // Carried, not re-derived: draftMoney must never re-label a WrittenOff order as Unpaid.
+      PaymentStatus: o.PaymentStatus,
+      // An order with no lines still needs one editable row to be a usable editor.
+      Lines: lines.length ? lines.map((l) => this.lineFromOrderLine(l)) : [this.newLine()],
+    };
+  }
+
+  private lineFromOrderLine(l: OrderLineRaw): OrderDraftLine {
+    return {
+      Key: `ol-${++this.keySeq}-${NormalizeUUID(l.ID)}`,
+      ProductID: l.ProductID,
+      Quantity: String(l.Quantity),
+      UnitPrice: l.UnitPrice.toFixed(2),
+      DiscountPct: this.discountPercentText(l.DiscountPct),
+      ServicePeriodStart: this.toDraftDate(l.ServicePeriodStart),
+      ServicePeriodEnd: this.toDraftDate(l.ServicePeriodEnd),
+      // The stored price is neither an override nor a resolution the editor just made — badge it as
+      // what it is (see SAVED_PRICE). 'DirectEntry' also stops OnQuantityChanged from silently
+      // re-pricing a saved line out from under the operator (BO-D33: direct entry wins).
+      PriceSource: 'DirectEntry',
+      PriceNote: SAVED_PRICE,
+    };
+  }
+
+  /**
+   * ⚠ The EXACT INVERSE of `discountFraction` (./order-draft) — the discount unit boundary, inbound.
+   *
+   * `OrderLine.DiscountPct` STORES a fraction (`DECIMAL(7,4)`, `CHECK 0..1`), while this grid's
+   * "Disc %" column takes a PERCENT. `discountFraction` divides by 100 on the way out
+   * (`queueLines`: `line.DiscountPct = discountFraction(l)`), so the way in must multiply by 100.
+   * Feeding the stored 0.10 straight into the grid would render "10% off" as 0.1% — and the reverse
+   * mistake (skipping the conversion on the way out) renders it as 1000%. Both have been shipped
+   * once; neither again.
+   *
+   * The round-trip is fixed to the column's own 4 decimals so 0.1 × 100 cannot surface as
+   * 10.000000000000002 in a text box the operator then saves back.
+   */
+  private discountPercentText(fraction: number): string {
+    if (!Number.isFinite(fraction)) return '0';
+    return String(Number((fraction * 100).toFixed(4)));
+  }
+
+  /**
+   * A DATE column read back for `<input type="date">`.
+   *
+   * OrderDate / DueDate / RequestedDeliveryDate / the service dates carry no timezone, so they
+   * round-trip at UTC — which is exactly what the outbound side does (`new Date(d.OrderDate)` on a
+   * bare `yyyy-mm-dd` parses as UTC midnight). Reading them in local time would show yesterday.
+   */
+  private toDraftDate(value: string | Date | null): string | null {
+    if (!value) return null;
+    const d = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+  }
+
+  /** The tab caption. OrderNumber is how a human finds the tab; never invent one it doesn't have. */
+  private orderTabLabel(o: OrderRaw): string {
+    return o.OrderNumber?.trim() || `Order ${NormalizeUUID(o.ID).slice(0, 8)}`;
+  }
+
   // ─── catalog / pricing ─────────────────────────────────────────────────────
 
   public get ProductOptions(): ProductOption[] {
@@ -349,7 +624,8 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
   }
 
   /**
-   * The B.2 price-source badge. Three states, deliberately distinct:
+   * The B.2 price-source badge. Four states, deliberately distinct:
+   *  - loaded off a saved order → "saved price" (the editor resolved nothing and claims nothing);
    *  - resolved from the catalog → what rule won;
    *  - no rule matched → "enter a price" (NOT an override — the operator has overridden nothing);
    *  - operator typed over a resolved price → "overridden", which is the BO-D33 signal that direct
@@ -358,6 +634,7 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
    */
   public PriceBadge(line: OrderDraftLine): { Text: string; Overridden: boolean } | null {
     if (!line.ProductID) return null;
+    if (line.PriceNote === SAVED_PRICE) return { Text: 'saved price', Overridden: false };
     if (line.PriceNote === NO_PRICE_RULE) return { Text: 'no catalog price — enter one', Overridden: false };
     if (line.PriceSource === 'DirectEntry') return { Text: 'overridden (direct entry)', Overridden: true };
     return { Text: line.PriceNote ?? line.PriceSource, Overridden: false };

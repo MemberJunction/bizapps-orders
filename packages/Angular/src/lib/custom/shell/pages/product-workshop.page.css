@@ -145,47 +145,12 @@
   max-height: calc(100vh - 300px);
 }
 
-/* ─── disclosure sections (label + rule across, chevron) ─────────────────── */
+/* ─── what we project INTO MJ's accordion panel ──────────────────────────── */
+/* The disclosure chrome itself (header, chevron, rule, keyboard + aria) belongs to
+   <mj-accordion-panel [Bare]>. Nothing here styles the panel — only the content we hand it. */
 
-.pw__section + .pw__section {
-  margin-top: 4px;
-}
-
-/* The header row: "text and then the line that goes across" — a divider you can click, not a
-   boxed accordion panel. */
-.pw__dt {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  font: inherit;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  padding: 12px 2px;
-  cursor: pointer;
-  color: var(--mj-text-primary);
-}
-.pw__dt:hover .pw__dt-label,
-.pw__dt:focus-visible .pw__dt-label {
-  color: var(--mj-brand-primary);
-}
-.pw__dt:focus-visible {
-  outline: 2px solid var(--mj-border-focus);
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-
-.pw__dt-chev {
-  font-size: 10px;
-  color: var(--mj-text-muted);
-  transition: transform 120ms ease-in-out;
-}
-.pw__dt-chev--open {
-  transform: rotate(90deg);
-}
-
-.pw__dt-label {
+/* The section label inside the mjAccordionTitle slot. */
+.pw__sec-label {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -196,16 +161,9 @@
   white-space: nowrap;
 }
 
-/* The rule runs across whatever width the label leaves. */
-.pw__dt-rule {
-  flex: 1;
-  height: 1px;
-  min-width: 16px;
-  background: var(--mj-border-default);
-}
-
-/* Rides on the header OPEN OR CLOSED — a folded section must never hide a problem. */
-.pw__dt-dot {
+/* The issue count, also in the title slot — so it rides on the header OPEN OR CLOSED and a folded
+   section can never hide a problem. */
+.pw__badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -217,10 +175,6 @@
   border: 1px solid var(--mj-status-warning-border);
   border-radius: 999px;
   padding: 1px 7px;
-}
-
-.pw__body {
-  padding: 4px 0 14px 19px;
 }
 
 /* ─── fields ─────────────────────────────────────────────────────────────── */

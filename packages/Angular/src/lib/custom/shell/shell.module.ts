@@ -18,6 +18,7 @@ import {
   MJEmptyStateComponent,
   MjSlidePanelComponent,
   MJAlertComponent,
+  MJAccordionModule,
 } from '@memberjunction/ng-ui-components';
 
 // Shared with accounting (dependency direction: common -> accounting -> orders). The scope chip,
@@ -139,6 +140,10 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
     MJEmptyStateComponent,
     MjSlidePanelComponent,
     MJAlertComponent,
+    // MJ's own disclosure panel (+ its title/actions/body slot directives) — the product workshop's
+    // five settings sections. Bundled as one module symbol so AOT can expand it across the package
+    // boundary (a bare array of standalone symbols trips NG1010).
+    MJAccordionModule,
     CompanyScopeChipComponent,
     // Backdrop-click + Escape dismissal (confirm-on-dirty) for the roster editors' scrims.
     DismissableDialogDirective,

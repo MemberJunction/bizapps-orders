@@ -21,25 +21,27 @@
   }
 }
 
-/* ── Header density (LOCAL OVERRIDE — temporary) ──────────────────────────────
+/* ── Header density (LOCAL OVERRIDE — deliberately minimal) ───────────────────
    Marcelo: the stock header "needs to be smaller... it's just too thick. It's taking up a lot of
    space and it's not doing much" — the user already knows the section (top nav) and the page (rail),
    so the title earns little vertical space.
 
-   MJ's <mj-page-header> has no density input (only Title/Icon/Subtitle). It DOES already compact
-   itself at <=768px — tighter padding, smaller icon — so this simply applies that same treatment at
-   every width. Requested upstream as a `Dense` input (MJ-UPSTREAM.md); DELETE this block when it
-   lands, rather than letting a local override of shared chrome become permanent. */
+   ⚠ WHAT THIS BLOCK USED TO GET WRONG (fixed 2026-07-17, and it is the same mistake as the .mj-btn
+   override we removed the same day). It ALSO forced the title to --mj-text-lg and the icon to 28px.
+   But MJ's own title is --mj-text-xl and MJ ALREADY drops it to --mj-text-lg under a <=768px media
+   query — so the override was PINNING MJ'S SMALL-SCREEN SIZE ONTO DESKTOP, permanently, defeating a
+   responsive decision MJ had already made. Marcelo saw the symptom and read it backwards:
+   "I'm not loving this metadata capsule. It's almost larger than the title... the icon next to it
+   looks really small in comparison." The capsule is MJ's own --mj-text-xs and was never the problem
+   — the TITLE had been shrunk a step, so the badge stopped reading as subordinate to it.
+
+   THE LESSON, twice in one day: overriding shared chrome does not merely restyle it, it OPTS OUT OF
+   DECISIONS THE COMPONENT ALREADY MADE FOR YOU — MJ's 44px touch target on the button, MJ's
+   responsive title here. Only the padding is overridden now; type scale and icon size are MJ's.
+   Asked upstream as a `Dense` input (QUESTIONS.md#q33) — delete this block if it lands. */
 :host ::ng-deep mj-page-header .mj-page-header-row--primary {
   padding-top: var(--mj-space-2);
   padding-bottom: var(--mj-space-2);
-}
-:host ::ng-deep mj-page-header .mj-page-header-icon {
-  height: 28px;
-  width: 28px;
-}
-:host ::ng-deep mj-page-header .mj-page-header-title {
-  font-size: var(--mj-text-lg);
 }
 
 /* ── Header controls: UNIFORM VERTICAL SIZING ────────────────────────────────
@@ -75,4 +77,50 @@
   display: inline-flex;
   align-items: center;
   box-sizing: border-box;
+}
+
+/* ── EXPERIMENT (Marcelo 2026-07-17) — badges INLINE, beside the title ────────
+   "Could you maybe put the metadata to the right of the title? And let me see what that
+   looks like... you don't need to change it in every single page."
+
+   MEASURED FIRST (live, Orders header): whole header 75.8px · title 25px @ top 68 ·
+   badge 26.8px @ top 101. The badge is on a SECOND ROW — that row IS the ~30px he keeps
+   objecting to. So the fix is composition, not scale: remove the row, don't shrink the type.
+   (Shrinking type is what produced two accidental accessibility regressions today.)
+
+   WHY THIS NEEDS AN OVERRIDE AT ALL: MJ projects [meta] INSIDE .mj-page-header-text,
+   after the title — it stacks by construction. MJ's own comment concedes the cost:
+   "When meta badges are present the actions drift down a touch — acceptable trade for the
+   more common no-meta case." We are the uncommon case: a data-forward app where every
+   header row is a grid row you cannot see.
+
+   ⚠ THIS IS A DELIBERATE, SCOPED OVERRIDE OF MJ CHROME, and it is exactly what
+   QUESTIONS.md#q33 asks Matt to make native. It is a COMPOSITION change (turn one column
+   into a row) — it does NOT touch type scale, icon size, or any responsive rule, which is
+   what the .mj-btn and title overrides got wrong. If Matt ships an inline [meta] option
+   this block deletes itself; if he declines, it is a one-rule cost with a known reason.
+   Scoped to ORDERS only for review — do not spread it until Marcelo has judged it. */
+:host ::ng-deep mj-page-header .mj-page-header-text {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--mj-space-3);
+  flex-wrap: wrap;
+}
+/* The meta wrapper is a plain div in the column; make it a row participant, not a block. */
+:host ::ng-deep mj-page-header .mj-page-header-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--mj-space-2);
+}
+
+/* The 36-vs-32 mismatch Marcelo saw is REAL and measured: the scope chip's HOST renders
+   36px while mj-refresh-button's <button> is 32px (MJ's own .mj-btn--sm). The old rule only
+   sized the chip's inner element, never its host. Same height beats any alignment — every
+   design system gives toolbar controls one shared control height for exactly this reason;
+   centring two different-height boxes just makes them symmetrically wrong. */
+:host ::ng-deep mj-page-header [actions] mj-company-scope-chip {
+  height: var(--mj-shell-control-h);
+  display: inline-flex;
+  align-items: center;
 }

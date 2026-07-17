@@ -22,6 +22,22 @@
 
       <!-- The card body: the ONLY scroll container here, so the footer below can stick to it. -->
       <div class="oe__body">
+        @if (IsLoading) {
+          <p class="oe__hint" role="status">
+            <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i> Opening order…
+          </p>
+        }
+        <!-- An order that could not be opened says so, loudly and here. The alternative — falling back
+             to a blank draft — would look like a working editor for an order that never loaded. -->
+        @if (LoadError) {
+          <div class="oe__fail" role="alert">
+            <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+            <div>
+              <b>This order could not be opened.</b>
+              <div class="oe__failline">{{ LoadError }}</div>
+            </div>
+          </div>
+        }
         @if (Draft; as d) {
           <!-- Identity + status. The status lives WITH its control, not as a header capsule. -->
           <div class="oe__ident">
