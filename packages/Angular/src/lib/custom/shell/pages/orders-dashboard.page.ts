@@ -23,6 +23,21 @@ interface RecentOrderRow {
 }
 
 /**
+ * Every count the page reads. Draft / Quoted / Confirmed / Posted / Fulfilled is the whole
+ * `Order.Status` value list bar `Voided`, so the breakdown accounts for every live order.
+ */
+interface OrderCounts {
+  thisMonth: number;
+  draft: number;
+  quoted: number;
+  confirmed: number;
+  awaitingFulfilment: number;
+  fulfilled: number;
+  booked: number;
+  arOpen: number;
+}
+
+/**
  * Orders Dashboard (orders UI plan §13.1) — built LAST within the category (§13.5 step 8).
  *
  * Cheap filtered COUNTS + SMALL lists only, per the §0 ruling: anything needing a sum or a group-by
@@ -58,6 +73,8 @@ export class OrdersDashboardPageComponent extends AccountingDashboardBase implem
 
   public Title = 'Orders';
   public Subtitle = 'The order book at a glance.';
+  /** The section's create verb — the shell must bind (CreateRequested). See the base class. */
+  public override CreateLabel = 'New order';
 
   public Cards: DashboardListCard[] = [];
 
@@ -92,17 +109,22 @@ export class OrdersDashboardPageComponent extends AccountingDashboardBase implem
     this.cdr.markForCheck();
     try {
       const monthStart = this.monthStartUTC();
-      const [thisMonth, draft, awaitingFulfilment, booked, arOpen, recent, overdue] = await Promise.all([
-        this.count({ EntityName: ORDER_ENTITY, ExtraFilter: `OrderDate >= '${monthStart}'` }),
-        this.count({ EntityName: ORDER_ENTITY, ExtraFilter: `Status='Draft'` }),
-        this.count({ EntityName: ORDER_ENTITY, ExtraFilter: `Status='Posted'` }),
-        this.count({ EntityName: ORDER_ENTITY, ExtraFilter: `Status IN ('Confirmed','Posted','Fulfilled')` }),
-        this.loadAROpen(),
-        this.loadRecentOrders(),
-        this.loadOverdue(),
-      ]);
+      const c = (filter: string): Promise<number> => this.count({ EntityName: ORDER_ENTITY, ExtraFilter: filter });
+      const [thisMonth, draft, quoted, confirmed, awaitingFulfilment, fulfilled, booked, arOpen, recent, overdue] =
+        await Promise.all([
+          c(`OrderDate >= '${monthStart}'`),
+          c(`Status='Draft'`),
+          c(`Status='Quoted'`),
+          c(`Status='Confirmed'`),
+          c(`Status='Posted'`),
+          c(`Status='Fulfilled'`),
+          c(`Status IN ('Confirmed','Posted','Fulfilled')`),
+          this.loadAROpen(),
+          this.loadRecentOrders(),
+          this.loadOverdue(),
+        ]);
 
-      this.Stats = this.buildStats(thisMonth, draft, awaitingFulfilment, booked, arOpen);
+      this.Stats = this.buildStats({ thisMonth, draft, quoted, confirmed, awaitingFulfilment, fulfilled, booked, arOpen });
       this.Cards = [this.recentOrdersCard(recent), this.overdueCard(overdue)];
     } catch (e) {
       this.LoadError = e instanceof Error ? e.message : String(e);
@@ -114,36 +136,70 @@ export class OrdersDashboardPageComponent extends AccountingDashboardBase implem
     }
   }
 
-  private buildStats(thisMonth: number, draft: number, awaitingFulfilment: number, booked: number, arOpen: number): DashboardStat[] {
+  /**
+   * The status breakdown + the two derived figures.
+   *
+   * **"Orders this month" is a COUNT, not current-month SALES** — and the label says so on purpose.
+   * Sales would be `SUM(TotalGross)` over the month's orders; there is no precomputed sales-by-month
+   * read model, and scanning the order book on every dashboard open is exactly what §0 forbids. A
+   * count is the honest thing this page can afford, so it is labelled as a count rather than dressed
+   * up as revenue. Open A/R is the one money figure here, and it is READ from accounting's
+   * precomputed read model rather than summed from the ledger (see loadAROpen).
+   */
+  private buildStats(c: OrderCounts): DashboardStat[] {
     return [
       {
         Id: 'this-month',
         Label: 'Orders this month',
-        Value: thisMonth,
+        Value: c.thisMonth,
         Icon: 'fa-solid fa-cart-shopping',
-        Tooltip: 'Orders dated on or after the first of this month (UTC), any status.',
+        Tooltip: 'How MANY orders are dated on or after the first of this month (UTC), any status. This is a count, not a sales total — a revenue figure needs a precomputed sales read model (§0).',
         GoTo: 'all-orders',
       },
       {
         Id: 'draft',
         Label: 'Drafts',
-        Value: draft,
+        Value: c.draft,
         Icon: 'fa-solid fa-pen-ruler',
         Tooltip: 'Composed but never quoted or confirmed — no journal entries exist for these.',
         GoTo: 'all-orders',
       },
       {
+        Id: 'quoted',
+        Label: 'Quoted',
+        Value: c.quoted,
+        Icon: 'fa-solid fa-file-signature',
+        Tooltip: 'Priced and sent to the customer, awaiting their confirmation. Still unbooked.',
+        GoTo: 'all-orders',
+      },
+      {
+        Id: 'confirmed',
+        Label: 'Confirmed',
+        Value: c.confirmed,
+        Icon: 'fa-solid fa-handshake',
+        Tooltip: 'The customer said yes — this is the transition that books the journal entry.',
+        GoTo: 'all-orders',
+      },
+      {
         Id: 'awaiting-fulfilment',
         Label: 'Posted (awaiting fulfilment)',
-        Value: awaitingFulfilment,
+        Value: c.awaitingFulfilment,
         Icon: 'fa-solid fa-truck-fast',
         Tooltip: 'Posted orders that have not advanced to Fulfilled.',
         GoTo: 'fulfillment',
       },
       {
+        Id: 'fulfilled',
+        Label: 'Fulfilled',
+        Value: c.fulfilled,
+        Icon: 'fa-solid fa-box-open',
+        Tooltip: 'Delivered to the customer — the end of the order lifecycle.',
+        GoTo: 'fulfillment',
+      },
+      {
         Id: 'booked',
         Label: 'Booked orders',
-        Value: booked,
+        Value: c.booked,
         Icon: 'fa-solid fa-book',
         Tooltip: 'Confirmed, Posted or Fulfilled — every one of these carries journal entries.',
         GoTo: 'all-orders',
@@ -151,7 +207,7 @@ export class OrdersDashboardPageComponent extends AccountingDashboardBase implem
       {
         Id: 'ar-open',
         Label: 'A/R open',
-        Value: arOpen,
+        Value: c.arOpen,
         Icon: 'fa-solid fa-file-invoice-dollar',
         Tooltip: "Open customer balance from accounting's A/R read model, across every company you can see.",
         GoTo: 'customer-ar',

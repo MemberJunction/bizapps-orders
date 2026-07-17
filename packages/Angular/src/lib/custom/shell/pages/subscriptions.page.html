@@ -5,6 +5,10 @@
       <mj-stat-badge [Label]="ActiveCount + ' active'" Icon="fa-solid fa-check" Variant="success"></mj-stat-badge>
     }
   </div>
+  <!-- One line: the search sits where the drop-downs' right edge would be (Marcelo's filter-bar rule). -->
+  <div toolbar class="su__filters">
+    <input class="mj-input su__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search subscription №, product or ID…" aria-label="Search subscriptions by number, product or ID" />
+  </div>
 </mj-page-header-interior>
 
 <mj-page-body-interior>
@@ -17,9 +21,9 @@
   } @else {
     <div class="su__gridwrap">
       <table class="su__grid">
-        <thead><tr><th>Subscription №</th><th>Product</th><th>Status</th><th>Current period</th><th>Next renewal</th><th></th></tr></thead>
+        <thead><tr><th>Subscription №</th><th>Product</th><th>Status</th><th>Current period</th><th>Next renewal</th><th>ID</th><th></th></tr></thead>
         <tbody>
-          @for (r of Rows; track r.ID) {
+          @for (r of Filtered; track r.ID) {
             <tr>
               <td>{{ r.SubscriptionNumber }}</td>
               <td>{{ r.Product || '—' }}</td>
@@ -32,11 +36,16 @@
                   <span class="su__soon">within 30 days</span>
                 }
               </td>
+              <!-- The ID is here to be READ and COPIED; the № above is how you find the row. -->
+              <td class="su__id" [title]="r.ID">{{ r.ID }}</td>
               <td><button class="mj-btn mj-btn--flat" (click)="Select(r.ID)">Timeline</button></td>
             </tr>
           }
         </tbody>
       </table>
+      @if (Filtered.length === 0) {
+        <p class="su__nomatch">No subscriptions match this search.</p>
+      }
     </div>
   }
 </mj-page-body-interior>

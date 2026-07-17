@@ -7,6 +7,30 @@
   min-height: 0;
 }
 
+/* Search sits on the filter line — the bar must not get taller. */
+.su__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.su__search {
+  width: 240px;
+  flex: 0 1 240px;
+  font-size: 12.5px;
+}
+.su__id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--mj-text-muted);
+  white-space: nowrap;
+}
+.su__nomatch {
+  margin: 0;
+  padding: 10px;
+  color: var(--mj-text-muted);
+  font-size: 12.5px;
+}
 .su__gridwrap {
   overflow: auto;
   border: 1px solid var(--mj-border-default);

@@ -1,0 +1,205 @@
+/* Payments → Terms types: the CRUD roster for Payment Terms Types. Mirrors product-types.page.css.
+   NOTE: mj-page-body-interior is display:block, so a `flex:1` child would be a no-op and collapse
+   to zero height. Everything below is sized with explicit height / max-height instead. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.ptt__note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.ptt__note code {
+  font-size: 11.5px;
+  color: var(--mj-text-secondary);
+}
+
+.ptt__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.ptt__search {
+  min-width: 260px;
+  flex: 0 1 340px;
+}
+.ptt__select {
+  width: auto;
+  min-width: 150px;
+}
+
+.ptt__gridwrap {
+  overflow: auto;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  min-height: 0;
+  max-height: calc(100vh - 260px);
+}
+.ptt__grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ptt__grid th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--mj-border-default);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--mj-bg-surface);
+}
+.ptt__grid td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+  vertical-align: top;
+  color: var(--mj-text-primary);
+}
+.ptt__grid th.num,
+.ptt__grid td.num {
+  text-align: right;
+}
+.ptt__row {
+  cursor: pointer;
+}
+.ptt__row:hover {
+  background: var(--mj-bg-surface-hover);
+}
+.ptt__row--inactive .ptt__name {
+  color: var(--mj-text-muted);
+}
+.ptt__name {
+  font-weight: 600;
+}
+.ptt__id {
+  font-size: 11px;
+  color: var(--mj-text-muted);
+  white-space: nowrap;
+}
+.ptt__editcell {
+  color: var(--mj-text-muted);
+  text-align: right;
+}
+
+/* ── editor dialog ───────────────────────────────────────────────────────────── */
+
+.ptt__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--mj-bg-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.ptt__dialog {
+  background: var(--mj-bg-surface);
+  border: 1px solid var(--mj-border-default);
+  border-radius: 12px;
+  padding: 18px;
+  width: min(760px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+}
+.ptt__dlgtitle {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--mj-text-primary);
+}
+.ptt__form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.ptt__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.ptt__field--wide {
+  grid-column: 1 / -1;
+}
+.ptt__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mj-text-secondary);
+}
+.ptt__req {
+  color: var(--mj-status-error-text);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ptt__help {
+  font-size: 11.5px;
+  color: var(--mj-text-muted);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ptt__flags {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  border-top: 1px solid var(--mj-border-subtle);
+  padding-top: 12px;
+}
+.ptt__flag {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--mj-text-primary);
+  cursor: pointer;
+}
+
+.ptt__warn {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--mj-status-warning);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--mj-status-warning) 8%, var(--mj-bg-surface));
+  color: var(--mj-text-primary);
+  font-size: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.ptt__dlgactions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.ptt__error {
+  margin: 0 0 10px;
+  color: var(--mj-status-error-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.ptt__desc {
+  max-width: 380px;
+  color: var(--mj-text-secondary);
+}

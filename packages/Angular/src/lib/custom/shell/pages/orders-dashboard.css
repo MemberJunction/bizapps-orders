@@ -1,6 +1,17 @@
-/* Shared category-dashboard styles. Design tokens only. */
-:host { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: 14px; }
-.dash-stats { display: flex; gap: 12px; flex-wrap: wrap; }
+/* Shared category-dashboard styles. Design tokens only.
+   ── ONE SPACING TOKEN ────────────────────────────────────────────────────────
+   Marcelo: "these bubbles are not padded in space consistently. All bubbles should be spaced
+   consistently, just straight up." So EVERY gap between EVERY card — stat strip, card grid, and the
+   space between the two — comes from `--mj-dash-gap` and nothing else. Never hard-code a gap below;
+   a per-card value is exactly the drift that made this look mismatched. Same token, same value, as
+   the JE/Batches dashboards in bizapps-accounting. */
+:host {
+  --mj-dash-gap: 14px;
+  display: flex; flex-direction: column; height: 100%; min-height: 0; gap: var(--mj-dash-gap);
+}
+/* mj-page-body-interior is display:BLOCK, so no gap reaches these siblings — the SAME token drives
+   the space between the strip and the grid, so "between two cards" is one distance everywhere. */
+.dash-stats { display: flex; gap: var(--mj-dash-gap); flex-wrap: wrap; margin-bottom: var(--mj-dash-gap); }
 .dash-stat {
   display: flex; flex-direction: column; gap: 2px; min-width: 170px; padding: 14px 16px;
   border: 1px solid var(--mj-border-default); border-radius: 10px; background: var(--mj-bg-surface-card);
@@ -17,7 +28,7 @@
    NOTE: no `flex: 1` anywhere below — the parent <mj-page-body-interior> is display:block, and a
    flex child of a block parent is ignored (the card would collapse to zero height). */
 .dash-cards {
-  display: grid; gap: 14px; margin-top: 2px;
+  display: grid; gap: var(--mj-dash-gap);
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
 .dash-card {
@@ -82,18 +93,3 @@
 .dash-row--warn .dash-row__icon i { color: var(--mj-status-warning); }
 .dash-row--warn .dash-row__secondary { color: var(--mj-status-warning-text); }
 
-/* ── CONSISTENT CARD SPACING ─────────────────────────────────────────────────
-   Marcelo: "these bubbles are not padded in space consistently. All bubbles should be spaced
-   consistently, just straight up." One gap token drives BOTH the stat strip and the list-card grid,
-   so the two can't drift apart — which is what made them look mismatched. */
-:host {
-  --mj-dash-gap: 12px;
-}
-.dash-stats,
-.dash-lists,
-.dash-cards {
-  gap: var(--mj-dash-gap);
-}
-.dash-stats {
-  margin-bottom: var(--mj-dash-gap);
-}

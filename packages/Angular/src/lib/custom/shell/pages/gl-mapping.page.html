@@ -6,9 +6,11 @@
       <mj-stat-badge Label="All resolved" Icon="fa-solid fa-check" Variant="success"></mj-stat-badge>
     }
   </div>
-  <div toolbar>
+  <!-- Filters left, search to their right, all on ONE line (Marcelo's filter-bar rule). -->
+  <div toolbar class="glm__filters">
+    <input class="mj-input glm__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search product, SKU or ID…" aria-label="Search products by name, SKU or ID" />
     <label class="glm__toggle">
-      <input type="checkbox" [(ngModel)]="ShowUnresolvedOnly" />
+      <input type="checkbox" [(ngModel)]="ShowUnresolvedOnly" (ngModelChange)="OnFilterChanged()" />
       Only unresolved
     </label>
   </div>
@@ -28,11 +30,12 @@
 
     <div class="glm__gridwrap">
       <table class="glm__grid">
-        <thead><tr><th>Product</th><th>Role</th><th>Books to</th><th>Resolved at</th></tr></thead>
+        <thead><tr><th>Product</th><th>SKU</th><th>Role</th><th>Books to</th><th>Resolved at</th><th>Product ID</th></tr></thead>
         <tbody>
           @for (r of Filtered; track r.ProductID) {
             <tr [class.glm__row--bad]="!r.Code">
               <td>{{ r.Product }}</td>
+              <td>{{ r.SKU || '—' }}</td>
               <td>{{ r.Role }}</td>
               <td>
                 @if (r.Code) {
@@ -42,6 +45,8 @@
                 }
               </td>
               <td class="glm__where">{{ r.ResolvedAt }}</td>
+              <!-- The ID is here to be READ and COPIED — the name/SKU above are how you find it. -->
+              <td class="glm__id" [title]="r.ProductID">{{ r.ProductID }}</td>
             </tr>
           }
         </tbody>

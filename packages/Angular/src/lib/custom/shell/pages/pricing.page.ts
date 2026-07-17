@@ -18,6 +18,9 @@ export interface PriceListRow {
 export interface ProductPriceRow {
   ID: string;
   Product: string;
+  /** The product's own handles — what a human searches by, and the id they can copy. */
+  ProductID: string;
+  ProductSKU: string | null;
   PricingModel: string;
   Amount: number;
   MinQuantity: number | null;
@@ -59,6 +62,8 @@ export class PricingPageComponent extends BaseAngularComponent implements OnInit
   public Prices: ProductPriceRow[] = [];
   public IsLoading = false;
   public LoadError: string | null = null;
+  /** One box over the price rows: product name / SKU / product ID / price-rule ID. */
+  public Search = '';
 
   async ngOnInit(): Promise<void> {
     this.refreshSub = this.pageRefresh.OnRefresh(() => this.Refresh());
@@ -125,6 +130,8 @@ export class PricingPageComponent extends BaseAngularComponent implements OnInit
       .map((p) => ({
         ID: p.ID,
         Product: engine.ProductByID(p.ProductID)?.Name ?? '(unknown product)',
+        ProductID: p.ProductID,
+        ProductSKU: engine.ProductByID(p.ProductID)?.SKU ?? null,
         PricingModel: p.PricingModel,
         Amount: p.Amount,
         MinQuantity: p.MinQuantity,
@@ -139,6 +146,32 @@ export class PricingPageComponent extends BaseAngularComponent implements OnInit
       .sort((a, b) => a.Product.localeCompare(b.Product));
   }
 
+  /**
+   * The rows the grid shows. Filters CLIENT-SIDE over the engine-cached prices already loaded for
+   * the selected list — never a round-trip per keystroke.
+   */
+  public get FilteredPrices(): ProductPriceRow[] {
+    const q = this.Search.trim().toLowerCase();
+    if (!q) return this.Prices;
+    // Product name + SKU lead (what an operator knows); the product ID and the rule's own ID match
+    // too, for anyone pasting one. Lowercased `includes` — a text match, not a UUID equality test.
+    return this.Prices.filter(
+      (p) =>
+        p.Product.toLowerCase().includes(q) ||
+        (p.ProductSKU ?? '').toLowerCase().includes(q) ||
+        p.ProductID.toLowerCase().includes(q) ||
+        p.ID.toLowerCase().includes(q),
+    );
+  }
+
+  public OnFilterChanged(): void {
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * DELIBERATELY counted over every price in the list, never the filtered set — an ambiguity warning
+   * a search box can mute is not a warning.
+   */
   public get OverlapCount(): number {
     return this.Prices.filter((p) => p.Overlaps).length;
   }

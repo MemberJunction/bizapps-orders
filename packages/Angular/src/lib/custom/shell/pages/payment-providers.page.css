@@ -1,0 +1,218 @@
+/* Payments → Providers: the CRUD roster for Payment Providers. Mirrors product-types.page.css.
+   NOTE: mj-page-body-interior is display:block, so a `flex:1` child would be a no-op and collapse
+   to zero height. Everything below is sized with explicit height / max-height instead. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.pp__note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--mj-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pp__note code {
+  font-size: 11.5px;
+  color: var(--mj-text-secondary);
+}
+
+.pp__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.pp__search {
+  min-width: 260px;
+  flex: 0 1 340px;
+}
+.pp__select {
+  width: auto;
+  min-width: 150px;
+}
+
+.pp__gridwrap {
+  overflow: auto;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  min-height: 0;
+  max-height: calc(100vh - 260px);
+}
+.pp__grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.pp__grid th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--mj-border-default);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--mj-bg-surface);
+}
+.pp__grid td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--mj-border-subtle);
+  vertical-align: top;
+  color: var(--mj-text-primary);
+}
+.pp__grid th.num,
+.pp__grid td.num {
+  text-align: right;
+}
+.pp__row {
+  cursor: pointer;
+}
+.pp__row:hover {
+  background: var(--mj-bg-surface-hover);
+}
+.pp__row--inactive .pp__name {
+  color: var(--mj-text-muted);
+}
+.pp__name {
+  font-weight: 600;
+}
+.pp__id {
+  font-size: 11px;
+  color: var(--mj-text-muted);
+  white-space: nowrap;
+}
+.pp__editcell {
+  color: var(--mj-text-muted);
+  text-align: right;
+}
+
+/* ── editor dialog ───────────────────────────────────────────────────────────── */
+
+.pp__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--mj-bg-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.pp__dialog {
+  background: var(--mj-bg-surface);
+  border: 1px solid var(--mj-border-default);
+  border-radius: 12px;
+  padding: 18px;
+  width: min(760px, 100%);
+  max-height: 88vh;
+  overflow: auto;
+}
+.pp__dlgtitle {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--mj-text-primary);
+}
+.pp__form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.pp__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.pp__field--wide {
+  grid-column: 1 / -1;
+}
+.pp__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--mj-text-secondary);
+}
+.pp__req {
+  color: var(--mj-status-error-text);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.pp__help {
+  font-size: 11.5px;
+  color: var(--mj-text-muted);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.pp__flags {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  border-top: 1px solid var(--mj-border-subtle);
+  padding-top: 12px;
+}
+.pp__flag {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--mj-text-primary);
+  cursor: pointer;
+}
+
+.pp__warn {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--mj-status-warning);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--mj-status-warning) 8%, var(--mj-bg-surface));
+  color: var(--mj-text-primary);
+  font-size: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.pp__dlgactions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.pp__error {
+  margin: 0 0 10px;
+  color: var(--mj-status-error-text);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Credentials are shown as a STATE, never a value — see the class doc in payment-providers.page.ts. */
+.pp__cred {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.pp__cred--set {
+  color: var(--mj-status-success-text);
+}
+.pp__cred--unset {
+  color: var(--mj-text-muted);
+}
+.pp__mode {
+  font-weight: 600;
+}
+.pp__mode--live {
+  color: var(--mj-status-warning-text);
+}

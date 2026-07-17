@@ -1,0 +1,193 @@
+<mj-page-header-interior>
+  <div meta>
+    <mj-stat-badge [Label]="Rows.length + ' providers'" Icon="fa-solid fa-credit-card" Variant="default"></mj-stat-badge>
+    <mj-stat-badge [Label]="LiveCount + ' live'" Icon="fa-solid fa-tower-broadcast" Variant="warning"></mj-stat-badge>
+  </div>
+  <div actions>
+    <button class="mj-btn mj-btn--primary" (click)="New()" [disabled]="IsLoading">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i> New provider
+    </button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body-interior>
+  <p class="pp__note">
+    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+    A provider account binds one company to one processor. <code>Live mode</code> is the difference
+    between a test charge and a real one. Credentials are held by the MJ Credentials engine — this
+    screen only shows whether a reference is set, never its value.
+  </p>
+
+  @if (IsLoading) {
+    <mj-loading text="Loading payment providers…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="pp__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else {
+    <div class="pp__bar">
+      <input
+        class="mj-input pp__search"
+        type="search"
+        [(ngModel)]="Search"
+        placeholder="Search by name, company or ID…"
+        aria-label="Search payment providers by name, company or ID" />
+      <select class="mj-input pp__select" [(ngModel)]="Filter" aria-label="Filter by active state">
+        <option value="all">All providers</option>
+        <option value="active">Active only</option>
+        <option value="inactive">Inactive only</option>
+      </select>
+      <select class="mj-input pp__select" [(ngModel)]="Sort" aria-label="Sort by">
+        <option value="name">Sort: name</option>
+        <option value="type">Sort: provider type</option>
+        <option value="company">Sort: company</option>
+      </select>
+    </div>
+
+    @if (Rows.length === 0) {
+      <mj-empty-state
+        Icon="fa-solid fa-credit-card"
+        Title="No payment providers"
+        Message="No provider accounts are defined. Create one — a payment cannot be captured without a provider.">
+      </mj-empty-state>
+    } @else if (VisibleRows.length === 0) {
+      <mj-empty-state
+        Icon="fa-solid fa-magnifying-glass"
+        Title="No matching providers"
+        Message="No payment provider matches this search and filter.">
+      </mj-empty-state>
+    } @else {
+      <div class="pp__gridwrap">
+        <table class="pp__grid">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Company</th>
+              <th>Mode</th>
+              <th>Credentials</th>
+              <th>Active</th>
+              <th>ID</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of VisibleRows; track r.ID) {
+              <tr class="pp__row" (click)="Edit(r)" [class.pp__row--inactive]="!r.IsActive">
+                <td class="pp__name">{{ r.Name }}</td>
+                <td>{{ r.ProviderType }}</td>
+                <td>{{ r.Company || '—' }}</td>
+                <td>
+                  <span class="pp__mode" [class.pp__mode--live]="r.IsLiveMode">{{ r.IsLiveMode ? 'Live' : 'Test' }}</span>
+                </td>
+                <td>
+                  <span class="pp__cred" [class.pp__cred--set]="r.HasCredentials" [class.pp__cred--unset]="!r.HasCredentials">
+                    {{ r.HasCredentials ? 'Set' : 'Not set' }}
+                  </span>
+                </td>
+                <td>{{ r.IsActive ? 'Yes' : 'No' }}</td>
+                <td class="pp__id">{{ r.ID }}</td>
+                <td class="pp__editcell">
+                  <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+
+  @if (Draft) {
+    <div class="pp__scrim" role="dialog" aria-modal="true" aria-label="Edit payment provider">
+      <div class="pp__dialog">
+        <h2 class="pp__dlgtitle">{{ Draft.ID ? 'Edit payment provider' : 'New payment provider' }}</h2>
+
+        @if (SaveError) {
+          <p class="pp__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ SaveError }}</p>
+        }
+
+        <div class="pp__form">
+          <label class="pp__field">
+            <span class="pp__label">Name <span class="pp__req">required</span></span>
+            <input class="mj-input" [(ngModel)]="Draft.Name" placeholder="e.g. Stripe — US entity" />
+            <span class="pp__help">Display name of this provider account.</span>
+          </label>
+
+          <label class="pp__field">
+            <span class="pp__label">Provider type</span>
+            <select class="mj-input" [(ngModel)]="Draft.ProviderType">
+              @for (o of ProviderTypeOptions; track o) {
+                <option [ngValue]="o">{{ o }}</option>
+              }
+            </select>
+            <span class="pp__help">Manual = cash/check/wire captured by hand. Widens as processors land.</span>
+          </label>
+
+          <label class="pp__field">
+            <span class="pp__label">Company <span class="pp__req">required</span></span>
+            <select class="mj-input" [(ngModel)]="Draft.CompanyID">
+              @for (c of Companies; track c.ID) {
+                <option [ngValue]="c.ID">{{ c.Name }}</option>
+              }
+            </select>
+            <span class="pp__help">The company this provider account belongs to.</span>
+          </label>
+
+          <label class="pp__field">
+            <span class="pp__label">Credentials reference</span>
+            <input
+              class="mj-input"
+              type="text"
+              autocomplete="off"
+              [(ngModel)]="Draft.CredentialsRefInput"
+              [disabled]="Draft.ClearCredentialsRef"
+              placeholder="Leave blank to keep the current reference" />
+            <span class="pp__help">
+              Currently <strong>{{ Draft.HasCredentials ? 'set' : 'not set' }}</strong>. The stored value is
+              never displayed or loaded into this box — type a new MJ Credentials key to replace it, or
+              leave it blank to change nothing.
+            </span>
+          </label>
+
+          <div class="pp__field pp__field--wide pp__flags">
+            <label class="pp__flag">
+              <input class="mj-checkbox" type="checkbox" [(ngModel)]="Draft.IsLiveMode" />
+              <span>Live mode <span class="pp__help">— points at the processor's live environment. Charges are real money.</span></span>
+            </label>
+            <label class="pp__flag">
+              <input class="mj-checkbox" type="checkbox" [(ngModel)]="Draft.IsActive" />
+              <span>Active <span class="pp__help">— an inactive account stops being selectable for new payments; history is unaffected.</span></span>
+            </label>
+            @if (Draft.HasCredentials) {
+              <label class="pp__flag">
+                <input class="mj-checkbox" type="checkbox" [(ngModel)]="Draft.ClearCredentialsRef" />
+                <span>Clear the stored credentials reference <span class="pp__help">— unsets it on save.</span></span>
+              </label>
+            }
+          </div>
+        </div>
+
+        @if (CredentialsConflict) {
+          <p class="pp__warn" role="alert">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            You have both typed a new credentials reference and asked to clear the stored one. Pick one.
+          </p>
+        }
+
+        @if (Draft.IsLiveMode) {
+          <p class="pp__warn" role="note">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            Live mode is on — payments captured through this account will be charged against the
+            processor's live environment, not a sandbox.
+          </p>
+        }
+
+        <div class="pp__dlgactions">
+          <button class="mj-btn mj-btn--primary" (click)="Save()" [disabled]="!CanSave">
+            {{ IsSaving ? 'Saving…' : 'Save' }}
+          </button>
+          <button class="mj-btn mj-btn--outline" (click)="Cancel()" [disabled]="IsSaving">Cancel</button>
+        </div>
+      </div>
+    </div>
+  }
+</mj-page-body-interior>

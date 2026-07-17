@@ -8,6 +8,8 @@ import { OrdersEngineBase } from '@mj-biz-apps/orders-engine-base';
 export interface MappingRow {
   ProductID: string;
   Product: string;
+  /** The other handle a human actually knows a product by (nullable exactly as the column is). */
+  SKU: string | null;
   Role: string;
   /** Where the winning link lives: the product, a category, the company, or nowhere. */
   ResolvedAt: string;
@@ -42,6 +44,8 @@ export class GLMappingPageComponent extends BaseAngularComponent implements OnIn
   public IsLoading = false;
   public LoadError: string | null = null;
   public ShowUnresolvedOnly = false;
+  /** One box, matching what a human knows (name/SKU) AND the ID they may have pasted from a log. */
+  public Search = '';
 
   async ngOnInit(): Promise<void> {
     this.refreshSub = this.pageRefresh.OnRefresh(() => this.Refresh());
@@ -56,8 +60,29 @@ export class GLMappingPageComponent extends BaseAngularComponent implements OnIn
     void this.load();
   }
 
+  /** Filters CLIENT-SIDE over the rows already resolved off the engine cache — no round-trip. */
   public get Filtered(): MappingRow[] {
-    return this.ShowUnresolvedOnly ? this.Rows.filter((r) => !r.Code) : this.Rows;
+    const q = this.Search.trim().toLowerCase();
+    return this.Rows.filter((r) => (!this.ShowUnresolvedOnly || !r.Code) && this.matchesSearch(r, q));
+  }
+
+  /**
+   * Name + SKU lead — what a human knows. The ID matches too (Marcelo: database IDs are meaningless
+   * to them, but they ARE how systems reference each other) — additive, never the primary handle.
+   * A lowercased text `includes`, deliberately NOT `UUIDsEqual`: this is a substring match, not a
+   * UUID equality test.
+   */
+  private matchesSearch(row: MappingRow, q: string): boolean {
+    if (!q) return true;
+    return (
+      row.Product.toLowerCase().includes(q) ||
+      (row.SKU ?? '').toLowerCase().includes(q) ||
+      row.ProductID.toLowerCase().includes(q)
+    );
+  }
+
+  public OnFilterChanged(): void {
+    this.cdr.markForCheck();
   }
 
   public get UnresolvedCount(): number {
@@ -81,6 +106,7 @@ export class GLMappingPageComponent extends BaseAngularComponent implements OnIn
         return {
           ProductID: p.ID,
           Product: p.Name,
+          SKU: p.SKU,
           Role: role,
           ResolvedAt: this.whereResolved(p.ID, role, asOf, p.OwningCompanyID),
           Code: account?.Code ?? null,

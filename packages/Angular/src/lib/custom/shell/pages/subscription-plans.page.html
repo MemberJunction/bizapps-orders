@@ -1,0 +1,183 @@
+<mj-page-header-interior>
+  <div meta>
+    <mj-stat-badge [Label]="Rows.length + ' plans'" Icon="fa-solid fa-repeat" Variant="default"></mj-stat-badge>
+    <mj-stat-badge [Label]="ActiveCount + ' active'" Icon="fa-solid fa-circle-check" Variant="info"></mj-stat-badge>
+  </div>
+  <div actions>
+    <button class="mj-btn mj-btn--primary" (click)="New()" [disabled]="IsLoading">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i> New plan
+    </button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body-interior>
+  <p class="sp__note">
+    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+    A plan is how a product is sold over time — cycle, price per cycle, trial. Retire a plan with the
+    active flag; live subscriptions keep billing on the terms they were sold.
+  </p>
+
+  @if (IsLoading) {
+    <mj-loading text="Loading subscription plans…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="sp__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else {
+    <div class="sp__bar">
+      <input
+        class="mj-input sp__search"
+        type="search"
+        [(ngModel)]="Search"
+        placeholder="Search by name, product or ID…"
+        aria-label="Search subscription plans by name, product or ID" />
+      <select class="mj-input sp__select" [(ngModel)]="Filter" aria-label="Filter by active state">
+        <option value="all">All plans</option>
+        <option value="active">Active only</option>
+        <option value="inactive">Inactive only</option>
+      </select>
+      <select class="mj-input sp__select" [(ngModel)]="Sort" aria-label="Sort by">
+        <option value="name">Sort: name</option>
+        <option value="product">Sort: product</option>
+        <option value="cycle">Sort: billing cycle</option>
+      </select>
+    </div>
+
+    @if (Rows.length === 0) {
+      <mj-empty-state
+        Icon="fa-solid fa-repeat"
+        Title="No subscription plans"
+        Message="No plans are defined. Create one — a recurring product cannot be subscribed to without a plan.">
+      </mj-empty-state>
+    } @else if (VisibleRows.length === 0) {
+      <mj-empty-state
+        Icon="fa-solid fa-magnifying-glass"
+        Title="No matching plans"
+        Message="No subscription plan matches this search and filter.">
+      </mj-empty-state>
+    } @else {
+      <div class="sp__gridwrap">
+        <table class="sp__grid">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Product</th>
+              <th>Billing cycle</th>
+              <th class="num">Price / cycle</th>
+              <th class="num">Trial days</th>
+              <th>Active</th>
+              <th>ID</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of VisibleRows; track r.ID) {
+              <tr class="sp__row" (click)="Edit(r)" [class.sp__row--inactive]="!r.IsActive">
+                <td class="sp__name">{{ r.Name }}</td>
+                <td class="sp__product">{{ r.Product || '—' }}</td>
+                <td>{{ CycleLabel(r) }}</td>
+                <td class="num">{{ r.PricePerCycle === null ? 'From pricing' : (r.PricePerCycle | number: '1.2-2') }}</td>
+                <td class="num">{{ r.TrialDays }}</td>
+                <td>{{ r.IsActive ? 'Yes' : 'No' }}</td>
+                <td class="sp__id">{{ r.ID }}</td>
+                <td class="sp__editcell">
+                  <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+
+  @if (Draft) {
+    <div class="sp__scrim" role="dialog" aria-modal="true" aria-label="Edit subscription plan">
+      <div class="sp__dialog">
+        <h2 class="sp__dlgtitle">{{ Draft.ID ? 'Edit subscription plan' : 'New subscription plan' }}</h2>
+
+        @if (SaveError) {
+          <p class="sp__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ SaveError }}</p>
+        }
+
+        <div class="sp__form">
+          <label class="sp__field">
+            <span class="sp__label">Name <span class="sp__req">required</span></span>
+            <input class="mj-input" [(ngModel)]="Draft.Name" placeholder="e.g. Pro — Annual" />
+          </label>
+
+          <label class="sp__field">
+            <span class="sp__label">Product <span class="sp__req">required</span></span>
+            <select class="mj-input" [(ngModel)]="Draft.ProductID">
+              @for (p of Products; track p.ID) {
+                <option [ngValue]="p.ID">{{ p.Name }}</option>
+              }
+            </select>
+            <span class="sp__help">The product this plan sells on a recurring cadence.</span>
+          </label>
+
+          <label class="sp__field">
+            <span class="sp__label">Billing cycle</span>
+            <select class="mj-input" [(ngModel)]="Draft.BillingCycle">
+              @for (o of BillingCycleOptions; track o) {
+                <option [ngValue]="o">{{ o }}</option>
+              }
+            </select>
+          </label>
+
+          <label class="sp__field">
+            <span class="sp__label">Custom cycle days</span>
+            <input
+              class="mj-input"
+              type="number"
+              min="1"
+              step="1"
+              [(ngModel)]="Draft.CustomCycleDays"
+              [disabled]="Draft.BillingCycle !== 'Custom'"
+              placeholder="e.g. 45" />
+            <span class="sp__help">Cycle length in days. Only used when the billing cycle is Custom.</span>
+          </label>
+
+          <label class="sp__field">
+            <span class="sp__label">Price per cycle</span>
+            <input class="mj-input" type="number" step="0.01" [(ngModel)]="Draft.PricePerCycle" placeholder="Leave blank to derive" />
+            <span class="sp__help">Blank means derive from the product / pricing engine — it does NOT mean free.</span>
+          </label>
+
+          <label class="sp__field">
+            <span class="sp__label">Trial days</span>
+            <input class="mj-input" type="number" min="0" step="1" [(ngModel)]="Draft.TrialDays" />
+            <span class="sp__help">Free-trial length in days. 0 = no trial.</span>
+          </label>
+
+          <div class="sp__field sp__field--wide sp__flags">
+            <label class="sp__flag">
+              <input class="mj-checkbox" type="checkbox" [(ngModel)]="Draft.IsActive" />
+              <span>Active <span class="sp__help">— an inactive plan stops being selectable for new subscriptions.</span></span>
+            </label>
+          </div>
+        </div>
+
+        @if (NeedsCustomCycleDays) {
+          <p class="sp__warn" role="alert">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            A Custom billing cycle needs a cycle length in days — otherwise the plan has no cadence to bill on.
+          </p>
+        }
+
+        @if (Draft.ID && !Draft.IsActive) {
+          <p class="sp__warn" role="note">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            Deactivating keeps existing subscriptions on {{ DraftProductName || 'this product' }} billing exactly as
+            they are — the plan simply stops being selectable for new ones.
+          </p>
+        }
+
+        <div class="sp__dlgactions">
+          <button class="mj-btn mj-btn--primary" (click)="Save()" [disabled]="!CanSave">
+            {{ IsSaving ? 'Saving…' : 'Save' }}
+          </button>
+          <button class="mj-btn mj-btn--outline" (click)="Cancel()" [disabled]="IsSaving">Cancel</button>
+        </div>
+      </div>
+    </div>
+  }
+</mj-page-body-interior>

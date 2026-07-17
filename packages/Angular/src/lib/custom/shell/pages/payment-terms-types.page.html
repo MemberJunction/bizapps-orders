@@ -1,0 +1,139 @@
+<mj-page-header-interior>
+  <div meta>
+    <mj-stat-badge [Label]="Rows.length + ' terms types'" Icon="fa-solid fa-file-invoice-dollar" Variant="default"></mj-stat-badge>
+    <mj-stat-badge [Label]="ActiveCount + ' active'" Icon="fa-solid fa-circle-check" Variant="info"></mj-stat-badge>
+  </div>
+  <div actions>
+    <button class="mj-btn mj-btn--primary" (click)="New()" [disabled]="IsLoading">
+      <i class="fa-solid fa-plus" aria-hidden="true"></i> New terms type
+    </button>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body-interior>
+  <p class="ptt__note">
+    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+    Payment terms turn an order's posting date into its due date — <code>Net days</code> is the offset.
+    Retire terms with the active flag; existing orders keep the terms they were written with.
+  </p>
+
+  @if (IsLoading) {
+    <mj-loading text="Loading payment terms types…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="ptt__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else {
+    <div class="ptt__bar">
+      <input
+        class="mj-input ptt__search"
+        type="search"
+        [(ngModel)]="Search"
+        placeholder="Search by name, code or ID…"
+        aria-label="Search payment terms types by name, code or ID" />
+      <select class="mj-input ptt__select" [(ngModel)]="Filter" aria-label="Filter by active state">
+        <option value="all">All terms types</option>
+        <option value="active">Active only</option>
+        <option value="inactive">Inactive only</option>
+      </select>
+      <select class="mj-input ptt__select" [(ngModel)]="Sort" aria-label="Sort by">
+        <option value="name">Sort: name</option>
+        <option value="code">Sort: code</option>
+        <option value="netdays">Sort: net days</option>
+      </select>
+    </div>
+
+    @if (Rows.length === 0) {
+      <mj-empty-state
+        Icon="fa-solid fa-file-invoice-dollar"
+        Title="No payment terms types"
+        Message="No payment terms are defined. Create one — an order cannot carry terms that do not exist.">
+      </mj-empty-state>
+    } @else if (VisibleRows.length === 0) {
+      <mj-empty-state
+        Icon="fa-solid fa-magnifying-glass"
+        Title="No matching terms types"
+        Message="No payment terms type matches this search and filter.">
+      </mj-empty-state>
+    } @else {
+      <div class="ptt__gridwrap">
+        <table class="ptt__grid">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Code</th>
+              <th class="num">Net days</th>
+              <th>Description</th>
+              <th>Active</th>
+              <th>ID</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (r of VisibleRows; track r.ID) {
+              <tr class="ptt__row" (click)="Edit(r)" [class.ptt__row--inactive]="!r.IsActive">
+                <td class="ptt__name">{{ r.Name }}</td>
+                <td>{{ r.Code }}</td>
+                <td class="num">{{ r.NetDays === 0 ? 'Due on receipt' : r.NetDays }}</td>
+                <td class="ptt__desc">{{ r.Description || '—' }}</td>
+                <td>{{ r.IsActive ? 'Yes' : 'No' }}</td>
+                <td class="ptt__id">{{ r.ID }}</td>
+                <td class="ptt__editcell">
+                  <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  }
+
+  @if (Draft) {
+    <div class="ptt__scrim" role="dialog" aria-modal="true" aria-label="Edit payment terms type">
+      <div class="ptt__dialog">
+        <h2 class="ptt__dlgtitle">{{ Draft.ID ? 'Edit payment terms type' : 'New payment terms type' }}</h2>
+
+        @if (SaveError) {
+          <p class="ptt__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ SaveError }}</p>
+        }
+
+        <div class="ptt__form">
+          <label class="ptt__field">
+            <span class="ptt__label">Name <span class="ptt__req">required</span></span>
+            <input class="mj-input" [(ngModel)]="Draft.Name" placeholder="e.g. Net 30" />
+          </label>
+
+          <label class="ptt__field">
+            <span class="ptt__label">Code <span class="ptt__req">required</span></span>
+            <input class="mj-input" [(ngModel)]="Draft.Code" placeholder="e.g. Net30" />
+            <span class="ptt__help">Stable machine code (Net30, DueOnReceipt, Prepaid…). Unique.</span>
+          </label>
+
+          <label class="ptt__field">
+            <span class="ptt__label">Net days</span>
+            <input class="mj-input" type="number" min="0" step="1" [(ngModel)]="Draft.NetDays" />
+            <span class="ptt__help">Days from the posting date to the due date. 0 = due on receipt.</span>
+          </label>
+
+          <label class="ptt__field ptt__field--wide">
+            <span class="ptt__label">Description</span>
+            <textarea class="mj-textarea" rows="2" [(ngModel)]="Draft.Description"></textarea>
+          </label>
+
+          <div class="ptt__field ptt__field--wide ptt__flags">
+            <label class="ptt__flag">
+              <input class="mj-checkbox" type="checkbox" [(ngModel)]="Draft.IsActive" />
+              <span>Active <span class="ptt__help">— inactive terms stop being selectable on new orders; existing orders are unaffected.</span></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="ptt__dlgactions">
+          <button class="mj-btn mj-btn--primary" (click)="Save()" [disabled]="!CanSave">
+            {{ IsSaving ? 'Saving…' : 'Save' }}
+          </button>
+          <button class="mj-btn mj-btn--outline" (click)="Cancel()" [disabled]="IsSaving">Cancel</button>
+        </div>
+      </div>
+    </div>
+  }
+</mj-page-body-interior>

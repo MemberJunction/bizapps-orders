@@ -5,6 +5,10 @@
     }
     <mj-stat-badge [Label]="Lists.length + ' price lists'" Icon="fa-solid fa-tags" Variant="default"></mj-stat-badge>
   </div>
+  <!-- One line: the search sits where the drop-downs' right edge would be (Marcelo's filter-bar rule). -->
+  <div toolbar class="pr__filters">
+    <input class="mj-input pr__search" [(ngModel)]="Search" (ngModelChange)="OnFilterChanged()" placeholder="Search product, SKU or ID…" aria-label="Search prices by product name, SKU or ID" />
+  </div>
 </mj-page-header-interior>
 
 <mj-page-body-interior>
@@ -43,9 +47,9 @@
         } @else {
           <div class="pr__gridwrap">
             <table class="pr__grid">
-              <thead><tr><th>Product</th><th>Model</th><th>Qty band</th><th class="num">Amount</th><th>Effective</th><th>Tiers</th></tr></thead>
+              <thead><tr><th>Product</th><th>SKU</th><th>Model</th><th>Qty band</th><th class="num">Amount</th><th>Effective</th><th>Tiers</th><th>Product ID</th></tr></thead>
               <tbody>
-                @for (p of Prices; track p.ID) {
+                @for (p of FilteredPrices; track p.ID) {
                   <tr [class.pr__row--warn]="p.Overlaps">
                     <td>
                       {{ p.Product }}
@@ -53,6 +57,7 @@
                         <span class="pr__overlap">overlaps another rule</span>
                       }
                     </td>
+                    <td>{{ p.ProductSKU || '—' }}</td>
                     <td>{{ p.PricingModel }}</td>
                     <td>{{ QtyBand(p) }}</td>
                     <td class="num">{{ p.Amount | currency }}</td>
@@ -70,10 +75,15 @@
                         }
                       }
                     </td>
+                    <!-- The ID is here to be READ and COPIED; the name/SKU are how you find the row. -->
+                    <td class="pr__id" [title]="p.ProductID">{{ p.ProductID }}</td>
                   </tr>
                 }
               </tbody>
             </table>
+            @if (FilteredPrices.length === 0) {
+              <p class="pr__muted">No prices match this search.</p>
+            }
           </div>
         }
       </section>

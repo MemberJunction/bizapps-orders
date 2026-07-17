@@ -76,6 +76,24 @@
   line-height: 1.5;
 }
 
+/* Search sits on the filter line — the bar must not get taller. */
+.pr__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.pr__search {
+  width: 220px;
+  flex: 0 1 220px;
+  font-size: 12.5px;
+}
+.pr__id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--mj-text-muted);
+  white-space: nowrap;
+}
 .pr__gridwrap {
   overflow: auto;
   border: 1px solid var(--mj-border-default);

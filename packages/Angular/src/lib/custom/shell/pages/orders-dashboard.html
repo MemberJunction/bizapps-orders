@@ -1,7 +1,19 @@
 <!-- Shared template for the category dashboards (§8.6 step 6). Cheap stats + small lists only — §0.
      Both the Orders and the Payments dashboard render this: the stat strip is driven by `Stats`, the
      cards by `Cards`, so the two pages differ only in what they put in those arrays. -->
+<!-- [actions] is the verbs slot (chrome conventions §10). The ONE refresh control lives in the shell
+     header — deliberately not repeated here — so this slot carries only the section's create verb.
+     The page cannot navigate itself (Explorer resources are not routed), so the button emits
+     CreateRequested and the hosting shell decides what "create" does. -->
 <mj-page-header-interior>
+  @if (CreateLabel) {
+    <div actions>
+      <button mjButton variant="primary" size="sm" (click)="RequestCreate()">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+        <span>{{ CreateLabel }}</span>
+      </button>
+    </div>
+  }
 </mj-page-header-interior>
 
 <!-- Scrollable body — <mj-page-body-interior> owns the gutters that keep the stat cards off the

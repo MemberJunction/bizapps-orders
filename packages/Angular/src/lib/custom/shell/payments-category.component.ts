@@ -6,7 +6,9 @@ import { MJLeftNavSection } from '@memberjunction/ng-ui-components';
 import { CategoryShellBase, PageRefreshService } from '@mj-biz-apps/accounting-ng';
 
 /** Page ids for this category's rail. Local to the shell — not routes. */
-export type PaymentsPageId = 'dashboard' | 'all-payments' | 'entry' | 'capture' | 'refunds' | 'methods';
+export type PaymentsPageId =
+  | 'dashboard' | 'all-payments' | 'entry' | 'capture'
+  | 'refunds' | 'methods' | 'terms-types' | 'providers';
 
 /**
  * Payments category shell (orders UI plan §13.0 / §13.2).
@@ -53,6 +55,10 @@ export class PaymentsCategoryComponent extends CategoryShellBase {
         items: [
           { id: 'refunds', label: 'Refunds & reversals', icon: 'fa-solid fa-rotate-left' },
           { id: 'methods', label: 'Payment methods', icon: 'fa-regular fa-credit-card' },
+          // The type rosters Marcelo asked for: "being able to create payment types is
+          // probably something we should do." Both are real entities with no UI until now.
+          { id: 'terms-types', label: 'Payment terms', icon: 'fa-solid fa-calendar-check' },
+          { id: 'providers', label: 'Payment providers', icon: 'fa-solid fa-building-columns' },
         ],
       },
     ];

@@ -7,6 +7,19 @@
   min-height: 0;
 }
 
+/* Filters on one line, search to their right — the bar must not get taller. */
+.glm__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.glm__search {
+  width: 220px;
+  flex: 0 1 220px;
+  font-size: 12.5px;
+}
+
 .glm__toggle {
   display: inline-flex;
   align-items: center;
@@ -68,6 +81,12 @@
 .glm__where {
   color: var(--mj-text-muted);
   font-size: 12px;
+}
+.glm__id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--mj-text-muted);
+  white-space: nowrap;
 }
 .glm__empty {
   margin: 0;

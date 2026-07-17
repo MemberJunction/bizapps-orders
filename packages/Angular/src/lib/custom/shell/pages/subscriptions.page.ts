@@ -58,6 +58,8 @@ export class SubscriptionsPageComponent extends BaseAngularComponent implements 
   public IsLoading = false;
   public IsLoadingEvents = false;
   public LoadError: string | null = null;
+  /** One box: the subscription number + product name a human knows, plus the ID they may paste. */
+  public Search = '';
 
   async ngOnInit(): Promise<void> {
     this.refreshSub = this.pageRefresh.OnRefresh(() => this.Refresh());
@@ -72,8 +74,30 @@ export class SubscriptionsPageComponent extends BaseAngularComponent implements 
     void this.load();
   }
 
+  /**
+   * DELIBERATELY counted over every loaded subscription, not the filtered set — a headline a search
+   * box can mute is not a headline.
+   */
   public get ActiveCount(): number {
     return this.Rows.filter((r) => r.Status === 'Active').length;
+  }
+
+  /** Filters CLIENT-SIDE over the rows already loaded — no round-trip per keystroke. */
+  public get Filtered(): SubscriptionRow[] {
+    const q = this.Search.trim().toLowerCase();
+    if (!q) return this.Rows;
+    // Subscription № + product name lead — what a human knows. The ID matches too, for anyone
+    // pasting one from a log. Lowercased `includes` — a text match, not a UUID equality test.
+    return this.Rows.filter(
+      (r) =>
+        r.SubscriptionNumber.toLowerCase().includes(q) ||
+        (r.Product ?? '').toLowerCase().includes(q) ||
+        r.ID.toLowerCase().includes(q),
+    );
+  }
+
+  public OnFilterChanged(): void {
+    this.cdr.markForCheck();
   }
 
   public get Selected(): SubscriptionRow | null {

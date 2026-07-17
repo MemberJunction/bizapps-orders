@@ -15,7 +15,8 @@ export type OrdersPageId =
   | 'status-board'
   | 'fulfillment'
   | 'overdue'
-  | 'subscriptions';
+  | 'subscriptions'
+  | 'sub-plans';
 
 /**
  * Orders category shell (orders UI plan §13.0 / §13.1).
@@ -91,6 +92,9 @@ export class OrdersCategoryComponent extends CategoryShellBase {
             badge: this.OverdueCount > 0 ? this.OverdueCount : undefined,
           },
           { id: 'subscriptions', label: 'Subscriptions & renewals', icon: 'fa-regular fa-calendar-days' },
+          // The plan is the contract a Subscription resolves its billing terms through —
+          // it had no management surface until now.
+          { id: 'sub-plans', label: 'Subscription plans', icon: 'fa-solid fa-file-contract' },
         ],
       },
     ];
