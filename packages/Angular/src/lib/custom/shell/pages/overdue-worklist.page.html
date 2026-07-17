@@ -12,7 +12,7 @@
   </div>
 </mj-page-header-interior>
 
-<mj-page-body [Flex]="true" [Padding]="true">
+<mj-page-body-interior>
   @if (IsLoading) {
     <mj-loading text="Loading the worklist…"></mj-loading>
   } @else if (LoadError) {
@@ -56,4 +56,4 @@
       </p>
     </div>
   }
-</mj-page-body>
+</mj-page-body-interior>

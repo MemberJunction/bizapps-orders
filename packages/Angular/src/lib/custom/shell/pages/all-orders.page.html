@@ -37,7 +37,7 @@
   </div>
 </mj-page-header-interior>
 
-<mj-page-body [Flex]="true" [Padding]="true">
+<mj-page-body-interior>
   <!-- PaginationMode="client" deliberately: MJ's infinite mode gates its empty state on
        `rowData.length`, which infinite never populates, so a populated grid renders "No data".
        Logged upstream (MJ-UPSTREAM.md); client mode is the workaround both apps use. -->
@@ -56,7 +56,7 @@
     Height="auto"
     (AfterRowClick)="OnRowClicked($event.rowKey)">
   </mj-entity-data-grid>
-</mj-page-body>
+</mj-page-body-interior>
 
 <mj-order-detail-panel
   [OrderID]="SelectedID"

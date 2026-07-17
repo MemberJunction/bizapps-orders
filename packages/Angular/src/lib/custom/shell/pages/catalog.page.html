@@ -24,7 +24,7 @@
   </div>
 </mj-page-header-interior>
 
-<mj-page-body [Flex]="true" [Padding]="true">
+<mj-page-body-interior>
   @if (IsLoading) {
     <mj-loading text="Loading the catalog…"></mj-loading>
   } @else if (LoadError) {
@@ -91,7 +91,7 @@
       }
     </div>
   }
-</mj-page-body>
+</mj-page-body-interior>
 
 <!-- Accounting's component renders the chain — imported, not rebuilt (§0). -->
 <mj-slide-panel [Visible]="!!SelectedID" Title="How this product resolves" (Closed)="CloseWhy()">

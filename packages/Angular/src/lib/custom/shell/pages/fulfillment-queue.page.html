@@ -11,7 +11,7 @@
   </div>
 </mj-page-header-interior>
 
-<mj-page-body [Flex]="true" [Padding]="true">
+<mj-page-body-interior>
   <!-- The role gate §13.1 asks for does not exist yet. Say so rather than imply this is gated. -->
   <div class="fq__notice" role="note">
     <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
@@ -76,4 +76,4 @@
   @if (ActionMessage) {
     <p class="fq__msg" [class.fq__msg--error]="ActionIsError" role="status">{{ ActionMessage }}</p>
   }
-</mj-page-body>
+</mj-page-body-interior>

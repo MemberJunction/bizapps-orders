@@ -7,7 +7,7 @@
   </div>
 </mj-page-header-interior>
 
-<mj-page-body [Flex]="true" [Padding]="true">
+<mj-page-body-interior>
   @if (IsLoading) {
     <mj-loading text="Loading categories…"></mj-loading>
   } @else if (LoadError) {
@@ -45,4 +45,4 @@
       </table>
     </div>
   }
-</mj-page-body>
+</mj-page-body-interior>
