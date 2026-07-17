@@ -275,3 +275,9 @@
 .oe__msg--error {
   color: var(--mj-status-error-text);
 }
+
+/* The §13.1 Confirm-failure deep link — a real navigation (a tab), not an href. */
+.oe__fixbtn {
+  margin: 0 4px;
+  vertical-align: baseline;
+}

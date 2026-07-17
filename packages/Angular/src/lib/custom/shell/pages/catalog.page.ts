@@ -2,7 +2,7 @@ import { Component, ChangeDetectionStrategy, ChangeDetectorRef, inject, OnInit }
 import { BaseAngularComponent } from '@memberjunction/ng-base-types';
 import { UUIDsEqual } from '@memberjunction/global';
 import { MJStatBadgeVariant } from '@memberjunction/ng-ui-components';
-import { CompanyScopeService, type GlResolutionResult, type GlResolutionStep } from '@mj-biz-apps/accounting-ng';
+import { CompanyScopeService, CrossAppLinkService, type GlResolutionResult, type GlResolutionStep } from '@mj-biz-apps/accounting-ng';
 // From its OWN package, not re-exported through accounting-ng (MJ CLAUDE.md rule 5: no re-exports
 // between packages — import from the source that defines it).
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
@@ -54,8 +54,10 @@ export interface CatalogRow {
 })
 export class CatalogPageComponent extends BaseAngularComponent implements OnInit {
   private cdr = inject(ChangeDetectorRef);
+  private links = inject(CrossAppLinkService);
   public Scope = inject(CompanyScopeService);
 
+  public NavError: string | null = null;
   public Rows: CatalogRow[] = [];
   public IsLoading = false;
   public LoadError: string | null = null;
@@ -220,6 +222,14 @@ export class CatalogPageComponent extends BaseAngularComponent implements OnInit
   private entityIdFor(entityName: string): string | null {
     const entity = this.ProviderToUse.Entities.find((e) => e.Name === entityName);
     return entity?.ID ?? null;
+  }
+
+  /** Open Accounting's Accounts category to add the missing links (a real tab, not an href). */
+  public async FixInAccounting(): Promise<void> {
+    this.NavError = (await this.links.Open('Accounting', 'Accounts'))
+      ? null
+      : 'Could not open Accounting from here — open it from the app launcher and go to Accounts → Account links.';
+    this.cdr.markForCheck();
   }
 
   public IsSelected(row: CatalogRow): boolean {

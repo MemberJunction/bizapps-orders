@@ -3,7 +3,7 @@ import { Metadata, RunView, type IRemoteOperationProvider } from '@memberjunctio
 import { BaseAngularComponent } from '@memberjunction/ng-base-types';
 import { UUIDsEqual } from '@memberjunction/global';
 import { MJStatBadgeVariant } from '@memberjunction/ng-ui-components';
-import { WorkspaceTabStore, type WorkspaceTab } from '@mj-biz-apps/accounting-ng';
+import { WorkspaceTabStore, type WorkspaceTab, CrossAppLinkService } from '@mj-biz-apps/accounting-ng';
 import {
   OrdersEngineBase,
   AllowedTransitions,
@@ -80,6 +80,7 @@ export interface ProductOption {
 })
 export class OrderEditorPageComponent extends BaseAngularComponent implements OnInit {
   private cdr = inject(ChangeDetectorRef);
+  private links = inject(CrossAppLinkService);
 
   private tabs = new WorkspaceTabStore<OrderDraftState>();
   private client = new OrderEditorClient();
@@ -533,6 +534,22 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
     } finally {
       this.IsConfirming = false;
       this.cdr.markForCheck();
+    }
+  }
+
+  /**
+   * Follow the §13.1 deep link: open Accounting's Accounts category so the operator can add the
+   * missing GL link, then retry Confirm.
+   *
+   * A real navigation, not prose. Explorer is a tabbed SPA — this opens a TAB via NavigationService;
+   * an <a href> would do nothing once the shell is running (see CrossAppLinkService).
+   */
+  public async FixInAccounting(): Promise<void> {
+    const opened = await this.links.Open('Accounting', 'Accounts');
+    if (!opened) {
+      // Never leave the user staring at a dead control: if the app or nav item cannot be resolved
+      // (renamed, not installed, no access), say where to go by hand.
+      this.setError('Could not open Accounting from here — open it from the app launcher and go to Accounts → Account links.');
     }
   }
 

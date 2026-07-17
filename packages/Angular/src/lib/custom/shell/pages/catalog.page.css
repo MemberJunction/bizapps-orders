@@ -115,3 +115,12 @@
   align-items: center;
   gap: 6px;
 }
+
+.cat__fixbtn {
+  margin-top: 6px;
+}
+.cat__naverr {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+}

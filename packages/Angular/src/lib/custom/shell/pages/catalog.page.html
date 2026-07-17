@@ -35,9 +35,15 @@
         <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
         <div>
           <b>{{ UnmappedCount }} product{{ UnmappedCount === 1 ? '' : 's' }} has no GL account for its revenue role.</b>
-          Confirming an order containing one will be BLOCKED. Fix the mapping in
-          <b>Accounting → Accounts → Account links</b> (admins only) — link the product, its category,
-          or the owning company's default.
+          Confirming an order containing one will be BLOCKED — link the product, its category, or
+          the owning company's default (admins only).
+          <button class="mj-btn mj-btn--outline cat__fixbtn" (click)="FixInAccounting()">
+            <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+            Fix in Accounting → Account links
+          </button>
+          @if (NavError) {
+            <span class="cat__naverr">{{ NavError }}</span>
+          }
         </div>
       </div>
     }

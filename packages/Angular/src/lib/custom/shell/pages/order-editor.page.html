@@ -74,8 +74,12 @@
             }
             @if (ShowAccountLinksFix) {
               <div class="oe__fixhint">
-                This looks like a missing GL account mapping. Fix it in
-                <b>Accounting → Accounts → Account links</b> (admins only), then retry Confirm.
+                This looks like a missing GL account mapping.
+                <button class="mj-btn mj-btn--outline oe__fixbtn" (click)="FixInAccounting()">
+                  <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                  Fix in Accounting → Account links
+                </button>
+                then retry Confirm. (Editing links is admin-only.)
               </div>
             }
           </div>
