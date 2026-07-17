@@ -33,3 +33,31 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
       `[decision needed: Robert/Amith]` — meetings/2026-07-10-decisions.md §H.
 - [ ] **AIDP read-only access for schema mapping** — Jeremy offered; get a seat to map the real
       customer/contract/invoice shapes. `[action: Marcelo/Jeremy]`
+
+### Refund must be ONE atomic operation — `Orders.RefundPayment` (F3.4) — added 2026-07-16
+
+- **Marcelo's ruling (2026-07-16):** *"the fact that there's no server op that writes the reversal
+  payment and the journal entry in one transaction, that's a problem. We need to make that happen in
+  one transaction."*
+- **The gap:** orders exposes `CapturePayment`, `ConfirmOrder`, `CreateReversalOrder` (an ORDER
+  reversal — not a payment refund), `CreateRevRecSchedule`, `GetOverdueWorklist`, `GrantEntitlements`.
+  **None refunds a payment.** So the Refunds screen ships as history-only (§13.2), and the refund
+  action has nowhere to call.
+- **NOT blocked on Stripe.** This was mis-scoped in my first report as "it moves money, so it needs
+  the integration". It does not: on our side nothing moves except the journal entry. A refund here is
+  a **reversal Payment row + a reversing JE** — both writable today. The provider call is a separate,
+  deferred concern; a Manual-provider refund is fully expressible now.
+- **Why it must be an OP, not two entity saves from the browser:** the reversal Payment and its JE
+  must commit together or not at all. Two saves from the UI can half-fail — a payment row with no
+  journal entry (money apparently returned, ledger silent) or a JE with no payment. Identical
+  atomicity argument to `ConfirmOrder`, which composes the order row + its JEs in one
+  TransactionGroup precisely because TransactionGroups do not cross the GraphQL boundary.
+- **Shape (mirrors ConfirmOrderOperation):** `Orders.RefundPayment { PaymentID, Amount, Reason }` →
+  open ONE TransactionGroup → queue the reversal Payment (`ReversesPaymentID` = the original,
+  `Status='Refunded'`, negative-or-reversing amount per the ledger's convention) → queue the
+  reversing JE via accounting's `QueueJournalEntries` seam (validate, no Submit) → `Submit()` once.
+  Guards: amount ≤ the payment's un-refunded remainder; refuse a payment that is not `Captured`;
+  refuse double-refunding (an existing reversal).
+- **Then:** the Refunds page's action lights up (the grid + reversal chain already exist), and its
+  "history only" notice comes out.
+- **Effort:** ~one operation + its guards; the UI is already built around it.
