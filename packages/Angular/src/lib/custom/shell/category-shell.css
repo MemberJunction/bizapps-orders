@@ -79,39 +79,49 @@
   box-sizing: border-box;
 }
 
-/* ── EXPERIMENT (Marcelo 2026-07-17) — badges INLINE, beside the title ────────
-   "Could you maybe put the metadata to the right of the title? And let me see what that
-   looks like... you don't need to change it in every single page."
+/* ── EXPERIMENT v2 (Marcelo 2026-07-17) — badge UNDER the title, small ───────
+   He looked at inline and rejected it: "the capsule is just literally taller than the title
+   text... even though it's in line, it just looks bad." MEASURED, and he is exactly right —
+   title 25px, badge 26.8px. The badge outweighs the thing it annotates.
 
-   MEASURED FIRST (live, Orders header): whole header 75.8px · title 25px @ top 68 ·
-   badge 26.8px @ top 101. The badge is on a SECOND ROW — that row IS the ~30px he keeps
-   objecting to. So the fix is composition, not scale: remove the row, don't shrink the type.
-   (Shrinking type is what produced two accidental accessibility regressions today.)
+   What he asked for, verbatim: "Orders remains centered vertically or shifted a little bit up.
+   The capsule becomes very small and goes under it and fits into that space. So orders doesn't
+   look like it's off center. It maintains its importance as the title, and the capsule is just
+   an afterthought that adds a little extra data for the user, the savvy user."
 
-   WHY THIS NEEDS AN OVERRIDE AT ALL: MJ projects [meta] INSIDE .mj-page-header-text,
-   after the title — it stacks by construction. MJ's own comment concedes the cost:
-   "When meta badges are present the actions drift down a touch — acceptable trade for the
-   more common no-meta case." We are the uncommon case: a data-forward app where every
-   header row is a grid row you cannot see.
+   That is a sound information-hierarchy argument: a subordinate annotation must READ subordinate,
+   and right now it out-weighs the title. So [meta] goes back to MJ's own placement (under the
+   identity — no composition override at all), and the badge is scaled down to look like the
+   afterthought it is.
 
-   ⚠ THIS IS A DELIBERATE, SCOPED OVERRIDE OF MJ CHROME, and it is exactly what
-   QUESTIONS.md#q33 asks Matt to make native. It is a COMPOSITION change (turn one column
-   into a row) — it does NOT touch type scale, icon size, or any responsive rule, which is
-   what the .mj-btn and title overrides got wrong. If Matt ships an inline [meta] option
-   this block deletes itself; if he declines, it is a one-rule cost with a known reason.
-   Scoped to ORDERS only for review — do not spread it until Marcelo has judged it. */
-:host ::ng-deep mj-page-header .mj-page-header-text {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--mj-space-3);
-  flex-wrap: wrap;
+   ⚠ THIS OVERRIDES mj-stat-badge's TYPE SCALE — knowingly, at his explicit instruction ("I need
+   you to experiment with changing the size of it... Yes. I understand. It's not the ideal, but
+   that's what I want. Just do it."). Logged for the override audit (BACKLOG.md): mj-stat-badge
+   has NO Size input, so there is no supported way to ask for a small badge. **If this survives
+   review it becomes a `[Size]` request to Matt** (QUESTIONS.md#q33's sibling) rather than a
+   permanent fork. Scoped to ORDERS only until he judges it.
+   Checked before writing it: the badge's only responsive/state rules are its Variant colours —
+   no @media, no :focus-visible, no reduced-motion. So scaling it here defeats nothing hidden,
+   which is the exact check the .mj-btn and title overrides failed today. */
+:host ::ng-deep mj-page-header .mj-page-header-meta mj-stat-badge {
+  font-size: 10px;
+  line-height: 1.1;
 }
-/* The meta wrapper is a plain div in the column; make it a row participant, not a block. */
+:host ::ng-deep mj-page-header .mj-page-header-meta mj-stat-badge > * {
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+/* The icon centres on the TITLE's line, not on the title+badge stack — otherwise adding a badge
+   visually shoves "Orders" upward off the icon's centre, which is the "off center" he called out. */
+:host ::ng-deep mj-page-header .mj-page-header-titlebar {
+  align-items: flex-start;
+}
+:host ::ng-deep mj-page-header .mj-page-header-icon {
+  align-self: flex-start;
+  margin-top: 2px;
+}
 :host ::ng-deep mj-page-header .mj-page-header-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--mj-space-2);
+  margin-top: 1px;
 }
 
 /* The 36-vs-32 mismatch Marcelo saw is REAL and measured: the scope chip's HOST renders
