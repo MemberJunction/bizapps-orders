@@ -64,9 +64,11 @@
    media query — the WCAG touch-target minimum. Forcing height on it would squash that back
    down on a phone, quietly undoing MJ's accessibility accommodation for the sake of 2px.
    So the button is left native at MJ's `sm` size, and the OTHER controls match IT. */
+/* Only the scope chip + refresh live in [actions] now — the stat badges moved to [meta]
+   (2026-07-17), so their selector is gone rather than left as dead weight. These two are
+   exactly the pair whose mismatched heights Marcelo flagged, so this rule still has a job. */
 :host ::ng-deep mj-page-header [actions] mj-refresh-button button,
-:host ::ng-deep mj-page-header [actions] mj-company-scope-chip > *,
-:host ::ng-deep mj-page-header [actions] mj-stat-badge > * {
+:host ::ng-deep mj-page-header [actions] mj-company-scope-chip > * {
   height: var(--mj-shell-control-h);
   padding-top: 0;
   padding-bottom: 0;

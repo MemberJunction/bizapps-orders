@@ -10,14 +10,26 @@
        a reliable place instead of repeated in every body.
 
        Chips + scope ride [actions] rather than [meta] because [meta] renders BELOW the identity —
-       a second line, which is exactly the wasted space this header exists to avoid. Requested
-       upstream as an inline-meta placement (MJ-UPSTREAM.md); they move to [meta] when it lands. -->
+       a second line. TRYING MARCELO'S CALL (2026-07-17): "the Nothing overdue metadata in the
+       header is on the right of the company scope when it should be on the left next to the title.
+       It's also a huge capsule, which I do not like. Maybe it does need to just... can you just try
+       shifting it to be under the orders title and see what it looks like instead? Maybe I was
+       wrong. Maybe it just makes more sense to have it under the title."
+       So the stats move to [meta] — MJ's own slot for exactly this, used as designed. The scope
+       chip + refresh stay in [actions] because they are CONTROLS, not state, which is the slot
+       rule ([meta] is state, [actions] is verbs). If this reads well it DELETES our inline-meta
+       deviation outright rather than needing an upstream change. -->
   <mj-page-header [Title]="CategoryTitle" [Icon]="CategoryIcon">
+    <!-- State lives in [meta], under the title — MJ's documented slot convention. -->
+    @if (HeaderStats.length) {
+      <div meta>
+        @for (s of HeaderStats; track s.Label) {
+          <mj-stat-badge [Label]="s.Label" [Icon]="s.Icon ?? ''" [Variant]="s.Variant ?? 'default'" [title]="s.Tooltip ?? ''"></mj-stat-badge>
+        }
+      </div>
+    }
     <div actions>
       <mj-company-scope-chip></mj-company-scope-chip>
-      @for (s of HeaderStats; track s.Label) {
-        <mj-stat-badge [Label]="s.Label" [Icon]="s.Icon ?? ''" [Variant]="s.Variant ?? 'default'" [title]="s.Tooltip ?? ''"></mj-stat-badge>
-      }
       <!-- Refreshes ONLY the page in the body — not the rail, not other pages in this category.
            Exactly one page is instantiated by the @switch below, so it is the only subscriber
            (see PageRefreshService). Hidden when the mounted page has nothing to reload, rather
@@ -39,7 +51,7 @@
     <mj-left-nav-content>
       @switch (ActivePageId) {
         @case ('dashboard') {
-          <mj-payments-dashboard-page></mj-payments-dashboard-page>
+          <mj-payments-dashboard-page (CreateRequested)="GoToPage('entry')"></mj-payments-dashboard-page>
         }
         @case ('all-payments') {
           <mj-all-payments-page></mj-all-payments-page>
