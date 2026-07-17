@@ -37,3 +37,12 @@ Sidecar instance, BCSaaS wraps, LH4I checkout is the launch surface. Triaged (Ma
 `action-plans/ActionPlan - Coupons (schema to UI).md`, Robert to review schema) · DEFERRALS (Stripe
 stub-first → F3.5b subset; tax deferred + LXP note) · instance QUESTIONS **Q21** (tax structure, Robert,
 HIGH) · F1.2b unit-of-work committed next wave. No accounting-side changes.
+
+### 2026-07-17 intake batch (seven docs) — ✅ PROCESSED 2026-07-17 (orchestrator Task 97a)
+Same seven docs as the accounting copy (see that repo's `_PROCESSED.md` for the per-doc table).
+Orders-side landings: **MOD-12** (forward-dated rev-rec JEs; BO-D11 rewrite), **MOD-13** (LXP→Orders
+DIRECT launch wiring + Teams-first contingency), **MOD-3 revised** (Order.CompanyID per Q2),
+**UPD-6 v3 addendum**, **UPD-7** (OrderJournalEntry junction), **UPD-8** (coupons provider model /
+OS7 review-blocked), **UPD-9** (RenewalSpawnStatus), **UPD-10** (email-first delivery + open-AR
+cutover rule); **Q2/Q21 ANSWERED**; **Q22** (LH4I launch-scope sitting) minted;
+**`ROADMAP-lxp-launch.md`** created; FEATURE-LIST trued up.

@@ -497,8 +497,11 @@ Same DB structure, two behaviors; order entry chooses per add.
 
 ### 4.2 Order + OrderLine (with multi-company)
 
-> ⚠ **MODIFIED by MOD-3:** `OrderLine.CompanyID` below is superseded — the built schema carries NO company
-> column at either level; each line's company is resolved via its `GLAccount.CompanyID` at booking time.
+> ⚠ **MODIFIED by MOD-3 (revised 2026-07-16, Q2 answer):** `OrderLine.CompanyID` below is superseded —
+> each line's company is resolved via its `GLAccount.CompanyID` at booking time. **`Order.CompanyID`
+> (owning company) IS added** per Robert's Q2 ruling (defaulted from sales channel; does NOT override
+> line-level revenue ownership; final resolution rung = owning-company default; tripwire stays;
+> `Product`/`Subscription.OwningCompanyID` rename to plain `CompanyID`).
 > **MOD-4:** the CurrencyCode/FX fields are deferred from the baseline. **MOD-1/MOD-7:** JEs book on the
 > first `Confirmed` (not Posted); Confirmed/Posted/Fulfilled cannot be Voided (reversing/credit order
 > instead). Original text retained below — the FIELD SET here is otherwise the target shape for the
@@ -595,6 +598,11 @@ __mj_BizAppsOrders.OrderLineTaxLine                     -- per-jurisdiction tax 
 > ➕ **UPDATED by UPD-2 (2026-07-10):** deferred recognition supports two shapes — single-date (event,
 > 100% on the date; accounting `ScheduleCount=1`) and period subscription (waterfall over the line's
 > service period) — see MASTER-PLAN-UPDATES.md.
+> ⚠ **MODIFIED by MOD-12 (2026-07-14/15):** the recognition waterfall is now written as **REAL
+> forward-dated JEs at booking** — the `ScheduledJournalEntry` bridge + materialization retire
+> (accounting MOD-17); changes/cancellations net via correcting Orders. The two-shape math above
+> stands. Also ➕ **UPD-9 (2026-07-16):** renewals spawn as **Draft** at launch; `RenewalSpawnStatus`
+> setting per type/plan. See MASTER-PLAN-MODIFICATIONS.md / -UPDATES.md.
 
 ```sql
 __mj_BizAppsOrders.SubscriptionPlan

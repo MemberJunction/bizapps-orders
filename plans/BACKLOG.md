@@ -90,3 +90,9 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
 - **Then:** the editor un-greys `Fulfilled` and routes it at the op. The picker + its blocked-reason map are
   already in place, so the UI change is one line.
 - **Related:** the atomic refund op (above) — same pattern, same reason.
+
+## Order naming — add `Order.Name` (schema)
+- Source: Marcelo 2026-07-17. Users must be able to NAME orders — for distinct workspace-tab captions and for name-search (task 41/47).
+- Order today has `OrderNumber` (system id), `Description` (customer-facing memo), `Notes` (internal). None is a short human label meant for the tab/search.
+- Proposed: add optional `Name NVARCHAR(200) NULL` to Order. Drives the tab caption when set (falls back to OrderNumber); shown + searchable in All Orders. Migration + codegen + the GUI wiring (task 47).
+- Decision needed from Marcelo: dedicated `Name` column vs. repurpose `Description` as the name. Recommend a dedicated `Name` (Description stays the customer-facing memo — different purpose).

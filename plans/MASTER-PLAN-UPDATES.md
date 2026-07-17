@@ -97,4 +97,78 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
 - **Why / source:** `meetings/2026-07-14 - LXP Requirements.md` (Ethan; decisions by Amith + John,
   2026-07-14). Coupons (their D10/A2) are handled separately — see MOD-6 revision + the dedicated
   coupon action plan. Tax (their D13/A4) stays deferred — see DEFERRALS + QUESTIONS (Robert).
-- **Status:** Accepted (Marcelo review 2026-07-14).
+- **v3 addendum (2026-07-17):** Ethan's v3 (`meetings/2026-07-14 - lxp-commerce-and-fulfillment
+  2.md`) LOCKS the fork closed (Orders exclusive, no CDP checkout ever, Auth0 permanent, Model 1
+  at launch) and adds the launch path — **LXP→Orders DIRECT, BCSaaS wrap fast-follow, Teams-first
+  contingency** — recorded as **MOD-13**; the A7 BAO-ready-date ask is [Q22](QUESTIONS.md#q22).
+  Robert's A1 check is closed (DueDate exists; overdue works as D15 describes); A3 entitlement
+  "robustness" confirmation awaits Ethan's answers to Robert's four questions (grant granularity ·
+  lifecycle coupling · read contract · team beneficiary semantics — Robert owns asking).
+- **Status:** Accepted (Marcelo review 2026-07-14; v3 addendum folded 2026-07-17).
+
+## UPD-7 — Order↔JE linkage becomes a junction entity (`OrderJournalEntry`) (2026-07-14)
+- **Amends:** MOD-11's "the single `Order.JournalEntryID` column is reworked" — this is the ruled
+  shape. Intent unchanged (orders trace to their JEs); mechanism refined for one-JE-per-company.
+- **Change:** a junction entity (`OrderJournalEntry`: OrderID + JournalEntryID, real FK
+  constraints) replaces the single `Order.JournalEntryID` field. JEs continue to reference the
+  order via the soft origin key (accounting side); the junction gives orders-side FK-integrity
+  navigation to ALL of a multi-company order's JEs. Idempotency guard = "order already booked"
+  (ConfirmedAt/any-junction-row check), per MOD-11.
+- **Why / source:** Robert, `meetings/2026-07-14 - Accounting Meeting.md` ("that's the way to do
+  it if we're going to support multiple journal entries per order").
+- **Status:** Accepted — schema amendment with the MOD-11/F1 rework.
+
+## UPD-8 — Coupons: provider-model **Option A for launch** (Stripe = first adapter); discount recording at BOTH levels regardless (2026-07-14/16)
+- **Amends:** MOD-6's coupon extension + the S7/coupon action plan's execution order.
+- **Change:** (a) **Launch path = Option A** — a `CouponProvider` abstraction where the provider
+  (Stripe: hosted checkout + promotion codes, exactly today's CDP behavior) owns coupon
+  configuration/application and **Orders records the outcome**. The Orders-native `Coupon` entity
+  (Option B, the S7 draft) becomes the **fast-follow** for non-provider channels (AD/manual
+  orders) — and slots in as just another provider. (b) **Recording schema lands NOW either way:**
+  order-level discount structure (code used, provider, provider coupon/promotion-code IDs, total
+  discount) AND line-level `DiscountAmount` (providers prorate order-level coupons across lines;
+  tax + GL operate on line amounts; `DiscountPct` alone cannot capture fixed-amount or
+  order-level discounts). (c) **Before the recording schema freezes:** two investigations — map
+  Stripe's Coupon-vs-Promotion-Code model end-to-end (incl. how discounts report back at order +
+  line level) and evaluate one second provider (Square/Shopify class) to find where models differ.
+  (d) **OS7 schema review is BLOCKED on sharing the artifact** — Robert cannot see
+  `ActionPlan - Coupons (schema to UI).md` (it exists only in this instance's branch); his review
+  checklist (provider traceability · definition-vs-code split · both-level recording · redemption
+  constraints/stacking · doesn't block the Stripe-only launch path) is recorded in the answers
+  doc. (e) **Open Sidecar/Ethan questions (Robert owns asking):** coupon surfaces at launch
+  beyond Stripe checkout? coupon shapes actually used (percent/fixed/order-level/repeating +
+  today's ASAE coupon config)? does the LXP need to display/validate codes in its own UI?
+- **Why / source:** Robert A2 (`meetings/2026-07-14 - lxp-open-items-response.md`) + OS7
+  (`meetings/2026-07-16 - marcelo-questions-draft-answers.md`).
+- **Status:** Accepted (lean) — coupon action plan to be re-sequenced against it; schema freeze
+  awaits the investigations + Sidecar answers.
+
+## UPD-9 — Renewals spawn as Draft at launch; `RenewalSpawnStatus` per type/plan (2026-07-16)
+- **Amends:** BO-D40 (renewal-order spawning) — refinement, intent unchanged.
+- **Change:** renewal orders spawn as **Draft** at launch (Confirm books the JE; a human
+  confirming renewals is the right conservative start). The fuller shape: a **`RenewalSpawnStatus`**
+  setting on SubscriptionType/SubscriptionPlan ∈ {Draft, Quoted, Confirmed} (Quoted = the classic
+  association renewal-notice flow; Confirmed = zero-touch once the pipeline is trusted — the LH4I
+  tiers' eventual mode). No per-order accounting gate by default (batch approval is accounting's
+  control point); when a gate IS warranted it's a tasks-substrate approval at Draft→Confirm;
+  per-order exceptions via the existing `SalesRule`/`SalesAuthority` engine; custom logic via the
+  `ProductBehavior` seam. ⚠ Terminology drift to reconcile: master BO-D8/§9 put the pen-commit at
+  **Posted**; the build books at **Confirm** — align vocabulary when this records into the master.
+  The "nightly vs continuous cadence" half of the original question is SUPERSEDED by MOD-12 (no
+  materialization job exists).
+- **Why / source:** Robert OF4, `meetings/2026-07-16 - marcelo-questions-draft-answers.md`.
+- **Status:** Accepted (Jeremy validates the Draft-at-launch default at his sitting).
+
+## UPD-10 — Invoice delivery lean (email render first) + open-AR cutover rule (2026-07-16)
+- **Amends:** §15 Q8 (delivery — lean recorded, decision stands as lean) + §13/N.2 (CDP
+  migration — cutover scope RULED).
+- **Change:** (a) **Delivery:** thin built-in send-via-email of the rendered posted Order first,
+  with an Action-plugin seam; bill.com becomes a delivery adapter when a channel needs it.
+  (b) **Cutover rule (ruled):** transfer **open invoices only, and only those WITHOUT existing GL
+  journal entries** — they enter Orders and generate JEs through the normal pipeline (importing an
+  already-journalized invoice would double-book). **Ask for Jeremy:** identify which open
+  invoices in the BC Data Platform lack GL JEs (defines the transfer set) + rule for
+  already-journalized open invoices (stay in legacy for collection vs JE-suppressed import).
+  Timing rides aidp Stage 4.
+- **Why / source:** Robert OQD, `meetings/2026-07-16 - marcelo-questions-draft-answers.md`.
+- **Status:** Accepted (delivery = lean; cutover = ruled, Jeremy identifies the set).

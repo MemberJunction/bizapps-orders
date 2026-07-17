@@ -29,13 +29,27 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
 - **Why / source:** 07-02 amendment S3; accounting MOD-10.
 - **Status:** Implemented (schema + resolver).
 
-## MOD-3 — No CompanyID on Order OR OrderLine; company resolved via the line's GLAccount (2026-07-02)
+## MOD-3 — Order gains a header `CompanyID` (owning company); OrderLine stays company-free — resolved via the line's GLAccount (2026-07-02; revised 2026-07-16 per Q2 answer)
 - **Supersedes:** BO-D5's `OrderLine.CompanyID` mechanism (the multi-company INTENT stands).
-- **Change:** each line's owning company = the resolved `GLAccount.CompanyID` at booking time; no company
-  columns in the orders schema. ⚠ Revisit when Payments lands: §5's "receiving company" concept lives on
-  `Payment.ReceivingCompanyID`, which is unaffected.
-- **Why / source:** 07-02 amendment S5.
-- **Status:** Implemented (baseline schema).
+- **Change (current, edited in place per ledger hygiene):** (a) **`Order.CompanyID` IS added** —
+  the OWNING company (owns the customer relationship + the document, defaulted from the sales
+  channel); its extended property states: *owning company — does NOT override line-level revenue
+  ownership*. (b) OrderLine still carries **no** company column — each line's revenue-owning
+  company = the resolved `GLAccount.CompanyID` at booking time (unchanged). (c) **Naming ruled
+  schema-wide:** `Product.OwningCompanyID` and `Subscription.OwningCompanyID` rename to plain
+  **`CompanyID`** (each table has exactly one `__mj.Company` FK; customer orgs are
+  `CustomerOrganizationID` → BizAppsCommon.Organization, so no ambiguity); role-qualified names
+  stay only where the role is the point (`Payment.ReceivingCompanyID`, etc.). (d) **Account
+  resolution walk gains a final rung:** product → category tree → **owning-company default**
+  (resolves against `Order.CompanyID` when no product/category link matches — Amith's "Izzy"
+  small-adopter case); if even that misses, **fail loudly** (the unresolved-mapping tripwire
+  stays).
+- **Evolution note:** the original 2026-07-02 ruling was NO company columns at either level;
+  Robert's Q2 answer (2026-07-16 draft-answers doc) adds the header field as an S1 amendment —
+  the master "was never fully company-free" (BO-D5 line company, BO-D6 primary receiving company).
+- **Why / source:** 07-02 amendment S5; Robert Q2 answer,
+  `meetings/2026-07-16 - marcelo-questions-draft-answers.md`.
+- **Status:** Implemented (baseline) + **schema amendment pending** (Order.CompanyID + renames + resolution rung).
 
 ## MOD-4 — Currency/FX deferred from the v1 baseline (2026-07-02)
 - **Supersedes:** BO-D22's v1 timing (the design — rates from accounting, per-transaction snapshot — stands).
@@ -139,3 +153,36 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
   sanity-check with Amith (residual, with the Q20-residual batch).
 - **Status:** Accepted — engine rework in the feature action plan F1/F0; accounting counterpart =
   accounting MOD-12 (single-company JE validation + CompanyID decision).
+
+## MOD-12 — Rev-rec staged as REAL forward-dated JEs; the ScheduledJournalEntry bridge retires (BO-D11 rewrite) (2026-07-14/15)
+- **Supersedes:** BO-D11's `ScheduledJournalEntry` emission + UPD-2's schedule-bridge mechanics
+  (G.3) + the materialization path (G.4). The **waterfall computation itself stands** (BO-D24
+  math, UPD-2's two recognition shapes, `RevenueRecognitionSchedule` may remain as the computed
+  envelope) — what changes is what gets WRITTEN.
+- **Change:** at booking-lock, Orders writes the recognition waterfall as **actual future-dated
+  JEs** into accounting (12-month sub → 12 real JEs, each with its own `EffectiveDate`) via the
+  same singular transactional call pattern (MOD-5). No schedule records to materialize, no
+  materializer, no daily job. **Contract change/cancel = a correcting Order** whose new rev-rec
+  entries NET against the staged ones (staged entries are never edited/deleted) — the same
+  reversal model as MOD-7. Batches only pick up forward-dated entries when their date filter
+  explicitly reaches forward (default cutoff = today, accounting MOD-17).
+- **Why / source:** Robert P5 (`meetings/2026-07-14-je-single-company-batching-proposal.md`) +
+  his 2026-07-14 meeting ruling ("just create them" — a scheduled wake-up task is fragile);
+  Jeremy agreed 2026-07-15 ("cleaner model than what I had in mind"). Accounting counterpart:
+  **MOD-17** there.
+- **Status:** Accepted — engine rework (F4 family) + accounting schema retirement to schedule.
+
+## MOD-13 — LH4I launch wiring: LXP → Orders DIRECT; BCSaaS wrap is a fast-follow; Teams-first contingency (2026-07-14)
+- **Supersedes:** nothing in the master text (additive launch-path decision) — recorded as a MOD
+  because it sets the build's critical path and reverses the default `LXP → BCSaaS → Orders`
+  layering for launch.
+- **Change:** for the ~30-day LXP launch, the LXP consumes BizApps Orders **directly** for the
+  LH4I flow (3 tiers + coupons + track/bundle + upfront Stripe payment); the BCSaaS-wrap (their
+  D4) moves OFF the launch critical path to fast-follow. If BAO cannot make the launch window,
+  the sequencing contingency is **Teams-first** (LH4T is AD/manual, zero checkout dependency) and
+  LH4I self-serve switches on the moment Orders lands — never any new CDP wiring. **The open item
+  (their A7): Robert + Marcelo owe Ethan a realistic date for a minimal LH4I-capable BAO** —
+  tracked in [Q22](QUESTIONS.md#q22) + `ROADMAP-lxp-launch.md`.
+- **Why / source:** `meetings/2026-07-14 - lxp-commerce-and-fulfillment 2.md` §8 (Ethan's team
+  lean, decisions D1–D16 locked by Amith + John).
+- **Status:** Accepted (the lean is the plan unless Amith/Robert object at the A7 date sitting).

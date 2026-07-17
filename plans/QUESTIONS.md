@@ -17,9 +17,10 @@
 
 | Ask order | Q | Ask | Status |
 |---|---|---|---|
-| 1 | [Q21](#q21) | Robert — order tax structure (LXP ~30-day clock) | OPEN ★HIGH |
-| 2 | [Q2](#q2) | Robert — order owning-company field + revenue default | OPEN (narrowed) |
-| 3 | [Q10](#q10) | Marcelo — branch strategy + diverged main (internal) | OPEN |
+| 1 | [Q22](#q22) | Marcelo→Robert/Jeremy/John/Ethan — LH4I launch-scope sitting (BAO date · tax-at-launch · coupon surfaces) | OPEN — proceeding ★HIGH |
+| 2 | [Q10](#q10) | Marcelo — branch strategy + diverged main (internal) | OPEN |
+| — | [Q21](#q21) | tax structure — ANSWERED (Option B durable shape; engine = buy; finance calls → Q22) | ANSWERED |
+| — | [Q2](#q2) | owning-company field — ANSWERED (add Order.CompanyID; resolution rung; renames) | ANSWERED |
 
 (Also open, tracked in the repo BACKLOG decision-needed roster: S7 coupons schema review — Robert ·
 C.12 order numbering — Jeremy · renewals spawn mode — Jeremy/Robert · rev-rec cadence — Amith ·
@@ -33,7 +34,9 @@ queryable surface for "which questions touch feature X".)*
 
 <a id="q21"></a>
 ### Q21 · Tax structure for orders — ask Robert — added 2026-07-14 (reformatted 2026-07-16)
-- **Status:** OPEN ★HIGH
+- **Status:** ANSWERED (Robert, 2026-07-16 draft-answers doc + his A4 position) — frozen. The two
+  remaining FINANCE calls (launch-tax yes/no; engine selection) are NOT Robert's and move to
+  [Q22](#q22) (LH4I launch-scope sitting).
 - **Who to ask:** Robert (structure ruling); Amith context optional (he made the LXP D13 call)
 - **Features:** ORD-K.1 (tax structure decision — gates K.2 / S4)
 - **Background (self-contained):** Order tax is currently DEFERRED (Marcelo: complexity; baseline
@@ -55,14 +58,23 @@ queryable surface for "which questions touch feature X".)*
 - **Context to share:** `meetings/2026-07-14 - LXP Requirements.md` D13/A4/§7.
 - **Additional context (for a verifying agent):** `plans/action-plans/ActionPlan - Schema
   alignment...md` §4 (S4 options) · `plans/DEFERRALS.md` tax note.
-- **Answer:** _(pending)_
+- **Answer:** (1) **Option B's durable shape — skip A entirely** (a `Tax`-type order line is a fake
+  catalog item with no per-jurisdiction breakdown; unwinding it is the rework S1 pre-paid to
+  avoid): `ProductTaxCategory` + `OrderLineTaxLine` per-jurisdiction snapshot rows + the
+  `TaxCalculationProvider` seam — but Orders does NOT calculate tax; a **third-party engine**
+  (Stripe Tax / Avalara class) does, and our tables record what it returned (accounting MOD-18).
+  Stripe Tax = natural first provider if launch needs tax (attaches to the checkout we already
+  use). (2) Launch-required? **Explicitly a Jeremy/John finance call** — pull Stripe Tax forward
+  OR ship tax-exempt/manual as an explicit decision, never a default (LH4I = 3 fixed digital
+  tiers, low jurisdiction complexity, but digital-goods nexus/taxability is a real Jeremy
+  question). (3) Rate package: **buy, not build** — the engine IS the rate package.
+  Source: `meetings/2026-07-16 - marcelo-questions-draft-answers.md` §Q21. Routed onward: accounting MOD-18; K.1/K.2 feature rows; Q22.
 
 
 <a id="q2"></a>
 ### Q2 · Company context on the Order — ask Robert — 2026-07-08 (narrowed 2026-07-13; reformatted 2026-07-16)
-- **Status:** OPEN — NARROWED: the JE-splitting half is RESOLVED (Marcelo ruled, validating Robert's
-  model + the original masters: booking emits ONE JE PER COMPANY — orders MOD-11 / accounting MOD-12;
-  Amith's CH-2 reversed on lock-fidelity rationale; residual Amith sanity-check noted in the MODs)
+- **Status:** ANSWERED (Robert, 2026-07-16 draft-answers doc) — frozen. (The JE-splitting half was
+  already RESOLVED via orders MOD-11 / accounting MOD-12.)
 - **Who to ask:** Robert
 - **Features:** ORD-C.1 (order entity shape), ORD-J.1 (multi-company orders)
 - **Background (self-contained):** `Order` deliberately has NO company column — an order is
@@ -78,7 +90,13 @@ queryable surface for "which questions touch feature X".)*
 - **Context to share:** the GL-mapping mockup page (the loud unresolved-mapping tripwire current
   behavior produces).
 - **Additional context (for a verifying agent):** amendment OQ-I; `OrdersEngine.ResolveAccount`.
-- **Answer:** _(pending)_
+- **Answer:** (1) **YES — add `Order.CompanyID`** (owning company; owns the customer relationship +
+  document, defaulted from the sales channel; does NOT override line-level revenue ownership).
+  Named plain `CompanyID`; `Product.OwningCompanyID`/`Subscription.OwningCompanyID` rename to
+  plain `CompanyID` too (role-qualified names only where the role is the point). (2) Resolution
+  walk gains a final rung: product → category tree → **owning-company default** (Amith's "Izzy"
+  case); if even that misses, keep failing loudly — the tripwire stays. Landed as the MOD-3
+  revision. Source: `meetings/2026-07-16 - marcelo-questions-draft-answers.md` §Q2.
 
 <a id="q10"></a>
 ### Q10 · Orders branch strategy + diverged main — ask Marcelo — 2026-07-08 (reformatted 2026-07-16)
@@ -181,3 +199,36 @@ queryable surface for "which questions touch feature X".)*
 - **Additional context (for a verifying agent):** …
 - **Answer:** _(pending)_
 ```
+
+<a id="q22"></a>
+### Q22 · LH4I launch-scope sitting — BAO-ready date (A7) · tax-at-launch · coupon surfaces — review: Robert/Jeremy/John/Ethan — added 2026-07-17
+- **Status:** OPEN — proceeding (the roadmap is the proposed basis; the date + two finance calls
+  need the humans)
+- **Requested reviewer:** Marcelo convenes; Robert + Ethan (date), Jeremy + John (tax call),
+  John/Sidecar marketing (coupon surfaces & shapes)
+- **Features:** ORD-N.1 (LH4I launch composite), ORD-K.1/K.2 (tax), ORD-B.3 (coupons), MOD-13
+- **Proposed solution (what we are implementing):** the LXP launch decisions are locked (D1–D16:
+  Orders exclusive, LXP→Orders DIRECT for launch per MOD-13); the one open item is **timing** —
+  their A7 asks Robert + Marcelo for "a realistic date for a minimal BizApps Orders that can
+  support LH4I" (products/tiers, coupons, entitlement-via-ProductType, payment, DueDate/overdue,
+  read/notify path). We are building toward that scope in validation-first order per
+  **`plans/ROADMAP-lxp-launch.md`** (the scope basis for the date estimate); the date itself is
+  Marcelo's + Robert's to state after reviewing the roadmap's V0–V2 tiers. Bundled into the same
+  sitting because they gate the same launch scope:
+  (a) **Tax at launch?** (Jeremy/John — explicit decision, never a default: pull Stripe Tax
+  forward, or launch tax-exempt/manual; Q21's answer holds the structure either way);
+  (b) **Coupon surfaces + shapes** (Robert's three A2 questions to Sidecar: any coupon surface
+  beyond the Stripe-hosted checkout at launch? which shapes are actually used — percent / fixed /
+  order-level / repeating, incl. today's ASAE coupon config? does the LXP need to display/validate
+  codes in its own UI, or is Stripe-page entry fine as today?).
+- **The question:** (1) BAO-ready date for the minimal LH4I scope — commit or give Ethan the
+  fast-follow signal (his §8 explicitly supports Teams-first if the date slips). (2) Tax at LH4I
+  launch: yes (Stripe Tax pulled forward) or no (explicit tax-exempt launch)? (3) The three coupon
+  questions above.
+- **Context to share:** `meetings/2026-07-14 - lxp-commerce-and-fulfillment 2.md` §8 (their lean +
+  contingency) · `plans/ROADMAP-lxp-launch.md` · Q21's answer (tax structure ruled).
+- **What motivates this now:** the ~30-day LXP launch window; Ethan's doc names this "the one open
+  item."
+- **Additional context (for a verifying agent):** UPD-8 (coupon launch path), MOD-13, accounting
+  MOD-18.
+- **Answer:** _(pending)_
