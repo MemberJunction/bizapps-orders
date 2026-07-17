@@ -19,8 +19,8 @@
   } @else if (Rows.length === 0) {
     <mj-empty-state Icon="fa-solid fa-rotate" Title="No subscriptions" Message="No subscriptions exist yet. They are created when an order line for a subscription product is booked."></mj-empty-state>
   } @else {
-    <div class="su__gridwrap">
-      <table class="su__grid">
+    <div class="su__gridwrap mjsh-tablewrap">
+      <table class="su__grid mjsh-table">
         <thead><tr><th>Subscription №</th><th>Product</th><th>Status</th><th>Current period</th><th>Next renewal</th><th>ID</th><th></th></tr></thead>
         <tbody>
           @for (r of Filtered; track r.ID) {

@@ -43,7 +43,7 @@ export interface SubscriptionEventRow {
   standalone: false,
   selector: 'mj-subscriptions-page',
   templateUrl: './subscriptions.page.html',
-  styleUrls: ['./subscriptions.page.css'],
+  styleUrls: ['./shell-table.css', './subscriptions.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SubscriptionsPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

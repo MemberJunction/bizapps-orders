@@ -211,7 +211,7 @@ interface OrderLineRaw {
   standalone: false,
   selector: 'mj-order-editor-page',
   templateUrl: './order-editor.page.html',
-  styleUrls: ['./order-editor.page.css'],
+  styleUrls: ['./shell-table.css', './order-editor.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrderEditorPageComponent extends BaseAngularComponent implements OnInit, OnChanges {

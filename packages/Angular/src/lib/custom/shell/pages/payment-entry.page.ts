@@ -52,7 +52,7 @@ export interface CustomerOption {
   standalone: false,
   selector: 'mj-payment-entry-page',
   templateUrl: './payment-entry.page.html',
-  styleUrls: ['./payment-entry.page.css'],
+  styleUrls: ['./shell-table.css', './payment-entry.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PaymentEntryPageComponent extends BaseAngularComponent implements OnInit {

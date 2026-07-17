@@ -27,6 +27,7 @@ import {
 import {
   CompanyScopeChipComponent,
   ShellPagePendingComponent,
+  ShellRailComponent,
   WorkspaceTabStripComponent,
   CustomerARBaseComponent,
   GlResolutionPreviewComponent,
@@ -56,6 +57,7 @@ import { SubscriptionsPageComponent } from './pages/subscriptions.page';
 import { OrdersDashboardPageComponent } from './pages/orders-dashboard.page';
 import { PaymentsDashboardPageComponent } from './pages/payments-dashboard.page';
 import { CategoriesPageComponent } from './pages/categories.page';
+import { CategoryWorkshopPageComponent } from './pages/category-workshop.page';
 import { ProductWorkshopPageComponent } from './pages/product-workshop.page';
 import { ProductTypesPageComponent } from './pages/product-types.page';
 import { PaymentTermsTypesPageComponent } from './pages/payment-terms-types.page';
@@ -92,6 +94,7 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
     PaymentsDashboardPageComponent,
     CatalogPageComponent,
     CategoriesPageComponent,
+    CategoryWorkshopPageComponent,
     ProductWorkshopPageComponent,
     ProductTypesPageComponent,
     PaymentTermsTypesPageComponent,
@@ -133,6 +136,7 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
     MJPageBodyComponent,
     MJPageHeaderInteriorComponent,
     MJPageBodyInteriorComponent,
+    ShellRailComponent, // standalone, from accounting-ng — the rail + its desktop collapse
     MJLeftNavComponent,
     MJLeftNavContentComponent,
     MJStatBadgeComponent,
@@ -162,6 +166,7 @@ import { OrdersReportsCategoryResourceComponent } from './reports-category-resou
     PaymentsDashboardPageComponent,
     CatalogPageComponent,
     CategoriesPageComponent,
+    CategoryWorkshopPageComponent,
     ProductWorkshopPageComponent,
     ProductTypesPageComponent,
     PaymentTermsTypesPageComponent,

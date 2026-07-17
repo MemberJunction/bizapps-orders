@@ -41,12 +41,14 @@
   </mj-page-header>
 
   <mj-page-body [Flex]="true" [Padding]="false" Direction="row">
-    <mj-left-nav
+    <!-- The rail + its desktop icons-only collapse toggle. One wrapper, nine shells: see
+         shell-rail.component.ts for why the collapse is not in MJ's own left-nav (QUESTIONS.md#q27). -->
+    <mj-shell-rail
       [Sections]="RailSections"
       [ActiveId]="ActivePageId"
       [MobileTitle]="CategoryTitle"
       (ItemClicked)="OnRailItemClicked($event)">
-    </mj-left-nav>
+    </mj-shell-rail>
 
     <mj-left-nav-content>
       @switch (ActivePageId) {
@@ -61,6 +63,9 @@
         }
         @case ('categories') {
           <mj-categories-page></mj-categories-page>
+        }
+        @case ('category-workshop') {
+          <mj-category-workshop-page [CategoryID]="PageParam"></mj-category-workshop-page>
         }
         @case ('types') {
           <mj-product-types-page></mj-product-types-page>

@@ -88,7 +88,7 @@ export type SortKey = 'name' | 'type' | 'company';
   standalone: false,
   selector: 'mj-payment-providers-page',
   templateUrl: './payment-providers.page.html',
-  styleUrls: ['./payment-providers.page.css'],
+  styleUrls: ['./shell-table.css', './payment-providers.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PaymentProvidersPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

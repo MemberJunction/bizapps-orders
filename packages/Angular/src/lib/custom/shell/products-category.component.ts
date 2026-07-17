@@ -6,7 +6,8 @@ import { MJLeftNavSection } from '@memberjunction/ng-ui-components';
 import { CategoryShellBase, PageRefreshService } from '@mj-biz-apps/accounting-ng';
 
 /** Page ids for this category's rail. Local to the shell — not routes. */
-export type ProductsPageId = 'catalog' | 'workshop' | 'categories' | 'types' | 'pricing' | 'gl-mapping';
+export type ProductsPageId =
+  | 'catalog' | 'workshop' | 'categories' | 'category-workshop' | 'types' | 'pricing' | 'gl-mapping';
 
 /**
  * Products category shell (orders UI plan §13.0 / §13.3).
@@ -49,6 +50,8 @@ export class ProductsCategoryComponent extends CategoryShellBase {
           // the workshop is where you change the answer.
           { id: 'workshop', label: 'Product workshop', icon: 'fa-solid fa-screwdriver-wrench' },
           { id: 'categories', label: 'Categories', icon: 'fa-solid fa-sitemap' },
+          // The category's create/edit surface — same list/workshop pairing as Catalog → Product workshop.
+          { id: 'category-workshop', label: 'Category workshop', icon: 'fa-solid fa-folder-tree' },
           // Product.ProductTypeID is NON-NULLABLE — a product cannot exist without a type, so the
           // type roster has to be reachable or "New product" is a dead end.
           { id: 'types', label: 'Product types', icon: 'fa-solid fa-shapes' },

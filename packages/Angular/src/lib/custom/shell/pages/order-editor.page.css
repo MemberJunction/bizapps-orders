@@ -12,19 +12,7 @@
 /* <mj-page-body-interior> is display:block and owns the page background + gutter. It is a flex item
    of :host, so it has a DEFINITE height — which is what lets .oe below resolve height:100% and give
    the card a real box to live in. (flex:1 on a child of the body-interior would be a no-op and
-   collapse to zero — the body is block, not flex.)
-
-   MJ ships padding-top: --mj-space-2 (8px) here, deliberately tighter "because the body is almost
-   always preceded by an <mj-page-header-interior> whose bottom margin provides the breathing room".
-   This page has no header (see the template), so we restore the full --mj-space-4 (16px) — exactly
-   the top margin MJ gives the header card, so the editor card starts at the same y-offset as the
-   header card on every sibling page and nothing shifts when you switch rail items. Scoped through
-   :host to beat MJ's own `:host` rule (0,1,0) — a bare element selector (0,0,1) would lose and be
-   silently inert. Padding, not margin, so .oe's height:100% still resolves inside the content box. */
-:host mj-page-body-interior {
-  padding-top: var(--mj-space-4);
-}
-
+   collapse to zero — the body is block, not flex.) */
 .oe {
   height: 100%;
   min-height: 0;
@@ -180,7 +168,6 @@
 
 /* Line grid. */
 .oe__gridwrap {
-  overflow-x: auto;
   border: 1px solid var(--mj-border-default);
   border-radius: 10px;
   flex: 0 0 auto;

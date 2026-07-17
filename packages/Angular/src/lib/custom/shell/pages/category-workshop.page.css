@@ -1,7 +1,15 @@
-/* Products → Product workshop.
+/* Products → Category workshop.
+
    Height chain: the host declares its own flex column. NOTE `mj-page-body-interior` is
-   display:block — a `flex:1` child of it is a no-op that collapses to zero height, so the scrolling
-   panel below is sized with min-height/max-height, never flex:1. */
+   display:block — a `flex:1` child of it is a NO-OP that collapses to ZERO height, so every
+   scrolling region below is sized with height/min-height/max-height, never flex:1.
+
+   Overflow: both axes are always set explicitly. Per the overflow spec a `visible` axis next to a
+   non-`visible` one computes to `auto`, so setting one axis silently scrolls both.
+
+   Colors: design tokens only (CI gate). The only literal is the shadow neutral `rgba(0,0,0,X)`,
+   which the gate exempts. There is deliberately NO `.mj-btn` rule anywhere in this file — buttons
+   are `mjButton` with [variant]/[size] (the second CI gate). */
 
 :host {
   display: flex;
@@ -10,21 +18,21 @@
   min-height: 0;
 }
 
-/* ─── the split button + its open-existing picker ───────────────────────── */
+/* ─── the split button + its open-existing picker ────────────────────────── */
+/* Same shape as the product workshop's — one idiom for "open or create a thing". */
 
-.pw__split {
+.cw__split {
   position: relative;
   display: inline-flex;
   align-items: stretch;
   gap: 2px;
 }
-.pw__split-toggle {
+.cw__split-toggle {
   padding-left: 9px;
   padding-right: 9px;
 }
 
-/* GitHub's repo-switcher shape: compact card, search pinned at the top, list below. */
-.pw__picker {
+.cw__picker {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
@@ -34,10 +42,11 @@
   border-radius: 10px;
   background: var(--mj-bg-surface-elevated, var(--mj-bg-surface));
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: hidden;
 }
 
-.pw__picker-search {
+.cw__picker-search {
   display: flex;
   align-items: center;
   gap: 7px;
@@ -45,7 +54,7 @@
   border-bottom: 1px solid var(--mj-border-default);
   color: var(--mj-text-muted);
 }
-.pw__picker-search input {
+.cw__picker-search input {
   font: inherit;
   font-size: 13px;
   flex: 1;
@@ -57,14 +66,15 @@
   padding: 5px 8px;
 }
 
-.pw__picker-list {
+.cw__picker-list {
   list-style: none;
   margin: 0;
   padding: 4px;
   max-height: 280px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
-.pw__picker-item {
+.cw__picker-item {
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -79,36 +89,36 @@
   padding: 6px 8px;
   cursor: pointer;
 }
-.pw__picker-item:hover,
-.pw__picker-item:focus-visible {
+.cw__picker-item:hover,
+.cw__picker-item:focus-visible {
   background: var(--mj-bg-surface-hover);
 }
-.pw__picker-name {
+.cw__picker-name {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pw__picker-sku {
+.cw__picker-code {
   font-size: 11.5px;
   color: var(--mj-text-muted);
   font-family: var(--mj-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
 }
-.pw__picker-open {
+.cw__picker-open {
   font-size: 11px;
   color: var(--mj-status-success-text);
   white-space: nowrap;
 }
-.pw__picker-none {
+.cw__picker-none {
   padding: 12px 10px;
   font-size: 12px;
   color: var(--mj-text-muted);
 }
 
-/* ─── the active product's bar ───────────────────────────────────────────── */
+/* ─── the active category's bar ──────────────────────────────────────────── */
 
-.pw__bar {
+.cw__bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -116,7 +126,7 @@
   flex-wrap: wrap;
   margin: 10px 0;
 }
-.pw__crumb {
+.cw__crumb {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -125,26 +135,20 @@
   color: var(--mj-text-primary);
 }
 
-.pw__actions {
+.cw__actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.pw__actions--left {
+.cw__actions--left {
   justify-content: flex-start;
   margin-top: 12px;
 }
 
-/* The scroll region the section cards sit ON. It is the PAGE surface, not a card: the sections are
-   the objects, so the thing behind them has to read as background or they don't separate from it
-   (his "the row is the same color as the background"). No border of its own — five bordered cards
-   inside a bordered box is chrome-on-chrome. */
-.pw__panel {
-  background: var(--mj-bg-page);
-  border-radius: var(--mj-radius-lg);
-  padding: 12px;
-  /* Both axes set explicitly: a `visible` axis beside a non-`visible` one computes to `auto` and
-     would give us a phantom horizontal scrollbar. */
+.cw__panel {
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  padding: 8px 16px 16px;
   overflow-x: hidden;
   overflow-y: auto;
   /* Sized, not flexed — see the note at the top of this file. */
@@ -152,42 +156,12 @@
   max-height: calc(100vh - 300px);
 }
 
-/* ─── the section card = the chrome [Bare] deliberately does NOT draw ─────── */
-/* `<mj-accordion-panel [Bare]>` drops its own border/header-background precisely so the HOST can
-   provide the box. This IS that box — so it is not a fork of MJ's accordion, it's the half [Bare]
-   hands back to us. The class goes straight on `<mj-accordion-panel>` (its host is display:block),
-   so no wrapper div is needed.
-   Surface-on-page is what makes a row read as an object rather than as text on the body, and
-   overflow:hidden clips MJ's full-bleed header hover to these rounded corners. */
-.pw__section {
-  background: var(--mj-bg-surface);
-  border: 1px solid var(--mj-border-default);
-  border-radius: var(--mj-radius-md);
-  box-shadow: var(--mj-shadow-sm);
-  overflow: hidden;
-}
-.pw__section + .pw__section {
-  margin-top: 10px;
-}
-
-/* MJ's panel keeps its own 8px stacking margin under [Bare] (Bare drops the border + header
-   background, not the margin). Inside our card that margin becomes a dead strip of surface below
-   the body, so we zero it and own the gap at the card level instead.
-   ::ng-deep audit — read accordion.scss before writing this: it is a margin reset only and touches
-   none of the panel's behavior. It does not defeat the `@media (prefers-reduced-motion: reduce)`
-   block (chevron/body transitions), the `:focus-visible` box-shadow focus ring on
-   .mj-accordion-header, the aria wiring (aria-expanded/-controls/-labelledby), or the
-   grid-template-rows open/close animation. */
-:host ::ng-deep .pw__section .mj-accordion-panel {
-  margin-bottom: 0;
-}
-
 /* ─── what we project INTO MJ's accordion panel ──────────────────────────── */
 /* The disclosure chrome itself (header, chevron, rule, keyboard + aria) belongs to
-   <mj-accordion-panel [Bare]>. Nothing here styles the panel — only the content we hand it. */
+   <mj-accordion-panel [Bare]>. Nothing here styles the panel — only the content we hand it, so
+   there is no ::ng-deep and nothing of MJ's to defeat. */
 
-/* The section label inside the mjAccordionTitle slot. */
-.pw__sec-label {
+.cw__sec-label {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -200,7 +174,7 @@
 
 /* The issue count, also in the title slot — so it rides on the header OPEN OR CLOSED and a folded
    section can never hide a problem. */
-.pw__badge {
+.cw__badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -216,39 +190,38 @@
 
 /* ─── fields ─────────────────────────────────────────────────────────────── */
 
-.pw__fields {
+.cw__fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 14px 18px;
   align-items: start;
 }
 
-.pw__field {
+.cw__field {
   display: flex;
   flex-direction: column;
   gap: 5px;
   min-width: 0;
 }
-.pw__field--wide {
+.cw__field--wide {
   grid-column: 1 / -1;
 }
 
-.pw__label {
+.cw__label {
   font-size: 10.5px;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--mj-text-muted);
 }
-.pw__req {
+.cw__req {
   color: var(--mj-status-error-text);
 }
 
-.pw__field input[type='text'],
-.pw__field input[type='number'],
-.pw__field input[type='date'],
-.pw__field select,
-.pw__field textarea {
+.cw__field input[type='text'],
+.cw__field input[type='date'],
+.cw__field select,
+.cw__field textarea {
   font: inherit;
   font-size: 13px;
   color: var(--mj-text-primary);
@@ -259,41 +232,42 @@
   width: 100%;
   min-width: 0;
 }
-.pw__field textarea {
+.cw__field textarea {
   resize: vertical;
 }
-.pw__field input:disabled,
-.pw__field select:disabled,
-.pw__field textarea:disabled {
+.cw__field input:disabled,
+.cw__field select:disabled,
+.cw__field textarea:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 
-.pw__check {
+.cw__check {
   display: inline-flex;
   align-items: center;
   gap: 8px;
 }
-.pw__check input[type='checkbox'] {
+.cw__check input[type='checkbox'] {
   margin: 0;
 }
 
-.pw__hint {
+.cw__hint {
   font-size: 11.5px;
   color: var(--mj-text-muted);
   line-height: 1.4;
 }
 
-.pw__note {
+.cw__note {
   margin: 0 0 10px;
   font-size: 12px;
   color: var(--mj-text-muted);
-  display: inline-flex;
-  align-items: center;
+  display: flex;
+  align-items: baseline;
   gap: 6px;
+  line-height: 1.5;
 }
 
-.pw__ok {
+.cw__ok {
   font-size: 12px;
   color: var(--mj-status-success-text);
   display: inline-flex;
@@ -301,7 +275,7 @@
   gap: 6px;
 }
 
-.pw__error {
+.cw__error {
   margin: 0 0 10px;
   color: var(--mj-status-error-text);
   display: inline-flex;
@@ -309,30 +283,82 @@
   gap: 7px;
 }
 
-.pw__warn {
+.cw__warn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-left: 8px;
   font-size: 11.5px;
   color: var(--mj-status-warning-text);
 }
+.cw__here {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--mj-status-success-text);
+}
 
-/* ─── GL links grid (same shape as the categories grid) ─────────────────── */
+/* ─── the Products split: filters LEFT, picker RIGHT ─────────────────────── */
 
-.pw__gridwrap {
-  overflow: auto;
+.cw__split-pane {
+  display: grid;
+  /* The filter rail is a fixed reading column; the picker takes the rest. `minmax(0, 1fr)` is what
+     stops a wide table from blowing the grid out instead of scrolling inside its own wrap. */
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+/* One column below the split's natural minimum — the rail stacks ABOVE the picker rather than
+   squeezing both into unusable widths. */
+@media (max-width: 900px) {
+  .cw__split-pane {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.cw__filters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  background: var(--mj-bg-surface-card);
+}
+/* The Clear button is a block in the rail, not an inline chip beside a field. */
+.cw__filters button {
+  align-self: flex-start;
+}
+
+.cw__picker-pane {
+  min-width: 0;
+}
+
+/* ─── grids ──────────────────────────────────────────────────────────────── */
+
+/* THE TABLE SCROLLS — not the page. `position: sticky` on the thead only sticks relative to a
+   SCROLLING ancestor, so the bounded height here is what makes the sticky header work. */
+.cw__gridwrap {
+  overflow-x: auto;
+  overflow-y: auto;
   border: 1px solid var(--mj-border-default);
   border-radius: 10px;
   min-height: 0;
   margin-top: 12px;
 }
-.pw__grid {
+.cw__gridwrap--picker {
+  height: min(52vh, 620px);
+  min-height: 260px;
+}
+.cw__grid {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
-.pw__grid th {
+.cw__grid th {
   text-align: left;
   font-size: 10.5px;
   font-weight: 700;
@@ -346,31 +372,47 @@
   top: 0;
   background: var(--mj-bg-surface);
 }
-.pw__grid td {
+.cw__grid td {
   padding: 7px 10px;
   border-bottom: 1px solid var(--mj-border-subtle);
   vertical-align: top;
 }
-.pw__rowactions {
+/* Members of the open category are tinted, so "what is in here" reads at a glance rather than
+   needing the Category-now column parsed row by row. */
+.cw__row--member {
+  background: color-mix(in srgb, var(--mj-brand-primary) 6%, transparent);
+}
+.cw__rowactions {
   white-space: nowrap;
   text-align: right;
 }
-.pw__muted {
+.cw__muted {
   color: var(--mj-text-muted);
   font-size: 12px;
 }
-.pw__mono {
+.cw__mono {
   font-family: var(--mj-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
 }
 
-.pw__linkeditor {
+.cw__pname {
+  font-weight: 600;
+  color: var(--mj-text-primary);
+}
+.cw__psku {
+  margin-left: 8px;
+  font-size: 11.5px;
+  color: var(--mj-text-muted);
+  font-family: var(--mj-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+}
+
+.cw__linkeditor {
   margin-top: 14px;
   padding: 14px;
   border: 1px solid var(--mj-border-default);
   border-radius: 10px;
   background: var(--mj-bg-subtle, transparent);
 }
-.pw__linkeditor-title {
+.cw__linkeditor-title {
   margin: 0 0 12px;
   font-size: 13px;
   font-weight: 700;

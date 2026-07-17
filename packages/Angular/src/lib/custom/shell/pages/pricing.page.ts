@@ -48,7 +48,7 @@ export interface ProductPriceRow {
   standalone: false,
   selector: 'mj-pricing-page',
   templateUrl: './pricing.page.html',
-  styleUrls: ['./pricing.page.css'],
+  styleUrls: ['./shell-table.css', './pricing.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PricingPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

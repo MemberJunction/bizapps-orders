@@ -38,11 +38,8 @@
 }
 
 .sp__gridwrap {
-  overflow: auto;
   border: 1px solid var(--mj-border-default);
   border-radius: 10px;
-  min-height: 0;
-  max-height: calc(100vh - 260px);
 }
 .sp__grid {
   width: 100%;

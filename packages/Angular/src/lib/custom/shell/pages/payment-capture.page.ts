@@ -139,7 +139,7 @@ interface SaveOutcome {
   standalone: false,
   selector: 'mj-payment-capture-page',
   templateUrl: './payment-capture.page.html',
-  styleUrls: ['./payment-capture.page.css'],
+  styleUrls: ['./shell-table.css', './payment-capture.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PaymentCapturePageComponent extends BaseAngularComponent implements OnInit, OnChanges, OnDestroy {

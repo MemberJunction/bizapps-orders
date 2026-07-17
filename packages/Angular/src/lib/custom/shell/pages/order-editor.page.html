@@ -1,7 +1,9 @@
 <!-- No <mj-page-header-interior>: the order's identity rides in the card's own head (beside the tabs)
      and its verbs are pinned to the card's foot, so an interior header had nothing left to carry —
-     and an empty one still paints its card chrome, which reads as a blank bubble. The body's top
-     padding is compensated in the CSS, since MJ tightens it assuming a header sits above it. -->
+     and an empty one still paints its card chrome, which reads as a blank bubble.
+     Note MJ tightens <mj-page-body-interior>'s TOP padding to 8px assuming a header sits above it,
+     so this card starts a little higher than a header card does on a sibling page. Left as-is
+     pending Marcelo's eye on the live result. -->
 
 <mj-page-body-interior>
   <!-- ONE card holds the whole editor: tab strip in the head, fields in the scrolling body, verbs
@@ -122,8 +124,8 @@
 
           @switch (ActiveTab) {
             @case ('lines') {
-              <div class="oe__gridwrap">
-                <table class="oe__grid">
+              <div class="oe__gridwrap mjsh-tablewrap">
+                <table class="oe__grid mjsh-table">
                   <thead>
                     <tr>
                       <th>Product</th>

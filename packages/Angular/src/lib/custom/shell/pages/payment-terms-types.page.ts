@@ -56,7 +56,7 @@ export type SortKey = 'name' | 'code' | 'netdays';
   standalone: false,
   selector: 'mj-payment-terms-types-page',
   templateUrl: './payment-terms-types.page.html',
-  styleUrls: ['./payment-terms-types.page.css'],
+  styleUrls: ['./shell-table.css', './payment-terms-types.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PaymentTermsTypesPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

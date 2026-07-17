@@ -1,6 +1,14 @@
-<!-- Shared template for the category dashboards (§8.6 step 6). Cheap stats + small lists only — §0.
+<!-- Shared template for the category dashboards (§8.6 step 6). Cheap reads only — §0.
      Both the Orders and the Payments dashboard render this: the stat strip is driven by `Stats`, the
-     cards by `Cards`, so the two pages differ only in what they put in those arrays. -->
+     composition bars by `Breakdowns`, the cards by `Cards`, so the two pages differ only in what they
+     put in those three arrays.
+
+     CARD LANGUAGE: this deliberately copies MJ Explorer's **Credentials** dashboard
+     (packages/Angular/Explorer/dashboards/src/Credentials/) rather than inventing a card style —
+     the tinted `icon-wrapper` chip above a label-over-value, the 16px radius + lift-on-hover
+     surface, the `section-header` + `section-title` card head, and the `activity-item` row (rounded
+     icon chip · details · status pill). Same idiom, MJ tokens only. Kept in lockstep with the
+     JE/Batches template in bizapps-accounting so a card reads identically in both apps. -->
 <!-- [actions] is the verbs slot (chrome conventions §10). The ONE refresh control lives in the shell
      header — deliberately not repeated here — so this slot carries only the section's create verb.
      The page cannot navigate itself (Explorer resources are not routed), so the button emits
@@ -23,19 +31,72 @@
     <mj-alert Variant="error" [Message]="LoadError"></mj-alert>
   }
 
+  <!-- Stat strip — the Credentials `stat-card`: tinted icon chip, then label, then the big value. -->
   <div class="dash-stats">
-  @for (s of Stats; track s.Id) {
-    <div class="dash-stat" [class.dash-stat--warn]="s.Warn" [title]="s.Tooltip">
-      <i [class]="s.Icon" aria-hidden="true"></i>
-      <span class="dash-stat__value">{{ StatValue(s) }}</span>
-      <span class="dash-stat__label">{{ s.Label }}</span>
-    </div>
-  } @empty {
-    @if (!IsLoading) {
-      <mj-empty-state Icon="fa-solid fa-chart-simple" Title="No stats to show" Message="Nothing could be counted for the current scope."></mj-empty-state>
+    @for (s of Stats; track s.Id) {
+      <div class="dash-stat" [class.dash-stat--warn]="s.Warn" [title]="s.Tooltip">
+        <span class="dash-stat__icon"><i [class]="s.Icon" aria-hidden="true"></i></span>
+        <span class="dash-stat__label">{{ s.Label }}</span>
+        <span class="dash-stat__value">{{ StatValue(s) }}</span>
+      </div>
+    } @empty {
+      @if (!IsLoading) {
+        <mj-empty-state Icon="fa-solid fa-chart-simple" Title="No stats to show" Message="Nothing could be counted for the current scope."></mj-empty-state>
+      }
     }
+  </div>
+
+  <!-- Composition cards. These cost NOTHING: every segment is a count the page already fetched for
+       the stat strip, restacked into a proportional bar (see dashboard-breakdown.ts). This is the
+       answer to "a row of counters isn't worth opening" that §0 actually permits — shape, not just
+       totals, with no extra read. -->
+  @if (Breakdowns.length) {
+    <div class="dash-breakdowns">
+      @for (b of Breakdowns; track b.Id) {
+        <section class="dash-card">
+          <header class="dash-card__head">
+            <span class="dash-card__head-icon"><i [class]="b.Icon" aria-hidden="true"></i></span>
+            <span class="dash-card__titles">
+              <h3 class="dash-card__title">{{ b.Title }}</h3>
+              <span class="dash-card__caption">{{ b.Caption }}</span>
+            </span>
+            <span class="dash-card__count">{{ BreakdownTotal(b) }}</span>
+          </header>
+          <div class="dash-card__body">
+            @if (BreakdownTotal(b) === 0) {
+              @if (!IsLoading) {
+                <p class="dash-card__empty">{{ b.EmptyMessage }}</p>
+              }
+            } @else {
+              <!-- The bar is aria-hidden because it is a REDUNDANT visual encoding of the legend
+                   below — a screen reader gets the same numbers, named and exact, from the legend
+                   rows. Announcing both would read every figure twice. -->
+              <div class="dash-bar" aria-hidden="true">
+                @for (s of b.Segments; track s.Id) {
+                  @if (s.Value > 0) {
+                    <span
+                      [class]="'dash-bar__seg dash-tone--' + s.Tone"
+                      [style.width.%]="BreakdownPercent(b, s)"
+                    ></span>
+                  }
+                }
+              </div>
+              <ul class="dash-legend">
+                @for (s of b.Segments; track s.Id) {
+                  <li class="dash-legend__row" [title]="s.Tooltip">
+                    <span [class]="'dash-legend__dot dash-tone--' + s.Tone"></span>
+                    <span class="dash-legend__label">{{ s.Label }}</span>
+                    <span class="dash-legend__value">{{ s.Value }}</span>
+                    <span class="dash-legend__pct">{{ BreakdownPercent(b, s) | number: '1.0-0' }}%</span>
+                  </li>
+                }
+              </ul>
+            }
+          </div>
+        </section>
+      }
+    </div>
   }
-</div>
 
   <!-- The list cards. A GRID, not a flex column: this sits inside <mj-page-body-interior>, which is
        display:block — a `flex: 1` child of a block parent is a no-op and collapses the card to zero

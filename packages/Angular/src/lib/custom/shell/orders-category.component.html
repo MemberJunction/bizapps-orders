@@ -45,12 +45,14 @@
          NOTE: the chip scopes Payments + Products (which carry a company column). An Order has NO
          CompanyID — it is multi-company via its lines' resolved GL accounts — so this category's
          lists are deliberately unscoped. -->
-    <mj-left-nav
+    <!-- The rail + its desktop icons-only collapse toggle. One wrapper, nine shells: see
+         shell-rail.component.ts for why the collapse is not in MJ's own left-nav (QUESTIONS.md#q27). -->
+    <mj-shell-rail
       [Sections]="RailSections"
       [ActiveId]="ActivePageId"
       [MobileTitle]="CategoryTitle"
       (ItemClicked)="OnRailItemClicked($event)">
-    </mj-left-nav>
+    </mj-shell-rail>
 
     <mj-left-nav-content>
       @switch (ActivePageId) {

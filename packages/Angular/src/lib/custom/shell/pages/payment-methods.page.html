@@ -27,8 +27,8 @@
       Message="No customer has a payment method on file. Methods appear here once the Stripe integration (F.4) is live and customers save one.">
     </mj-empty-state>
   } @else {
-    <div class="pm__gridwrap">
-      <table class="pm__grid">
+    <div class="pm__gridwrap mjsh-tablewrap">
+      <table class="pm__grid mjsh-table">
         <thead><tr><th>Instrument</th><th>Type</th><th>Expiry</th><th>Default</th><th>Active</th></tr></thead>
         <tbody>
           @for (r of Rows; track r.ID) {

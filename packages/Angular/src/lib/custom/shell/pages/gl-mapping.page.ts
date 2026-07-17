@@ -31,7 +31,7 @@ export interface MappingRow {
   standalone: false,
   selector: 'mj-gl-mapping-page',
   templateUrl: './gl-mapping.page.html',
-  styleUrls: ['./gl-mapping.page.css'],
+  styleUrls: ['./shell-table.css', './gl-mapping.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class GLMappingPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

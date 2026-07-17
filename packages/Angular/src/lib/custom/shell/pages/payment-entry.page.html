@@ -79,8 +79,8 @@
         } @else if (OpenOrders.length === 0) {
           <p class="pe__muted">This customer has no open orders — the whole payment will sit unapplied.</p>
         } @else {
-          <div class="pe__gridwrap">
-            <table class="pe__grid">
+          <div class="pe__gridwrap mjsh-tablewrap">
+            <table class="pe__grid mjsh-table">
               <thead><tr><th>Order №</th><th>Due</th><th class="num">Balance</th><th class="num">Apply</th></tr></thead>
               <tbody>
                 @for (o of OpenOrders; track o.OrderID) {

@@ -4,7 +4,7 @@
     <mj-stat-badge [Label]="ActiveCount + ' active'" Icon="fa-solid fa-circle-check" Variant="info"></mj-stat-badge>
   </div>
   <div actions>
-    <button class="mj-btn mj-btn--primary" (click)="New()" [disabled]="IsLoading">
+    <button type="button" mjButton variant="primary" (click)="New()" [disabled]="IsLoading">
       <i class="fa-solid fa-plus" aria-hidden="true"></i> New terms type
     </button>
   </div>
@@ -54,8 +54,8 @@
         Message="No payment terms type matches this search and filter.">
       </mj-empty-state>
     } @else {
-      <div class="ptt__gridwrap">
-        <table class="ptt__grid">
+      <div class="ptt__gridwrap mjsh-tablewrap">
+        <table class="ptt__grid mjsh-table">
           <thead>
             <tr>
               <th>Name</th>
@@ -129,10 +129,10 @@
         </div>
 
         <div class="ptt__dlgactions">
-          <button class="mj-btn mj-btn--primary" (click)="Save()" [disabled]="!CanSave">
+          <button type="button" mjButton variant="primary" (click)="Save()" [disabled]="!CanSave">
             {{ IsSaving ? 'Saving…' : 'Save' }}
           </button>
-          <button class="mj-btn mj-btn--outline" (click)="Cancel()" [disabled]="IsSaving">Cancel</button>
+          <button type="button" mjButton variant="outline" (click)="Cancel()" [disabled]="IsSaving">Cancel</button>
         </div>
       </div>
     </div>

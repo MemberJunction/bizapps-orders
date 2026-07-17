@@ -3,6 +3,12 @@ import { PageRefreshService } from '@mj-biz-apps/accounting-ng';
 import { RunView } from '@memberjunction/core';
 import { AccountingDashboardBase, CompanyScopeService } from '@mj-biz-apps/accounting-ng';
 import { FormatMoney, type DashboardListCard } from './dashboard-lists';
+import {
+  BreakdownPercent,
+  BreakdownTotal,
+  type DashboardBreakdown,
+  type DashboardBreakdownSegment,
+} from '@mj-biz-apps/accounting-ng';
 
 const PAYMENT_ENTITY = 'MJ_BizApps_Orders: Payments';
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
@@ -65,6 +71,62 @@ export class PaymentsDashboardPageComponent extends AccountingDashboardBase impl
   public override CreateLabel = 'New payment';
 
   public Cards: DashboardListCard[] = [];
+
+  /**
+   * The composition cards. This one is FREE in the most literal sense: the page already counts every
+   * one of `Payment.Status`'s five values for the stat strip, so stacking them into a proportional
+   * bar adds no query at all — see buildBreakdowns and dashboard-breakdown.ts.
+   */
+  public Breakdowns: DashboardBreakdown[] = [];
+
+  /** Template hooks for the composition bar. Pure functions; see dashboard-breakdown.ts. */
+  public BreakdownTotal(b: DashboardBreakdown): number {
+    return BreakdownTotal(b);
+  }
+  public BreakdownPercent(b: DashboardBreakdown, s: DashboardBreakdownSegment): number {
+    return BreakdownPercent(b, s);
+  }
+
+  /**
+   * The money-in pipeline — every payment in scope, by status.
+   *
+   * The segments are the COMPLETE `Payment.Status` value list (Pending|Captured|Failed|Refunded|
+   * Disputed — CK_Payment_Status), and the page ALREADY counts all five for the stat strip, so this
+   * card costs exactly zero additional reads. Covering the whole value list is what makes the
+   * proportions honest: every payment lands in exactly one segment, so these are real shares of a
+   * real total. If a migration widens CK_Payment_Status, a segment belongs here.
+   *
+   * Tones: brand (money promised) → success (money in) → error (broken) → warning (money back out,
+   * or contested). Refunded is not a failure, but it IS money leaving — warning, not success.
+   *
+   * NOTE this counts PAYMENTS, not amounts. A by-status SUM is the heavy aggregate §0 rules out
+   * without a precompute — see the unapplied-balance note on the class.
+   */
+  private buildBreakdowns(c: {
+    pending: number; captured: number; failed: number; refunded: number; disputed: number;
+  }): DashboardBreakdown[] {
+    return [
+      {
+        Id: 'money-in',
+        Title: 'Money in',
+        Icon: 'fa-solid fa-diagram-project',
+        Caption: 'Every payment in scope, by status',
+        EmptyMessage: 'No payments in this company scope yet.',
+        Segments: [
+          { Id: 'pending', Label: 'Not yet captured', Value: c.pending, Tone: 'brand',
+            Tooltip: 'Authorised but not captured — money promised, not yet taken.' },
+          { Id: 'captured', Label: 'Captured', Value: c.captured, Tone: 'success',
+            Tooltip: 'Money actually taken — the end of the line for a payment.' },
+          { Id: 'failed', Label: 'Failed', Value: c.failed, Tone: 'error',
+            Tooltip: 'The capture attempt failed. These need a retry or a new method.' },
+          { Id: 'refunded', Label: 'Refunded', Value: c.refunded, Tone: 'warning',
+            Tooltip: 'Returned to the customer. Not a failure — but money back out.' },
+          { Id: 'disputed', Label: 'Disputed', Value: c.disputed, Tone: 'warning',
+            Tooltip: 'The customer contested the charge. Contested money is not yours yet.' },
+        ],
+      },
+    ];
+  }
 
   ngOnInit(): void {
     this.refreshSub = this.pageRefresh.OnRefresh(() => this.Refresh());
@@ -175,6 +237,9 @@ export class PaymentsDashboardPageComponent extends AccountingDashboardBase impl
         },
       ];
 
+      // Costs nothing: every segment is one of the status counts already fetched above.
+      this.Breakdowns = this.buildBreakdowns({ pending, captured, failed, refunded, disputed });
+
       // Each card's header count comes from the COUNT above, never from the five rows fetched — so
       // the card and the stat above it show the same number by construction, not by coincidence.
       this.Cards = [
@@ -185,6 +250,7 @@ export class PaymentsDashboardPageComponent extends AccountingDashboardBase impl
     } catch (e) {
       this.LoadError = e instanceof Error ? e.message : String(e);
       this.Stats = [];
+      this.Breakdowns = [];
       this.Cards = [];
     } finally {
       this.IsLoading = false;

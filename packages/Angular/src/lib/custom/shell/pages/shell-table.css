@@ -1,0 +1,59 @@
+/* ══ SHARED: scrolling table + sticky header ═════════════════════════════════
+   Consumed by every shell page with a hand-rolled <table>, as the FIRST entry in its
+   styleUrls (so a page's own file still wins on a tie and can restyle type/colour).
+   Markup contract:  <div class="mjsh-tablewrap"><table class="mjsh-table"> … </table></div>
+
+   ── WHY THIS FILE EXISTS ────────────────────────────────────────────────────
+   This block was pasted verbatim into 7 page stylesheets and half-pasted into ~10 more,
+   which is exactly how the half-copies drifted into being silently broken (below). One
+   home, one fix. Pages using MJ's <mj-entity-data-grid> (AG Grid) are NOT consumers —
+   AG Grid owns its own header and viewport; do not add these classes there.
+
+   ── THE THREE THINGS THAT MAKE STICKY WORK (all are load-bearing) ───────────
+   1. A REAL BOUNDED HEIGHT + overflow-y on the ancestor. `position: sticky` is measured
+      against the nearest SCROLLING ancestor; with no bounded height there is no scroll
+      port, the th is inert, and THE PAGE scrolls instead — rows ride up OVER the header.
+      This is the failure this file fixes. Note `flex: 1` is NOT a height here: these
+      wrappers sit under <mj-page-body-interior>, which is display:block, so a flex child
+      is a no-op that collapses to zero (it blanked All journal entries once). Height must
+      come from height/min-height. Every consumer page's :host already declares
+      `display:flex; flex-direction:column; height:100%; min-height:0` — the chain that
+      makes min(68vh,900px) resolve. Same chain everywhere; don't invent a per-page one.
+   2. BOTH overflow axes, explicitly. Per the overflow spec a `visible` axis paired with a
+      non-`visible` axis computes to `auto` — so `overflow-x: auto` alone silently turns on
+      a VERTICAL scrollbar nobody asked for. Four pages shipped exactly that bug.
+   3. An OPAQUE background + a z-index. Rows scroll UNDER the header; a transparent or
+      un-stacked th lets them show straight through it. The background MUST be a token
+      (there is a CI gate on literals) — never `white`.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.mjsh-tablewrap {
+  /* 68vh keeps the table clearly INSIDE the viewport, so the page itself never grows a
+     scrollbar because a table got long; 900px stops it stretching absurdly on a tall
+     monitor; 320px keeps a near-empty table from collapsing to a sliver. */
+  height: min(68vh, 900px);
+  min-height: 320px;
+  /* Both axes, always — see (2) above. */
+  overflow-x: auto;
+  overflow-y: auto;
+  border: 1px solid var(--mj-border-default);
+  border-radius: 10px;
+  background: var(--mj-bg-surface);
+}
+
+.mjsh-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.mjsh-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--mj-bg-surface);
+  /* NOT `border-bottom`: with border-collapse:collapse the collapsed border belongs to the
+     table grid, not the th, so it does NOT travel with a sticky header — the rule detaches
+     and rows slide over the gap. An inset shadow paints on the th itself and does stick.
+     A page that wants no rule can override `box-shadow: none` in its own file. */
+  box-shadow: inset 0 -1px 0 var(--mj-border-default);
+}

@@ -28,7 +28,7 @@ export interface OverdueRowView extends OverdueOrderRow {
   standalone: false,
   selector: 'mj-overdue-worklist-page',
   templateUrl: './overdue-worklist.page.html',
-  styleUrls: ['./overdue-worklist.page.css'],
+  styleUrls: ['./shell-table.css', './overdue-worklist.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OverdueWorklistPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

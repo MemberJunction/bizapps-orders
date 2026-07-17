@@ -5,6 +5,12 @@ import { GraphQLDataProvider } from '@memberjunction/graphql-dataprovider';
 import { AccountingDashboardBase, CompanyScopeService, ReadModelsClient, type DashboardStat } from '@mj-biz-apps/accounting-ng';
 import { OverdueWorklistClient, type OverdueOrderRow } from './overdue-worklist.client';
 import { FormatMoney, type DashboardListCard } from './dashboard-lists';
+import {
+  BreakdownPercent,
+  BreakdownTotal,
+  type DashboardBreakdown,
+  type DashboardBreakdownSegment,
+} from '@mj-biz-apps/accounting-ng';
 
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 
@@ -33,6 +39,8 @@ interface OrderCounts {
   confirmed: number;
   awaitingFulfilment: number;
   fulfilled: number;
+  /** Counted so the lifecycle breakdown can cover the WHOLE Order.Status value list. */
+  voided: number;
   booked: number;
   arOpen: number;
 }
@@ -78,6 +86,20 @@ export class OrdersDashboardPageComponent extends AccountingDashboardBase implem
 
   public Cards: DashboardListCard[] = [];
 
+  /**
+   * The composition cards. Derived ENTIRELY from `OrderCounts` — every segment is a count the page
+   * already fetched for the stat strip — so this band adds no reads. See dashboard-breakdown.ts.
+   */
+  public Breakdowns: DashboardBreakdown[] = [];
+
+  /** Template hooks for the composition bar. Pure functions; see dashboard-breakdown.ts. */
+  public BreakdownTotal(b: DashboardBreakdown): number {
+    return BreakdownTotal(b);
+  }
+  public BreakdownPercent(b: DashboardBreakdown, s: DashboardBreakdownSegment): number {
+    return BreakdownPercent(b, s);
+  }
+
   /** Stats whose Value is money, not a count — see StatValue. */
   private static readonly MoneyStatIds = new Set<string>(['ar-open']);
 
@@ -110,7 +132,10 @@ export class OrdersDashboardPageComponent extends AccountingDashboardBase implem
     try {
       const monthStart = this.monthStartUTC();
       const c = (filter: string): Promise<number> => this.count({ EntityName: ORDER_ENTITY, ExtraFilter: filter });
-      const [thisMonth, draft, quoted, confirmed, awaitingFulfilment, fulfilled, booked, arOpen, recent, overdue] =
+      // `voided` exists so the lifecycle breakdown can cover the WHOLE `Order.Status` value list
+      // (Draft|Quoted|Confirmed|Posted|Fulfilled|Voided — CK_Order_Status). One extra `MaxRows: 1` +
+      // `TotalRowCount` read: a SQL count transferring one row, exactly the kind §0 permits on demand.
+      const [thisMonth, draft, quoted, confirmed, awaitingFulfilment, fulfilled, voided, booked, arOpen, recent, overdue] =
         await Promise.all([
           c(`OrderDate >= '${monthStart}'`),
           c(`Status='Draft'`),
@@ -118,17 +143,21 @@ export class OrdersDashboardPageComponent extends AccountingDashboardBase implem
           c(`Status='Confirmed'`),
           c(`Status='Posted'`),
           c(`Status='Fulfilled'`),
+          c(`Status='Voided'`),
           c(`Status IN ('Confirmed','Posted','Fulfilled')`),
           this.loadAROpen(),
           this.loadRecentOrders(),
           this.loadOverdue(),
         ]);
 
-      this.Stats = this.buildStats({ thisMonth, draft, quoted, confirmed, awaitingFulfilment, fulfilled, booked, arOpen });
+      const counts: OrderCounts = { thisMonth, draft, quoted, confirmed, awaitingFulfilment, fulfilled, voided, booked, arOpen };
+      this.Stats = this.buildStats(counts);
+      this.Breakdowns = this.buildBreakdowns(counts);
       this.Cards = [this.recentOrdersCard(recent), this.overdueCard(overdue)];
     } catch (e) {
       this.LoadError = e instanceof Error ? e.message : String(e);
       this.Stats = [];
+      this.Breakdowns = [];
       this.Cards = [];
     } finally {
       this.IsLoading = false;
@@ -146,6 +175,46 @@ export class OrdersDashboardPageComponent extends AccountingDashboardBase implem
    * up as revenue. Open A/R is the one money figure here, and it is READ from accounting's
    * precomputed read model rather than summed from the ledger (see loadAROpen).
    */
+  /**
+   * The order lifecycle, end to end — the order book's shape in one bar.
+   *
+   * The segments are the COMPLETE `Order.Status` value list, which is what makes the proportions
+   * honest: every order lands in exactly one segment, so these are real shares of a real total. If a
+   * migration widens CK_Order_Status, a segment belongs here — the value list is this card's contract.
+   *
+   * Tones follow the journey, not severity: brand (not yet committed) → info (committed, in flight)
+   * → success (delivered) → error for Voided, the one terminal state that is not a completion.
+   *
+   * NOTE this bar counts ORDERS, not money. Sales by stage would be a `SUM(TotalGross) GROUP BY
+   * Status` over the order book — the heavy aggregate §0 forbids on demand — so it needs a
+   * precomputed read model before it can appear. Counts are what we can honestly show for free.
+   */
+  private buildBreakdowns(c: OrderCounts): DashboardBreakdown[] {
+    return [
+      {
+        Id: 'lifecycle',
+        Title: 'Order lifecycle',
+        Icon: 'fa-solid fa-diagram-project',
+        Caption: 'Every order, by status',
+        EmptyMessage: 'No orders yet — the book is empty.',
+        Segments: [
+          { Id: 'draft', Label: 'Draft', Value: c.draft, Tone: 'brand',
+            Tooltip: 'Being written. Not a commitment from anyone yet.' },
+          { Id: 'quoted', Label: 'Quoted', Value: c.quoted, Tone: 'brand',
+            Tooltip: 'Sent to the customer, awaiting their decision.' },
+          { Id: 'confirmed', Label: 'Confirmed', Value: c.confirmed, Tone: 'info',
+            Tooltip: 'The customer committed. This is the transition that books the journal entry.' },
+          { Id: 'posted', Label: 'Awaiting fulfilment', Value: c.awaitingFulfilment, Tone: 'info',
+            Tooltip: 'Booked to the ledger and waiting on the fulfilment queue.' },
+          { Id: 'fulfilled', Label: 'Fulfilled', Value: c.fulfilled, Tone: 'success',
+            Tooltip: 'Delivered — the end of the line for an order.' },
+          { Id: 'voided', Label: 'Voided', Value: c.voided, Tone: 'error',
+            Tooltip: 'Cancelled. The only terminal state that is not a completion.' },
+        ],
+      },
+    ];
+  }
+
   private buildStats(c: OrderCounts): DashboardStat[] {
     return [
       {

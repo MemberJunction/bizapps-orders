@@ -76,7 +76,7 @@ export interface ParentOption {
   standalone: false,
   selector: 'mj-categories-page',
   templateUrl: './categories.page.html',
-  styleUrls: ['./categories.page.css'],
+  styleUrls: ['./shell-table.css', './categories.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CategoriesPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

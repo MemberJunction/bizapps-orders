@@ -45,8 +45,8 @@
         @if (Prices.length === 0) {
           <p class="pr__muted">This price list has no product prices.</p>
         } @else {
-          <div class="pr__gridwrap">
-            <table class="pr__grid">
+          <div class="pr__gridwrap mjsh-tablewrap">
+            <table class="pr__grid mjsh-table">
               <thead><tr><th>Product</th><th>SKU</th><th>Model</th><th>Qty band</th><th class="num">Amount</th><th>Effective</th><th>Tiers</th><th>Product ID</th></tr></thead>
               <tbody>
                 @for (p of FilteredPrices; track p.ID) {

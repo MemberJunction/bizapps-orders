@@ -41,7 +41,7 @@ export interface PaymentMethodRow {
   standalone: false,
   selector: 'mj-payment-methods-page',
   templateUrl: './payment-methods.page.html',
-  styleUrls: ['./payment-methods.page.css'],
+  styleUrls: ['./shell-table.css', './payment-methods.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PaymentMethodsPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

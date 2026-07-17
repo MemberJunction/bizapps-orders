@@ -1,0 +1,492 @@
+<mj-page-header-interior>
+  <div meta>
+    @if (ActiveState; as s) {
+      <mj-stat-badge
+        [Label]="IsNew ? 'New category' : (s.Draft.IsActive ? 'Active' : 'Inactive')"
+        Icon="fa-solid fa-sitemap"
+        [Variant]="IsNew || s.Draft.IsActive ? 'default' : 'warning'"></mj-stat-badge>
+      @if (!IsNew) {
+        <mj-stat-badge
+          [Label]="MemberCount + (MemberCount === 1 ? ' product' : ' products')"
+          Icon="fa-solid fa-box"
+          Variant="default"></mj-stat-badge>
+      }
+      @if (Tabs.length) {
+        <mj-stat-badge
+          [Label]="Tabs.length + (Tabs.length === 1 ? ' open category' : ' open categories')"
+          Icon="fa-solid fa-layer-group"
+          Variant="default"></mj-stat-badge>
+      }
+    }
+  </div>
+  <div actions>
+    <!-- The split button: [ New category ][ ▾ ]. The ▾ half opens the open-existing picker.
+         Same affordance as the product workshop — one idiom for "open or create a thing". -->
+    <div class="cw__split" (click)="$event.stopPropagation()">
+      <button type="button" mjButton class="cw__split-main" (click)="OpenNewDraft()">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> New category
+      </button>
+      <button
+        type="button"
+        mjButton
+        variant="outline"
+        class="cw__split-toggle"
+        [attr.aria-expanded]="PickerOpen"
+        aria-haspopup="dialog"
+        aria-label="Open an existing category"
+        title="Open an existing category"
+        (click)="TogglePicker()">
+        <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+      </button>
+
+      @if (PickerOpen) {
+        <div class="cw__picker" role="dialog" aria-label="Open an existing category">
+          <div class="cw__picker-search">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input
+              #pickerSearch
+              type="text"
+              [(ngModel)]="PickerSearch"
+              (ngModelChange)="OnPickerSearchChanged()"
+              placeholder="Search by name, code or ID…"
+              aria-label="Search categories" />
+          </div>
+          <ul class="cw__picker-list">
+            @for (row of PickerRows; track row.ID) {
+              <li>
+                <!-- Name LEADS; the code is the secondary human handle. The ID is searchable in full
+                     (see PickerRows) but is never what the row shows — ids are meaningless to users. -->
+                <button type="button" class="cw__picker-item" (click)="PickCategory(row)">
+                  <span class="cw__picker-name">{{ row.Name }}</span>
+                  @if (row.Code) {
+                    <span class="cw__picker-code">{{ row.Code }}</span>
+                  }
+                  @if (row.AlreadyOpen) {
+                    <span class="cw__picker-open"><i class="fa-solid fa-check" aria-hidden="true"></i> open</span>
+                  }
+                </button>
+              </li>
+            } @empty {
+              <li class="cw__picker-none">No category matches “{{ PickerSearch }}”.</li>
+            }
+          </ul>
+        </div>
+      }
+    </div>
+  </div>
+</mj-page-header-interior>
+
+<mj-page-body-interior>
+  @if (IsLoading) {
+    <mj-loading text="Loading the category workshop…"></mj-loading>
+  } @else if (LoadError) {
+    <p class="cw__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ LoadError }}</p>
+  } @else {
+    <!-- Tabs are OPEN CATEGORIES, not sections of one category. -->
+    <mj-workspace-tab-strip
+      [Tabs]="Tabs"
+      [ActiveId]="ActiveTabId"
+      [ShowNewTab]="true"
+      NewTabLabel="New category"
+      (TabSelected)="SelectTab($event)"
+      (TabClosed)="CloseTab($event)"
+      (NewTabRequested)="OpenNewDraft()">
+    </mj-workspace-tab-strip>
+
+    @if (ActiveState; as s) {
+      <div class="cw__bar">
+        <span class="cw__crumb">
+          <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
+          {{ s.Draft.Name.trim() || 'New category' }}
+        </span>
+        <div class="cw__actions">
+          @if (s.SaveMessage) {
+            <span class="cw__ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> {{ s.SaveMessage }}</span>
+          }
+          <button type="button" mjButton [disabled]="!CanSave" (click)="Save()">
+            <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+            {{ IsSaving ? 'Saving…' : IsNew ? 'Create category' : 'Save category' }}
+          </button>
+        </div>
+      </div>
+
+      @if (s.SaveError) {
+        <p class="cw__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ s.SaveError }}</p>
+      }
+
+      <div class="cw__panel">
+        <!-- ─── General ───────────────────────────────────────────────────── -->
+        <!-- MJ's own disclosure panel. [Bare] drops its box chrome so it reads as a header + rule
+             inside the card that already provides the chrome — and we get MJ's keyboard + aria
+             (aria-expanded / aria-controls / aria-labelledby) instead of hand-rolling it. -->
+        <mj-accordion-panel [Bare]="true" [Expanded]="IsSectionOpen('general')" (ExpandedChange)="SetSectionOpen('general', $event)">
+          <ng-template mjAccordionTitle>
+            <span class="cw__sec-label"><i class="fa-solid fa-sitemap" aria-hidden="true"></i> General</span>
+            @if (SectionIssues('general') > 0) {
+              <!-- Passive state, so it lives in the TITLE (mjAccordionActions is for interactive
+                   controls). It renders whether the panel is open or closed — a collapsed section
+                   must never hide a problem. -->
+              <span class="cw__badge" [title]="SectionIssueTitle('general')">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ SectionIssues('general') }}
+              </span>
+            }
+          </ng-template>
+
+          <ng-template mjAccordionBody>
+            <div class="cw__fields">
+              <label class="cw__field">
+                <span class="cw__label">Name <b class="cw__req">*</b></span>
+                <input type="text" [(ngModel)]="s.Draft.Name" (ngModelChange)="MarkDirty()" maxlength="200" placeholder="Category name" />
+                <span class="cw__hint">What a human searches for — the name leads every list this category appears in.</span>
+              </label>
+
+              <label class="cw__field">
+                <span class="cw__label">Code</span>
+                <input type="text" [(ngModel)]="s.Draft.Code" (ngModelChange)="MarkDirty()" maxlength="80" placeholder="Optional short code" />
+              </label>
+
+              <label class="cw__field">
+                <span class="cw__label">Parent category</span>
+                <select [(ngModel)]="s.Draft.ParentID" (ngModelChange)="MarkDirty()">
+                  <option [ngValue]="null">— none (a root category) —</option>
+                  @for (p of Parents; track p.ID) {
+                    <option [ngValue]="p.ID">{{ p.Label }}</option>
+                  }
+                </select>
+                <span class="cw__hint">
+                  Booking walks UP this chain: a product with no GL link of its own falls back to its category,
+                  then to that category's parent, and so on. This category and its own descendants are excluded —
+                  a category cannot be its own ancestor.
+                </span>
+              </label>
+
+              <label class="cw__field">
+                <span class="cw__label">Active</span>
+                <span class="cw__check">
+                  <input type="checkbox" [(ngModel)]="s.Draft.IsActive" (ngModelChange)="MarkDirty()" />
+                  <span class="cw__hint">Whether this category is offered when classifying a product.</span>
+                </span>
+              </label>
+
+              <label class="cw__field cw__field--wide">
+                <span class="cw__label">Description</span>
+                <textarea rows="3" [(ngModel)]="s.Draft.Description" (ngModelChange)="MarkDirty()"></textarea>
+              </label>
+            </div>
+          </ng-template>
+        </mj-accordion-panel>
+
+        <!-- ─── GL accounts ───────────────────────────────────────────────── -->
+        <!-- Open by DEFAULT here (unlike the product workshop, where it is collapsed): the category
+             is a chart-of-accounts tier in its own right, so the mapping is why you opened the page. -->
+        <mj-accordion-panel [Bare]="true" [Expanded]="IsSectionOpen('gl')" (ExpandedChange)="SetSectionOpen('gl', $event)">
+          <ng-template mjAccordionTitle>
+            <span class="cw__sec-label"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i> GL accounts</span>
+            @if (SectionIssues('gl') > 0) {
+              <span class="cw__badge" [title]="SectionIssueTitle('gl')">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ SectionIssues('gl') }}
+              </span>
+            }
+          </ng-template>
+
+          <ng-template mjAccordionBody>
+            @if (IsNew) {
+              <mj-empty-state
+                Icon="fa-solid fa-diagram-project"
+                Title="Save the category first"
+                Message="A GL account link points at a saved category record. Create the category, then link its accounts here."></mj-empty-state>
+            } @else {
+              <p class="cw__note">
+                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                This category's own chart of accounts. A link here is what a product in this category falls back to
+                when it carries no GL link of its own — and what its child categories fall back to in turn.
+              </p>
+
+              <!-- The chains, rendered by accounting's shared preview — never re-rendered here. One
+                   per revenue role, because a category has no recognition type of its own to pick one. -->
+              @for (r of s.Resolutions; track r.Role) {
+                <mj-gl-resolution-preview [Result]="r"></mj-gl-resolution-preview>
+              }
+
+              <p class="cw__note">
+                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                The chain above stops at the top of the category tree. Booking then falls back to the
+                <b>company default</b> — but that tier hangs off each <i>product's</i> owning company, which differs
+                product by product inside this category, so it cannot be shown from here. The product workshop shows
+                the full product → category → company chain for one product.
+              </p>
+
+              @if (s.LinkError) {
+                <p class="cw__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ s.LinkError }}</p>
+              }
+
+              <div class="cw__gridwrap">
+                <table class="cw__grid">
+                  <thead>
+                    <tr><th>Role</th><th>Account</th><th>Company</th><th>Status</th><th>From</th><th>To</th><th>Comments</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    @for (l of s.Links; track l.ID) {
+                      <tr>
+                        <td>{{ l.RoleName }}</td>
+                        <td><span class="cw__mono">{{ l.AccountCode }}</span> {{ l.AccountName }}</td>
+                        <!-- The account's company is shown, never enforced: a ProductCategory has no
+                             company of its own, so there is no rule here to check against. -->
+                        <td class="cw__muted">{{ l.AccountCompanyName }}</td>
+                        <td>{{ l.Status }}</td>
+                        <!-- DATE columns: rendered in UTC so the row never shows yesterday. -->
+                        <td>{{ l.StartedAt ? (l.StartedAt | date: 'mediumDate' : 'UTC') : 'open' }}</td>
+                        <td>{{ l.EndedAt ? (l.EndedAt | date: 'mediumDate' : 'UTC') : 'open' }}</td>
+                        <td class="cw__muted">{{ l.Comments || '—' }}</td>
+                        <td class="cw__rowactions">
+                          <button type="button" mjButton variant="outline" size="sm" (click)="EditLink(l)" [disabled]="IsSavingLink">Edit</button>
+                          <button type="button" mjButton variant="outline" size="sm" (click)="RemoveLink(l)" [disabled]="IsSavingLink">Remove</button>
+                        </td>
+                      </tr>
+                    } @empty {
+                      <tr>
+                        <td colspan="8" class="cw__muted">
+                          No GL link on this category — products in it resolve through their own link, this category's
+                          parent chain, or their company default.
+                        </td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+
+              @if (!s.LinkDraft) {
+                <div class="cw__actions cw__actions--left">
+                  <button type="button" mjButton (click)="AddLink()" [disabled]="IsSavingLink">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i> Add GL account link
+                  </button>
+                </div>
+              } @else {
+                <div class="cw__linkeditor">
+                  <h4 class="cw__linkeditor-title">{{ s.LinkDraft.ID ? 'Edit GL account link' : 'New GL account link' }}</h4>
+                  <div class="cw__fields">
+                    <label class="cw__field">
+                      <span class="cw__label">Role <b class="cw__req">*</b></span>
+                      <select [(ngModel)]="s.LinkDraft.GLAccountRoleID">
+                        <option [ngValue]="null">— select a role —</option>
+                        @for (r of Roles; track r.ID) {
+                          <option [ngValue]="r.ID">{{ r.Label }}</option>
+                        }
+                      </select>
+                      <span class="cw__hint">Booking walks a category chain for <b>Sales</b> and <b>Deferred Revenue</b>; other roles are stored but not walked from here.</span>
+                    </label>
+
+                    <label class="cw__field">
+                      <span class="cw__label">GL account <b class="cw__req">*</b></span>
+                      <select [(ngModel)]="s.LinkDraft.GLAccountID">
+                        <option [ngValue]="null">— select an account —</option>
+                        @for (a of Accounts; track a.ID) {
+                          <option [ngValue]="a.ID">{{ a.CompanyName }} · {{ a.Label }}</option>
+                        }
+                      </select>
+                      <span class="cw__hint">
+                        Grouped by company — a chart of accounts belongs to ONE company. A category has no owning
+                        company of its own, so nothing here narrows the list for you: pick deliberately.
+                      </span>
+                    </label>
+
+                    <label class="cw__field">
+                      <span class="cw__label">Status</span>
+                      <select [(ngModel)]="s.LinkDraft.Status">
+                        @for (ls of LinkStatusOptions; track ls) {
+                          <option [ngValue]="ls">{{ ls }}</option>
+                        }
+                      </select>
+                      <span class="cw__hint">Only Active links are used by resolution; Pending is entered-but-not-yet-in-force.</span>
+                    </label>
+
+                    <label class="cw__field">
+                      <span class="cw__label">Effective from</span>
+                      <input type="date" [(ngModel)]="s.LinkDraft.StartedAt" />
+                      <span class="cw__hint">Empty = open start.</span>
+                    </label>
+
+                    <label class="cw__field">
+                      <span class="cw__label">Effective to</span>
+                      <input type="date" [(ngModel)]="s.LinkDraft.EndedAt" />
+                      <span class="cw__hint">Empty = open end.</span>
+                    </label>
+
+                    <label class="cw__field cw__field--wide">
+                      <span class="cw__label">Comments</span>
+                      <input type="text" [(ngModel)]="s.LinkDraft.Comments" placeholder="Why this mapping exists / changed" />
+                    </label>
+                  </div>
+
+                  <div class="cw__actions cw__actions--left">
+                    <button type="button" mjButton [disabled]="!CanSaveLink" (click)="SaveLink()">
+                      {{ IsSavingLink ? 'Saving…' : 'Save link' }}
+                    </button>
+                    <button type="button" mjButton variant="outline" (click)="CancelLink()" [disabled]="IsSavingLink">Cancel</button>
+                  </div>
+                </div>
+              }
+            }
+          </ng-template>
+        </mj-accordion-panel>
+
+        <!-- ─── Products: filters LEFT, picker RIGHT ──────────────────────── -->
+        <mj-accordion-panel [Bare]="true" [Expanded]="IsSectionOpen('products')" (ExpandedChange)="SetSectionOpen('products', $event)">
+          <ng-template mjAccordionTitle>
+            <span class="cw__sec-label"><i class="fa-solid fa-box" aria-hidden="true"></i> Products</span>
+            @if (SectionIssues('products') > 0) {
+              <span class="cw__badge" [title]="SectionIssueTitle('products')">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ SectionIssues('products') }}
+              </span>
+            }
+          </ng-template>
+
+          <ng-template mjAccordionBody>
+            @if (IsNew) {
+              <mj-empty-state
+                Icon="fa-solid fa-box-open"
+                Title="Save the category first"
+                Message="A product points AT a saved category record. Create the category, then pick its products here."></mj-empty-state>
+            } @else {
+              @if (s.MembershipError) {
+                <p class="cw__error" role="alert"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i> {{ s.MembershipError }}</p>
+              }
+
+              <!-- The split: filters on the LEFT, the picker on the RIGHT. Sized, never flex:1 —
+                   see the note at the top of the stylesheet. -->
+              <div class="cw__split-pane">
+                <!-- LEFT: the filters. They scope the picker beside them, nothing else on the page. -->
+                <aside class="cw__filters" aria-label="Filter the product picker">
+                  <div class="cw__field">
+                    <span class="cw__label">Search</span>
+                    <input
+                      type="text"
+                      [(ngModel)]="ProductSearch"
+                      (ngModelChange)="OnProductFilterChanged()"
+                      placeholder="Name, SKU or ID…"
+                      aria-label="Search products" />
+                  </div>
+
+                  <div class="cw__field">
+                    <span class="cw__label">Membership</span>
+                    <select [(ngModel)]="Membership" (ngModelChange)="OnProductFilterChanged()" aria-label="Filter by membership">
+                      <option value="all">All products</option>
+                      <option value="in">In this category</option>
+                      <option value="out">Not in this category</option>
+                    </select>
+                  </div>
+
+                  <div class="cw__field">
+                    <span class="cw__label">Type</span>
+                    <select [(ngModel)]="FilterTypeID" (ngModelChange)="OnProductFilterChanged()" aria-label="Filter by product type">
+                      <option value="">All types</option>
+                      @for (t of ProductTypes; track t.ID) {
+                        <option [value]="t.ID">{{ t.Label }}</option>
+                      }
+                    </select>
+                  </div>
+
+                  <div class="cw__field">
+                    <span class="cw__label">Status</span>
+                    <select [(ngModel)]="FilterStatus" (ngModelChange)="OnProductFilterChanged()" aria-label="Filter by product status">
+                      <option value="">All statuses</option>
+                      @for (st of StatusOptions; track st) {
+                        <option [value]="st">{{ st }}</option>
+                      }
+                    </select>
+                  </div>
+
+                  @if (HasProductFilters) {
+                    <button type="button" mjButton variant="outline" size="sm" (click)="ClearProductFilters()">
+                      <i class="fa-solid fa-xmark" aria-hidden="true"></i> Clear filters
+                    </button>
+                  }
+
+                  <p class="cw__hint">
+                    Filters are how you are looking right now, not a property of the category — they stay put when you
+                    switch tabs.
+                  </p>
+                </aside>
+
+                <!-- RIGHT: the picker. -->
+                <div class="cw__picker-pane">
+                  <p class="cw__note">
+                    <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                    A product belongs to at most ONE category, so adding a product that already sits in another
+                    category <b>moves</b> it. Each row says where it is now.
+                  </p>
+
+                  <div class="cw__gridwrap cw__gridwrap--picker">
+                    <table class="cw__grid">
+                      <thead>
+                        <tr><th>Product</th><th>Type</th><th>Status</th><th>Category now</th><th></th></tr>
+                      </thead>
+                      <tbody>
+                        @for (row of ProductRows; track row.ID) {
+                          <tr [class.cw__row--member]="row.IsMember">
+                            <td>
+                              <!-- Name leads; the SKU rides beside it. The full ID is title-attributed
+                                   so it stays copyable without ever occupying the row. -->
+                              <span class="cw__pname" [title]="row.ID">{{ row.Name }}</span>
+                              @if (row.SKU) {
+                                <span class="cw__psku">{{ row.SKU }}</span>
+                              }
+                            </td>
+                            <td class="cw__muted">{{ row.TypeName }}</td>
+                            <td class="cw__muted">{{ row.Status }}</td>
+                            <td>
+                              @if (row.IsMember) {
+                                <span class="cw__here"><i class="fa-solid fa-check" aria-hidden="true"></i> this category</span>
+                              } @else if (row.IsMemberOfOther) {
+                                <span class="cw__warn" [title]="'Adding it here moves it out of ' + row.CategoryName">
+                                  <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ row.CategoryName }}
+                                </span>
+                              } @else {
+                                <span class="cw__muted">—</span>
+                              }
+                            </td>
+                            <td class="cw__rowactions">
+                              @if (row.IsMember) {
+                                <button
+                                  type="button"
+                                  mjButton
+                                  variant="outline"
+                                  size="sm"
+                                  [disabled]="SavingProductID !== null"
+                                  (click)="SetMembership(row, false)">
+                                  {{ SavingProductID === row.ID ? 'Saving…' : 'Remove' }}
+                                </button>
+                              } @else {
+                                <button
+                                  type="button"
+                                  mjButton
+                                  size="sm"
+                                  [disabled]="SavingProductID !== null"
+                                  (click)="SetMembership(row, true)">
+                                  {{ SavingProductID === row.ID ? 'Saving…' : row.IsMemberOfOther ? 'Move here' : 'Add' }}
+                                </button>
+                              }
+                            </td>
+                          </tr>
+                        } @empty {
+                          <tr>
+                            <td colspan="5" class="cw__muted">No product matches the filters on the left.</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            }
+          </ng-template>
+        </mj-accordion-panel>
+      </div>
+    } @else {
+      <mj-empty-state
+        Icon="fa-solid fa-sitemap"
+        Title="No category open"
+        Message="Each tab above is a category you are working on. Start one with New category, or use the ▾ next to it to open an existing category."></mj-empty-state>
+    }
+  }
+</mj-page-body-interior>

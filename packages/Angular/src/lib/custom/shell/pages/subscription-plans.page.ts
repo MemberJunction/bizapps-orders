@@ -73,7 +73,7 @@ export type SortKey = 'name' | 'product' | 'cycle';
   standalone: false,
   selector: 'mj-subscription-plans-page',
   templateUrl: './subscription-plans.page.html',
-  styleUrls: ['./subscription-plans.page.css'],
+  styleUrls: ['./shell-table.css', './subscription-plans.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SubscriptionPlansPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

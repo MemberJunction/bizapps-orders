@@ -63,10 +63,6 @@
    sticky header work. Both axes are set explicitly — per the overflow spec a `visible` axis next
    to a non-`visible` one computes to `auto`, so setting one axis would silently scroll both. */
 .cg__gridwrap {
-  height: min(68vh, 900px);
-  min-height: 320px;
-  overflow-x: auto;
-  overflow-y: auto;
   border: 1px solid var(--mj-border-default);
   border-radius: 10px;
 }

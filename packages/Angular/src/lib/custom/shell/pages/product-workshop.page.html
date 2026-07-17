@@ -111,10 +111,11 @@
 
       <div class="pw__panel">
         <!-- ─── General ───────────────────────────────────────────────────── -->
-        <!-- MJ's own disclosure panel. [Bare] drops its box chrome so it reads as a header + rule
-             inside the card that already provides the chrome — and we get MJ's keyboard + aria
-             (aria-expanded / aria-controls / aria-labelledby) instead of hand-rolling it. -->
-        <mj-accordion-panel [Bare]="true" [Expanded]="IsSectionOpen('general')" (ExpandedChange)="SetSectionOpen('general', $event)">
+        <!-- MJ's own disclosure panel — we do NOT hand-roll a disclosure. [Bare] drops MJ's box chrome
+             so the HOST supplies it; `.pw__section` IS that box (surface + rounded corners), which is
+             exactly the contract [Bare] is designed for. We get MJ's keyboard + aria
+             (aria-expanded / aria-controls / aria-labelledby) for free. -->
+        <mj-accordion-panel class="pw__section" [Bare]="true" [Expanded]="IsSectionOpen('general')" (ExpandedChange)="SetSectionOpen('general', $event)">
           <ng-template mjAccordionTitle>
             <span class="pw__sec-label"><i class="fa-solid fa-box" aria-hidden="true"></i> General</span>
             @if (SectionIssues('general') > 0) {
@@ -218,7 +219,7 @@
         </mj-accordion-panel>
 
         <!-- ─── Revenue ───────────────────────────────────────────────────── -->
-        <mj-accordion-panel [Bare]="true" [Expanded]="IsSectionOpen('revenue')" (ExpandedChange)="SetSectionOpen('revenue', $event)">
+        <mj-accordion-panel class="pw__section" [Bare]="true" [Expanded]="IsSectionOpen('revenue')" (ExpandedChange)="SetSectionOpen('revenue', $event)">
           <ng-template mjAccordionTitle>
             <span class="pw__sec-label"><i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Revenue</span>
             @if (SectionIssues('revenue') > 0) {
@@ -279,6 +280,7 @@
 
         <!-- ─── Subscription ──────────────────────────────────────────────── -->
         <mj-accordion-panel
+          class="pw__section"
           [Bare]="true"
           [Expanded]="IsSectionOpen('subscription')"
           (ExpandedChange)="SetSectionOpen('subscription', $event)">
@@ -336,7 +338,7 @@
         </mj-accordion-panel>
 
         <!-- ─── GL accounts ───────────────────────────────────────────────── -->
-        <mj-accordion-panel [Bare]="true" [Expanded]="IsSectionOpen('gl')" (ExpandedChange)="SetSectionOpen('gl', $event)">
+        <mj-accordion-panel class="pw__section" [Bare]="true" [Expanded]="IsSectionOpen('gl')" (ExpandedChange)="SetSectionOpen('gl', $event)">
           <ng-template mjAccordionTitle>
             <span class="pw__sec-label"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i> GL accounts</span>
             @if (SectionIssues('gl') > 0) {
@@ -486,7 +488,7 @@
         </mj-accordion-panel>
 
         <!-- ─── Advanced ──────────────────────────────────────────────────── -->
-        <mj-accordion-panel [Bare]="true" [Expanded]="IsSectionOpen('advanced')" (ExpandedChange)="SetSectionOpen('advanced', $event)">
+        <mj-accordion-panel class="pw__section" [Bare]="true" [Expanded]="IsSectionOpen('advanced')" (ExpandedChange)="SetSectionOpen('advanced', $event)">
           <ng-template mjAccordionTitle>
             <span class="pw__sec-label"><i class="fa-solid fa-gears" aria-hidden="true"></i> Advanced</span>
           </ng-template>

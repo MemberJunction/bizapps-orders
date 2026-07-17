@@ -41,7 +41,7 @@ export interface RefundablePayment {
   standalone: false,
   selector: 'mj-refunds-page',
   templateUrl: './refunds.page.html',
-  styleUrls: ['./refunds.page.css'],
+  styleUrls: ['./shell-table.css', './refunds.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RefundsPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

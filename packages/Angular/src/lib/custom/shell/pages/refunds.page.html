@@ -27,8 +27,8 @@
   } @else if (Rows.length === 0) {
     <mj-empty-state Icon="fa-solid fa-rotate-left" Title="No captured payments" Message="Nothing has been captured in the companies you have in scope, so there is nothing to refund."></mj-empty-state>
   } @else {
-    <div class="rf__gridwrap">
-      <table class="rf__grid">
+    <div class="rf__gridwrap mjsh-tablewrap">
+      <table class="rf__grid mjsh-table">
         <thead><tr><th>Payment №</th><th>Date</th><th>Method</th><th class="num">Amount</th><th>Status</th><th>Reversal</th></tr></thead>
         <tbody>
           @for (r of Rows; track r.ID) {

@@ -1,39 +1,84 @@
 /* Shared category-dashboard styles. Design tokens only.
+
+   ── CARD LANGUAGE: COPIED FROM THE CREDENTIALS DASHBOARD ─────────────────────
+   The idiom below is lifted from MJ Explorer's Credentials dashboard
+   (packages/Angular/Explorer/dashboards/src/Credentials/credentials-dashboard.component.css) rather
+   than invented here: the tinted `icon-wrapper` chip, label-over-value with a heavy tabular value,
+   the 16px-radius surface with a 1px border + soft shadow, and the lift-on-hover transition. Its
+   literal values are reused (16px radius, 2rem/800 value) so a card reads the same in Explorer and
+   in the biz apps; only the colours differ, because Credentials hardcodes a couple of neutrals and
+   we are token-only (CI gate). Kept in lockstep with the JE/Batches stylesheet in
+   bizapps-accounting.
+
    ── ONE SPACING TOKEN ────────────────────────────────────────────────────────
    Marcelo: "these bubbles are not padded in space consistently. All bubbles should be spaced
-   consistently, just straight up." So EVERY gap between EVERY card — stat strip, card grid, and the
-   space between the two — comes from `--mj-dash-gap` and nothing else. Never hard-code a gap below;
-   a per-card value is exactly the drift that made this look mismatched. Same token, same value, as
-   the JE/Batches dashboards in bizapps-accounting. */
+   consistently, just straight up." So EVERY gap between EVERY card — stat strip, breakdown grid,
+   card grid, and the space between them — comes from `--mj-dash-gap` and nothing else. Never
+   hard-code a gap below; a per-card value is exactly the drift that made this look mismatched. Same
+   token, same value, as the JE/Batches dashboards in bizapps-accounting. */
 :host {
   --mj-dash-gap: 14px;
   display: flex; flex-direction: column; height: 100%; min-height: 0; gap: var(--mj-dash-gap);
 }
-/* mj-page-body-interior is display:BLOCK, so no gap reaches these siblings — the SAME token drives
-   the space between the strip and the grid, so "between two cards" is one distance everywhere. */
-.dash-stats { display: flex; gap: var(--mj-dash-gap); flex-wrap: wrap; margin-bottom: var(--mj-dash-gap); }
-.dash-stat {
-  display: flex; flex-direction: column; gap: 2px; min-width: 170px; padding: 14px 16px;
-  border: 1px solid var(--mj-border-default); border-radius: 10px; background: var(--mj-bg-surface-card);
-}
-.dash-stat i { color: var(--mj-brand-primary); font-size: 14px; }
-.dash-stat--warn { border-color: color-mix(in srgb, var(--mj-status-warning) 45%, transparent); background: color-mix(in srgb, var(--mj-status-warning) 7%, var(--mj-bg-surface-card)); }
-.dash-stat--warn i { color: var(--mj-status-warning); }
-.dash-stat__value { font-size: 26px; font-weight: 700; color: var(--mj-text-primary); font-variant-numeric: tabular-nums; }
-.dash-stat__label { font-size: 12px; color: var(--mj-text-muted); }
 
-/* ---- List cards -------------------------------------------------------------------------------
-   Each list gets its own card: a small header, then the rows within it. Auto-fit columns so the
-   pair sits side by side on a wide viewport and stacks on a narrow one without a media query.
-   NOTE: no `flex: 1` anywhere below — the parent <mj-page-body-interior> is display:block, and a
-   flex child of a block parent is ignored (the card would collapse to zero height). */
+/* ---- Tone accents ------------------------------------------------------------------------------
+   The Credentials `icon-wrapper.blue/.green/.amber/.red` set, expressed as tokens. One place maps a
+   DashboardTone to a colour, so a tone means the same thing on the bar, the legend dot, and any
+   future consumer — and adding a tone is one rule here, not a hunt through the file. */
+.dash-tone--brand   { --dash-tone: var(--mj-brand-primary); }
+.dash-tone--success { --dash-tone: var(--mj-status-success); }
+.dash-tone--warning { --dash-tone: var(--mj-status-warning); }
+.dash-tone--error   { --dash-tone: var(--mj-status-error); }
+.dash-tone--info    { --dash-tone: var(--mj-status-info); }
+
+/* mj-page-body-interior is display:BLOCK, so no gap reaches these siblings — the SAME token drives
+   the space between each band, so "between two cards" is one distance everywhere. */
+.dash-stats { display: flex; gap: var(--mj-dash-gap); flex-wrap: wrap; margin-bottom: var(--mj-dash-gap); }
+
+/* The Credentials `stat-card`: chip, label, big value — in that vertical order. */
+.dash-stat {
+  display: flex; flex-direction: column; gap: 2px; min-width: 170px; flex: 1 1 170px;
+  padding: 16px; border: 1px solid var(--mj-border-default); border-radius: 16px;
+  background: var(--mj-bg-surface); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+/* Credentials lifts its stat cards on hover. Gated on `hover: hover` so a touch device — where
+   :hover sticks after a tap — does not leave a card floating, and dropped entirely under
+   prefers-reduced-motion (the transform is decorative; the card is not interactive). */
+@media (hover: hover) {
+  .dash-stat:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dash-stat { transition: none; }
+  .dash-stat:hover { transform: none; }
+}
+.dash-stat__icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 12px; margin-bottom: 8px;
+  background: color-mix(in srgb, var(--mj-brand-primary) 14%, var(--mj-bg-surface));
+}
+.dash-stat__icon i { color: var(--mj-brand-primary); font-size: 15px; }
+.dash-stat--warn { border-color: color-mix(in srgb, var(--mj-status-warning) 45%, transparent); background: color-mix(in srgb, var(--mj-status-warning) 7%, var(--mj-bg-surface)); }
+.dash-stat--warn .dash-stat__icon { background: color-mix(in srgb, var(--mj-status-warning) 18%, var(--mj-bg-surface)); }
+.dash-stat--warn .dash-stat__icon i { color: var(--mj-status-warning); }
+.dash-stat__label { font-size: 12px; color: var(--mj-text-muted); }
+.dash-stat__value { font-size: 26px; font-weight: 800; color: var(--mj-text-primary); font-variant-numeric: tabular-nums; }
+
+/* ---- Cards (shared by the breakdown + list bands) ----------------------------------------------
+   Auto-fit columns so cards sit side by side on a wide viewport and stack on a narrow one without a
+   media query. NOTE: no `flex: 1` anywhere below — the parent <mj-page-body-interior> is
+   display:block, and a flex child of a block parent is ignored (the card would collapse to zero
+   height). */
+.dash-breakdowns,
 .dash-cards {
   display: grid; gap: var(--mj-dash-gap);
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
 }
+.dash-breakdowns { margin-bottom: var(--mj-dash-gap); }
 .dash-card {
-  border: 1px solid var(--mj-border-default); border-radius: 10px;
+  border: 1px solid var(--mj-border-default); border-radius: 16px;
   background: var(--mj-bg-surface); overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 .dash-card__head {
   display: flex; align-items: center; gap: 10px; padding: 12px 14px;
@@ -45,7 +90,9 @@
   background: color-mix(in srgb, var(--mj-brand-primary) 14%, var(--mj-bg-surface));
 }
 .dash-card__head-icon i { font-size: 12px; color: var(--mj-brand-primary); }
+.dash-card__titles { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .dash-card__title { margin: 0; font-size: 13px; font-weight: 600; color: var(--mj-text-primary); }
+.dash-card__caption { font-size: 11px; color: var(--mj-text-muted); }
 .dash-card__count {
   margin-left: auto; padding: 1px 8px; border-radius: 999px;
   font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
@@ -58,6 +105,24 @@
 }
 .dash-card__empty i { margin-right: 6px; color: var(--mj-text-disabled); }
 
+/* ---- Composition bar + legend ------------------------------------------------------------------
+   A single proportional bar, then a legend naming every slice with its exact count and share. The
+   legend is the accessible copy of the bar (the bar itself is aria-hidden) — which is also why the
+   legend carries the numbers rather than relying on segment width alone. */
+.dash-bar {
+  display: flex; height: 10px; border-radius: 999px; overflow: hidden; flex-shrink: 0;
+  background: var(--mj-bg-surface-sunken); margin: 8px 6px 12px;
+}
+.dash-bar__seg { display: block; height: 100%; background: var(--dash-tone); min-width: 2px; }
+.dash-legend { display: flex; flex-direction: column; gap: 2px; margin: 0 0 4px; padding: 0; list-style: none; }
+.dash-legend__row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 8px; font-size: 12px; }
+.dash-legend__row:hover { background: var(--mj-bg-surface-card); }
+.dash-legend__dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; background: var(--dash-tone); }
+.dash-legend__label { color: var(--mj-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-legend__value { margin-left: auto; font-weight: 600; color: var(--mj-text-primary); font-variant-numeric: tabular-nums; }
+.dash-legend__pct { width: 38px; text-align: right; color: var(--mj-text-muted); font-variant-numeric: tabular-nums; }
+
+/* ---- List rows (the Credentials `activity-item`) ---------------------------------------------- */
 .dash-row {
   display: flex; align-items: center; gap: 10px; padding: 8px 8px; border-radius: 8px;
 }
@@ -92,4 +157,3 @@
 .dash-row--warn .dash-row__icon { background: color-mix(in srgb, var(--mj-status-warning) 16%, var(--mj-bg-surface)); }
 .dash-row--warn .dash-row__icon i { color: var(--mj-status-warning); }
 .dash-row--warn .dash-row__secondary { color: var(--mj-status-warning-text); }
-

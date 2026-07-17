@@ -41,7 +41,7 @@ export interface CustomerOpenOrder {
   standalone: false,
   selector: 'mj-customer-ar-page',
   templateUrl: './customer-ar.page.html',
-  styleUrls: ['./customer-ar.page.css'],
+  styleUrls: ['./shell-table.css', './customer-ar.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CustomerARPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

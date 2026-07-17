@@ -61,7 +61,7 @@ export interface CatalogRow {
   standalone: false,
   selector: 'mj-catalog-page',
   templateUrl: './catalog.page.html',
-  styleUrls: ['./catalog.page.css'],
+  styleUrls: ['./shell-table.css', './catalog.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CatalogPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {

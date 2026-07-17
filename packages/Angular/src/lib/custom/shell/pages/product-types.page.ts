@@ -67,7 +67,7 @@ export type SortKey = 'name' | 'code' | 'products';
   standalone: false,
   selector: 'mj-product-types-page',
   templateUrl: './product-types.page.html',
-  styleUrls: ['./product-types.page.css'],
+  styleUrls: ['./shell-table.css', './product-types.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProductTypesPageComponent extends BaseAngularComponent implements OnInit, OnDestroy {
