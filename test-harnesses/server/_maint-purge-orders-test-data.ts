@@ -79,9 +79,10 @@ const IMMUTABILITY_TRIGGERS = [
  *   ORD2JEAPI-<epoch>  — api/order-to-je-fixture.ts
  *   PWBATCH-<base36>   — accounting playwright/lib/batching-fixture.ts
  *   SJE-<epoch>        — accounting server/scheduled-je-runtime.ts
+ *   CYCLE-<epoch>      — server/order-to-glposted.ts (order → JE → Batched → GLPosted proof)
  *   AGENT WRITE TEST   — UI create-screen write verification (the original scope of this script)
  */
-const TEST_TAG_PREFIXES = ['ORD2JE-', 'ORD2JEAPI-', 'PWBATCH-', 'SJE-', 'AGENT WRITE TEST'] as const;
+const TEST_TAG_PREFIXES = ['ORD2JE-', 'ORD2JEAPI-', 'PWBATCH-', 'SJE-', 'CYCLE-', 'AGENT WRITE TEST'] as const;
 
 /** Real records. If the matcher would ever touch one of these, the script aborts instead. */
 const PROTECTED_NAMES = [

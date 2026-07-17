@@ -310,24 +310,34 @@ async function main(): Promise<void> {
   });
 
   // ─── teardown (db_owner: disable triggers to sweep locked fixtures) ─────────
+  // Re-enable EVERY toggled trigger in a `finally` so a failed DELETE (or a kill mid-window) can NEVER
+  // leave the immutability triggers disabled — a real dev-instance integrity gap (harness-notes #3).
   const exec = async (q: string) => { try { await teardownPool.request().query(q); } catch (e) { console.log(`  teardown warn: ${(e instanceof Error ? e.message : String(e)).split('\n')[0]}`); } };
-  await exec(`DISABLE TRIGGER ALL ON ${S}.OrderLine`);
-  await exec(`DISABLE TRIGGER ALL ON ${S}.[Order]`);
-  await exec(`DISABLE TRIGGER ALL ON ${S}.Payment`);
-  await exec(`DELETE FROM ${S}.PriceTier WHERE ProductPriceID IN (SELECT ID FROM ${S}.ProductPrice WHERE ProductID IN (${createdProductIds.map(i => `'${i}'`).join(',') || `''`}))`);
-  await exec(`DELETE FROM ${S}.ProductPrice WHERE ProductID IN (${createdProductIds.map(i => `'${i}'`).join(',') || `''`})`);
-  for (const id of createdPaymentIds) await exec(`DELETE FROM ${S}.Payment WHERE ID='${id}'`);
-  for (const id of createdOrderIds) await exec(`DELETE FROM ${S}.OrderLine WHERE OrderID='${id}'`);
-  for (const id of createdOrderIds) await exec(`DELETE FROM ${S}.[Order] WHERE ID='${id}'`);
-  for (const id of createdProductIds) await exec(`DELETE FROM ${S}.Product WHERE ID='${id}'`);
-  for (const id of createdTypeIds) await exec(`DELETE FROM ${S}.ProductType WHERE ID='${id}'`);
-  await exec(`ENABLE TRIGGER ALL ON ${S}.OrderLine`);
-  await exec(`ENABLE TRIGGER ALL ON ${S}.[Order]`);
-  await exec(`ENABLE TRIGGER ALL ON ${S}.Payment`);
+  const toggled = ['OrderLine', '[Order]', 'Payment'];
+  try {
+    for (const t of toggled) await exec(`DISABLE TRIGGER ALL ON ${S}.${t}`);
+    await exec(`DELETE FROM ${S}.PriceTier WHERE ProductPriceID IN (SELECT ID FROM ${S}.ProductPrice WHERE ProductID IN (${createdProductIds.map(i => `'${i}'`).join(',') || `''`}))`);
+    await exec(`DELETE FROM ${S}.ProductPrice WHERE ProductID IN (${createdProductIds.map(i => `'${i}'`).join(',') || `''`})`);
+    for (const id of createdPaymentIds) await exec(`DELETE FROM ${S}.Payment WHERE ID='${id}'`);
+    for (const id of createdOrderIds) await exec(`DELETE FROM ${S}.OrderLine WHERE OrderID='${id}'`);
+    for (const id of createdOrderIds) await exec(`DELETE FROM ${S}.[Order] WHERE ID='${id}'`);
+    for (const id of createdProductIds) await exec(`DELETE FROM ${S}.Product WHERE ID='${id}'`);
+    for (const id of createdTypeIds) await exec(`DELETE FROM ${S}.ProductType WHERE ID='${id}'`);
+  } finally {
+    for (const t of toggled) await exec(`ENABLE TRIGGER ALL ON ${S}.${t}`);
+  }
 
   const failed = outcomes.filter(o => !o.Passed);
   console.log(`\n────── Orders schema preflight: ${outcomes.length - failed.length}/${outcomes.length} passed ──────`);
   if (failed.length) for (const f of failed) console.log(`   ✗ ${f.Name}: ${(f.Error ?? '').split('\n')[0]}`);
   process.exit(failed.length > 0 ? 1 : 0);
 }
-void main();
+// All fixtures are created inside swallowing `test()` blocks, so the body reaches teardown on every
+// normal run; this net turns an unexpected out-of-test throw into a LOUD, actionable error (instead of
+// a silent unhandled rejection) pointing at the belt-and-suspenders purge.
+main().catch((e) => {
+  console.error(`\nHARNESS ERROR — aborted before teardown: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
+  console.error('Any leaked fixtures — purge with:');
+  console.error('  npx tsx packages/dev-apps/bizapps-orders/test-harnesses/server/_maint-purge-orders-test-data.ts --yes');
+  process.exit(1);
+});
