@@ -7,6 +7,22 @@
 > authorities. Sources: `meetings/2026-07-14 - lxp-commerce-and-fulfillment 2.md` (D1–D16 + §8),
 > MOD-12/13 + UPD-6..10 (orders), MOD-15..18 + UPD-2 (accounting), both FEATURE-LISTs @ 2026-07-17.
 
+## Slice board (LIVE — update at every slice mint + close-out)
+
+| Slice | Scope | Status | Plan | Blocked on |
+|---|---|---|---|---|
+| S0a | V0 orders spine validation (cheap tiers) | IN PROGRESS (accounting agent testing wave) | agent ledgers | T36 ✅ answered (per-run seed) |
+| S0b | V0 accounting spine validation (cheap tiers) | IN PROGRESS (same wave) | agent ledgers | — |
+| S1 | V1.1+V1.2 order lineage & product ownership (orders schema) | QUEUED — parallel w/ S2 | to mint | S0 baseline |
+| S2 | V1.3+V1.4 batch rework + posting date (+ V1.6 approver-enforcement rider) | QUEUED — parallel w/ S1 | to mint | S0 baseline |
+| S3 | V1.5 forward-dated rev-rec (spans both repos) | QUEUED | to mint | S1+S2 |
+| S4 | Full GUI validation pass (section-by-section, ONCE, post-structural) | QUEUED | to mint | S3 |
+| S5+ | V2 LH4I feature slices (per roadmap rows; entitlement read path pulled early) | QUEUED | to mint per row | gates per row |
+
+Sequencing rule (Marcelo 2026-07-18): cheap tiers validate before AND after structural changes
+(nearly free); GUI validates ONCE, after them (expensive, weakest agent skill). GUI development
+beyond validation is deferred to feature-enabling changes only.
+
 ## The premise: we start from (approximately) zero VALIDATION
 
 Most launch-relevant features exist as code, but: (a) many carry the **◇ claimed-not-verified**
