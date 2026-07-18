@@ -542,9 +542,32 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
     return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
   }
 
-  /** The tab caption. OrderNumber is how a human finds the tab; never invent one it doesn't have. */
+  /**
+   * The tab caption. The human memo (Description) leads — the ratified naming/memo model (Marcelo
+   * 2026-07-17) makes the customer-facing Description an order's human label — falling back to
+   * OrderNumber, then a short id, then "New order" when nothing human is filled in yet. A long memo
+   * is capped so a tab stays a tab.
+   */
+  private tabLabelFrom(
+    description: string | null | undefined,
+    orderNumber: string | null | undefined,
+    id: string | null | undefined,
+  ): string {
+    const memo = description?.trim();
+    if (memo) return memo.length > 40 ? `${memo.slice(0, 40)}…` : memo;
+    const num = orderNumber?.trim();
+    if (num) return num;
+    return id ? `Order ${NormalizeUUID(id).slice(0, 8)}` : 'New order';
+  }
+
+  /** The caption for a just-read order (open path). */
   private orderTabLabel(o: OrderRaw): string {
-    return o.OrderNumber?.trim() || `Order ${NormalizeUUID(o.ID).slice(0, 8)}`;
+    return this.tabLabelFrom(o.Description, o.OrderNumber, o.ID);
+  }
+
+  /** The caption for the live draft — what the reactive rename reads as the memo is typed. */
+  private draftTabLabel(d: OrderDraft): string {
+    return this.tabLabelFrom(d.Description, d.OrderNumber, d.OrderID);
   }
 
   // ─── catalog / pricing ─────────────────────────────────────────────────────
@@ -723,6 +746,16 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
     this.cdr.markForCheck();
   }
 
+  /**
+   * The Description IS the order's human label (naming/memo model, Marcelo 2026-07-17), so retitle the
+   * active tab live as it is typed — through the SAME renameActiveTab path open/save use, never a
+   * second mechanism. Empty memo falls back to OrderNumber / "New order" via draftTabLabel.
+   */
+  public OnDescriptionChanged(): void {
+    if (this.Draft) this.renameActiveTab(this.draftTabLabel(this.Draft));
+    this.touch();
+  }
+
   // ─── money strip ───────────────────────────────────────────────────────────
 
   public get Money(): { Total: number; Paid: number; Balance: number; PaymentStatus: string } {
@@ -882,7 +915,11 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
       d.OrderNumber = order.OrderNumber;
       if (this.tabs.ActiveId) {
         this.tabs.UpdateState(this.tabs.ActiveId, d, false);
-        this.renameActiveTab(order.OrderNumber ?? 'Order');
+        // Keep the memo as the caption (naming/memo model) — only fall back to the new OrderNumber.
+        this.renameActiveTab(this.draftTabLabel(d));
+        // A just-saved draft graduates from the compose icon to the saved-order icon.
+        const savedTab = this.tabs.ActiveTab;
+        if (savedTab) savedTab.Icon = 'fa-solid fa-file-invoice-dollar';
       }
       this.ActionMessage = `Saved order ${order.OrderNumber}.`;
       this.ActionIsError = false;
@@ -965,12 +1002,14 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
     }
   }
 
+  /**
+   * The ONE place the active tab's caption is written. Label-only on purpose: it fires on every
+   * Description keystroke (OnDescriptionChanged), and a rename must not also flip a draft's compose
+   * icon. The saved-order icon is set at the open/save sites, where the transition actually happens.
+   */
   private renameActiveTab(label: string): void {
     const tab = this.tabs.ActiveTab;
-    if (tab) {
-      tab.Label = label;
-      tab.Icon = 'fa-solid fa-file-invoice-dollar';
-    }
+    if (tab) tab.Label = label;
   }
 
   // ─── confirm ───────────────────────────────────────────────────────────────

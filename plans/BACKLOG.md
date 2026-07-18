@@ -105,3 +105,10 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
 - Order today has `OrderNumber` (system id), `Description` (customer-facing memo), `Notes` (internal). None is a short human label meant for the tab/search.
 - Proposed: add optional `Name NVARCHAR(200) NULL` to Order. Drives the tab caption when set (falls back to OrderNumber); shown + searchable in All Orders. Migration + codegen + the GUI wiring (task 47).
 - Decision needed from Marcelo: dedicated `Name` column vs. repurpose `Description` as the name. Recommend a dedicated `Name` (Description stays the customer-facing memo — different purpose).
+
+### ⚠ DECIDED 2026-07-17 (supersedes the "add Order.Name" item above)
+Marcelo ratified the accounting-norm model: **transactions get number + memo; master data gets names.**
+- **Orders:** NO new `Name` column. Use the EXISTING `Order.Description` as the searchable memo — surface
+  it in All Orders, drive the workspace-tab caption from it, include it in name/memo/ID search. No migration.
+- **Products / product categories:** already named — just ensure name+ID search covers them. No schema.
+- The only orders-side schema work is nil. The batch memo (accounting) is the sole migration in this feature.

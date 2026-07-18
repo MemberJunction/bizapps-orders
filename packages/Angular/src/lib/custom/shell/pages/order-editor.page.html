@@ -256,7 +256,7 @@
 
                 <label class="oe__field oe__field--wide">
                   <span>Description (customer-facing memo)</span>
-                  <textarea class="mj-textarea" rows="2" [(ngModel)]="d.Description" (ngModelChange)="touch()" placeholder="What is this order for?"></textarea>
+                  <textarea class="mj-textarea" rows="2" [(ngModel)]="d.Description" (ngModelChange)="OnDescriptionChanged()" placeholder="What is this order for? — also names this tab"></textarea>
                 </label>
                 <label class="oe__field oe__field--wide">
                   <span>Internal notes</span>

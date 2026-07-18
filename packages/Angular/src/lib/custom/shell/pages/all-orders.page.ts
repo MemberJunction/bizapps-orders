@@ -92,7 +92,9 @@ export class AllOrdersPageComponent extends BaseAngularComponent implements OnIn
       timeWindowFilter(this.TimeWindow, 'OrderDate'),
       this.StatusFilter === 'All' ? null : `Status='${this.StatusFilter}'`,
       this.paymentFilter(),
-      likeContains(['OrderNumber', 'Description', 'ExternalDocumentNumber'], this.Search),
+      // Human fields lead (OrderNumber, the memo, the external doc №); the full ID is searchable but
+      // last — ids are meaningless to users, so they never lead, but a pasted id must still resolve.
+      likeContains(['OrderNumber', 'Description', 'ExternalDocumentNumber', 'ID'], this.Search),
       this.OnlyMine ? `SalesRepUserID='${this.CurrentUserID}'` : null,
     );
 
