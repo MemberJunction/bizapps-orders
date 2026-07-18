@@ -69,7 +69,7 @@ export class AllPaymentsPageComponent extends BaseAngularComponent implements On
     const filter = andFilters(
       timeWindowFilter(this.TimeWindow, 'PaymentDate'),
       this.StatusFilter === 'All' ? null : `Status='${this.StatusFilter}'`,
-      likeContains(['PaymentNumber', 'Description'], this.Search),
+      likeContains(['PaymentNumber', 'Description', 'ID'], this.Search),
       // A real column, so the scope chip means something here (unlike the Orders category).
       this.Scope.FilterFor('ReceivingCompanyID'),
     );
