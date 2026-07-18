@@ -7,6 +7,12 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
 
 ## Tasks
 
+- [ ] **Re-sequence the Coupons action plan against UPD-8** — the drafted plan is Option-B-shaped
+      (Coupon entity first); UPD-8 rules Option A for launch (provider model + both-level discount
+      recording first; the Coupon entity becomes the fast-follow provider). Rework the plan's
+      stages before executing; Robert's OS7 review checklist applies to the recording schema.
+      (2026-07-17 sweep; "circle back when we get there" — Marcelo.)
+
 - [ ] **Navigation routing / back-button (UI)** — cross-links (order → JE → accounting app,
       product → category, slide-in pop-outs) have no "go back" affordance; routing is manual.
       Consider a history/back mechanism — likely part MJ Explorer platform (tab/navigation
@@ -19,8 +25,11 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
       going to require a deep dive." Scope: resolution caching strategy (OrdersEngine catalog
       cache coverage), whether line company should be materialized as a stored column for RLS/
       query efficiency (orders Q23 sub-q 3), the Q38 same-company invariant's enforcement cost,
-      and category tree shape (company-specific vs per-company routing). Revisit trigger: before
-      resolution is load-bearing at real volume (V2 exit), or the Q38/Q31 sitting landing.
+      and category tree shape (company-specific vs per-company routing). Also weighs
+      **denormalizing `CompanyID` onto GLAccountLink** (engine-stamped, trigger-verified) — turns
+      the UPD-5 uniqueness rule into a plain unique index AND drops the resolver's account join
+      (Marcelo 2026-07-17: likes the thinking, NOT yet approved — decide here). Revisit trigger:
+      before resolution is load-bearing at real volume (V2 exit), or the Q38/Q31 sitting landing.
 
 - [x] ~~**Order form: surface the full field set**~~ — PROMOTED 2026-07-11 →
       `action-plans/ActionPlan - UI layout and workflows (orders).md` §1.
@@ -41,9 +50,13 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
 - [ ] **Order numbering: single sequence vs BC-style dual (draft seq → posted seq)** — Jeremy doesn't use
       it as a control today ("maybe it should be"). `[decision needed: Jeremy]` — blocks UPD-1's related
       sequence work, not the ExternalDocumentNumber column itself.
-- [ ] **Deferred-rev cadence: batch-monthly vs continuous running balance** — reproducibility is the hard
+- [x] ~~**Deferred-rev cadence: batch-monthly vs continuous running balance**~~ — **SUPERSEDED
+      2026-07-17 by MOD-12/acct MOD-17:** rev-rec is real forward-dated JEs at booking; there is no
+      materialization job, so cadence has no referent. ~~reproducibility is the hard
       requirement either way. `[decision needed: Amith]` (UPD-2).
-- [ ] **Invoice delivery path** — AIDP → BC → bill.com (today) vs direct bill.com API; drives a future
+- [x] ~~**Invoice delivery path**~~ — **LEAN RECORDED 2026-07-16 (Robert OQD → UPD-10):** email
+      render first with an Action-plugin seam; bill.com becomes a delivery adapter when a channel
+      needs it. Build lands post-launch (V4). ~~AIDP → BC → bill.com (today) vs direct bill.com API; drives a future
       integration action plan (multiple recipient emails/CC per customer via bizapps-common ContactMethod).
       `[decision needed: Robert/Amith]` — meetings/2026-07-10-decisions.md §H.
 - [ ] **AIDP read-only access for schema mapping** — Jeremy offered; get a seat to map the real
