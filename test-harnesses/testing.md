@@ -176,3 +176,6 @@ use the real client. NEW `api/order-to-je-client.ts` **21/21** — creates Order
 Exact values: O1 Dr AR 200/Cr Sales 200 · O2 per-company 300/150 single-company-pure · O3 deferred 120 ·
 O4 unresolvable → Confirm BLOCKED + no JE · overdue rows drift-proof (DaysOverdue>0). Overlaps order-to-je-api
 by design (regression path). Provider bootstrapped AFTER the fixture subprocess (stale-keep-alive rule).
+
+### 2026-07-18 (correction) — TIER 4 dashboard breadth filled (gap 4b CLOSED)
+Orders gui suite **6/6**: added `orders-console` · `order-history` · `orders-management` (+MJFormPresenterService) · `product-category-tree` (+MJFormPresenterService), plus product-catalog + example. Every orders dashboard now renders real data through the real client, keystone-clean.
