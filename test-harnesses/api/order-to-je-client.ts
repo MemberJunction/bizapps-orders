@@ -22,8 +22,13 @@ import { setupGraphQLClient, GraphQLProviderConfigData, GraphQLDataProvider } fr
 import '@memberjunction/core-entities';
 import '@mj-biz-apps/common-entities';
 import '@mj-biz-apps/orders-entities';
+import '@mj-biz-apps/accounting-entities'; // GLAccountLink subclass must register or field-sets don't stick
 import { OrderEditorClient } from '../../packages/Angular/src/lib/custom/shell/pages/order-editor.client.js';
 import { OverdueWorklistClient } from '../../packages/Angular/src/lib/custom/shell/pages/overdue-worklist.client.js';
+import { PaymentEntryClient } from '../../packages/Angular/src/lib/custom/shell/pages/payment-entry.client.js';
+
+const PAYMENT_ENTITY = 'MJ_BizApps_Orders: Payments';
+const GL_ENTITY = 'MJ_BizApps_Accounting: GL Accounts';
 
 const LAUNCHER = process.env.MJDEV_BIN ?? '/Users/marcelotorres/MJDev/bin/mjdev';
 const SLUG = process.env.MJDEV_SLUG ?? 'accounting-engine-dev';
@@ -105,6 +110,7 @@ async function main(): Promise<void> {
   const md = new Metadata();
   const editor = new OrderEditorClient();
   const worklist = new OverdueWorklistClient();
+  const payments = new PaymentEntryClient();
   console.log(`  real client on http://localhost:${api.port}, user ${user?.Email ?? '?'}`);
 
   try {
@@ -165,6 +171,42 @@ async function main(): Promise<void> {
     check('OverdueWorklist: returns an array (op reachable, no throw)', Array.isArray(overdue), typeof overdue);
     check('OverdueWorklist: every row is genuinely overdue (DaysOverdue > 0, drift-proof)', overdue.every((r) => Number(r.DaysOverdue) > 0), JSON.stringify(overdue.slice(0, 3)));
     check('OverdueWorklist: every row well-formed (OrderID + OrderNumber)', overdue.every((r) => !!r.OrderID && !!r.OrderNumber), 'a row is missing OrderID/OrderNumber');
+
+    // P — Payment capture via the REAL PaymentEntryClient → Dr Cash / Cr AR, EntryType PaymentReceipt.
+    console.log('\nP payment capture (PaymentEntryClient.Capture → Dr Cash / Cr AR):');
+    const cashRes = await new RunView().RunView<{ ID: string }>({ EntityName: GL_ENTITY, ExtraFilter: `CompanyID='${fx.coA.id}' AND Code='11101'`, Fields: ['ID'], ResultType: 'simple' }, user);
+    const cashGL = cashRes.Results?.[0]?.ID ?? '';
+    check('P: coA Cash GL (11101) resolvable', !!cashGL, 'no 11101 in coA COA');
+    // The fixture only makes AR links; the capture booking needs a company-level Cash link to resolve.
+    const companiesEntityId = md.EntityByName('MJ: Companies')?.ID ?? '';
+    const cashRole = (await new RunView().RunView<{ ID: string }>({ EntityName: 'MJ_BizApps_Accounting: GL Account Roles', ExtraFilter: "Name='Cash'", Fields: ['ID'], ResultType: 'simple' }, user)).Results?.[0]?.ID ?? '';
+    if (cashGL && cashRole && companiesEntityId) {
+      const link = await md.GetEntityObject('MJ_BizApps_Accounting: GL Account Links', user);
+      link.NewRecord();
+      const L = link as unknown as Record<string, unknown>;
+      L.GLAccountID = cashGL; L.GLAccountRoleID = cashRole; L.EntityID = companiesEntityId; L.RecordID = fx.coA.id; L.Status = 'Active';
+      const linkSaved = await link.Save();
+      check('P: Cash GLAccountLink created via the real client', linkSaved === true, link.LatestResult?.CompleteMessage);
+    } else {
+      check('P: Cash link prerequisites resolved', false, `cashGL=${!!cashGL} role=${!!cashRole} companiesEntity=${!!companiesEntityId}`);
+    }
+    const pay = await md.GetEntityObject(PAYMENT_ENTITY, user);
+    pay.NewRecord();
+    const P = pay as unknown as Record<string, unknown>;
+    P.PaymentNumber = `${fx.runTag}-PAY1`; P.ReceivingCompanyID = fx.coA.id; P.CustomerOrganizationID = fx.customerOrgId;
+    P.PaymentDate = new Date(); P.Method = 'Cash'; P.Amount = 200; P.Status = 'Pending';
+    const paySaved = await pay.Save();
+    check('P: pending payment created via the real entity path', paySaved === true, pay.LatestResult?.CompleteMessage);
+    if (paySaved) {
+      const cap = await payments.Capture(provider as unknown as IRemoteOperationProvider, (pay as unknown as { ID: string }).ID);
+      check('P: Capture Success', cap.Success === true, JSON.stringify(cap.Errors));
+      check('P: capture books a JournalEntryID', !!cap.JournalEntryID, JSON.stringify(cap));
+      if (cap.JournalEntryID) {
+        const cl = await jeLines(user, cap.JournalEntryID);
+        check('P: Dr Cash === 200', near(dr(cl, cashGL), 200), `got ${dr(cl, cashGL)}`);
+        check('P: Cr AR === 200 (balanced)', near(cr(cl, fx.coA.arGL), 200) && near(sumDr(cl), sumCr(cl)), `AR ${cr(cl, fx.coA.arGL)} · Dr ${sumDr(cl)}/Cr ${sumCr(cl)}`);
+      }
+    }
   } catch (e) {
     check('flow completed without throwing', false, e instanceof Error ? (e.stack ?? e.message) : String(e));
   } finally {

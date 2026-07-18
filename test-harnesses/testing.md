@@ -179,3 +179,6 @@ by design (regression path). Provider bootstrapped AFTER the fixture subprocess 
 
 ### 2026-07-18 (correction) — TIER 4 dashboard breadth filled (gap 4b CLOSED)
 Orders gui suite **6/6**: added `orders-console` · `order-history` · `orders-management` (+MJFormPresenterService) · `product-category-tree` (+MJFormPresenterService), plus product-catalog + example. Every orders dashboard now renders real data through the real client, keystone-clean.
+
+### 2026-07-18 (correction) — orders T3 payment capture added (gap 3b CLOSED)
+`order-to-je-client.ts` now **28/28** — added P: create a Pending Payment + a company Cash GLAccountLink via the real entity path, then **`PaymentEntryClient.Capture`** → Dr Cash (11101) 200 / Cr AR 200, balanced. HARNESS GOTCHA (fixed): a field-set on an entity whose generated subclass is NOT imported silently produces null on Save over GraphQL — must `import @mj-biz-apps/accounting-entities` so GLAccountLink resolves to its subclass.
