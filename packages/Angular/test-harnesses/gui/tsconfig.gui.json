@@ -1,0 +1,14 @@
+{
+  "//": "MJDEV-MANAGED — do not hand-edit. Diagnostic-clean: rootDir = the Angular package root so",
+  "//2": "harness files outside src/ are in-bounds → no TS6059 → no analog `referencedFiles` crash.",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["vitest/globals", "node"],
+    "rootDir": "../.."
+  },
+  "//3": "Include ONLY this harness dir; components under src/ are pulled in transitively via the",
+  "//4": "specs' imports (proven in the spike). Do NOT glob src/ — that can re-include a file that",
+  "//5": "emits an inclusion diagnostic and re-trip the crash.",
+  "include": ["./**/*.ts"],
+  "exclude": ["node_modules"]
+}

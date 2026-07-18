@@ -153,3 +153,26 @@ is global), and the DEMO seeds legitimately create Pending JEs (3 confirmed demo
 tier-2 harnesses BEFORE seeding demo data (the drop-schema loop naturally gives that order), or sweep
 demo Pending JEs first. The 2026-07-14 6/6 green run happened pre-reseed; a post-reseed re-run refusing
 to start is the guard working, not a failure.
+
+
+---
+### 2026-07-18 — 5-tier roll-through (tier-3 verified on real path; NEW tier-4 gui harness)
+Instance accounting-engine-dev · MJAPI :4030 (restarted — was stale) · Explorer :4390.
+
+**Tier 1:** CoreEntitiesServer **58/58** · Angular **49/49** (re-run, green).
+**Tier 2:** schema-preflight **25/25** · order-to-je **24/24** (after the accounting-side test-data reset).
+**Tier 3 (over real GraphQL):** `api/order-to-je-api` **44/44** verified on fresh MJAPI (order create→Confirm→JE booking, exact balanced-JE values). Orders' own clients (`OrderEditorClient.Confirm`, `PaymentEntryClient.Capture`, `OverdueWorklistClient.Get`) are REMOTE-OP wrappers (take `IRemoteOperationProvider`) — the op IS the real mechanism, so order-to-je-api already drives the real path (kept + verified rather than rewritten). Reasonable-default logged.
+**Tier 4 — NEW mjdev gui harness:** installed via `mjdev app gui-test init accounting-engine-dev bizapps-orders`. `example.dom.test` smoke GREEN + NEW `product-catalog.dom.test` GREEN — the Product Catalog dashboard renders real seeded catalog data through the real GraphQL client (products load well-formed, categories present), keystone clean. Same BaseDashboard `push`-TypeError noise as accounting (non-blocking; for the MJDev agent).
+**Tier 5:** shares the accounting playwright harness (verified working); orders specs (orders-management/product-catalog/product-categories/ui-fixes) carry the same UI-wave nav-debt to reconcile with the proven pattern.
+
+_New files uncommitted (holding per instruction)._
+
+### 2026-07-18 (correction) — orders tier-3 REWRITTEN onto the real client
+Per Marcelo: the old `order-to-je-api.ts` (hand-rolled `fetch`) is a mimic; the regression path must
+use the real client. NEW `api/order-to-je-client.ts` **21/21** — creates Order+OrderLines via
+`Metadata.GetEntityObject().Save()`, confirms via **`OrderEditorClient.Confirm` → `RouteOperation('Orders.ConfirmOrder')`**
+(the atomic unit-of-work op the Order Editor uses — NOT a `Status='Confirmed'` update), reads the JE via
+`RunView`, and drives **`OverdueWorklistClient.Get`** (the dunning read I had wrongly skipped as a "wrapper").
+Exact values: O1 Dr AR 200/Cr Sales 200 · O2 per-company 300/150 single-company-pure · O3 deferred 120 ·
+O4 unresolvable → Confirm BLOCKED + no JE · overdue rows drift-proof (DaysOverdue>0). Overlaps order-to-je-api
+by design (regression path). Provider bootstrapped AFTER the fixture subprocess (stale-keep-alive rule).
