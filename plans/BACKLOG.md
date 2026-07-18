@@ -7,6 +7,12 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
 
 ## Tasks
 
+- [ ] **Navigation routing / back-button (UI)** — cross-links (order → JE → accounting app,
+      product → category, slide-in pop-outs) have no "go back" affordance; routing is manual.
+      Consider a history/back mechanism — likely part MJ Explorer platform (tab/navigation
+      history — candidate Matt ask) and part app-shell (workspace-tab return links). (Marcelo,
+      2026-07-17.) Twin row in the accounting BACKLOG.
+
 - [ ] **GL account-resolution deep dive (performance + complexity)** — Marcelo flag 2026-07-17
       (MOD-3 rev-2): the product → category → company-default walk, per-line at booking, across
       multi-company orders, is "going to become a performance and complexity pain point that's

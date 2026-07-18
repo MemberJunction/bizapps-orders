@@ -37,12 +37,12 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
   document, defaulted from the sales channel). It is the **document/ownership/visibility** anchor
   (cross-company visibility = [Q23](QUESTIONS.md#q23)); it does **NOT** drive GL resolution and
   does NOT override line-level revenue ownership.
-  (b) **The line's company derives from the PRODUCT** — `Product.CompanyID` (Marcelo rev-2,
-  2026-07-17: "the line in the order should derive the company from the product, not the
-  account"). Every product is owned by a company; the resolved account is expected to belong to
-  that SAME company (the consistency invariant — accounting [Q38], lean: mismatch disallowed).
-  The earlier resolved-account derivation inverts cause and effect: the account follows from the
-  product's company, not the other way round.
+  (b) **The line's company derives from the PRODUCT** — `Product.CompanyID` (required NOT NULL;
+  the company listed ON the product is the source of truth — CONFIRMED as standard practice:
+  ERPs carry company on the item record; deriving company from a connected account is not an
+  accounting practice and is **struck entirely**). The resolved account MUST belong to the same
+  company — the locked invariant + enforcement tiers are accounting **UPD-5** (company-scoped
+  mapping, per-company category routes, engine + trigger enforcement).
   (c) **Naming ruled schema-wide:** `Product.OwningCompanyID` and `Subscription.OwningCompanyID`
   rename to plain **`CompanyID`**; role-qualified names stay only where the role is the point
   (`Payment.ReceivingCompanyID`, etc.).
