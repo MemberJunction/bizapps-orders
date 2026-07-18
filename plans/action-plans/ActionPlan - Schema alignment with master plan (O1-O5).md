@@ -503,3 +503,10 @@ is a schema stage (S*), a feature phase (F*), the UI plan, or an explicit `plans
 | Multi-company mechanics (§5) | F1.2 per-company split (MOD-11); intercompany legs → Payments (O2+) |
 | Backdating guard / timing restrictions | **DEFERRED** — accounting `plans/DEFERRALS.md` (timing system); F1.7 seam is the future hook |
 | Statements/portal/variants/metered/dispute/recon/CDP-migration | DEFERRALS (each with trigger) |
+
+---
+## ⓘ Status annotation — 2026-07-17 (pre-testing filing)
+UNTOUCHED this session — the 2026-07-16/17 work was the UI wave + the naming/memo feature only. This plan's
+status stands as its header states; feature/schema execution resumes after test-harness validation. Any
+design decisions from this session live in the app BACKLOG "UI TASKS" section + the Q-stock (Q27–Q40); the
+UI-design-decision doc gap was filed to `~/MJDev/MJDEV-REQUESTS.md`.

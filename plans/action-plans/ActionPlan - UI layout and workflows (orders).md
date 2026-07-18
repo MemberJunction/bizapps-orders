@@ -359,3 +359,16 @@ detail links back to the originating order (JournalEntryLink lineage).
    on Jeremy's feedback against the real thing.**
 5. UI work owner: ~~suggestions-level or per-screen specs before handoff?~~ **RESOLVED 2026-07-16:
    per-screen specs written (§13) — this plan is the build handoff.**
+
+---
+## ⓘ Status annotation — 2026-07-17 (pre-testing filing)
+The §13 UI wave is **substantially BUILT + refined**. Shipped: all category shells + order editor, All
+Orders, Status board, payments (entry/all/capture — "Apply payments" workspace already built), products
+(catalog/categories/workshop/types/pricing/GL-mapping), refunds/methods/subscriptions/fulfillment, cheap
+dashboards; then GUI-review refinements (order editor card-wrap + verbs-to-foot + ID input + required-field
+red-dot tabs, status board, order detail depth). Order memo **shipped**: `Order.Description`-as-memo drives
+the editor tab caption live + name/ID search on All Orders/All Payments.
+- **Deferred → `plans/BACKLOG.md` "UI TASKS":** the All Orders grid rework (#32 — top filters + per-column
+  filter/sort + chips-REQUIRED + visible sort arrow + rounded/floating table; filters held pending Matt's
+  Q40, app-side parts ready). ORD-BUG-1 order-create: crash half fixed by the MJ upgrade (PR #3097).
+- **NEXT:** test harness.
