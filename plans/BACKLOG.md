@@ -7,6 +7,11 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
 
 ## Tasks
 
+- [ ] **F8 sales-rule evaluation engine** — SalesRule/SalesAuthority schema is built (S6, H.1);
+      the evaluation engine at Order Confirm + approval-Task routing (H.2/H.3) is NOT — and was
+      the one orphan the 2026-07-18 action-plan audit found (in no re-homing doc). Not
+      LXP-launch-critical; pick up post-launch or when discount-authority enforcement matters.
+
 - [ ] **Re-sequence the Coupons action plan against UPD-8** — the drafted plan is Option-B-shaped
       (Coupon entity first); UPD-8 rules Option A for launch (provider model + both-level discount
       recording first; the Coupon entity becomes the fast-follow provider). Rework the plan's

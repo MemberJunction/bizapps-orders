@@ -1,5 +1,11 @@
 # Plan — Schema alignment with the master plan (phases O1–O5)
 
+> **AUDIT 2026-07-18 (orchestrator): COMPLETED — archived.** S1–S3, S5, S6 all in the baseline
+> and preflight-proven (25/25); triggers present + enabled. Not done → re-homed: S4 tax (Q21
+> answered Option B; roadmap V2.7). SUPERSEDED after completion: the "no Order.CompanyID" premise
+> (MOD-3 rev-2 ADDS it + product-company derivation — roadmap V1.1) and S3's SJE bridge shape
+> (MOD-12 — V1.5). Do not build from this plan; the plan chain + roadmap are current.
+
 > **Status:** ACTIVE (approved for execution — Marcelo review completed 2026-07-14) · **Created:** 2026-07-11
 > **Implements:** MASTER-PLAN §4.1–§4.6, §4.3 (Order as A/R primitive), §15 Q11 (PaymentTermsType) — **as
 > overlaid by** MOD-1..10 and UPD-1..3. Phasing follows the gap analysis

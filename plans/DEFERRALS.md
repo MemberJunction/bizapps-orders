@@ -60,3 +60,4 @@ rationale · revisit trigger. Remove a row only when the item ships (note the pl
 - **Revisit trigger:** the post-GUI-overhaul scoping pass ("scoping is a problem we will solve
   later"). Pair with accounting's matching DEFERRALS rows (multi-currency batch totals + the same
   scope-semantics question) — they share the "what does the current company mean" decision.
+| Credit **write-off** settlement path (F2.3c — action + JE) | feature plan Q4 lean-defer (2026-07) | refund + apply-to-order paths are built; write-off enum exists, no op | a real write-off need (finance ask), or the credit-settlement UI slice |

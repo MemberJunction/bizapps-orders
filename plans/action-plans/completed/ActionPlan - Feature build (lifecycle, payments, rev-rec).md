@@ -1,5 +1,15 @@
 # Plan — Feature build: order lifecycle, payments, rev-rec (engine + server)
 
+> **AUDIT 2026-07-18 (orchestrator): COMPLETED — archived.** Built + committed + harness-proven:
+> F0 engine split, F1 lifecycle (+per-company JE split, atomic Confirm), F2 reversals, F3 manual
+> payments + Stripe stub + overdue worklist, F4 waterfall MATH, F7.2 entitlement grants, F9
+> pricing resolution (FEATURE-LIST B.2 corrected — ledger lagged the artifact). Built-then-
+> SUPERSEDED: F4's SJE bridge (MOD-12 — forward-dated JEs; roadmap V1.5; its green tests cover
+> superseded code). Not done → re-homed: Stripe REAL (V2.2) · tax (V2.7) · roles (V1.6/V4) ·
+> subscription lifecycle/renewals, bundles, gift cards, fee leg, dunning delivery, F2b linkage
+> (DEFERRALS) · write-off (DEFERRALS row added 2026-07-18) · F8 sales-rule engine (BACKLOG row
+> added 2026-07-18 — was the one orphan).
+
 > **Status:** ACTIVE (approved for execution — Marcelo review completed 2026-07-14) · **Created:** 2026-07-11
 > **Implements:** MASTER-PLAN §4.3, §6 (reversals), §7 (JE emission), §8 (subscription lifecycle) — as overlaid
 > by MOD-1, MOD-5, MOD-7, MOD-8, MOD-9, MOD-10 + UPD-2, UPD-3; BACKLOG items "State-based validation matrix",

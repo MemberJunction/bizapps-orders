@@ -30,7 +30,7 @@
 | ID | Feature | Status | Source |
 |---|---|---|---|
 | B.1 | PriceList / ProductPrice / PriceTier tables (effective-dated, models, fee types) | Shipped | MOD-6 rev.; S5 (built 2026-07-14) |
-| B.2 | Pricing resolution engine (BO-D33 precedence; UnitPrice direct entry = base) | Planned | MOD-6; feature plan F9 |
+| B.2 | Pricing resolution engine (BO-D33 precedence; UnitPrice direct entry = base) | Shipped ◇ — 2026-07-18 audit: `ResolvePrice` + tests + commit f714559 EXIST (ledger lagged) | MOD-6; F9; audit 2026-07-18 |
 | B.3 | Coupons: LAUNCH = `CouponProvider` model, Stripe first adapter + order-level & line-level (`DiscountAmount`) recording; Orders-native Coupon entity (S7) = fast-follow provider | Planned — recording schema freeze awaits 2 investigations + Sidecar answers; OS7 review BLOCKED until the action plan is shared with Robert | UPD-8 (Robert A2/OS7); MOD-6 ext.; coupon action plan (re-sequence) |
 
 ## C. Order lifecycle

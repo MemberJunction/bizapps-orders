@@ -1,5 +1,11 @@
 # Plan — Coupons & promo codes (schema → engine → UI)
 
+> **AUDIT 2026-07-18 (orchestrator): NOT EXECUTED — stays here as DRAFT.** Zero stages built (no
+> Coupon/CouponRedemption tables, entities, or engine code — verified). Pending: re-sequencing
+> against UPD-8 (Option-A provider model first; BACKLOG row) + Robert's OS7 schema review (his
+> checklist is recorded; artifacts shared in the 2026-07-17 file-share package). Rework this plan
+> before executing anything from it.
+
 > **Status:** DRAFT — awaiting **Robert's schema-structure review** (LXP A2: "Robert to spec"; this plan
 > is the proposed spec). On his approval/edits it flips ACTIVE and executes as written.
 > **Created:** 2026-07-14 · **Owner:** orchestrator (accounting-engine-dev)
