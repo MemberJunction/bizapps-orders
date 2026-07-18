@@ -118,3 +118,9 @@ Marcelo ratified the accounting-norm model: **transactions get number + memo; ma
   it in All Orders, drive the workspace-tab caption from it, include it in name/memo/ID search. No migration.
 - **Products / product categories:** already named — just ensure name+ID search covers them. No schema.
 - The only orders-side schema work is nil. The batch memo (accounting) is the sole migration in this feature.
+
+## ═══ UI TASKS — deferred until after the test harness ═══
+See bizapps-accounting/plans/BACKLOG.md "UI TASKS — deferred until AFTER the test harness" for the full,
+decision-detailed list (grid rework #32 + chips-required doctrine, master-data ID-search sweep, order memo
+is done). Orders-specific: All Orders grid rework (UI-1) lands here; order Description-as-memo + name/ID
+search on all-orders/all-payments already shipped this round.
