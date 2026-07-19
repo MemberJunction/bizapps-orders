@@ -17,7 +17,7 @@
 
 | Ask order | Q | Ask | Status |
 |---|---|---|---|
-| 1 | [Q22](#q22) | Marcelo→Robert/Jeremy/John/Ethan — LH4I launch-scope sitting (BAO date · tax-at-launch · coupon surfaces) | OPEN — proceeding ★HIGH |
+| 1 | [Q22](#q22) | LH4I launch timing — AGENDA ITEM for Monday's Robert meeting (2026-07-20), not the doc | OPEN — proceeding ★HIGH |
 | 2 | [Q23](#q23) | Robert — cross-company order visibility (proceeding: involved companies can SEE) | OPEN — proceeding |
 | 3 | [Q10](#q10) | Marcelo — branch strategy + diverged main (internal) | OPEN |
 | — | [Q21](#q21) | tax structure — ANSWERED (Option B durable shape; engine = buy; finance calls → Q22) | ANSWERED |
@@ -203,8 +203,9 @@ queryable surface for "which questions touch feature X".)*
 
 <a id="q22"></a>
 ### Q22 · LH4I launch-scope sitting — BAO-ready date (A7) · tax-at-launch · coupon surfaces — review: Robert/Jeremy/John/Ethan — added 2026-07-17
-- **Status:** OPEN — proceeding (the roadmap is the proposed basis; the date + two finance calls
-  need the humans)
+- **Status:** OPEN — proceeding · **routed to MONDAY'S MEETING with Robert (2026-07-20) as a live
+  agenda item, NOT the question doc** (Marcelo 2026-07-18). Removed from the distribution package;
+  bring the roadmap (slice board + V2 gate) as the talking basis.
 - **Requested reviewer:** Marcelo convenes; Robert + Ethan (date), Jeremy + John (tax call),
   John/Sidecar marketing (coupon surfaces & shapes)
 - **Features:** ORD-N.1 (LH4I launch composite), ORD-K.1/K.2 (tax), ORD-B.3 (coupons), MOD-13
