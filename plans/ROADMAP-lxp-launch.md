@@ -31,7 +31,8 @@ monolithic "ran everything" report.
 Most launch-relevant features exist as code, but: (a) many carry the **◇ claimed-not-verified**
 flag (agent-ledger statuses pending the waived Task 65b sign-off review); (b) the 2026-07-14/17
 rulings just **invalidated real chunks of the as-built shape** (multi-company batches, the
-ScheduledJournalEntry bridge, single `Order.JournalEntryID`, unenforced approval deciders);
+ScheduledJournalEntry bridge, single `Order.JournalEntryID`, unenforced approval deciders, the
+per-company Dr-own-AR booking shape — now seller-of-record per MOD-14);
 (c) the UI wave is mid-flight. So this roadmap treats **"built" as a claim, not a fact** — every
 tier's exit gate is validation (committed tests green + a demo artifact), not code merged. Order
 of attack is driven by **Ethan's minimal-BAO list** (§8: products/tiers · coupons ·
@@ -68,7 +69,7 @@ do them BEFORE building more on top.*
 
 | # | What | Ruling | Notes |
 |---|---|---|---|
-| V1.1 | `Order.CompanyID` + company renames + **line-company derivation from `Product.CompanyID`** + resolution walk re-anchored to the product's company (+ same-company account validation per acct Q38 lean) | MOD-3 rev-2 | S1 amendment; tripwire stays; ⚠ resolution perf/complexity deep dive backlogged |
+| V1.1 | `Order.CompanyID` + company renames + **line-company derivation from `Product.CompanyID`** + `ProductCategory.CompanyID` (company-owned categories) + resolution walk re-anchored + same-company link enforcement | MOD-3 rev-2 + UPD-5 rev. (Q38 ANSWERED 2026-07-20) | S1 amendment; tripwire stays; ⚠ resolution deep dive backlogged |
 | V1.2 | `OrderJournalEntry` junction (real FKs) replaces `Order.JournalEntryID`; idempotency = order-already-booked | UPD-7 / MOD-11 | |
 | V1.3 | Single-company batches: batch header CompanyID, line company dropped, triggers folded, `buildBatch(companyId, dateFilter)` | ACC MOD-15 | Jeremy's 2 conditions surface in config/UI |
 | V1.4 | Batch `PostingDate` (singular, accountant-set; one aggregated JE per batch; netting key GLAccount × dims) + closed-period HOLD/flag exceptions | ACC MOD-16 (rev. — Amith model, Q37) | |
