@@ -195,3 +195,28 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
 - **Why / source:** `meetings/2026-07-14 - lxp-commerce-and-fulfillment 2.md` §8 (Ethan's team
   lean, decisions D1–D16 locked by Amith + John).
 - **Status:** Accepted (the lean is the plan unless Amith/Robert object at the A7 date sitting).
+
+## MOD-14 — Booking JE shape: SELLER-OF-RECORD AR + mirrored intercompany legs at booking (2026-07-20)
+- **Supersedes:** the as-built per-company booking draft (each company Dr own-AR / Cr own-revenue,
+  AM-4's per-company self-balance) on the AR side. MOD-11's one-JE-per-company SPLIT stands; what
+  changes is what each JE contains.
+- **Change (Robert's mechanics, 2026-07-20 Monday meeting — accounting Q39 answer):** at booking
+  of a multi-company order (owner A, sibling B):
+  **A's JE:** Dr AR (FULL order amount) · Cr A-revenue/DefRev (A's lines) · Cr **Due-To-B (AP)**
+  (B's share) — one per sibling.
+  **B's JE:** Dr **Due-From-A (intercompany AR)** · Cr B's revenue-or-DefRev — resolved against
+  B'S OWN accounts (product → B's category tree → B default). Revenue is NEVER recognized in the
+  owner for a sibling's product (no double recognition); forward-dated rev-rec entries (MOD-12)
+  live entirely under the sibling's accounts. Each JE balances within its company (whole-entry
+  balance rule unchanged). Due-to/due-from = money only, disconnected from revenue. Payment side
+  unchanged in ownership: Payments clears the owner's AR to cash and clears the Due-To/Due-From
+  pair on the cash transfer (accounting MOD-5 as revised).
+- **Anchor split (reconciles Robert's Q2 answer with MOD-3 rev-2):** revenue-side account
+  resolution anchors to the PRODUCT's company; **AR/cash/due-to-from anchor to the ORDER-owning
+  company** (seller of record). Tax remit: selling company (Robert; Jeremy verifies nexus via
+  acct Q19).
+- **Why / source:** `meetings/2026-07-20 - Accounting Meeting - Marcelo robert Ian.md`; acct Q39
+  answer; Marcelo: "when I write the order creation system, it's got to do that."
+- **Status:** Accepted — engine rework rides roadmap **V1.7 / slice S3** (pairs with the rev-rec
+  emission rework; the intercompany per-pair accounts must exist for the legs — provisioning
+  detail lands with the slice).

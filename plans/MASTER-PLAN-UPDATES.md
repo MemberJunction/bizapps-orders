@@ -213,3 +213,12 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
 - **Why / source:** Marcelo 2026-07-17 (colleague's CDP/ATS grid demo); plan-affecting UI advice
   → recorded in the chain per the standing rule. Accounting counterpart: accounting UPD-4.
 - **Status:** Accepted — lands with the list screens + the forms/list design pass.
+
+## UPD-13 — Matt UI-review rulings (mirror of accounting UPD-6) (2026-07-20)
+- **Amends:** UI plan §0 house rules. Container queries not media queries (Explorer split panes) ·
+  sticky interior chrome, content scrolls · tab content scrolls internally, tabs always visible ·
+  required-state red-dot per editor tab + gated save (the Order editor is the pilot — Matt's main
+  concern was exactly its tab completeness signaling) · filter consolidation variants + indicated
+  (index-limited) sortable/filterable columns · table-to-edge density OK with kept hierarchy.
+  Full text: accounting UPD-6. Source: `meetings/2026-07-20 - Accounting UI Review - Matt and.md`.
+- **Status:** Accepted.

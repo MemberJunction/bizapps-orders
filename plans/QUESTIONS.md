@@ -18,7 +18,7 @@
 | Ask order | Q | Ask | Status |
 |---|---|---|---|
 | 1 | [Q22](#q22) | LH4I launch timing — AGENDA ITEM for Monday's Robert meeting (2026-07-20), not the doc | OPEN — proceeding ★HIGH |
-| 2 | [Q23](#q23) | Robert — cross-company order visibility (proceeding: involved companies can SEE) | OPEN — proceeding |
+| — | [Q23](#q23) | ANSWERED 2026-07-20 (involved companies SEE; write owner-scoped; visibility configurable later) | ANSWERED |
 | 3 | [Q10](#q10) | Marcelo — branch strategy + diverged main (internal) | OPEN |
 | — | [Q21](#q21) | tax structure — ANSWERED (Option B durable shape; engine = buy; finance calls → Q22) | ANSWERED |
 | — | [Q2](#q2) | owning-company field — ANSWERED (add Order.CompanyID; resolution rung; renames) | ANSWERED |
@@ -237,7 +237,7 @@ queryable surface for "which questions touch feature X".)*
 
 <a id="q23"></a>
 ### Q23 · Cross-company order visibility — if an order owned by Company A contains Company B's products, can B's users see it? — review: Robert — added 2026-07-17
-- **Status:** OPEN — proceeding
+- **Status:** ANSWERED (Robert, 2026-07-20 Monday meeting) — frozen.
 - **Requested reviewer:** Robert (pairs with the `UserCompanyRole`/RLS design he owns — acct Q22
   answer; Jeremy input welcome on accounting-parity expectations)
 - **Features:** ORD-C.1 (Order.CompanyID), ORD-M.1 (orders RLS), ORD-J.1 (multi-company orders)

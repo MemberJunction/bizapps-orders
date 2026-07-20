@@ -13,9 +13,9 @@
 |---|---|---|---|---|
 | S0a | V0 orders spine validation (cheap tiers) | IN PROGRESS (accounting agent testing wave) | agent ledgers | T36 ✅ answered (per-run seed) |
 | S0b | V0 accounting spine validation (cheap tiers) | IN PROGRESS (same wave) | agent ledgers | — |
-| S1 | V1.1+V1.2 order lineage & product ownership (orders schema) | PLAN MINTED (Draft, 2026-07-20) | `action-plans/ActionPlan - S1 Order lineage and product ownership.md` | S0 orders-spine close |
+| S1 | V1.1+V1.2 order lineage & product ownership + company-owned categories | PLAN MINTED (Draft, 2026-07-20; scope updated post-Robert-meeting) | `action-plans/ActionPlan - S1 Order lineage and product ownership.md` | S0 orders-spine close |
 | S2 | V1.3+V1.4 batch rework + posting date (+ V1.6 approver-enforcement rider) | PLAN MINTED (Draft, 2026-07-20) | acct `action-plans/ActionPlan - S2 Batch rework, posting date, approver enforcement.md` | S0 accounting-spine close |
-| S3 | V1.5 forward-dated rev-rec (spans both repos) | QUEUED | to mint | S1+S2 |
+| S3 | V1.5 forward-dated rev-rec + V1.7 seller-of-record booking JEs (spans both repos) | QUEUED | to mint | S1+S2 |
 | S4 | Full GUI validation pass (section-by-section, ONCE, post-structural) | QUEUED | to mint | S3 |
 | S5+ | V2 LH4I feature slices (per roadmap rows; entitlement read path pulled early) | QUEUED | to mint per row | gates per row |
 
@@ -74,6 +74,7 @@ do them BEFORE building more on top.*
 | V1.4 | Batch `PostingDate` (singular, accountant-set; one aggregated JE per batch; netting key GLAccount × dims) + closed-period HOLD/flag exceptions | ACC MOD-16 (rev. — Amith model, Q37) | |
 | V1.5 | Forward-dated rev-rec JEs replace ScheduledJournalEntry (+ default cutoff=today filter; correcting-order netting) | MOD-12 / ACC MOD-17 | retires the G.3/G.4 + ACC E.1–E.5 as-built |
 | V1.6 | Approval-decider enforcement: `recordDecision` requires Accounting Approver for the batch's company (minimal `UserCompanyRole` table) | Q6/Q22 answers | REQUIRED "before anything beyond dev" — Robert. Full RLS stays later (K.2) |
+| V1.7 | Booking JE shape: seller-of-record AR + mirrored Due-To/Due-From legs at booking (+ per-pair account provisioning) | MOD-14 / acct MOD-5 rev. / Q39 answer | rides slice S3 (pairs with rev-rec emission) |
 
 **Exit gate:** V0's spine harnesses re-run green ON the new shape (downstream re-run discipline) +
 a delta demo (multi-company order → per-company JEs → per-company batches → per-company approvals).

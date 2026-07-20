@@ -52,3 +52,9 @@ Orders landing: **forms-first ruling block in UI plan §13** (Entity Forms for O
 Subscription/Product; dashboard-shared widgets; no custom pop-ups — Amith's explicit orders
 comment; Order editor = pilot). Robert owns detailed Products/Orders/Payments/Subs flow work with
 Marcelo. Accounting-side landings in that repo's `_PROCESSED.md`.
+
+### 2026-07-20 meetings (Robert/Ian + Matt UI review) — ✅ PROCESSED 2026-07-20 (Task 116a)
+Orders landings: **MOD-14** (seller-of-record booking JE shape; V1.7/S3) · Q23 ANSWERED ·
+UPD-13 (Matt UI rulings mirror) · S1 plan scope updated (ProductCategory.CompanyID; revised
+hard-blocks) · fulfillment-groups BACKLOG row · routing row updated. Accounting-side landings in
+that repo's _PROCESSED.md.

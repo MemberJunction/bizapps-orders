@@ -7,6 +7,13 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
 
 ## Tasks
 
+- [ ] **Fulfillment groups / order splitting (future)** — Robert 2026-07-20: per-line fulfillment
+      is YES; real-world practice for partial fulfillment is SPLITTING the order (ship-what-you-
+      have + follow-on order — also how partial charging works); a fulfillment-groups structure
+      inside one order (Marcelo's sketch) is the eventual design. Not LXP-relevant (instant
+      fulfillment; splitting stays a manual accounting practice for now). Revisit trigger:
+      physical-goods fulfillment demand (post-launch).
+
 - [ ] **F8 sales-rule evaluation engine** — SalesRule/SalesAuthority schema is built (S6, H.1);
       the evaluation engine at Order Confirm + approval-Task routing (H.2/H.3) is NOT — and was
       the one orphan the 2026-07-18 action-plan audit found (in no re-homing doc). Not
@@ -18,11 +25,10 @@ Convention: `~/MJDev/shared-plans/repo-planning-system.md` §5.1. (The instance-
       stages before executing; Robert's OS7 review checklist applies to the recording schema.
       (2026-07-17 sweep; "circle back when we get there" — Marcelo.)
 
-- [ ] **Navigation routing / back-button (UI)** — cross-links (order → JE → accounting app,
-      product → category, slide-in pop-outs) have no "go back" affordance; routing is manual.
-      Consider a history/back mechanism — likely part MJ Explorer platform (tab/navigation
-      history — candidate Matt ask) and part app-shell (workspace-tab return links). (Marcelo,
-      2026-07-17.) Twin row in the accounting BACKLOG.
+- [ ] **Navigation routing / back-button (UI)** — UPDATED 2026-07-20 (Matt review): Explorer
+      ALREADY has shift-click → new tab + drag-split panes; gap = discoverability (split button +
+      tooltip), active-window top-bar tracking. Matt owns the nav rethink; deep-link helper PRs
+      into MJ core (acct Q25). Twin row in the accounting BACKLOG.
 
 - [ ] **GL account-resolution deep dive (performance + complexity)** — Marcelo flag 2026-07-17
       (MOD-3 rev-2): the product → category → company-default walk, per-line at booking, across
