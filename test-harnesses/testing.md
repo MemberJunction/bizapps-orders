@@ -61,6 +61,10 @@ curl -s -X POST http://localhost:4050/ -H "Content-Type: application/json" \
   combined proof can be added once batching is exercised from an order-originated JE.
 - Company-level REVENUE default resolution (Izzy example) needs a company context on the order — v1
   resolves revenue via product/category links only (OQ-I, Robert). See OrdersEngine header.
+- ✅ **Tier-4 control coverage for the `order-editor` + `payment-entry` workspaces (2026-07-20, CLOSED)** —
+  added `order-editor.dom.test` + `payment-entry.dom.test` (real API): each renders the create workspace
+  cleanly (keystone armed) and asserts the NEW input renders (`Line note (optional)` placeholder / the Notes
+  placeholder), with data loaded through the real client. Orders gui suite now 8 files.
 
 ---
 ### 2026-07-10 rollout (Task 36) — orders tiers re-baselined + new coverage
@@ -182,3 +186,11 @@ Orders gui suite **6/6**: added `orders-console` · `order-history` · `orders-m
 
 ### 2026-07-18 (correction) — orders T3 payment capture added (gap 3b CLOSED)
 `order-to-je-client.ts` now **28/28** — added P: create a Pending Payment + a company Cash GLAccountLink via the real entity path, then **`PaymentEntryClient.Capture`** → Dr Cash (11101) 200 / Cr AR 200, balanced. HARNESS GOTCHA (fixed): a field-set on an entity whose generated subclass is NOT imported silently produces null on Save over GraphQL — must `import @mj-biz-apps/accounting-entities` so GLAccountLink resolves to its subclass.
+
+### 2026-07-20 — UI-hole fields verified live at tier-3 (order line Description · payment Notes · JE counterparty)
+Three "visibility/testing" input fields were added to existing workspaces (Marcelo, 2026-07-20) and verified through their REAL transaction/remote-op paths — no new mocks, self-seeding fixture, torn down (0 residuals, demo CO1–CO3 untouched):
+- **`order-to-je-client.ts` now 31/31** (was 28/28) — added: **O1** asserts `OrderLine.Description` persists via the order save path; **P** asserts `Payment.Notes` persists via the payment write path; **P** asserts the capture JE's AR line carries `CounterpartyOrganizationID === customer` (set by `PaymentEntityServer` → `CreateJournalEntry` contract → engine atomic write — the SAME path the manual-JE workspace's new counterparty picker feeds). Golden path (O1–O4 + payment) intact.
+- **accounting `je-draft.test.ts` now 31/31** (tier-1) — added: `toCreateInput` sends `CounterpartyOrganizationID` when the operator picks one, and omits it (absent, not null) when they don't. This proves the UI→contract half of the JE counterparty picker; tier-3 proves the contract→engine→DB half.
+- **All 4 dev-linked apps rebuilt clean** (`app build-all`, failed:[]), so the new inputs compile into all three surfaces (je-workspace, order-editor, payment-entry).
+- **✅ tier-4 render+bind CLOSED (2026-07-20, same day):** added `order-editor.dom.test` + `payment-entry.dom.test` (orders) + `je-workspace.dom.test` (accounting). Each renders the create workspace via the real API, keystone-clean, and asserts the NEW input control renders. The three golden-path create workspaces now all have dom specs — 3/3 green. (Was originally logged as a ✗ gap; closed same day at Marcelo's request.)
+- **FileID** (JE supporting-doc) deliberately NOT added — needs a contract+engine change + a file-picker; available via the generated JE form drill. Left per Marcelo.

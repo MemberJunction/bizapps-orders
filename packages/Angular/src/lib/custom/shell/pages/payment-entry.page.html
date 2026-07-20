@@ -60,6 +60,11 @@
           <span>Reference № <span class="pe__hint">(stored as the payment's description)</span></span>
           <input class="mj-input" [(ngModel)]="Reference" placeholder="Wire ref / check №" />
         </label>
+
+        <label class="pe__field">
+          <span>Notes <span class="pe__hint">(optional)</span></span>
+          <textarea class="mj-textarea" [(ngModel)]="Notes" rows="2" placeholder="Anything worth recording about this payment"></textarea>
+        </label>
       </section>
 
       <!-- Where it goes. -->

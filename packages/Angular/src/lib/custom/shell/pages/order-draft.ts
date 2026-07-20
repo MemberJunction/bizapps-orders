@@ -42,6 +42,8 @@ export interface OrderDraftLine {
   PriceSource: PriceSource;
   /** Human note for the badge, e.g. "PriceList Standard · tier 10+". */
   PriceNote: string | null;
+  /** Optional free-text line memo (OrderLine.Description) — set inside the order's save transaction. */
+  Description: string;
 }
 
 export interface OrderDraftState {
@@ -76,6 +78,7 @@ export function newOrderLine(key: string): OrderDraftLine {
     ServicePeriodEnd: null,
     PriceSource: 'DirectEntry',
     PriceNote: null,
+    Description: '',
   };
 }
 

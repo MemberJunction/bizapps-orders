@@ -8,42 +8,91 @@ import '@angular/compiler';
 import { provideZonelessChangeDetection, ErrorHandler } from '@angular/core';
 import { getTestBed } from '@angular/core/testing';
 import { BrowserTestingModule, platformBrowserTesting } from '@angular/platform-browser/testing';
-import { beforeEach, afterEach, expect, vi } from 'vitest';
+import { registerLocaleData } from '@angular/common';
+import localeEn from '@angular/common/locales/en';
+import { beforeEach, afterEach, expect } from 'vitest';
+
+// Register locale data (defensive). Angular's built-in `en-US` default handles a plain `currency`
+// pipe, but a component that sets an explicit currency code / non-default locale looks up locale data
+// that isn't registered in a bare TestBed → the lookup returns `undefined` and Angular does
+// `undefined.hasOwnProperty(...)` at detectChanges. Registering `en` covers that.
+registerLocaleData(localeEn);
+
+// NOTE: no WebSocket stub here — `tier4-bootstrap.ts` gives the provider the REAL MJAPI WS URL
+// (parity with MJExplorer's GRAPHQL_WS_URI), so an entity form's record-change subscription connects
+// to the running MJAPI exactly as production does instead of doing `new WebSocket('')`. (An earlier
+// v1.4.0 no-op WebSocket stub was replaced by this real-WS parity approach — ADR-033.)
 
 getTestBed().initTestEnvironment(BrowserTestingModule, platformBrowserTesting());
 
-// Benign Node-side noise (in-memory metadata cache has no Blob.stream) — drop it so it doesn't
-// clutter output or look like a failure. Filters both channels MJ may use; everything else preserved.
-const _warn = console.warn.bind(console);
-const _log = console.log.bind(console);
-const isBlobNoise = (a: unknown[]) =>
-  typeof a[0] === 'string' && a[0].includes('blob.stream is not a function');
-console.warn = (...a: unknown[]) => (isBlobNoise(a) ? undefined : _warn(...(a as [])));
-console.log = (...a: unknown[]) => (isBlobNoise(a) ? undefined : _log(...(a as [])));
+// ── Keystone (mandatory): fail any test that surfaces an error, via ANY of the three channels a
+// silent UI bug hides behind — console.error, Angular's ErrorHandler, or an unhandled promise
+// rejection. (console.error alone isn't enough: async component errors route through the ErrorHandler
+// / rejections.) The hooks are armed at MODULE scope — BEFORE the test file's `beforeAll` bootstrap —
+// so an error thrown during `bootstrapTier4()` (startup-engine loading) is caught too, not just
+// render-time errors. Without this the whole bootstrap phase is an un-guarded blind spot.
+//
+// Two phases with DIFFERENT strictness:
+//   • bootstrap (before the first test): `setupGraphQLClient` runs MJ's full `StartupManager.Startup()`
+//     engine sequence. Some engines log NON-FATAL load failures and retry (MJExplorer/MJAPI tolerate
+//     these too) — e.g. a dev-app engine whose DB view is mid-migration. Those are allowlisted below
+//     (surfaced as visible warnings, but they do NOT fail the suite). ANY other bootstrap error fails.
+//   • render (each test): the component under test is the subject — fail on ANY error, no allowlist.
+//
+// NOTE: the allowlist is deliberately tight. Registration-failure messages (e.g. "does not have a
+// Prompts property" / tree-shaking) are NOT allowlisted — if entity registration regresses we WANT
+// the suite to go red. Add a pattern here only for an error MJ itself treats as non-fatal-and-retried.
+const NON_FATAL_BOOTSTRAP = [
+  /Not marking as loaded/, // BaseEngine: a startup engine deferred its load and will retry
+  /Failed to load .+ into _/, // BaseEngine: a single dataset failed to load (engine retries)
+  /blob\.stream is not a function/, // in-memory metadata-cache compression fallback (Node/jsdom)
+  /Compression failed, falling back/, // same metadata-cache fallback, other phrasing
+];
+const isNonFatalBootstrap = (msg: string) => NON_FATAL_BOOTSTRAP.some(re => re.test(msg));
 
-// ── Keystone (mandatory): fail any test that surfaces an error during render — via ANY of the three
-// channels a silent UI bug hides behind: console.error, Angular's ErrorHandler, or an unhandled
-// promise rejection. (Only console.error is not enough — async component errors route through the
-// ErrorHandler / rejections; that's how a real render error slips a console.error-only keystone.)
-let captured: string[] = [];
-const push = (kind: string, detail: unknown) =>
-  captured.push(
-    `[${kind}] ${detail instanceof Error ? (detail.stack ?? detail.message) : JSON.stringify(detail)}`
-  );
+const fmt = (kind: string, detail: unknown): string =>
+  `[${kind}] ${detail instanceof Error ? (detail.stack ?? detail.message) : String(detail)}`;
+
+let phase: 'bootstrap' | 'render' = 'bootstrap';
+let bootstrapChecked = false;
+const bootstrapErrs: string[] = []; // non-allowlisted errors seen during bootstrap
+let renderErrs: string[] = []; // errors seen during the current test's render window
+
+const _err = console.error.bind(console);
+function record(kind: string, detail: unknown): void {
+  const msg = fmt(kind, detail);
+  if (phase === 'bootstrap') {
+    if (isNonFatalBootstrap(msg)) {
+      _err(`[tier4-keystone] tolerated non-fatal startup log: ${msg.slice(0, 300)}`);
+    } else {
+      bootstrapErrs.push(msg);
+    }
+  } else {
+    renderErrs.push(msg);
+  }
+}
+
+// console.error + unhandledRejection are armed now (module scope) so bootstrap is covered.
+console.error = (...args: unknown[]) => record('console.error', args.length === 1 ? args[0] : args);
+process.on('unhandledRejection', (reason: unknown) => record('unhandledRejection', reason));
 
 class KeystoneErrorHandler implements ErrorHandler {
   handleError(err: unknown): void {
-    push('ErrorHandler', err);
+    record('ErrorHandler', err);
   }
 }
-const onRejection = (reason: unknown) => push('unhandledRejection', reason);
 
 beforeEach(() => {
-  captured = [];
-  vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) =>
-    push('console.error', args)
-  );
-  process.on('unhandledRejection', onRejection);
+  // First test: bootstrap has finished — assert it produced no non-allowlisted errors before we go on.
+  if (!bootstrapChecked) {
+    bootstrapChecked = true;
+    phase = 'render';
+    expect(
+      bootstrapErrs,
+      `Keystone: error(s) during bootstrapTier4() → ${JSON.stringify(bootstrapErrs).slice(0, 1000)}`
+    ).toHaveLength(0);
+  }
+  renderErrs = [];
   getTestBed().configureTestingModule({
     providers: [
       provideZonelessChangeDetection(),
@@ -51,11 +100,11 @@ beforeEach(() => {
     ],
   });
 });
+
 afterEach(async () => {
   await new Promise(r => setTimeout(r, 0)); // let a pending rejection surface before we assert
-  process.off('unhandledRejection', onRejection);
-  const errs = captured;
-  captured = [];
+  const errs = renderErrs;
+  renderErrs = [];
   expect(
     errs,
     `Keystone: error(s) during render → ${JSON.stringify(errs).slice(0, 1000)}`

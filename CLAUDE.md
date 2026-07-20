@@ -33,6 +33,13 @@ test-harnesses/        - server/order-to-je.ts (live integration) + testing.md (
    **PascalCase** public members.
 6. **Single-copy invariant** — `@memberjunction/*` are peers. Cross-app deps on
    `@mj-biz-apps/accounting-engine-base` + `accounting-core-entities-server` are the intended integration seam.
+7. **New entity create/edit UI uses MJ forms, NOT hand-rolled pages (UPD-11 guardrail, 2026-07-20).**
+   Build any NEW detail/edit surface on the MJ form host via `openBizDetail` (import from
+   `@mj-biz-apps/accounting-ng`) — never a new bespoke create/edit page. Existing hand-rolled editors
+   stay until the forms-migration slice (`plans/DEFERRALS.md` → UPD-11 entry). Genuinely bespoke
+   WORKFLOW surfaces (kanban / console / tree / worklist) are exempt — they are not entity forms.
+   Never a frontend `.Set()`/`.Save()` side-channel for a validated create — go through the entity's
+   transaction/remote-op path (the form host does this for you).
 
 ## The integration (how an order becomes a JE)
 `OrderEntityServer.Save()` → if `Status==='Confirmed' && !JournalEntryID`:

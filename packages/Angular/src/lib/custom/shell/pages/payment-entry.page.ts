@@ -70,6 +70,8 @@ export class PaymentEntryPageComponent extends BaseAngularComponent implements O
   public ReceivingCompanyID: string | null = null;
   /** The mockup's "Reference №". Payment has no such column — this is its Description (see template). */
   public Reference = '';
+  /** Optional free-text note (Payment.Notes) — set inside the payment write transaction, not after. */
+  public Notes = '';
 
   // ─── the application panel ─────────────────────────────────────────────────
   public Customers: CustomerOption[] = [];
@@ -279,6 +281,7 @@ export class PaymentEntryPageComponent extends BaseAngularComponent implements O
     // Pending until the capture op says otherwise — never optimistically 'Captured'.
     payment.Status = 'Pending';
     if (this.Reference.trim()) payment.Description = this.Reference.trim();
+    if (this.Notes.trim()) payment.Notes = this.Notes.trim();
     payment.TransactionGroup = tg;
     await payment.Save();
 
@@ -301,6 +304,7 @@ export class PaymentEntryPageComponent extends BaseAngularComponent implements O
   private async resetAfterRecord(): Promise<void> {
     this.Amount = '';
     this.Reference = '';
+    this.Notes = '';
     // Refetch: the balances this panel just changed are exactly what it shows.
     await this.loadOpenOrders();
     await this.loadCustomers();

@@ -61,3 +61,25 @@ rationale · revisit trigger. Remove a row only when the item ships (note the pl
   later"). Pair with accounting's matching DEFERRALS rows (multi-currency batch totals + the same
   scope-semantics question) — they share the "what does the current company mean" decision.
 | Credit **write-off** settlement path (F2.3c — action + JE) | feature plan Q4 lean-defer (2026-07) | refund + apply-to-order paths are built; write-off enum exists, no op | a real write-off need (finance ask), or the credit-settlement UI slice |
+
+---
+
+### UPD-11 entity-forms migration (detail views + workspaces on MJ forms) — deferred 2026-07-20
+
+- **Source:** UPD-11 (Amith: build first-class Entity Forms and open them from dashboards via the MJ
+  form host, not custom pop-ups; the Order editor is the pilot). Deferral ruled by Marcelo 2026-07-20.
+- **What's deferred:** RE-HOSTING the ~16 existing hand-rolled orders create/edit pages onto MJ forms.
+  NOT the whole directive — see the guardrail below.
+- **Rationale:** the correctness/feature tiers (roadmap V0–V2) take priority, and the re-host re-expresses
+  UI only — the money math, price resolution, and the Confirm/CapturePayment remote ops already live in
+  engine/shared layers, so no business rule changes. Audited 2026-07-20: orders has **0** form-host usage
+  today while accounting is already forms-first (near-zero migration debt there), so this deferral is
+  orders-specific. The Order editor (the pilot) is the expensive surface and gets its own slice.
+- **⚠ GUARDRAIL (in force NOW — keeps the debt flat, not growing):** **new** orders entity create/edit
+  surfaces are built on the MJ form host via `openBizDetail` (imported from `@mj-biz-apps/accounting-ng`,
+  already a dependency) — never as new hand-rolled pages. Existing pages stay until revisited. Genuinely
+  bespoke WORKFLOW surfaces (kanban/console/tree/worklist) are exempt (they are not entity forms). See the
+  orders CLAUDE.md UI-convention rule.
+- **Revisit trigger:** the S4 full-GUI validation pass (roadmap) OR a dedicated forms slice, whichever the
+  roadmap reaches first. The trivial editors (product-types, payment-providers, payment-terms-types,
+  categories) can be converted opportunistically whenever touched; the Order-editor pilot is its own slice.

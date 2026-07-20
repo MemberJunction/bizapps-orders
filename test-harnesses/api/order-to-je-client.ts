@@ -60,7 +60,7 @@ function fixtureTeardown(fx: OrderFixture): void {
   catch (e) { console.log(`  [teardown warning] ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`); }
 }
 
-async function createOrder(md: Metadata, user: UserInfo, fx: OrderFixture, seq: number, lines: Array<{ productId: string; qty: number; price: number }>): Promise<string> {
+async function createOrder(md: Metadata, user: UserInfo, fx: OrderFixture, seq: number, lines: Array<{ productId: string; qty: number; price: number; description?: string }>): Promise<string> {
   const o = await md.GetEntityObject(ORDER_ENTITY, user);
   o.NewRecord();
   (o as unknown as Record<string, unknown>).OrderNumber = `${fx.runTag}-C${seq}`;
@@ -79,14 +79,15 @@ async function createOrder(md: Metadata, user: UserInfo, fx: OrderFixture, seq: 
     (ln as unknown as Record<string, unknown>).LineNumber = n++;
     (ln as unknown as Record<string, unknown>).Quantity = l.qty;
     (ln as unknown as Record<string, unknown>).UnitPrice = l.price;
+    if (l.description) (ln as unknown as Record<string, unknown>).Description = l.description;
     if (!(await ln.Save())) throw new Error(`order line create failed: ${ln.LatestResult?.CompleteMessage}`);
   }
   return orderId;
 }
 
-interface JELine { GLAccountID: string; DebitAmount: number | null; CreditAmount: number | null; }
+interface JELine { GLAccountID: string; DebitAmount: number | null; CreditAmount: number | null; CounterpartyOrganizationID: string | null; }
 async function jeLines(user: UserInfo, jeId: string): Promise<JELine[]> {
-  const r = await new RunView().RunView<JELine>({ EntityName: JE_LINE_ENTITY, ExtraFilter: `JournalEntryID='${jeId}'`, Fields: ['GLAccountID', 'DebitAmount', 'CreditAmount'], ResultType: 'simple' }, user);
+  const r = await new RunView().RunView<JELine>({ EntityName: JE_LINE_ENTITY, ExtraFilter: `JournalEntryID='${jeId}'`, Fields: ['GLAccountID', 'DebitAmount', 'CreditAmount', 'CounterpartyOrganizationID'], ResultType: 'simple' }, user);
   return r.Results ?? [];
 }
 const dr = (ls: JELine[], gl: string) => ls.filter((l) => up(l.GLAccountID) === up(gl)).reduce((s, l) => s + Number(l.DebitAmount ?? 0), 0);
@@ -116,7 +117,7 @@ async function main(): Promise<void> {
   try {
     // O1 — single-company immediate: Dr AR 200 / Cr Sales 200, order → Posted, JE stamped.
     console.log('\nO1 single-company immediate (via OrderEditorClient.Confirm):');
-    const o1 = await createOrder(md, user, fx, 1, [{ productId: fx.products.immA, qty: 2, price: 100 }]);
+    const o1 = await createOrder(md, user, fx, 1, [{ productId: fx.products.immA, qty: 2, price: 100, description: `${fx.runTag} line-memo` }]);
     const r1 = await editor.Confirm(provider as unknown as IRemoteOperationProvider, o1);
     check('O1: Confirm Success', r1.Success === true, JSON.stringify(r1.Errors));
     check('O1: Status Posted', r1.Status === 'Posted', `got ${r1.Status}`);
@@ -125,6 +126,10 @@ async function main(): Promise<void> {
     check('O1: JE balances', near(sumDr(l1), sumCr(l1)), `Dr ${sumDr(l1)} / Cr ${sumCr(l1)}`);
     check('O1: Dr AR === 200', near(dr(l1, fx.coA.arGL), 200), `got ${dr(l1, fx.coA.arGL)}`);
     check('O1: Cr Sales === 200', near(cr(l1, fx.coA.revGL), 200), `got ${cr(l1, fx.coA.revGL)}`);
+    // NEW FIELD — OrderLine.Description persists via the order save path (real entity Save, same
+    // mechanism the editor's queueLines uses inside its TransactionGroup).
+    const o1lines = (await new RunView().RunView<{ Description: string | null }>({ EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderID='${o1}'`, Fields: ['Description'], ResultType: 'simple' }, user)).Results ?? [];
+    check('O1: OrderLine.Description persisted (NEW UI field → order save)', o1lines.some((l) => l.Description === `${fx.runTag} line-memo`), JSON.stringify(o1lines));
 
     // O2 — multi-company: ONE JE PER COMPANY, each single-company + balanced (coA 300 / coB 150).
     console.log('\nO2 multi-company → one JE per company (MOD-11):');
@@ -195,9 +200,14 @@ async function main(): Promise<void> {
     const P = pay as unknown as Record<string, unknown>;
     P.PaymentNumber = `${fx.runTag}-PAY1`; P.ReceivingCompanyID = fx.coA.id; P.CustomerOrganizationID = fx.customerOrgId;
     P.PaymentDate = new Date(); P.Method = 'Cash'; P.Amount = 200; P.Status = 'Pending';
+    P.Notes = `${fx.runTag} payment note`;
     const paySaved = await pay.Save();
     check('P: pending payment created via the real entity path', paySaved === true, pay.LatestResult?.CompleteMessage);
     if (paySaved) {
+      // NEW FIELD — Payment.Notes persists via the payment write path (same entity Save the
+      // payment-entry writePaymentAndLines TransactionGroup uses).
+      const pn = (await new RunView().RunView<{ Notes: string | null }>({ EntityName: PAYMENT_ENTITY, ExtraFilter: `ID='${(pay as unknown as { ID: string }).ID}'`, Fields: ['Notes'], ResultType: 'simple' }, user)).Results?.[0];
+      check('P: Payment.Notes persisted (NEW UI field → payment write)', pn?.Notes === `${fx.runTag} payment note`, JSON.stringify(pn));
       const cap = await payments.Capture(provider as unknown as IRemoteOperationProvider, (pay as unknown as { ID: string }).ID);
       check('P: Capture Success', cap.Success === true, JSON.stringify(cap.Errors));
       check('P: capture books a JournalEntryID', !!cap.JournalEntryID, JSON.stringify(cap));
@@ -205,6 +215,11 @@ async function main(): Promise<void> {
         const cl = await jeLines(user, cap.JournalEntryID);
         check('P: Dr Cash === 200', near(dr(cl, cashGL), 200), `got ${dr(cl, cashGL)}`);
         check('P: Cr AR === 200 (balanced)', near(cr(cl, fx.coA.arGL), 200) && near(sumDr(cl), sumCr(cl)), `AR ${cr(cl, fx.coA.arGL)} · Dr ${sumDr(cl)}/Cr ${sumCr(cl)}`);
+        // NEW FIELD PATH — the AR line carries CounterpartyOrganizationID (set by PaymentEntityServer
+        // → CreateJournalEntry contract → engine's atomic write: the SAME path the manual-JE workspace's
+        // new counterparty picker feeds). Proves counterparty persists through the real op, not just the UI.
+        const arLine = cl.find((l) => up(l.GLAccountID) === up(fx.coA.arGL));
+        check('P: capture JE AR line carries CounterpartyOrganizationID === customer (NEW field path)', !!arLine && up(arLine.CounterpartyOrganizationID ?? '') === up(fx.customerOrgId), `AR line counterparty=${arLine?.CounterpartyOrganizationID}, expected ${fx.customerOrgId}`);
       }
     }
   } catch (e) {

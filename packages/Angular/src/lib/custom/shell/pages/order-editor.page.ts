@@ -185,6 +185,7 @@ interface OrderLineRaw {
   DiscountPct: number;
   ServicePeriodStart: string | Date | null;
   ServicePeriodEnd: string | Date | null;
+  Description: string | null;
 }
 
 /**
@@ -508,6 +509,7 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
       // re-pricing a saved line out from under the operator (BO-D33: direct entry wins).
       PriceSource: 'DirectEntry',
       PriceNote: SAVED_PRICE,
+      Description: l.Description ?? '',
     };
   }
 
@@ -997,6 +999,9 @@ export class OrderEditorPageComponent extends BaseAngularComponent implements On
       line.DiscountPct = discountFraction(l);
       line.ServicePeriodStart = l.ServicePeriodStart ? new Date(l.ServicePeriodStart) : null;
       line.ServicePeriodEnd = l.ServicePeriodEnd ? new Date(l.ServicePeriodEnd) : null;
+      // Set inside the same TransactionGroup — part of the validated order write, not a side-channel.
+      const desc = l.Description.trim();
+      line.Description = desc ? desc : null;
       line.TransactionGroup = tg;
       await line.Save();
     }
