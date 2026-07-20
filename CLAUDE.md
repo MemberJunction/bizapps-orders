@@ -38,6 +38,9 @@ test-harnesses/        - server/order-to-je.ts (live integration) + testing.md (
    `@mj-biz-apps/accounting-ng`) — never a new bespoke create/edit page. Existing hand-rolled editors
    stay until the forms-migration slice (`plans/DEFERRALS.md` → UPD-11 entry). Genuinely bespoke
    WORKFLOW surfaces (kanban / console / tree / worklist) are exempt — they are not entity forms.
+   **Convert-on-touch (ruled 2026-07-20):** when you edit an existing hand-rolled editor for other work,
+   convert THAT surface to the form host as part of the change — incremental migration, no separate slice
+   (except the order-editor pilot, which is scheduled on its own). See `plans/DEFERRALS.md` → UPD-11.
    Never a frontend `.Set()`/`.Save()` side-channel for a validated create — go through the entity's
    transaction/remote-op path (the form host does this for you).
 

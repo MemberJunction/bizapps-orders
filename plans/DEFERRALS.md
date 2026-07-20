@@ -80,6 +80,15 @@ rationale · revisit trigger. Remove a row only when the item ships (note the pl
   already a dependency) — never as new hand-rolled pages. Existing pages stay until revisited. Genuinely
   bespoke WORKFLOW surfaces (kanban/console/tree/worklist) are exempt (they are not entity forms). See the
   orders CLAUDE.md UI-convention rule.
-- **Revisit trigger:** the S4 full-GUI validation pass (roadmap) OR a dedicated forms slice, whichever the
-  roadmap reaches first. The trivial editors (product-types, payment-providers, payment-terms-types,
-  categories) can be converted opportunistically whenever touched; the Order-editor pilot is its own slice.
+- **Reaffirmed deferred 2026-07-20 (Marcelo):** keep deferred + guardrailed to protect the focus on
+  validation + feature introduction. **Standing policy = convert-on-touch:** when you edit an existing
+  hand-rolled editor for other work, convert THAT surface to the MJ form host as part of the change
+  (not a separate slice). New editors are forms from the start (CLAUDE.md rule 7).
+- **Scoped cost (for when a slice IS scheduled):** ~2–3 days total for full orders migration — the ~7
+  easy/composite editors (product-types · payment-providers · payment-terms-types · categories ·
+  subscription-plans · product-workshop · category-workshop) ≈ ~1½ days via `openBizDetail`; the
+  **order-editor pilot** (tabbed header + child lines + confirm) ≈ 1–2 days as its own slice. Exclude
+  payment-entry + all workflow surfaces (kanban/console/tree/worklist) — not entity forms. Accounting ≈ 0
+  (already forms-first; only the CoA curated editor is an optional ~½-day swap).
+- **Revisit trigger:** convert-on-touch handles most surfaces incrementally; a dedicated slice is only
+  needed for the order-editor pilot (schedule when UI focus returns / at S4).
