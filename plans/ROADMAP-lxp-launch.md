@@ -13,8 +13,8 @@
 |---|---|---|---|---|
 | S0a | V0 orders spine validation (cheap tiers) | IN PROGRESS (accounting agent testing wave) | agent ledgers | T36 ✅ answered (per-run seed) |
 | S0b | V0 accounting spine validation (cheap tiers) | IN PROGRESS (same wave) | agent ledgers | — |
-| S1 | V1.1+V1.2 order lineage & product ownership (orders schema) | QUEUED — parallel w/ S2 | to mint | S0 baseline |
-| S2 | V1.3+V1.4 batch rework + posting date (+ V1.6 approver-enforcement rider) | QUEUED — parallel w/ S1 | to mint | S0 baseline |
+| S1 | V1.1+V1.2 order lineage & product ownership (orders schema) | PLAN MINTED (Draft, 2026-07-20) | `action-plans/ActionPlan - S1 Order lineage and product ownership.md` | S0 orders-spine close |
+| S2 | V1.3+V1.4 batch rework + posting date (+ V1.6 approver-enforcement rider) | PLAN MINTED (Draft, 2026-07-20) | acct `action-plans/ActionPlan - S2 Batch rework, posting date, approver enforcement.md` | S0 accounting-spine close |
 | S3 | V1.5 forward-dated rev-rec (spans both repos) | QUEUED | to mint | S1+S2 |
 | S4 | Full GUI validation pass (section-by-section, ONCE, post-structural) | QUEUED | to mint | S3 |
 | S5+ | V2 LH4I feature slices (per roadmap rows; entitlement read path pulled early) | QUEUED | to mint per row | gates per row |
@@ -22,6 +22,9 @@
 Sequencing rule (Marcelo 2026-07-18): cheap tiers validate before AND after structural changes
 (nearly free); GUI validates ONCE, after them (expensive, weakest agent skill). GUI development
 beyond validation is deferred to feature-enabling changes only.
+Validation is VERTICAL too (Marcelo 2026-07-20): S0 closes per feature-vertical (lifecycle ·
+booking · A/R · payments · batching · entitlements), each with its own demo artifact — never one
+monolithic "ran everything" report.
 
 ## The premise: we start from (approximately) zero VALIDATION
 
