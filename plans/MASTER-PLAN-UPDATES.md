@@ -107,6 +107,9 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
 - **Status:** Accepted (Marcelo review 2026-07-14; v3 addendum folded 2026-07-17).
 
 ## UPD-7 — Order↔JE linkage becomes a junction entity (`OrderJournalEntry`) (2026-07-14)
+
+> ⚠ **SUPERSEDED by MOD-15 (2026-07-21, Amith):** the junction is ELIMINATED — linkage is
+> `OrderLine.JournalEntryID` (nullable FK, one JE per line). Text below retained for history.
 - **Amends:** MOD-11's "the single `Order.JournalEntryID` column is reworked" — this is the ruled
   shape. Intent unchanged (orders trace to their JEs); mechanism refined for one-JE-per-company.
 - **Change:** a junction entity (`OrderJournalEntry`: OrderID + JournalEntryID, real FK

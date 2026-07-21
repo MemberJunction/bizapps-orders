@@ -18,6 +18,7 @@
 | Ask order | Q | Ask | Status |
 |---|---|---|---|
 | 1 | [Q22](#q22) | LH4I launch timing — AGENDA ITEM for Monday's Robert meeting (2026-07-20), not the doc | OPEN — proceeding ★HIGH |
+| 2 | [Q25](#q25) | Robert+Jeremy — re-close seller-of-record: Amith's per-line-company AR + payment-side IC supersedes MOD-14 (building Amith's shape) | OPEN — proceeding ★HIGH |
 | — | [Q23](#q23) | ANSWERED 2026-07-20 (written doc: role-GRANT visibility, not auto-involvement; owner-scoped RLS) | ANSWERED |
 | 3 | [Q10](#q10) | Marcelo — branch strategy + diverged main (internal) | OPEN |
 | — | [Q24](#q24) | category model — ANSWERED 2026-07-21 (Robert confirmed per-company rows; "crossing them, no") | ANSWERED |
@@ -306,4 +307,30 @@ queryable surface for "which questions touch feature X".)*
 - **Additional context (for a verifying agent):** S1 plan P1 (the un-held bullet); UPD-5 item 1
   (accounting); `meetings/2026-07-20-Robert-q23-q38-q39-answers.md` §Q38.3 vs the meeting
   transcript ~13:00.
+- **Answer:** _(pending)_
+
+<a id="q25"></a>
+### Q25 · Seller-of-record vs per-line-company AR — re-close with Robert/Jeremy after Amith's booking rework — review: Robert + Jeremy — added 2026-07-21
+- **Status:** OPEN — proceeding (building Amith's shape now)
+- **Requested reviewer:** Robert (his 2026-07-20 ruling is superseded) + Jeremy (his finance
+  co-sign was still pending on the old shape)
+- **Features:** ORD-E (booking JEs), ORD-J.1 (multi-company orders), ACC intercompany (MOD-5 family)
+- **Proposed solution (what we are implementing):** Amith's 2026-07-21 architecture (orders
+  MOD-15): every order line books its OWN single-company JE — Dr the LINE company's AR, Cr its
+  revenue/DefRev — and **orders create NO due-to/due-from; intercompany starts on the PAYMENT
+  side** ("you don't know about intercompany anything until you get cash"). This replaces
+  Robert's 2026-07-20 seller-of-record booking shape (owner holds the FULL customer AR; mirrored
+  IC legs at booking; MOD-14). The customer-facing invoice can still present as one document
+  (the order's JE is a virtual aggregation), but the LEDGER holds per-line-company AR until
+  payment allocates cash and raises the IC legs.
+- **The question for Robert/Jeremy:** (1) Confirm you're aligned with booking-side AR sitting
+  with each line's company and IC deferred to payment (Amith's model) — or does the
+  seller-of-record concern (one receivable, sisters never chase the customer) need the payment
+  engine to REALLOCATE at capture rather than at booking? (2) Jeremy: does the tax-remit
+  position (selling company collects/remits) survive unchanged under per-line-company AR?
+- **Context to share:** orders MOD-15 vs MOD-14 (superseded, retained text); the 2026-07-21
+  Amith meeting (t-shirt/Yeti walkthrough ~minute 4–8); acct Q39's frozen answer.
+- **What motivates this now:** MOD-14 was priced into the BAO date and flagged as real scope
+  growth — Amith's model shrinks booking scope (no IC legs, no IntercompanyFlow at booking) and
+  moves that scope to payments; the roadmap V1.7 row needs re-costing either way.
 - **Answer:** _(pending)_

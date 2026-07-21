@@ -147,6 +147,10 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
 - **Status:** Accepted — enforce in the Order entity server's transition validation.
 
 ## MOD-11 — Booking emits ONE JE PER COMPANY (restores §5/§7; supersedes the as-built multi-company JE) (2026-07-13)
+
+> ⚠ **SUPERSEDED by MOD-15 (2026-07-21, Amith):** granularity moves from per-COMPANY to per
+> ORDER LINE — one JE per line, always. Single-company-per-JE remains true by construction.
+> Text below retained for history.
 - **Supersedes:** the AS-BUILT single multi-company booking JE (Amith's 2026-07-02 CH-2 ruling, recorded
   in the amendment/baseline — never a master-plan text change) and MOD-1's single-`JournalEntryID`
   idempotency-guard mechanics. **RESTORES the master plan's original design:** §5's per-company JE
@@ -204,6 +208,11 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
 - **Status:** Accepted (the lean is the plan unless Amith/Robert object at the A7 date sitting).
 
 ## MOD-14 — Booking JE shape: SELLER-OF-RECORD AR + mirrored intercompany legs at booking (2026-07-20)
+
+> ⚠ **SUPERSEDED by MOD-15 (2026-07-21, Amith) on the booking shape:** each line's AR books to
+> the LINE's company and orders create NO due-to/due-from — intercompany moves to the PAYMENT
+> side. Robert/Jeremy re-closure of the seller-of-record thread rides orders Q25. Text below
+> retained for history.
 - **Supersedes:** the as-built per-company booking draft (each company Dr own-AR / Cr own-revenue,
   AM-4's per-company self-balance) on the AR side. MOD-11's one-JE-per-company SPLIT stands; what
   changes is what each JE contains.
@@ -236,3 +245,53 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
 - **Status:** Accepted — engine rework rides roadmap **V1.7 / slice S3** (pairs with the rev-rec
   emission rework; the intercompany per-pair accounts must exist for the legs — provisioning
   detail lands with the slice).
+
+## MOD-15 — Amith booking architecture: ONE JE PER ORDER LINE; `OrderLine.JournalEntryID`; intercompany moves to the PAYMENT side; single locked status (2026-07-21)
+- **Supersedes:** MOD-11's one-JE-per-COMPANY split (granularity moves to the LINE) · UPD-7's
+  `OrderJournalEntry` junction (eliminated — "you don't know which journal entry ties to which
+  order line," and it's an unnecessary table) · **MOD-14's mirrored intercompany legs AT BOOKING**
+  (deferred to the payment side — see the ⚠ flag below) · the Confirmed→Posted two-step (collapsed).
+- **Change (Amith's architecture, 2026-07-21 review — Marcelo endorsed; this is the build basis):**
+  1. **Every order line generates its OWN journal entry — always.** Even multiple lines of the
+     same company stay separate JEs ("my recommendation would probably be to always have separate
+     journal entries per order line — it's just simpler"). The ORDER's journal entry is a
+     **virtual concept**: a UI aggregation of the line JEs; batching nets them later anyway.
+  2. **Linkage = `OrderLine.JournalEntryID`** — a nullable FK on OrderLine, set when booking
+     creates the line's JE. The `OrderJournalEntry` junction is DROPPED; `Order` itself never
+     carries a JournalEntryID. Full per-line traceability by construction. (Cross-app FK hardness
+     unchanged: soft until CodeGen include-mode ships — acct Q42, approved.)
+  3. **Line JE shape (single-company by construction):** Dr the LINE company's AR (net) ·
+     Cr the line company's Sales (gross) at the resolved role accounts; **discounts via the
+     CONTRA-account pattern** — Dr Sales-Discounts (new GLAccountRole) for the discount; if no
+     Sales-Discounts account is linked, net the discount into the sales credit. DefRev-typed
+     products credit the Deferred-Revenue role instead of Sales. (Returns & Allowances role added
+     alongside; coupon/campaign-code DIMENSIONS acknowledged as coming — deferred, Amith:
+     "we'll unfortunately have to add it… come back to that.")
+  4. **⚠ Intercompany: orders creates NO due-to/due-from.** "You don't know about intercompany
+     anything until you get cash" — IC legs and settlement mechanics move to the PAYMENT side.
+     Each line's AR sits with the LINE's company at booking. **This supersedes MOD-14's
+     seller-of-record-holds-ALL-AR booking shape (Robert 2026-07-20, Jeremy co-sign pending)** —
+     re-closure with Robert/Jeremy filed as [Q25](QUESTIONS.md#q25); we build Amith's
+     shape now.
+  5. **One locked status:** Confirmed and Posted collapse into a single status at which the order
+     locks and books ("we can change that to just be one status… totally fine"). Lifecycle DAG +
+     triggers + engine gates simplify accordingly.
+  6. **Resolver + cache placement:** the product→GL-account resolver (walk product → category
+     tree → company defaults) + a lazy resolved-accounts map (product ID → {role → account})
+     live in **OrdersEngineBase** (browser-safe — the UI shows resolved accounts on product
+     setup); booking consumes it server-side.
+  7. **Booking mechanics (the encapsulation pattern):** a new **`OrderJournalEntryFactory`**
+     (helper class, orders server package) takes an order, iterates lines (parallelizable),
+     generates each line JE via the accounting engine. The **server-only Order entity subclass
+     overrides `Save()`**: on transition into the locked status — outer transaction →
+     `super.Save()` → factory generates line JEs (accounting engine's own JE transactions
+     nested inside) → commit; any failure rolls back everything (an order in the locked status
+     without its JEs is invalid state). Provider discipline: the transaction path uses the
+     entity's provider — never a fresh global `Metadata` connection. The order object gains a
+     **`Lines` array of unsaved OrderLine entities + a `Validate()` override** (≥1 line;
+     children validate) so the entity — not only the engine — guards its own invariants.
+     (Moving the same encapsulation into the JE entity object is FUTURE — Amith explicitly
+     deferred it.)
+- **Why / source:** `meetings/2026-07-21 Accounting Orders Review - Amith & Marcelo.md`;
+  executed from `action-plans/ActionPlan - Amith build direction (per-line JEs, factory, schema cleanup).md`.
+- **Status:** Accepted — the active build basis.

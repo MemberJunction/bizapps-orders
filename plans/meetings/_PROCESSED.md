@@ -71,3 +71,10 @@ Orders-relevant: **Q24 category model CONFIRMED by Robert** (per-company categor
 "five companies, 5 t-shirt categories… crossing them, no"; name-collapse display stands;
 S1 proceeds). Acct-side closures (Q42 include-mode approved, Q41 direction) ledgered in the
 accounting repo's _PROCESSED.
+
+### 2026-07-21 Accounting Orders Review - Amith & Marcelo.md — ✅ PROCESSED 2026-07-21 (Task 130a)
+See the accounting repo's _PROCESSED entry for the full landing list. Orders-side: MOD-15
+minted (per-line JEs, OrderLine.JournalEntryID, IC→payments, single locked status) ·
+MOD-11/MOD-14/UPD-7 superseded w/ markers · Q25 ★HIGH minted (Robert+Jeremy seller-of-record
+re-closure; proceeding on Amith's shape) · roadmap V1.2/V1.7 reshaped · the Active build plan:
+`action-plans/ActionPlan - Amith build direction (per-line JEs, factory, schema cleanup).md`.

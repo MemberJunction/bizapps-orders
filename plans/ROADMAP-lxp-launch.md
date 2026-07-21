@@ -70,12 +70,12 @@ do them BEFORE building more on top.*
 | # | What | Ruling | Notes |
 |---|---|---|---|
 | V1.1 | `Order.CompanyID` + company renames + **line-company derivation from `Product.CompanyID`** + `ProductCategory.CompanyID` (company-owned categories) + resolution walk re-anchored + same-company link enforcement | MOD-3 rev-2 + UPD-5 rev. (Q38 ANSWERED 2026-07-20) | S1 amendment; tripwire stays; ⚠ resolution deep dive backlogged |
-| V1.2 | `OrderJournalEntry` junction (real FKs) replaces `Order.JournalEntryID`; idempotency = order-already-booked | UPD-7 / MOD-11 | |
+| V1.2 | ⚠ RESHAPED by MOD-15 (Amith 2026-07-21): junction ELIMINATED — `OrderLine.JournalEntryID` (one JE per LINE); idempotency = line-already-booked | MOD-15 (supersedes UPD-7 / MOD-11) | executes from `ActionPlan - Amith build direction…` |
 | V1.3 | Single-company batches: batch header CompanyID, line company dropped, triggers folded, `buildBatch(companyId, dateFilter)` | ACC MOD-15 | Jeremy's 2 conditions surface in config/UI |
 | V1.4 | Batch `PostingDate` (singular, accountant-set; one aggregated JE per batch; netting key GLAccount × dims) + closed-period HOLD/flag exceptions | ACC MOD-16 (rev. — Amith model, Q37) | |
 | V1.5 | Forward-dated rev-rec JEs replace ScheduledJournalEntry (+ default cutoff=today filter; correcting-order netting) | MOD-12 / ACC MOD-17 | retires the G.3/G.4 + ACC E.1–E.5 as-built |
 | V1.6 | Approval-decider enforcement: `recordDecision` requires Accounting Approver for the batch's company (minimal `UserCompanyRole` table) | Q6/Q22 answers | REQUIRED "before anything beyond dev" — Robert. Full RLS stays later (K.2) |
-| V1.7 | Booking JE shape: seller-of-record AR + mirrored IC legs at booking + `IntercompanyFlow` (pulled forward) + NEW Intercompany AR/AP roles + per-affiliate (entity x counterparty) routing decision | MOD-14 (ext. by Robert written answers) | rides slice S3; ⚠ REAL SCOPE GROWTH — price into the BAO date (Robert's own flag) |
+| V1.7 | ⚠ RESHAPED by MOD-15 (Amith 2026-07-21): booking books per-line-company AR with NO IC legs — MOD-14's seller-of-record/IC-at-booking scope moves to the PAYMENT side (Q25 re-closure w/ Robert+Jeremy riding). Booking scope SHRINKS; payments slice grows — re-cost the BAO date | MOD-15 (supersedes MOD-14 booking shape) | IC design lands with the payments work, not S3 booking |
 
 **Exit gate:** V0's spine harnesses re-run green ON the new shape (downstream re-run discipline) +
 a delta demo (multi-company order → per-company JEs → per-company batches → per-company approvals).
