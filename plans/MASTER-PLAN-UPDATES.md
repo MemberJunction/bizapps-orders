@@ -231,3 +231,18 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
   (index-limited) sortable/filterable columns · table-to-edge density OK with kept hierarchy.
   Full text: accounting UPD-6. Source: `meetings/2026-07-20 - Accounting UI Review - Matt and.md`.
 - **Status:** Accepted.
+
+## UPD-14 — View/edit UX unification (mirror of accounting UPD-7) (2026-07-21)
+- **Amends:** UPD-11 (refines — intent unchanged).
+- **Change:** the three standing rules of accounting UPD-7 apply app-wide: (1) single-record
+  surface → MJ form host via `openBizDetail`; process surface → workspace-card; (2) state-derived
+  `EditabilityPolicy` mirroring the DB triggers (order/payment 51001-51005 — line financials
+  freeze at Confirmed, `FulfillmentStatus` carve-out; payment financials freeze at Captured);
+  (3) one company-filter authority per surface (browse = global scope; workspace = local
+  criteria, scope-seeded). Orders specifics: the **order editor is the RecordTab pilot** (the
+  entity form hosted inside the workspace tab, policy-driven footer, UPD-13 red-dot tabs);
+  `all-orders` adopts the global-scope rule the moment S1 lands `Order.CompanyID` (S1 checklist
+  row). Full design: accounting `action-plans/ActionPlan - UI: Unified view-edit primitives,
+  forms boundary, scope model.md`.
+- **Why / source:** as accounting UPD-7 (Marcelo-delegated technical determination, 2026-07-21).
+- **Status:** Accepted.
