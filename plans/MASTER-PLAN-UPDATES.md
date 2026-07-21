@@ -234,15 +234,18 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
 
 ## UPD-14 — View/edit UX unification (mirror of accounting UPD-7) (2026-07-21)
 - **Amends:** UPD-11 (refines — intent unchanged).
-- **Change:** the three standing rules of accounting UPD-7 apply app-wide: (1) single-record
-  surface → MJ form host via `openBizDetail`; process surface → workspace-card; (2) state-derived
-  `EditabilityPolicy` mirroring the DB triggers (order/payment 51001-51005 — line financials
-  freeze at Confirmed, `FulfillmentStatus` carve-out; payment financials freeze at Captured);
-  (3) one company-filter authority per surface (browse = global scope; workspace = local
-  criteria, scope-seeded). Orders specifics: the **order editor is the RecordTab pilot** (the
-  entity form hosted inside the workspace tab, policy-driven footer, UPD-13 red-dot tabs);
-  `all-orders` adopts the global-scope rule the moment S1 lands `Order.CompanyID` (S1 checklist
-  row). Full design: accounting `action-plans/ActionPlan - UI: Unified view-edit primitives,
-  forms boundary, scope model.md`.
-- **Why / source:** as accounting UPD-7 (Marcelo-delegated technical determination, 2026-07-21).
-- **Status:** Accepted.
+- **Change:** accounting UPD-7's rules apply app-wide (read it for the full text): (1) the MJ
+  entity form (via `openBizDetail`) = simple one-record edits + detail viewing (children
+  visible, not edited inline); the **workspace = creation + advanced edits**; process surfaces
+  are always workspaces; pop-out opens an existing order/payment in its workspace. (2) Edit
+  gating rides what MJ ships — NO invented policy system/entities: DB triggers
+  (51001-51005 — line financials freeze at Confirmed w/ the `FulfillmentStatus` carve-out;
+  payment financials freeze at Captured) stay the enforcement authority; the `*Extended` forms
+  set `EditMode` from status + show real state verbs. (3) The company-scope model is
+  **withdrawn pending Marcelo's dedicated scope planning pass** (his model: scoping makes
+  unselected companies not exist in the frontend — options and all — not mere query filters).
+  Orders specifics: the **order editor remains the workspace pilot** (UPD-13 red-dot tabs).
+  Full design: accounting `action-plans/ActionPlan - UI: Unified view-edit primitives, forms
+  boundary, scope model.md`.
+- **Why / source:** as accounting UPD-7 (research-verified + Marcelo's 2026-07-21 rulings).
+- **Status:** Accepted (items 1-2) · item 3 Withdrawn pending the scope planning pass.
