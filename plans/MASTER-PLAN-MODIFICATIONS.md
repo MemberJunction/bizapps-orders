@@ -38,11 +38,14 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
   (cross-company visibility = [Q23](QUESTIONS.md#q23)); it does **NOT** drive GL resolution and
   does NOT override line-level revenue ownership.
   (b) **The line's company derives from the PRODUCT** — `Product.CompanyID` (required NOT NULL;
-  the company listed ON the product is the source of truth — CONFIRMED as standard practice:
-  ERPs carry company on the item record; deriving company from a connected account is not an
-  accounting practice and is **struck entirely**). The resolved account MUST belong to the same
-  company — the locked invariant + enforcement tiers are accounting **UPD-5** (company-scoped
-  mapping, per-company category routes, engine + trigger enforcement).
+  confirmed in Robert's written answers 2026-07-20 — the code's nullable `OwningCompanyID` flips
+  with S1; UX auto-populates when only one company is in play). The resolved account MUST belong
+  to the same company — invariant + enforcement tiers per accounting UPD-5.
+  (b2, rev-3 — Robert's written answers 2026-07-20): **`OrderLine.CompanyID` IS added** as a
+  **denormalized copy of `Product.CompanyID` stamped at line save** — NOT an RLS need (visibility
+  is owner-scoped, Q23 revised answer) but a performance/reporting column: JE per-company
+  splitting and per-company reporting read line company hot, and it removes the last
+  account-derivation dependency. Revises this entry's earlier no-line-company stance.
   (c) **Naming ruled schema-wide:** `Product.OwningCompanyID` and `Subscription.OwningCompanyID`
   rename to plain **`CompanyID`**; role-qualified names stay only where the role is the point
   (`Payment.ReceivingCompanyID`, etc.).
@@ -215,6 +218,15 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
   resolution anchors to the PRODUCT's company; **AR/cash/due-to-from anchor to the ORDER-owning
   company** (seller of record). Tax remit: selling company (Robert; Jeremy verifies nexus via
   acct Q19).
+- **Account mechanics (Robert's written answers, 2026-07-20 — canonical worked example in
+  `meetings/2026-07-20-Robert-q23-q38-q39-answers.md`):** the IC link is one account-type pair —
+  **Intercompany AR (Due-From)** on each sister · **Intercompany AP (Due-To)** on the owner, per
+  counterparty — affiliate CONTROL accounts, separate from trade AR/AP; settlement moves only
+  Cash + this pair, never revenue. Requires **two new GLAccountRoles** (+ Sales Tax Payable if
+  tax launches) and a **per-affiliate resolution key (entity x counterparty)** — richer than
+  ResolveAccount's (product x role x company); decide the routing shape BEFORE building legs.
+  **`IntercompanyFlow` pulls FORWARD from deferred to the launch model** — a real scope item to
+  surface in the BAO-date discussion. No COGS/inventory in v1 (digital goods).
 - **Why / source:** `meetings/2026-07-20 - Accounting Meeting - Marcelo robert Ian.md`; acct Q39
   answer; Marcelo: "when I write the order creation system, it's got to do that."
 - **Status:** Accepted — engine rework rides roadmap **V1.7 / slice S3** (pairs with the rev-rec
