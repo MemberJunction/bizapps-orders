@@ -131,7 +131,7 @@
 | ID | Feature | Status | Source |
 |---|---|---|---|
 | J.1 | Multi-company orders (per-line company via resolved account; receiving company on Payment) | Shipped | BO-D5 intent + MOD-3/MOD-11 |
-| J.2 | IntercompanyFlow records + Due-From/Due-To leg generation | Deferred — Payments maturity + accounting `IntercompanyRelationship` | BO-D6; feature plan Deferred |
+| J.2 | IntercompanyFlow records + Due-From/Due-To leg generation at BOOKING (+ Intercompany AR/AP GLAccountRoles, per-affiliate routing) | Planned — PULLED FORWARD to the launch model (Robert written answers 2026-07-20); rides V1.7/S3 | BO-D6; MOD-14 |
 
 ## K. Tax
 

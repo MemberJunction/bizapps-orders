@@ -58,3 +58,10 @@ Orders landings: **MOD-14** (seller-of-record booking JE shape; V1.7/S3) · Q23 
 UPD-13 (Matt UI rulings mirror) · S1 plan scope updated (ProductCategory.CompanyID; revised
 hard-blocks) · fulfillment-groups BACKLOG row · routing row updated. Accounting-side landings in
 that repo's _PROCESSED.md.
+
+### 2026-07-20-Robert-q23-q38-q39-answers.md — ✅ PROCESSED 2026-07-20 (Task 119a)
+Orders landings: MOD-3 rev-3 (OrderLine.CompanyID denormalized) · Q23 answer landed+REVISED
+(role-grant visibility, owner-scoped one-leg RLS; the 116a in-meeting answer had silently
+no-opped — caught and fixed here) · MOD-14 extended (IC AR/AP roles, per-affiliate routing,
+IntercompanyFlow pulled forward — BAO-date scope flag) · J.2 pulled forward · V1.7 expanded ·
+S1 updated (category bullet ⏸ HELD on the meeting-vs-written contradiction).

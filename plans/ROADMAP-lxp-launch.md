@@ -75,7 +75,7 @@ do them BEFORE building more on top.*
 | V1.4 | Batch `PostingDate` (singular, accountant-set; one aggregated JE per batch; netting key GLAccount × dims) + closed-period HOLD/flag exceptions | ACC MOD-16 (rev. — Amith model, Q37) | |
 | V1.5 | Forward-dated rev-rec JEs replace ScheduledJournalEntry (+ default cutoff=today filter; correcting-order netting) | MOD-12 / ACC MOD-17 | retires the G.3/G.4 + ACC E.1–E.5 as-built |
 | V1.6 | Approval-decider enforcement: `recordDecision` requires Accounting Approver for the batch's company (minimal `UserCompanyRole` table) | Q6/Q22 answers | REQUIRED "before anything beyond dev" — Robert. Full RLS stays later (K.2) |
-| V1.7 | Booking JE shape: seller-of-record AR + mirrored Due-To/Due-From legs at booking (+ per-pair account provisioning) | MOD-14 / acct MOD-5 rev. / Q39 answer | rides slice S3 (pairs with rev-rec emission) |
+| V1.7 | Booking JE shape: seller-of-record AR + mirrored IC legs at booking + `IntercompanyFlow` (pulled forward) + NEW Intercompany AR/AP roles + per-affiliate (entity x counterparty) routing decision | MOD-14 (ext. by Robert written answers) | rides slice S3; ⚠ REAL SCOPE GROWTH — price into the BAO date (Robert's own flag) |
 
 **Exit gate:** V0's spine harnesses re-run green ON the new shape (downstream re-run discipline) +
 a delta demo (multi-company order → per-company JEs → per-company batches → per-company approvals).

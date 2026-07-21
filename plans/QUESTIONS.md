@@ -18,7 +18,7 @@
 | Ask order | Q | Ask | Status |
 |---|---|---|---|
 | 1 | [Q22](#q22) | LH4I launch timing — AGENDA ITEM for Monday's Robert meeting (2026-07-20), not the doc | OPEN — proceeding ★HIGH |
-| — | [Q23](#q23) | ANSWERED 2026-07-20 (involved companies SEE; write owner-scoped; visibility configurable later) | ANSWERED |
+| — | [Q23](#q23) | ANSWERED 2026-07-20 (written doc: role-GRANT visibility, not auto-involvement; owner-scoped RLS) | ANSWERED |
 | 3 | [Q10](#q10) | Marcelo — branch strategy + diverged main (internal) | OPEN |
 | — | [Q21](#q21) | tax structure — ANSWERED (Option B durable shape; engine = buy; finance calls → Q22) | ANSWERED |
 | — | [Q2](#q2) | owning-company field — ANSWERED (add Order.CompanyID; resolution rung; renames) | ANSWERED |
@@ -260,4 +260,14 @@ queryable surface for "which questions touch feature X".)*
   story should be designed against the same shape.
 - **Additional context (for a verifying agent):** orders MOD-3/MOD-11; acct MOD-15;
   `OrdersEngine.ResolveAccount`.
-- **Answer:** _(pending)_
+- **Answer (Robert, 2026-07-20 — his WRITTEN answers doc supersedes the looser in-meeting
+  version on point 1):** (1) **Visibility is ROLE-GRANT-DRIVEN, not auto-involvement** — a user
+  sees an order only when their `UserCompanyRole` grants include the order's OWNING company;
+  sees a product only when granted that product's company. So adding B's product to an order
+  requires B-product view permission, and B's users do NOT automatically see A's order off a
+  shared line (supersedes this entry's involvement-based proposal). BCHQ order-desk users get
+  all companies (deployment config, not code). Accounting drill-through survives regardless (the
+  sister's revenue is in her own JE). (2) WRITE stays owner-company-scoped. (3) RLS filter =
+  owner-scoped ONE leg (no involvement EXISTS clause); `OrderLine.CompanyID` is NOT an RLS need
+  but IS added as a denormalized perf/reporting column (MOD-3 rev-3). Routed onward: MOD-3
+  rev-3 · K.2/A2 filter shape · S1.

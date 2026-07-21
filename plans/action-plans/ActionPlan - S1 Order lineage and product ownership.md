@@ -25,16 +25,20 @@ invariant at creation time (engine + trigger floor). Nothing else rides along.
 **P1 — Schema (migration + app codegen).**
 `Order.CompanyID` (backfill: unanimous line-product company, else the seed/demo default — record
 choice in Decisions taken; then NOT NULL) · `Product.OwningCompanyID` → `CompanyID` NOT NULL ·
-`Subscription.OwningCompanyID` → `CompanyID` · **`ProductCategory.CompanyID` NOT NULL (added
-2026-07-20 — categories are COMPANY-OWNED, Robert ruling; backfill: the unanimous company of the
-category's products, flag mixed trees for manual split)** · new `OrderJournalEntry` (OrderID +
-JournalEntryID, real FKs, unique pair) · `Order.JournalEntryID`: keep as DEPRECATED read-only
+`Subscription.OwningCompanyID` → `CompanyID` · **⏸ HOLD — category company model** (Robert's meeting ruling = company-owned
+`ProductCategory.CompanyID`; his written answers doc the same evening = shared-label +
+per-company routes — contradiction awaiting Marcelo's one-line pick; build the rest of P1
+without this item) · **`OrderLine.CompanyID`** (denormalized from
+`Product.CompanyID`, stamped at line save — perf/reporting column per MOD-3 rev-3, not RLS) ·
+new `OrderJournalEntry` (OrderID + JournalEntryID, real FKs, unique pair) · `Order.JournalEntryID`: keep as DEPRECATED read-only
 during S1 (stamped with the owning-company JE) so the UI tab doesn't break before S4 — removal is
 an S4-or-later item.
 *Demo artifact:* schema-preflight extension green + a one-page "what you can now record" note.
 
 **P2 — Engine.**
-Line company = the line's product's `CompanyID` (derivation-from-resolved-account deleted) ·
+Line company = the line's product's `CompanyID`, stamped onto `OrderLine.CompanyID` at line save
+(derivation-from-resolved-account deleted) · UX auto-populates `Product.CompanyID` when only one
+company is in play (written Q38 answer) ·
 booking splits JEs by product company (MOD-11 basis swap) · junction rows written in the Confirm
 unit-of-work; idempotency = "order already booked" (any-junction-row + ConfirmedAt) · resolution
 walk re-anchored: product link → the product-company's OWN category tree → PRODUCT-company
