@@ -110,7 +110,16 @@ text.** Convention: `~/MJDev/shared-plans/repo-planning-system.md` §3.1.
 - **Amends:** MOD-11's "the single `Order.JournalEntryID` column is reworked" — this is the ruled
   shape. Intent unchanged (orders trace to their JEs); mechanism refined for one-JE-per-company.
 - **Change:** a junction entity (`OrderJournalEntry`: OrderID + JournalEntryID, real FK
-  constraints) replaces the single `Order.JournalEntryID` field. JEs continue to reference the
+  constraints) replaces the single `Order.JournalEntryID` field.
+  **FK-hardness note (Marcelo ask, resolved 2026-07-21):** MJ-core's own OpenApp policy
+  (`packages/OpenApp/PUBLISH_NO_BREAK_POLICY.md`) EXPECTS downstream→upstream cross-app FKs
+  ("the cross-app foreign-key case is the motivating one for this policy"; dependency-order
+  install makes them safe) — so a hard FK from orders into accounting is doctrinally fine. The
+  "soft cross-app refs" rule is OUR app convention only, and its one live practical blocker is
+  the open MJ CodeGen bug (MJ-UPSTREAM: a foreign FK INTO a schema pollutes that app's codegen —
+  accounting is codegen-safe today precisely because orders' refs are soft). Ruling: **ship
+  JournalEntryID SOFT + the unique pair now; upgrade to a hard FK when the codegen bug fixes
+  upstream** (tracked in ~/MJDev/MJ-UPSTREAM.md). JEs continue to reference the
   order via the soft origin key (accounting side); the junction gives orders-side FK-integrity
   navigation to ALL of a multi-company order's JEs. Idempotency guard = "order already booked"
   (ConfirmedAt/any-junction-row check), per MOD-11.
