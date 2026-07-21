@@ -25,10 +25,9 @@ invariant at creation time (engine + trigger floor). Nothing else rides along.
 **P1 — Schema (migration + app codegen).**
 `Order.CompanyID` (backfill: unanimous line-product company, else the seed/demo default — record
 choice in Decisions taken; then NOT NULL) · `Product.OwningCompanyID` → `CompanyID` NOT NULL ·
-`Subscription.OwningCompanyID` → `CompanyID` · **⏸ HOLD — category company model** (Robert's meeting ruling = company-owned
-`ProductCategory.CompanyID`; his written answers doc the same evening = shared-label +
-per-company routes — contradiction awaiting Marcelo's one-line pick; build the rest of P1
-without this item) · **`OrderLine.CompanyID`** (denormalized from
+`Subscription.OwningCompanyID` → `CompanyID` · **`ProductCategory.CompanyID` NOT NULL** (UN-HELD 2026-07-21 — Marcelo ruled
+per-company category rows, orders Q24; identical-name display-collapse is UI-later; backfill:
+unanimous company of the category's products, flag mixed trees) · **`OrderLine.CompanyID`** (denormalized from
 `Product.CompanyID`, stamped at line save — perf/reporting column per MOD-3 rev-3, not RLS) ·
 new `OrderJournalEntry` (OrderID + JournalEntryID, real FKs, unique pair) · `Order.JournalEntryID`: keep as DEPRECATED read-only
 during S1 (stamped with the owning-company JE) so the UI tab doesn't break before S4 — removal is

@@ -20,6 +20,7 @@
 | 1 | [Q22](#q22) | LH4I launch timing — AGENDA ITEM for Monday's Robert meeting (2026-07-20), not the doc | OPEN — proceeding ★HIGH |
 | — | [Q23](#q23) | ANSWERED 2026-07-20 (written doc: role-GRANT visibility, not auto-involvement; owner-scoped RLS) | ANSWERED |
 | 3 | [Q10](#q10) | Marcelo — branch strategy + diverged main (internal) | OPEN |
+| 4 | [Q24](#q24) | Robert — category model ruled: per-company rows + display-collapse (confirm) | OPEN — proceeding |
 | — | [Q21](#q21) | tax structure — ANSWERED (Option B durable shape; engine = buy; finance calls → Q22) | ANSWERED |
 | — | [Q2](#q2) | owning-company field — ANSWERED (add Order.CompanyID; resolution rung; renames) | ANSWERED |
 
@@ -271,3 +272,30 @@ queryable surface for "which questions touch feature X".)*
   owner-scoped ONE leg (no involvement EXISTS clause); `OrderLine.CompanyID` is NOT an RLS need
   but IS added as a denormalized perf/reporting column (MOD-3 rev-3). Routed onward: MOD-3
   rev-3 · K.2/A2 filter shape · S1.
+
+<a id="q24"></a>
+### Q24 · Category model RESOLVED: per-company category rows + identical-name display-collapse — review: Robert — added 2026-07-21
+- **Status:** OPEN — proceeding (Marcelo ruling; Robert reviews since his two 2026-07-20 statements
+  differed)
+- **Requested reviewer:** Robert
+- **Features:** ORD-A.2 (ProductCategory), ACC-B (GL mapping), S1 slice
+- **Proposed solution (what we are implementing — Marcelo, 2026-07-21):** **Option 1 — every
+  company owns its own category ROWS** (`ProductCategory.CompanyID` NOT NULL), and the UI
+  **collapses identical names at display time** (one visual "Memberships" entry listing the
+  companies that carry it; pickers scope to the product's company so no verbose "name (company)"
+  noise for single-company users). The rejected alternative was a **category REGISTRY** (shared
+  name table + per-company overrides): simpler naming consistency, but it creates a shared
+  document across companies (permissions complexity), and a category created by one company
+  surfacing for all others is surprising behavior. The permissions angle decides it: company-
+  scoped rows are the only shape that RLS-scopes cleanly with everything else.
+- **Why this dissolves your two statements:** the meeting ruling (company-owned categories) is
+  the SCHEMA; the written doc's "shared label with per-company routes" is the UX — delivered by
+  name-collapse display instead of a shared DB object. Naming consistency comes from soft
+  suggestion (autocomplete over category names visible to the user), not a registry row.
+- **The question for Robert:** confirm, or name a case where a true shared registry object is
+  needed (e.g. cross-company reporting rollups by category NAME — under option 1 those group by
+  name string, not by ID).
+- **Additional context (for a verifying agent):** S1 plan P1 (the un-held bullet); UPD-5 item 1
+  (accounting); `meetings/2026-07-20-Robert-q23-q38-q39-answers.md` §Q38.3 vs the meeting
+  transcript ~13:00.
+- **Answer:** _(pending)_

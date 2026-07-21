@@ -46,6 +46,10 @@ original master-plan text.** Convention: `~/MJDev/shared-plans/repo-planning-sys
   is owner-scoped, Q23 revised answer) but a performance/reporting column: JE per-company
   splitting and per-company reporting read line company hot, and it removes the last
   account-derivation dependency. Revises this entry's earlier no-line-company stance.
+  **Temporal-integrity rationale (Marcelo 2026-07-21):** the stamped copy also preserves history —
+  if a product's ownership ever changes, existing lines still record who owned them at
+  transaction time. The same snapshot-at-transaction mindset applies to accounts (JE lines
+  already snapshot resolved GLAccount IDs).
   (c) **Naming ruled schema-wide:** `Product.OwningCompanyID` and `Subscription.OwningCompanyID`
   rename to plain **`CompanyID`**; role-qualified names stay only where the role is the point
   (`Payment.ReceivingCompanyID`, etc.).
