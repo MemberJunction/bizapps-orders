@@ -46,9 +46,11 @@ Pages: `je-workspace.page` (manual create) · `journal-entry-detail-panel` + JE 
 | Manual JE → CFO approval before batch (C.8) | no gate (honest footnote) | none | ⏸ deferred (DEFERRALS) |
 
 **Gaps / to-do:**
-- [ ] **Drive the create form end-to-end + attempt invalid input** (the missing test class) — confirm submit is truly blocked for each invariant via the UI, not just the unit seam. (T4 today = render-only; no form-submit-with-invalid-input drive.)
-- [ ] **Reverse-eligibility inconsistency** — `journal-entry-detail-panel` allows Reverse on ANY status; the `*Extended` form only shows it for `GLPosted`. Confirm intended; align the two surfaces.
+- [x] **Drive the create form with invalid input** — DONE 2026-07-21. New tier-4 `je-workspace-validation.dom.test` drives the REAL form component through every invalid-input class and asserts the Create button is truly `disabled` in the DOM (empty · no-company · unbalanced · <2 lines · no-date · no-account) AND that valid input ENABLES it, AND that the account picker structurally offers only the company's ACTIVE accounts (cross-company/inactive/unknown unbuildable) + clears on company change. **Both layers green:** FE gate = tier-4 (component) + tier-1 `je-draft` 31/31; BE enforcement = tier-1 EngineBase pipeline 39/39 (UNBALANCED/MULTI_COMPANY/ACCOUNT_UNKNOWN/INACTIVE/MALFORMED) + DB triggers 50001/50019/50025 (documented tier-2) + engine-op-client 8/8 (documented tier-3; live re-run blocked by pre-existing stray test JEs — see finding below). **JE create path = everyday-use validated.**
+- [ ] **Reverse-eligibility inconsistency** — `journal-entry-detail-panel` allows Reverse on ANY status; the `*Extended` form only shows it for `GLPosted`. Confirm intended; align the two surfaces. (Separate JE item — not the create path.)
 - [ ] **`je-console` `EffectiveDate` renders in browser zone** (default `| date`) → off-by-one in negative-offset zones. FE display bug (ISSUES.md, still open). Fix to UTC.
+- ✅ **BE re-run now LIVE-green (2026-07-21):** engine-op-client **8/8** on the real client (unbalanced→UNBALANCED, unknown-key refused, duplicate-debit merge) after clearing the stray JEs (entity-layer delete, sanctioned path — 0 Pending remain). So the JE create path is both-layer LIVE-validated, not just documented.
+- ⚠ **OPEN FINDING — order-to-je teardown gap (harness, not a product bug).** The 2 cleared JEs (`JE-O2JA*` Pending PaymentReceipt) were un-torn-down because the order-to-je teardown deletes JEs by `OrderID`, but a **payment-capture JE has no OrderID** (PaymentID-linked) → missed. Fix: order-to-je-fixture teardown should also clean payment JEs by runTag, so this residual can't recur. (Small orders-harness fix; not done yet.)
 
 ---
 
