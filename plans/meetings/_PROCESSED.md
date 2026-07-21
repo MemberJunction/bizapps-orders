@@ -65,3 +65,9 @@ Orders landings: MOD-3 rev-3 (OrderLine.CompanyID denormalized) · Q23 answer la
 no-opped — caught and fixed here) · MOD-14 extended (IC AR/AP roles, per-affiliate routing,
 IntercompanyFlow pulled forward — BAO-date scope flag) · J.2 pulled forward · V1.7 expanded ·
 S1 updated (category bullet ⏸ HELD on the meeting-vs-written contradiction).
+
+### 2026-07-21 Accounting Meeting- marcelo ian  & robert.md — ✅ PROCESSED 2026-07-21 (Task 129a)
+Orders-relevant: **Q24 category model CONFIRMED by Robert** (per-company category rows —
+"five companies, 5 t-shirt categories… crossing them, no"; name-collapse display stands;
+S1 proceeds). Acct-side closures (Q42 include-mode approved, Q41 direction) ledgered in the
+accounting repo's _PROCESSED.

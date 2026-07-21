@@ -20,7 +20,7 @@
 | 1 | [Q22](#q22) | LH4I launch timing — AGENDA ITEM for Monday's Robert meeting (2026-07-20), not the doc | OPEN — proceeding ★HIGH |
 | — | [Q23](#q23) | ANSWERED 2026-07-20 (written doc: role-GRANT visibility, not auto-involvement; owner-scoped RLS) | ANSWERED |
 | 3 | [Q10](#q10) | Marcelo — branch strategy + diverged main (internal) | OPEN |
-| 4 | [Q24](#q24) | Robert — category model ruled: per-company rows + display-collapse (confirm) | OPEN — proceeding |
+| — | [Q24](#q24) | category model — ANSWERED 2026-07-21 (Robert confirmed per-company rows; "crossing them, no") | ANSWERED |
 | — | [Q21](#q21) | tax structure — ANSWERED (Option B durable shape; engine = buy; finance calls → Q22) | ANSWERED |
 | — | [Q2](#q2) | owning-company field — ANSWERED (add Order.CompanyID; resolution rung; renames) | ANSWERED |
 
@@ -275,8 +275,13 @@ queryable surface for "which questions touch feature X".)*
 
 <a id="q24"></a>
 ### Q24 · Category model RESOLVED: per-company category rows + identical-name display-collapse — review: Robert — added 2026-07-21
-- **Status:** OPEN — proceeding (Marcelo ruling; Robert reviews since his two 2026-07-20 statements
-  differed)
+- **Status:** ANSWERED (Robert, 2026-07-21 meeting) — frozen. **CONFIRMED, unambiguously:**
+  categories are company-level — "even if they have the same t-shirts… five companies, you're
+  going to have 5 t-shirt categories… this idea of crossing them, no. I don't see a lot of
+  value in the share." His 2026-07-20 written "shared" phrasing was doc-interpretation drift,
+  acknowledged in-meeting. Name-collapse display stands (Marcelo, unchallenged). Routed onward:
+  UPD-5 item 1 confirm cleared; S1 proceeds as planned.
+  *(Original status at mint: OPEN — proceeding, Marcelo ruling w/ Robert review pending.)*
 - **Requested reviewer:** Robert
 - **Features:** ORD-A.2 (ProductCategory), ACC-B (GL mapping), S1 slice
 - **Proposed solution (what we are implementing — Marcelo, 2026-07-21, CONFIRMED GO):**
