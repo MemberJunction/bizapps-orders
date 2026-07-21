@@ -279,9 +279,12 @@ queryable surface for "which questions touch feature X".)*
   differed)
 - **Requested reviewer:** Robert
 - **Features:** ORD-A.2 (ProductCategory), ACC-B (GL mapping), S1 slice
-- **Proposed solution (what we are implementing — Marcelo, 2026-07-21):** **Option 1 — every
-  company owns its own category ROWS** (`ProductCategory.CompanyID` NOT NULL), and the UI
-  **collapses identical names at display time** (one visual "Memberships" entry listing the
+- **Proposed solution (what we are implementing — Marcelo, 2026-07-21, CONFIRMED GO):**
+  **Option 1 — every company owns its own category ROWS** (`ProductCategory.CompanyID` NOT
+  NULL). **The load-bearing UX mechanic is GROUPING BY NAME:** wherever categories display
+  across companies, rows with identical names collapse into ONE visual entry (e.g.
+  "Memberships" once, with the supporting companies listed under it) — the shared-label feel
+  without any shared DB object. The UI (one visual "Memberships" entry listing the
   companies that carry it; pickers scope to the product's company so no verbose "name (company)"
   noise for single-company users). The rejected alternative was a **category REGISTRY** (shared
   name table + per-company overrides): simpler naming consistency, but it creates a shared
