@@ -182,3 +182,75 @@ export function buildOrderJournalDrafts(inputs: OrderDraftInputs): JournalEntryD
   }
   return drafts;
 }
+
+// ─── per-line JE assembly (MOD-15, Amith 2026-07-21) ─────────────────────────────
+// The per-COMPANY builder above is the MOD-11 model, retired by MOD-15. Below is the per-LINE
+// model: every order line books its OWN single-company journal entry. Kept in this pure module so
+// it stays offline-unit-testable, exactly like the per-company builder.
+
+/**
+ * One order line, fully resolved for its own single-company JE (MOD-15). All amounts are SIGNED —
+ * negative on reversal (Return / CreditMemo) lines, which book the mirror image.
+ */
+export interface ResolvedLineForJE {
+  /** 0-based index into the order's lines (error messages / traceability). */
+  LineIndex: number;
+  /** The originating OrderLine — the JE it produces is stamped back onto `OrderLine.JournalEntryID`. */
+  OrderLineID: string;
+  /** Signed gross = Qty × UnitPrice (list, before discount). */
+  Gross: number;
+  /** Signed net = gross − discount (what AR is debited). */
+  Net: number;
+  /** Signed trade discount = gross − net (0 when none). */
+  Discount: number;
+  /** The line company's Accounts Receivable account (Dr, net). */
+  ArAccountID: string;
+  /** The resolved revenue account — Sales, or Deferred Revenue for a Deferred product (Cr). */
+  RevenueAccountID: string;
+  /** Contra-revenue "Sales Discounts" account; `null`/absent ⇒ net the discount into revenue (no contra line). */
+  SalesDiscountsAccountID?: string | null;
+  /** The line's single company (from the resolved accounts) — every line JE is single-company by construction. */
+  CompanyID: string;
+  Description?: string;
+}
+
+/**
+ * Assemble ONE line's single-company journal entry (Amith's contra model, worked example
+ * $30 gross / $5 discount → Dr AR 25 · Cr Sales 30 · Dr Sales-Discounts 5):
+ *   Dr  Accounts Receivable   (net)
+ *   Cr  Revenue               (GROSS when a contra applies, else NET)
+ *   Dr  Sales Discounts       (discount)  — ONLY when a contra account is linked AND discount ≠ 0;
+ *                                           otherwise the discount is netted into revenue.
+ * Reversal (negative) lines flip every side together (mirror image). Balanced by construction:
+ * Dr AR + Dr Discounts == Cr Revenue. Throws {@link OrderDraftError} on a zero/NaN net.
+ */
+export function buildLineJournalEntryDraft(line: ResolvedLineForJE, context: OrderJournalContext): JournalEntryDraft {
+  if (line.Net === 0 || Number.isNaN(line.Net)) {
+    throw new OrderDraftError(
+      `Order line ${line.LineIndex} has a zero/NaN net amount (${line.Net}); every booked line must be non-zero.`
+    );
+  }
+  const useContra = !!line.SalesDiscountsAccountID && Math.abs(line.Discount) > 0;
+  const lines: JournalEntryLineDraft[] = [
+    // Dr/Cr AR for the NET the customer owes (arSide flips to Cr on a reversal).
+    { GLAccountID: line.ArAccountID, ...arSide(line.Net), CounterpartyOrganizationID: context.CounterpartyOrganizationID },
+    // Cr/Dr revenue — GROSS when the discount books to its own contra, else NET.
+    {
+      GLAccountID: line.RevenueAccountID,
+      ...revenueSide(useContra ? line.Gross : line.Net),
+      OrderLineID: line.OrderLineID,
+      Description: line.Description,
+    },
+  ];
+  if (useContra) {
+    // Sales Discounts is a debit-natured contra (same sign rule as AR): Dr on a normal sale.
+    lines.push({ GLAccountID: line.SalesDiscountsAccountID!, ...arSide(line.Discount), OrderLineID: line.OrderLineID });
+  }
+  return {
+    EffectiveDate: context.EffectiveDate,
+    EntryType: context.EntryType,
+    OrderID: context.OrderID,
+    Description: context.Description,
+    Lines: lines,
+  };
+}

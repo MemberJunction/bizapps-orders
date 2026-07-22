@@ -44,7 +44,12 @@ import type {
   mjBizAppsOrdersProductPriceEntity,
   mjBizAppsOrdersProductTypeEntity,
 } from '@mj-biz-apps/orders-entities';
-import { buildOrderJournalDrafts, type ResolvedOrderLine } from './orderJournalDraft.js';
+import {
+  buildLineJournalEntryDraft,
+  buildOrderJournalDrafts,
+  type OrderJournalContext,
+  type ResolvedOrderLine,
+} from './orderJournalDraft.js';
 import { computeLineNet } from './orderLifecycle.js';
 import { resolveProductPrice, type ResolvePriceResult } from './pricing.js';
 
@@ -60,6 +65,9 @@ const COMPANIES_ENTITY = 'MJ: Companies';
 const ROLE_ACCOUNTS_RECEIVABLE = 'Accounts Receivable';
 const ROLE_SALES = 'Sales';
 const ROLE_DEFERRED_REVENUE = 'Deferred Revenue';
+const ROLE_CASH = 'Cash';
+const ROLE_SALES_DISCOUNTS = 'Sales Discounts';
+const ROLE_RETURNS_ALLOWANCES = 'Sales Returns and Allowances';
 
 /** A resolved GL account: its ID and (from the account) the company it belongs to. */
 export interface ResolvedAccount {
@@ -68,11 +76,49 @@ export interface ResolvedAccount {
 }
 
 /**
+ * The full role→account map for a single product (Amith 2026-07-21). Every GL-account role the
+ * product can book to, resolved once via the product → category tree → company-default walk and
+ * held as a struct with a NAMED SLOT PER ROLE (Amith preferred this over an array: "we have slots
+ * for each of the possible roles"). A `null` slot is a legitimate "not configured" — e.g. no
+ * `SalesDiscounts` account means discounts net into revenue (the `OrderJournalEntryFactory` rule).
+ *
+ * Consumed by: the per-line `OrderJournalEntryFactory` (B2) and the Products setup UI (§13.3 —
+ * "which accounts will this product use, and do they resolve?"), so both ask exactly what booking asks.
+ */
+export interface ProductGLAccounts {
+  ProductID: string;
+  /** Company these accounts resolve to — from the revenue account, else the product's OwningCompanyID; null when unresolved. */
+  CompanyID: string | null;
+  /** Role name of the revenue account below (`'Sales'` | `'Deferred Revenue'`) so callers don't re-derive it. */
+  RevenueRole: string;
+  /** The active revenue account for this product's recognition type (Sales, or Deferred Revenue when Deferred). */
+  Revenue: ResolvedAccount | null;
+  AccountsReceivable: ResolvedAccount | null;
+  Cash: ResolvedAccount | null;
+  /** Contra-revenue accounts (optional — null ⇒ the factory nets the amount into revenue instead). */
+  SalesDiscounts: ResolvedAccount | null;
+  SalesReturnsAndAllowances: ResolvedAccount | null;
+}
+
+/**
  * Outcome of turning an order into its booking drafts (ONE PER COMPANY — MOD-11), or the
  * resolution errors that blocked it. Drafts is non-empty exactly when Errors is empty.
  */
 export interface OrderDraftBuildResult {
   Drafts?: JournalEntryDraft[];
+  Errors: string[];
+}
+
+/**
+ * Outcome of assembling an order's PER-LINE booking drafts (MOD-15 — one JE per order line). `Drafts[i]`
+ * is booked for the line whose `OrderLineID` is `OrderLineIDs[i]`, so the caller can stamp each queued
+ * `JournalEntry.ID` back onto `OrderLine.JournalEntryID`. `Drafts`/`OrderLineIDs` are index-aligned and
+ * non-empty exactly when `Errors` is empty.
+ */
+export interface OrderLineDraftBuildResult {
+  Drafts: JournalEntryDraft[];
+  /** The OrderLine each draft books for — index-aligned with `Drafts`, for the reverse stamp. */
+  OrderLineIDs: string[];
   Errors: string[];
 }
 
@@ -86,12 +132,16 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
   private _priceTiers: mjBizAppsOrdersPriceTierEntity[] = [];
   private _priceLists: mjBizAppsOrdersPriceListEntity[] = [];
   private _entityIdCache = new Map<string, string>();
+  /** Lazy per-(product, date) resolved-accounts cache (Amith's `productID → {role → account}` map). Cleared on Config. */
+  private _productAccountsCache = new Map<string, ProductGLAccounts>();
 
   public static get Instance(): OrdersEngineBase {
     return super.getInstance<OrdersEngineBase>();
   }
 
   public async Config(forceRefresh?: boolean, contextUser?: UserInfo, provider?: IMetadataProvider): Promise<unknown> {
+    // Derived resolution cache — invalidate whenever catalog/link data (re)loads.
+    this._productAccountsCache.clear();
     const params: Array<Partial<BaseEnginePropertyConfig>> = [
       { PropertyName: '_productTypes', EntityName: PRODUCT_TYPES_ENTITY },
       { PropertyName: '_productCategories', EntityName: PRODUCT_CATEGORIES_ENTITY },
@@ -213,6 +263,43 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
     return hit ? this.accountFromLink(hit.Link.GLAccountID) : null;
   }
 
+  /**
+   * The full role→account map for a product (Amith's B1 deliverable). Resolves EVERY role the
+   * product can book to via the same product → category tree → company-default walk `ResolveAccount`
+   * uses, and returns a struct with a named slot per role. Lazily computed once per `(product, date)`
+   * and cached (`_productAccountsCache`, cleared on `Config`).
+   *
+   * The product's COMPANY is resolved first (from its revenue account, else its `OwningCompanyID`);
+   * the company-default roles (AR, Cash) then resolve for that company. Null slots are legitimate —
+   * an unlinked `SalesDiscounts` means the factory nets discounts into revenue (Amith's contra rule).
+   */
+  public GetProductGLAccounts(productID: string, asOfDate: Date): ProductGLAccounts {
+    const cacheKey = `${uuidKey(productID)}|${toISODate(asOfDate)}`;
+    const cached = this._productAccountsCache.get(cacheKey);
+    if (cached) return cached;
+
+    const product = this.ProductByID(productID);
+    const revenueRole = product ? this.RevenueRoleFor(product) : ROLE_SALES;
+    const owningCompanyID = product?.OwningCompanyID ?? undefined;
+    const revenue = product ? this.ResolveAccount(productID, revenueRole, asOfDate, owningCompanyID) : null;
+    // Company drives the company-default roles below; from the revenue account, else the product's own company.
+    const companyID = revenue?.CompanyID ?? product?.OwningCompanyID ?? null;
+    const forCompany = companyID ?? undefined;
+
+    const accounts: ProductGLAccounts = {
+      ProductID: productID,
+      CompanyID: companyID,
+      RevenueRole: revenueRole,
+      Revenue: revenue,
+      AccountsReceivable: this.ResolveAccount(productID, ROLE_ACCOUNTS_RECEIVABLE, asOfDate, forCompany),
+      Cash: this.ResolveAccount(productID, ROLE_CASH, asOfDate, forCompany),
+      SalesDiscounts: this.ResolveAccount(productID, ROLE_SALES_DISCOUNTS, asOfDate, forCompany),
+      SalesReturnsAndAllowances: this.ResolveAccount(productID, ROLE_RETURNS_ALLOWANCES, asOfDate, forCompany),
+    };
+    this._productAccountsCache.set(cacheKey, accounts);
+    return accounts;
+  }
+
   /** Walk product link → up the category tree → (optional) company default. First hit wins. */
   public ResolveAccount(
     productID: string,
@@ -264,10 +351,80 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
   // ─── order → draft ───────────────────────────────────────────────────────────
 
   /**
+   * Assemble an order's PER-LINE booking drafts (MOD-15, Amith 2026-07-21) — one single-company JE
+   * per order line. For each line: resolve its full role→account set via {@link GetProductGLAccounts}
+   * (B1), then assemble the line JE (Dr AR net · Cr revenue · Dr Sales-Discounts contra / net-into-
+   * revenue) via the pure {@link buildLineJournalEntryDraft}. Returns typed errors instead of throwing
+   * so a booking failure is reservoired, never silent. The `OrderJournalEntryFactory` consumes this,
+   * queues each draft, and stamps `OrderLine.JournalEntryID` from the index-aligned `OrderLineIDs`.
+   */
+  public buildLineDraftsForOrder(
+    order: mjBizAppsOrdersOrderEntity,
+    lines: mjBizAppsOrdersOrderLineEntity[]
+  ): OrderLineDraftBuildResult {
+    const asOfDate = order.OrderDate ?? new Date();
+    const context: OrderJournalContext = {
+      EffectiveDate: toISODate(asOfDate),
+      EntryType: 'OrderBooking',
+      OrderID: order.ID,
+      CounterpartyOrganizationID: order.CustomerOrganizationID ?? undefined,
+      Description: `Order ${order.OrderNumber}`,
+    };
+    const drafts: JournalEntryDraft[] = [];
+    const orderLineIDs: string[] = [];
+    const errors: string[] = [];
+
+    lines.forEach((line, index) => {
+      const product = this.ProductByID(line.ProductID);
+      if (!product) {
+        errors.push(`Line ${index}: unknown product ${line.ProductID}.`);
+        return;
+      }
+      const accounts = this.GetProductGLAccounts(line.ProductID, asOfDate);
+      if (!accounts.Revenue) {
+        errors.push(`Line ${index}: no "${accounts.RevenueRole}" account resolved for product "${product.Name}".`);
+        return;
+      }
+      if (!accounts.AccountsReceivable) {
+        errors.push(`Line ${index}: no "Accounts Receivable" account resolved for product "${product.Name}" (company ${accounts.CompanyID ?? 'unknown'}).`);
+        return;
+      }
+      const gross = round2(Number(line.Quantity) * Number(line.UnitPrice));
+      const net = computeLineNet(Number(line.Quantity), Number(line.UnitPrice), line.DiscountPct);
+      try {
+        drafts.push(
+          buildLineJournalEntryDraft(
+            {
+              LineIndex: index,
+              OrderLineID: line.ID,
+              Gross: gross,
+              Net: net,
+              Discount: round2(gross - net),
+              ArAccountID: accounts.AccountsReceivable.GLAccountID,
+              RevenueAccountID: accounts.Revenue.GLAccountID,
+              SalesDiscountsAccountID: accounts.SalesDiscounts?.GLAccountID ?? null,
+              CompanyID: accounts.CompanyID ?? accounts.Revenue.CompanyID,
+              Description: line.Description ?? undefined,
+            },
+            context
+          )
+        );
+        orderLineIDs.push(line.ID);
+      } catch (e) {
+        errors.push(`Line ${index}: ${(e as Error).message}`);
+      }
+    });
+    return { Drafts: drafts, OrderLineIDs: orderLineIDs, Errors: errors };
+  }
+
+  /**
    * Resolve every line's revenue account and each involved company's AR account, then assemble the
    * balanced order-booking drafts — ONE PER COMPANY (MOD-11; accounting MOD-12 rejects mixed
    * drafts). Returns typed resolution errors instead of throwing — the caller reservoirs them so
    * a booking failure never silently vanishes.
+   *
+   * ⚠ RETIRED by MOD-15 (per-line model above) — retained until the `OrderEntityServer`/booking
+   * rewrite (B3) fully cuts over, then removed with its per-company helpers.
    */
   public buildDraftsForOrder(
     order: mjBizAppsOrdersOrderEntity,
@@ -366,3 +523,5 @@ export class OrdersEngineBase extends BaseEngine<OrdersEngineBase> {
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
 const toISODate = (d: Date): string => new Date(d).toISOString().slice(0, 10);
+/** Round to 2 decimals (currency) — kills float dust on gross/discount before assembly. */
+const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;

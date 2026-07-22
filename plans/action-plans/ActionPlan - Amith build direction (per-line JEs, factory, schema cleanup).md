@@ -19,32 +19,53 @@ deliberately blown past and revisited in-system; plans stay thin; Amith reviews 
 you through it"). Marcelo personally walks the generated code before Amith's review — build
 output is not fire-and-forget.
 
-## Phase A — Schema cleanup (edit baselines in place → clean DB rebuild → codegen)
+## ⚠ RE-PRIORITIZATION (Marcelo, 2026-07-22) — orders first; accounting schema cleanup deferred
+
+Marcelo's ruling after the Phase A design review: **the orders per-line booking build is the
+priority; the accounting schema cleanup (A1/A2/A3) is deferred and NOTATED so it gets done later.**
+- **Marcelo** is taking the CodeGen include-mode PR (cross-app FK) — why it's the way it is + how to
+  change it. Until it lands, the orders→accounting link is a **SOFT ref** (interim only — becomes a
+  HARD FK once the PR is done; that is the go-forward standard, per Marcelo's cross-app-FK rule:
+  parent→required-dependency FKs are hard + nullable up the tree).
+- **A1/A2 + the role→account management UI → DEFERRED + NOTATED** in `bizapps-accounting/plans/DEFERRALS.md`
+  (MOD-19 execution row). The B1 resolver reads `GLAccountLink` regardless, so orders does NOT need
+  the ACP columns dropped — we seed `GLAccountLink` company-default rows alongside them for testing.
+- **A3 → DEFERRED to the S2 single-company-batch slice** (the batch has no header `CompanyID` today;
+  dropping the line-level one now would break the batching engine). Already in the plans.
+- **A4 stays** (cheap metadata seed, needed for orders discount/contra booking + tests).
+
+## Phase A (revised) — ORDERS schema + the contra-role seed only
 
 Per the standing pre-production migration practice (MOD-19.5): fix the ORIGINAL baseline
-migrations, rebuild on a clean database, re-run codegen, commit regenerated code with the
-migration.
+migrations, rebuild on a clean database, re-run codegen, commit regenerated code with the migration.
 
-**Accounting baseline (`B202605281200…`):**
-- [ ] A1 · Drop the five `AccountingCompanyProfile` GL-account FK columns (`ARGLAccountID` …
-  `UnrealizedFXGainLossGLAccountID`) — company defaults become GLAccountLink rows (role-based)
-  at the company level. Update seeds accordingly.
-- [ ] A2 · Drop the `ChartOfAccountsMapping` table (+ its seeds/entities/UI references).
-- [ ] A3 · Drop `JournalEntryBatchLineItem.CompanyID` (batch header owns company, MOD-15 acct).
-- [ ] A4 · Seed the two contra `GLAccountRole` rows: **Sales Discounts**, **Returns &
-  Allowances**.
-- [ ] A5 · ERD + docs same-change update (standing convention).
+**Accounting baseline (`B202605281200…`) — DEFERRED except A4:**
+- [~] A1 · ~~Drop the 5 ACP GL-account FK columns~~ → **DEFERRED** (DEFERRALS: MOD-19 execution).
+  The resolver reads `GLAccountLink`; seed company-default links alongside the ACP columns for tests.
+- [~] A2 · ~~Drop `ChartOfAccountsMapping` + erp-mapping page/service/op~~ → **DEFERRED** (DEFERRALS).
+- [~] A3 · ~~Drop `JournalEntryBatchLineItem.CompanyID`~~ → **DEFERRED to S2** (batch-header CompanyID first).
+- [ ] A4 · Seed the two contra `GLAccountRole` rows: **Sales Discounts**, **Returns & Allowances**
+  (metadata/gl-account-roles). Needed for orders contra booking.
+- [ ] A5 · ERD + docs same-change update for whatever ships (standing convention).
 
 **Orders baseline (`B202607061431…`):**
-- [ ] O1 · Drop the `OrderJournalEntry` junction; add **`OrderLine.JournalEntryID`** (nullable,
-  soft cross-app ref until CodeGen include-mode ships — acct Q42). `Order` carries NO JE ref.
-- [ ] O2 · Collapse `Confirmed`/`Posted` into ONE locked status: lifecycle DAG, CHECK
-  constraint, immutability triggers (51002/51003 trigger point), engine gates, UI states.
-  Decide the surviving name in-code (Decisions-taken list), Amith indifferent.
+- [ ] O1 · **Rework `Order.JournalEntryID` → `OrderLine.JournalEntryID`** (the `OrderJournalEntry`
+  junction was never built; today it's a single `Order.JournalEntryID` + trigger 51001). New column is
+  nullable; **SOFT ref for now** (no FK constraint — CodeGen include-mode PR pending; hard FK after).
+  `Order` carries NO JE ref (drop `Order.JournalEntryID` + its immutability trigger; add the per-line
+  equivalent).
+- [~] O2 · ~~Collapse `Confirmed`/`Posted`~~ → **NOT DOING** (Marcelo 2026-07-22, final). Keep the
+  two-step status exactly as-is: Amith instructed not to change it ("there was a reason for it"), and
+  it's outside the specific per-line-JE changeset he asked for — don't surprise him. Status / DAG /
+  `isBookedStatus` / `orderBooking.ts` `PostedAt` all UNCHANGED.
 - [ ] O3 · ERD + docs same-change update.
 
-**Gate:** clean-DB rebuild green on both apps (`app drop-schema` → `migrate` → `codegen` →
-`build`), tier-1/2 suites re-run (expect breakage from O2/O1 — fix forward).
+**Note — O1 rides with B2/B3, not a standalone schema stage:** dropping `Order.JournalEntryID` breaks
+`orderBooking.ts`/`OrderEntityServer` immediately, and `OrderLine.JournalEntryID` is only consumed by
+the new per-line booking. So the O1 schema move lands together with the factory + Save-override rework.
+
+**Gate:** clean-DB rebuild green on **orders** (`app drop-schema` → `migrate` → `codegen` →
+`build`) + A4 seed; tier-1/2 suites re-run (expect breakage from O1/O2 — fix forward).
 
 ## Phase B — The booking build (Amith's two named deliverables)
 
@@ -95,5 +116,15 @@ multi-company order → per-line JEs → aggregated order-JE view is deferred to
   The S0 validation wave's order-to-je expectations change with B5.
 
 ## Decisions taken
-- Surviving single lock-status name: decide at O2 implementation (lean: `Confirmed`).
-- Q42 include-mode implementation is upstream MJ work — NOT in this plan (green-lit separately).
+- **Status model UNCHANGED — keep the two-step `Confirmed` → `Posted`** (Marcelo 2026-07-22, final:
+  weighed the collapse, then reverted to leaving it as-is). Amith explicitly instructed not to change
+  it ("there was a reason for it"), so we stay inside the specific orders changeset he asked for and
+  don't surprise him. A future collapse can be revisited **with Amith directly** if ever warranted.
+- **Orders→accounting link is a SOFT ref for now** (Marcelo owns the CodeGen include-mode PR); it
+  becomes a HARD, nullable FK once that PR lands — the go-forward standard for parent→dependency refs.
+- **A1/A2/A3 (accounting schema cleanup) DEFERRED** and notated in `bizapps-accounting/plans/DEFERRALS.md`
+  (MOD-19 execution row); A3 rides S2. Orders is the priority.
+- **For testing, seed `GLAccountLink` company-default rows** (roles: AR, Sales, Deferred Revenue, +
+  the two contra roles) rather than build the role→account management UI now (Marcelo: hold off on
+  account-link management).
+- Q42 include-mode implementation is upstream MJ work — Marcelo owns it (green-lit separately).
