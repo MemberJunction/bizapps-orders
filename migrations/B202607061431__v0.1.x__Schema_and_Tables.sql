@@ -33,7 +33,7 @@
 -- Cross-app references are SOFT (plain UNIQUEIDENTIFIER, no FK) so Orders never
 -- couples to another app's schema:
 --   * Order.CustomerOrganizationID  → __mj_BizAppsCommon.Organization (soft)
---   * Order.JournalEntryID          → __mj_BizAppsAccounting.JournalEntry (soft lineage back-ref)
+--   * OrderLine.JournalEntryID      → __mj_BizAppsAccounting.JournalEntry (soft per-line lineage; MOD-15)
 --
 -- CodeGen handles __mj_CreatedAt/__mj_UpdatedAt and FK indexes — do NOT add them here.
 -- SQL Server is the source of truth; the PostgreSQL counterpart is produced via
@@ -170,8 +170,9 @@ GO
 ---------------------------------------------------------------------------
 -- 3.4 Order — the order header AND the A/R primitive (order = invoice, CA-2 2026-07-14).
 --     JEs are booked EXACTLY ONCE, on the first flip to 'Confirmed' (S4). Booking emits
---     ONE JE PER COMPANY (MOD-11); JournalEntryID holds the single-company case's entry,
---     the order-level booked guard is ConfirmedAt + JE existence (F1.2 reworks the engine).
+--     ONE JE PER ORDER LINE (MOD-15, Amith 2026-07-21) — the Order carries NO JournalEntryID;
+--     each line's entry lives on OrderLine.JournalEntryID. The order-level booked guard is
+--     ConfirmedAt (order already booked). The order's JE is the aggregate of its lines' JEs.
 --     NO CompanyID (S5); NO currency (FX deferred, S10). Totals (TotalGross/AmountPaid/
 --     Balance) and PaymentStatus are engine-materialized, never user-entered.
 --     [Order] is a T-SQL reserved word — always bracket it in raw SQL.
@@ -203,7 +204,6 @@ CREATE TABLE __mj_BizAppsOrders.[Order] (
     ApprovalTaskID UNIQUEIDENTIFIER NULL,
     Description NVARCHAR(MAX) NULL,
     Notes NVARCHAR(MAX) NULL,
-    JournalEntryID UNIQUEIDENTIFIER NULL,
     ConfirmedAt DATETIMEOFFSET NULL,
     CONSTRAINT PK_Order PRIMARY KEY (ID),
     CONSTRAINT UQ_Order_OrderNumber UNIQUE (OrderNumber),
@@ -240,6 +240,9 @@ CREATE TABLE __mj_BizAppsOrders.OrderLine (
     SubscriptionID UNIQUEIDENTIFIER NULL,
     RevenueRecognitionScheduleID UNIQUEIDENTIFIER NULL,
     Description NVARCHAR(500) NULL,
+    -- MOD-15 (Amith 2026-07-21): each line books its OWN journal entry; this is the per-line link.
+    -- SOFT ref (no FK yet — CodeGen include-mode PR pending; becomes a hard, nullable FK after).
+    JournalEntryID UNIQUEIDENTIFIER NULL,
     CONSTRAINT PK_OrderLine PRIMARY KEY (ID),
     CONSTRAINT UQ_OrderLine_Order_LineNumber UNIQUE (OrderID, LineNumber),
     CONSTRAINT CK_OrderLine_Quantity CHECK (Quantity <> 0),
@@ -358,7 +361,7 @@ GO
 -- 3.11 Payment — a money movement (receipt or reversal). Gross Amount is the
 --      customer-side truth; NetAmount = Amount − ProcessingFeeAmount (BO-D47).
 --      Negative Amount for reversal methods. JournalEntryID is a SOFT ref to
---      the accounting JE booked at capture (mirrors Order.JournalEntryID).
+--      the accounting JE booked at capture (same NULL->value-once rule as OrderLine.JournalEntryID).
 ---------------------------------------------------------------------------
 CREATE TABLE __mj_BizAppsOrders.Payment (
     ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
@@ -1139,30 +1142,12 @@ GO
 -- =============================================================================
 
 ---------------------------------------------------------------------------
--- 5.1 trg_Order_JournalEntryIDImmutable
---     The booking record: once JournalEntryID is set it may never be cleared or
---     replaced. Corrections happen via reversal orders (new JEs), never by
---     re-pointing the booked entry.
+-- 5.1 trg_Order_JournalEntryIDImmutable — REMOVED (MOD-15, Amith 2026-07-21).
+--     The Order no longer carries a JournalEntryID: each line books its OWN journal entry, so the
+--     booking link + its NULL→value-once immutability moved to OrderLine.JournalEntryID (enforced in
+--     trg_OrderLine_ImmutableAfterConfirm below). The order's "journal entry" is the virtual
+--     aggregate of its lines' JEs. (THROW code 51001 retired.)
 ---------------------------------------------------------------------------
-CREATE TRIGGER __mj_BizAppsOrders.trg_Order_JournalEntryIDImmutable
-ON __mj_BizAppsOrders.[Order]
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF EXISTS (
-        SELECT 1
-        FROM deleted d
-        JOIN inserted i ON i.ID = d.ID
-        WHERE d.JournalEntryID IS NOT NULL
-          AND (i.JournalEntryID IS NULL OR i.JournalEntryID <> d.JournalEntryID)
-    )
-    BEGIN
-        ROLLBACK TRANSACTION;
-        THROW 51001, 'Order.JournalEntryID cannot be cleared or replaced once set. Corrections happen via a reversal order, not by re-pointing the booked journal entry.', 1;
-    END;
-END;
-GO
 
 ---------------------------------------------------------------------------
 -- 5.2 trg_OrderLine_ImmutableAfterConfirm
@@ -1215,6 +1200,21 @@ BEGIN
     BEGIN
         ROLLBACK TRANSACTION;
         THROW 51003, 'OrderLine financial fields (ProductID/Quantity/UnitPrice/DiscountPct/LineTotalNet/LineTax/LineTotalGross) are frozen once the order is Confirmed. Use a reversal order.', 1;
+    END;
+
+    -- JournalEntryID (MOD-15): the per-line booking record — NULL→value once, never cleared or
+    -- replaced (any status). Set when the line's JE is booked at Confirm. Corrections go through a
+    -- reversal order, not by re-pointing the booked entry. (Mirrors the retired Order-level rule.)
+    IF EXISTS (
+        SELECT 1
+        FROM deleted d
+        JOIN inserted i ON i.ID = d.ID
+        WHERE d.JournalEntryID IS NOT NULL
+          AND (i.JournalEntryID IS NULL OR i.JournalEntryID <> d.JournalEntryID)
+    )
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 51008, 'OrderLine.JournalEntryID cannot be cleared or replaced once set. Corrections happen via a reversal order, not by re-pointing the booked journal entry.', 1;
     END;
 END;
 GO
@@ -1330,7 +1330,7 @@ EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Effective date of 
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Draft | Quoted | Confirmed | Posted | Fulfilled | Voided. Voided is reachable only from Draft/Quoted; the JE fires once on the first Confirmed.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'Status';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Organization — the customer. Nullable.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'CustomerOrganizationID';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Optional free-text description / memo for the order.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'Description';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to the __mj_BizAppsAccounting.JournalEntry booked on Confirm. Non-null means the JE has already been booked (idempotency guard).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'JournalEntryID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK yet, MOD-15) to the __mj_BizAppsAccounting.JournalEntry booked for THIS line at Confirm. NULL until booked; NULL->value once, never cleared or replaced (trigger). The order''s journal entry is the aggregate of its lines'' JEs.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLine', @level2type=N'COLUMN', @level2name=N'JournalEntryID';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'UTC timestamp of the first transition to Confirmed.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'ConfirmedAt';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Sale | Return | Cancellation | Amendment | CreditMemoOrder. Non-Sale types are the correction/reversal document family (BO-D9/D15).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'OrderType';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Soft reference (no FK) to __mj_BizAppsCommon.Person — the buyer/contact person at the customer organization. Nullable.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'Order', @level2type=N'COLUMN', @level2name=N'CustomerPersonID';

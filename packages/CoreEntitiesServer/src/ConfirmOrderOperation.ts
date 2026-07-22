@@ -54,9 +54,11 @@ export class ConfirmOrderOperation extends BaseRemotableOperation<ConfirmOrderIn
     if (!(await order.Load(input.OrderID))) {
       return { Success: false, Errors: [`Order ${input.OrderID} not found.`] };
     }
-    // Idempotent: a booked order (ConfirmedAt stamped) is already the unit of work's result.
+    // Idempotent: a booked order (ConfirmedAt stamped) is already the unit of work's result. The
+    // Order carries no JournalEntryID (MOD-15) — the line JEs are looked up by JournalEntry.OrderID.
     if (order.ConfirmedAt) {
-      return { Success: true, Status: order.Status, JournalEntryIDs: order.JournalEntryID ? [order.JournalEntryID] : [] };
+      const existing = await this.findExistingEntries(order.ID, user);
+      return { Success: true, Status: order.Status, JournalEntryIDs: existing };
     }
     // Defensive assert (atomic commit removes the old adoption window): JEs must not pre-exist for
     // an unbooked order. If they do, refuse rather than double-book — an operator must reconcile.

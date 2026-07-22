@@ -3,9 +3,9 @@
  * Exports ONLY what this package defines (MJ rule 5 — no re-exports from other packages).
  */
 export { OrdersEngineBase } from './OrdersEngineBase.js';
-export type { ResolvedAccount, OrderDraftBuildResult } from './OrdersEngineBase.js';
-export { buildOrderJournalDrafts, OrderDraftError } from './orderJournalDraft.js';
-export type { ResolvedOrderLine, OrderJournalContext, OrderDraftInputs } from './orderJournalDraft.js';
+export type { ResolvedAccount, ProductGLAccounts, OrderDraftBuildResult, OrderLineDraftBuildResult } from './OrdersEngineBase.js';
+export { buildOrderJournalDrafts, buildLineJournalEntryDraft, OrderDraftError } from './orderJournalDraft.js';
+export type { ResolvedOrderLine, ResolvedLineForJE, OrderJournalContext, OrderDraftInputs } from './orderJournalDraft.js';
 export { buildPaymentJournalDraft, PaymentDraftError } from './paymentJournalDraft.js';
 export type { PaymentDraftInputs } from './paymentJournalDraft.js';
 export { computeRecognitionDates } from './revrec.js';

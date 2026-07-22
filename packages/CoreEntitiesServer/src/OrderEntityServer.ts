@@ -1,14 +1,14 @@
 /**
  * OrderEntityServer — books balanced journal entries into BizApps Accounting when an order is
- * first Confirmed (amendment §4, S4) — ONE JE PER COMPANY (MOD-11), as an ATOMIC UNIT OF WORK
- * (F1.2b, 2026-07-15).
+ * first Confirmed (amendment §4, S4) — ONE JE PER ORDER LINE (MOD-15, Amith 2026-07-21), as an
+ * ATOMIC UNIT OF WORK (F1.2b).
  *
  * A direct save of an order to `Confirmed` (outside a caller-owned TransactionGroup) composes the
- * SAME atomic unit of work as the `Orders.ConfirmOrder` remotable op: the per-company JE set is
- * queued onto ONE fresh TransactionGroup (accounting's `QueueJournalEntries` seam — validate, no
- * Submit), the order row is queued onto the same TG, and the TG is submitted ONCE — order + all
- * JEs, or nothing. There is no booked-but-unposted window: a JE failure rolls back the order row,
- * and an order-row failure rolls back the JEs.
+ * SAME atomic unit of work as the `Orders.ConfirmOrder` remotable op: the per-line JE set (+ each
+ * OrderLine.JournalEntryID stamp) is queued onto ONE fresh TransactionGroup (accounting's
+ * `QueueJournalEntries` seam — validate, no Submit), the order row is queued onto the same TG, and
+ * the TG is submitted ONCE — order + all line JEs, or nothing. There is no booked-but-unposted
+ * window: a JE failure rolls back the order row, and an order-row failure rolls back the JEs.
  *
  * When a caller (the op) already owns the TransactionGroup — i.e. `this.TransactionGroup` is set —
  * this override does NOT self-compose; it just queues the order row (the op owns Submit). The
@@ -66,10 +66,11 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
   /**
    * Book once — the ORDER-LEVEL idempotency guard (F1.2). Fires on reaching ANY booked state
    * (Confirmed/Posted/Fulfilled — MOD-10 prerequisite effects, so a forward skip still books) when
-   * not yet booked (no JournalEntryID, no ConfirmedAt).
+   * not yet booked. The Order carries NO JournalEntryID (MOD-15) — ConfirmedAt is the order-level
+   * "already booked" guard (each line's JE lives on OrderLine.JournalEntryID).
    */
   private shouldBookJournalEntries(): boolean {
-    return isBookedStatus(this.Status) && !this.JournalEntryID && !this.ConfirmedAt;
+    return isBookedStatus(this.Status) && !this.ConfirmedAt;
   }
 
   /** Validate a status CHANGE on an existing order against the lifecycle DAG (F1.1). */
