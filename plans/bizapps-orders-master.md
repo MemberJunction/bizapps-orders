@@ -145,7 +145,7 @@ JE, never GL-post.
 deferred); calculate tax (§11); maintain GL balances; know about batching/dispatch.
 
 **Cross-app reference hardness (go-forward standard, Marcelo):** references from Orders into
-accounting (`OrderLine.JournalEntryID`, `Payment.PostedJournalEntryID`) are **SOFT refs for now** —
+accounting (`OrderLine.JournalEntryID`, `Payment.JournalEntryID`) are **SOFT refs for now** —
 they become **hard, nullable FKs** once the MJ CodeGen include-mode work lands (Marcelo owns that
 PR; MJ's own OpenApp publish policy expects downstream→upstream cross-app FKs — dependency-order
 install makes them safe; the current blocker is a CodeGen bug where a foreign FK into a schema
@@ -426,7 +426,7 @@ __mj_BizAppsOrders.Payment                -- PaymentNumber; ReceivingCompanyID; 
                                           -- BankReturn); Amount (negative = reversal); ProcessingFeeAmount;
                                           -- NetAmount; provider/intent/method refs; ReversesPaymentID;
                                           -- Status (Pending|Captured|Failed|Refunded|Disputed);
-                                          -- PostedJournalEntryID (soft ref)
+                                          -- JournalEntryID (soft ref, booked at capture)
 __mj_BizAppsOrders.PaymentLine            -- cash application: PaymentID × OrderID (+ optional line),
                                           -- Amount, AllocatedAt/By
 __mj_BizAppsOrders.CustomerPaymentMethod  -- token vault: provider customer/pm tokens, display meta,
