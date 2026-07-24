@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.angular.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true
+  },
+  "angularCompilerOptions": {
+    "skipTemplateCodegen": true,
+    "enableResourceInlining": true,
+    "strictTemplates": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}

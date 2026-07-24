@@ -1,1 +1,19 @@
+# Local configuration overrides for mjdev
+**/.mjrc.cjs
+
+.DS_Store
+.cache/
+node_modules/
+.turbo/
+.angular/
+dist/
+
+# CodeGen artifacts — regenerated per environment via `mj codegen`, never committed.
+# (The hand-authored baseline migration is the only committed SQL; codegen output
+#  is reproduced from it + the DB on demand.)
+codegen.output.log
+migrations/codegen/
+Schema Files/
+SQL Scripts/generated/
+
 .env
