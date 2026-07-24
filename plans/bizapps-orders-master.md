@@ -1,1280 +1,865 @@
-# BizAppsOrders Master Plan
+# BizApps Orders — Master Plan
 
-> **Status**: Plan — v2 (revised 2026-06-22 to reconcile with the as-built BizAppsAccounting design)
-> **Target repo**: `MemberJunction/bizapps-orders` (repo scaffolded; schema/build work begins once the BizAppsAccounting schema locks — imminent, expected this week or next)
-> **Depends on**: `bizapps-accounting` (GLAccount, JournalEntry primitives + `AccountingService` façade, AccountingPeriod, Dimension, Tax\*, **Currency + CurrencySpotRate**), `bizapps-common` (Person, Organization, Address, ContactMethod), `bizapps-tasks` (workflow/approval substrate), `__mj` core (Company, User, Roles, Credentials, Scheduled Actions)
-> **Sibling plans**: `plans/bizapps-accounting-master.md`, `plans/bizapps-contracts-master.md`, `plans/aidp-master-plan.md`
-> **Positioning**: **Unified order management — products, orders, payments, subscriptions, intercompany flows. Order is the substrate *and the A/R primitive*; payments and subscriptions are aspects.**
-
-> **⚠️ Revision v2 (2026-06-22)** — this plan was originally authored in the CDP repo against the *planned* BizAppsAccounting design. It has been reconciled with the *as-built* accounting app and verified MJ framework primitives. Material changes from v1:
-> - **JE emission**: Orders generates balanced JEs from domain logic and persists them as accounting entity records via a thin `AccountingService` façade (a helper on the accounting engine over the BaseEntity subclasses — accounting issue [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9)). JEs land `Pending`; **Accounting batches them** to the ERP. "Post" means *create a Pending JE*, not GL-post.
-> - **Revenue recognition**: Orders computes the waterfall and generates one **`ScheduledJournalEntry`** (+ line items) per accounting period; **Accounting materializes** each into a Pending JE at period close (BA-D25). The v1 Orders-side rev-rec cron is removed.
-> - **Currency/FX**: owned by **BizAppsAccounting** (`Currency` + `CurrencySpotRate`), not BizAppsCommon (BA-D11; common never shipped them).
-> - **Workflow/approvals**: run on **BizAppsTasks** via an "Approval Request" Task Type, replacing the non-existent `__mj.ApprovalRequest` (tasks issue [#8](https://github.com/MemberJunction/bizapps-tasks/issues/8); accounting adopts the same substrate, issue [#10](https://github.com/MemberJunction/bizapps-accounting/issues/10)).
-> - **Lineage**: JE → Order/Payment/Sub linkage is via soft-ref columns + the polymorphic `JournalEntryLink` — **never hard FKs into Orders** (accounting takes no dependency on us). FKs from Orders *into* accounting (e.g. `Payment.PostedJournalEntryID`) are fine.
-> - **Entity naming**: cross-app entities use the underscore prefix — `MJ_BizApps_Accounting: …`, `MJ_BizApps_Common: …`, `MJ_BizApps_Tasks: …` (the `Accounting.X` / `BizAppsCommon.X` shorthand below is conceptual).
+> **Status:** Single source of truth for BizApps Orders (consolidated 2026-07-23).
+> **Repo:** `MemberJunction/bizapps-orders` · schema `__mj_BizAppsOrders`.
+> **Positioning:** **Unified order management — products, orders, payments, subscriptions. The Order
+> is the transactional substrate *and the A/R primitive*; payments and subscriptions are aspects of
+> the same business event.** Officially named **Orders** (higher-ups' wording choice); "invoice
+> creation & tracking + payment management" is a category analog only — never reintroduce "Invoice"
+> as an entity, type, or status.
 >
-> See [§17 Cross-repo coordination](#17-cross-repo-coordination) for the dependency tracking.
+> This document consolidates the entire prior plan chain (master plan + modification/update ledgers +
+> question-stock answers + meeting rulings through 2026-07-23) into one current-state plan. It stands
+> alone: there are no companion ledgers, markers, or meeting docs — **git is the history**. Where a
+> decision came from a specific person's ruling, the attribution is noted inline so provenance
+> survives without ledger machinery.
+>
+> **Sibling plan:** `bizapps-accounting/plans/bizapps-accounting-master.md` (consolidated 2026-07-22)
+> — the accounting side of every boundary contract below.
 
 ---
 
 ## 0. Table of contents
 
-1. [Context and positioning](#1-context-and-positioning)
-2. [Decisions (BO-D1 through BO-D47)](#2-decisions-bo-d1-through-bo-d47)
-3. [Architecture and scope boundaries](#3-architecture-and-scope-boundaries)
+1. [Context, positioning, and guiding principles](#1-context-positioning-and-guiding-principles)
+2. [Architecture and scope boundaries](#2-architecture-and-scope-boundaries)
+3. [Design decisions (current)](#3-design-decisions-current)
 4. [Entity model](#4-entity-model)
-   - 4.1 Product Management — Product, ProductType, Bundles, Pricing, Entitlements
-   - 4.2 Order + OrderLine (with multi-company)
-   - 4.3 Order as the A/R primitive (credit memos, statements)
-   - 4.4 Subscription + SubscriptionPlan + SubscriptionEvent
-   - 4.5 Payment + PaymentProvider + PaymentIntent + PaymentLine (+ CustomerPaymentMethod, StoredValue)
-   - 4.6 RevenueRecognitionSchedule + RevRecScheduleLine
-   - 4.7 IntercompanyFlow
-   - 4.8 SalesRule + SalesAuthority
-5. [Multi-company order mechanics](#5-multi-company-order-mechanics)
-6. [Reversal patterns at every layer](#6-reversal-patterns-at-every-layer)
-7. [JE emission to BizAppsAccounting](#7-je-emission-to-bizappsaccounting)
-8. [Subscription lifecycle](#8-subscription-lifecycle)
-9. [Payment providers (pluggable)](#9-payment-providers-pluggable)
-10. [Sales rules enforcement](#10-sales-rules-enforcement)
-11. [Tax integration with BizAppsAccounting](#11-tax-integration-with-bizappsaccounting)
-12. [Integration with BizAppsContracts (upstream) and aidp (downstream)](#12-integration-with-bizappscontracts-upstream-and-aidp-downstream)
-13. [Migration of CDP data](#13-migration-of-cdp-data)
-14. [Phasing and delivery](#14-phasing-and-delivery)
-15. [Open questions](#15-open-questions)
-16. [Out of scope](#16-out-of-scope)
-17. [Cross-repo coordination](#17-cross-repo-coordination)
-- [Appendix A — BizAppsContracts boundary](#appendix-a--bizappscontracts-boundary)
-- [Appendix B — BizAppsInventory boundary](#appendix-b--bizappsinventory-boundary)
+   - 4.1 Product catalog · 4.2 Pricing · 4.3 Order + OrderLine · 4.4 Order as the A/R primitive ·
+     4.5 Subscriptions · 4.6 Revenue-recognition envelope · 4.7 Payments & stored value ·
+     4.8 Sales rules · 4.9 What is deliberately absent from the schema
+5. [Order lifecycle and booking workflow](#5-order-lifecycle-and-booking-workflow)
+6. [JE booking — the accounting integration](#6-je-booking--the-accounting-integration)
+7. [Revenue recognition](#7-revenue-recognition)
+8. [Payments](#8-payments)
+9. [Multi-company and intercompany](#9-multi-company-and-intercompany)
+10. [Pricing and coupons](#10-pricing-and-coupons)
+11. [Tax](#11-tax)
+12. [Sales rules and approvals](#12-sales-rules-and-approvals)
+13. [Entitlements](#13-entitlements)
+14. [Permissions, roles, and company scope](#14-permissions-roles-and-company-scope)
+15. [UX direction](#15-ux-direction)
+16. [The LXP launch (first integrating consumer)](#16-the-lxp-launch-first-integrating-consumer)
+17. [Migration of legacy CDP data](#17-migration-of-legacy-cdp-data)
+18. [Build sequencing (current priorities)](#18-build-sequencing-current-priorities)
+19. [Open architecture questions](#19-open-architecture-questions)
+20. [Open decisions parked with owners](#20-open-decisions-parked-with-owners)
+21. [Out of scope and future-app boundaries](#21-out-of-scope-and-future-app-boundaries)
+22. [Build inventory (state as of consolidation, 2026-07-23)](#22-build-inventory-state-as-of-consolidation-2026-07-23)
 
 ---
 
-## 1. Context and positioning
+## 1. Context, positioning, and guiding principles
 
-BizAppsOrders provides the **unified order management substrate** for the MJ ecosystem. It subsumes the previously-planned `BizAppsPayments` and `BizAppsSubscriptions` (per MJ PR #2214) into a single app, on the principle that orders, payments, and subscriptions are **aspects of the same business event** — a customer commits to pay, the system tracks both what they're getting and how they're paying.
+BizApps Orders provides the **unified order-management substrate** for the MJ ecosystem. It subsumes
+the previously-planned Payments and Subscriptions apps (MJ PR #2214) into one app, on the principle
+that orders, payments, and subscriptions are aspects of the same business event — a customer commits
+to pay, the system tracks both what they're getting and how they're paying.
 
 ### What we ARE
 
-- **The substrate for customer-facing transactions**: products, orders, invoicing, payments, subscriptions, refunds, returns, credit memos.
-- **Multi-company native**: a single order can span multiple subsidiaries; intercompany Due-From/Due-To JEs are generated automatically at order book time (M19 from master).
-- **Payment-provider agnostic**: Stripe is the first provider; PayPal/Square/Authorize/Adyen/Manual all pluggable via `RegisterClass` pattern.
-- **Subscription-aware**: full lifecycle (active/paused/cancel/migrate) with revenue recognition schedules native to the Subscription entity.
-- **Reversal-disciplined**: every business event supports reversal at its own layer (Order returns, Payment refunds, credit-memo Orders, Subscription cancellations), each emitting reversal JEs through BizAppsAccounting (M10).
+- **The substrate for customer-facing transactions:** products, orders, billing, payments,
+  subscriptions, refunds, returns, credit memos.
+- **The A/R front end:** the posted/confirmed Order *is* the receivable — there is no Invoice entity.
+  The customer-facing bill is the Order rendered as a document.
+- **Multi-company native:** one order can carry lines owned by different subsidiaries; each line
+  books its own single-company journal entry into BizApps Accounting.
+- **Payment-provider agnostic:** Stripe first; others pluggable via the `RegisterClass` pattern;
+  Manual always available.
+- **Subscription-aware:** a subscription is a continuity record that spawns a per-cycle renewal
+  Order — recurring cadence = many Orders under one Subscription.
+- **Reversal-disciplined:** every business event reverses at its own layer (return/credit-memo
+  Orders, refund/chargeback Payments, subscription cancellations), each emitting reversal JEs.
 
 ### What we are NOT
 
-- **Not the ledger**: JE generation calls into `BizAppsAccounting.AccountingService`. We don't maintain GL balances ourselves.
-- **Not the contract layer**: Contracts (with formal terms, escalators, renewal cycles) live in `BizAppsContracts` on top of Orders.
-- **Not an e-commerce storefront**: we provide the transactional substrate; commerce UI/UX is downstream consumer territory.
-- **Not the tax engine**: tax calculation logic lives in BizAppsAccounting's pluggable `TaxCalculationProvider`. We invoke it at order line time and store the result.
-- **Not a CRM**: customer master (Person/Organization) lives in BizAppsCommon.
+- **Not the ledger:** JE creation calls into BizApps Accounting; we never maintain GL balances.
+- **Not the tax engine:** a third-party engine calculates; we send inputs and record results.
+- **Not the contract layer:** formal terms/escalators/renewal envelopes are BizApps Contracts
+  territory (future; see §21).
+- **Not an e-commerce storefront or CRM:** we are the transactional substrate; customer master lives
+  in BizApps Common.
+- **Not inventory/COGS:** a future BizApps Inventory bolts onto the seams we ship (§21).
 
-### Why one unified app instead of two (Payments + Subscriptions)
+### Guiding principles
 
-PR #2214 originally separated Payments and Subscriptions. We're combining them because:
-
-- A subscription IS a recurring order; the entities overlap heavily (both reference Product, Customer, payment provider, revrec schedule).
-- Payment provider primitives (subscription endpoint, recurring billing API) live with Payment; making subscriptions a separate package would require Subscriptions to depend on Payments anyway.
-- B2C orgs adopting Orders without contracts get sub-handling out of the box.
-- The MJ adopter benefits from one package install vs. two — same scope, less coordination.
-
-This is a refinement, not a contradiction, of PR #2214's design intent.
+1. **The Order is the substrate.** Every commercial event either is an Order or hangs off one.
+   Fewest primitives: Orders + Payments; everything else (credit memos, invoices, statements) is a
+   view or a reversal of them.
+2. **Pen, not pencil.** After an order books, corrections are reversing/credit orders and reversal
+   payments — locked history is never edited (mirrors accounting's immutability ethos).
+3. **Metadata-driven behavior.** Product type + roles + links determine JE patterns, fulfillment,
+   recurrence, and taxability — new behavior comes from metadata and pluggable classes, not engine
+   forks.
+4. **Atomic units of business work are Remote Operations.** A JE plus its lines, an order confirm
+   plus its bookings, a refund plus its reversal JE — each is ONE transactional server call, never
+   client-side multi-save choreography (Amith: "Remotable Operations for larger encapsulated units
+   of logical work"; plain BaseEntity saves are fine for one-record edits).
+5. **Build first, iterate in the system** (Amith 2026-07-21, Marcelo-endorsed): get the database
+   built, work through bugs against the running system; plans stay thin; Amith reviews the BUILT
+   code. Nothing is "done" until its tests are green and a demo artifact exists — a claimed status
+   is a claim, not a fact.
+6. **Deterministic test data + tiered validation:** every change validates through the tiered
+   harness (unit → server → API → component → e2e) against generated seed data.
 
 ---
 
-## 2. Decisions (BO-D1 through BO-D47)
+## 2. Architecture and scope boundaries
 
-References to `M*` are master-plan decisions (`plans/aidp-master-plan.md`). References to `BA-D*` are BizAppsAccounting decisions (`plans/bizapps-accounting-master.md`).
+### Dependency stack
 
-| # | Decision | Rationale |
+```
+__mj                    MJ core: Company, User, Role, File
+   ↑
+bizapps-common          Person, Organization, Address, ContactMethod
+   ↑
+bizapps-tasks           Task primitives (approval gates run through it)
+   ↑
+bizapps-accounting      GLAccount + roles/links, JournalEntry primitives, Currency,
+   ↑                    dimensions, tax snapshot tables, batching to the ERP
+bizapps-orders  ◄── this plan
+   ↑
+bizapps-contracts       (future) agreement envelope — consumes Orders
+   ↑
+aidp                    analytics consumer (pull-only, cross-schema reads)
+```
+
+- **Currency is owned by accounting** (`__mj_BizAppsAccounting.Currency`); common never shipped it.
+- **SQL Server first; PostgreSQL by conversion** (T-SQL source of truth, `sql-converter` output
+  validated in CI). **UUID primary keys throughout.**
+- **Cross-app entity naming:** `MJ_BizApps_Accounting: …`, `MJ_BizApps_Common: …`,
+  `MJ_BizApps_Tasks: …`; schemas `__mj_BizAppsOrders` etc.
+
+### Boundary contracts
+
+**Orders provides upstream/consumers:** order lifecycle APIs (create/confirm/reverse via remote
+operations), payment capture/refund/application, subscription lifecycle, entitlement grants + a
+poll-based read/notify path, product catalog + pricing resolution.
+
+**Orders sends accounting:** one JE create request per order line (and per payment event) through
+the `Accounting.CreateJournalEntry` / `CreateJournalEntries` remote operations — balanced,
+single-company, landing `Pending`; accounting batches to the ERP. "Book"/"post" = create a Pending
+JE, never GL-post.
+
+**Orders does NOT:** generate intercompany legs at booking (payment-side, §9); compute FX (§21
+deferred); calculate tax (§11); maintain GL balances; know about batching/dispatch.
+
+**Cross-app reference hardness (go-forward standard, Marcelo):** references from Orders into
+accounting (`OrderLine.JournalEntryID`, `Payment.PostedJournalEntryID`) are **SOFT refs for now** —
+they become **hard, nullable FKs** once the MJ CodeGen include-mode work lands (Marcelo owns that
+PR; MJ's own OpenApp publish policy expects downstream→upstream cross-app FKs — dependency-order
+install makes them safe; the current blocker is a CodeGen bug where a foreign FK into a schema
+pollutes that app's codegen). Accounting takes no dependency on Orders: JEs reference their origin
+via soft columns (`OrderID`/`OrderLineID`/`SubscriptionID`/`PaymentID`) only.
+
+### Standing migration practice (pre-production)
+
+While nothing is deployed, schema changes are made by **editing the ORIGINAL baseline migration in
+place**, rebuilding on a clean database, and re-running CodeGen — no incremental fix-up migrations
+(Amith 2026-07-21). Once published, the publish-then-no-breaking-changes policy applies.
+
+---
+
+## 3. Design decisions (current)
+
+The current decision set. Each is the standing ruling — superseded ancestors live only in git.
+
+| # | Decision | Rationale / source |
 |---|----------|-----------|
-| **BO-D1** | **Unified app**: orders + payments + subscriptions in one repo. Subsumes MJ PR #2214 Payments + Subscriptions plans. | Tight entity overlap; single dependency install; same MJ adopter regardless of whether they care about subs or one-time orders or both. |
-| **BO-D2** | **PostgreSQL native day 1** via `@memberjunction/sql-converter`; T-SQL is source of truth, PG migrations auto-converted. CI enforces parity. | Same approach as BizAppsAccounting (M26). |
-| **BO-D3** | **UUID primary keys throughout.** No INT IDENTITY. | M5. |
-| **BO-D4** | **Order is the top-level entity *and the A/R primitive***; OrderLine is line-level granularity. Subscriptions are born from OrderLines; Payments apply to Orders. There is **no separate Invoice entity** — the posted Order *is* the receivable (BO-D45). | The order is the customer's commitment and the bill; everything else is mechanical fallout. |
-| **BO-D5** | **Multi-company orders via `OrderLine.CompanyID`**: each line owns its revenue/recognition Company. Order has no single CompanyID. The "receiving company" (where cash hits) is on Payment. | M19. Models the "unified company with products" pattern from the 2026-05-26 meeting. Allows a customer to buy a Sidecar product + a Cimatri product + a BCHQ product in one transaction. |
-| **BO-D6** | **IntercompanyFlow generation at order-book time.** When an OrderLine's CompanyID differs from the order's primary receiving Company, BizAppsOrders auto-generates `IntercompanyFlow` records and emits the Due-From / Due-To JEs into BizAppsAccounting. | M19 / BA-D17. Eliminates Power BI consolidation hack from CDP. Replaces missing BC intercompany functionality. |
-| **BO-D7** | **JE emission by creating accounting entity records via a thin `AccountingService` façade** (a helper on the accounting engine that wraps the `JournalEntry` / `JournalEntryLine` BaseEntity subclasses — accounting issue [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9)). Orders generates balanced JEs from domain logic; they land in `Pending`; **Accounting batches them** to the ERP. Orders orchestrates; Accounting is the primitive. | BA-D4 / BA-D17. "Post" = create a Pending JE, **not** GL-post (the batch run does GL). Falls back to direct entity CRUD if the façade isn't ready. |
-| **BO-D8** | **Order status lifecycle: `Draft → Quoted → Confirmed → Posted → Fulfilled` (or `Voided`)**. `Posted` is the business-event commit; from then on, changes are via amendment/reversal Orders. | M9 / M10. Pencil → pen at Order level. |
-| **BO-D9** | **Reversals at every layer**: Order (return/cancel/amendment, incl. credit-memo Orders) → Payment (refund/chargeback/bank-return) → Subscription (cancellation with proration refund). Each emits its own reversal JEs through Accounting. | M10. Standard subledger pattern. |
-| **BO-D10** | **OrderLine.Quantity supports negative values** for reversal slices. A partial return is a new Order with `Qty=-1, ReversesOrderLineID=line1`. | M10. Handles "return 1 of 2" naturally; partial reversals stack. |
-| **BO-D11** | **Subscription is the primitive for ratable revenue recognition.** Orders computes the recognition waterfall (count, per-period amounts, front-loaded rounding remainder in entry 1, uneven-start / no-lapse-gap handling) and generates one **`ScheduledJournalEntry`** (+ line items, one Dr Deferred Revenue / Cr Revenue pair) **per accounting period** via `AccountingService.createScheduledJournalEntries(...)`. **Accounting materializes** each into a Pending JE at its target period close (BA-D25) and freezes it. Orders keeps a lightweight `RevenueRecognitionSchedule` for MRR/ARR display + as the source of the computation — it does **not** run its own rev-rec cron. Contract-level overrides come from BizAppsContracts. | M20 / BA-D25. A standalone Stripe sub without a contract still needs revrec ratably. Contract is an envelope, not the owner. |
-| **BO-D12** | **PaymentProvider abstraction via `RegisterClass`/`ClassFactory`**. Ship Stripe (primary), PayPal, Square, Authorize, Adyen, Manual. New providers added without schema change. | Per MJ PR #2214 + master M14. Cleaner than per-provider entity proliferation. |
-| **BO-D13** | **Webhook receipt as an unauthenticated Express route** following MJ's `SignatureWebhookHandler` precedent: raw-body capture + provider HMAC signature verification in a driver, mounted before the auth middleware, then hand off to a processing engine (a `BaseAction` is appropriate for the *processing* step, not HTTP receipt). Idempotency via `PaymentIntent.ProviderEventID` / `SubscriptionEvent.ProviderEventID` uniqueness. | Matches MJ's actual inbound-webhook pattern (the eSignature handler), not the generic Action pattern. |
-| **BO-D14** | **Payment Method enum includes reversal types**: `CreditCard`, `ACH`, `Wire`, `Check`, `Cash`, `InternalTransfer`, `Refund`, `Chargeback`, `BankReturn`. Reversal-method Payments have negative `Amount` and `ReversesPaymentID` set. | Lets us model the full payment graph (forward + reverse) in one entity with one query path. |
-| **BO-D15** | **No Invoice entity — the posted Order is the A/R primitive (see BO-D45).** A **credit memo is an Order with a negative balance** (`OrderType ∈ {Return, CreditMemoOrder}`, `ReversesOrderID` set). Settle by Refund Payment, by applying to another Order, or by write-off. | Collapses Invoice/CreditMemo into the Order + reversal-order model already in place; fewer primitives to keep in sync. |
-| **BO-D16** | **`PaymentLine` as a junction** between Payment and Order. One Payment can clear multiple Orders; one Order can be partially cleared by multiple Payments. `Order.Balance = TotalGross − SUM(posted PaymentLine.Amount)`. | Standard pattern; supports complex AR workflows (lump-sum payment with itemized application). |
-| **BO-D17** | **Sales rules enforced at Order Confirm** via `SalesRule` + `SalesAuthority` metadata: discount limits, payment terms, product authorization, customer credit limits. Off-path → raises an **"Approval Request" Task in BizAppsTasks** (BO-D27), linked to the Order and routed to the approver role; on approve → Confirm proceeds, on reject → Order returns to Draft with annotation. Golden path → instant Confirm. | M21. Johanna's existing BC rules become first-class system constraints; routing runs on the shared Tasks substrate. |
-| **BO-D18** | **Sales rule definitions are metadata-driven**, not code. `SalesRule.RuleType` enum + JSON expression for predicate; admin-editable. | New rules without code change. Customer-facing UI for the rule editor in MJ Explorer. |
-| **BO-D19** | **Product.RevenueRecognitionType + default GL accounts** drive JE pattern selection at order-book time. Values: `Immediate` (Sales account), `Ratable` (Deferred Revenue then ratable recognition), `Milestone` (Deferred Revenue then milestone-triggered), `Custom` (caller specifies schedule). | M11 / BA-D24. Metadata-driven JE generation. |
-| **BO-D20** | **Tax calculation at OrderLine time via BizAppsAccounting's `TaxCalculationProvider`**. We pass shipping address + product tax category + customer tax profile; we get back per-jurisdiction tax breakdowns; we store on OrderLine. | BA-D19. Engine pluggable; we're a consumer. |
-| **BO-D21** | **Contract reference is optional** on Order (`Order.ContractID NULL`). Most orders won't have contracts (e.g., one-time e-commerce purchases). Contracts entity in BizAppsContracts is the envelope when one applies. | M20. Decouples Orders from formal contract requirements. |
-| **BO-D22** | **Currency + FX consumed from BizAppsAccounting** (`Currency` + `CurrencySpotRate`, owned there per BA-D11 — BizAppsCommon never shipped them). Rate captured per-transaction; stored on `OrderLine.ExchangeRateUsed` and `Payment.ExchangeRateUsed`. | BA-D11. Single source of truth for rates; per-transaction snapshot for reproducibility. |
-| **BO-D23** | **Stripe is the day-1 payment provider**; PayPal/Square/Adyen as MJ-ecosystem contributions in v1.5 / v2. Manual provider always available. | Stripe is most common; gets the highest investment. Others added based on demand. |
-| **BO-D24** | **Subscription downgrade is modeled as cancel-existing + new-sub** (with appropriate proration refund + new Subscription record). Not a single "downgrade" event. | Cleaner audit trail (each sub has clean lifecycle). Matches how Stripe models it. |
-| **BO-D25** | **Order amendments use a separate Order record** with `OrderType = 'Amendment'` and `ReversesOrderID` (partial slice via OrderLine.ReversesOrderLineID). Not in-place mutation of the original. | M10. Audit trail by construction. |
-| **BO-D26** | **PaymentIntent is provider-side state**; Payment is internal state. Webhooks update PaymentIntent; PaymentIntent transitions update Payment.Status. | Maps to Stripe's PaymentIntent concept. Decouples our state from provider state. |
-| **BO-D27** | **Workflow & approvals run on BizAppsTasks** — the shared workflow/state-management substrate across Orders and Accounting. Any human gate (sales-rule violation, customer-requested credit-limit override, discount exception, subscription cancellation override, refund authorization, …) is raised as an **"Approval Request" Task** (a Task Type) linked to the subject record via the polymorphic `Task Links`, routed to an approver role, with the decision driving a Task Type action hook. | Replaces the non-existent `__mj.ApprovalRequest`. Requires generic approval features in tasks (outcome/decision model, reject hook, role routing, orchestration API) — tasks issue [#8](https://github.com/MemberJunction/bizapps-tasks/issues/8). Tasks is a new dependency. |
-| **BO-D28** | **The `AccountingService` façade is the integration contract.** Orders is its first consumer and **drives the `JournalEntryDraft` / `ScheduledJournalEntryDraft` shapes** (undefined in the accounting plan today). Orders codes against the façade; accounting builds it (issue #9). | Single stable contract that survives accounting's internal schema churn; atomic balanced-set creation + period-open validation in one call. |
-| **BO-D29** | **v1 ships Stripe + Manual payment providers only.** PayPal/Square/Authorize/Adyen deferred to v1.5/v2. Orders co-evolves with accounting (which is ~Phase 1, wrapping shortly); phases that depend on unbuilt accounting surface (Tax provider, intercompany, scheduled-JE materialization) are sequenced behind their accounting counterparts. | Avoids building against an incomplete dependency; gets a usable substrate out fastest. |
-| **BO-D30** | **Engine architecture: `OrdersEngine` (this app) + `AccountingEngine` (accounting).** Both extend MJ `BaseEngine` — caching slow-changing metadata and exposing domain helper methods (`Config()` + `ObserveProperty` + lazy-load singleton). `OrdersEngine` caches catalog/config and exposes `ResolvePrice`, `ComputeOrderTotals`, `BuildBookingJEs`, `BuildRevRecWaterfall`, `EvaluateSalesRules`, `InvokeTax`; JE emission delegates to `AccountingEngine` (accounting issue [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9)). | MJ canonical engine pattern: cached reads + reactivity, lazy singleton. PascalCase public members. See [§3 Engine architecture](#engine-architecture-bo-d30). |
-| **BO-D31** | **`ProductType` is a first-class entity** carrying behavior defaults (rev-rec type, taxability, fulfillment-required, billing cadence): Physical Good / Digital Good / Service / Subscription / Usage / Bundle / Add-on / Fee / Donation / Gift Card. Replaces the v1 `IsSubscription` boolean. | New products inherit correct behavior instead of per-flag hand-setting. |
-| **BO-D32** | **Bundles/kits in v1** via `ProductBundleItem` (parent → component products, qty, priced-as-bundle vs sum-of-parts). **Product variants (SKU matrix) deferred to v2.** | Bundles unlock package selling + ASC-606 revenue allocation; variants are heavier and rarer for SaaS. |
-| **BO-D33** | **Pricing depth in v1**: `PriceList` (segment/region/channel/tier, currency-scoped) + `PriceTier` (volume/quantity breaks) + a `PricingModel` on `ProductPrice` (flat / per-unit / tiered / volume / package / usage-rate) + fee types (setup / recurring / overage). Effective-dated, currency-specific. | Pricing structure is hard to retrofit; build it once. |
-| **BO-D34** | **`ProductEntitlement` modeled in v1** — what a purchase grants (feature / access level / quantity-of-resource). Provisioning/enforcement is later, but the entity + order/subscription linkage ship in v1. | Entitlements are the machine-readable contract of what the customer can use — the enabler for downstream apps. |
-| **BO-D35** | **ASC 606 fields in v1; allocation engine in v2.** Product carries performance obligation(s) + standalone selling price (SSP) so bundle revenue can be allocated across components by SSP into the `ScheduledJournalEntry` waterfall. The allocation *engine* is v2; the fields ship in v1. | Correct bundle rev-rec roots in product metadata; model now to avoid a breaking change. |
-| **BO-D36** | **Usage/metered modeled on the product/pricing side in v1; metered billing engine in v2.** `PricingModel='Usage'` + UnitOfMeasure + overage rates exist in v1; consumption aggregation + metered invoicing is v2. | Lets metered billing land later without a breaking schema change. |
-| **BO-D37** | **Type-driven IsA extensions at both Product and OrderLine level.** `ProductType` names a product-level and an order-line-level extension entity, each an **IsA Disjoint child** (shared UUID PK) of `Product` / `OrderLine` (same pattern as accounting's `AccountingCompanyProfile` IsA `__mj.Company`). Type-specific attributes (e.g. event date at product level, attendee at line level) live in the extension, keeping base tables thin. | MJ IsA is rich; generic forms render the right extension by type. Adopters add their own subtypes without touching base tables. |
-| **BO-D38** | **`ProductBehavior` plugin** (`@RegisterClass`/`ClassFactory`), resolved most-specific-wins: `Product.BehaviorClass` → `ProductType.BehaviorClass` → default. Full **Before/After hook surface** (pricing, order-entry, lifecycle, provisioning, subscription, rev-rec, tax) plumbed now. Default implements the deterministic pricing precedence (BO-D33) + standard post; plugins augment. | Pluggable per-type/per-product behavior without forking the engine; predictable defaults with an escape hatch. |
-| **BO-D39** | **Entitlements split into definition + grant.** `ProductEntitlement` is the template (on Product/Plan); `EntitlementGrant` is the instance created at Post/activation, carrying a **beneficiary** (Person/Org — defaults to the buyer; an order line may designate another, e.g. the event attendee). Downstream apps read grants to provision access. | Entitlement grants are the machine-readable spine carrying value out to downstream apps; provisioning/enforcement engine is later. |
-| **BO-D40** | **`SubscriptionType` on Product drives recurring behavior.** The first sale **creates** a `Subscription` (continuity record) for (Product, Customer, Beneficiary); each **billing cycle the Subscription spawns a renewal `Order`** (its own bill — Order is the A/R primitive, BO-D45), and a later same-sub purchase extends it. `SubscriptionPlan` is optional elaboration for multi-tier/multi-cycle products; simple memberships need none. Behavior is pluggable (BO-D38). | Recurring cadence = many per-cycle Orders under one Subscription — consistent with Order-as-substrate + Order-as-A/R-primitive. |
-| **BO-D41** | **`ProductBundleItem` is one grouping structure serving two order modes.** (1) **Bundle line** — a single OrderLine for the bundle product (components visible, one line; revenue allocated across components by SSP). (2) **Fast-path expansion** — the bundle is a "fast code" whose components explode into individual normal OrderLines at entry; `OrderLine.SourceBundleProductID` records provenance. Same DB structure powers both. SSP allocation math is v2 (BO-D35). | Bundling and order-entry fast-grouping are the same data shape; lets order entry stay fast without a separate construct. |
-| **BO-D42** | **Seeded out-of-the-box product types** (extensible by adopters): Event, Membership, PhysicalGood, DigitalGood, Service, Donation, GiftCard, plus structural Bundle and attribute-only AddOn/Fee and generic Subscription/Usage. Each ships its `ProductType` + (where useful) IsA extension entities and a default `ProductBehavior`. | A useful catalog out of the box; anyone can register additional types/extensions/behaviors later. |
-| **BO-D43** | **PhysicalGood products are inventory-aware via seams; inventory, costing (FIFO/LIFO/Average), COGS, and asset valuation live in a future bolt-on `BizAppsInventory` app.** Orders ships the seams now — `PhysicalGoodProduct.IsStockTracked` + `InventoryAssetGLAccountID` (Product already has `COGSGLAccountID`), `OrderLine.FulfillmentStatus`, and an `OrderEvent` on fulfillment — but builds **no** cost-layer/valuation machinery. BizAppsInventory computes COGS per the costing method and emits Inventory-asset/COGS JEs into Accounting (generate-then-batch, BO-D7), like any upstream emitter. | Inventory + cost accounting is a large domain of its own; keep Orders focused and let Inventory bolt on. See [Appendix B](#appendix-b--bizappsinventory-boundary). |
-| **BO-D44** | **Gift cards / stored value are two-sided.** Selling a GiftCard product issues a `StoredValueAccount` (+ `StoredValueTransaction` ledger) and books a **liability** (Dr Cash / Cr Gift Card Liability — *not* revenue). Redeeming is an internal `StoredValuePaymentProvider`: a `Payment` with `Method='GiftCard'` referencing the account, posting **liability relief** (Dr Gift Card Liability / Cr A/R). Cross-company redemption (v1.5) and breakage (v2) deferred. | The instrument bridges product-issuance and payment-redemption; reuses the pluggable-provider + reversal models. |
-| **BO-D45** | **No Invoice entity — the posted Order is the A/R primitive; rename `PaymentAllocation` → `PaymentLine`.** `Order.Balance = TotalGross − SUM(posted PaymentLine.Amount)`; the customer-facing bill is the posted Order **rendered as a report** (`OrderNumber` = document number, `PostedAt` = tax point). Recurring/milestone cadence is modeled as **many Orders under a `Subscription`/`Contract` envelope** (the sub spawns a renewal Order each cycle; the contract issues an Order per milestone), **not** invoices. Statements/consolidated bills are reports (§15). | Fewest primitives (just Orders + Payments); Order carries AR identity (number, tax point, due date, status). Matches "Order is the substrate." |
-| **BO-D46** | **`CustomerPaymentMethod` — saved instrument / token vault.** Stores the provider token (e.g. Stripe `cus_` / `pm_`) + display metadata (brand / last4 / expiry / default) per customer; **never the PAN**. Required for subscriptions and repeat charges (charge-on-file without re-collecting). `Payment.PaymentMethodID` references it. | Recurring billing needs a reusable instrument; PCI-safe (token only, no card data at rest). |
-| **BO-D47** | **Payment captures settlement reality + minor links.** `Payment.ProcessingFeeAmount` / `NetAmount` so capture JEs and bank recon are accurate (Dr Cash *net* / Dr Processing Fee / Cr A/R *gross*); `PaymentIntent` references the `Order` being collected. Full **dispute lifecycle** (evidence / won-lost) deferred to v2 — v1 models a chargeback as a reversal `Payment` + `Status='Disputed'`. | Accurate cash/settlement now; dispute case management later. |
-
----
-
-## 3. Architecture and scope boundaries
-
-### Dependency stack (zoom-in on Orders)
-
-```
-BizAppsCommon                    (Person, Organization, Address, ContactMethod)
-   ↑
-BizAppsAccounting                (GLAccount, JournalEntry primitives, AccountingPeriod,
-                                  Dimension, Tax* entities, Currency + CurrencySpotRate,
-                                  AccountingService façade)
-   ↑
-BizAppsOrders   ◄── this plan    (Product, Order, OrderLine, Subscription,
-                                  Payment, PaymentProvider, PaymentIntent,
-                                  PaymentLine, RevRecSchedule, IntercompanyFlow,
-                                  SalesRule, SalesAuthority)
-   ↑
-BizAppsContracts                 (Contract envelope — consumes Orders)
-   ↑
-aidp                             (Analytics consumer)
-
-BizAppsTasks  ══╣ cross-cutting workflow/approval substrate, consumed by BOTH
-                 BizAppsOrders AND BizAppsAccounting for "Approval Request" Tasks (BO-D27)
-```
-
-> **Note on Currency**: `Currency` and `CurrencySpotRate` live in `__mj_BizAppsAccounting` (BA-D11, revised 2026-06). Orders already depends on Accounting, so currency/FX is sourced there — BizAppsCommon does **not** ship currency entities.
-
-### What Orders provides to upstream apps
-
-- **Order API**: create/quote/confirm/post/void Orders, with multi-line, multi-company, multi-currency support
-- **Subscription API**: create/pause/cancel/migrate, lifecycle event emission
-- **Payment API**: capture/refund/chargeback handling, allocation to Orders
-- **Webhook receivers**: Stripe (and other providers) → idempotent state updates
-- **JE emission**: every business event that requires accounting (Order Post, Payment Capture, Sub revrec rollover, Refund, etc.) emits balanced JEs into Accounting via the `AccountingService` façade (`createJournalEntry` / `createScheduledJournalEntries`); JEs land `Pending` and **Accounting batches them** to the ERP
-
-### What Orders does NOT do
-
-- Maintain GL balances (Accounting's job)
-- Calculate tax (delegates to Accounting's `TaxCalculationProvider`)
-- Manage contract terms / escalators / renewals (Contracts' job)
-- Generate financial statements (ERP's job)
-- Handle payroll / vendor bills / expenses (future BizApps* siblings)
-- Customer master (BizAppsCommon's job)
-
-### Engine architecture (BO-D30)
-
-Both apps expose an MJ `BaseEngine` that caches slow-changing metadata and provides domain helper methods — the canonical `Config()` + `ObserveProperty` + lazy-load singleton pattern. Admin edits (a price change, a new GL account) propagate to subscribers via `ObserveProperty` with no manual reload; public members are PascalCase.
-
-- **`OrdersEngine`** (this app)
-  - *Caches*: `Product`, `ProductType`, `ProductCategory`, `ProductPrice` / `PriceList` / `PriceTier`, `ProductTaxCategory`, `SubscriptionPlan`, `PaymentProvider`, `SalesRule`, `SalesAuthority`, `PaymentTermsType`.
-  - *Helpers*: `ResolvePrice(productId, currency, qty, date, priceList)`, `ComputeOrderTotals(order)`, `BuildBookingJEs(order)` (→ `AccountingEngine`), `BuildRevRecWaterfall(subscription)` (→ `ScheduledJournalEntry` drafts), `EvaluateSalesRules(order)`, `InvokeTax(...)`.
-- **`AccountingEngine`** (BizApps Accounting; accounting issue [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9))
-  - *Caches*: `GLAccount`, `AccountingPeriod`, `AccountingCompanyProfile`, `Currency`, `Dimension` / `DimensionValue`, `Tax*`.
-  - *Helpers*: `CreateJournalEntry`, `CreateScheduledJournalEntries`, `ReverseJournalEntry`, `GetAccountBalance`, `GetPeriodStatus`, `ResolveGLAccount`.
+| D1 | **One unified app** — orders + payments + subscriptions in one repo/schema. | Tight entity overlap; one install; subsumes MJ PR #2214's two-app split. |
+| D2 | **No Invoice entity — the confirmed/posted Order IS the A/R primitive.** It carries the receivable fields (`TotalGross`/`AmountPaid`/`Balance`/`DueDate`/`PaymentStatus`); `OrderNumber` is the document number; the customer-facing bill is the Order **rendered as a report**. A **credit memo is a negative-balance Order** (`OrderType ∈ {Return, CreditMemoOrder}`, `ReversesOrderID` set). Statements/consolidated bills are reports, not primitives. | Fewest primitives. Robert confirmed the terminology flip (order ≡ invoice) 2026-07-10; Marcelo re-confirmed 2026-07-14. |
+| D3 | **Vocabulary is "Orders"** — official name and entity vocabulary; "invoice/payment management" only as category analogs. | Higher-ups' wording choice; Marcelo directive 2026-07-11. |
+| D4 | **Product catalog is the behavior root.** `ProductType` carries behavior defaults (rev-rec type, taxability, fulfillment-required, recurrence); **type-driven IsA extensions** at Product and OrderLine level (shared-UUID disjoint children, e.g. `EventProduct`/`EventOrderLine`); seeded out-of-the-box types (Event, Membership, PhysicalGood, DigitalGood, Service, Donation, GiftCard, Bundle, AddOn/Fee, Subscription, Usage). A pluggable `ProductBehavior` class seam (most-specific-wins: Product → ProductType → default) is the escape hatch — schema ready, seam deferred. | Nail the catalog and orders/booking/rev-rec/tax inherit correct behavior. |
+| D5 | **No GL columns anywhere in the catalog** — GL routing is **role-based** via accounting's polymorphic `GLAccountLink` (roles: AR, Sales, Deferred Revenue, Sales Discounts, Returns & Allowances, …). Resolution walk: product link → up the **product-company's own** category tree → the **product-company's** company-default link → **fail loudly** (tripwire; no silent fallback). Cached in `OrdersEngineBase` as a lazy `productID → {role → account}` map. | Amith 2026-07-02 engine meeting; resolution anchor moved to the product's company by Marcelo 2026-07-17. ⚠ Resolution perf/complexity deep-dive is a named pre-volume work item (§19). |
+| D6 | **Company model:** `Product.CompanyID NOT NULL` is the **source of truth for line ownership** (revenue accrues to the product's company). `Order.CompanyID` = the **OWNING company** — document/ownership/visibility anchor only, never GL resolution. `OrderLine.CompanyID` = a **denormalized stamp of the product's company at line save** — perf/reporting + temporal integrity (if product ownership later changes, lines record who owned them at transaction time). Naming is plain `CompanyID` schema-wide; role-qualified names only where the role is the point (`Payment.ReceivingCompanyID`). The resolved account must belong to the line's company (hard-block; cross-company mapping refused entirely). | MOD-3 lineage: Robert's Q2 answer (owning company exists) + Marcelo 2026-07-17 (product anchors the line) + Robert's written answers 2026-07-20 (line stamp; not an RLS need). Schema amendment pending (§18). |
+| D7 | **Product categories are per-company rows** (`ProductCategory.CompanyID NOT NULL`) with **identical-name display-collapse** in the UI — no shared registry object; naming consistency via soft autocomplete suggestion. | Robert 2026-07-21, unambiguous: "five companies, 5 t-shirt categories… crossing them, no." Permissions decide it: company-scoped rows RLS-scope cleanly. |
+| D8 | **Booking fires exactly once, on the FIRST transition to `Confirmed`;** failure **blocks** the Confirm (never silently unbooked). `Posted` = "the JEs are in the subledger" — near-instant after Confirm. **The two-step `Confirmed → Posted` status model stays as-is** (Marcelo 2026-07-22, final — Amith: "there was a reason for it"; a collapse can be revisited with Amith directly). | 07-02 engine amendment; Robert 2026-07-08. Idempotency = line-already-booked. |
+| D9 | **Forward status skipping is allowed; the ORDER of stages is fixed.** Draft → Confirmed without Quoted is legal; you can't reach a later stage without its prerequisites' effects (booking on first Confirmed; can't Fulfill before Posted). `Voided` is reachable **only from Draft/Quoted** — after Confirm, corrections are reversing/credit orders. | Robert 2026-07-08/2026-07-10. |
+| D10 | **ONE JE PER ORDER LINE — always** (even multiple lines of the same company). The order's journal entry is a **virtual concept** — a UI aggregation of the line JEs; batching nets them later anyway. Linkage = **`OrderLine.JournalEntryID`** (nullable, soft ref until include-mode; the Order header carries NO JE ref; no junction table). | Amith 2026-07-21 ("always separate journal entries per order line — it's just simpler"); supersedes the one-JE-per-company split and the junction idea. |
+| D11 | **Line JE shape (single-company by construction):** Dr the line company's **AR (net)** · Cr its **Sales (gross)** at the resolved role accounts · **discounts via the contra-account pattern** — Dr Sales-Discounts for the discount; absent a linked discounts account, net into the sales credit. Deferred-revenue-typed products credit the **Deferred Revenue** role instead of Sales (recognition staged per D14). Returns & Allowances role exists alongside. | Amith 2026-07-21. Coupon/campaign-code dimensions acknowledged as coming — deferred. |
+| D12 | **Booking encapsulation:** an **`OrderJournalEntryFactory`** (orders server package) iterates the order's lines (parallelizable) and books each line's JE via the accounting engine; the **server-only Order entity subclass overrides `Save()`** — on transition into the locked status: outer transaction → `super.Save()` → factory books per-line JEs → stamp each `OrderLine.JournalEntryID` → commit; **any failure rolls back everything** (a locked order without its JEs is invalid state). The order object carries a **`Lines` array of unsaved OrderLine entities + a `Validate()` override** (≥1 line; children validate) so the entity guards its own invariants. Provider discipline: the entity's own provider throughout — never a fresh global `Metadata` in the transaction path. Moving the same encapsulation into the JE entity itself is FUTURE (Amith explicitly deferred). | Amith 2026-07-21 — the build basis; built and harness-proven on the donor branch (§22). |
+| D13 | **Intercompany: orders create NO due-to/due-from at booking.** "You don't know about intercompany anything until you get cash" — each line's AR sits with the LINE's company; IC legs and settlement mechanics arise on the **payment side** when built. No `IntercompanyFlow` table exists. ⚠ Re-closure with Robert (his 2026-07-20 seller-of-record model is superseded) + Jeremy (finance co-sign was against the old shape) is a HIGH-priority open item (§19); we build Amith's shape meanwhile. | Amith 2026-07-21; accounting D18 is the mirror. |
+| D14 | **Revenue recognition = REAL forward-dated JEs written at booking-lock.** A 12-month $1,200 sub → 12 × $100 Dr DefRev / Cr Revenue JEs dated on the monthly anniversaries; an event product → ONE entry dated the event date. **Two recognition shapes:** single-date (100% on the date) and period waterfall (over the line's `ServicePeriodStart/End`). No schedule-bridge tables, no materializer, no daily job. **Changes/cancellations = correcting Orders whose entries NET against what's staged** — staged entries are never edited or deleted. Batches sweep forward-dated entries only when the date filter explicitly reaches forward (default cutoff = today, accounting-side). | Robert's model ("a wake-up job is fragile — just create them"), Jeremy sign-off; Marcelo adopted 2026-07-13/14. Accounting D15 is the mirror. Engine rework to this shape pending (§18). |
+| D15 | **Fulfillment ↔ revenue recognition are DISCONNECTED.** Fulfillment is a logistics fact; NO JE fires on Posted→Fulfilled. If no line's product requires fulfillment, a Posted order **auto-advances to Fulfilled**; fulfillment-requiring lines hold the order for the fulfiller role (per-line flip queue deferred). | Robert 2026-07-09/2026-07-10. |
+| D16 | **Reversals at every layer, each emitting its own reversal JEs:** Order → return/cancellation/amendment/credit-memo Orders with negative-quantity lines (`ReversesOrderID`/`ReversesOrderLineID`; partial reversals stack); Payment → refund/chargeback/bank-return Payments (negative `Amount`, `ReversesPaymentID`); Subscription → cancellation with proration refund. Credit settlement paths: refund payment · apply-to-another-order (zero-cash credit-application Payment) · write-off (deferred until a real need). | Standard subledger pattern; audit trail by construction. |
+| D17 | **Refund is ONE atomic remote operation** (`Orders.RefundPayment`): reversal Payment + reversing JE commit together or not at all (TransactionGroups don't cross the GraphQL boundary — same reason `ConfirmOrder` is an op). NOT blocked on Stripe: a Manual-provider refund is fully expressible (nothing moves on our side but the JE). Same pattern owed for create-into-`Fulfilled` (a future `Orders.CreateOrderInState`-style op that runs the real Confirm path). | Marcelo 2026-07-16: "no server op that writes the reversal payment and the journal entry in one transaction — that's a problem." |
+| D18 | **Payment model:** `Payment` (internal state; gross `Amount`, `ProcessingFeeAmount`, `NetAmount`) · `PaymentIntent` (provider-side state; webhooks update it) · **`PaymentLine`** as the cash-application junction (one Payment clears many Orders; one Order cleared by many Payments; `Order.Balance = TotalGross − SUM(posted PaymentLine.Amount)`) · `CustomerPaymentMethod` token vault (provider tokens only, never PAN). `Payment.ReceivingCompanyID` = where cash hits. Capture JE: Dr Cash (net) / Dr Processing Fee / Cr A/R (gross). | BO-D16/D46/D47 lineage, unchanged. Fee JE leg is coded but dormant until a Processing-Fee role/account is seeded. |
+| D19 | **Payment providers are pluggable** (`RegisterClass`/ClassFactory). **v1 = Stripe + Manual** (+ the internal StoredValue provider when gift cards activate). **Stub-first Stripe:** the committed success-stub is the default test provider; the **LXP-checkout subset of real Stripe** (PaymentIntent lifecycle + hosted checkout + webhook→capture) is pulled forward for launch; recon/forensics/idempotency-stress remain deferred. Webhooks: an **unauthenticated Express route** (raw-body capture + provider HMAC verification, mounted before auth — the MJ `SignatureWebhookHandler` precedent), idempotent via `ProviderEventID` uniqueness; the HTTP boundary is never an MJ Action. | BO-D12/D13/D23/D29; stub-first per Marcelo 2026-07-14 (LXP D8). |
+| D20 | **Subscriptions:** `Product.SubscriptionType` declares recurring value; on first sale the behavior does **find-or-extend-or-create** for (Product, Customer, Beneficiary); **each billing cycle the Subscription spawns a renewal Order** (its own bill, D2). `SubscriptionPlan` is optional elaboration (multi-tier/cycle products); simple memberships need none. **Renewals spawn as `Draft` at launch** (a human confirms; Confirm books); the fuller shape is a **`RenewalSpawnStatus`** setting per type/plan ∈ {Draft, Quoted, Confirmed}. Downgrade = cancel-existing + new sub (clean audit; matches Stripe). No per-order accounting gate by default — batch approval is accounting's control point; exceptions via SalesRule; custom logic via the behavior seam. | BO-D24/D40 + Robert OF4 (2026-07-16; Jeremy validates the Draft default). Lifecycle build deferred behind booking (§18). |
+| D21 | **Pricing:** `PriceList`/`ProductPrice`/`PriceTier` (effective-dated, pricing models flat/per-unit/tiered/volume/package/usage, fee types) are **built**; `OrderLine.UnitPrice` **direct entry remains valid and is the base of the precedence chain** — the resolution engine layers suggestion/resolution on top, so pricing never blocks baseline flows. ASC-606 fields (SSP, `ProductPerformanceObligation`) ship now; the allocation engine is future. | Robert deferred → Marcelo un-deferred 2026-07-14; tables built 2026-07-14. |
+| D22 | **Coupons/promo codes: provider-model Option A at launch** — a `CouponProvider` abstraction where the provider (Stripe hosted checkout + promotion codes, exactly today's CDP behavior) owns configuration/application and **Orders records the outcome**. Recording schema lands at BOTH levels regardless: order-level discount structure (code, provider, provider coupon/promo IDs, total) AND line-level `DiscountAmount` (providers prorate; tax + GL operate on line amounts; `DiscountPct` alone can't express fixed/order-level discounts). The Orders-native `Coupon` entity is the **fast-follow**, slotting in as just another provider. Schema freeze gated (§20). | Robert A2 + OS7 (2026-07-14/16); LXP D10 (Amith: "v1, not hard"). |
+| D23 | **Tax: Option B durable shape, calculation DELEGATED.** `ProductTaxCategory` + `Product.ProductTaxCategoryID` + `OrderLineTaxLine` per-jurisdiction snapshot rows + accounting's `TaxCalculationProvider` seam — but Orders never calculates: a third-party engine (Stripe Tax / Avalara class) does, and our tables record what it returned. Skip the "tax as a fake catalog line" shortcut entirely. Rate package: **buy, not build.** Launch-with-tax vs tax-exempt is an explicit finance call (§20), never a default. | Robert 2026-07-16 (Q21 answer); accounting D17 is the mirror. Tax remains deferred-by-complexity until that call — no stub (a stub is complex enough to become a blocker). |
+| D24 | **Currency/FX deferred from the baseline** — no currency columns on Order/OrderLine; single-currency reality today. The design stands for later: rates from accounting, per-transaction snapshot on lines, realized-FX on cross-currency payments (computed upstream — accounting never generates FX entries). | 07-02 amendment; Robert 2026-07-10: "day one? No." |
+| D25 | **No periods, no closed-period guard — backdating allowed, unguarded (final).** The order carries `OrderDate`; the JE bears its date; accountants batch entries into the right periods; any future timing rule detects by DATE, never a period FK. | Marcelo 2026-07-14 (final, after a same-day manual-close detour was withdrawn); mirrors accounting D2. |
+| D26 | **Sales rules are metadata-driven** (`SalesRule` rule types + JSON predicates; `SalesAuthority` per-rep limits), evaluated at Order Confirm; violations raise an **"Approval Request" Task in BizApps Tasks** routed to the approver role (approve → proceed; reject → back to Draft with notes). The same tasks substrate carries every human gate (credit-limit override, discount exception, refund authorization, cancellation sign-off). Schema built; evaluation engine + routing not yet (§18). | BO-D17/D18/D27; tasks-app prerequisites verified satisfied 2026-07-15. |
+| D27 | **Entitlements split into definition + grant.** `ProductEntitlement` is the template; `EntitlementGrant` is the instance created at booking/activation, carrying a **beneficiary** (defaults to the buyer; a line may designate another — attendee, gift-card recipient, honoree). Downstream apps **poll** grants (MJ Scheduled Job + Record-Set-Processing; Amith recommends the poll) — no bespoke webhook/notification system. Provisioning/enforcement engine is later. | BO-D34/D39; LXP D14 (2026-07-14). |
+| D28 | **Order visibility is ROLE-GRANT-DRIVEN, not auto-involvement:** a user sees an order only when their `UserCompanyRole` grants (accounting's table) include the order's **OWNING company**; sees a product only when granted that product's company. Sibling-company users do NOT automatically see an order off a shared line (drill-through survives — the sister's revenue is in her own JE). WRITE stays owner-company-scoped. RLS filter = one owner-scoped leg; `OrderLine.CompanyID` is a perf/reporting column, not an RLS need. Orders seeds its own roles (order entry + an order **fulfiller**). | Robert's written answers 2026-07-20 (supersedes the involvement-based proposal); MOD-9a. |
+| D29 | **Naming convention: transactions get number + memo; master data gets names.** No `Order.Name` column — `Order.Description` is the searchable memo, drives workspace-tab captions, and joins name/ID search. Products/categories are already named. | Marcelo 2026-07-17 (ratified the accounting norm). |
+| D30 | **Order numbering:** global `ORD-{seq}` via the `OrderSequence` table (as-built; payments likewise `PaymentSequence`). `ExternalDocumentNumber` exists as its own column (bill.com won't sync without it; may equal OrderNumber). Single vs BC-style dual sequence (draft → posted) is an open Jeremy decision (§20). | UPD-1 (Jeremy 2026-07-10). |
+| D31 | **Line-level dimension tagging:** `OrderLineDimension` junction carries accounting Dimension/DimensionValue tags on order lines so JE generation propagates them into JE lines. | §15-Q5 lean, implemented in the baseline. |
+| D32 | **`IsOverdue` is a computed/virtual surface** (`Balance > 0 AND DueDate < now`) — computed in the view/entity layer, **never stored state**. Dunning: overdue detection + worklist (`Orders.GetOverdueWorklist`); a **configurable `DunningGracePeriodDays`** setting (default 7, an Orders setting — per owning company when multi-company needs it) governs the post-failed-renewal hold, and dunning **notifies CS rather than auto-cancelling**. Reminder delivery channel is decision-gated (§20). | LXP D15/D16; Marcelo 2026-07-14 (configurable, not hardcoded). |
+| D33 | **Forms-first UX** (Amith): first-class MJ Entity Forms for Order/Payment/Subscription/Product composed of reusable widgets dashboards embed directly; no bespoke pop-ups — modal/slide-in surfaces render the entity form through MJ's form host. Full direction §15, including the form-vs-workspace boundary and the convert-on-touch migration policy. | Amith 2026-07-17; accounting D22 is the mirror. |
+| D34 | **UTC everywhere.** Every persisted timestamp is UTC; time zones are presentation-only. | Standing convention. |
+| D35 | **Metadata-driven JE pattern selection:** `Product.RevenueRecognitionType` × `Order.OrderType` × reversal refs determine each line's JE pattern (immediate revenue vs DefRev + staged recognition vs reversal mirror). New rev-rec policies come from metadata, not code changes. | Original principle, unchanged. |
 
 ---
 
 ## 4. Entity model
 
-Schema: `__mj_BizAppsOrders`. All entities use `UUID PK`.
+Schema `__mj_BizAppsOrders`. All UUID PKs. Shapes below are the **current design**; items tagged
+**[S1 pending]** are the company-model amendment wave not yet in the baseline (see §18). Per the
+standing practice (§2), amendments edit the original baseline migration.
 
-### 4.1 Product Management — the catalog root
+### 4.0 ERD diagrams
 
-Product is the root of the whole app: it defines **how an item is billed** (one-time / subscription / usage), **how revenue is recognized and allocated**, **how it is taxed**, **what the purchase grants** (entitlements), and **how it is priced**. Nail the catalog and orders / invoicing / subscriptions / rev-rec / tax / intercompany all inherit correct behavior. (Variants and the metered-billing engine are v2 — BO-D32 / BO-D36.)
+#### Catalog
+```mermaid
+erDiagram
+    Company ||--o{ Product : "CompanyID (owner)"
+    Company ||--o{ ProductCategory : "CompanyID [S1]"
+    ProductType ||--o{ Product : "behavior defaults"
+    ProductCategory ||--o{ ProductCategory : "ParentProductCategoryID"
+    ProductCategory ||--o{ Product : "ProductCategoryID"
+    Product ||--o{ ProductBundleItem : "bundle/component"
+    Product ||--o{ ProductPrice : "prices"
+    PriceList ||--o{ ProductPrice : "optional grouping"
+    ProductPrice ||--o{ PriceTier : "qty breaks"
+    Product ||--o{ ProductEntitlement : "grants template"
+    Product ||--o| EventProduct : "IsA - same UUID"
+```
+
+#### Order, lines, and booking
+```mermaid
+erDiagram
+    Company ||--o{ Order : "CompanyID (owning) [S1]"
+    Order ||--|{ OrderLine : "has lines"
+    Product ||--o{ OrderLine : "ProductID"
+    OrderLine ||--o| JournalEntry : "JournalEntryID (soft, 1 JE per line)"
+    OrderLine ||--o{ OrderLineDimension : "dimension tags"
+    Order ||--o{ Order : "ReversesOrderID"
+    OrderLine ||--o{ OrderLine : "ReversesOrderLineID"
+    OrderLine ||--o| EventOrderLine : "IsA - same UUID"
+    OrderLine ||--o| Subscription : "births"
+```
+
+#### Payments & subscriptions
+```mermaid
+erDiagram
+    Order ||--o{ PaymentLine : "cleared by"
+    Payment ||--|{ PaymentLine : "applies via"
+    PaymentProvider ||--o{ Payment : "provider"
+    PaymentProvider ||--o{ PaymentIntent : "provider state"
+    PaymentIntent ||--o{ Payment : "capture"
+    CustomerPaymentMethod ||--o{ Payment : "instrument"
+    Payment ||--o{ Payment : "ReversesPaymentID"
+    Subscription ||--o{ SubscriptionEvent : "immutable log"
+    SubscriptionPlan ||--o{ Subscription : "optional plan"
+    Subscription ||--o{ Order : "spawns renewal Orders"
+```
+
+### 4.1 Product catalog
 
 ```sql
-__mj_BizAppsOrders.ProductType                           -- BO-D31: behavior defaults per kind
-  ID UUID PK,
-  Code NVARCHAR(40) UNIQUE,                               -- 'PhysicalGood' | 'DigitalGood' | 'Service' | 'Subscription'
-                                                           -- | 'Usage' | 'Bundle' | 'AddOn' | 'Fee' | 'Donation' | 'GiftCard'
-  Name NVARCHAR(200),
-  DefaultRevenueRecognitionType NVARCHAR(20),             -- seeds Product.RevenueRecognitionType
-  DefaultIsTaxable BIT NOT NULL DEFAULT 1,
-  RequiresFulfillment BIT NOT NULL DEFAULT 0,
-  IsBillableRecurring BIT NOT NULL DEFAULT 0,             -- subscription / usage kinds
-  DefaultSubscriptionType NVARCHAR(20) NOT NULL DEFAULT 'None', -- seeds Product.SubscriptionType (BO-D40)
-  -- Type-driven IsA extensions (BO-D37) — names the subtype entities for this type
-  ProductExtensionEntity NVARCHAR(200) NULL,             -- e.g. 'MJ_BizApps_Orders: Event Products'  (IsA Product)
-  OrderLineExtensionEntity NVARCHAR(200) NULL,           -- e.g. 'MJ_BizApps_Orders: Event Order Lines' (IsA OrderLine)
-  -- Default behavior plugin (BO-D38) — ClassFactory key
-  BehaviorClass NVARCHAR(100) NULL,
-  IsActive BIT NOT NULL DEFAULT 1
+__mj_BizAppsOrders.ProductType                 -- behavior defaults per kind (D4)
+  ID, Code UNIQUE,                             -- Event | Membership | PhysicalGood | DigitalGood | Service
+                                               -- | Donation | GiftCard | Bundle | AddOn | Fee | Subscription | Usage
+  Name, DefaultRevenueRecognitionType,         -- seeds Product.RevenueRecognitionType
+  DefaultIsTaxable BIT, RequiresFulfillment BIT,
+  IsBillableRecurring BIT, DefaultSubscriptionType,
+  ProductExtensionEntity NVARCHAR NULL,        -- IsA subtype entity names (D4)
+  OrderLineExtensionEntity NVARCHAR NULL,
+  BehaviorClass NVARCHAR NULL,                 -- ProductBehavior ClassFactory key (seam deferred)
+  IsActive BIT
 
 __mj_BizAppsOrders.ProductCategory
-  ID UUID PK,
-  Name NVARCHAR(200) NOT NULL,
-  ParentProductCategoryID UUID FK → ProductCategory NULL, -- hierarchical
-  Code NVARCHAR(40),
-  Description NVARCHAR(MAX),
-  IsActive BIT NOT NULL DEFAULT 1
+  ID, CompanyID NOT NULL FK → __mj.Company,    -- [S1 pending] per-company rows (D7)
+  Name, ParentProductCategoryID NULL,          -- hierarchical, within one company
+  Code, Description, IsActive
 
 __mj_BizAppsOrders.Product
-  ID UUID PK,
-  OwningCompanyID UUID FK → __mj.Company NOT NULL,        -- subsidiary whose revenue accrues (multi-company)
-  ProductTypeID UUID FK → ProductType NOT NULL,           -- BO-D31: drives default behavior
-  ProductCategoryID UUID FK NOT NULL,
-  ProductTaxCategoryID UUID FK NULL,
-  SKU NVARCHAR(80) UNIQUE,
-  Name NVARCHAR(400) NOT NULL,
-  Description NVARCHAR(MAX),
-  -- Lifecycle
-  Status NVARCHAR(20) NOT NULL DEFAULT 'Draft',           -- 'Draft' | 'Active' | 'Discontinued' | 'EOL'
-  SuccessorProductID UUID FK → Product NULL,              -- replacement on discontinuation
-  AvailableFrom DATE NULL, AvailableTo DATE NULL,
-  -- Revenue recognition + GL routing
-  RevenueRecognitionType NVARCHAR(20) NOT NULL,           -- 'Immediate' | 'Ratable' | 'Milestone' | 'Custom'
-  RevenueGLAccountID UUID FK → Accounting.GLAccount,
-  DeferredRevenueGLAccountID UUID FK → Accounting.GLAccount NULL,
-  COGSGLAccountID UUID FK → Accounting.GLAccount NULL,    -- for products with COGS (rare for SaaS)
-  -- ASC 606 (BO-D35: fields in v1; allocation engine v2)
-  StandaloneSellingPrice DECIMAL(18,4) NULL,             -- SSP for bundle revenue allocation
-  -- Subscription semantics (BO-D40): selling this on a posted order creates/extends a sub
-  SubscriptionType NVARCHAR(20) NOT NULL DEFAULT 'None',  -- 'None' | 'Standard' | 'Membership' | 'Custom' (seeded from ProductType)
-  -- Behavior override (BO-D38): ClassFactory key; falls back to ProductType.BehaviorClass then the default
-  BehaviorClass NVARCHAR(100) NULL,
-  -- Subscription defaults (detailed plan in SubscriptionPlan §4.4)
-  DefaultBillingCycle NVARCHAR(20),                       -- 'Monthly' | 'Quarterly' | 'Annual' | 'Custom'
-  DefaultSubscriptionTermMonths INT NULL,
-  -- Tax
-  IsTaxable BIT NOT NULL DEFAULT 1,
-  IsActive BIT NOT NULL DEFAULT 1
-  -- NOTE: the v1 `IsSubscription` boolean is replaced by ProductTypeID (BO-D31)
+  ID,
+  CompanyID NOT NULL FK → __mj.Company,        -- [S1 pending: rename from OwningCompanyID + NOT NULL]
+                                               -- the company whose revenue accrues (D6 source of truth)
+  ProductTypeID NOT NULL, ProductCategoryID NOT NULL,
+  ProductTaxCategoryID NULL,                   -- [lands with the tax build, D23]
+  SKU UNIQUE, Name, Description,
+  Status,                                      -- Draft | Active | Discontinued | EOL
+  SuccessorProductID NULL, AvailableFrom/To,
+  RevenueRecognitionType NOT NULL,             -- Immediate | Ratable | Milestone | Custom (D35)
+  StandaloneSellingPrice NULL,                 -- ASC-606 SSP (fields now, engine later — D21)
+  SubscriptionType NOT NULL DEFAULT 'None',    -- None | Standard | Membership | Custom (D20)
+  BehaviorClass NULL,
+  DefaultBillingCycle, DefaultSubscriptionTermMonths,
+  IsTaxable BIT, IsActive BIT
+  -- NO GL account columns (D5): routing via accounting GLAccountLink roles
 
-__mj_BizAppsOrders.ProductBundleItem                      -- BO-D32: composite products
-  ID UUID PK,
-  BundleProductID UUID FK → Product NOT NULL,             -- parent bundle (ProductType='Bundle')
-  ComponentProductID UUID FK → Product NOT NULL,
-  Quantity DECIMAL(18,4) NOT NULL DEFAULT 1,
-  PricingMode NVARCHAR(20) NOT NULL DEFAULT 'Bundled',    -- 'Bundled' (fixed bundle price) | 'SumOfParts'
-  SortOrder INT NOT NULL DEFAULT 0,
-  UNIQUE (BundleProductID, ComponentProductID)
+__mj_BizAppsOrders.ProductBundleItem           -- one structure, two order modes (bundle line
+  ID, BundleProductID, ComponentProductID,     -- vs fast-path explode w/ SourceBundleProductID)
+  Quantity, PricingMode,                       -- Bundled | SumOfParts
+  SortOrder, UNIQUE (Bundle, Component)
 
-__mj_BizAppsOrders.ProductPerformanceObligation          -- BO-D35: ASC 606; one+ per product (esp. bundles)
-  ID UUID PK,
-  ProductID UUID FK → Product NOT NULL,
-  Name NVARCHAR(200),
-  RevenueRecognitionType NVARCHAR(20) NOT NULL,           -- per-obligation pattern
-  StandaloneSellingPrice DECIMAL(18,4) NOT NULL,         -- SSP used for allocation across obligations
-  RevenueGLAccountID UUID FK → Accounting.GLAccount NULL,
-  DeferredRevenueGLAccountID UUID FK → Accounting.GLAccount NULL
-
-__mj_BizAppsOrders.ProductEntitlement                     -- BO-D34: what a purchase grants
-  ID UUID PK,
-  ProductID UUID FK → Product NOT NULL,
-  EntitlementType NVARCHAR(40) NOT NULL,                  -- 'Feature' | 'AccessLevel' | 'ResourceQuantity' | 'Custom'
-  Code NVARCHAR(80) NOT NULL,                             -- machine key consumed by downstream apps
-  Name NVARCHAR(200),
-  Quantity DECIMAL(18,4) NULL,                            -- for ResourceQuantity (e.g. 100 GB, 5 seats)
-  UnitOfMeasure NVARCHAR(40) NULL,
-  IsActive BIT NOT NULL DEFAULT 1
-  -- Provisioned on Order Post / Subscription activation (provisioning/enforcement engine is later)
-
-__mj_BizAppsOrders.PriceList                              -- BO-D33: pricing segmentation
-  ID UUID PK,
-  Code NVARCHAR(40) UNIQUE,
-  Name NVARCHAR(200),
-  CurrencyCode CHAR(3) FK → BizAppsAccounting.Currency NULL, -- null = multi-currency list
-  Segment NVARCHAR(40) NULL,                              -- region / channel / customer-tier scope
-  EffectiveFrom DATE NULL, EffectiveTo DATE NULL,
-  IsActive BIT NOT NULL DEFAULT 1
-
-__mj_BizAppsOrders.ProductPrice
-  ID UUID PK,
-  ProductID UUID FK NOT NULL,
-  PriceListID UUID FK → PriceList NULL,                   -- optional grouping / segmentation
-  CurrencyCode CHAR(3) FK → BizAppsAccounting.Currency,   -- Currency owned by Accounting (BA-D11)
-  PricingModel NVARCHAR(20) NOT NULL DEFAULT 'Flat',      -- 'Flat' | 'PerUnit' | 'Tiered' | 'Volume' | 'Package' | 'Usage'
-  FeeType NVARCHAR(20) NOT NULL DEFAULT 'Standard',       -- 'Standard' | 'Setup' | 'Recurring' | 'Overage'
-  Amount DECIMAL(18,4) NOT NULL,                          -- base/flat amount; tier detail in PriceTier
-  UnitOfMeasure NVARCHAR(40),                             -- 'each', 'month', 'hour', 'GB', 'seat'
-  MinQuantity DECIMAL(18,4) NULL, MaxQuantity DECIMAL(18,4) NULL,
-  EffectiveFrom DATE NOT NULL,
-  EffectiveTo DATE NULL,
-  INDEX (ProductID, CurrencyCode, EffectiveFrom DESC)
-
-__mj_BizAppsOrders.PriceTier                              -- BO-D33: volume / quantity breaks
-  ID UUID PK,
-  ProductPriceID UUID FK → ProductPrice NOT NULL,
-  MinQuantity DECIMAL(18,4) NOT NULL,                     -- tier lower bound (inclusive)
-  MaxQuantity DECIMAL(18,4) NULL,                         -- null = unbounded top tier
-  Amount DECIMAL(18,4) NOT NULL,                          -- per-unit (or flat) price for this tier
-  SortOrder INT NOT NULL DEFAULT 0
-
-__mj_BizAppsOrders.ProductTaxCategory
-  ID UUID PK,
-  Code NVARCHAR(40) UNIQUE,                               -- 'Standard' | 'Reduced' | 'Exempt' | 'Digital'
-  Name NVARCHAR(200),
-  Description NVARCHAR(MAX)
-  -- maps to TaxRate.TaxCategory in Accounting
+__mj_BizAppsOrders.ProductPerformanceObligation  -- ASC-606; per-obligation SSP for future allocation
+__mj_BizAppsOrders.ProductEntitlement            -- template: what a purchase grants (D27)
+__mj_BizAppsOrders.EntitlementGrant              -- instance at booking: beneficiary Person/Org,
+                                                 -- Quantity, ValidFrom/To, Status, ProvisionedAt
+__mj_BizAppsOrders.EventProduct / EventOrderLine -- the shipped IsA extension pair (Event type)
 ```
 
-> **Governance**: new-product and price-change approvals route through BizAppsTasks ("Approval Request" Task, BO-D27). **Variants** (size/color/tier SKU matrix) and the **metered-billing engine** (consumption aggregation + overage invoicing) are v2 (BO-D32 / BO-D36); the catalog + pricing structure modeled here is forward-compatible with both. The `OrdersEngine` (BO-D30) caches this catalog and resolves prices/tiers without per-line DB round-trips.
-
-#### Type-driven IsA extensions (BO-D37)
-
-`ProductType` names two extension entities — one at the **Product** level, one at the **OrderLine** level — each an **IsA Disjoint child** that shares the parent's UUID PK (the same mechanism accounting uses for `AccountingCompanyProfile` IsA `__mj.Company`). A product is at most one subtype, so MJ's generic forms can render the right extension by type, and base tables stay thin. Example — Events:
+### 4.2 Pricing
 
 ```sql
-__mj_BizAppsOrders.EventProduct              -- IsA Product (PK = Product.ID, same UUID)
-  ID UUID PK FK → Product,
-  EventStartsAt DATETIMEOFFSET NOT NULL,
-  EventEndsAt DATETIMEOFFSET NULL,
-  VenueName NVARCHAR(300),
-  VenueAddressID UUID FK → BizAppsCommon.Address NULL,
-  Capacity INT NULL,
-  RequiresAttendeeInfo BIT NOT NULL DEFAULT 1
-
-__mj_BizAppsOrders.EventOrderLine            -- IsA OrderLine (PK = OrderLine.ID, same UUID)
-  ID UUID PK FK → OrderLine,
-  AttendeeName NVARCHAR(300),
-  AttendeeEmail NVARCHAR(255),
-  CheckInAt DATETIMEOFFSET NULL
-  -- the attendee is typically the EntitlementGrant beneficiary (BO-D39)
+__mj_BizAppsOrders.PriceList        -- segmentation: currency-scoped, segment, effective-dated
+__mj_BizAppsOrders.ProductPrice     -- PricingModel: Flat|PerUnit|Tiered|Volume|Package|Usage;
+                                    -- FeeType: Standard|Setup|Recurring|Overage; effective-dated
+__mj_BizAppsOrders.PriceTier        -- quantity breaks under a ProductPrice
 ```
 
-#### Out-of-the-box product types (BO-D42)
+`OrderLine.UnitPrice` direct entry is the precedence base (D21); the resolution engine
+(`ResolvePrice`) suggests/resolves on top. Coupon recording columns land with the D22 schema freeze
+(order-level code/provider/discount structure + line-level `DiscountAmount`).
 
-Seeded by the app; adopters register their own types, extensions, and behaviors later. (`ProductType.ProductExtensionEntity` / `OrderLineExtensionEntity` / `BehaviorClass` wire each one up.)
-
-| Type (Code) | Product extension | OrderLine extension | Subscription | Notes |
-|---|---|---|---|---|
-| `Event` | `EventProduct` | `EventOrderLine` | No | attendee = beneficiary per line |
-| `Membership` | `MembershipProduct` | — | Membership | renews/extends a sub on purchase |
-| `PhysicalGood` | `PhysicalGoodProduct` (weight/dims/ship class, `IsStockTracked`, `InventoryAssetGLAccountID`) | `PhysicalGoodOrderLine` (fulfillment) | No | requires fulfillment; inventory/COGS via future BizAppsInventory (BO-D43) |
-| `DigitalGood` | `DigitalGoodProduct` (license/download model) | `DigitalGoodOrderLine` (key issued) | No | grants a download/license entitlement |
-| `Service` | `ServiceProduct` (delivery model/hours) | `ServiceOrderLine` (scheduling) | optional | project or retainer |
-| `Donation` | `DonationProduct` (fund/campaign, tax-deductible) | `DonationOrderLine` (designation, honoree, anonymous) | optional (recurring giving) | beneficiary may be an honoree |
-| `GiftCard` | `GiftCardProduct` (denomination rules) | `GiftCardOrderLine` (recipient, code, balance) | No | recipient = beneficiary |
-| `Bundle` | — (uses `ProductBundleItem`) | — | — | composite; see Bundles below |
-| `AddOn` / `Fee` | — | — | — | attribute/pricing only, no extension |
-| `Subscription` (generic) | — | — | Standard | plain recurring; `SubscriptionType` drives it |
-| `Usage` (generic) | — | — | Standard | metered; pricing side only in v1 (BO-D36) |
-
-#### Product behavior plugins — `ProductBehavior` (BO-D38)
-
-A `ProductBehavior` base resolved via `ClassFactory` most-specific-wins: **`Product.BehaviorClass` → `ProductType.BehaviorClass` → default**. The default implements the deterministic pricing precedence (BO-D33) and the standard post path; plugins **augment** (they don't silently replace). The full hook surface is plumbed now (some hooks are no-ops in v1) so behaviors have real power:
-
-| Phase | Before / After pair |
-|---|---|
-| Pricing | `BeforeResolvePrice` / `AfterResolvePrice`, `BeforeComputeTotals` / `AfterComputeTotals` |
-| Order entry | `BeforeOrderLineAdded` / `AfterOrderLineAdded`, `BeforeOrderLineValidate` / `AfterOrderLineValidate` |
-| Lifecycle | `BeforePost` / `AfterPost`, `BeforeVoid` / `AfterVoid`, `BeforeReverse` / `AfterReverse` |
-| Provisioning | `BeforeProvisionEntitlements` / `AfterProvisionEntitlements` |
-| Subscription | `BeforeSubscriptionCreateOrExtend` / `AfterSubscriptionCreateOrExtend` |
-| Revenue | `BeforeBuildRevRec` / `AfterBuildRevRec` |
-| Tax | `BeforeInvokeTax` / `AfterInvokeTax` |
-
-The `OrdersEngine` (BO-D30) resolves and invokes the behavior at each phase. MJ casing applies (PascalCase public hooks).
-
-#### Entitlements & grants (BO-D39)
-
-`ProductEntitlement` (above) is the **definition**. At Post / subscription activation, an `EntitlementGrant` **instance** is created — carrying the **beneficiary**, who defaults to the buyer but can be designated per order line (the event attendee, the gift-card recipient, a donation honoree):
+### 4.3 Order + OrderLine
 
 ```sql
-__mj_BizAppsOrders.EntitlementGrant
-  ID UUID PK,
-  ProductEntitlementID UUID FK → ProductEntitlement NOT NULL,
-  -- source of the grant
-  OrderLineID UUID FK → OrderLine NULL,
-  SubscriptionID UUID FK → Subscription NULL,
-  -- beneficiary (defaults to the buyer; an order line may name another)
-  BeneficiaryPersonID UUID FK → BizAppsCommon.Person NULL,
-  BeneficiaryOrganizationID UUID FK → BizAppsCommon.Organization NULL,
-  Quantity DECIMAL(18,4) NULL,
-  ValidFrom DATE NULL, ValidTo DATE NULL,
-  Status NVARCHAR(20) NOT NULL DEFAULT 'Active',         -- 'Active' | 'Suspended' | 'Revoked' | 'Expired'
-  ProvisionedAt DATETIMEOFFSET NULL
-  -- downstream apps read EntitlementGrants to provision access; the provisioning/
-  -- enforcement engine is later — v1 ships the grant record + beneficiary linkage
-```
-
-#### Subscriptions from products (BO-D40)
-
-`Product.SubscriptionType` (seeded from `ProductType.DefaultSubscriptionType`) declares that selling the product creates recurring value. On Post, the subscription behavior does **find-or-extend-or-create** for `(Product, Customer, Beneficiary)`: a renewal purchase **extends** the existing `Subscription`; a first purchase **creates** one. `SubscriptionPlan` (§4.4) is **optional elaboration** — only needed when one subscription product offers multiple commercial variants (tiers / cycles / add-ons); a simple membership needs none. Proration / extension / beneficiary specifics ride the `ProductBehavior` plugin.
-
-#### Bundles & product grouping (BO-D41)
-
-`ProductBundleItem` is a single grouping structure that powers **two order modes**:
-
-1. **Bundle line** — one `OrderLine` for the bundle product; components are visible but it stays a single line. Revenue is allocated across the components' performance obligations by relative SSP (`component_revenue = T × component_SSP / Σ component_SSP`), each slice then following its own rev-rec policy into the `ScheduledJournalEntry` waterfall. The **allocation engine is v2** (BO-D35); v1 carries the SSP fields + bundle structure.
-2. **Fast-path expansion** — the bundle acts as a "fast code": at entry its components **explode into individual normal `OrderLine`s**, each a standard product line, with `OrderLine.SourceBundleProductID` recording the provenance. This is order-entry convenience, not a true bundle (no allocation — each line prices and recognizes on its own).
-
-Same DB structure, two behaviors; order entry chooses per add.
-
-### 4.2 Order + OrderLine (with multi-company)
-
-```sql
-__mj_BizAppsOrders.Order
-  ID UUID PK,
-  OrderNumber NVARCHAR(40) UNIQUE NOT NULL,            -- 'ORD-{seq}' or custom format
-  OrderType NVARCHAR(20) NOT NULL DEFAULT 'Sale',      -- 'Sale' | 'Return' | 'Cancellation' | 'Amendment' | 'CreditMemoOrder'
-  CustomerOrganizationID UUID FK → BizAppsCommon.Organization NOT NULL,
-  CustomerPersonID UUID FK → BizAppsCommon.Person NULL,    -- the buyer/contact
-  SalesRepUserID UUID FK → __mj.User NULL,
-  BillToAddressID UUID FK → BizAppsCommon.Address NULL,
-  ShipToAddressID UUID FK → BizAppsCommon.Address NULL,
-  Status NVARCHAR(20) NOT NULL,                         -- 'Draft' | 'Quoted' | 'Confirmed' | 'Posted' | 'Fulfilled' | 'Voided'
-  PaymentTermsTypeID UUID FK NULL,
-  OrderDate DATE NOT NULL,
-  -- A/R — the posted Order IS the receivable (BO-D45); no Invoice entity
-  TotalGross DECIMAL(18,2),                             -- materialized = SUM(OrderLine.LineTotalGross)
-  AmountPaid DECIMAL(18,2) NOT NULL DEFAULT 0,          -- materialized = SUM(posted PaymentLine.Amount)
-  Balance DECIMAL(18,2),                                -- = TotalGross - AmountPaid (negative = credit memo)
-  DueDate DATE NULL,                                    -- A/R due date (derived from PaymentTerms at Post)
-  PaymentStatus NVARCHAR(20) NOT NULL DEFAULT 'Unpaid', -- 'Unpaid' | 'PartiallyPaid' | 'Paid' | 'Overdue' | 'WrittenOff'
-  RequestedDeliveryDate DATE NULL,
-  Description NVARCHAR(MAX),
-  Notes NVARCHAR(MAX),
-  -- Reversal references (per BO-D9, BO-D10)
-  ReversesOrderID UUID FK → Order NULL,
-  ReversalReason NVARCHAR(MAX) NULL,
-  -- Pencil → pen lifecycle
-  PostedAt DATETIMEOFFSET NULL,
-  PostedByUserID UUID FK → __mj.User NULL,
-  -- Optional contract envelope (per BO-D21)
-  ContractID UUID NULL,                                 -- references Contracts.Contract, soft FK across apps
-  -- Approval gating (sales rules) — via BizAppsTasks (BO-D27), NOT __mj.ApprovalRequest (which does not exist).
-  -- The approval is a Task ("Approval Request" type) that links to this Order via the polymorphic Task Links
-  -- table; no FK column is required here. ApprovalTaskID is an optional denormalized convenience pointer.
-  ApprovalTaskID UUID NULL,                             -- soft ref → MJ_BizApps_Tasks: Tasks (optional convenience)
-  -- Note: Order has NO single CompanyID — multi-company support is via OrderLine.CompanyID
+__mj_BizAppsOrders.[Order]
+  ID, OrderNumber UNIQUE NOT NULL,             -- ORD-{seq} via OrderSequence (D30)
+  OrderType NOT NULL DEFAULT 'Sale',           -- Sale | Return | Cancellation | Amendment | CreditMemoOrder
+  OrderDate DATE NOT NULL,                     -- backdating allowed, unguarded (D25)
+  Status NOT NULL DEFAULT 'Draft',             -- Draft | Quoted | Confirmed | Posted | Fulfilled | Voided (D8/D9)
+  CompanyID NOT NULL FK → __mj.Company,        -- [S1 pending] OWNING company — doc/visibility anchor (D6)
+  CustomerOrganizationID, CustomerPersonID, SalesRepUserID,
+  BillToAddressID, ShipToAddressID, PaymentTermsTypeID,
+  -- A/R — the Order IS the receivable (D2)
+  TotalGross, AmountPaid DEFAULT 0, Balance,   -- Balance = TotalGross − SUM(posted PaymentLine.Amount)
+  DueDate NULL,                                -- from PaymentTerms; IsOverdue is computed, never stored (D32)
+  PaymentStatus DEFAULT 'Unpaid',              -- Unpaid | PartiallyPaid | Paid | Overdue | WrittenOff
+  ExternalDocumentNumber NULL,                 -- bill.com identity (D30)
+  -- Lifecycle stamps
+  ConfirmedAt, PostedAt, PostedByUserID,
+  -- Reversals (D16)
+  ReversesOrderID NULL, ReversalReason NULL,
+  ContractID NULL,                             -- soft ref → future Contracts
+  ApprovalTaskID NULL,                         -- soft ref → Tasks (sales-rule gate, D26)
+  RequestedDeliveryDate, Description, Notes    -- Description = the searchable memo (D29)
+  -- NO JournalEntryID (D10 — linkage is per-line); NO currency columns (D24)
 
 __mj_BizAppsOrders.OrderLine
-  ID UUID PK,
-  OrderID UUID FK NOT NULL,
-  LineNumber INT NOT NULL,
-  ProductID UUID FK NOT NULL,
-  SourceBundleProductID UUID FK → Product NULL,         -- fast-path provenance when a bundle was exploded into lines (BO-D41)
-  CompanyID UUID FK → __mj.Company NOT NULL,            -- which sub OWNS this line (revenue accrues here)
-  Quantity DECIMAL(18,4) NOT NULL,                      -- supports negative for reversal slices (BO-D10)
-  UnitPrice DECIMAL(18,4) NOT NULL,
-  DiscountPct DECIMAL(7,4) NOT NULL DEFAULT 0,
-  CurrencyCode CHAR(3) FK NOT NULL,
-  -- Computed (validated on save)
-  LineTotalNet DECIMAL(18,2) NOT NULL,                  -- = Quantity × UnitPrice × (1 - DiscountPct)
-  LineTax DECIMAL(18,2) NOT NULL DEFAULT 0,             -- populated by tax engine
-  LineTotalGross DECIMAL(18,2) NOT NULL,                -- = LineTotalNet + LineTax
-  -- FX (when CurrencyCode != owning Company's functional currency)
-  OriginalCurrencyCode CHAR(3) NULL,
-  ExchangeRateUsed DECIMAL(18,8) NULL,
-  FunctionalCurrencyAmount DECIMAL(18,2),
-  -- Subscription / ratable
-  RevenueRecognitionScheduleID UUID FK NULL,
-  SubscriptionID UUID FK → Subscription NULL,           -- if this line births a subscription
-  -- Fulfillment seam (BO-D43) — future BizAppsInventory hooks here for COGS/inventory
-  FulfillmentStatus NVARCHAR(20) NULL,                  -- 'Pending' | 'Fulfilled' | 'Returned'
-  -- Reversal (per BO-D10)
-  ReversesOrderLineID UUID FK → OrderLine NULL,
-  UNIQUE (OrderID, LineNumber)
+  ID, OrderID NOT NULL, LineNumber, UNIQUE (OrderID, LineNumber),
+  ProductID NOT NULL,
+  CompanyID NOT NULL FK → __mj.Company,        -- [S1 pending] denormalized stamp of the product's
+                                               -- company at save (D6 — perf/reporting/temporal)
+  SourceBundleProductID NULL,                  -- fast-path bundle provenance
+  Quantity NOT NULL (≠ 0; negative = reversal slice),
+  UnitPrice, DiscountPct DEFAULT 0,
+  LineTotalNet, LineTax DEFAULT 0, LineTotalGross,   -- computed, validated on save
+  ServicePeriodStart/End NULL,                 -- the coverage period rides the line (rev-rec, D14)
+  FulfillmentStatus NULL,                      -- Pending | Fulfilled | Returned (seam, D15)
+  ReversesOrderLineID NULL,
+  SubscriptionID NULL,                         -- if this line births/extends a sub
+  RevenueRecognitionScheduleID NULL,           -- the computed envelope (§4.6)
+  JournalEntryID NULL,                         -- ★ D10: this line's booked JE (SOFT ref → hard FK
+                                               --   when CodeGen include-mode lands)
+  Description NULL
 
-__mj_BizAppsOrders.OrderLineTaxLine                     -- per-jurisdiction tax breakdown from engine
-  ID UUID PK,
-  OrderLineID UUID FK NOT NULL,
-  TaxJurisdictionID UUID FK → Accounting.TaxJurisdiction NOT NULL,
-  TaxRateID UUID FK → Accounting.TaxRate NOT NULL,
-  TaxableAmount DECIMAL(18,2) NOT NULL,
-  TaxAmount DECIMAL(18,2) NOT NULL
+__mj_BizAppsOrders.OrderLineDimension          -- accounting Dimension/DimensionValue tags per line (D31)
+__mj_BizAppsOrders.OrderLineTaxLine            -- [lands with the tax build, D23] per-jurisdiction snapshot
+__mj_BizAppsOrders.PaymentTermsType            -- owned here (accounting delegates to it)
+__mj_BizAppsOrders.OrderSequence / PaymentSequence  -- numbering state (D30)
 ```
 
-### 4.3 Order as the A/R primitive (credit memos & statements)
+**DB enforcement (as-built trigger family 51001–51005):** line financials freeze once the order is
+Confirmed (with the `FulfillmentStatus` carve-out); payment financials freeze at Captured; status
+CHECK constraints carry the lifecycle vocabulary. The triggers are the enforcement authority; forms
+merely reflect state (§15).
 
-**There is no Invoice entity (BO-D45).** A **posted `Order` is the receivable** — it carries the A/R fields (`TotalGross`, `AmountPaid`, `Balance`, `DueDate`, `PaymentStatus`; see the Order entity in §4.2). `Balance = TotalGross − SUM(posted PaymentLine.Amount)`. AR aging, dunning, and the accounting AR subledger all operate on **Orders**.
+### 4.4 Order as the A/R primitive
 
-- **The customer-facing "invoice"** is just the posted Order **rendered as a document/report** — `OrderNumber` is its number, `PostedAt` its issue / tax-point date. No separate entity, numbering sequence, or status lifecycle to keep in sync.
-- **A credit memo is an Order with a negative balance** — `OrderType ∈ {Return, CreditMemoOrder}`, `ReversesOrderID` set, negative-quantity/amount lines (BO-D9 / BO-D10). A negative `Balance` means we owe the customer; settle it by a **Refund Payment**, by **applying it to another Order** (a zero-cash credit-application `Payment` whose `PaymentLine`s net the two Orders), or by **write-off** (`PaymentStatus='WrittenOff'`).
-- **Statements / consolidated bills** = **reports** that group a customer's Orders + Payments over a period — a presentation concern, not a primitive (§15).
+- `Balance = TotalGross − SUM(posted PaymentLine.Amount)`; AR aging, dunning, and drill-through all
+  operate on Orders.
+- The customer-facing "invoice" is the confirmed/posted Order rendered as a document — `OrderNumber`
+  is its number, the lifecycle stamp its issue/tax-point date.
+- **Credit memo** = an Order with negative lines and a negative Balance (`Return`/`CreditMemoOrder`
+  + `ReversesOrderID`). Settle by refund Payment, by applying to another Order (a zero-cash
+  credit-application Payment netting the two), or by write-off (`PaymentStatus='WrittenOff'`;
+  the write-off op itself is deferred until a real finance need).
+- **Statements / consolidated bills** = reports grouping a customer's Orders + Payments. Delivery
+  lean (ruled): thin send-via-email of the rendered Order first, with an Action-plugin seam;
+  bill.com becomes a delivery adapter when a channel needs it.
 
-### 4.4 Subscription + SubscriptionPlan + SubscriptionEvent
+### 4.5 Subscriptions
 
 ```sql
-__mj_BizAppsOrders.SubscriptionPlan
-  ID UUID PK,
-  ProductID UUID FK → Product NOT NULL,                 -- the underlying product
-  Name NVARCHAR(200),
-  BillingCycle NVARCHAR(20) NOT NULL,                   -- 'Monthly' | 'Quarterly' | 'Annual' | 'Custom'
-  CustomCycleDays INT NULL,                             -- if BillingCycle = 'Custom'
-  PricePerCycle DECIMAL(18,4),
-  TrialDays INT NOT NULL DEFAULT 0,
-  IsActive BIT NOT NULL DEFAULT 1
-
-__mj_BizAppsOrders.Subscription
-  ID UUID PK,
-  SubscriptionNumber NVARCHAR(40) UNIQUE,
-  OrderLineID UUID FK → OrderLine NOT NULL,             -- the order line that birthed this sub
-  SubscriptionPlanID UUID FK → SubscriptionPlan NOT NULL,
-  CustomerOrganizationID UUID FK → BizAppsCommon.Organization NOT NULL,
-  OwningCompanyID UUID FK → __mj.Company NOT NULL,      -- which sub the revenue belongs to
-  Status NVARCHAR(20) NOT NULL,                         -- 'Active' | 'Paused' | 'Canceled' | 'Migrated' | 'Trialing'
-  StartDate DATE NOT NULL,
-  CurrentPeriodStart DATE NOT NULL,
-  CurrentPeriodEnd DATE NOT NULL,
-  TrialEndDate DATE NULL,
-  CanceledAt DATETIMEOFFSET NULL,
-  EndDate DATE NULL,                                     -- if terminated
-  -- Provider linkage (for Stripe-driven subs)
-  PaymentProviderID UUID FK → PaymentProvider NULL,
-  ProviderSubscriptionID NVARCHAR(100) NULL,
-  -- RevRec
-  RevenueRecognitionScheduleID UUID FK → RevenueRecognitionSchedule NOT NULL,
-  -- Migration trail (downgrade/upgrade per BO-D24)
-  MigratesFromSubscriptionID UUID FK → Subscription NULL,
-  MigratesToSubscriptionID UUID FK → Subscription NULL
-
-__mj_BizAppsOrders.SubscriptionEvent                    -- immutable log
-  ID UUID PK,
-  SubscriptionID UUID FK NOT NULL,
-  EventType NVARCHAR(40) NOT NULL,                      -- 'Created' | 'Activated' | 'TrialStarted' | 'TrialEnded'
-                                                         -- | 'PaymentSucceeded' | 'PaymentFailed' | 'Paused' | 'Resumed'
-                                                         -- | 'Cancellation Requested' | 'Canceled' | 'Migrated'
-  OccurredAt DATETIMEOFFSET NOT NULL,
-  EventData JSONB,                                       -- provider payload + our derived state
-  ProviderEventID NVARCHAR(100) NULL,                    -- for idempotency
-  RelatedPaymentID UUID FK → Payment NULL,
-  RelatedJournalEntryID UUID FK → Accounting.JournalEntry NULL,
-  UNIQUE (ProviderEventID) WHERE ProviderEventID IS NOT NULL  -- prevent duplicate webhook processing
+__mj_BizAppsOrders.SubscriptionPlan     -- optional elaboration: billing cycle, price/cycle, trial
+__mj_BizAppsOrders.Subscription         -- continuity record: OrderLineID (birth), CustomerOrganizationID,
+                                        -- CompanyID [S1 rename], Status (Active|Paused|Canceled|Migrated|Trialing),
+                                        -- period bounds, provider linkage (ProviderSubscriptionID),
+                                        -- RevenueRecognitionScheduleID, migration trail (MigratesFrom/To)
+__mj_BizAppsOrders.SubscriptionEvent    -- immutable log; ProviderEventID UNIQUE (webhook idempotency)
 ```
 
-### 4.5 Payment + PaymentProvider + PaymentIntent + PaymentLine
+Lifecycle per D20: first sale creates; renewals spawn per-cycle Orders (Draft at launch;
+`RenewalSpawnStatus` per type/plan later); downgrade = cancel + new. Stripe-driven subs mirror
+Stripe state via webhooks; manual subs are driven by our scheduler. The find-or-extend-or-create
+behavior and the renewal-spawn job are the deferred remainder of the subscription build (§18).
+
+### 4.6 Revenue-recognition envelope
 
 ```sql
-__mj_BizAppsOrders.PaymentProvider
-  ID UUID PK,
-  ProviderType NVARCHAR(40) NOT NULL,                   -- 'Stripe' | 'PayPal' | 'Square' | 'Authorize' | 'Adyen' | 'Manual'
-  CompanyID UUID FK → __mj.Company NOT NULL,             -- which sub uses this provider account
-  Name NVARCHAR(200),
-  CredentialsRef NVARCHAR(200),                          -- reference into MJ Credentials engine
-  IsLiveMode BIT NOT NULL DEFAULT 0,
-  IsActive BIT NOT NULL DEFAULT 1
-
-__mj_BizAppsOrders.PaymentIntent
-  ID UUID PK,
-  PaymentProviderID UUID FK NOT NULL,
-  ProviderIntentID NVARCHAR(100) NOT NULL UNIQUE,        -- provider-side ID (e.g., Stripe pi_xxx)
-  Status NVARCHAR(30) NOT NULL,                          -- provider-state-mapped: 'RequiresPayment' | 'Processing' | 'Succeeded' | 'Canceled' | 'Failed'
-  Amount DECIMAL(18,2) NOT NULL,
-  CurrencyCode CHAR(3) FK NOT NULL,
-  OrderID UUID FK → Order NULL,                          -- the Order being collected (BO-D47)
-  CustomerOrganizationID UUID FK NOT NULL,
-  CreatedAt DATETIMEOFFSET NOT NULL,
-  LastEventAt DATETIMEOFFSET
-
-__mj_BizAppsOrders.Payment
-  ID UUID PK,
-  PaymentNumber NVARCHAR(40) UNIQUE,
-  ReceivingCompanyID UUID FK → __mj.Company NOT NULL,     -- where cash hits (often BCHQ)
-  PaymentDate DATE NOT NULL,
-  Method NVARCHAR(20) NOT NULL,                           -- 'CreditCard' | 'ACH' | 'Wire' | 'Check' | 'Cash' | 'InternalTransfer'
-                                                           -- | 'GiftCard' | 'Refund' | 'Chargeback' | 'BankReturn'
-  Amount DECIMAL(18,2) NOT NULL,                          -- gross; negative for refund/chargeback/return
-  ProcessingFeeAmount DECIMAL(18,2) NOT NULL DEFAULT 0,   -- provider fee withheld (BO-D47)
-  NetAmount DECIMAL(18,2),                                -- = Amount - ProcessingFeeAmount (cash actually settled)
-  CurrencyCode CHAR(3) FK NOT NULL,
-  ExchangeRateUsed DECIMAL(18,8) NULL,                    -- when foreign currency
-  FunctionalCurrencyAmount DECIMAL(18,2),
-  -- Provider linkage
-  PaymentProviderID UUID FK NULL,
-  PaymentIntentID UUID FK → PaymentIntent NULL,
-  PaymentMethodID UUID FK → CustomerPaymentMethod NULL,   -- saved instrument used (BO-D46)
-  StoredValueAccountID UUID FK → StoredValueAccount NULL, -- when Method='GiftCard' (BO-D44)
-  ProviderChargeID NVARCHAR(100) NULL,                    -- provider-side charge ID
-  -- Reversal (per BO-D9, BO-D14)
-  ReversesPaymentID UUID FK → Payment NULL,
-  ProviderRefundID NVARCHAR(100) NULL,
-  ReversalReason NVARCHAR(MAX) NULL,
-  -- Status
-  Status NVARCHAR(20) NOT NULL,                           -- 'Pending' | 'Captured' | 'Failed' | 'Refunded' | 'Disputed'
-  -- JE linkage
-  PostedJournalEntryID UUID FK → Accounting.JournalEntry NULL,
-  Description NVARCHAR(MAX),
-  Notes NVARCHAR(MAX)
-
-__mj_BizAppsOrders.PaymentLine                            -- cash application (renamed from PaymentAllocation; BO-D16 / BO-D45)
-  ID UUID PK,
-  PaymentID UUID FK NOT NULL,
-  OrderID UUID FK → Order NOT NULL,                       -- the Order this clears (Order is the A/R primitive)
-  OrderLineID UUID FK → OrderLine NULL,                   -- optional line-grain application
-  Amount DECIMAL(18,2) NOT NULL,                          -- how much of this Payment clears this Order
-  AllocatedAt DATETIMEOFFSET NOT NULL,
-  AllocatedByUserID UUID FK NULL                          -- NULL = auto-allocated
-
-__mj_BizAppsOrders.CustomerPaymentMethod                  -- saved instrument / token vault (BO-D46)
-  ID UUID PK,
-  CustomerOrganizationID UUID FK → BizAppsCommon.Organization NOT NULL,
-  PaymentProviderID UUID FK → PaymentProvider NOT NULL,
-  ProviderCustomerID NVARCHAR(100),                       -- e.g. Stripe cus_xxx
-  ProviderPaymentMethodID NVARCHAR(100),                  -- e.g. Stripe pm_xxx (token only; no PAN stored)
-  MethodType NVARCHAR(20),                                -- 'CreditCard' | 'ACH' | ...
-  Brand NVARCHAR(40), Last4 CHAR(4), ExpiryMonth INT, ExpiryYear INT,
-  IsDefault BIT NOT NULL DEFAULT 0,
-  IsActive BIT NOT NULL DEFAULT 1
-
-__mj_BizAppsOrders.StoredValueAccount                     -- gift card / stored-value instrument (BO-D44)
-  ID UUID PK,
-  Code NVARCHAR(60) UNIQUE,                               -- the gift-card number
-  IssuingCompanyID UUID FK → __mj.Company NOT NULL,       -- whose books carry the liability
-  CurrencyCode CHAR(3) FK → BizAppsAccounting.Currency NOT NULL,
-  InitialAmount DECIMAL(18,2) NOT NULL,
-  CurrentBalance DECIMAL(18,2) NOT NULL,
-  Status NVARCHAR(20) NOT NULL,                           -- 'Active' | 'Depleted' | 'Expired' | 'Suspended' | 'Voided'
-  IssuedFromOrderLineID UUID FK → OrderLine NULL,         -- the sale that created it
-  BeneficiaryPersonID UUID FK → BizAppsCommon.Person NULL,
-  BeneficiaryOrganizationID UUID FK → BizAppsCommon.Organization NULL,
-  ExpiresAt DATE NULL
-
-__mj_BizAppsOrders.StoredValueTransaction                 -- stored-value balance ledger (BO-D44)
-  ID UUID PK,
-  StoredValueAccountID UUID FK NOT NULL,
-  TransactionType NVARCHAR(20) NOT NULL,                  -- 'Issue' | 'Redeem' | 'Refund' | 'Adjust' | 'Expire'
-  Amount DECIMAL(18,2) NOT NULL,                          -- signed
-  BalanceAfter DECIMAL(18,2) NOT NULL,
-  RelatedPaymentID UUID FK → Payment NULL,
-  RelatedOrderID UUID FK → Order NULL,
-  OccurredAt DATETIMEOFFSET NOT NULL
+__mj_BizAppsOrders.RevenueRecognitionSchedule  -- the COMPUTED envelope (method, dates, totals) —
+__mj_BizAppsOrders.RevRecScheduleLine          -- kept for MRR/ARR display + as the computation
+                                               -- source; the LEDGER truth is the forward-dated
+                                               -- JEs themselves (D14)
 ```
 
-### 4.6 RevenueRecognitionSchedule + RevRecScheduleLine
+The waterfall math stands (per-period amounts, front-loaded rounding remainder in entry 1,
+anniversary dating); what gets WRITTEN is real future-dated JEs at booking-lock. The as-built
+ScheduledJournalEntry-bridge fields on these tables retire with the D14 rework (§18).
 
-**Division of labor (revised v2, per BA-D25):** Orders **computes** the recognition waterfall and keeps this lightweight schedule for MRR/ARR display and as the computation source. The actual ledger entries are **not** emitted by Orders — for each schedule line, Orders generates a corresponding **`ScheduledJournalEntry`** (+ line items) in BizAppsAccounting via `AccountingService.createScheduledJournalEntries(...)`. Accounting's **period-close engine materializes** each `ScheduledJournalEntry` into a Pending `JournalEntry` (Dr Deferred Revenue / Cr Revenue) on its target period, then freezes it. There is **no Orders-side rev-rec cron**.
+### 4.7 Payments & stored value
 
 ```sql
-__mj_BizAppsOrders.RevenueRecognitionSchedule
-  ID UUID PK,
-  SchedulingMethod NVARCHAR(20) NOT NULL,                -- 'StraightLine' | 'Milestone' | 'PctOfCompletion' | 'Custom'
-  StartDate DATE NOT NULL,
-  EndDate DATE NOT NULL,
-  TotalAmount DECIMAL(18,2) NOT NULL,
-  TotalRecognized DECIMAL(18,2) NOT NULL DEFAULT 0,      -- updated as accounting materializes scheduled JEs
-  CurrencyCode CHAR(3) FK NOT NULL,                      -- → BizAppsAccounting.Currency (BA-D11)
-  -- Detail in RevRecScheduleLine
-  IsComplete BIT NOT NULL DEFAULT 0
-
-__mj_BizAppsOrders.RevRecScheduleLine                     -- one per accounting period in the waterfall
-  ID UUID PK,
-  ScheduleID UUID FK NOT NULL,
-  PeriodStart DATE NOT NULL,
-  PeriodEnd DATE NOT NULL,
-  Amount DECIMAL(18,2) NOT NULL,                          -- entry 1 carries the front-loaded rounding remainder
-  -- Linkage to the accounting-side scheduled entry Orders created for this period (soft refs; no FK)
-  ScheduledJournalEntryID UUID NULL,                      -- → Accounting.ScheduledJournalEntry (the future JE)
-  RecognizedJournalEntryID UUID NULL,                     -- → Accounting.JournalEntry once materialized (read-back)
-  RecognizedAt DATETIMEOFFSET NULL,                       -- when accounting materialized it
-  IsRecognized BIT NOT NULL DEFAULT 0
+__mj_BizAppsOrders.PaymentProvider        -- Stripe | Manual | (StoredValue) …; per-company account;
+                                          -- CredentialsRef into MJ Credentials; IsLiveMode
+__mj_BizAppsOrders.PaymentIntent          -- provider-side state; ProviderIntentID UNIQUE; OrderID ref
+__mj_BizAppsOrders.Payment                -- PaymentNumber; ReceivingCompanyID; Method (CreditCard|ACH|
+                                          -- Wire|Check|Cash|InternalTransfer|GiftCard|Refund|Chargeback|
+                                          -- BankReturn); Amount (negative = reversal); ProcessingFeeAmount;
+                                          -- NetAmount; provider/intent/method refs; ReversesPaymentID;
+                                          -- Status (Pending|Captured|Failed|Refunded|Disputed);
+                                          -- PostedJournalEntryID (soft ref)
+__mj_BizAppsOrders.PaymentLine            -- cash application: PaymentID × OrderID (+ optional line),
+                                          -- Amount, AllocatedAt/By
+__mj_BizAppsOrders.CustomerPaymentMethod  -- token vault: provider customer/pm tokens, display meta,
+                                          -- IsDefault — never the PAN
+__mj_BizAppsOrders.StoredValueAccount     -- gift card instrument: code, issuing company, balance,
+__mj_BizAppsOrders.StoredValueTransaction -- signed ledger (Issue|Redeem|Refund|Adjust|Expire)
+                                          -- (schema shipped; the gift-card FLOWS are deferred — §21)
 ```
 
-> Renewals/amendments that recompute a future schedule cause Orders to supersede the affected `ScheduledJournalEntry` rows in accounting (accounting sets `Status='Superseded'` with `SupersededByScheduledJournalEntryID`); already-materialized periods are corrected via reversal JEs, never mutation.
-
-### 4.7 IntercompanyFlow
+### 4.8 Sales rules
 
 ```sql
-__mj_BizAppsOrders.IntercompanyFlow
-  ID UUID PK,
-  OrderID UUID FK → Order NULL,                           -- if originated from an order
-  SubscriptionID UUID FK → Subscription NULL,             -- if recurring (per period)
-  FromCompanyID UUID FK → __mj.Company NOT NULL,           -- sub originating the flow
-  ToCompanyID UUID FK → __mj.Company NULL,                 -- destination if internal
-  ToExternalPartyID UUID FK NULL,                          -- for waterfall external parties (Contracts use case)
-  FlowType NVARCHAR(30) NOT NULL,                          -- 'IntercompanyAR' | 'Distribution' | 'MgmtFee' | 'RevShare'
-  Amount DECIMAL(18,2) NOT NULL,
-  CurrencyCode CHAR(3) FK NOT NULL,
-  PeriodStart DATE,
-  -- JE linkages — both legs of the intercompany pair
-  FromJournalEntryID UUID FK → Accounting.JournalEntry,    -- Due-From JE in From company
-  ToJournalEntryID UUID FK → Accounting.JournalEntry,      -- Due-To JE in To company (NULL for external)
-  Description NVARCHAR(MAX)
+__mj_BizAppsOrders.SalesRule         -- RuleType (DiscountLimit | PaymentTermsRequired |
+                                     -- ProductAuthorization | CreditLimit | MaxOrderValue | Custom),
+                                     -- scope, PredicateJson, ApprovalRequiredRoleID
+__mj_BizAppsOrders.SalesAuthority    -- per-rep limits: MaxDiscountPct, MaxOrderValue,
+                                     -- allowed terms/categories
 ```
 
-### 4.8 SalesRule + SalesAuthority
+Schema built; the Confirm-time evaluation engine + Task routing are the pending build (D26, §18).
 
-```sql
-__mj_BizAppsOrders.SalesRule
-  ID UUID PK,
-  Name NVARCHAR(200),
-  RuleType NVARCHAR(40) NOT NULL,                          -- 'DiscountLimit' | 'PaymentTermsRequired' | 'ProductAuthorization' | 'CreditLimit' | 'Custom'
-  Scope NVARCHAR(40),                                       -- 'Global' | 'PerProduct' | 'PerCustomer' | 'PerSalesRep'
-  ScopeReferenceID UUID NULL,                               -- specific Product/Customer/Rep if scoped
-  PredicateJson JSONB,                                      -- rule expression
-  ApprovalRequiredRoleID UUID FK → __mj.Role NULL,          -- if violated, who must approve
-  IsActive BIT NOT NULL DEFAULT 1
+### 4.9 What is deliberately ABSENT from the schema
 
-__mj_BizAppsOrders.SalesAuthority                          -- per-rep limits (e.g., max discount Johanna allows)
-  ID UUID PK,
-  SalesRepUserID UUID FK → __mj.User NOT NULL,
-  MaxDiscountPct DECIMAL(7,4),
-  MaxOrderValue DECIMAL(18,2),
-  AllowedPaymentTermsTypeIDs JSONB,                         -- array of FKs
-  AllowedProductCategoryIDs JSONB,
-  IsActive BIT NOT NULL DEFAULT 1
-```
+| Absent | Why |
+|---|---|
+| `Invoice` / `CreditMemo` entities | D2 — the Order is the receivable; credit memo = negative Order |
+| `Order.JournalEntryID` / an Order↔JE junction | D10 — one JE per LINE; `OrderLine.JournalEntryID` |
+| `IntercompanyFlow` + booking-time IC legs | D13 — intercompany arises on the payment side |
+| Currency/FX columns | D24 — deferred until multi-currency activates |
+| `AccountingPeriod` refs / closed-period guard | D25 — no periods anywhere; date-based rules if ever |
+| GL account columns on Product/Category | D5 — role-based `GLAccountLink` resolution |
+| `Coupon` tables | D22 — provider-model launch; native entity is the fast-follow |
+| An `Order.Name` column | D29 — transactions get number + memo |
+| Webhook/notification tables for entitlements | D27 — consumers poll |
 
 ---
 
-## 5. Multi-company order mechanics
-
-Per BO-D5/D6 and M19 of master plan. The canonical scenario: a customer purchases items from three different BC subsidiaries on one order.
-
-### Example
-
-Customer "Acme Corp" places an order:
-- Line 1: Sidecar Pro subscription, $99/mo (CompanyID = Sidecar)
-- Line 2: Cimatri analytics, $5,000 one-time (CompanyID = Cimatri)
-- Line 3: BCHQ consulting, $10,000 one-time (CompanyID = BCHQ)
-
-Total: $15,099 + tax. Payment goes to BCHQ (the receiving company).
-
-### At Order Post time, BizAppsOrders generates:
-
-**Per-line revenue/AR JEs (via `AccountingService.createJournalEntry`, each landing `Pending`)**:
-
-```
-JE A (in Sidecar, EntryType='OrderBooking'):
-  Dr Intercompany AR (BCHQ)    $99 + tax
-  Cr Deferred Revenue          $99 (it's a subscription)
-  Cr Sales Tax Payable         tax portion
-
-JE B (in Cimatri, EntryType='OrderBooking'):
-  Dr Intercompany AR (BCHQ)    $5,000 + tax
-  Cr Sales Revenue             $5,000
-  Cr Sales Tax Payable         tax portion
-
-JE C (in BCHQ, EntryType='OrderBooking'):
-  Dr Accounts Receivable (Acme)  $15,099 + tax
-  Cr Sales Revenue               $10,000 (BCHQ's own portion)
-  Cr Intercompany AP (Sidecar)   $99 + tax
-  Cr Intercompany AP (Cimatri)   $5,000 + tax
-  Cr Sales Tax Payable           BCHQ's tax portion
-```
-
-(All amounts in functional currency per BA-D10. If Acme is AUD-billing, OriginalCurrency/Amount/ExchangeRate populated on each line.)
-
-### IntercompanyFlow records
-
-For each non-receiving line, BizAppsOrders emits an `IntercompanyFlow` record linking the From and To Companies. These feed:
-- `aidp` analytics (intercompany visibility in consolidated views)
-- Recon (verifying actual cash movement matches expected flows)
-
-### On Payment Receipt
-
-```
-JE D (in BCHQ, EntryType='PaymentReceipt'):
-  Dr Cash                         $15,099 + tax
-  Cr Accounts Receivable (Acme)   $15,099 + tax
-```
-
-The intercompany balances between BCHQ and Sidecar/Cimatri remain on the books until cash is actually wired between subsidiaries (handled by Treasury, separate from order processing per M22).
-
-### Sub-period revenue recognition (for the subscription line)
-
-Monthly, BizAppsOrders triggers `RevRecScheduleLine` recognition. For the Sidecar Pro subscription:
-
-```
-JE E (in Sidecar, EntryType='RevenueRecognition'):
-  Dr Deferred Revenue      $99
-  Cr Subscription Revenue  $99
-```
-
-This continues each month for the duration of the subscription.
-
----
-
-## 6. Reversal patterns at every layer
-
-Per BO-D9. Every business event has a corresponding reversal pattern.
-
-### Order reversal (return / cancellation / amendment)
-
-A new Order with `OrderType = 'Return'` (or `'Cancellation'`, `'Amendment'`) and `ReversesOrderID` set. Lines have negative quantities for the slice being reversed. Posts a JE that backs out the appropriate slice via Accounting reversal mechanism.
-
-**Example: customer returns 1 of 2 product A**:
-- Original Order #100, Line 1: `Qty=2, Product A, $200`
-- Return Order #100-R1, Line 1: `Qty=-1, Product A, $-100, ReversesOrderLineID=Line1Of100`
-- On Post of #100-R1, JE auto-generated:
-  - `Dr Sales Revenue $100, Dr Sales Tax Payable, Cr A/R $108` (or Cr Cash if refund-on-return)
-
-### Payment reversal (refund / chargeback / bank-return)
-
-A new Payment with `Method ∈ {'Refund', 'Chargeback', 'BankReturn'}` and `ReversesPaymentID` set. `Amount` is negative.
-
-**Example: chargeback of a $108 payment**:
-- Original Payment #500: `Amount=108, Method='CreditCard', Status='Captured'`
-- Chargeback Payment #500-C1: `Amount=-108, Method='Chargeback', ReversesPaymentID=#500, Status='Captured'`
-- On Capture, JE: `Dr A/R / Cr Cash` (re-establishing the receivable)
-
-### Credit memo (negative-balance Order)
-
-A credit memo is an `Order` with `OrderType ∈ {Return, CreditMemoOrder}`, `ReversesOrderID` set, and negative lines → a **negative `Balance`** (we owe the customer). Settlement options:
-- **Apply to another Order**: a zero-cash credit-application `Payment` whose `PaymentLine`s net the credit Order against an open debit Order.
-- **Refund**: emit a Refund Payment against the negative balance.
-- **Write off**: post a write-off JE and set `PaymentStatus='WrittenOff'`.
-
-### Subscription reversal (cancellation with proration)
-
-Subscription `Status='Active' → 'Canceled'` mid-period with proration:
-- `SubscriptionEvent` records the Cancellation
-- If proration refund applies, emit a Refund Payment (per Payment reversal pattern)
-- The JE for the refund reverses the unearned portion of recognized revenue
-
-Cancellation without refund (paid through end of period): status change only; revrec continues through original end date.
-
-### What ties it all together
-
-Every reversal at the business-entity level emits its own JE through Accounting. Each JE has `ReversesJournalEntryID` set on the reversal JE. The chain is:
-
-```
-Business event reversal (Order #100-R1) → emits → JE in Accounting (in Pending) → batched → Batched
-Original business event (Order #100) → emitted → JE in Accounting (Batched earlier)
-```
-
-Both JEs persist forever. Net is zero. Audit story: walk from any reversal JE → reversal business entity → original business entity → original JE.
-
----
-
-## 7. JE emission to BizAppsAccounting
-
-BizAppsOrders generates balanced JEs from domain logic and persists them into BizAppsAccounting via the thin `AccountingService` façade — `createJournalEntry(JournalEntryDraft)` for immediate entries and `createScheduledJournalEntries(ScheduledJournalEntryDraft[])` for the rev-rec waterfall (BO-D7, BO-D11, BO-D28). Each created JE lands in `Pending`; **Accounting's batch run** later flips it to `Batched` and ships it to the ERP (accounting plan §8.4 / BA-D16). **"Emit"/"post" here means create a Pending JE — not post to the GL.** Where the façade isn't yet built, Orders writes `JournalEntry` + `JournalEntryLine` records directly through the MJ entity layer (the accounting server subclass auto-numbers; DB triggers enforce balance/immutability).
-
-**Lineage (no hard FKs).** Accounting takes no dependency on Orders. Each JE records its origin via accounting's soft-ref columns (`JournalEntry.OrderID / OrderLineID / SubscriptionID / PaymentID / ContractID / RevRecScheduleID` — no FK) **and** a row in the polymorphic `JournalEntryLink (EntityID + RecordID)` table pointing back at the Order/Payment/etc. Orders owns referential integrity for those links. FKs from Orders *into* accounting (e.g. `Payment.PostedJournalEntryID`) are normal and fine.
-
-### When JEs are emitted
-
-| Business event | EntryType in Accounting | Pattern |
-|---|---|---|
-| Order Post | `'OrderBooking'` | Dr A/R / Cr Sales (or DefRev for subs) / Cr Tax Payable; plus intercompany legs if multi-company |
-| Payment Capture | `'PaymentReceipt'` | Dr Cash (net) / Dr Processing Fee / Cr A/R (gross); plus realized FX line if rate mismatch (BO-D47) |
-| Subscription period rollover | `'RevenueRecognition'` | **Materialized by Accounting** from the `ScheduledJournalEntry` rows Orders pre-generated (Dr DefRev / Cr Sales). Orders does **not** emit these at rollover (BO-D11). |
-| Refund Payment Capture | `'Refund'` (reversal) | Reverses the original Payment Receipt slice |
-| Gift card sold | `'OrderBooking'` | Dr Cash / Cr Gift Card Liability (deferred — not revenue) (BO-D44) |
-| Gift card redeemed (as payment) | `'PaymentReceipt'` | Dr Gift Card Liability / Cr A/R (liability relief, no cash) (BO-D44) |
-| Return Order Post | `'OrderBooking'` (reversal) | Reverses the original OrderBooking slice |
-| Credit-memo Order Post | `'OrderBooking'` (reversal) | Reverses the original Order's booking JE — a credit memo is a negative-balance return Order (BO-D45) |
-| Subscription cancellation (with refund) | `'Refund'` + reverses prior `'RevenueRecognition'` lines as appropriate | Multiple JEs to back out unearned revenue + emit refund Payment + refund JE |
-| Commission accrual (on Order Post) | `'CommissionAccrual'` | Dr Commission Expense / Cr Commission Payable |
-| Partner rev share accrual (on Order Post) | `'PartnerRevShare'` | Dr Partner Cost / Cr Partner Payable |
-| Intercompany flow (multi-company order) | `'IntercompanyFlow'` | Dr IC A/R / Cr Sales (one leg); Dr Sales / Cr IC A/P (other leg) |
-
-### How JE generation is selected
-
-`Product.RevenueRecognitionType` + `Product.IsTaxable` + `Order.OrderType` + `OrderLine.ReversesOrderLineID` + customer's tax profile determine the JE pattern at order-book time. The JE generator reads these (all metadata) and assembles the balanced JE drafts.
-
-For multi-company orders, the generator emits **multiple JEs** (one per Company involved) all referencing the same Order via `OriginOrderID`. Auditability preserved by the shared origin link.
-
----
-
-## 8. Subscription lifecycle
-
-### Status transitions
+## 5. Order lifecycle and booking workflow
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Trialing : sub created with trial
-    [*] --> Active : sub created, no trial
-    Trialing --> Active : trial ends, payment succeeds
-    Trialing --> Canceled : trial ends, no payment / customer cancels
-    Active --> Paused : customer / admin pauses
-    Active --> Canceled : customer / admin cancels
-    Paused --> Active : resumed
-    Paused --> Canceled : cancellation while paused
-    Active --> Migrated : upgrade/downgrade (BO-D24)
-    Migrated --> [*]
-    Canceled --> [*]
+    [*] --> Draft
+    Draft --> Quoted : optional stage
+    Draft --> Confirmed : skip allowed (D9)
+    Quoted --> Confirmed
+    Confirmed --> Posted : JEs in the subledger (near-instant)
+    Posted --> Fulfilled : logistics fact only (no JE — D15);\nauto-advance when no line needs fulfillment
+    Draft --> Voided
+    Quoted --> Voided
+    note right of Confirmed : FIRST transition books\none JE per line (D10);\nfailure BLOCKS Confirm
+    note right of Fulfilled : after Confirm, corrections are\nreversing / credit-memo orders only
 ```
 
-### Per-event JE emission
-
-- `Created` → no JE (subscription is intent, not transaction)
-- `TrialStarted` → no JE
-- `TrialEnded` (with payment) → `OrderBooking` JE for first period
-- `PaymentSucceeded` (each billing cycle) → `PaymentReceipt` JE
-- `Period rolling forward` → no Orders action; **Accounting materializes** the pre-generated `ScheduledJournalEntry` for that period (Dr DefRev / Cr Sales) at period close
-- `PaymentFailed` → SubscriptionEvent only; retry per dunning policy
-- `Paused` → SubscriptionEvent only; no revrec during pause
-- `Canceled` → if proration applies, Refund Payment + reversal JEs
-
-### Provider-driven vs. internal
-
-For Stripe-driven subs, Stripe is the source of truth for lifecycle events. Our subscription mirrors Stripe state via webhooks. For Manual / non-provider subs, our system drives the events (cron job emits PaymentSucceeded equivalent based on PaymentTerms).
-
----
-
-## 9. Payment providers (pluggable)
-
-### Abstract interface
-
-```typescript
-export abstract class PaymentProvider {
-  static readonly ProviderType: string;  // 'Stripe' | 'PayPal' | ...
-
-  // Customer-facing operations
-  abstract createPaymentIntent(request: CreatePaymentIntentRequest): Promise<PaymentIntent>;
-  abstract capturePayment(paymentIntentId: string): Promise<Payment>;
-  abstract refundPayment(paymentId: string, amount?: number): Promise<Payment>;
-  abstract cancelPaymentIntent(paymentIntentId: string): Promise<void>;
-
-  // Subscription operations
-  abstract createSubscription(request: CreateSubscriptionRequest): Promise<Subscription>;
-  abstract pauseSubscription(subscriptionId: string): Promise<void>;
-  abstract resumeSubscription(subscriptionId: string): Promise<void>;
-  abstract cancelSubscription(subscriptionId: string, prorate: boolean): Promise<Subscription>;
-  abstract updateSubscription(subscriptionId: string, changes: SubscriptionUpdate): Promise<Subscription>;
-
-  // Webhook receiver
-  abstract verifyWebhookSignature(payload: string, signature: string): boolean;
-  abstract handleWebhookEvent(event: WebhookEvent): Promise<void>;
-}
-```
-
-### Shipped implementations
-
-- **`StripePaymentProvider`** (v1): full implementation including PaymentIntents, Subscriptions, Refunds, webhooks. Per MJ PR #2214 design.
-- **`ManualPaymentProvider`** (v1): supports Wire/ACH/Check/Cash payments manually recorded by finance.
-- **`StoredValuePaymentProvider`** (v1): internal provider for gift-card / stored-value redemption — validates the code, debits the `StoredValueAccount`, posts liability relief (BO-D44).
-- **`PayPalPaymentProvider`** (v1.5): basic operations.
-- **`SquarePaymentProvider`** (v2): basic operations.
-- **`AuthorizeNetPaymentProvider`** (v2): legacy support.
-- **`AdyenPaymentProvider`** (v2): enterprise European/international.
-
-### Webhook receipt & idempotency
-
-Inbound webhooks are received by an **unauthenticated Express route** mounted before the auth middleware, mirroring MJ's `SignatureWebhookHandler` (the eSignature precedent): it captures the **raw request body**, verifies the provider HMAC signature inside the provider driver's `verifyWebhookSignature`, resolves a context user, then dispatches to `handleWebhookEvent` (a processing engine; a `BaseAction` may wrap the *processing* step for agent/workflow reuse). The HTTP boundary is **not** an MJ Action (BO-D13).
-
-Each webhook event has a `ProviderEventID`. We store it on `SubscriptionEvent.ProviderEventID` (and `PaymentIntent.ProviderEventID` for non-subscription events). A unique constraint prevents duplicate processing.
+- **Stage order fixed, skipping forward allowed; effects always enforced** (booking on first
+  Confirmed; can't Fulfill before Posted). `Voided` only from Draft/Quoted.
+- **Confirm is a remote operation** (`Orders.ConfirmOrder`) — order row + per-line JEs in one
+  transaction. The editor's start-status picker offers Draft/Quoted/Confirmed (routed through the
+  op); Posted is pointless as a start status; Voided is out; create-into-Fulfilled awaits its own
+  op (D17).
+- **Booking mechanics (D12):** Save-override on the locked-status transition → factory books each
+  line's JE via the accounting engine → stamps `OrderLine.JournalEntryID` → all-or-none commit.
+  Idempotency = line-already-booked.
+- **State-based validation matrix** in the entity server; totals validated on save; DB triggers
+  freeze locked financials (§4.3).
+- The **order-status vs financial-status split** (fulfillment and GL progress are independent
+  concerns) was considered and deliberately kept as ONE linear status for v1 — revisit
+  post-baseline (Robert flagged, Marcelo deferred 2026-07-08).
 
 ---
 
-## 10. Sales rules enforcement
+## 6. JE booking — the accounting integration
 
-Per BO-D17, BO-D18. Johanna's existing BC rules become first-class system constraints.
+The orders-facing half of the contract (accounting's plan §14 is the mirror):
 
-### Rule types (initial set)
-
-| Type | Predicate |
-|---|---|
-| `DiscountLimit` | `OrderLine.DiscountPct <= SalesAuthority.MaxDiscountPct` |
-| `PaymentTermsRequired` | `Order.PaymentTermsTypeID IN SalesAuthority.AllowedPaymentTermsTypeIDs` |
-| `ProductAuthorization` | `OrderLine.Product.ProductCategoryID IN SalesAuthority.AllowedProductCategoryIDs` |
-| `CreditLimit` | `Customer.TotalOpenAR + Order.TotalGross <= Customer.CreditLimit` |
-| `MaxOrderValue` | `Order.TotalGross <= SalesAuthority.MaxOrderValue` |
-| `Custom` | metadata-defined predicate via JSONB expression |
-
-### Evaluation flow
-
-1. At Order Confirm, all applicable `SalesRule` records evaluated against the Order
-2. If all pass → Order proceeds to Posted on user action
-3. If any violation → an **"Approval Request" Task** is created in **BizAppsTasks**, linked to the Order via `Task Links` and routed to the approver role named by `SalesRule.ApprovalRequiredRoleID` (BO-D27)
-4. Approver acts in the Tasks approval inbox; the Task Type's decision hook fires the appropriate Action
-5. On **approve** → Order proceeds to Posted; on **reject** → Order returns to Draft with the decision notes annotated
-
-### Other workflow gates on the same Tasks substrate
-
-Sales-rule approval is one consumer of a shared mechanism. The same "Approval Request" Task pattern handles the broader set of order/subscription workflow gates that product management and finance need, e.g.:
-
-- **Customer-requested credit-limit override** routed to finance for approval
-- **Discount / pricing exception** beyond a rep's `SalesAuthority`
-- **Refund / chargeback authorization** above a threshold
-- **Subscription cancellation / mid-term change** requiring manager sign-off
-- **Manual payment write-off** approval
-
-Each is a Task linked to its subject record (Order, Payment, Subscription) with an approver role; the recorded decision drives the downstream state transition. BizAppsAccounting uses the same substrate (manual JE approval, period reopen, CoA-mapping approval) — see [§17](#17-cross-repo-coordination).
+- **One JE per order line** (D10), single-company by construction, shaped per D11 (AR net / Sales
+  gross / contra discounts / DefRev for deferred products).
+- Booked via **`Accounting.CreateJournalEntry` / atomic `CreateJournalEntries`** remote operations —
+  one TransactionGroup, all-or-none, typed errors. The old `AccountingService` façade concept is
+  retired; the engine pair is `OrdersEngineBase`/`OrdersEngine` ↔
+  `AccountingEngineBase`/`AccountingEngine`.
+- **Account resolution** (D5) runs in `OrdersEngineBase` (browser-safe — the UI can show "accounts
+  this product will use" at product setup); booking consumes it server-side.
+- Every JE lands **`Pending`**; accounting batches and dispatches. Reversal orders book mirror JEs
+  (flipped Dr/Cr, net-zero) marked at the order level; formal JE→JE reversal linkage
+  (`EntryType='Reversal'` + `ReversesJournalEntryID`) is a contained deferred item.
+- **Lineage:** accounting-side soft origin refs (`JournalEntry.OrderID`/`OrderLineID`/…) +
+  orders-side `OrderLine.JournalEntryID`. Hardness upgrades per the §2 FK standard.
+- **When JEs are emitted:** order lock (per-line booking JEs + forward-dated rev-rec JEs, D14) ·
+  payment capture (Dr Cash net / Dr Processing Fee / Cr A/R gross) · refund/chargeback (reversal) ·
+  return/credit-memo lock (mirror) · gift-card issue/redemption (liability pattern — deferred).
+  Nothing fires on Posted→Fulfilled (D15).
 
 ---
 
-## 11. Tax integration with BizAppsAccounting
+## 7. Revenue recognition
 
-Per BO-D20 / BA-D19.
+Per D14 — the whole model in four sentences:
 
-### At Order Confirm time
+1. At booking-lock, deferred-revenue lines write their recognition waterfall as **real forward-dated
+   JEs** (Dr Deferred Revenue / Cr Revenue), dated by shape: **single-date** (event → one entry on
+   the event date) or **period** (sub → one per anniversary across `ServicePeriodStart/End`, rounding
+   remainder front-loaded).
+2. There is **no materializer, no daily job, no schedule bridge** — recognition "fires" by date;
+   accounting batches sweep entries by date window (default cutoff = today).
+3. **Changes and cancellations are correcting Orders** whose new entries net against the staged
+   ones; staged entries are never edited or deleted.
+4. `RevenueRecognitionSchedule`(+lines) remains as the **computed envelope** for MRR/ARR display and
+   as the computation source — never the ledger truth.
 
-```
-For each OrderLine:
-  1. Determine TaxJurisdictions applicable to (Customer.ShipToAddress, Product.ProductTaxCategory, OrderDate)
-  2. Call AccountingService.TaxCalculationProvider.calculateTax(...)
-  3. Get back: per-jurisdiction TaxableAmount + TaxAmount + TaxRateID
-  4. Store as OrderLineTaxLine records
-  5. Update OrderLine.LineTax = SUM(OrderLineTaxLine.TaxAmount)
-  6. Update OrderLine.LineTotalGross = LineTotalNet + LineTax
-```
-
-### Customer tax profile
-
-`Accounting.CustomerTaxProfile` (in BizAppsAccounting) has resale certs, VAT registration, exempt status keyed to `BizAppsCommon.Organization`. We look this up at calc time and pass to the provider.
-
-### Provider choice
-
-Per BA-D19: the `TaxCalculationProvider` **interface, the tax entities, and the adapters (Avalara/TaxJar/Local) all live in BizAppsAccounting**; the **order-time invocation lives here in Orders**. Deployments select a provider via `RegisterClass`. Local fallback supports manual rate entry for simple cases. **Note (v2):** the provider abstraction is **not yet built** in accounting (only the tax *data* tables exist) — Orders' tax phase (Phase G) sequences behind accounting's tax phase. Cross-app references use the `MJ_BizApps_Accounting:` entity prefix.
+Fulfillment never recognizes revenue (D15). Bundle SSP allocation across performance obligations is
+future (fields ship now, D21).
 
 ---
 
-## 12. Integration with BizAppsContracts (upstream) and aidp (downstream)
+## 8. Payments
 
-### Upstream from Contracts
-
-When BizAppsContracts creates a Contract:
-- It can pre-populate Order records (e.g., the annual renewal cycle's first order)
-- It can override revrec on Subscription via `ContractRevRecOverride` (per BizAppsContracts plan)
-- It references our Orders / Subscriptions via `ContractOrderLink` / `ContractSubscriptionLink`
-
-We expose hooks:
-- `Order.ContractID` soft FK
-- `OrderEvent` raised on Post/Voided so Contracts can react
-
-### Downstream to aidp
-
-aidp consumes our data via cross-schema queries (no Integration framework, same DB):
-- `RunView` against `OrderLine` for forecast-from-pipeline analysis
-- `RunView` against `Subscription` for MRR/ARR calculations
-- `RunView` against `IntercompanyFlow` for consolidation visibility
-- Reads `Order` and `Payment` for AR aging
-
-We don't push to aidp. They pull.
+- **Model per D18**; **providers per D19** (Stripe + Manual v1; stub-first Stripe with the real
+  LXP-checkout subset pulled forward; webhook receipt as an unauthenticated raw-body route with
+  HMAC + `ProviderEventID` idempotency).
+- **Capture** books the payment JE (fee leg coded, dormant until a Processing-Fee role/account is
+  seeded). **Application** is manual PaymentLine allocation today; auto-apply suggestion later.
+- **Refund** = the atomic `Orders.RefundPayment` op (D17): reversal Payment + reversing JE in one
+  transaction, guards (≤ un-refunded remainder; only Captured payments; no double-refund). The
+  provider money-movement call is a separate, deferred concern — Manual refunds are fully
+  expressible now.
+- **Chargeback / bank-return** = reversal Payments (`Status='Disputed'` for chargebacks); dispute
+  case management is future (§21).
+- **Intercompany clearing rides the payment side** (D13): when cash lands with the receiving
+  company, due-to/due-from legs clear sibling companies — design lands with the payments slice
+  (reserved reference shape lives in the accounting plan §9).
 
 ---
 
-## 13. Migration of CDP data
+## 9. Multi-company and intercompany
 
-CDP today has order/customer/payment data in:
-- `crm.Account` → migrate to `BizAppsCommon.Organization` (handled by BizAppsCommon migration)
-- `crm.Contact` → migrate to `BizAppsCommon.Person`
-- `crm.Invoice` → migrate to `BizAppsOrders.Order` (legacy invoices become posted Orders; their payments → `Payment` + `PaymentLine`)
-- `crm.Payment` → migrate to `BizAppsOrders.Payment` + `PaymentLine`
-- `sdr.Subscription`, `sdr.SubscriptionPlan`, `sdr.SubscriptionEvent` → migrate to `BizAppsOrders.Subscription` (plus generating synthetic Order/OrderLine records for the originating purchase)
-- `finance.Product`, `finance.ProductCategory` → migrate to `BizAppsOrders.Product` / `ProductCategory`
-- `finance.PaymentTermsType` → migrate to `BizAppsOrders.PaymentTermsType` (currently in crm in CDP; consolidated here)
-
-Migration scripts under `migration/bizapps-orders/` in new aidp repo (when Stage 4 starts). Each existing CDP entity gets ID-mapping (INT → UUID), schema restructuring, validation. Per master plan §12.
-
----
-
-## 14. Phasing and delivery
-
-Modular delivery per M23. ~18 weeks of focused dev across 8 phases.
-
-> **v2 sequencing note.** **v1 ships Stripe + Manual providers only** (BO-D29); other providers move to v1.5/v2 (Phase H). Schema migrations land once the BizAppsAccounting schema locks (imminent). Phases that consume not-yet-built accounting surface are gated on their accounting counterparts: Phase B's JE emission ⇠ accounting `AccountingService` façade (issue #9); Phase D's rev-rec materialization ⇠ accounting `ScheduledJournalEntry` close engine; Phase G's tax ⇠ accounting `TaxCalculationProvider`. Phase F's approvals ⇠ BizAppsTasks workflow features (issue #8). Until a dependency lands, Orders uses the documented interim (direct entity CRUD for JEs).
-
-### Phase A: Product catalog + basic Order (Weeks 1–3)
-
-- [ ] Catalog entities: ProductType, Product, ProductCategory, ProductPrice (+ PriceList, PriceTier), ProductTaxCategory, ProductBundleItem, ProductEntitlement, ProductPerformanceObligation, EntitlementGrant (variants + metered-billing engine deferred to v2)
-- [ ] Out-of-the-box product types + IsA extension entities (Event first; Membership/PhysicalGood/DigitalGood/Service/Donation/GiftCard) (BO-D37, BO-D42)
-- [ ] `ProductBehavior` base + ClassFactory resolution + full Before/After hook surface plumbed (default behavior implements pricing precedence + standard post) (BO-D38)
-- [ ] `OrdersEngine` (BaseEngine) caching catalog/config metadata + price-resolution helper (BO-D30)
-- [ ] Seeded sample products (incl. a bundle + a subscription + an event) for demo
-- [ ] Order / OrderLine entities, single-company first
-- [ ] Order Draft → Confirmed → Posted lifecycle (no JE yet)
-- [ ] OrderLine validation (totals match, currency consistency)
-
-**Demo**: create a product, set a price, create an order with multiple lines, confirm and post in MJ Explorer.
-
-### Phase B: Multi-company + IntercompanyFlow + JE emission (Weeks 3–6)
-
-- [ ] OrderLine.CompanyID multi-company support
-- [ ] IntercompanyFlow generation at Post time
-- [ ] AccountingService façade integration (`createJournalEntry`) — interim fallback: direct `JournalEntry`/`JournalEntryLine` entity CRUD
-- [ ] Order JE generation per BO-D19 (Product.RevenueRecognitionType drives pattern)
-- [ ] Order A/R fields (TotalGross / AmountPaid / Balance / DueDate / PaymentStatus); customer "invoice" is a rendered report — no Invoice entity (BO-D45)
-- [ ] Reversal Order pattern (Return/Cancellation/Amendment)
-
-**Demo**: post a multi-company order, see all JEs in BizAppsAccounting (revenue + IC due-from/due-to + tax accrual), see the order balance, return part of the order (a credit-memo Order), see reversal JEs.
-
-### Phase C: Payment + PaymentProvider abstraction + Stripe (Weeks 6–10)
-
-- [ ] PaymentProvider abstract class + Stripe implementation
-- [ ] PaymentIntent entity + Stripe PaymentIntent lifecycle mapping
-- [ ] Payment entity (capture + refund + chargeback) with ProcessingFee/Net settlement fields (BO-D47)
-- [ ] PaymentLine cash application to Orders (renamed from PaymentAllocation) (BO-D45)
-- [ ] CustomerPaymentMethod token vault (charge-on-file for subscriptions/repeat) (BO-D46)
-- [ ] Payment Capture JE generation (Dr Cash net / Dr Processing Fee / Cr AR gross + realized FX) (BO-D47)
-- [ ] Gift card: StoredValueAccount + StoredValueTransaction + StoredValuePaymentProvider (issuance liability + redemption relief) (BO-D44)
-- [ ] Stripe webhook receiver as an unauthenticated Express route (raw-body capture + HMAC signature verification) + idempotency (BO-D13)
-- [ ] Refund Payment pattern (reverses prior Payment)
-
-**Demo**: customer pays an order via Stripe Checkout; see PaymentIntent → Payment → PaymentLine → JE; refund part of the payment; see reversal JE.
-
-### Phase D: Subscription + lifecycle (Weeks 10–13)
-
-- [ ] SubscriptionPlan + Subscription + SubscriptionEvent entities
-- [ ] Stripe Subscription integration (create / pause / resume / cancel / migrate)
-- [ ] Webhook handling for subscription events
-- [ ] RevenueRecognitionSchedule + RevRecScheduleLine
-- [ ] Generate one `ScheduledJournalEntry` (+ line items) per accounting period via `AccountingService.createScheduledJournalEntries(...)`; **Accounting materializes** them at period close (no Orders-side cron) (BO-D11)
-- [ ] Mid-period cancellation with proration refund pattern
-
-**Demo**: create a $99/mo Stripe subscription; see monthly RevRec JEs auto-emit; cancel mid-month; see proration Refund + reversal JE.
-
-### Phase E: ManualPaymentProvider + non-Stripe lifecycle (Weeks 13–15)
-
-- [ ] ManualPaymentProvider implementation (for Wire/ACH/Check/Cash)
-- [ ] Manual Payment entry UI in MJ Explorer
-- [ ] Manual subscription billing cron (for orgs not using Stripe for subs)
-- [ ] Dunning workflow for failed payments
-
-**Demo**: enter a manual ACH payment; allocate to an Order; see JE; same for a manual subscription cycle.
-
-### Phase F: Sales rules enforcement + Tasks-based approvals (Weeks 15–16)
-
-> **Prerequisite**: the generic approval features in BizAppsTasks (outcome/decision model, reject hook, role-based routing, orchestration API — tasks issue [#8](https://github.com/MemberJunction/bizapps-tasks/issues/8)) must land first. Orders depends on `@mj-biz-apps/tasks-entities` + `tasks-core` + `tasks-server` (`LoadBizAppsTasksServer()` at startup) and the `__mj_BizAppsTasks` schema.
-
-- [ ] SalesRule + SalesAuthority entities
-- [ ] Seeded rule types (DiscountLimit, PaymentTermsRequired, etc.)
-- [ ] Evaluation engine at Order Confirm
-- [ ] "Approval Request" Task Type + `Task Links` from Order; route to approver role (BO-D27)
-- [ ] Raise Approval Request Task on violation; decision hook drives Post / return-to-Draft
-- [ ] Rule editor UI in MJ Explorer
-
-**Demo**: salesperson confirms an order with discount > authority; see ApprovalRequest; approver approves; order proceeds to Post.
-
-### Phase G: Tax integration + advanced multi-currency (Weeks 16–17)
-
-- [ ] Call AccountingService.TaxCalculationProvider at OrderLine time
-- [ ] OrderLineTaxLine records populated
-- [ ] CustomerTaxProfile lookup
-- [ ] Multi-currency Order with FX rate captured at Confirm time
-- [ ] Realized FX gain/loss auto-emission on cross-currency Payment
-
-**Demo**: AUD-billed customer order; see OrderLine.OriginalCurrency populated; see tax accrued by jurisdiction; later, payment in AUD at different rate; see realized FX line.
-
-### Phase H: Provider expansion (v1.5/v2) + reconciliation (Weeks 17–18)
-
-> v1 ships **Stripe + Manual only** (BO-D29). The providers below are v1.5/v2 ecosystem contributions.
-
-
-- [ ] PayPalPaymentProvider (basic ops)
-- [ ] Webhook event log entity (for forensics + replay)
-- [ ] Recon between Stripe charges and our Payment records
-- [ ] Idempotency stress test (replay 1000 duplicate webhooks; verify zero double-processing)
-
-**Demo**: PayPal flow end-to-end; replay attack defense; missing-payment detection.
+- **Line ownership is the product's company** (D6): a three-company order is three lines whose JEs
+  book AR + revenue in each product's own company. There are no cross-company mapping routes —
+  cross-company revenue flows are intercompany TRANSACTIONS, and those arise **only at payment
+  time** (D13).
+- `Order.CompanyID` (owning company) anchors the document, visibility (D28), and the customer
+  relationship — never GL resolution.
+- **Consequence for booking:** no due-to/due-from at booking, no seller-of-record AR concentration.
+  The customer-facing invoice can still present as one document (the order's JE is a virtual
+  aggregation); the LEDGER holds per-line-company AR until payment allocates cash and raises the IC
+  legs. ⚠ Robert/Jeremy re-closure pending (§19.1).
+- **Company-scope UX semantics are deliberately unruled** — Marcelo's model (selected companies make
+  the others *not exist* in the frontend, not mere query filters) awaits his dedicated scope
+  planning pass; until then, no scope doctrine and no scope code. Interim: Payments scope by
+  `ReceivingCompanyID`, Products by their company; Orders unscoped until `Order.CompanyID` lands.
 
 ---
 
-## 15. Open questions
+## 10. Pricing and coupons
 
-1. **Order numbering format**: `ORD-{seq}` global or `ORD-{CompanyCode}-{seq}` per-Company? Multi-company orders complicate the latter. **Lean**: global `ORD-{seq}` with the receiving Company embedded in metadata.
-2. **Quote-to-Order workflow**: should `Quoted` status be its own entity (with expiration date, version history) or just a stage of Order? **Lean**: stage of Order for v1, can split later.
-3. **Coupon / promo code support**: in v1 or punt? Many SaaS orgs need this. **Lean**: punt to v2; deployments can model as a negative-discount line via Custom rule.
-4. **Recurring billing failures and dunning**: how aggressive is the retry policy? Provider-default (Stripe Smart Retries) or our own?
-5. **Order line dimension tagging**: should OrderLine support BizAppsAccounting Dimensions directly (e.g., tag a line with `CostCenter=Marketing`) so JE generation can propagate them? **Lean**: yes; add `OrderLineDimension` junction.
-6. **Currency at Order vs Line**: do all lines in an order share a CurrencyCode, or can each line have its own? **Lean**: same currency per Order; mixed-currency orders are a v2+ scope.
-7. **Invoice numbering** — **RESOLVED / N/A**: there is no Invoice entity; the posted Order *is* the bill, so `OrderNumber` is the document number (BO-D45).
-8. **Bulk bill / statement send**: emailing the posted-order bill (and statements) to customers — an Orders responsibility or a separate `BizAppsBilling` app? **Lean**: thin built-in send-via-email; extensibility via Action plugin.
-9. **Customer portal**: customer-facing payment-page / subscription-management UI? Almost certainly a v2 / separate app. Out of v1.
-10. **Cross-app FK enforcement**: `Order.ContractID` references `BizAppsContracts.Contract` — is that enforced or soft? **Lean**: soft (no DB FK across app schemas), with validator in BaseEntity.
-11. **PaymentTermsType** location: **RESOLVED — owned by BizAppsOrders.** Accounting's `AccountingCompanyProfile.DefaultPaymentTermsTypeID` already delegates to `BizAppsOrders.PaymentTermsType`. Add a `PaymentTermsType` entity to the Orders schema (migrated from CDP `crm`).
-12. **What happens to a Pending JE if its source Order is voided before Batch?** Per BizAppsAccounting open question — flag-and-emit-zero vs hard-delete. **Lean**: flag-and-emit-zero (audit purity).
-13. **Consolidated invoicing / customer statements** — **RESOLVED**: there is no Invoice entity; statements/consolidated bills are **reports** grouping a customer's Orders + Payments. Out of v1 as a packaged report; no schema needed (BO-D45).
-14. **Invoice entity vs. Order as A/R primitive** — **RESOLVED**: **collapsed onto Order.** No Invoice entity; the posted Order is the receivable and a credit memo is a negative-balance Order (BO-D15 / BO-D45).
-
----
-
-## 16. Out of scope
-
-- General Ledger functionality (BizAppsAccounting's domain)
-- Contract envelope (BizAppsContracts' domain)
-- E-commerce storefront / customer portal (future app)
-- CRM (deal management, lead nurturing) (HubSpot / future app)
-- Inventory, costing (FIFO/LIFO/Average), COGS recognition, and inventory-asset valuation — a future bolt-on **BizAppsInventory** app; Orders ships only the seams (BO-D43, [Appendix B](#appendix-b--bizappsinventory-boundary))
-- Payment **dispute case management** (evidence / won-lost lifecycle) — v1 models a chargeback as a reversal Payment + `Status='Disputed'` (BO-D47)
-- Gift-card **cross-company redemption** (v1.5) and **breakage** revenue recognition (v2) (BO-D44)
-- Customer service / support tickets (future)
-- Metered/usage **billing engine** + consumption aggregation — the product/pricing side is modeled in v1 (BO-D36), the billing engine is v2
-- Product **variants** (size/color/tier SKU matrix) — v2 (BO-D32)
-- Bundle **revenue-allocation engine** (SSP-based ASC 606 allocation) — fields modeled in v1, allocation engine v2 (BO-D35)
-- Marketplace / multi-vendor (significant scope expansion; not in plan)
-- Quote-to-cash workflow tooling (workflow engine could be separate app)
-- Pricing optimization / dynamic pricing
-- Returns logistics (RMA tracking, restocking) — out for v1
-- Audit packages / SOC2 evidence collection (future BizAppsAudit)
+- **Pricing per D21:** tables built; deterministic precedence with `UnitPrice` direct entry as the
+  base; `ResolvePrice` engine on top; contract-override slot reserved at the top of the chain for
+  future Contracts.
+- **Coupons per D22:** Option A (provider model) at launch — Stripe hosted checkout + promotion
+  codes own configuration/application; Orders records the outcome at order level AND line level
+  (`DiscountAmount`). The Orders-native `Coupon` entity is the fast-follow, as just another
+  provider. **Before the recording schema freezes:** map Stripe's Coupon-vs-Promotion-Code model
+  end-to-end (incl. order/line-level discount reporting) and evaluate one second provider
+  (Square/Shopify class) to find where models differ; Robert's schema review checklist (provider
+  traceability · definition-vs-code split · both-level recording · redemption
+  constraints/stacking · never blocks the Stripe-only launch) applies; Sidecar answers on coupon
+  surfaces/shapes are owed (§20).
+- Coupon/campaign-code **dimensions** on JE lines are acknowledged as coming — deferred (Amith:
+  "we'll unfortunately have to add it… come back to that").
 
 ---
 
-## 17. Cross-repo coordination
+## 11. Tax
 
-This plan depends on work in sibling repos, tracked as GitHub issues:
-
-| Dependency | Repo / Issue | Owner | What Orders needs |
-|---|---|---|---|
-| `AccountingEngine` (BaseEngine) — cached ledger metadata + `CreateJournalEntry` / `CreateScheduledJournalEntries` helpers over the JE BaseEntity subclasses; defined `JournalEntryDraft` / `ScheduledJournalEntryDraft` contracts | bizapps-accounting [#9](https://github.com/MemberJunction/bizapps-accounting/issues/9) | MarceloT-BC | The integration entry point for emitting JEs and scheduling rev-rec. Orders drives the draft shapes (BO-D28). Interim: direct entity CRUD. |
-| Accounting adopts the **BizAppsTasks** approval substrate (replacing the phantom `__mj.ApprovalRequest`) + accounting-plan update | bizapps-accounting [#10](https://github.com/MemberJunction/bizapps-accounting/issues/10) | MarceloT-BC (with bc-izygmunt) | Keeps approvals consistent across the ecosystem. |
-| Generic approval/workflow features in **BizAppsTasks**: outcome/decision model (`TaskDecision`), reject hook, role-based routing, orchestration API (MJ casing conventions), reusable approval UX widget | bizapps-tasks [#8](https://github.com/MemberJunction/bizapps-tasks/issues/8) | bc-izygmunt (Ian) | Prerequisite for Phase F (sales-rule approvals) and all other workflow gates (BO-D27). |
-
-**Sequencing.** BizAppsAccounting is ~Phase 1 and expected to wrap this week or next; its schema lock is imminent. Orders begins **now** against this v2 design (entities, services, phasing). Orders' **schema** migrations land once the accounting schema is locked, and phases that consume unbuilt accounting surface (Tax provider, intercompany posting, scheduled-JE materialization) sequence behind their accounting counterparts (BO-D29).
-
-**Naming reminder.** Cross-app entity references resolve as `MJ_BizApps_Accounting: …`, `MJ_BizApps_Common: …`, `MJ_BizApps_Tasks: …`; schemas are `__mj_BizAppsAccounting`, `__mj_BizAppsCommon`, `__mj_BizAppsTasks`, and this app's `__mj_BizAppsOrders`.
+Per D23: Option B durable shape, third-party engine calculates, our tables snapshot. Tax remains
+**deferred by complexity** — no stub — until the finance call (§20): pull Stripe Tax forward for
+LH4I launch, or launch explicitly tax-exempt/manual. Stripe Tax is the natural first provider (it
+attaches to the checkout we already use); Avalara-class when non-Stripe channels or
+exemption-certificate management matter (we sell to nonprofits — certs matter). Tax remittance:
+the selling company collects/remits (Robert; Jeremy verifies nexus posture — rides Q25's sitting).
+S1 already ships `LineTax`/`LineTotalGross`, so the tax build slots in without reworking totals or
+booking.
 
 ---
 
-*v1 ships a comprehensive order management substrate that handles BC's day-to-day customer transactions: multi-company orders with intercompany generation, Stripe + manual payments, subscriptions with revrec, returns/refunds/chargebacks at every layer, sales rules enforcement, multi-currency, tax integration. Each MJ adopter can install this and have working order management in days. BC layers Contracts on top in Stage 3; the AIDP analytics layer consumes from this substrate in Stage 4.*
+## 12. Sales rules and approvals
+
+Per D26. Rule types: DiscountLimit · PaymentTermsRequired · ProductAuthorization · CreditLimit ·
+MaxOrderValue · Custom (JSON predicate). Flow: evaluate at Confirm → all pass → proceed; violation →
+"Approval Request" Task (BizApps Tasks) linked via `Task Links`, routed to
+`SalesRule.ApprovalRequiredRoleID`; approve → Confirm proceeds; reject → back to Draft, annotated.
+The same substrate carries every other human gate (credit-limit override, discount exception,
+refund authorization above threshold, cancellation sign-off, write-off approval) — reuse the
+accounting `TasksAppApprovalGate` pattern. Schema is built (`SalesRule`/`SalesAuthority` seeded rule
+types); the evaluation engine + routing + rule-editor UI are the pending build — not launch-critical
+(post-launch or when discount-authority enforcement matters).
 
 ---
 
-## Appendix A — BizAppsContracts boundary
+## 13. Entitlements
 
-> **Status**: forward-looking. `bizapps-contracts` is a **separate repo to be spun up after BizAppsOrders is underway**. This appendix records the agreed Orders↔Contracts split so we build Orders with the right seams (soft `Order.ContractID`, pricing-precedence slot, rev-rec override hook) and don't absorb contract concerns here.
+Per D27: `ProductEntitlement` (definition on the product) → `EntitlementGrant` (instance at booking,
+with beneficiary defaulting to the buyer; per-line designation for attendees/recipients/honorees).
+Grants are the machine-readable spine downstream apps read to provision access.
 
-BizAppsContracts is the **B2B agreement envelope** that layers on top of Orders + Subscriptions. It encapsulates the *negotiated terms that govern future activity*; Orders remains the *transactional substrate that records what actually happened*.
-
-| Lives in **Orders/Subs** (this repo) | Lives in **BizAppsContracts** (future repo) |
-|---|---|
-| Catalog, prices, deterministic price resolution | Negotiated **price overrides / rate cards** (top of the BO-D33 precedence chain) |
-| The *actual* orders, subscriptions, payments | The *agreement* that spawns/governs them |
-| Subscription lifecycle + execution | **Renewal cycles, escalators, committed volume/spend, term length** |
-| Rev-rec execution (ScheduledJournalEntry waterfall) | **Contract-level rev-rec overrides** (e.g. allocate to a custom schedule) |
-| "What happened / what's active" | "What we agreed" — SLAs, MFN/caps, signature & legal status, amendments |
-
-**Principles**
-- An **Order can exist with no Contract** (one-off purchase). A Contract never *replaces* an Order — it **spawns and governs** them.
-- Contracts **drive** Orders: generate the renewal Order each cycle; supply the override price; optionally override rev-rec.
-- Linkage is via Contracts-owned join tables (e.g. `ContractOrderLink`, `ContractSubscriptionLink`) + the soft `Order.ContractID`; **no hard FK from Orders into Contracts** (Orders takes no dependency on Contracts — same one-way rule Orders follows toward Accounting).
-- Workflow/approvals for contract negotiation reuse **BizAppsTasks** (BO-D27), consistent across the stack.
-
-**Seams Orders ships now so Contracts can layer cleanly later**
-- `Order.ContractID` soft reference (BO-D21).
-- Pricing precedence reserves the top slot for a contract override (BO-D33 / §10 resolution order).
-- A rev-rec override hook on the waterfall builder (`OrdersEngine.BuildRevRecWaterfall`) so a contract can supply a custom schedule.
-- `OrderEvent` raised on Post/Void so Contracts can react.
+- **Read/notify path for consumers (the LXP):** a poll — MJ Scheduled Job + Record-Set-Processing
+  over grants. No webhook system gets invented.
+- The grant SHAPE freeze for the LXP awaits Ethan's answers to Robert's four questions (grant
+  granularity · lifecycle coupling · read contract · team beneficiary semantics — Robert owns
+  asking).
+- Provisioning/enforcement engine: later, deliberately.
 
 ---
 
-## Appendix B — BizAppsInventory boundary
+## 14. Permissions, roles, and company scope
 
-> **Status**: forward-looking. `bizapps-inventory` is a **separate bolt-on app**, not built in v1. Orders ships inventory *seams* so it can attach later without a schema break; the costing/valuation engine lives entirely there.
+- **Visibility/write per D28** — role-grant-driven via accounting's `UserCompanyRole` table;
+  owner-company-scoped read AND write; BCHQ order-desk users get all companies by deployment
+  config, not code.
+- Orders **seeds its own roles** (order entry, Order Fulfiller) mirroring accounting's
+  roles + RLS model; the A2 co-design (Marcelo + Robert) executes the mechanism. Approver-style
+  enforcement matters before any non-dev use on the accounting side; orders-side RLS rides the same
+  wave.
+- Company-scope UX semantics: unruled, awaiting Marcelo's scope pass (§9).
 
-PhysicalGood products need real inventory + cost accounting — stock by location, cost layers, **FIFO / LIFO / Average** (later Standard / Specific-ID), receipts / transfers / adjustments / cycle counts, lower-of-cost-or-market write-downs, and the COGS + inventory-asset JEs these drive. That is a large domain of its own and belongs in **BizAppsInventory**, not Orders.
+---
 
-| Lives in **Orders** (this repo) | Lives in **BizAppsInventory** (future) |
-|---|---|
-| PhysicalGood product + `IsStockTracked` + GL account refs | Stock on hand by item × location/warehouse |
-| The order + per-line `FulfillmentStatus` + fulfillment `OrderEvent` | Cost layers/lots + the costing method (FIFO/LIFO/Average) |
-| Revenue side of the sale (Dr A/R / Cr Sales) | COGS + inventory-asset side (Dr COGS / Cr Inventory Asset) |
-| — | Receipts, transfers, adjustments, cycle counts, revaluation |
+## 15. UX direction
 
-**Flow**: Orders raises an OrderLine **Fulfilled** event → BizAppsInventory relieves the right cost layer per the costing method and **emits the COGS + Inventory-asset JEs into Accounting** (`AccountingEngine.CreateJournalEntry`, generate-then-batch, BO-D7). Accounting needs no knowledge of Inventory — it is just another upstream emitter, exactly like Orders.
+The binding UI-architecture rules (mirrors accounting §13; schema/engine remain this plan's core):
 
-**Typical entries Inventory owns:**
+1. **Forms-first (Amith):** first-class MJ Entity Forms for Order / Payment / Subscription /
+   Product (extend the generated forms; the MJ agents-app forms are the reference implementation),
+   composed of reusable widgets dashboards embed directly. Modal/slide-in content = the entity form
+   via MJ's form host (`forms.open()` / `<mj-form-dialog>` / `<mj-form-slide-in>` +
+   `EntityFormConfig`) — "not custom pop-up things."
+2. **Form vs workspace boundary (Marcelo):** the entity form is the home of simple one-record edits
+   + detail viewing; the **workspace is the home of creation and advanced edits**; process surfaces
+   are always workspaces; pop-out opens a record in its workspace. **The Order editor is the
+   pilot** — its tab set (Details · Lines · Bill-To/Ship-To · Payments · Accounting) becomes the
+   Order entity form's shape, reused everywhere the order opens. A forms **design pass** precedes
+   the form-family build-out (base pattern + specialization, not over-standardized).
+3. **Edit gating rides what MJ ships — nothing invented:** the DB triggers (51001–51005) are the
+   enforcement authority; `*Extended` forms set `EditMode` from status and show the state's REAL
+   verbs (Reverse / Refund / Cancel), never a disabled Save.
+4. **Migration policy:** existing hand-rolled editors stay until touched — **convert-on-touch**
+   (editing a surface for other work converts it to the form host in the same change); NEW
+   create/edit surfaces are forms from the start; genuinely bespoke WORKFLOW surfaces
+   (kanban/console/tree/worklist) are exempt. The order-editor pilot is its own slice.
+5. **List idiom:** per-column filtering/sorting in AG-grid column headers (sortable/filterable
+   columns indicated, index-limited); the card above each list shrinks to the time-span control +
+   high-value preset chips (Orders: Overdue · Unpaid · Confirmed-not-Posted · my orders; Order
+   History keeps its moving-window presets).
+6. **Chrome (Matt):** container queries, not media queries; sticky interior chrome, content
+   scrolls; tab content scrolls internally with tabs always visible; **required-state red-dot per
+   editor tab + completeness-gated save** (the Order editor is exactly Matt's concern case);
+   table-to-edge density OK with kept hierarchy.
+7. **Dashboards ship as-is** (Amith: "don't put too much more work into this — improve based on
+   user feedback"); correctness and forms-first work take the slots.
 
-| Event | JE |
-|---|---|
-| Purchase receipt | Dr Inventory Asset / Cr AP (or GR-NI) |
-| Sale fulfillment | Dr COGS / Cr Inventory Asset (cost per FIFO/LIFO/Average) |
-| Revaluation / write-down | Dr COGS (or Loss) / Cr Inventory Asset |
-| Adjustment / shrinkage | Dr Inventory Shrinkage / Cr Inventory Asset |
+---
 
-**Seams Orders ships now** (no cost-layer/valuation machinery in v1): `PhysicalGoodProduct.IsStockTracked` + `InventoryAssetGLAccountID`, `Product.COGSGLAccountID` (already present), `OrderLine.FulfillmentStatus`, the fulfillment `OrderEvent`, and the `ProductBehavior` `AfterPost` / fulfillment hooks (BO-D38) where the Inventory integration attaches.
+## 16. The LXP launch (first integrating consumer)
+
+Sidecar's **LXP** (Ethan's team) is the first integrating consumer — Amith + John decided
+(2026-07-14) that **BizApps Orders is the exclusive go-forward commerce engine**, on a dedicated
+Sidecar instance, with BCSaaS refactored to wrap Orders as a fast-follow.
+
+- **Launch surface:** the **LH4I individual checkout** — 3 fixed digital tiers + coupons +
+  track/bundle selection + upfront Stripe card payment. LH4T (teams) is AD/manual.
+- **Wiring:** **LXP → Orders DIRECT** for launch (the BCSaaS wrap moved off the critical path).
+  **Contingency:** if the date slips, Teams-first launches with zero checkout dependency and LH4I
+  self-serve switches on when Orders lands — never any new CDP wiring.
+- **The minimal-BAO scope** (Ethan's list): products/tiers · coupons · entitlement-via-ProductType ·
+  payment · DueDate/overdue · the grant read/notify path (+ tax only if the finance call says so).
+- **The date owed (their A7):** Robert + Marcelo state it after the validation-first sequencing
+  (§18) reaches its LH4I gate: a full dry run — buy a tier with a coupon through Stripe checkout
+  (test mode) → order books → grants emitted → LXP-style poll reads them → sub + forward-dated
+  rev-rec staged → payment captured → A/R correct — with committed harnesses green and a recorded
+  demo. That gate passing IS "BAO ready for LH4I."
+- Overdue/grace behavior per D32; entitlement notification per D27; renewals are NOT a launch need
+  (annual terms).
+
+---
+
+## 17. Migration of legacy CDP data
+
+At cutover (rides aidp Stage 4):
+
+- `crm.Invoice` → posted Orders; `crm.Payment` → Payment + PaymentLine; `sdr.Subscription*` →
+  Subscription (+ synthetic originating Order/OrderLines); `finance.Product`/`ProductCategory` →
+  the catalog; `finance.PaymentTermsType` → PaymentTermsType. INT→UUID mapping throughout.
+- **Open-AR cutover rule (ruled, Robert 2026-07-16):** transfer **open invoices only, and only
+  those WITHOUT existing GL journal entries** — they enter Orders and book through the normal
+  pipeline (importing an already-journalized invoice would double-book). Jeremy identifies which
+  open invoices in the BC Data Platform lack GL JEs (the transfer set) + rules the treatment of
+  already-journalized open invoices (stay in legacy for collection vs JE-suppressed import).
+- Customer identifier stability (stable account numbers across systems) is a bizapps-common
+  Organization-identity concern, not an orders migration.
+
+---
+
+## 18. Build sequencing (current priorities)
+
+Ruling of record (Amith 2026-07-21, Marcelo re-prioritized 2026-07-22): **build first, iterate in
+the system.** Validation discipline: cheap test tiers run before AND after structural changes; GUI
+validates ONCE, after them; per-feature-vertical close-out with a demo artifact each — "built" is a
+claim until its gate's tests are green.
+
+1. **NOW — per-line booking (D10–D12), the priority.** Schema move (`OrderLine.JournalEntryID`,
+   Order JE ref dropped) + `OrderJournalEntryFactory` + Save-override + `Lines`/`Validate()`
+   encapsulation + contra-role seed (Sales Discounts, Returns & Allowances) + company-default
+   `GLAccountLink` rows seeded for testing. **Built and harness-proven 8/8 on the donor branch**
+   (§22); re-lands here deliberately.
+2. **Company-model schema wave (S1):** `Order.CompanyID` + `Product.CompanyID` NOT NULL rename +
+   `OrderLine.CompanyID` stamp + `ProductCategory.CompanyID` (per-company categories) + resolution
+   walk re-anchored to the product's company + same-company link enforcement tiers.
+3. **Rev-rec rework to D14:** retire the ScheduledJournalEntry bridge/materializer consumption in
+   favor of forward-dated JEs at booking; correcting-order netting; downstream harness re-runs.
+   (Pairs with accounting's batch rework: single-company batches + `PostingDate`.)
+4. **LH4I feature slices (the V2 surface):** the 3 tiers + track bundles seeded/validated · Stripe
+   real checkout subset (F.4/F.10) · coupon launch path (D22, after the schema-freeze
+   investigations) · entitlement read/notify poll (D27) · overdue/grace config (D32) · subscription
+   booking for tiers + staged rev-rec · tax IF the finance call says launch-with-tax.
+5. **Full GUI validation pass** — once, after the structural waves; then feature-enabling UI only
+   (forms design pass → order-editor pilot → convert-on-touch).
+6. **Cross-app FK hardening** when the CodeGen include-mode PR lands (Marcelo owns).
+7. **Later, triggers named:** payments-side intercompany design (with Q25's re-closure) ·
+   sales-rule evaluation engine + approvals routing · subscription lifecycle/renewal spawning ·
+   refund op + credit-settlement UI · fulfillment queue + order splitting · gift-card flows ·
+   provider expansion · delivery/dunning channels · GL-resolution deep dive (pre-volume) ·
+   CDP migration (aidp Stage 4).
+
+---
+
+## 19. Open architecture questions
+
+Only genuine unresolved tensions inside the architecture. Where we have a defensible default we
+proceed on it and the answer adjusts course.
+
+1. **Seller-of-record re-closure (HIGH).** Amith's per-line-company AR + payment-side intercompany
+   (D13) superseded Robert's 2026-07-20 seller-of-record booking shape, and Jeremy's finance
+   co-sign was given against the old shape. Both must re-confirm: does one-receivable-per-customer
+   (sisters never chase the customer) need the payment engine to REALLOCATE at capture, or does
+   per-line AR stand? Jeremy also re-verifies the tax-remit position under per-line AR. Building
+   Amith's shape meanwhile; the payments-slice IC design and the launch-date costing both hang off
+   this.
+2. **GL account resolution at volume.** The product → category tree → company-default walk, per
+   line at booking, across multi-company orders, is a flagged performance + complexity pain point
+   (Marcelo). The deep dive weighs: resolution caching coverage, the same-company invariant's
+   enforcement cost, category-tree shape, and denormalizing `CompanyID` onto `GLAccountLink`
+   (engine-stamped, trigger-verified — liked, not yet approved). Due before resolution is
+   load-bearing at real volume.
+3. **Company-scope UX semantics** (shared with accounting): Marcelo's "unselected companies don't
+   exist in the frontend" model awaits his dedicated scope planning pass — no scope doctrine or
+   code until then.
+4. **Pending-JE void semantics** (shared with accounting): a source order voided before its JEs
+   batch — hard-delete the Pending JEs or flag-and-carry at zero? Audit purity leans flag; branch
+   unresolved.
+5. **Order-status vs financial-status split:** fulfillment and GL progress are independent
+   concerns overloaded on one linear status — deliberately kept single for v1; revisit
+   post-baseline.
+
+---
+
+## 20. Open decisions parked with owners
+
+Not architecture tensions — rulings owed by named people, with our default noted:
+
+| Decision | Owner | Default while open |
+|---|---|---|
+| LH4I BAO-ready date (their A7) | Robert + Marcelo (after the §18 gate) | Teams-first contingency degrades gracefully |
+| Tax at LH4I launch: Stripe Tax pulled forward vs explicit tax-exempt launch | Jeremy + John (finance) | tax stays deferred; never a silent default |
+| Coupon surfaces beyond Stripe checkout · shapes actually used · LXP-side display/validation | Sidecar (John/marketing; Robert owns asking) | Stripe-page entry as today |
+| Coupon recording-schema freeze (after the two provider investigations) | Robert (review checklist) | Option A launch path proceeds |
+| Entitlement grant shape (granularity · lifecycle coupling · read contract · team semantics) | Ethan (Robert owns asking) | current definition+grant shape |
+| Order numbering: single vs BC-style dual sequence | Jeremy | global `ORD-{seq}` |
+| Renewal-spawn default (Draft) validation | Jeremy | Draft at launch (D20) |
+| Already-journalized open invoices at cutover: legacy-collect vs JE-suppressed import | Jeremy | per D17 §17 rule, transfer only un-journalized |
+| BC dispatch app registration + company-config standardization (accounting-side dependency) | Jeremy/Robert | accounting plan §7.5 |
+
+---
+
+## 21. Out of scope and future-app boundaries
+
+**Deferred, design standing** (each has a revisit trigger; nothing here is a contradiction):
+currency/FX (D24) · product variants (SKU matrix) · metered-billing engine (pricing fields ship) ·
+ASC-606 bundle allocation engine (fields ship) · gift-card flows (schema ships; issuance/redemption/
+cross-company/breakage later) · payment dispute case management · provider expansion
+(PayPal/Square/Authorize/Adyen) · statements & consolidated-bill report packages · bulk
+bill/statement delivery + bill.com adapter · per-line fulfillment queue + fulfillment
+groups/order-splitting (Robert: real-world partial fulfillment splits the order) · write-off
+settlement op · ProductBehavior plugin seam activation · browser catalog lazy-loading for very
+large catalogs · customer portal / storefront · CDP migration timing (aidp Stage 4).
+
+**Explicitly out (other apps' domain):** GL functionality, financial statements, year-end close
+(ERP / accounting) · contract terms/escalators/renewal envelopes (**BizApps Contracts** — future;
+Orders ships the seams: soft `Order.ContractID`, the pricing-precedence top slot, a rev-rec
+override hook, order events) · inventory, costing (FIFO/LIFO/Average), COGS, asset valuation
+(**BizApps Inventory** — future bolt-on; Orders ships the seams: `PhysicalGoodProduct.IsStockTracked`,
+`OrderLine.FulfillmentStatus`, fulfillment events; Inventory emits its own COGS/asset JEs into
+accounting as just another upstream emitter) · CRM / customer master (BizApps Common) · marketplace
+/ multi-vendor · returns logistics (RMA) · pricing optimization.
+
+---
+
+## 22. Build inventory (state as of consolidation, 2026-07-23)
+
+For orientation only — the plan above is the authority; this notes what exists on the donor branch
+(`feature/accounting-integration`, developed in the accounting-engine-dev instance) and its status
+relative to this plan. ◇ = agent-claimed, not independently verified.
+
+**Built + validated:** the full baseline schema (catalog incl. Event IsA pair, pricing tables,
+Order/OrderLine + dimensions + sequences, payments + token vault + stored-value schema,
+subscriptions, rev-rec envelope, sales-rule schema, PaymentTermsType) · **per-line booking on this
+plan's shape** — `OrderLine.JournalEntryID` schema move + role-slot resolver + per-line JE draft
+assembly + `OrderJournalEntryFactory` + Save-override — order-to-je harness **8/8 green**
+(multi-line/multi-company, discount contra, DefRev, rollback, idempotency) · atomic Confirm via
+remote op with E5 rollback proven · lifecycle transition matrix + skip + void gating ◇ · totals
+validation ◇ · A/R fields + computed IsOverdue ◇ · manual payments + capture JE + application ◇ ·
+reversal orders booking mirror JEs ◇ · pricing resolution engine (`ResolvePrice`) · entitlement
+grants at booking ◇ · overdue worklist ◇ · engine split (`OrdersEngineBase` + server `OrdersEngine`)
+◇ · Stripe success-stub provider ◇ · tiered test harnesses + the JE-workspace-grade golden-path
+validation pattern (accounting side) to replicate.
+
+**Built but pending rework to this plan's shape:** rev-rec emission still writes through the
+retired ScheduledJournalEntry bridge → D14 forward-dated JEs · company columns absent
+(`Order.CompanyID` / `OrderLine.CompanyID` stamps / `ProductCategory.CompanyID` / `Product.CompanyID`
+rename+NOT NULL) → §18.2 · account-resolution anchor not yet re-based to the product's company
+throughout · UI wave mid-flight on pre-rework shapes (hand-rolled editors under the convert-on-touch
+guardrail; ~16 surfaces; order-editor pilot unscheduled).
+
+**Not yet built:** payments-side intercompany machinery · Stripe real (LXP checkout subset) +
+webhook receiver · coupons (any layer) · tax (any layer) · sales-rule evaluation engine + approval
+routing · subscription find-or-extend + renewal spawning · `Orders.RefundPayment` +
+create-into-Fulfilled ops · entitlement read/notify poll · gift-card flows · orders-side role
+seeding/RLS · statements/delivery · CDP migration tooling.
