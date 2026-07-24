@@ -28,8 +28,9 @@
     "@memberjunction/sqlserver-dataprovider": "^5.49.0",
     "class-validator": "^0.14.3",
     "@mj-biz-apps/orders-server": "0.1.0",
-    "@mj-biz-apps/common-server": "^5.31.1",
-    "@mj-biz-apps/common-entities": "^5.31.1"
+    "@mj-biz-apps/common-server": "^5.32.0",
+    "@mj-biz-apps/common-entities": "^5.32.0",
+    "@mj-biz-apps/common-actions": "^5.32.0"
   },
   "repository": {
     "type": "git",
