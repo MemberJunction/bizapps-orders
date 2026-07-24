@@ -1,0 +1,38 @@
+{
+  "name": "mj_api",
+  "version": "0.1.0",
+  "description": "BizApps Orders API server (MemberJunction)",
+  "main": "index.js",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-specifier-resolution=node --import ./register.js -r dotenv/config ./src/index.ts",
+    "test": "vitest run",
+    "check-types": "tsc -noEmit",
+    "build": "tsc && tsc-alias -f"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@memberjunction/cli": "^5.49.0",
+    "dotenv": "17.2.4",
+    "nodemon": "^3.1.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@memberjunction/core": "^5.49.0",
+    "@memberjunction/global": "^5.49.0",
+    "@memberjunction/server": "^5.49.0",
+    "@memberjunction/server-bootstrap": "^5.49.0",
+    "@memberjunction/sqlserver-dataprovider": "^5.49.0",
+    "class-validator": "^0.14.3",
+    "@mj-biz-apps/orders-server": "0.1.0",
+    "@mj-biz-apps/common-server": "^5.31.1",
+    "@mj-biz-apps/common-entities": "^5.31.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-orders"
+  }
+}
