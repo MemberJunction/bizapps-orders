@@ -24,15 +24,16 @@
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
+            LinkType="Record"
         ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Provider Details Section -->
+    <!-- Payment Provider Details Section -->
     <mj-collapsible-panel
-        SectionKey="providerDetails"
-        SectionName="Provider Details"
-        Icon="fa fa-shield-alt"
+        SectionKey="paymentProviderDetails"
+        SectionName="Payment Provider Details"
+        Icon="fa fa-network-wired"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -63,10 +64,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Method Details Section -->
+    <!-- Payment Method Details Section -->
     <mj-collapsible-panel
-        SectionKey="methodDetails"
-        SectionName="Method Details"
+        SectionKey="paymentMethodDetails"
+        SectionName="Payment Method Details"
         Icon="fa fa-credit-card"
         [Form]="this"
         [FormContext]="formContext">

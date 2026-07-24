@@ -19,8 +19,8 @@ export class mjBizAppsOrdersRevenueRecognitionScheduleFormComponent extends Base
             { sectionKey: 'recognitionConfiguration', sectionName: 'Recognition Configuration', isExpanded: true },
             { sectionKey: 'financialSummary', sectionName: 'Financial Summary', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersRevRecScheduleLines', sectionName: 'Rev Rec Schedule Lines', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersRevRecScheduleLines', sectionName: 'Rev Rec Schedule Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false }
         ]);
     }
 }

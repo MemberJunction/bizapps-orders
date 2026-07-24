@@ -16,7 +16,7 @@ export class mjBizAppsOrdersProductPerformanceObligationFormComponent extends Ba
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'obligationDetails', sectionName: 'Obligation Details', isExpanded: true },
-            { sectionKey: 'financialConfiguration', sectionName: 'Financial Configuration', isExpanded: true },
+            { sectionKey: 'revenueRecognition', sectionName: 'Revenue Recognition', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

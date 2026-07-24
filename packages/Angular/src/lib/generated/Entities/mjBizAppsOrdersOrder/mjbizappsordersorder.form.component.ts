@@ -17,19 +17,17 @@ export class mjBizAppsOrdersOrderFormComponent extends BaseFormComponent {
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'orderDetails', sectionName: 'Order Details', isExpanded: true },
-            { sectionKey: 'orderTimeline', sectionName: 'Order Timeline', isExpanded: true },
-            { sectionKey: 'relationships', sectionName: 'Relationships', isExpanded: true },
-            { sectionKey: 'billingAndShipping', sectionName: 'Billing and Shipping', isExpanded: true },
-            { sectionKey: 'financialDetails', sectionName: 'Financial Details', isExpanded: true },
-            { sectionKey: 'notesAndDescriptions', sectionName: 'Notes and Descriptions', isExpanded: true },
+            { sectionKey: 'organizationAndSales', sectionName: 'Organization and Sales', isExpanded: true },
+            { sectionKey: 'addresses', sectionName: 'Addresses', isExpanded: true },
+            { sectionKey: 'financials', sectionName: 'Financials', isExpanded: true },
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersStoredValueTransactions', sectionName: 'Stored Value Transactions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentIntents', sectionName: 'Payment Intents', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrders', sectionName: 'Orders', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrders', sectionName: 'Orders', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPaymentIntents', sectionName: 'Payment Intents', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events', isExpanded: false }
         ]);
     }
 }

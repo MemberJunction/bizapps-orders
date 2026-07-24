@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="paymentProviderDetails"
         SectionName="Payment Provider Details"
-        Icon="fa fa-network-wired"
+        Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -45,11 +45,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Payment Status and Amount Section -->
+    <!-- Payment Status Section -->
     <mj-collapsible-panel
-        SectionKey="paymentStatusAndAmount"
-        SectionName="Payment Status and Amount"
-        Icon="fa fa-money-bill-wave"
+        SectionKey="paymentStatus"
+        SectionName="Payment Status"
+        Icon="fa fa-check-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -79,10 +79,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Relationships Section -->
+    <!-- Related Records Section -->
     <mj-collapsible-panel
-        SectionKey="relationships"
-        SectionName="Relationships"
+        SectionKey="relatedRecords"
+        SectionName="Related Records"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
@@ -102,6 +102,7 @@
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
+            LinkType="Record"
         ></mj-form-field>
 
     </mj-collapsible-panel>
