@@ -776,12 +776,39 @@ proceed on it and the answer adjusts course.
    REALLOCATE at capture (vs. per-line AR standing), and Jeremy's tax-remit position under
    per-line AR. Building Amith's shape meanwhile; the payments-slice IC design and the launch-date
    costing both hang off this.
-2. **GL account resolution at volume.** The product → category tree → company-default walk, per
-   line at booking, across multi-company orders, is a flagged performance + complexity pain point
-   (Marcelo). The deep dive weighs: resolution caching coverage, the same-company invariant's
-   enforcement cost, category-tree shape, and denormalizing `CompanyID` onto `GLAccountLink`
-   (engine-stamped, trigger-verified — liked, not yet approved). Due before resolution is
-   load-bearing at real volume.
+2. **GL account resolution — hierarchy rules, ownership, and volume (Amith, 2026-07-24; DO NEXT).**
+   The walk (product → its category → category ancestors → company default) is stated as a
+   one-liner here (D5) and in accounting (D11), but **the rules are nowhere written down**, and
+   the first implementation (orders' `GLAccountResolver`, 2026-07-24) had to decide all of the
+   following unaided. Spec these:
+   - **Precedence within a level** — accounting's `pickActiveLinkIndex` picks Active links whose
+     `StartedAt`/`EndedAt` window covers the as-of date, latest `StartedAt` winning. Confirm that
+     is the intended tie-break and write it down.
+   - **Blocking vs falling through** — does an *inactive* link at a specific level stop the walk
+     or fall through to the next level? (Today: falls through.)
+   - **Category-tree traversal** — depth limit, cycle handling (the DB CHECK blocks self-parenting
+     only), and whether per-company category trees (D7) can ever be crossed.
+   - **The company invariant (D6)** — the resolved account MUST belong to the line's company.
+     Accounting derives a JE's company from `GLAccount.CompanyID` and accepts no CompanyID in its
+     contract, so a mis-resolved account books revenue to the WRONG legal entity with nothing
+     downstream to catch it. This guard currently exists ONLY in orders' resolver.
+
+   **Ownership question (the important one):** accounting exposes only the per-record primitive
+   `ResolveLinkedAccount(entityId, recordId, role, asOf)`, so orders implemented the walk itself.
+   Payments, subscriptions, and a future Inventory would each reimplement it and drift. Proposal:
+   promote the walk into `AccountingEngineBase` as a first-class
+   `ResolveAccountFor(product, role, asOf)` so every consumer shares one semantics, with orders
+   keeping only its company assertion.
+
+   **Performance (measured, not theoretical):** `AccountingEngineBase` DOES cache the links —
+   `Config()` loads GL Accounts, Roles, Links, Link Dimensions and Dimensions, with BaseEngine
+   auto-refresh. But `ResolveLinkedAccount` **linearly scans the whole links array on every call**
+   (plus a second scan of link dimensions and a `find` over roles); nothing is indexed. Each order
+   line costs 2–3 roles × up to 4 hierarchy levels ≈ 8–12 full scans, so a 50-line order against
+   10k links is ~5M comparisons. Fix is cheap since the data is already resident: build an index at
+   `Config()` time keyed `entityID|recordID|roleID → candidates[]`, making each lookup O(1).
+   Also still open: denormalizing `CompanyID` onto `GLAccountLink` (engine-stamped,
+   trigger-verified — liked, not yet approved).
 3. **Company-scope UX semantics** (shared with accounting): Marcelo's "unselected companies don't
    exist in the frontend" model awaits his dedicated scope planning pass — no scope doctrine or
    code until then.
