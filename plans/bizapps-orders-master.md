@@ -207,6 +207,7 @@ The current decision set. Each is the standing ruling — superseded ancestors l
 | D39 | **Copy-on-use, never share; immutability is the guarantee.** Each host gets its OWN `PaymentDetail` row (wallet → copied onto the order; order's → copied onto the payment at confirm), so snapshots cannot drift. `SourceCustomerPaymentMethodID` records the wallet entry a copy came from — provenance without coupling, keeping "every payment made with this saved card" answerable. Enforced by a **filtered UNIQUE index on each host FK** (1:1 per host) plus an **immutability trigger** on PaymentDetail's instrument fields. Cross-host exclusivity is deliberately NOT enforced: the risk was drift, immutability removes it directly, and blocking sharing would cost three triggers each scanning the other two tables. | Amith 2026-07-25 — "we don't share, we use once and copy the values", immutability confirmed. |
 | D40 | **`Order` → `OrderHeader`, `Payment` → `PaymentHeader`.** `ORDER` is reserved in BOTH T-SQL and PostgreSQL (and this app ships a PG conversion path), so the base table needed bracketing forever in raw SQL, dynamic SQL, and third-party reporting tools. `OrderHeader`/`OrderLine` and `PaymentHeader`/`PaymentLine` also read as the classic header/line pairing. MJ entity names are unaffected (`MJ_BizApps_Orders: Orders` regardless of base table), so only raw SQL changes. Renamed pre-production, when the cost is near zero. | Amith 2026-07-25. |
 | D41 | **`OrderHeader` rollup fields are TRIGGER-maintained, not computed columns.** `TotalGross` (SUM of line gross) and `AmountPaid` (SUM of posted `PaymentLine.Amount`) are cross-table aggregates that a computed column cannot express; `Balance = TotalGross − AmountPaid` is computed in the SAME trigger rather than as a PERSISTED/GENERATED column so the behaviour is identical on SQL Server and PostgreSQL and depends on no `sql-converter` or CodeGen handling of computed-column DDL. `PaymentStatus` derives from the same trigger except `WrittenOff`, which stays an explicit action. `IsOverdue` remains view-computed (D32) — it changes with the clock, not with a write. | Amith 2026-07-25 (cross-platform parity over DB-guaranteed arithmetic). |
+| D44 | **Cross-app references point UP the dependency graph only.** `Order.ContractID` is **REMOVED**: bizapps-contracts is downstream of orders, so a reference to it — hard OR soft — inverts the app graph and encodes a contracts concern in an orders table. When that app exists it will join to orders from its own schema. This is the same rule that removed accounting's `AccountingCompanyProfile.DefaultPaymentTermsTypeID`. `Order.ApprovalTaskID` stays soft only because **bizapps-tasks cannot currently be installed alongside our bizapps-common** — tasks' generated views select `Person.DisplayName`, which exists on common's enriched VIEW but not on the `Person` TABLE we have; it becomes a real FK the moment the two are version-aligned (see the versioning memo). | Amith 2026-07-25 (PR #10). |
 | D42 | **Initial payment on the order is a CONVENIENCE capture, and it is INTENT.** `OrderHeader.InitialPaymentTypeID` + `InitialPaymentAmount` + `InitialPaymentDetailID` record what the customer said they would pay at order entry; on confirm they auto-generate a `PaymentHeader` + `PaymentLine` applied to that order. They are written at order entry and **never updated once the payment exists** — the `PaymentHeader` is the record of what happened. Keeping them is what lets a quote carry payment intent before confirm and lets a failed initial payment preserve the request for retry. | Amith 2026-07-25. |
 
 ---
@@ -349,8 +350,8 @@ __mj_BizAppsOrders.OrderHeader                  -- ★ D40 (was `[Order]` — re
   ConfirmedAt, PostedAt, PostedByUserID,
   -- Reversals (D16)
   ReversesOrderID NULL, ReversalReason NULL,
-  ContractID NULL,                             -- soft ref → future Contracts
-  ApprovalTaskID NULL,                         -- soft ref → Tasks (sales-rule gate, D26)
+  ApprovalTaskID NULL,                         -- → Tasks (sales-rule gate, D26). Soft ONLY until
+                                               -- tasks/common are version-aligned (D44)
   RequestedDeliveryDate, Description, Notes    -- Description = the searchable memo (D29)
   -- NO JournalEntryID (D10 — linkage is per-line); NO currency columns (D24)
 
@@ -510,6 +511,7 @@ Schema built; the Confirm-time evaluation engine + Task routing are the pending 
 | PERSISTED / GENERATED computed columns | D41 — rollups are trigger-maintained for SQL Server ↔ PostgreSQL parity |
 | Cross-host exclusivity on `PaymentDetail` | D39 — immutability removes the drift risk that exclusivity would guard |
 | Webhook/notification tables for entitlements | D27 — consumers poll |
+| `Order.ContractID` | D44 — orders must not reference a DOWNSTREAM app; contracts will join from its own schema |
 
 ---
 

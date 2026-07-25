@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="salesRepresentative"
         SectionName="Sales Representative"
-        Icon="fa fa-user-tie"
+        Icon="fa fa-user"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -33,7 +33,7 @@
     <mj-collapsible-panel
         SectionKey="authorityLimits"
         SectionName="Authority Limits"
-        Icon="fa fa-dollar-sign"
+        Icon="fa fa-lock"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -52,14 +52,22 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Operational Permissions Section -->
+    <!-- Authorized Permissions Section -->
     <mj-collapsible-panel
-        SectionKey="operationalPermissions"
-        SectionName="Operational Permissions"
-        Icon="fa fa-cogs"
+        SectionKey="authorizedPermissions"
+        SectionName="Authorized Permissions"
+        Icon="fa fa-check-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -75,14 +83,6 @@
             [ShowLabel]="true"
             FieldName="AllowedProductCategoryIDs"
             Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

@@ -34,14 +34,22 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProviderEventID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Payment Status Section -->
+    <!-- Payment Status and Amount Section -->
     <mj-collapsible-panel
-        SectionKey="paymentStatus"
-        SectionName="Payment Status"
-        Icon="fa fa-check-circle"
+        SectionKey="paymentStatusAndAmount"
+        SectionName="Payment Status and Amount"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -57,14 +65,6 @@
             [ShowLabel]="true"
             FieldName="Amount"
             Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProviderEventID"
-            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

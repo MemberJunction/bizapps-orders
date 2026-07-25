@@ -44,6 +44,14 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Quantity"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -51,7 +59,7 @@
     <mj-collapsible-panel
         SectionKey="beneficiaryInformation"
         SectionName="Beneficiary Information"
-        Icon="fa fa-users"
+        Icon="fa fa-user-check"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -75,21 +83,13 @@
 
     </mj-collapsible-panel>
 
-    <!-- Grant Configuration Section -->
+    <!-- Validity and Status Section -->
     <mj-collapsible-panel
-        SectionKey="grantConfiguration"
-        SectionName="Grant Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="validityAndStatus"
+        SectionName="Validity and Status"
+        Icon="fa fa-calendar-check"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Quantity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

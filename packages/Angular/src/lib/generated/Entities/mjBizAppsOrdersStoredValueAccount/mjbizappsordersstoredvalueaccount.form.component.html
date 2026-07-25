@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Instrument Details Section -->
+    <!-- Account Details Section -->
     <mj-collapsible-panel
-        SectionKey="instrumentDetails"
-        SectionName="Instrument Details"
-        Icon="fa fa-id-card"
+        SectionKey="accountDetails"
+        SectionName="Account Details"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -71,6 +71,15 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="IssuedFromOrderLineID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="ExpiresAt"
             Type="datepicker"
             [EditMode]="EditMode"
@@ -79,22 +88,13 @@
 
     </mj-collapsible-panel>
 
-    <!-- Relationships Section -->
+    <!-- Beneficiary Information Section -->
     <mj-collapsible-panel
-        SectionKey="relationships"
-        SectionName="Relationships"
-        Icon="fa fa-link"
+        SectionKey="beneficiaryInformation"
+        SectionName="Beneficiary Information"
+        Icon="fa fa-user-friends"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IssuedFromOrderLineID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

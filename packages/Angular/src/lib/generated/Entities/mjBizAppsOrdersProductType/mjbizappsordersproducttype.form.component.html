@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Type Details Section -->
+    <!-- General Information Section -->
     <mj-collapsible-panel
-        SectionKey="productTypeDetails"
-        SectionName="Product Type Details"
+        SectionKey="generalInformation"
+        SectionName="General Information"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -52,10 +52,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Operational Behavior Section -->
+    <!-- Operational Settings Section -->
     <mj-collapsible-panel
-        SectionKey="operationalBehavior"
-        SectionName="Operational Behavior"
+        SectionKey="operationalSettings"
+        SectionName="Operational Settings"
         Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
@@ -63,6 +63,14 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="RequiresFulfillment"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DefaultIsTaxable"
             Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -95,29 +103,21 @@
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="DefaultRevenueRecognitionTypeID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="DefaultIsTaxable"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- System Configuration Section -->
+    <!-- Technical Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="systemConfiguration"
-        SectionName="System Configuration"
-        Icon="fa fa-wrench"
+        SectionKey="technicalConfiguration"
+        SectionName="Technical Configuration"
+        Icon="fa fa-code"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -140,7 +140,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="BehaviorClass"
-            Type="code"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

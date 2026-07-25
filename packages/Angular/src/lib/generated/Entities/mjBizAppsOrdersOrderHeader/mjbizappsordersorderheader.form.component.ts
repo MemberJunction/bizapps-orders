@@ -16,20 +16,19 @@ export class mjBizAppsOrdersOrderHeaderFormComponent extends BaseFormComponent {
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'orderInformation', sectionName: 'Order Information', isExpanded: true },
+            { sectionKey: 'orderDetails', sectionName: 'Order Details', isExpanded: true },
             { sectionKey: 'relationships', sectionName: 'Relationships', isExpanded: true },
-            { sectionKey: 'addresses', sectionName: 'Addresses', isExpanded: true },
+            { sectionKey: 'billingAndShipping', sectionName: 'Billing and Shipping', isExpanded: true },
             { sectionKey: 'financials', sectionName: 'Financials', isExpanded: true },
-            { sectionKey: 'orderLifecycle', sectionName: 'Order Lifecycle', isExpanded: true },
-            { sectionKey: 'notesAndMemos', sectionName: 'Notes and Memos', isExpanded: true },
+            { sectionKey: 'orderTimeline', sectionName: 'Order Timeline', isExpanded: true },
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersStoredValueTransactions', sectionName: 'Stored Value Transactions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentIntents', sectionName: 'Payment Intents', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderHeaders', sectionName: 'Order Headers', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentIntents', sectionName: 'Payment Intents', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false }
         ]);
     }
 }

@@ -10,22 +10,32 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Bundle Components Section -->
+    <!-- Bundle Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="bundleComponents"
-        SectionName="Bundle Components"
-        Icon="fa fa-layer-group"
+        SectionKey="bundleConfiguration"
+        SectionName="Bundle Configuration"
+        Icon="fa fa-boxes"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="BundleProductID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Component Details Section -->
+    <mj-collapsible-panel
+        SectionKey="componentDetails"
+        SectionName="Component Details"
+        Icon="fa fa-box"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -35,16 +45,6 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="configuration"
-        SectionName="Configuration"
-        Icon="fa fa-sliders-h"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -53,6 +53,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Pricing and Ordering Section -->
+    <mj-collapsible-panel
+        SectionKey="pricingAndOrdering"
+        SectionName="Pricing and Ordering"
+        Icon="fa fa-dollar-sign"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
