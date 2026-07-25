@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Attendee Information Section -->
+    <!-- Attendee Details Section -->
     <mj-collapsible-panel
-        SectionKey="attendeeInformation"
-        SectionName="Attendee Information"
+        SectionKey="attendeeDetails"
+        SectionName="Attendee Details"
         Icon="fa fa-user-check"
         [Form]="this"
         [FormContext]="formContext">
@@ -57,7 +57,7 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="OrderID"
+            FieldName="OrderHeaderID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"

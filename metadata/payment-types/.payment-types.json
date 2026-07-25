@@ -1,0 +1,202 @@
+[
+  {
+    "fields": {
+      "Code": "CreditCard",
+      "Name": "Credit Card",
+      "Description": "Card payment through a gateway; the instrument is a provider token, never a PAN.",
+      "IsReversal": 0,
+      "RequiresProvider": 1,
+      "RequiresInstrument": 1,
+      "RequiresReference": 0,
+      "Sequence": 10,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E01"
+    },
+    "sync": {
+      "lastModified": "2026-07-25T17:55:23.522Z",
+      "checksum": "38b8b005c26d01cb3f00fecd2b3f552a97b5f79d0ad15cbb92e204940a77dd60"
+    }
+  },
+  {
+    "fields": {
+      "Code": "ACH",
+      "Name": "ACH / Bank Transfer",
+      "Description": "Bank debit through a gateway; instrument carries routing/account last-4 only.",
+      "IsReversal": 0,
+      "RequiresProvider": 1,
+      "RequiresInstrument": 1,
+      "RequiresReference": 0,
+      "Sequence": 20,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E02"
+    },
+    "sync": {
+      "lastModified": "2026-07-25T17:55:23.535Z",
+      "checksum": "eba323ca33520edb45015651865607b5721b242a0031c3f38f00906aec23785b"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Wire",
+      "Name": "Wire Transfer",
+      "Description": "Wire received; the confirmation number is captured as the instrument reference.",
+      "IsReversal": 0,
+      "RequiresProvider": 0,
+      "RequiresInstrument": 0,
+      "RequiresReference": 1,
+      "Sequence": 30,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E03"
+    },
+    "sync": {
+      "lastModified": "2026-07-25T17:55:23.546Z",
+      "checksum": "4647aad3eae6e809b04c6cdc142e176c914feddf774129faeb854b7e4808ebbb"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Check",
+      "Name": "Check",
+      "Description": "Paper check; the check number is captured as the instrument reference.",
+      "IsReversal": 0,
+      "RequiresProvider": 0,
+      "RequiresInstrument": 1,
+      "RequiresReference": 1,
+      "Sequence": 40,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E04"
+    },
+    "sync": {
+      "lastModified": "2026-07-25T17:55:23.558Z",
+      "checksum": "bb040ba0443be2830a2a17b3a3043f981a1e9f4b3cdab0641bb75d8cc5a5b60b"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Cash",
+      "Name": "Cash",
+      "Description": "Cash received. No instrument, no reference.",
+      "IsReversal": 0,
+      "RequiresProvider": 0,
+      "RequiresInstrument": 0,
+      "RequiresReference": 0,
+      "Sequence": 50,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E05"
+    },
+    "sync": {
+      "lastModified": "2026-07-25T17:55:23.570Z",
+      "checksum": "aec828b97b3473ed50a323598a6da454a009396d1aad2605fb346ef38e3311fe"
+    }
+  },
+  {
+    "fields": {
+      "Code": "InternalTransfer",
+      "Name": "Internal Transfer",
+      "Description": "Movement between our own companies or accounts; reference identifies the transfer.",
+      "IsReversal": 0,
+      "RequiresProvider": 0,
+      "RequiresInstrument": 0,
+      "RequiresReference": 1,
+      "Sequence": 60,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E06"
+    },
+    "sync": {
+      "lastModified": "2026-07-25T17:55:23.582Z",
+      "checksum": "df7b28a50ce4e84167f2035e028f3daeb0c1d035352e0acd9b3aa84c32af0449"
+    }
+  },
+  {
+    "fields": {
+      "Code": "GiftCard",
+      "Name": "Gift Card / Stored Value",
+      "Description": "Redemption against a StoredValueAccount; books liability relief, not revenue.",
+      "IsReversal": 0,
+      "RequiresProvider": 0,
+      "RequiresInstrument": 1,
+      "RequiresReference": 0,
+      "Sequence": 70,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E07"
+    },
+    "sync": {
+      "lastModified": "2026-07-25T17:55:23.593Z",
+      "checksum": "f2c65fd0c32f5efbdc88a64b136c21ccf221fc73515138243d05fccd00494dd1"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Refund",
+      "Name": "Refund",
+      "Description": "REVERSAL — money returned to the customer. Never offered as an initial payment.",
+      "IsReversal": 1,
+      "RequiresProvider": 0,
+      "RequiresInstrument": 0,
+      "RequiresReference": 0,
+      "Sequence": 80,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E08"
+    },
+    "sync": {
+      "lastModified": "2026-07-25T17:55:23.604Z",
+      "checksum": "796649b9ed32ab619270432a754298938a5ea5d7d7de576f364c48f4ba597685"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Chargeback",
+      "Name": "Chargeback",
+      "Description": "REVERSAL — funds pulled back by the card network. Never an initial payment.",
+      "IsReversal": 1,
+      "RequiresProvider": 0,
+      "RequiresInstrument": 0,
+      "RequiresReference": 0,
+      "Sequence": 90,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E09"
+    },
+    "sync": {
+      "lastModified": "2026-07-25T17:55:23.615Z",
+      "checksum": "95603d6db27fef4df4fedce2d4450a2c8fd74e1ef65f57832e17923c1cf84426"
+    }
+  },
+  {
+    "fields": {
+      "Code": "BankReturn",
+      "Name": "Bank Return",
+      "Description": "REVERSAL — bank returned the debit (NSF etc.). Never an initial payment.",
+      "IsReversal": 1,
+      "RequiresProvider": 0,
+      "RequiresInstrument": 0,
+      "RequiresReference": 0,
+      "Sequence": 100,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E0A"
+    },
+    "sync": {
+      "lastModified": "2026-07-25T17:55:23.625Z",
+      "checksum": "fde3d554f9b17fe332b248d0e7ef9f62805e602b7e03b7581af082eecb89d692"
+    }
+  }
+]

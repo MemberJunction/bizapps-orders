@@ -19,16 +19,19 @@ import { mjBizAppsOrdersCustomerPaymentMethodFormComponent } from "./Entities/mj
 import { mjBizAppsOrdersEntitlementGrantFormComponent } from "./Entities/mjBizAppsOrdersEntitlementGrant/mjbizappsordersentitlementgrant.form.component";
 import { mjBizAppsOrdersEventOrderLineFormComponent } from "./Entities/mjBizAppsOrdersEventOrderLine/mjbizappsorderseventorderline.form.component";
 import { mjBizAppsOrdersEventProductFormComponent } from "./Entities/mjBizAppsOrdersEventProduct/mjbizappsorderseventproduct.form.component";
+import { mjBizAppsOrdersOrderHeaderFormComponent } from "./Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component";
 import { mjBizAppsOrdersOrderLineDimensionFormComponent } from "./Entities/mjBizAppsOrdersOrderLineDimension/mjbizappsordersorderlinedimension.form.component";
 import { mjBizAppsOrdersOrderLineFormComponent } from "./Entities/mjBizAppsOrdersOrderLine/mjbizappsordersorderline.form.component";
 import { mjBizAppsOrdersOrderSequenceFormComponent } from "./Entities/mjBizAppsOrdersOrderSequence/mjbizappsordersordersequence.form.component";
-import { mjBizAppsOrdersOrderFormComponent } from "./Entities/mjBizAppsOrdersOrder/mjbizappsordersorder.form.component";
+import { mjBizAppsOrdersPaymentDetailFormComponent } from "./Entities/mjBizAppsOrdersPaymentDetail/mjbizappsorderspaymentdetail.form.component";
+import { mjBizAppsOrdersPaymentHeaderFormComponent } from "./Entities/mjBizAppsOrdersPaymentHeader/mjbizappsorderspaymentheader.form.component";
 import { mjBizAppsOrdersPaymentIntentFormComponent } from "./Entities/mjBizAppsOrdersPaymentIntent/mjbizappsorderspaymentintent.form.component";
 import { mjBizAppsOrdersPaymentLineFormComponent } from "./Entities/mjBizAppsOrdersPaymentLine/mjbizappsorderspaymentline.form.component";
+import { mjBizAppsOrdersPaymentProviderTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentProviderType/mjbizappsorderspaymentprovidertype.form.component";
 import { mjBizAppsOrdersPaymentProviderFormComponent } from "./Entities/mjBizAppsOrdersPaymentProvider/mjbizappsorderspaymentprovider.form.component";
 import { mjBizAppsOrdersPaymentSequenceFormComponent } from "./Entities/mjBizAppsOrdersPaymentSequence/mjbizappsorderspaymentsequence.form.component";
 import { mjBizAppsOrdersPaymentTermsTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentTermsType/mjbizappsorderspaymenttermstype.form.component";
-import { mjBizAppsOrdersPaymentFormComponent } from "./Entities/mjBizAppsOrdersPayment/mjbizappsorderspayment.form.component";
+import { mjBizAppsOrdersPaymentTypeFormComponent } from "./Entities/mjBizAppsOrdersPaymentType/mjbizappsorderspaymenttype.form.component";
 import { mjBizAppsOrdersPriceListFormComponent } from "./Entities/mjBizAppsOrdersPriceList/mjbizappsorderspricelist.form.component";
 import { mjBizAppsOrdersPriceTierFormComponent } from "./Entities/mjBizAppsOrdersPriceTier/mjbizappsorderspricetier.form.component";
 import { mjBizAppsOrdersProductBundleItemFormComponent } from "./Entities/mjBizAppsOrdersProductBundleItem/mjbizappsordersproductbundleitem.form.component";
@@ -55,22 +58,22 @@ declarations: [
     mjBizAppsOrdersEntitlementGrantFormComponent,
     mjBizAppsOrdersEventOrderLineFormComponent,
     mjBizAppsOrdersEventProductFormComponent,
+    mjBizAppsOrdersOrderHeaderFormComponent,
     mjBizAppsOrdersOrderLineDimensionFormComponent,
     mjBizAppsOrdersOrderLineFormComponent,
     mjBizAppsOrdersOrderSequenceFormComponent,
-    mjBizAppsOrdersOrderFormComponent,
+    mjBizAppsOrdersPaymentDetailFormComponent,
+    mjBizAppsOrdersPaymentHeaderFormComponent,
     mjBizAppsOrdersPaymentIntentFormComponent,
     mjBizAppsOrdersPaymentLineFormComponent,
+    mjBizAppsOrdersPaymentProviderTypeFormComponent,
     mjBizAppsOrdersPaymentProviderFormComponent,
     mjBizAppsOrdersPaymentSequenceFormComponent,
     mjBizAppsOrdersPaymentTermsTypeFormComponent,
-    mjBizAppsOrdersPaymentFormComponent,
+    mjBizAppsOrdersPaymentTypeFormComponent,
     mjBizAppsOrdersPriceListFormComponent,
     mjBizAppsOrdersPriceTierFormComponent,
-    mjBizAppsOrdersProductBundleItemFormComponent,
-    mjBizAppsOrdersProductCategoryFormComponent,
-    mjBizAppsOrdersProductEntitlementFormComponent,
-    mjBizAppsOrdersProductPerformanceObligationFormComponent],
+    mjBizAppsOrdersProductBundleItemFormComponent],
 imports: [
     CommonModule,
     FormsModule,
@@ -87,6 +90,9 @@ export class GeneratedForms_SubModule_0 { }
 
 @NgModule({
 declarations: [
+    mjBizAppsOrdersProductCategoryFormComponent,
+    mjBizAppsOrdersProductEntitlementFormComponent,
+    mjBizAppsOrdersProductPerformanceObligationFormComponent,
     mjBizAppsOrdersProductPriceFormComponent,
     mjBizAppsOrdersProductTypeFormComponent,
     mjBizAppsOrdersProductFormComponent,

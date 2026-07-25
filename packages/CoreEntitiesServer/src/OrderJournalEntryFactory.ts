@@ -31,7 +31,7 @@
  *   CALLER:   OrderEntityServer.Save (./OrderEntityServer.ts)
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
-import type { mjBizAppsOrdersOrderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { GL_ROLE, GLAccountResolver } from './GLAccountResolver.js';
 
 /**
@@ -87,7 +87,7 @@ export class OrderJournalEntryFactory {
      * all-or-none, so there is no value in collecting partial results.
      */
     public async BuildDrafts(
-        order: mjBizAppsOrdersOrderEntity,
+        order: mjBizAppsOrdersOrderHeaderEntity,
         lines: mjBizAppsOrdersOrderLineEntity[],
     ): Promise<OrderLineDraft[]> {
         if (lines.length === 0) {
@@ -109,7 +109,7 @@ export class OrderJournalEntryFactory {
     }
 
     private async buildLineDraft(
-        order: mjBizAppsOrdersOrderEntity,
+        order: mjBizAppsOrdersOrderHeaderEntity,
         line: mjBizAppsOrdersOrderLineEntity,
         products: Map<string, ProductRow>,
         effectiveDate: string,
@@ -205,7 +205,7 @@ export class OrderJournalEntryFactory {
      */
     private assertBalanced(
         lines: JELineDraft[],
-        order: mjBizAppsOrdersOrderEntity,
+        order: mjBizAppsOrdersOrderHeaderEntity,
         line: mjBizAppsOrdersOrderLineEntity,
     ): void {
         const debits = money(lines.reduce((sum, l) => sum + (l.DebitAmount ?? 0), 0));
@@ -220,7 +220,7 @@ export class OrderJournalEntryFactory {
     }
 
     /** `OrderDate` is the accounting date (plan: backdating is allowed and unguarded, D25). */
-    private effectiveDateOf(order: mjBizAppsOrdersOrderEntity): string {
+    private effectiveDateOf(order: mjBizAppsOrdersOrderHeaderEntity): string {
         const d = order.OrderDate ? new Date(order.OrderDate) : new Date();
         return d.toISOString().slice(0, 10);
     }

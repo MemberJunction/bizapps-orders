@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Sales Representative Section -->
+    <!-- Authority Assignment Section -->
     <mj-collapsible-panel
-        SectionKey="salesRepresentative"
-        SectionName="Sales Representative"
-        Icon="fa fa-user"
+        SectionKey="authorityAssignment"
+        SectionName="Authority Assignment"
+        Icon="fa fa-user-shield"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -41,7 +41,7 @@
     <mj-collapsible-panel
         SectionKey="authorityLimits"
         SectionName="Authority Limits"
-        Icon="fa fa-balance-scale"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -64,7 +64,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="AllowedPaymentTermsTypeIDs"
-            Type="code"
+            Type="textarea"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -72,7 +72,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="AllowedProductCategoryIDs"
-            Type="code"
+            Type="textarea"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

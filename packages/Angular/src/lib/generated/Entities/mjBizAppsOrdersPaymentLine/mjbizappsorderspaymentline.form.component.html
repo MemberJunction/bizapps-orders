@@ -20,7 +20,7 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="PaymentID"
+            FieldName="PaymentHeaderID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -29,7 +29,7 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="OrderID"
+            FieldName="OrderHeaderID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -55,10 +55,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Allocation Details Section -->
+    <!-- Allocation Audit Section -->
     <mj-collapsible-panel
-        SectionKey="allocationDetails"
-        SectionName="Allocation Details"
+        SectionKey="allocationAudit"
+        SectionName="Allocation Audit"
         Icon="fa fa-user-clock"
         [Form]="this"
         [FormContext]="formContext">

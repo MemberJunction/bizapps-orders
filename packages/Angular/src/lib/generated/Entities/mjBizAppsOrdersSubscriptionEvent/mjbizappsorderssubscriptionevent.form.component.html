@@ -38,7 +38,7 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="RelatedOrderID"
+            FieldName="RelatedOrderHeaderID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -70,6 +70,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Event Data Section -->
+    <mj-collapsible-panel
+        SectionKey="eventData"
+        SectionName="Event Data"
+        Icon="fa fa-code"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

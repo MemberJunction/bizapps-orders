@@ -20,7 +20,7 @@ export class mjBizAppsOrdersPaymentIntentFormComponent extends BaseFormComponent
             { sectionKey: 'paymentStatus', sectionName: 'Payment Status', isExpanded: true },
             { sectionKey: 'relatedRecords', sectionName: 'Related Records', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPayments', sectionName: 'Payments', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false }
         ]);
     }
 }

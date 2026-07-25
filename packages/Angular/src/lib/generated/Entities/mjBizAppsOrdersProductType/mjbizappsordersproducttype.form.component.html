@@ -52,10 +52,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Operational Behavior Section -->
+    <!-- Operational Logic Section -->
     <mj-collapsible-panel
-        SectionKey="operationalBehavior"
-        SectionName="Operational Behavior"
+        SectionKey="operationalLogic"
+        SectionName="Operational Logic"
         Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
@@ -67,24 +67,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsBillableRecurring"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Financial Defaults Section -->
-    <mj-collapsible-panel
-        SectionKey="financialDefaults"
-        SectionName="Financial Defaults"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -104,6 +86,14 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="IsBillableRecurring"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="DefaultSubscriptionType"
             Type="select"
             [EditMode]="EditMode"
@@ -112,11 +102,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Configuration and Extensions Section -->
+    <!-- System Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="configurationAndExtensions"
-        SectionName="Configuration and Extensions"
-        Icon="fa fa-plug"
+        SectionKey="systemConfiguration"
+        SectionName="System Configuration"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

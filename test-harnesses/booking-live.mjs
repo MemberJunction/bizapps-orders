@@ -91,6 +91,9 @@ async function main() {
     console.log(`\n=== Test 2: unresolvable account rolls back the whole confirm ===`);
     await testAllOrNone(pool, md, user, seed);
 
+    console.log(`\n=== Test 3: rollup triggers + PaymentDetail immutability ===`);
+    await testRollupsAndImmutability(pool, md, user, seed);
+
     console.log(`\n=== Teardown ===`);
     await teardown(pool, seed);
 
@@ -247,7 +250,7 @@ async function testHappyPath(pool, md, user, seed) {
                 je.LinkedEntityID, je.LinkedRecordID, ol.ID AS OrderLineID
          FROM ${ORDERS}.OrderLine ol
          LEFT JOIN ${ACCT}.JournalEntry je ON je.ID = ol.JournalEntryID
-         WHERE ol.OrderID='${order.ID}' ORDER BY ol.LineNumber`,
+         WHERE ol.OrderHeaderID='${order.ID}' ORDER BY ol.LineNumber`,
     );
 
     check('one JE per line (3 lines → 3 entries)', rows.every((r) => r.JournalEntryID), 'some lines unstamped');
@@ -314,7 +317,7 @@ async function testAllOrNone(pool, md, user, seed) {
         `before=${before[0].N} after=${after[0].N}`,
     );
 
-    const persisted = await q(pool, `SELECT Status, ConfirmedAt FROM ${ORDERS}.[Order] WHERE ID='${order.ID}'`);
+    const persisted = await q(pool, `SELECT Status, ConfirmedAt FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`);
     check(
         'order did not persist as Confirmed',
         persisted.length === 0 || persisted[0].Status !== 'Confirmed',
@@ -322,10 +325,55 @@ async function testAllOrNone(pool, md, user, seed) {
     );
 }
 
+// ─── Test 3: D41 rollups + D39 immutability ────────────────────────────────────
+
+/**
+ * The rollup triggers and the PaymentDetail immutability guarantee are pure schema behaviour —
+ * nothing in the engine maintains them, so they need direct proof.
+ */
+async function testRollupsAndImmutability(pool, md, user, seed) {
+    // 2 x 100 + 1 x 50 = 250 gross
+    const { order } = await buildOrder(md, user, seed.coA.id, [
+        { productID: seed.prodA, qty: 2, price: 100, discount: 0 },
+        { productID: seed.prodA, qty: 1, price: 50, discount: 0 },
+    ]);
+    order.Status = 'Confirmed';
+    if (!(await order.Save())) { check('rollup fixture confirmed', false, order.LatestResult?.CompleteMessage ?? ''); return; }
+
+    let row = (await q(pool, `SELECT TotalGross, AmountPaid, Balance, PaymentStatus FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`))[0];
+    check('TotalGross rolled up from lines (250)', Number(row.TotalGross) === 250, JSON.stringify(row));
+    check('Balance = TotalGross - AmountPaid (250)', Number(row.Balance) === 250, JSON.stringify(row));
+    check("PaymentStatus 'Unpaid' with no payments", row.PaymentStatus === 'Unpaid', JSON.stringify(row));
+
+    // Apply a partial payment: 100 of 250.
+    const ptCash = (await q(pool, `SELECT ID FROM ${ORDERS}.PaymentType WHERE Code='Cash'`))[0].ID;
+    const detailID = randomUUID(), payID = randomUUID();
+    await pool.request().query(
+        `INSERT INTO ${ORDERS}.PaymentDetail (ID, CompanyID, PaymentTypeID, ReferenceNumber)
+         VALUES ('${detailID}','${seed.coA.id}','${ptCash}','HARNESS-1')`);
+    await pool.request().query(
+        `INSERT INTO ${ORDERS}.PaymentHeader (ID, PaymentNumber, ReceivingCompanyID, PaymentDate, PaymentTypeID, Amount, PaymentDetailID, Status)
+         VALUES ('${payID}','PAY-${RUN}-1','${seed.coA.id}',GETDATE(),'${ptCash}',100,'${detailID}','Captured')`);
+    await pool.request().query(
+        `INSERT INTO ${ORDERS}.PaymentLine (ID, PaymentHeaderID, OrderHeaderID, Amount, AllocatedAt)
+         VALUES ('${randomUUID()}','${payID}','${order.ID}',100,SYSDATETIMEOFFSET())`);
+
+    row = (await q(pool, `SELECT TotalGross, AmountPaid, Balance, PaymentStatus FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`))[0];
+    check('AmountPaid rolled up from PaymentLine (100)', Number(row.AmountPaid) === 100, JSON.stringify(row));
+    check('Balance recalculated (150)', Number(row.Balance) === 150, JSON.stringify(row));
+    check("PaymentStatus 'PartiallyPaid'", row.PaymentStatus === 'PartiallyPaid', JSON.stringify(row));
+
+    // PaymentDetail instrument fields are immutable (D39) — this is what makes copy-on-use safe.
+    let blocked = false;
+    try { await pool.request().query(`UPDATE ${ORDERS}.PaymentDetail SET ReferenceNumber='TAMPERED' WHERE ID='${detailID}'`); }
+    catch { blocked = true; }
+    check('PaymentDetail instrument fields are immutable', blocked);
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 async function buildOrder(md, user, companyID, lineSpecs) {
-    const order = await md.GetEntityObject('MJ_BizApps_Orders: Orders', user);
+    const order = await md.GetEntityObject('MJ_BizApps_Orders: Order Headers', user);
     order.NewRecord();
     order.OrderNumber = `ORD-${RUN}-${Math.floor(Math.random() * 100000)}`;
     order.OrderType = 'Sale';
@@ -364,15 +412,19 @@ async function q(pool, query) {
  */
 async function teardown(pool, seed) {
     const companies = [seed.coA.id, seed.coB.id, seed.coC.id].map((c) => `'${c}'`).join(',');
-    const orderScope = `SELECT ID FROM ${ORDERS}.[Order] WHERE CompanyID IN (${companies})`;
+    const orderScope = `SELECT ID FROM ${ORDERS}.OrderHeader WHERE CompanyID IN (${companies})`;
     const stmts = [
         `DISABLE TRIGGER ${ORDERS}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS}.OrderLine`,
-        `DISABLE TRIGGER ${ORDERS}.trg_Payment_ImmutableAfterCapture ON ${ORDERS}.Payment`,
-        `UPDATE ${ORDERS}.OrderLine SET JournalEntryID=NULL WHERE OrderID IN (${orderScope})`,
+        `DISABLE TRIGGER ${ORDERS}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS}.PaymentHeader`,
+        `UPDATE ${ORDERS}.OrderLine SET JournalEntryID=NULL WHERE OrderHeaderID IN (${orderScope})`,
         `DELETE jel FROM ${ACCT}.JournalEntryLine jel JOIN ${ACCT}.JournalEntry je ON je.ID=jel.JournalEntryID WHERE je.CompanyID IN (${companies})`,
         `DELETE FROM ${ACCT}.JournalEntry WHERE CompanyID IN (${companies})`,
-        `DELETE FROM ${ORDERS}.OrderLine WHERE OrderID IN (${orderScope})`,
-        `DELETE FROM ${ORDERS}.[Order] WHERE CompanyID IN (${companies})`,
+        // payments first — PaymentLine FKs the order, PaymentHeader FKs the detail
+        `DELETE FROM ${ORDERS}.PaymentLine WHERE OrderHeaderID IN (${orderScope})`,
+        `DELETE FROM ${ORDERS}.PaymentHeader WHERE ReceivingCompanyID IN (${companies})`,
+        `DELETE FROM ${ORDERS}.PaymentDetail WHERE CompanyID IN (${companies})`,
+        `DELETE FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orderScope})`,
+        `DELETE FROM ${ORDERS}.OrderHeader WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS}.Product WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS}.ProductCategory WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS}.ProductType WHERE Name LIKE '${RUN}%'`,
@@ -382,7 +434,7 @@ async function teardown(pool, seed) {
         `DELETE FROM ${ACCT}.AccountingCompanyProfile WHERE ID IN (${companies})`,
         `DELETE FROM __mj.Company WHERE ID IN (${companies})`,
         `ENABLE TRIGGER ${ORDERS}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS}.OrderLine`,
-        `ENABLE TRIGGER ${ORDERS}.trg_Payment_ImmutableAfterCapture ON ${ORDERS}.Payment`,
+        `ENABLE TRIGGER ${ORDERS}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS}.PaymentHeader`,
     ];
     for (const s of stmts) {
         try {

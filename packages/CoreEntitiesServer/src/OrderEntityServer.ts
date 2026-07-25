@@ -43,11 +43,11 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
-import { mjBizAppsOrdersOrderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 
-const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
+const ORDER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
@@ -80,7 +80,7 @@ interface CreateJournalEntriesResult {
 }
 
 @RegisterClass(BaseEntity, ORDER_ENTITY)
-export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
+export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     private _lines: mjBizAppsOrdersOrderLineEntity[] = [];
 
     /**
@@ -185,7 +185,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
 
     private async savePendingLines(options?: EntitySaveOptions): Promise<void> {
         for (const line of this._lines) {
-            line.OrderID = this.ID;
+            line.OrderHeaderID = this.ID;
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
@@ -363,7 +363,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
         const result = await rv.RunView<mjBizAppsOrdersOrderLineEntity>(
             {
                 EntityName: ORDER_LINE_ENTITY,
-                ExtraFilter: `OrderID='${this.ID}'`,
+                ExtraFilter: `OrderHeaderID='${this.ID}'`,
                 OrderBy: 'LineNumber',
                 ResultType: 'entity_object',
             },
@@ -378,7 +378,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderEntity {
         const result = await rv.RunView(
             {
                 EntityName: ORDER_LINE_ENTITY,
-                ExtraFilter: `OrderID='${this.ID}'`,
+                ExtraFilter: `OrderHeaderID='${this.ID}'`,
                 Fields: ['ID'],
                 ResultType: 'simple',
             },

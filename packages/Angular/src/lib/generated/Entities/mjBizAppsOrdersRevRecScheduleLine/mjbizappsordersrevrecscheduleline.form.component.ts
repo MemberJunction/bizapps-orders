@@ -15,7 +15,7 @@ export class mjBizAppsOrdersRevRecScheduleLineFormComponent extends BaseFormComp
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'recognitionDetails', sectionName: 'Recognition Details', isExpanded: true },
+            { sectionKey: 'scheduleDetails', sectionName: 'Schedule Details', isExpanded: true },
             { sectionKey: 'financialDetails', sectionName: 'Financial Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);

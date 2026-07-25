@@ -18,7 +18,7 @@ export class mjBizAppsOrdersSubscriptionPlanFormComponent extends BaseFormCompon
         this.initSections([
             { sectionKey: 'productAssociation', sectionName: 'Product Association', isExpanded: true },
             { sectionKey: 'planConfiguration', sectionName: 'Plan Configuration', isExpanded: true },
-            { sectionKey: 'pricingAndBilling', sectionName: 'Pricing and Billing', isExpanded: true },
+            { sectionKey: 'pricingAndTrials', sectionName: 'Pricing and Trials', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false }
         ]);

@@ -145,7 +145,7 @@ JE, never GL-post.
 deferred); calculate tax (§11); maintain GL balances; know about batching/dispatch.
 
 **Cross-app reference hardness (go-forward standard, Marcelo):** references from Orders into
-accounting (`OrderLine.JournalEntryID`, `Payment.JournalEntryID`) are **SOFT refs for now** —
+accounting (`OrderLine.JournalEntryID`, `PaymentHeader.JournalEntryID`) are **SOFT refs for now** —
 they become **hard, nullable FKs** once the MJ CodeGen include-mode work lands (Marcelo owns that
 PR; MJ's own OpenApp publish policy expects downstream→upstream cross-app FKs — dependency-order
 install makes them safe; the current blocker is a CodeGen bug where a foreign FK into a schema
@@ -171,7 +171,7 @@ The current decision set. Each is the standing ruling — superseded ancestors l
 | D3 | **Vocabulary is "Orders"** — official name and entity vocabulary; "invoice/payment management" only as category analogs. | Higher-ups' wording choice; Marcelo directive 2026-07-11. |
 | D4 | **Product catalog is the behavior root.** `ProductType` carries behavior defaults (rev-rec type, taxability, fulfillment-required, recurrence); **type-driven IsA extensions** at Product and OrderLine level (shared-UUID disjoint children, e.g. `EventProduct`/`EventOrderLine`); seeded out-of-the-box types (Event, Membership, PhysicalGood, DigitalGood, Service, Donation, GiftCard, Bundle, AddOn/Fee, Subscription, Usage). A pluggable `ProductBehavior` class seam (most-specific-wins: Product → ProductType → default) is the escape hatch — schema ready, seam deferred. | Nail the catalog and orders/booking/rev-rec/tax inherit correct behavior. |
 | D5 | **No GL columns anywhere in the catalog** — GL routing is **role-based** via accounting's polymorphic `GLAccountLink` (roles: AR, Sales, Deferred Revenue, Sales Discounts, Returns & Allowances, …). Resolution walk: product link → up the **product-company's own** category tree → the **product-company's** company-default link → **fail loudly** (tripwire; no silent fallback). Cached in `OrdersEngineBase` as a lazy `productID → {role → account}` map. | Amith 2026-07-02 engine meeting; resolution anchor moved to the product's company by Marcelo 2026-07-17. ⚠ Resolution perf/complexity deep-dive is a named pre-volume work item (§19). |
-| D6 | **Company model:** `Product.CompanyID NOT NULL` is the **source of truth for line ownership** (revenue accrues to the product's company). `Order.CompanyID` = the **OWNING company** — document/ownership/visibility anchor only, never GL resolution. `OrderLine.CompanyID` = a **denormalized stamp of the product's company at line save** — perf/reporting + temporal integrity (if product ownership later changes, lines record who owned them at transaction time). Naming is plain `CompanyID` schema-wide; role-qualified names only where the role is the point (`Payment.ReceivingCompanyID`). The resolved account must belong to the line's company (hard-block; cross-company mapping refused entirely). Read `Order.CompanyID` as the **ORIGINATING company** — the sales-attribution/document anchor (pairs with `Order.SalesRepUserID`); financially, company is fully implied per line by `Product.CompanyID` (Amith 2026-07-23). | MOD-3 lineage: Robert's Q2 answer (owning company exists) + Marcelo 2026-07-17 (product anchors the line) + Robert's written answers 2026-07-20 (line stamp; not an RLS need). Schema amendment pending (§18). |
+| D6 | **Company model:** `Product.CompanyID NOT NULL` is the **source of truth for line ownership** (revenue accrues to the product's company). `Order.CompanyID` = the **OWNING company** — document/ownership/visibility anchor only, never GL resolution. `OrderLine.CompanyID` = a **denormalized stamp of the product's company at line save** — perf/reporting + temporal integrity (if product ownership later changes, lines record who owned them at transaction time). Naming is plain `CompanyID` schema-wide; role-qualified names only where the role is the point (`PaymentHeader.ReceivingCompanyID`). The resolved account must belong to the line's company (hard-block; cross-company mapping refused entirely). Read `Order.CompanyID` as the **ORIGINATING company** — the sales-attribution/document anchor (pairs with `Order.SalesRepUserID`); financially, company is fully implied per line by `Product.CompanyID` (Amith 2026-07-23). | MOD-3 lineage: Robert's Q2 answer (owning company exists) + Marcelo 2026-07-17 (product anchors the line) + Robert's written answers 2026-07-20 (line stamp; not an RLS need). Schema amendment pending (§18). |
 | D7 | **Product categories are per-company rows** (`ProductCategory.CompanyID NOT NULL`) with **identical-name display-collapse** in the UI — no shared registry object; naming consistency via soft autocomplete suggestion. | Robert 2026-07-21, unambiguous: "five companies, 5 t-shirt categories… crossing them, no." Permissions decide it: company-scoped rows RLS-scope cleanly. |
 | D8 | **Booking fires exactly once, on the FIRST transition to `Confirmed`;** failure **blocks** the Confirm (never silently unbooked). `Posted` = "the JEs are in the subledger" — near-instant after Confirm. **The two-step `Confirmed → Posted` status model stays as-is** (Marcelo 2026-07-22, final — Amith: "there was a reason for it"; a collapse can be revisited with Amith directly). | 07-02 engine amendment; Robert 2026-07-08. Idempotency = line-already-booked. |
 | D9 | **Forward status skipping is allowed; the ORDER of stages is fixed.** Draft → Confirmed without Quoted is legal; you can't reach a later stage without its prerequisites' effects (booking on first Confirmed; can't Fulfill before Posted). `Voided` is reachable **only from Draft/Quoted** — after Confirm, corrections are reversing/credit orders. | Robert 2026-07-08/2026-07-10. |
@@ -181,9 +181,9 @@ The current decision set. Each is the standing ruling — superseded ancestors l
 | D13 | **Intercompany: orders create NO due-to/due-from at booking.** "You don't know about intercompany anything until you get cash" — each line's AR sits with the LINE's company; IC legs and settlement mechanics arise on the **payment side** when built. No `IntercompanyFlow` table exists. Each line's JE stands alone as a complete single-company story (AR, Sales, Discounts, DefRev, …); when cash received by one entity is applied to an order carrying other companies' products, the payment-application step books the IC balancing entries. Amith re-affirmed this as the right design 2026-07-23 and **personally owns the Robert + Jeremy re-closure** (§19); we build this shape meanwhile. | Amith 2026-07-21, re-affirmed 2026-07-23; accounting D18 is the mirror. |
 | D14 | **Revenue recognition = REAL forward-dated JEs written at booking-lock.** A 12-month $1,200 sub → 12 × $100 Dr DefRev / Cr Revenue JEs dated on the monthly anniversaries; an event product → ONE entry dated the event date. **Two recognition shapes:** single-date (100% on the date) and period waterfall (over the line's `ServicePeriodStart/End`). No schedule-bridge tables, no materializer, no daily job. **Changes/cancellations = correcting Orders whose entries NET against what's staged** — staged entries are never edited or deleted. Batches sweep forward-dated entries only when the date filter explicitly reaches forward (default cutoff = today, accounting-side). | Robert's model ("a wake-up job is fragile — just create them"), Jeremy sign-off; Marcelo adopted 2026-07-13/14. Accounting D15 is the mirror. Engine rework to this shape pending (§18). |
 | D15 | **Fulfillment ↔ revenue recognition are DISCONNECTED.** Fulfillment is a logistics fact; NO JE fires on Posted→Fulfilled. If no line's product requires fulfillment, a Posted order **auto-advances to Fulfilled**; fulfillment-requiring lines hold the order for the fulfiller role (per-line flip queue deferred). | Robert 2026-07-09/2026-07-10. |
-| D16 | **Reversals at every layer, each emitting its own reversal JEs:** Order → return/cancellation/amendment/credit-memo Orders with negative-quantity lines (`ReversesOrderID`/`ReversesOrderLineID`; partial reversals stack); Payment → refund/chargeback/bank-return Payments (negative `Amount`, `ReversesPaymentID`); Subscription → cancellation with proration refund. Credit settlement paths: refund payment · apply-to-another-order (zero-cash credit-application Payment) · write-off (deferred until a real need). | Standard subledger pattern; audit trail by construction. |
+| D16 | **Reversals at every layer, each emitting its own reversal JEs:** Order → return/cancellation/amendment/credit-memo Orders with negative-quantity lines (`ReversesOrderID`/`ReversesOrderLineID`; partial reversals stack); Payment → refund/chargeback/bank-return PaymentHeaders (negative `Amount`, `ReversesPaymentHeaderID`); Subscription → cancellation with proration refund. Credit settlement paths: refund payment · apply-to-another-order (zero-cash credit-application Payment) · write-off (deferred until a real need). | Standard subledger pattern; audit trail by construction. |
 | D17 | **Refund is ONE atomic remote operation** (`Orders.RefundPayment`): reversal Payment + reversing JE commit together or not at all (TransactionGroups don't cross the GraphQL boundary — same reason `ConfirmOrder` is an op). NOT blocked on Stripe: a Manual-provider refund is fully expressible (nothing moves on our side but the JE). Same pattern owed for create-into-`Fulfilled` (a future `Orders.CreateOrderInState`-style op that runs the real Confirm path). | Marcelo 2026-07-16: "no server op that writes the reversal payment and the journal entry in one transaction — that's a problem." |
-| D18 | **Payment model:** `Payment` (internal state; gross `Amount`, `ProcessingFeeAmount`, `NetAmount`) · `PaymentIntent` (provider-side state; webhooks update it) · **`PaymentLine`** as the cash-application junction (one Payment clears many Orders; one Order cleared by many Payments; `Order.Balance = TotalGross − SUM(posted PaymentLine.Amount)`) · `CustomerPaymentMethod` token vault (provider tokens only, never PAN). `Payment.ReceivingCompanyID` = where cash hits. Capture JE: Dr Cash (net) / Dr Processing Fee / Cr A/R (gross). | BO-D16/D46/D47 lineage, unchanged. Fee JE leg is coded but dormant until a Processing-Fee role/account is seeded. |
+| D18 | **Payment model** (revised by D36–D39): `PaymentHeader` (internal state; gross `Amount`, `ProcessingFeeAmount`, `NetAmount`) · `PaymentIntent` (provider-side state; webhooks update it) · **`PaymentLine`** as the cash-application junction (one Payment clears many Orders; one Order cleared by many Payments; `OrderHeader.Balance = TotalGross − SUM(posted PaymentLine.Amount)`, trigger-maintained (D41)) · `CustomerPaymentMethod` as the WALLET (its instrument fields now live in `PaymentDetail`, D38). `PaymentHeader.ReceivingCompanyID` = where cash hits. Capture JE: Dr Cash (net) / Dr Processing Fee / Cr A/R (gross). | BO-D16/D46/D47 lineage, unchanged. Fee JE leg is coded but dormant until a Processing-Fee role/account is seeded. |
 | D19 | **Payment providers are pluggable** (`RegisterClass`/ClassFactory). **v1 = Stripe + Manual** (+ the internal StoredValue provider when gift cards activate). **Stub-first Stripe:** the committed success-stub is the default test provider; the **LXP-checkout subset of real Stripe** (PaymentIntent lifecycle + hosted checkout + webhook→capture) is pulled forward for launch; recon/forensics/idempotency-stress remain deferred. Webhooks: an **unauthenticated Express route** (raw-body capture + provider HMAC verification, mounted before auth — the MJ `SignatureWebhookHandler` precedent), idempotent via `ProviderEventID` uniqueness; the HTTP boundary is never an MJ Action. | BO-D12/D13/D23/D29; stub-first per Marcelo 2026-07-14 (LXP D8). |
 | D20 | **Subscriptions:** `Product.SubscriptionType` declares recurring value; on first sale the behavior does **find-or-extend-or-create** for (Product, Customer, Beneficiary); **each billing cycle the Subscription spawns a renewal Order** (its own bill, D2). `SubscriptionPlan` is optional elaboration (multi-tier/cycle products); simple memberships need none. **Renewals spawn as `Draft` at launch** (a human confirms; Confirm books); the fuller shape is a **`RenewalSpawnStatus`** setting per type/plan ∈ {Draft, Quoted, Confirmed}. Downgrade = cancel-existing + new sub (clean audit; matches Stripe). No per-order accounting gate by default — batch approval is accounting's control point; exceptions via SalesRule; custom logic via the behavior seam. | BO-D24/D40 + Robert OF4 (2026-07-16; Jeremy validates the Draft default). Lifecycle build deferred behind booking (§18). |
 | D21 | **Pricing:** `PriceList`/`ProductPrice`/`PriceTier` (effective-dated, pricing models flat/per-unit/tiered/volume/package/usage, fee types) are **built**; `OrderLine.UnitPrice` **direct entry remains valid and is the base of the precedence chain** — the resolution engine layers suggestion/resolution on top, so pricing never blocks baseline flows. ASC-606 fields (SSP, `ProductPerformanceObligation`) ship now; the allocation engine is future. | Robert deferred → Marcelo un-deferred 2026-07-14; tables built 2026-07-14. |
@@ -201,6 +201,13 @@ The current decision set. Each is the standing ruling — superseded ancestors l
 | D33 | **Forms-first UX** (Amith): first-class MJ Entity Forms for Order/Payment/Subscription/Product composed of reusable widgets dashboards embed directly; no bespoke pop-ups — modal/slide-in surfaces render the entity form through MJ's form host. Full direction §15, including the form-vs-workspace boundary and the convert-on-touch migration policy. | Amith 2026-07-17; accounting D22 is the mirror. |
 | D34 | **UTC everywhere.** Every persisted timestamp is UTC; time zones are presentation-only. | Standing convention. |
 | D35 | **Metadata-driven JE pattern selection:** `Product.RevenueRecognitionType` × `Order.OrderType` × reversal refs determine each line's JE pattern (immediate revenue vs DefRev + staged recognition vs reversal mirror). New rev-rec policies come from metadata, not code changes. | Original principle, unchanged. |
+| D36 | **`PaymentType` is a first-class table, not a CHECK enum.** Code, Name, `IsReversal`, `RequiresProvider`/`RequiresInstrument`/`RequiresReference`, `DetailExtensionEntity` (IsA seam, mirroring `ProductType.ProductExtensionEntity`), Sequence — seeded via metadata, never SQL inserts. `PaymentHeader.PaymentTypeID` **replaces** the old `Payment.Method` enum entirely (no denormalized code column; pull the name in as an FK virtual field). Rationale: the old enum mixed forward methods with reversal types (`Refund`/`Chargeback`/`BankReturn`), so any "initial payment type" picker had to hardcode the excluded subset; `IsReversal` makes that a data question. The `RequiresX` flags drive both validation and which instrument fields the UI demands. | Amith 2026-07-25. |
+| D37 | **`PaymentProviderType` is a LOOKUP, not a CHECK.** The as-built `PaymentProvider.ProviderType CHECK ('Stripe','Manual')` directly contradicted D19 ("new providers added without schema change") — adding JPM would have required a migration. Now `PaymentProvider.PaymentProviderTypeID` FKs a seeded lookup whose `Code` IS the `@RegisterClass` key, carrying `DriverClass` + capability flags (`SupportsTokenization`/`SupportsRefund`/`SupportsWebhooks`) so the UI can hide what a gateway can't do instead of failing at runtime. `PaymentProvider` stays the CONFIGURED account (per-company, credentials ref, live/test). | Amith 2026-07-25. |
+| D38 | **`PaymentDetail` — one instrument shape, three hosts.** Holds every instrument field (tokenized: provider customer/instrument refs, brand, last4, expiry, holder — NEVER the PAN; bank: routing/account last4; manual: reference number for check no / wire confirmation, instrument date; gift card: `StoredValueAccountID`) plus `CompanyID` for audit, pushed down from the host. Referenced by `OrderHeader.InitialPaymentDetailID` (intent), `PaymentHeader.PaymentDetailID` (fact), and `CustomerPaymentMethod.PaymentDetailID` (wallet). This removes the duplicate card columns that previously lived on `CustomerPaymentMethod`, leaving it purely a wallet (customer scope + IsDefault + IsActive). Sparse nullable columns rather than per-type IsA subtypes for v1 — queryable and ~14 columns beats six extension tables — with `PaymentType.DetailExtensionEntity` reserving the IsA seam for adopters. | Amith 2026-07-25. |
+| D39 | **Copy-on-use, never share; immutability is the guarantee.** Each host gets its OWN `PaymentDetail` row (wallet → copied onto the order; order's → copied onto the payment at confirm), so snapshots cannot drift. `SourceCustomerPaymentMethodID` records the wallet entry a copy came from — provenance without coupling, keeping "every payment made with this saved card" answerable. Enforced by a **filtered UNIQUE index on each host FK** (1:1 per host) plus an **immutability trigger** on PaymentDetail's instrument fields. Cross-host exclusivity is deliberately NOT enforced: the risk was drift, immutability removes it directly, and blocking sharing would cost three triggers each scanning the other two tables. | Amith 2026-07-25 — "we don't share, we use once and copy the values", immutability confirmed. |
+| D40 | **`Order` → `OrderHeader`, `Payment` → `PaymentHeader`.** `ORDER` is reserved in BOTH T-SQL and PostgreSQL (and this app ships a PG conversion path), so the base table needed bracketing forever in raw SQL, dynamic SQL, and third-party reporting tools. `OrderHeader`/`OrderLine` and `PaymentHeader`/`PaymentLine` also read as the classic header/line pairing. MJ entity names are unaffected (`MJ_BizApps_Orders: Orders` regardless of base table), so only raw SQL changes. Renamed pre-production, when the cost is near zero. | Amith 2026-07-25. |
+| D41 | **`OrderHeader` rollup fields are TRIGGER-maintained, not computed columns.** `TotalGross` (SUM of line gross) and `AmountPaid` (SUM of posted `PaymentLine.Amount`) are cross-table aggregates that a computed column cannot express; `Balance = TotalGross − AmountPaid` is computed in the SAME trigger rather than as a PERSISTED/GENERATED column so the behaviour is identical on SQL Server and PostgreSQL and depends on no `sql-converter` or CodeGen handling of computed-column DDL. `PaymentStatus` derives from the same trigger except `WrittenOff`, which stays an explicit action. `IsOverdue` remains view-computed (D32) — it changes with the clock, not with a write. | Amith 2026-07-25 (cross-platform parity over DB-guaranteed arithmetic). |
+| D42 | **Initial payment on the order is a CONVENIENCE capture, and it is INTENT.** `OrderHeader.InitialPaymentTypeID` + `InitialPaymentAmount` + `InitialPaymentDetailID` record what the customer said they would pay at order entry; on confirm they auto-generate a `PaymentHeader` + `PaymentLine` applied to that order. They are written at order entry and **never updated once the payment exists** — the `PaymentHeader` is the record of what happened. Keeping them is what lets a quote carry payment intent before confirm and lets a failed initial payment preserve the request for retry. | Amith 2026-07-25. |
 
 ---
 
@@ -251,7 +258,6 @@ erDiagram
     PaymentProvider ||--o{ PaymentIntent : "provider state"
     PaymentIntent ||--o{ Payment : "capture"
     CustomerPaymentMethod ||--o{ Payment : "instrument"
-    Payment ||--o{ Payment : "ReversesPaymentID"
     Subscription ||--o{ SubscriptionEvent : "immutable log"
     SubscriptionPlan ||--o{ Subscription : "optional plan"
     Subscription ||--o{ Order : "spawns renewal Orders"
@@ -321,7 +327,7 @@ __mj_BizAppsOrders.PriceTier        -- quantity breaks under a ProductPrice
 ### 4.3 Order + OrderLine
 
 ```sql
-__mj_BizAppsOrders.[Order]
+__mj_BizAppsOrders.OrderHeader                  -- ★ D40 (was `[Order]` — reserved word)
   ID, OrderNumber UNIQUE NOT NULL,             -- ORD-{seq} via OrderSequence (D30)
   OrderType NOT NULL DEFAULT 'Sale',           -- Sale | Return | Cancellation | Amendment | CreditMemoOrder
   OrderDate DATE NOT NULL,                     -- backdating allowed, unguarded (D25)
@@ -330,10 +336,15 @@ __mj_BizAppsOrders.[Order]
   CustomerOrganizationID, CustomerPersonID, SalesRepUserID,
   BillToAddressID, ShipToAddressID, PaymentTermsTypeID,
   -- A/R — the Order IS the receivable (D2)
-  TotalGross, AmountPaid DEFAULT 0, Balance,   -- Balance = TotalGross − SUM(posted PaymentLine.Amount)
+  TotalGross, AmountPaid DEFAULT 0, Balance,   -- ALL trigger-maintained (D41), not computed columns
   DueDate NULL,                                -- from PaymentTerms; IsOverdue is computed, never stored (D32)
   PaymentStatus DEFAULT 'Unpaid',              -- Unpaid | PartiallyPaid | Paid | Overdue | WrittenOff
   ExternalDocumentNumber NULL,                 -- bill.com identity (D30)
+  -- Initial payment — CONVENIENCE capture of INTENT (D42). Auto-generates a PaymentHeader +
+  -- PaymentLine at confirm; never updated once that payment exists.
+  InitialPaymentTypeID NULL FK → PaymentType,
+  InitialPaymentAmount DECIMAL(18,2) NOT NULL DEFAULT 0,
+  InitialPaymentDetailID NULL FK → PaymentDetail,   -- own row, copied (D39)
   -- Lifecycle stamps
   ConfirmedAt, PostedAt, PostedByUserID,
   -- Reversals (D16)
@@ -417,24 +428,58 @@ ScheduledJournalEntry-bridge fields on these tables retire with the D14 rework (
 
 ### 4.7 Payments & stored value
 
+Revised 2026-07-25 (D36–D39): payment KIND and payment INSTRUMENT are now first-class tables
+rather than CHECK-constrained strings scattered across the payment entities.
+
 ```sql
-__mj_BizAppsOrders.PaymentProvider        -- Stripe | Manual | (StoredValue) …; per-company account;
-                                          -- CredentialsRef into MJ Credentials; IsLiveMode
-__mj_BizAppsOrders.PaymentIntent          -- provider-side state; ProviderIntentID UNIQUE; OrderID ref
-__mj_BizAppsOrders.Payment                -- PaymentNumber; ReceivingCompanyID; Method (CreditCard|ACH|
-                                          -- Wire|Check|Cash|InternalTransfer|GiftCard|Refund|Chargeback|
-                                          -- BankReturn); Amount (negative = reversal); ProcessingFeeAmount;
-                                          -- NetAmount; provider/intent/method refs; ReversesPaymentID;
+__mj_BizAppsOrders.PaymentType            -- ★ D36 first-class kind: Code, Name, IsReversal,
+                                          -- RequiresProvider/Instrument/Reference, DetailExtensionEntity
+                                          -- (IsA seam), Sequence. Seeded via metadata, not SQL.
+__mj_BizAppsOrders.PaymentProviderType    -- ★ D37 gateway kind: Code (= the @RegisterClass key),
+                                          -- DriverClass, SupportsTokenization/Refund/Webhooks.
+                                          -- A LOOKUP, not a CHECK — new gateways need no migration (D19).
+__mj_BizAppsOrders.PaymentProvider        -- a CONFIGURED gateway account: PaymentProviderTypeID,
+                                          -- CompanyID, CredentialsRef into MJ Credentials, IsLiveMode
+__mj_BizAppsOrders.PaymentDetail          -- ★ D38 the INSTRUMENT snapshot — one shape, three hosts.
+                                          -- CompanyID (audit, pushed down from the host); PaymentTypeID;
+                                          -- tokenized: ProviderCustomerRef/ProviderInstrumentRef, Brand,
+                                          -- Last4, Expiry, HolderName (NEVER the PAN); bank: BankName,
+                                          -- Routing/AccountLast4; manual: ReferenceNumber (check no /
+                                          -- wire confirmation), InstrumentDate; StoredValueAccountID
+                                          -- (gift cards); SourceCustomerPaymentMethodID = provenance.
+__mj_BizAppsOrders.PaymentIntent          -- provider-side state; ProviderIntentID UNIQUE; OrderHeaderID ref
+__mj_BizAppsOrders.PaymentHeader          -- (was `Payment`) PaymentNumber; ReceivingCompanyID;
+                                          -- PaymentTypeID (replaces the Method enum); PaymentDetailID;
+                                          -- Amount (negative = reversal); ProcessingFeeAmount; NetAmount;
+                                          -- provider/intent refs; ReversesPaymentHeaderID;
                                           -- Status (Pending|Captured|Failed|Refunded|Disputed);
-                                          -- JournalEntryID (soft ref, booked at capture)
-__mj_BizAppsOrders.PaymentLine            -- cash application: PaymentID × OrderID (+ optional line),
-                                          -- Amount, AllocatedAt/By
-__mj_BizAppsOrders.CustomerPaymentMethod  -- token vault: provider customer/pm tokens, display meta,
-                                          -- IsDefault — never the PAN
+                                          -- JournalEntryID (booked at capture)
+__mj_BizAppsOrders.PaymentLine            -- cash application: PaymentHeaderID × OrderHeaderID (+ optional
+                                          -- line), Amount, AllocatedAt/By. One payment SPLITS across many
+                                          -- orders; one order is cleared by many payments.
+__mj_BizAppsOrders.CustomerPaymentMethod  -- the WALLET: CustomerOrganizationID, PaymentDetailID, IsDefault,
+                                          -- IsActive. Instrument fields live in PaymentDetail, not here.
 __mj_BizAppsOrders.StoredValueAccount     -- gift card instrument: code, issuing company, balance,
 __mj_BizAppsOrders.StoredValueTransaction -- signed ledger (Issue|Redeem|Refund|Adjust|Expire)
                                           -- (schema shipped; the gift-card FLOWS are deferred — §21)
 ```
+
+**PaymentDetail's three hosts** (D38). One instrument shape, referenced by whoever needs it:
+
+| Host | Column | Meaning |
+|---|---|---|
+| `OrderHeader` | `InitialPaymentDetailID` | **intent** — what the customer said they'd pay with, at order entry |
+| `PaymentHeader` | `PaymentDetailID` | **fact** — what actually ran |
+| `CustomerPaymentMethod` | `PaymentDetailID` | the saved wallet entry's instrument |
+
+**Copy-on-use, never share** (D39). Each host gets its OWN row; the wallet's detail is copied onto the
+order, and the order's is copied onto the payment at confirm. Snapshots therefore cannot drift, so no
+cross-host immutability coordination is needed. `SourceCustomerPaymentMethodID` records which wallet
+entry a copy came from — provenance without coupling, so "every payment made with this saved card"
+stays answerable. Enforcement: a **filtered UNIQUE index on each host's FK** (1:1 per host) plus an
+**immutability trigger** on PaymentDetail's instrument fields. Cross-host exclusivity is deliberately
+NOT enforced — immutability already neutralizes sharing, and blocking it would cost three triggers
+each scanning the other two tables.
 
 ### 4.8 Sales rules
 
@@ -460,6 +505,10 @@ Schema built; the Confirm-time evaluation engine + Task routing are the pending 
 | GL account columns on Product/Category | D5 — role-based `GLAccountLink` resolution |
 | `Coupon` tables | D22 — provider-model launch; native entity is the fast-follow |
 | An `Order.Name` column | D29 — transactions get number + memo |
+| `Payment.Method` / `PaymentProvider.ProviderType` CHECK enums | D36/D37 — replaced by the `PaymentType` and `PaymentProviderType` lookups |
+| Instrument columns on `CustomerPaymentMethod` | D38 — they live in `PaymentDetail`; the wallet keeps only customer scope + IsDefault |
+| PERSISTED / GENERATED computed columns | D41 — rollups are trigger-maintained for SQL Server ↔ PostgreSQL parity |
+| Cross-host exclusivity on `PaymentDetail` | D39 — immutability removes the drift risk that exclusivity would guard |
 | Webhook/notification tables for entitlements | D27 — consumers poll |
 
 ---
@@ -545,7 +594,7 @@ future (fields ship now, D21).
 
 ## 8. Payments
 
-- **Model per D18**; **providers per D19** (Stripe + Manual v1; stub-first Stripe with the real
+- **Model per D18 as revised by D36–D39** (first-class `PaymentType`/`PaymentProviderType`, `PaymentDetail` instrument snapshots, copy-on-use); **providers per D19/D37** (Stripe + Manual v1; stub-first Stripe with the real
   LXP-checkout subset pulled forward; webhook receipt as an unauthenticated raw-body route with
   HMAC + `ProviderEventID` idempotency).
 - **Capture** books the payment JE (fee leg coded, dormant until a Processing-Fee role/account is
@@ -717,7 +766,7 @@ Sidecar instance, with BCSaaS refactored to wrap Orders as a fast-follow.
 
 At cutover (rides aidp Stage 4):
 
-- `crm.Invoice` → posted Orders; `crm.Payment` → Payment + PaymentLine; `sdr.Subscription*` →
+- `crm.Invoice` → posted Orders; `crm.Payment` → PaymentHeader + PaymentLine; `sdr.Subscription*` →
   Subscription (+ synthetic originating Order/OrderLines); `finance.Product`/`ProductCategory` →
   the catalog; `finance.PaymentTermsType` → PaymentTermsType. INT→UUID mapping throughout.
 - **Open-AR cutover rule (ruled, Robert 2026-07-16):** transfer **open invoices only, and only
