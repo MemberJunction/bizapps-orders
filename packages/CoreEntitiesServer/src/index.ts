@@ -11,5 +11,14 @@ export type { GLRole, ResolverEntityIDs } from './GLAccountResolver.js';
 export { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 export type { JEDraft, JELineDraft, OrderLineDraft } from './OrderJournalEntryFactory.js';
 
+export {
+    RevenueRecognitionDriver,
+    UpFrontDriver,
+    EvenOverTimeDriver,
+    AllBackEndDriver,
+    LoadRevenueRecognitionDrivers,
+} from './RevenueRecognition.js';
+export type { RevRecContext, RevRecEntry, RevRecSchedule } from './RevenueRecognition.js';
+
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';

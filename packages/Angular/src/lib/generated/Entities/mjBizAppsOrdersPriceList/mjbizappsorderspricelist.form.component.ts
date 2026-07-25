@@ -16,7 +16,7 @@ export class mjBizAppsOrdersPriceListFormComponent extends BaseFormComponent {
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'listIdentification', sectionName: 'List Identification', isExpanded: true },
+            { sectionKey: 'listConfiguration', sectionName: 'List Configuration', isExpanded: true },
             { sectionKey: 'validityPeriod', sectionName: 'Validity Period', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductPrices', sectionName: 'Product Prices', isExpanded: false }

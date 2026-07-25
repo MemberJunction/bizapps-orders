@@ -52,6 +52,9 @@ const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 const COMPANY_ENTITY = 'MJ: Companies';
+const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
+const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
+const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 
 /** Statuses at or beyond the booking lock (plan D8/D9). */
 const BOOKED_STATUSES = new Set(['Confirmed', 'Posted', 'Fulfilled']);
@@ -147,6 +150,12 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 this.ConfirmedAt = new Date();
             }
 
+            // The order IS the receivable, so its number is an A/R document number — assigned
+            // gap-consciously from OrderSequence before the first insert (D30).
+            if (!this.IsSaved && !this.OrderNumber) {
+                this.OrderNumber = await this.assignOrderNumber();
+            }
+
             const savedHeader = await super.Save(options);
             if (!savedHeader) {
                 throw new Error(
@@ -159,6 +168,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             if (booking) {
                 const lines = await this.loadLinesForBooking();
                 await this.bookLines(lines, options);
+                await this.createInitialPayment(options);
             }
 
             await dbProvider.CommitTransaction();
@@ -225,7 +235,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 .map((e) => {
                     const which =
                         e.DraftIndex !== undefined
-                            ? ` (order line ${unbooked[e.DraftIndex]?.LineNumber ?? e.DraftIndex})`
+                            ? ` (order line ${
+                                  unbooked.find((l) => l.ID === drafts[e.DraftIndex!]?.OrderLineID)?.LineNumber ??
+                                  e.DraftIndex
+                              })`
                             : '';
                     return `${e.Code}${which}: ${e.Message}`;
                 })
@@ -272,7 +285,11 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         return result.Output;
     }
 
-    /** NULL→value-once; the DB trigger enforces the same rule independently. */
+    /**
+     * Stamp each line with its BOOKING entry (NULL→value-once; trigger 51008 enforces the same
+     * rule independently). Recognition entries are forward-dated releases — they belong to the
+     * schedule, not to the line's booking pointer, so they are skipped here.
+     */
     private async stampJournalEntryIDs(
         drafts: OrderLineDraft[],
         result: CreateJournalEntriesResult,
@@ -282,6 +299,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const results = result.Results ?? [];
 
         for (let i = 0; i < drafts.length; i++) {
+            if (!drafts[i].IsBooking) continue;
             const jeID = results[i]?.JournalEntryID;
             if (!jeID) {
                 throw new Error(
@@ -306,6 +324,149 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 );
             }
         }
+    }
+
+
+    // ─── Numbering (D30) ───────────────────────────────────────────────────────
+
+    /**
+     * Mint the next `ORD-{seq}` from the OrderSequence singleton.
+     *
+     * The order IS the invoice (D2), so this is an A/R document number and auditors expect it to
+     * be gap-conscious. Taken with UPDLOCK+HOLDLOCK inside the caller's transaction so concurrent
+     * confirms serialize on the counter rather than colliding on the UNIQUE index.
+     *
+     * Currently a GLOBAL sequence per D30. Jeremy's global-vs-per-company call is still open; the
+     * change would be a WHERE clause here plus a CompanyID on the sequence table.
+     */
+    private async assignOrderNumber(): Promise<string> {
+        const provider = this.ProviderToUse as unknown as { ExecuteSQL: (sql: string, params?: unknown[]) => Promise<unknown> };
+        const rows = (await provider.ExecuteSQL(
+            // OUTPUT ... INTO (not a bare OUTPUT): CodeGen puts an __mj_UpdatedAt trigger on every
+            // table, and SQL Server forbids a bare OUTPUT clause on a table that has triggers.
+            `DECLARE @seq TABLE (Seq INT);
+             UPDATE __mj_BizAppsOrders.OrderSequence WITH (UPDLOCK, HOLDLOCK)
+             SET NextSequenceNumber = NextSequenceNumber + 1
+             OUTPUT deleted.NextSequenceNumber INTO @seq(Seq)
+             WHERE ID = 1;
+             SELECT Seq FROM @seq;`,
+        )) as Array<{ Seq: number }>;
+
+        const seq = rows?.[0]?.Seq;
+        if (!seq) {
+            throw new Error(
+                `Could not obtain the next order number — the OrderSequence singleton (ID=1) is missing. ` +
+                    `It is seeded by the baseline migration.`,
+            );
+        }
+        return `ORD-${String(seq).padStart(6, '0')}`;
+    }
+
+    // ─── Initial payment (D42) ─────────────────────────────────────────────────
+
+    /**
+     * Turn the order's captured payment INTENT into a real payment.
+     *
+     * `InitialPaymentTypeID`/`Amount`/`DetailID` are a convenience capture at order entry; on
+     * confirm they become a PaymentHeader plus a PaymentLine applied to this order. The rollup
+     * triggers then move AmountPaid/Balance/PaymentStatus on their own (D41) — nothing here
+     * touches those fields.
+     *
+     * The instrument is COPIED, never shared (D39): the order keeps its snapshot of what was
+     * intended, the payment gets its own record of what ran, and neither can rewrite the other.
+     */
+    private async createInitialPayment(options?: EntitySaveOptions): Promise<void> {
+        const amount = this.InitialPaymentAmount ?? 0;
+        if (!this.InitialPaymentTypeID || amount <= 0) return;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser;
+
+        // Copy the intent instrument so the payment owns its own row (D39).
+        let paymentDetailID: string | null = null;
+        if (this.InitialPaymentDetailID) {
+            paymentDetailID = await this.copyPaymentDetail(this.InitialPaymentDetailID, options);
+        }
+
+        const payment = await provider.GetEntityObject<BaseEntity>(PAYMENT_HEADER_ENTITY, user);
+        payment.NewRecord();
+        payment.Set('PaymentNumber', await this.assignPaymentNumber());
+        payment.Set('ReceivingCompanyID', this.CompanyID);
+        payment.Set('CustomerOrganizationID', this.CustomerOrganizationID);
+        payment.Set('PaymentDate', this.OrderDate ?? new Date());
+        payment.Set('PaymentTypeID', this.InitialPaymentTypeID);
+        payment.Set('Amount', amount);
+        payment.Set('PaymentDetailID', paymentDetailID);
+        payment.Set('Status', 'Captured');
+        payment.Set('Description', `Initial payment for order ${this.OrderNumber}`);
+
+        if (!(await payment.Save(options))) {
+            throw new Error(
+                `Failed to create the initial payment for order ${this.OrderNumber}: ` +
+                    `${payment.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+
+        const line = await provider.GetEntityObject<BaseEntity>(PAYMENT_LINE_ENTITY, user);
+        line.NewRecord();
+        line.Set('PaymentHeaderID', payment.Get('ID'));
+        line.Set('OrderHeaderID', this.ID);
+        line.Set('Amount', amount);
+        line.Set('AllocatedAt', new Date());
+        line.Set('AllocatedByUserID', user?.ID ?? null);
+
+        if (!(await line.Save(options))) {
+            throw new Error(
+                `Failed to apply the initial payment to order ${this.OrderNumber}: ` +
+                    `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+    }
+
+    /** Duplicate a PaymentDetail so each host owns its own immutable snapshot (D39). */
+    private async copyPaymentDetail(sourceID: string, options?: EntitySaveOptions): Promise<string> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const source = await provider.GetEntityObject<BaseEntity>(
+            PAYMENT_DETAIL_ENTITY,
+            CompositeKey.FromID(sourceID),
+            this.ContextCurrentUser,
+        );
+
+        const copy = await provider.GetEntityObject<BaseEntity>(PAYMENT_DETAIL_ENTITY, this.ContextCurrentUser);
+        copy.NewRecord();
+        for (const f of source.Fields) {
+            if (f.Name === 'ID' || f.Name.startsWith('__mj_')) continue;
+            copy.Set(f.Name, source.Get(f.Name));
+        }
+        // Record where the copy came from when the source was a saved wallet entry.
+        if (!source.Get('SourceCustomerPaymentMethodID')) {
+            copy.Set('SourceCustomerPaymentMethodID', source.Get('SourceCustomerPaymentMethodID'));
+        }
+
+        if (!(await copy.Save(options))) {
+            throw new Error(
+                `Failed to copy the payment instrument for order ${this.OrderNumber}: ` +
+                    `${copy.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+        return copy.Get('ID') as string;
+    }
+
+    private async assignPaymentNumber(): Promise<string> {
+        const provider = this.ProviderToUse as unknown as { ExecuteSQL: (sql: string, params?: unknown[]) => Promise<unknown> };
+        const rows = (await provider.ExecuteSQL(
+            // OUTPUT ... INTO (not a bare OUTPUT): CodeGen puts an __mj_UpdatedAt trigger on every
+            // table, and SQL Server forbids a bare OUTPUT clause on a table that has triggers.
+            `DECLARE @seq TABLE (Seq INT);
+             UPDATE __mj_BizAppsOrders.PaymentSequence WITH (UPDLOCK, HOLDLOCK)
+             SET NextSequenceNumber = NextSequenceNumber + 1
+             OUTPUT deleted.NextSequenceNumber INTO @seq(Seq)
+             WHERE ID = 1;
+             SELECT Seq FROM @seq;`,
+        )) as Array<{ Seq: number }>;
+        const seq = rows?.[0]?.Seq;
+        if (!seq) throw new Error('Could not obtain the next payment number — PaymentSequence (ID=1) is missing.');
+        return `PAY-${String(seq).padStart(6, '0')}`;
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────────

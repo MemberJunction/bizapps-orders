@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="productAssociation"
         SectionName="Product Association"
-        Icon="fa fa-box"
+        Icon="fa fa-tags"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -29,11 +29,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Plan Configuration Section -->
+    <!-- Plan Details Section -->
     <mj-collapsible-panel
-        SectionKey="planConfiguration"
-        SectionName="Plan Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="planDetails"
+        SectionName="Plan Details"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -44,6 +44,24 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Pricing and Billing Section -->
+    <mj-collapsible-panel
+        SectionKey="pricingAndBilling"
+        SectionName="Pricing and Billing"
+        Icon="fa fa-dollar-sign"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -60,24 +78,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Pricing and Trials Section -->
-    <mj-collapsible-panel
-        SectionKey="pricingAndTrials"
-        SectionName="Pricing and Trials"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Subscription Context Section -->
+    <!-- Event Context Section -->
     <mj-collapsible-panel
-        SectionKey="subscriptionContext"
-        SectionName="Subscription Context"
+        SectionKey="eventContext"
+        SectionName="Event Context"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
@@ -29,20 +29,10 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="RelatedPaymentID"
+            FieldName="ProviderEventID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="RelatedOrderHeaderID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
         ></mj-form-field>
 
     </mj-collapsible-panel>
@@ -70,16 +60,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Event Data Section -->
-    <mj-collapsible-panel
-        SectionKey="eventData"
-        SectionName="Event Data"
-        Icon="fa fa-code"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -88,13 +68,33 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Related Entities Section -->
+    <mj-collapsible-panel
+        SectionKey="relatedEntities"
+        SectionName="Related Entities"
+        Icon="fa fa-external-link-alt"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ProviderEventID"
+            FieldName="RelatedPaymentID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RelatedOrderHeaderID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
         ></mj-form-field>
 
     </mj-collapsible-panel>

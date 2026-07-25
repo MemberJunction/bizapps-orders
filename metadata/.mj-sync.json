@@ -4,6 +4,7 @@
     "autoCreateMissingRecords": true
   },
   "directoryOrder": [
+    "revenue-recognition-types",
     "payment-provider-types",
     "payment-types"
   ],

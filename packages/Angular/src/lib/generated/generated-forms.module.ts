@@ -43,6 +43,7 @@ import { mjBizAppsOrdersProductTypeFormComponent } from "./Entities/mjBizAppsOrd
 import { mjBizAppsOrdersProductFormComponent } from "./Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component";
 import { mjBizAppsOrdersRevRecScheduleLineFormComponent } from "./Entities/mjBizAppsOrdersRevRecScheduleLine/mjbizappsordersrevrecscheduleline.form.component";
 import { mjBizAppsOrdersRevenueRecognitionScheduleFormComponent } from "./Entities/mjBizAppsOrdersRevenueRecognitionSchedule/mjbizappsordersrevenuerecognitionschedule.form.component";
+import { mjBizAppsOrdersRevenueRecognitionTypeFormComponent } from "./Entities/mjBizAppsOrdersRevenueRecognitionType/mjbizappsordersrevenuerecognitiontype.form.component";
 import { mjBizAppsOrdersSalesAuthorityFormComponent } from "./Entities/mjBizAppsOrdersSalesAuthority/mjbizappsorderssalesauthority.form.component";
 import { mjBizAppsOrdersSalesRuleFormComponent } from "./Entities/mjBizAppsOrdersSalesRule/mjbizappsorderssalesrule.form.component";
 import { mjBizAppsOrdersStoredValueAccountFormComponent } from "./Entities/mjBizAppsOrdersStoredValueAccount/mjbizappsordersstoredvalueaccount.form.component";
@@ -98,6 +99,7 @@ declarations: [
     mjBizAppsOrdersProductFormComponent,
     mjBizAppsOrdersRevRecScheduleLineFormComponent,
     mjBizAppsOrdersRevenueRecognitionScheduleFormComponent,
+    mjBizAppsOrdersRevenueRecognitionTypeFormComponent,
     mjBizAppsOrdersSalesAuthorityFormComponent,
     mjBizAppsOrdersSalesRuleFormComponent,
     mjBizAppsOrdersStoredValueAccountFormComponent,

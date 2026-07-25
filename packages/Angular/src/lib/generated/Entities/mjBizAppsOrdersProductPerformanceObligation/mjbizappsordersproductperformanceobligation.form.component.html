@@ -10,32 +10,22 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Association Section -->
+    <!-- Performance Obligation Details Section -->
     <mj-collapsible-panel
-        SectionKey="productAssociation"
-        SectionName="Product Association"
+        SectionKey="performanceObligationDetails"
+        SectionName="Performance Obligation Details"
         Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="ProductID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Obligation Details Section -->
-    <mj-collapsible-panel
-        SectionKey="obligationDetails"
-        SectionName="Obligation Details"
-        Icon="fa fa-list-alt"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -44,27 +34,28 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="RevenueRecognitionType"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Pricing and Allocation Section -->
+    <!-- Revenue Recognition Section -->
     <mj-collapsible-panel
-        SectionKey="pricingAndAllocation"
-        SectionName="Pricing and Allocation"
-        Icon="fa fa-dollar-sign"
+        SectionKey="revenueRecognition"
+        SectionName="Revenue Recognition"
+        Icon="fa fa-chart-line"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
+            FieldName="RevenueRecognitionTypeID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="StandaloneSellingPrice"
             Type="number"
             [EditMode]="EditMode"

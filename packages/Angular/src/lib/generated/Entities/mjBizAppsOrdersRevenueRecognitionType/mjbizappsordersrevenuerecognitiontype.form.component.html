@@ -10,30 +10,20 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Provider Configuration Section -->
+    <!-- Recognition Type Details Section -->
     <mj-collapsible-panel
-        SectionKey="providerConfiguration"
-        SectionName="Provider Configuration"
-        Icon="fa fa-cogs"
+        SectionKey="recognitionTypeDetails"
+        SectionName="Recognition Type Details"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="PaymentProviderTypeID"
+            FieldName="Code"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CompanyID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
@@ -46,26 +36,16 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="CredentialsRef"
-            Type="textbox"
+            FieldName="Description"
+            Type="textarea"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Operational Settings Section -->
-    <mj-collapsible-panel
-        SectionKey="operationalSettings"
-        SectionName="Operational Settings"
-        Icon="fa fa-toggle-on"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="IsLiveMode"
-            Type="checkbox"
+            FieldName="Sequence"
+            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -73,6 +53,40 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Recognition Logic Section -->
+    <mj-collapsible-panel
+        SectionKey="recognitionLogic"
+        SectionName="Recognition Logic"
+        Icon="fa fa-cogs"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DriverClass"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsDeferred"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RequiresServicePeriod"
             Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -112,100 +126,100 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Payment Details Section -->
+    <!-- Products Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPaymentDetails"
-        SectionName="Payment Details"
-        Icon="fa fa-credit-card"
+        SectionKey="mJBizAppsOrdersProducts"
+        SectionName="Products"
+        Icon="fa fa-box"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentDetails')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProducts')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Details','PaymentProviderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Details')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentDetails')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Products','RevenueRecognitionTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Products')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProducts')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentDetails', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProducts', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
         }
     </mj-collapsible-panel>
 
-    <!-- Payment Intents Section -->
+    <!-- Product Performance Obligations Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPaymentIntents"
-        SectionName="Payment Intents"
-        Icon="fa fa-credit-card"
+        SectionKey="mJBizAppsOrdersProductPerformanceObligations"
+        SectionName="Product Performance Obligations"
+        Icon="fa fa-tasks"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentIntents')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductPerformanceObligations')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Intents','PaymentProviderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Intents')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentIntents')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Performance Obligations','RevenueRecognitionTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Performance Obligations')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductPerformanceObligations')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentIntents', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductPerformanceObligations', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
         }
     </mj-collapsible-panel>
 
-    <!-- Subscriptions Section -->
+    <!-- Product Types Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersSubscriptions"
-        SectionName="Subscriptions"
-        Icon="fa fa-sync-alt"
+        SectionKey="mJBizAppsOrdersProductTypes"
+        SectionName="Product Types"
+        Icon="fa fa-tags"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptions')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductTypes')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','PaymentProviderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptions')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Types','DefaultRevenueRecognitionTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Types')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductTypes')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptions', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductTypes', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
         }
     </mj-collapsible-panel>
 
-    <!-- Payment Headers Section -->
+    <!-- Revenue Recognition Schedules Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPaymentHeaders"
-        SectionName="Payment Headers"
-        Icon="fa fa-money-bill-wave"
+        SectionKey="mJBizAppsOrdersRevenueRecognitionSchedules"
+        SectionName="Revenue Recognition Schedules"
+        Icon="fa fa-calendar-check"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentHeaders')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersRevenueRecognitionSchedules')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Headers','PaymentProviderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Headers')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentHeaders')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Revenue Recognition Schedules','RevenueRecognitionTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Revenue Recognition Schedules')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersRevenueRecognitionSchedules')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentHeaders', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersRevenueRecognitionSchedules', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

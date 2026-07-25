@@ -18,15 +18,15 @@ export class mjBizAppsOrdersOrderLineFormComponent extends BaseFormComponent {
         this.initSections([
             { sectionKey: 'lineItemDetails', sectionName: 'Line Item Details', isExpanded: true },
             { sectionKey: 'pricingAndRevenue', sectionName: 'Pricing and Revenue', isExpanded: true },
-            { sectionKey: 'serviceAndFulfillment', sectionName: 'Service and Fulfillment', isExpanded: true },
-            { sectionKey: 'lineItemRelationships', sectionName: 'Line Item Relationships', isExpanded: true },
-            { sectionKey: 'accountingInformation', sectionName: 'Accounting Information', isExpanded: true },
+            { sectionKey: 'serviceAndRevenueRecognition', sectionName: 'Service and Revenue Recognition', isExpanded: true },
+            { sectionKey: 'fulfillmentAndTracking', sectionName: 'Fulfillment and Tracking', isExpanded: true },
+            { sectionKey: 'accounting', sectionName: 'Accounting', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLineDimensions', sectionName: 'Order Line Dimensions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLineDimensions', sectionName: 'Order Line Dimensions', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersStoredValueAccounts', sectionName: 'Stored Value Accounts', isExpanded: false }
         ]);
     }

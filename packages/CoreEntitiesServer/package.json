@@ -1,8 +1,8 @@
 {
   "name": "@mj-biz-apps/orders-core-entities-server",
   "type": "module",
-  "version": "0.1.0",
-  "description": "Server-side entity subclasses for BizApps Orders — order booking (one JE per line), line computation, and lifecycle hooks.",
+  "version": "5.0.0",
+  "description": "Server-side entity subclasses for BizApps Orders \u2014 order booking (one JE per line), line computation, and lifecycle hooks.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "publishConfig": {
@@ -23,7 +23,7 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "0.1.0"
+    "@mj-biz-apps/orders-entities": "5.0.0"
   },
   "peerDependencies": {
     "@memberjunction/core": "^5.49.0",
@@ -34,8 +34,12 @@
     "@mj-biz-apps/accounting-core-entities-server": ">=0.1.0"
   },
   "peerDependenciesMeta": {
-    "@mj-biz-apps/accounting-engine-base": { "optional": true },
-    "@mj-biz-apps/accounting-core-entities-server": { "optional": true }
+    "@mj-biz-apps/accounting-engine-base": {
+      "optional": true
+    },
+    "@mj-biz-apps/accounting-core-entities-server": {
+      "optional": true
+    }
   },
   "repository": {
     "type": "git",

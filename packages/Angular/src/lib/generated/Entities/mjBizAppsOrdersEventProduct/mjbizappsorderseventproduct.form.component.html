@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Event Logistics Section -->
+    <!-- Event Details Section -->
     <mj-collapsible-panel
-        SectionKey="eventLogistics"
-        SectionName="Event Logistics"
-        Icon="fa fa-map-marker-alt"
+        SectionKey="eventDetails"
+        SectionName="Event Details"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -50,6 +50,16 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Event Logistics Section -->
+    <mj-collapsible-panel
+        SectionKey="eventLogistics"
+        SectionName="Event Logistics"
+        Icon="fa fa-users"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -179,15 +189,7 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="RevenueRecognitionType"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="DeferredRecognitionShape"
+            FieldName="RevenueRecognitionTypeID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"

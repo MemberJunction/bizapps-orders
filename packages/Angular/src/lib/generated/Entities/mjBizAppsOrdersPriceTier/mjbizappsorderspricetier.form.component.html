@@ -29,6 +29,24 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="Amount"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Tier Details Section -->
+    <mj-collapsible-panel
+        SectionKey="tierDetails"
+        SectionName="Tier Details"
+        Icon="fa fa-list-ol"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="MinQuantity"
             Type="number"
             [EditMode]="EditMode"
@@ -38,14 +56,6 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="MaxQuantity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Amount"
             Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"

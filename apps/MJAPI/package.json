@@ -1,6 +1,6 @@
 {
   "name": "mj_api",
-  "version": "0.1.0",
+  "version": "5.0.0",
   "description": "BizApps Orders API server (MemberJunction)",
   "main": "index.js",
   "private": true,
@@ -27,7 +27,7 @@
     "@memberjunction/server-bootstrap": "^5.49.0",
     "@memberjunction/sqlserver-dataprovider": "^5.49.0",
     "class-validator": "^0.14.3",
-    "@mj-biz-apps/orders-server": "0.1.0",
+    "@mj-biz-apps/orders-server": "5.0.0",
     "@mj-biz-apps/common-server": "^5.32.0",
     "@mj-biz-apps/common-entities": "^5.32.0",
     "@mj-biz-apps/common-actions": "^5.32.0"

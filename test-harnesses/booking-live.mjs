@@ -94,6 +94,12 @@ async function main() {
     console.log(`\n=== Test 3: rollup triggers + PaymentDetail immutability ===`);
     await testRollupsAndImmutability(pool, md, user, seed);
 
+    console.log(`\n=== Test 4: revenue recognition schedules (D14/D43) ===`);
+    await testRevRec(pool, md, user, seed);
+
+    console.log(`\n=== Test 5: numbering + auto initial payment (D30/D42) ===`);
+    await testNumberingAndInitialPayment(pool, md, user, seed);
+
     console.log(`\n=== Teardown ===`);
     await teardown(pool, seed);
 
@@ -133,22 +139,24 @@ async function seedFixtures(pool, md, user, companyEntityID) {
     }
 
     // Catalog: one Immediate product per company + one Deferred product in company A.
-    const ptImmediate = await makeProductType(pool, `${RUN} Service`, 'Immediate');
-    const ptDeferred = await makeProductType(pool, `${RUN} Subscription`, 'Deferred');
+    const rr = new Map((await q(pool, `SELECT ID, Code FROM ${ORDERS}.RevenueRecognitionType`)).map((r) => [r.Code, r.ID]));
+    const ptImmediate = await makeProductType(pool, `${RUN} Service`);
+    const ptDeferred = await makeProductType(pool, `${RUN} Subscription`);
 
     const catA = await makeCategory(pool, coA.id, `${RUN} Cat A`);
     const catB = await makeCategory(pool, coB.id, `${RUN} Cat B`);
 
-    const prodA = await makeProduct(pool, coA.id, ptImmediate, catA, `${RUN} Widget A`, 'Immediate');
-    const prodADef = await makeProduct(pool, coA.id, ptDeferred, catA, `${RUN} Sub A`, 'Deferred');
-    const prodB = await makeProduct(pool, coB.id, ptImmediate, catB, `${RUN} Widget B`, 'Immediate');
+    const prodA = await makeProduct(pool, coA.id, ptImmediate, catA, `${RUN} Widget A`, rr.get('UpFront'));
+    const prodADef = await makeProduct(pool, coA.id, ptDeferred, catA, `${RUN} Sub A`, rr.get('AllBackEnd'));
+    const prodASub = await makeProduct(pool, coA.id, ptDeferred, catA, `${RUN} Sub Monthly A`, rr.get('EvenOverTime'));
+    const prodB = await makeProduct(pool, coB.id, ptImmediate, catB, `${RUN} Widget B`, rr.get('UpFront'));
 
     // A product with NO resolvable revenue account — company C has no links at all.
     const coC = await makeCompany(md, user, rv, `${RUN} Co C (unlinked)`, currencyCode, pool);
     const catC = await makeCategory(pool, coC.id, `${RUN} Cat C`);
-    const prodC = await makeProduct(pool, coC.id, ptImmediate, catC, `${RUN} Widget C`, 'Immediate');
+    const prodC = await makeProduct(pool, coC.id, ptImmediate, catC, `${RUN} Widget C`, rr.get('UpFront'));
 
-    return { coA, coB, coC, ptImmediate, ptDeferred, catA, catB, catC, prodA, prodADef, prodB, prodC };
+    return { coA, coB, coC, ptImmediate, ptDeferred, catA, catB, catC, prodA, prodADef, prodASub, prodB, prodC, rr };
 }
 
 /**
@@ -203,11 +211,11 @@ async function link(pool, entityID, recordID, roleID, glAccountID) {
     );
 }
 
-async function makeProductType(pool, name, revRec) {
+async function makeProductType(pool, name) {
     const id = randomUUID();
     await pool.request().query(
-        `INSERT INTO ${ORDERS}.ProductType (ID, Name, DefaultRevenueRecognitionType, RequiresFulfillment, IsActive)
-         VALUES ('${id}','${name}','${revRec}',0,1)`,
+        `INSERT INTO ${ORDERS}.ProductType (ID, Name, RequiresFulfillment, IsActive)
+         VALUES ('${id}','${name}',0,1)`,
     );
     return id;
 }
@@ -221,11 +229,11 @@ async function makeCategory(pool, companyID, name) {
     return id;
 }
 
-async function makeProduct(pool, companyID, typeID, categoryID, name, revRec) {
+async function makeProduct(pool, companyID, typeID, categoryID, name, revRecTypeID) {
     const id = randomUUID();
     await pool.request().query(
-        `INSERT INTO ${ORDERS}.Product (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionType, IsTaxable, IsActive)
-         VALUES ('${id}','${companyID}','${typeID}','${categoryID}','${name}','Active','${revRec}',0,1)`,
+        `INSERT INTO ${ORDERS}.Product (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, IsTaxable, IsActive)
+         VALUES ('${id}','${companyID}','${typeID}','${categoryID}','${name}','Active','${revRecTypeID}',0,1)`,
     );
     return id;
 }
@@ -235,7 +243,7 @@ async function makeProduct(pool, companyID, typeID, categoryID, name, revRec) {
 async function testHappyPath(pool, md, user, seed) {
     const { order, lines } = await buildOrder(md, user, seed.coA.id, [
         { productID: seed.prodA, qty: 2, price: 100, discount: 0 },      // Co A, immediate, no discount
-        { productID: seed.prodADef, qty: 1, price: 1200, discount: 0 },  // Co A, DEFERRED
+        { productID: seed.prodADef, qty: 1, price: 1200, discount: 0, svcStart: '2026-08-01', svcEnd: '2026-08-31' }, // Co A, AllBackEnd
         { productID: seed.prodB, qty: 3, price: 50, discount: 0.1 },     // Co B, 10% discount, no contra acct
     ]);
 
@@ -370,12 +378,85 @@ async function testRollupsAndImmutability(pool, md, user, seed) {
     check('PaymentDetail instrument fields are immutable', blocked);
 }
 
+// ─── Test 4: revenue recognition ───────────────────────────────────────────────
+
+/**
+ * A deferred line must produce its booking entry PLUS one real forward-dated release entry per
+ * schedule slice (D14) — no materializer, the ledger holds the future. EvenOverTime across a
+ * 12-month service period on $1,200 = 12 monthly $100 releases.
+ */
+async function testRevRec(pool, md, user, seed) {
+    const { order } = await buildOrder(md, user, seed.coA.id, [
+        { productID: seed.prodASub, qty: 1, price: 1200, discount: 0, svcStart: '2026-01-01', svcEnd: '2026-12-31' },
+    ]);
+    order.Status = 'Confirmed';
+    if (!(await order.Save())) { check('EvenOverTime line confirmed', false, order.LatestResult?.CompleteMessage ?? ''); return; }
+
+    const line = (await q(pool, `SELECT ID, JournalEntryID FROM ${ORDERS}.OrderLine WHERE OrderHeaderID='${order.ID}'`))[0];
+    const entries = await q(pool, `
+        SELECT je.EntryType, je.EffectiveDate, SUM(ISNULL(jel.DebitAmount,0)) AS D
+        FROM ${ACCT}.JournalEntry je JOIN ${ACCT}.JournalEntryLine jel ON jel.JournalEntryID=je.ID
+        WHERE je.LinkedRecordID='${line.ID}' GROUP BY je.ID, je.EntryType, je.EffectiveDate ORDER BY je.EffectiveDate`);
+
+    const booking = entries.filter((e) => e.EntryType === 'OrderBooking');
+    const releases = entries.filter((e) => e.EntryType === 'RevenueRecognition');
+    check('one booking entry', booking.length === 1, `got ${booking.length}`);
+    check('twelve forward-dated release entries', releases.length === 12, `got ${releases.length}`);
+    check('releases sum to the line amount (1200)',
+        Math.round(releases.reduce((t, r) => t + Number(r.D), 0) * 100) / 100 === 1200,
+        String(releases.reduce((t, r) => t + Number(r.D), 0)));
+    check('releases are dated into the future (ledger holds the schedule)',
+        releases.some((r) => new Date(r.EffectiveDate) > new Date(booking[0].EffectiveDate)));
+    check('OrderLine points at the BOOKING entry, not a release',
+        booking.length === 1 && line.JournalEntryID !== null);
+}
+
+// ─── Test 5: numbering + initial payment ───────────────────────────────────────
+
+async function testNumberingAndInitialPayment(pool, md, user, seed) {
+    const ptCheck = (await q(pool, `SELECT ID FROM ${ORDERS}.PaymentType WHERE Code='Check'`))[0].ID;
+
+    // Instrument captured as INTENT at order entry (D42), copied to the payment at confirm (D39).
+    const intentDetailID = randomUUID();
+    await pool.request().query(
+        `INSERT INTO ${ORDERS}.PaymentDetail (ID, CompanyID, PaymentTypeID, ReferenceNumber, InstrumentDate)
+         VALUES ('${intentDetailID}','${seed.coA.id}','${ptCheck}','CHK-9911','2026-07-25')`);
+
+    const { order } = await buildOrder(md, user, seed.coA.id, [
+        { productID: seed.prodA, qty: 1, price: 400, discount: 0 },
+    ]);
+    order.InitialPaymentTypeID = ptCheck;
+    order.InitialPaymentAmount = 400;
+    order.InitialPaymentDetailID = intentDetailID;
+    order.Status = 'Confirmed';
+    if (!(await order.Save())) { check('order with initial payment confirmed', false, order.LatestResult?.CompleteMessage ?? ''); return; }
+
+    const saved = (await q(pool, `SELECT OrderNumber, TotalGross, AmountPaid, Balance, PaymentStatus FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`))[0];
+    check('OrderNumber auto-assigned as ORD-{seq}', /^ORD-\d{6}$/.test(saved.OrderNumber ?? ''), saved.OrderNumber);
+
+    const pay = await q(pool, `
+        SELECT ph.PaymentNumber, ph.Amount, ph.Status, ph.PaymentDetailID, pl.Amount AS Applied
+        FROM ${ORDERS}.PaymentHeader ph JOIN ${ORDERS}.PaymentLine pl ON pl.PaymentHeaderID=ph.ID
+        WHERE pl.OrderHeaderID='${order.ID}'`);
+    check('initial payment auto-generated and applied', pay.length === 1, `got ${pay.length}`);
+    check('PaymentNumber auto-assigned as PAY-{seq}', /^PAY-\d{6}$/.test(pay[0]?.PaymentNumber ?? ''), pay[0]?.PaymentNumber);
+    check('payment fully applied to the order (400)', Number(pay[0]?.Applied) === 400);
+    check('rollups reflect the payment (Balance 0, Paid)',
+        Number(saved.Balance) === 0 && saved.PaymentStatus === 'Paid',
+        JSON.stringify(saved));
+
+    // D39: the payment got its OWN copy of the instrument, not the order's row.
+    check('instrument was COPIED, not shared', pay[0]?.PaymentDetailID && pay[0].PaymentDetailID.toLowerCase() !== intentDetailID.toLowerCase(),
+        `order=${intentDetailID} payment=${pay[0]?.PaymentDetailID}`);
+    const copied = (await q(pool, `SELECT ReferenceNumber FROM ${ORDERS}.PaymentDetail WHERE ID='${pay[0]?.PaymentDetailID}'`))[0];
+    check('the copy carries the same instrument data', copied?.ReferenceNumber === 'CHK-9911', JSON.stringify(copied));
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 async function buildOrder(md, user, companyID, lineSpecs) {
     const order = await md.GetEntityObject('MJ_BizApps_Orders: Order Headers', user);
     order.NewRecord();
-    order.OrderNumber = `ORD-${RUN}-${Math.floor(Math.random() * 100000)}`;
     order.OrderType = 'Sale';
     order.OrderDate = new Date();
     order.Status = 'Draft';
@@ -391,6 +472,8 @@ async function buildOrder(md, user, companyID, lineSpecs) {
         line.Quantity = spec.qty;
         line.UnitPrice = spec.price;
         line.DiscountPct = spec.discount;
+        if (spec.svcStart) line.ServicePeriodStart = new Date(spec.svcStart);
+        if (spec.svcEnd) line.ServicePeriodEnd = new Date(spec.svcEnd);
         lines.push(line);
     }
     order.Lines = lines;
@@ -420,6 +503,8 @@ async function teardown(pool, seed) {
         `DELETE jel FROM ${ACCT}.JournalEntryLine jel JOIN ${ACCT}.JournalEntry je ON je.ID=jel.JournalEntryID WHERE je.CompanyID IN (${companies})`,
         `DELETE FROM ${ACCT}.JournalEntry WHERE CompanyID IN (${companies})`,
         // payments first — PaymentLine FKs the order, PaymentHeader FKs the detail
+        // clear the order's intent pointer before deleting details it references
+        `UPDATE ${ORDERS}.OrderHeader SET InitialPaymentDetailID=NULL WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS}.PaymentLine WHERE OrderHeaderID IN (${orderScope})`,
         `DELETE FROM ${ORDERS}.PaymentHeader WHERE ReceivingCompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS}.PaymentDetail WHERE CompanyID IN (${companies})`,

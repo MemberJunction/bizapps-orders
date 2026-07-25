@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Organization Details Section -->
+    <!-- Account Information Section -->
     <mj-collapsible-panel
-        SectionKey="organizationDetails"
-        SectionName="Organization Details"
+        SectionKey="accountInformation"
+        SectionName="Account Information"
         Icon="fa fa-building"
         [Form]="this"
         [FormContext]="formContext">
@@ -29,10 +29,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Payment Method Section -->
+    <!-- Payment Method Details Section -->
     <mj-collapsible-panel
-        SectionKey="paymentMethod"
-        SectionName="Payment Method"
+        SectionKey="paymentMethodDetails"
+        SectionName="Payment Method Details"
         Icon="fa fa-credit-card"
         [Form]="this"
         [FormContext]="formContext">
@@ -92,10 +92,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Payment Instrument Section -->
+    <!-- Card Details Section -->
     <mj-collapsible-panel
-        SectionKey="paymentInstrument"
-        SectionName="Payment Instrument"
+        SectionKey="cardDetails"
+        SectionName="Card Details"
         Icon="fa fa-id-card"
         [Form]="this"
         [FormContext]="formContext">
@@ -142,10 +142,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Bank Details Section -->
+    <!-- Bank Account Details Section -->
     <mj-collapsible-panel
-        SectionKey="bankDetails"
-        SectionName="Bank Details"
+        SectionKey="bankAccountDetails"
+        SectionName="Bank Account Details"
         Icon="fa fa-university"
         [Form]="this"
         [FormContext]="formContext">
@@ -259,31 +259,6 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Order Headers Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersOrderHeaders"
-        SectionName="Order Headers"
-        Icon="fa fa-shopping-cart"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderHeaders')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Headers','InitialPaymentDetailID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Headers')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderHeaders')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderHeaders', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Customer Payment Methods Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersCustomerPaymentMethods"
@@ -328,6 +303,31 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentHeaders', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Order Headers Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersOrderHeaders"
+        SectionName="Order Headers"
+        Icon="fa fa-shopping-cart"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderHeaders')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Headers','InitialPaymentDetailID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Headers')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderHeaders')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderHeaders', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

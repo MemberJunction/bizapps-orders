@@ -16,17 +16,16 @@ export class mjBizAppsOrdersPaymentHeaderFormComponent extends BaseFormComponent
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'paymentDetails', sectionName: 'Payment Details', isExpanded: true },
+            { sectionKey: 'paymentInformation', sectionName: 'Payment Information', isExpanded: true },
             { sectionKey: 'relationships', sectionName: 'Relationships', isExpanded: true },
-            { sectionKey: 'financials', sectionName: 'Financials', isExpanded: true },
-            { sectionKey: 'providerInformation', sectionName: 'Provider Information', isExpanded: true },
-            { sectionKey: 'reversalDetails', sectionName: 'Reversal Details', isExpanded: true },
-            { sectionKey: 'notesAndMemo', sectionName: 'Notes and Memo', isExpanded: true },
+            { sectionKey: 'financialDetails', sectionName: 'Financial Details', isExpanded: true },
+            { sectionKey: 'providerDetails', sectionName: 'Provider Details', isExpanded: true },
+            { sectionKey: 'reversalInformation', sectionName: 'Reversal Information', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersStoredValueTransactions', sectionName: 'Stored Value Transactions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false }
         ]);
     }
 }

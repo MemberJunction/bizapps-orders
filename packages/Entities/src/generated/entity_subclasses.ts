@@ -56,7 +56,7 @@ export const mjBizAppsOrdersCustomerPaymentMethodSchema = z.object({
         * * Default Value: getutcdate()`),
     CustomerOrganization: z.string().describe(`
         * * Field Name: CustomerOrganization
-        * * Display Name: Customer Organization
+        * * Display Name: Customer Name
         * * SQL Data Type: nvarchar(255)`),
 });
 
@@ -177,7 +177,7 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Description: Attendee email.`),
     CheckInAt: z.date().nullable().describe(`
         * * Field Name: CheckInAt
-        * * Display Name: Check-In Time
+        * * Display Name: Check In At
         * * SQL Data Type: datetimeoffset
         * * Description: UTC timestamp the attendee checked in.`),
     __mj_CreatedAt: z.date().describe(`
@@ -357,14 +357,10 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: AvailableTo
         * * Display Name: Available To
         * * SQL Data Type: date`),
-    RevenueRecognitionType: z.string().describe(`
-        * * Field Name: RevenueRecognitionType
+    RevenueRecognitionTypeID: z.string().describe(`
+        * * Field Name: RevenueRecognitionTypeID
         * * Display Name: Revenue Recognition Type
-        * * SQL Data Type: nvarchar(20)`),
-    DeferredRecognitionShape: z.string().nullable().describe(`
-        * * Field Name: DeferredRecognitionShape
-        * * Display Name: Deferred Recognition Shape
-        * * SQL Data Type: nvarchar(20)`),
+        * * SQL Data Type: uniqueidentifier`),
     StandaloneSellingPrice: z.number().nullable().describe(`
         * * Field Name: StandaloneSellingPrice
         * * Display Name: Standalone Selling Price
@@ -473,24 +469,24 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Description: FK to __mj_BizAppsCommon.Organization — the customer. Nullable.`),
     CustomerPersonID: z.string().nullable().describe(`
         * * Field Name: CustomerPersonID
-        * * Display Name: Customer Person
+        * * Display Name: Customer Contact
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ.BizApps.Common: People (vwPeopleExtended.ID)
         * * Description: FK to __mj_BizAppsCommon.Person — the buyer/contact person at the customer organization. Nullable.`),
     SalesRepUserID: z.string().nullable().describe(`
         * * Field Name: SalesRepUserID
-        * * Display Name: Sales Rep
+        * * Display Name: Sales Representative
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)`),
     BillToAddressID: z.string().nullable().describe(`
         * * Field Name: BillToAddressID
-        * * Display Name: Bill To Address
+        * * Display Name: Billing Address
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ.BizApps.Common: Addresses (vwAddresses.ID)
         * * Description: FK to __mj_BizAppsCommon.Address — the billing address for this order/invoice. Nullable.`),
     ShipToAddressID: z.string().nullable().describe(`
         * * Field Name: ShipToAddressID
-        * * Display Name: Ship To Address
+        * * Display Name: Shipping Address
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ.BizApps.Common: Addresses (vwAddresses.ID)
         * * Description: FK to __mj_BizAppsCommon.Address — the shipping/service address; drives tax jurisdiction when tax lands. Nullable.`),
@@ -560,7 +556,7 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Description: UTC timestamp of the transition to Posted — the issue/tax-point date of the invoice.`),
     PostedByUserID: z.string().nullable().describe(`
         * * Field Name: PostedByUserID
-        * * Display Name: Posted By
+        * * Display Name: Posted By User
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)`),
     ReversesOrderHeaderID: z.string().nullable().describe(`
@@ -595,7 +591,7 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Description: Optional free-text description / memo for the order.`),
     Notes: z.string().nullable().describe(`
         * * Field Name: Notes
-        * * Display Name: Notes
+        * * Display Name: Internal Notes
         * * SQL Data Type: nvarchar(MAX)
         * * Description: Internal notes on the order (Description is the customer-facing memo).`),
     ConfirmedAt: z.date().nullable().describe(`
@@ -623,19 +619,19 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * SQL Data Type: nvarchar(255)`),
     CustomerPerson: z.string().nullable().describe(`
         * * Field Name: CustomerPerson
-        * * Display Name: Customer Person Name
+        * * Display Name: Customer Contact Name
         * * SQL Data Type: nvarchar(244)`),
     SalesRepUser: z.string().nullable().describe(`
         * * Field Name: SalesRepUser
-        * * Display Name: Sales Rep Name
+        * * Display Name: Sales Representative Name
         * * SQL Data Type: nvarchar(100)`),
     BillToAddress: z.string().nullable().describe(`
         * * Field Name: BillToAddress
-        * * Display Name: Billing Address
+        * * Display Name: Billing Address Display
         * * SQL Data Type: nvarchar(255)`),
     ShipToAddress: z.string().nullable().describe(`
         * * Field Name: ShipToAddress
-        * * Display Name: Shipping Address
+        * * Display Name: Shipping Address Display
         * * SQL Data Type: nvarchar(255)`),
     PaymentTermsType: z.string().nullable().describe(`
         * * Field Name: PaymentTermsType
@@ -645,10 +641,26 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Field Name: InitialPaymentType
         * * Display Name: Initial Payment Type Name
         * * SQL Data Type: nvarchar(200)`),
+    InitialPaymentDetail: z.string().nullable().describe(`
+        * * Field Name: InitialPaymentDetail
+        * * Display Name: Initial Payment Detail
+        * * SQL Data Type: char(4)`),
     PostedByUser: z.string().nullable().describe(`
         * * Field Name: PostedByUser
         * * Display Name: Posted By User Name
         * * SQL Data Type: nvarchar(100)`),
+    ReversesOrderHeader: z.string().nullable().describe(`
+        * * Field Name: ReversesOrderHeader
+        * * Display Name: Reverses Order Header
+        * * SQL Data Type: nvarchar(40)`),
+    __mj_Latitude: z.number().nullable().describe(`
+        * * Field Name: __mj_Latitude
+        * * Display Name: Mj Latitude
+        * * SQL Data Type: decimal(10, 6)`),
+    __mj_Longitude: z.number().nullable().describe(`
+        * * Field Name: __mj_Longitude
+        * * Display Name: Mj Longitude
+        * * SQL Data Type: decimal(10, 6)`),
     RootReversesOrderHeaderID: z.string().nullable().describe(`
         * * Field Name: RootReversesOrderHeaderID
         * * Display Name: Root Reverses Order
@@ -716,7 +728,7 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Default Value: newsequentialid()`),
     OrderHeaderID: z.string().describe(`
         * * Field Name: OrderHeaderID
-        * * Display Name: Order Header
+        * * Display Name: Order
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)`),
     ProductID: z.string().describe(`
@@ -753,28 +765,28 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Description: Line discount as a fraction (0 to 1; e.g. 0.10 = ten percent off). Applied in LineTotalNet = Quantity * UnitPrice * (1 - DiscountPct).`),
     LineTotalNet: z.number().nullable().describe(`
         * * Field Name: LineTotalNet
-        * * Display Name: Line Total Net
+        * * Display Name: Net Total
         * * SQL Data Type: decimal(18, 2)
         * * Description: Engine-computed stored net line total = Quantity * UnitPrice * (1 - DiscountPct). Frozen after Confirm.`),
     LineTax: z.number().describe(`
         * * Field Name: LineTax
-        * * Display Name: Line Tax
+        * * Display Name: Tax
         * * SQL Data Type: decimal(18, 2)
         * * Default Value: 0
         * * Description: Tax amount for this line. 0 until the tax subsystem lands (O4).`),
     LineTotalGross: z.number().nullable().describe(`
         * * Field Name: LineTotalGross
-        * * Display Name: Line Total Gross
+        * * Display Name: Gross Total
         * * SQL Data Type: decimal(18, 2)
         * * Description: Engine-computed stored gross line total = LineTotalNet + LineTax. Frozen after Confirm.`),
     ServicePeriodStart: z.date().nullable().describe(`
         * * Field Name: ServicePeriodStart
-        * * Display Name: Service Period Start
+        * * Display Name: Service Start Date
         * * SQL Data Type: date
         * * Description: Start of the service period for Deferred products (UPD-2 service-period recognition shape). Nullable.`),
     ServicePeriodEnd: z.date().nullable().describe(`
         * * Field Name: ServicePeriodEnd
-        * * Display Name: Service Period End
+        * * Display Name: Service End Date
         * * SQL Data Type: date
         * * Description: End of the service period for Deferred products (>= ServicePeriodStart). Nullable.`),
     FulfillmentStatus: z.union([z.literal('Fulfilled'), z.literal('Pending'), z.literal('Returned')]).nullable().describe(`
@@ -843,7 +855,7 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * SQL Data Type: nvarchar(200)`),
     RootReversesOrderLineID: z.string().nullable().describe(`
         * * Field Name: RootReversesOrderLineID
-        * * Display Name: Root Reverses Order Line
+        * * Display Name: Root Reversed Order Line
         * * SQL Data Type: uniqueidentifier`),
 });
 
@@ -1040,7 +1052,7 @@ export const mjBizAppsOrdersPaymentHeaderSchema = z.object({
         * * Description: Gross amount received (negative for reversal methods).`),
     ProcessingFeeAmount: z.number().describe(`
         * * Field Name: ProcessingFeeAmount
-        * * Display Name: Processing Fee
+        * * Display Name: Processing Fee Amount
         * * SQL Data Type: decimal(18, 2)
         * * Default Value: 0
         * * Description: Processor fee withheld from this payment.`),
@@ -1076,7 +1088,7 @@ export const mjBizAppsOrdersPaymentHeaderSchema = z.object({
         * * Description: Provider-side refund identifier when this payment is a provider refund.`),
     ReversesPaymentHeaderID: z.string().nullable().describe(`
         * * Field Name: ReversesPaymentHeaderID
-        * * Display Name: Reverses Payment
+        * * Display Name: Reverses Payment Header
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Headers (vwPaymentHeaders.ID)`),
     ReversalReason: z.string().nullable().describe(`
@@ -1141,7 +1153,7 @@ export const mjBizAppsOrdersPaymentHeaderSchema = z.object({
         * * SQL Data Type: nvarchar(200)`),
     RootReversesPaymentHeaderID: z.string().nullable().describe(`
         * * Field Name: RootReversesPaymentHeaderID
-        * * Display Name: Root Reverses Payment
+        * * Display Name: Root Reverses Payment Header
         * * SQL Data Type: uniqueidentifier`),
 });
 
@@ -1185,7 +1197,7 @@ export const mjBizAppsOrdersPaymentIntentSchema = z.object({
         * * Description: Amount being collected.`),
     OrderHeaderID: z.string().nullable().describe(`
         * * Field Name: OrderHeaderID
-        * * Display Name: Order Header
+        * * Display Name: Order
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)`),
     CustomerOrganizationID: z.string().nullable().describe(`
@@ -1242,7 +1254,7 @@ export const mjBizAppsOrdersPaymentLineSchema = z.object({
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Headers (vwPaymentHeaders.ID)`),
     OrderHeaderID: z.string().describe(`
         * * Field Name: OrderHeaderID
-        * * Display Name: Order
+        * * Display Name: Order Header
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)`),
     OrderLineID: z.string().nullable().describe(`
@@ -1471,7 +1483,7 @@ export const mjBizAppsOrdersPaymentTermsTypeSchema = z.object({
         * * Description: Optional description of the terms.`),
     IsActive: z.boolean().describe(`
         * * Field Name: IsActive
-        * * Display Name: Active
+        * * Display Name: Is Active
         * * SQL Data Type: bit
         * * Default Value: 1
         * * Description: Whether these terms are active and selectable.`),
@@ -1672,12 +1684,12 @@ export const mjBizAppsOrdersProductBundleItemSchema = z.object({
         * * Default Value: newsequentialid()`),
     BundleProductID: z.string().describe(`
         * * Field Name: BundleProductID
-        * * Display Name: Bundle Product ID
+        * * Display Name: Bundle Product
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
     ComponentProductID: z.string().describe(`
         * * Field Name: ComponentProductID
-        * * Display Name: Component Product ID
+        * * Display Name: Component Product
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
     Quantity: z.number().describe(`
@@ -1714,11 +1726,11 @@ export const mjBizAppsOrdersProductBundleItemSchema = z.object({
         * * Default Value: getutcdate()`),
     BundleProduct: z.string().describe(`
         * * Field Name: BundleProduct
-        * * Display Name: Bundle Product
+        * * Display Name: Bundle Product Name
         * * SQL Data Type: nvarchar(200)`),
     ComponentProduct: z.string().describe(`
         * * Field Name: ComponentProduct
-        * * Display Name: Component Product
+        * * Display Name: Component Product Name
         * * SQL Data Type: nvarchar(200)`),
 });
 
@@ -1741,12 +1753,12 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Description: The company that owns this category tree (D7). No shared/global categories. FK to __mj.Company.`),
     Code: z.string().nullable().describe(`
         * * Field Name: Code
-        * * Display Name: Code
+        * * Display Name: Category Code
         * * SQL Data Type: nvarchar(40)
         * * Description: Stable machine code for the category. Unique when present.`),
     Name: z.string().describe(`
         * * Field Name: Name
-        * * Display Name: Name
+        * * Display Name: Category Name
         * * SQL Data Type: nvarchar(200)
         * * Description: Display name of the category.`),
     ParentProductCategoryID: z.string().nullable().describe(`
@@ -1833,7 +1845,7 @@ export const mjBizAppsOrdersProductEntitlementSchema = z.object({
         * * Description: Granted quantity for ResourceQuantity entitlements (e.g. 100 GB, 5 seats).`),
     UnitOfMeasure: z.string().nullable().describe(`
         * * Field Name: UnitOfMeasure
-        * * Display Name: Unit of Measure
+        * * Display Name: Unit Of Measure
         * * SQL Data Type: nvarchar(40)
         * * Description: Unit for Quantity (GB, seats, hours, ...).`),
     IsActive: z.boolean().describe(`
@@ -1876,18 +1888,14 @@ export const mjBizAppsOrdersProductPerformanceObligationSchema = z.object({
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
     Name: z.string().nullable().describe(`
         * * Field Name: Name
-        * * Display Name: Obligation Name
+        * * Display Name: Name
         * * SQL Data Type: nvarchar(200)
         * * Description: Display name of the obligation.`),
-    RevenueRecognitionType: z.union([z.literal('Deferred'), z.literal('Immediate')]).describe(`
-        * * Field Name: RevenueRecognitionType
-        * * Display Name: Revenue Recognition Type
-        * * SQL Data Type: nvarchar(20)
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Deferred
-    *   * Immediate
-        * * Description: Recognition pattern for THIS obligation (Immediate | Deferred), independent of siblings.`),
+    RevenueRecognitionTypeID: z.string().describe(`
+        * * Field Name: RevenueRecognitionTypeID
+        * * Display Name: Revenue Recognition Type ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Revenue Recognition Types (vwRevenueRecognitionTypes.ID)`),
     StandaloneSellingPrice: z.number().describe(`
         * * Field Name: StandaloneSellingPrice
         * * Display Name: Standalone Selling Price
@@ -1906,6 +1914,10 @@ export const mjBizAppsOrdersProductPerformanceObligationSchema = z.object({
     Product: z.string().describe(`
         * * Field Name: Product
         * * Display Name: Product
+        * * SQL Data Type: nvarchar(200)`),
+    RevenueRecognitionType: z.string().describe(`
+        * * Field Name: RevenueRecognitionType
+        * * Display Name: Revenue Recognition Type
         * * SQL Data Type: nvarchar(200)`),
 });
 
@@ -2038,15 +2050,11 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * SQL Data Type: bit
         * * Default Value: 0
         * * Description: When 1, orders containing products of this type hold at Posted until a fulfiller marks every such line Fulfilled; when no line requires fulfillment the order auto-advances to Fulfilled.`),
-    DefaultRevenueRecognitionType: z.union([z.literal('Deferred'), z.literal('Immediate')]).nullable().describe(`
-        * * Field Name: DefaultRevenueRecognitionType
-        * * Display Name: Default Revenue Recognition Type
-        * * SQL Data Type: nvarchar(20)
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Deferred
-    *   * Immediate
-        * * Description: Default recognition type stamped onto new products of this type (Immediate | Deferred).`),
+    DefaultRevenueRecognitionTypeID: z.string().nullable().describe(`
+        * * Field Name: DefaultRevenueRecognitionTypeID
+        * * Display Name: Default Revenue Recognition Type ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Revenue Recognition Types (vwRevenueRecognitionTypes.ID)`),
     DefaultIsTaxable: z.boolean().describe(`
         * * Field Name: DefaultIsTaxable
         * * Display Name: Default Is Taxable
@@ -2087,7 +2095,7 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * Description: ClassFactory key of the ProductBehavior plugin for this type; Product.BehaviorClass overrides; default behavior otherwise (BO-D38).`),
     IsActive: z.boolean().describe(`
         * * Field Name: IsActive
-        * * Display Name: Is Active
+        * * Display Name: Active
         * * SQL Data Type: bit
         * * Default Value: 1
         * * Description: Whether this type is active and selectable.`),
@@ -2101,6 +2109,10 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    DefaultRevenueRecognitionType: z.string().nullable().describe(`
+        * * Field Name: DefaultRevenueRecognitionType
+        * * Display Name: Default Revenue Recognition Type
+        * * SQL Data Type: nvarchar(200)`),
 });
 
 export type mjBizAppsOrdersProductTypeEntityType = z.infer<typeof mjBizAppsOrdersProductTypeSchema>;
@@ -2126,17 +2138,17 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Description: Stock-keeping unit / product code. Unique when present.`),
     ProductTypeID: z.string().describe(`
         * * Field Name: ProductTypeID
-        * * Display Name: Product Type ID
+        * * Display Name: Product Type
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Types (vwProductTypes.ID)`),
     ProductCategoryID: z.string().describe(`
         * * Field Name: ProductCategoryID
-        * * Display Name: Product Category ID
+        * * Display Name: Product Category
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Categories (vwProductCategories.ID)`),
     CompanyID: z.string().describe(`
         * * Field Name: CompanyID
-        * * Display Name: Company ID
+        * * Display Name: Company
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
         * * Description: The company whose revenue this product accrues to — the SOURCE OF TRUTH for order-line ownership (D6). Stamped onto OrderLine.CompanyID at line save. GL routing is via accounting's GLAccountLink, anchored at this company (D5).`),
@@ -2154,7 +2166,7 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Description: Draft | Active | Discontinued | EOL — catalog lifecycle. Data-only until the catalog engine gates ordering on it.`),
     SuccessorProductID: z.string().nullable().describe(`
         * * Field Name: SuccessorProductID
-        * * Display Name: Successor Product ID
+        * * Display Name: Successor Product
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
     AvailableFrom: z.date().nullable().describe(`
@@ -2167,25 +2179,12 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Available To
         * * SQL Data Type: date
         * * Description: Last date the product may be sold.`),
-    RevenueRecognitionType: z.union([z.literal('Deferred'), z.literal('Immediate')]).describe(`
-        * * Field Name: RevenueRecognitionType
+    RevenueRecognitionTypeID: z.string().describe(`
+        * * Field Name: RevenueRecognitionTypeID
         * * Display Name: Revenue Recognition Type
-        * * SQL Data Type: nvarchar(20)
-        * * Default Value: Immediate
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Deferred
-    *   * Immediate
-        * * Description: Immediate (Dr AR / Cr Sales) or Deferred (Dr AR / Cr Deferred Revenue). Drives the credit side of the order-booking journal entry.`),
-    DeferredRecognitionShape: z.union([z.literal('ServicePeriod'), z.literal('SingleDate')]).nullable().describe(`
-        * * Field Name: DeferredRecognitionShape
-        * * Display Name: Deferred Recognition Shape
-        * * SQL Data Type: nvarchar(20)
-    * * Value List Type: List
-    * * Possible Values 
-    *   * ServicePeriod
-    *   * SingleDate
-        * * Description: For Deferred products: SingleDate (100 percent recognized on the event date) or ServicePeriod (spread over the line's service dates). Robert's two deferred shapes on their own axis (UPD-2).`),
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Revenue Recognition Types (vwRevenueRecognitionTypes.ID)
+        * * Description: HOW revenue for this product is earned (plan D43). Resolves to a pluggable driver via RevenueRecognitionType.DriverClass; the driver returns a schedule and the order entity turns it into forward-dated journal entries.`),
     StandaloneSellingPrice: z.number().nullable().describe(`
         * * Field Name: StandaloneSellingPrice
         * * Display Name: Standalone Selling Price
@@ -2252,23 +2251,27 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Default Value: getutcdate()`),
     ProductType: z.string().describe(`
         * * Field Name: ProductType
-        * * Display Name: Product Type
+        * * Display Name: Product Type Name
         * * SQL Data Type: nvarchar(100)`),
     ProductCategory: z.string().describe(`
         * * Field Name: ProductCategory
-        * * Display Name: Product Category
+        * * Display Name: Product Category Name
         * * SQL Data Type: nvarchar(200)`),
     Company: z.string().describe(`
         * * Field Name: Company
-        * * Display Name: Company
+        * * Display Name: Company Name
         * * SQL Data Type: nvarchar(50)`),
     SuccessorProduct: z.string().nullable().describe(`
         * * Field Name: SuccessorProduct
-        * * Display Name: Successor Product
+        * * Display Name: Successor Product Name
+        * * SQL Data Type: nvarchar(200)`),
+    RevenueRecognitionType: z.string().describe(`
+        * * Field Name: RevenueRecognitionType
+        * * Display Name: Revenue Recognition Type Name
         * * SQL Data Type: nvarchar(200)`),
     RootSuccessorProductID: z.string().nullable().describe(`
         * * Field Name: RootSuccessorProductID
-        * * Display Name: Root Successor Product ID
+        * * Display Name: Root Successor Product
         * * SQL Data Type: uniqueidentifier`),
 });
 
@@ -2332,17 +2335,11 @@ export const mjBizAppsOrdersRevenueRecognitionScheduleSchema = z.object({
         * * Display Name: ID
         * * SQL Data Type: uniqueidentifier
         * * Default Value: newsequentialid()`),
-    SchedulingMethod: z.union([z.literal('Custom'), z.literal('Milestone'), z.literal('SingleDate'), z.literal('StraightLine')]).describe(`
-        * * Field Name: SchedulingMethod
-        * * Display Name: Scheduling Method
-        * * SQL Data Type: nvarchar(20)
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Custom
-    *   * Milestone
-    *   * SingleDate
-    *   * StraightLine
-        * * Description: StraightLine (service-period spread) | SingleDate (100 percent on the event date) | Milestone | Custom.`),
+    RevenueRecognitionTypeID: z.string().describe(`
+        * * Field Name: RevenueRecognitionTypeID
+        * * Display Name: Revenue Recognition Type
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Revenue Recognition Types (vwRevenueRecognitionTypes.ID)`),
     StartDate: z.date().describe(`
         * * Field Name: StartDate
         * * Display Name: Start Date
@@ -2380,9 +2377,72 @@ export const mjBizAppsOrdersRevenueRecognitionScheduleSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    RevenueRecognitionType: z.string().describe(`
+        * * Field Name: RevenueRecognitionType
+        * * Display Name: Revenue Recognition Type Name
+        * * SQL Data Type: nvarchar(200)`),
 });
 
 export type mjBizAppsOrdersRevenueRecognitionScheduleEntityType = z.infer<typeof mjBizAppsOrdersRevenueRecognitionScheduleSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Revenue Recognition Types
+ */
+export const mjBizAppsOrdersRevenueRecognitionTypeSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    Code: z.string().describe(`
+        * * Field Name: Code
+        * * Display Name: Code
+        * * SQL Data Type: nvarchar(40)`),
+    Name: z.string().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(200)`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * Display Name: Description
+        * * SQL Data Type: nvarchar(MAX)`),
+    DriverClass: z.string().describe(`
+        * * Field Name: DriverClass
+        * * Display Name: Driver Class
+        * * SQL Data Type: nvarchar(200)`),
+    IsDeferred: z.boolean().describe(`
+        * * Field Name: IsDeferred
+        * * Display Name: Is Deferred
+        * * SQL Data Type: bit
+        * * Default Value: 0`),
+    RequiresServicePeriod: z.boolean().describe(`
+        * * Field Name: RequiresServicePeriod
+        * * Display Name: Requires Service Period
+        * * SQL Data Type: bit
+        * * Default Value: 0`),
+    Sequence: z.number().describe(`
+        * * Field Name: Sequence
+        * * Display Name: Sequence
+        * * SQL Data Type: int
+        * * Default Value: 0`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersRevenueRecognitionTypeEntityType = z.infer<typeof mjBizAppsOrdersRevenueRecognitionTypeSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Sales Authorities
@@ -2436,7 +2496,7 @@ export const mjBizAppsOrdersSalesAuthoritySchema = z.object({
         * * Default Value: getutcdate()`),
     SalesRepUser: z.string().describe(`
         * * Field Name: SalesRepUser
-        * * Display Name: Sales Rep Name
+        * * Display Name: Sales Representative
         * * SQL Data Type: nvarchar(100)`),
 });
 
@@ -2453,7 +2513,7 @@ export const mjBizAppsOrdersSalesRuleSchema = z.object({
         * * Default Value: newsequentialid()`),
     Name: z.string().describe(`
         * * Field Name: Name
-        * * Display Name: Rule Name
+        * * Display Name: Name
         * * SQL Data Type: nvarchar(200)
         * * Description: Display name of the rule.`),
     RuleType: z.union([z.literal('CreditLimit'), z.literal('Custom'), z.literal('DiscountLimit'), z.literal('PaymentTermsRequired'), z.literal('ProductAuthorization')]).describe(`
@@ -2487,17 +2547,17 @@ export const mjBizAppsOrdersSalesRuleSchema = z.object({
         * * Description: Soft reference (no FK) to the scoped Product / Customer Organization / Sales Rep User when Scope is not Global.`),
     PredicateJson: z.string().nullable().describe(`
         * * Field Name: PredicateJson
-        * * Display Name: Rule Logic
+        * * Display Name: Predicate Logic
         * * SQL Data Type: nvarchar(MAX)
         * * Description: JSON rule expression (admin-editable; evaluated by the F8 engine).`),
     ApprovalRequiredRoleID: z.string().nullable().describe(`
         * * Field Name: ApprovalRequiredRoleID
-        * * Display Name: Approval Role ID
+        * * Display Name: Approval Required Role ID
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ: Roles (vwRoles.ID)`),
     IsActive: z.boolean().describe(`
         * * Field Name: IsActive
-        * * Display Name: Active
+        * * Display Name: Is Active
         * * SQL Data Type: bit
         * * Default Value: 1
         * * Description: Whether this rule participates in Confirm evaluation.`),
@@ -2513,7 +2573,7 @@ export const mjBizAppsOrdersSalesRuleSchema = z.object({
         * * Default Value: getutcdate()`),
     ApprovalRequiredRole: z.string().nullable().describe(`
         * * Field Name: ApprovalRequiredRole
-        * * Display Name: Approval Role
+        * * Display Name: Approval Required Role
         * * SQL Data Type: nvarchar(50)`),
 });
 
@@ -2530,7 +2590,7 @@ export const mjBizAppsOrdersStoredValueAccountSchema = z.object({
         * * Default Value: newsequentialid()`),
     Code: z.string().describe(`
         * * Field Name: Code
-        * * Display Name: Card Number
+        * * Display Name: Gift Card Code
         * * SQL Data Type: nvarchar(60)
         * * Description: The gift-card number / instrument code. Unique.`),
     IssuingCompanyID: z.string().describe(`
@@ -2563,7 +2623,7 @@ export const mjBizAppsOrdersStoredValueAccountSchema = z.object({
         * * Description: Active | Depleted | Expired | Suspended | Voided.`),
     IssuedFromOrderLineID: z.string().nullable().describe(`
         * * Field Name: IssuedFromOrderLineID
-        * * Display Name: Issued From Order Line
+        * * Display Name: Source Order Line
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)`),
     BeneficiaryPersonID: z.string().nullable().describe(`
@@ -2580,7 +2640,7 @@ export const mjBizAppsOrdersStoredValueAccountSchema = z.object({
         * * Description: FK to __mj_BizAppsCommon.Organization — the benefiting organization.`),
     ExpiresAt: z.date().nullable().describe(`
         * * Field Name: ExpiresAt
-        * * Display Name: Expires At
+        * * Display Name: Expiration Date
         * * SQL Data Type: date
         * * Description: Expiration date where legally permitted. NULL = never.`),
     __mj_CreatedAt: z.date().describe(`
@@ -2729,7 +2789,7 @@ export const mjBizAppsOrdersSubscriptionEventSchema = z.object({
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Headers (vwPaymentHeaders.ID)`),
     RelatedOrderHeaderID: z.string().nullable().describe(`
         * * Field Name: RelatedOrderHeaderID
-        * * Display Name: Related Order Header
+        * * Display Name: Related Order
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)`),
     __mj_CreatedAt: z.date().describe(`
@@ -2810,7 +2870,7 @@ export const mjBizAppsOrdersSubscriptionPlanSchema = z.object({
         * * Default Value: getutcdate()`),
     Product: z.string().describe(`
         * * Field Name: Product
-        * * Display Name: Product Name
+        * * Display Name: Product
         * * SQL Data Type: nvarchar(200)`),
 });
 
@@ -2929,12 +2989,12 @@ export const mjBizAppsOrdersSubscriptionSchema = z.object({
         * * Description: Provider-side subscription identifier (e.g. Stripe sub_...), when provider-billed.`),
     MigratesFromSubscriptionID: z.string().nullable().describe(`
         * * Field Name: MigratesFromSubscriptionID
-        * * Display Name: Migrates From Subscription
+        * * Display Name: Migrates From
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscriptions (vwSubscriptions.ID)`),
     MigratesToSubscriptionID: z.string().nullable().describe(`
         * * Field Name: MigratesToSubscriptionID
-        * * Display Name: Migrates To Subscription
+        * * Display Name: Migrates To
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscriptions (vwSubscriptions.ID)`),
     __mj_CreatedAt: z.date().describe(`
@@ -2973,11 +3033,11 @@ export const mjBizAppsOrdersSubscriptionSchema = z.object({
         * * SQL Data Type: nvarchar(200)`),
     RootMigratesFromSubscriptionID: z.string().nullable().describe(`
         * * Field Name: RootMigratesFromSubscriptionID
-        * * Display Name: Root Migrates From Subscription
+        * * Display Name: Root Migrates From
         * * SQL Data Type: uniqueidentifier`),
     RootMigratesToSubscriptionID: z.string().nullable().describe(`
         * * Field Name: RootMigratesToSubscriptionID
-        * * Display Name: Root Migrates To Subscription
+        * * Display Name: Root Migrates To
         * * SQL Data Type: uniqueidentifier`),
 });
 
@@ -3117,7 +3177,7 @@ export class mjBizAppsOrdersCustomerPaymentMethodEntity extends BaseEntity<mjBiz
 
     /**
     * * Field Name: CustomerOrganization
-    * * Display Name: Customer Organization
+    * * Display Name: Customer Name
     * * SQL Data Type: nvarchar(255)
     */
     get CustomerOrganization(): string {
@@ -3158,7 +3218,7 @@ export class mjBizAppsOrdersEntitlementGrantEntity extends BaseEntity<mjBizAppsO
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Entitlement Grants entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Table-Level: The end date (Valid To) must be on or after the start date (Valid From) if both dates are specified.
+    * * Table-Level: The validity end date must be on or after the validity start date when both dates are specified.
     * @public
     * @method
     * @override
@@ -3172,19 +3232,21 @@ export class mjBizAppsOrdersEntitlementGrantEntity extends BaseEntity<mjBizAppsO
     }
 
     /**
-    * The end date (Valid To) must be on or after the start date (Valid From) if both dates are specified.
+    * The validity end date must be on or after the validity start date when both dates are specified.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
     public ValidateValidToGreaterThanOrEqualToValidFrom(result: ValidationResult) {
-    	if (this.ValidFrom != null && this.ValidTo != null && this.ValidTo < this.ValidFrom) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"ValidTo",
-    			"The end date (Valid To) must be on or after the start date (Valid From).",
-    			this.ValidTo,
-    			ValidationErrorType.Failure
-    		));
+    	if (this.ValidFrom != null && this.ValidTo != null) {
+    		if (this.ValidTo < this.ValidFrom) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"ValidTo",
+    				"The Valid To date must be on or after the Valid From date.",
+    				this.ValidTo,
+    				ValidationErrorType.Failure
+    			));
+    		}
     	}
     }
 
@@ -3460,7 +3522,7 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
 
     /**
     * * Field Name: CheckInAt
-    * * Display Name: Check-In Time
+    * * Display Name: Check In At
     * * SQL Data Type: datetimeoffset
     * * Description: UTC timestamp the attendee checked in.
     */
@@ -3772,7 +3834,7 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Event Products entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Capacity: The capacity of the venue, if specified, must be greater than zero to ensure a valid number of attendees can be accommodated.
+    * * Capacity: If a capacity is specified, it must be greater than zero to ensure a valid number of attendees can be accommodated.
     * * Table-Level: The event's end date and time must be on or after its start date and time.
     * @public
     * @method
@@ -3781,14 +3843,14 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     public override Validate(): ValidationResult {
         const result = super.Validate();
         this.ValidateCapacityGreaterThanZero(result);
-        this.ValidateEventEndsAtAfterStartsAt(result);
+        this.ValidateEventEndsAtAfterEventStartsAt(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
     }
 
     /**
-    * The capacity of the venue, if specified, must be greater than zero to ensure a valid number of attendees can be accommodated.
+    * If a capacity is specified, it must be greater than zero to ensure a valid number of attendees can be accommodated.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
@@ -3797,7 +3859,7 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     	if (this.Capacity != null && this.Capacity <= 0) {
     		result.Errors.push(new ValidationErrorInfo(
     			"Capacity",
-    			"Capacity must be greater than zero if specified.",
+    			"Capacity must be greater than zero.",
     			this.Capacity,
     			ValidationErrorType.Failure
     		));
@@ -3810,9 +3872,11 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     * @public
     * @method
     */
-    public ValidateEventEndsAtAfterStartsAt(result: ValidationResult) {
+    public ValidateEventEndsAtAfterEventStartsAt(result: ValidationResult) {
     	if (this.EventEndsAt != null && this.EventStartsAt != null) {
-    		if (this.EventEndsAt < this.EventStartsAt) {
+    		const endsAt = new Date(this.EventEndsAt).getTime();
+    		const startsAt = new Date(this.EventStartsAt).getTime();
+    		if (endsAt < startsAt) {
     			result.Errors.push(new ValidationErrorInfo(
     				"EventEndsAt",
     				"The event end date and time must be on or after the start date and time.",
@@ -4054,29 +4118,16 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     }
 
     /**
-    * * Field Name: RevenueRecognitionType
+    * * Field Name: RevenueRecognitionTypeID
     * * Display Name: Revenue Recognition Type
-    * * SQL Data Type: nvarchar(20)
+    * * SQL Data Type: uniqueidentifier
     * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
     */
-    get RevenueRecognitionType(): string {
-        return this.Get('RevenueRecognitionType');
+    get RevenueRecognitionTypeID(): string {
+        return this.Get('RevenueRecognitionTypeID');
     }
-    set RevenueRecognitionType(value: string) {
-        this.Set('RevenueRecognitionType', value);
-    }
-
-    /**
-    * * Field Name: DeferredRecognitionShape
-    * * Display Name: Deferred Recognition Shape
-    * * SQL Data Type: nvarchar(20)
-    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
-    */
-    get DeferredRecognitionShape(): string | null {
-        return this.Get('DeferredRecognitionShape');
-    }
-    set DeferredRecognitionShape(value: string | null) {
-        this.Set('DeferredRecognitionShape', value);
+    set RevenueRecognitionTypeID(value: string) {
+        this.Set('RevenueRecognitionTypeID', value);
     }
 
     /**
@@ -4243,6 +4294,38 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * Validate() method override for MJ_BizApps_Orders: Order Headers entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * InitialPaymentAmount: The initial payment amount must be greater than or equal to zero.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateInitialPaymentAmountGreaterThanOrEqualToZero(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * The initial payment amount must be greater than or equal to zero.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateInitialPaymentAmountGreaterThanOrEqualToZero(result: ValidationResult) {
+    	if (this.InitialPaymentAmount != null && this.InitialPaymentAmount < 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"InitialPaymentAmount",
+    			"The initial payment amount must be greater than or equal to zero.",
+    			this.InitialPaymentAmount,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
     * * Field Name: ID
     * * Display Name: ID
     * * SQL Data Type: uniqueidentifier
@@ -4354,7 +4437,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: CustomerPersonID
-    * * Display Name: Customer Person
+    * * Display Name: Customer Contact
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ.BizApps.Common: People (vwPeopleExtended.ID)
     * * Description: FK to __mj_BizAppsCommon.Person — the buyer/contact person at the customer organization. Nullable.
@@ -4368,7 +4451,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: SalesRepUserID
-    * * Display Name: Sales Rep
+    * * Display Name: Sales Representative
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
     */
@@ -4381,7 +4464,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: BillToAddressID
-    * * Display Name: Bill To Address
+    * * Display Name: Billing Address
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ.BizApps.Common: Addresses (vwAddresses.ID)
     * * Description: FK to __mj_BizAppsCommon.Address — the billing address for this order/invoice. Nullable.
@@ -4395,7 +4478,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: ShipToAddressID
-    * * Display Name: Ship To Address
+    * * Display Name: Shipping Address
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ.BizApps.Common: Addresses (vwAddresses.ID)
     * * Description: FK to __mj_BizAppsCommon.Address — the shipping/service address; drives tax jurisdiction when tax lands. Nullable.
@@ -4561,7 +4644,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: PostedByUserID
-    * * Display Name: Posted By
+    * * Display Name: Posted By User
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
     */
@@ -4652,7 +4735,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: Notes
-    * * Display Name: Notes
+    * * Display Name: Internal Notes
     * * SQL Data Type: nvarchar(MAX)
     * * Description: Internal notes on the order (Description is the customer-facing memo).
     */
@@ -4716,7 +4799,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: CustomerPerson
-    * * Display Name: Customer Person Name
+    * * Display Name: Customer Contact Name
     * * SQL Data Type: nvarchar(244)
     */
     get CustomerPerson(): string | null {
@@ -4725,7 +4808,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: SalesRepUser
-    * * Display Name: Sales Rep Name
+    * * Display Name: Sales Representative Name
     * * SQL Data Type: nvarchar(100)
     */
     get SalesRepUser(): string | null {
@@ -4734,7 +4817,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: BillToAddress
-    * * Display Name: Billing Address
+    * * Display Name: Billing Address Display
     * * SQL Data Type: nvarchar(255)
     */
     get BillToAddress(): string | null {
@@ -4743,7 +4826,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: ShipToAddress
-    * * Display Name: Shipping Address
+    * * Display Name: Shipping Address Display
     * * SQL Data Type: nvarchar(255)
     */
     get ShipToAddress(): string | null {
@@ -4769,12 +4852,48 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: InitialPaymentDetail
+    * * Display Name: Initial Payment Detail
+    * * SQL Data Type: char(4)
+    */
+    get InitialPaymentDetail(): string | null {
+        return this.Get('InitialPaymentDetail');
+    }
+
+    /**
     * * Field Name: PostedByUser
     * * Display Name: Posted By User Name
     * * SQL Data Type: nvarchar(100)
     */
     get PostedByUser(): string | null {
         return this.Get('PostedByUser');
+    }
+
+    /**
+    * * Field Name: ReversesOrderHeader
+    * * Display Name: Reverses Order Header
+    * * SQL Data Type: nvarchar(40)
+    */
+    get ReversesOrderHeader(): string | null {
+        return this.Get('ReversesOrderHeader');
+    }
+
+    /**
+    * * Field Name: __mj_Latitude
+    * * Display Name: Mj Latitude
+    * * SQL Data Type: decimal(10, 6)
+    */
+    get __mj_Latitude(): number | null {
+        return this.Get('__mj_Latitude');
+    }
+
+    /**
+    * * Field Name: __mj_Longitude
+    * * Display Name: Mj Longitude
+    * * SQL Data Type: decimal(10, 6)
+    */
+    get __mj_Longitude(): number | null {
+        return this.Get('__mj_Longitude');
     }
 
     /**
@@ -4944,10 +5063,10 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Order Lines entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * DiscountPct: Discount percentage must be a value between 0 and 1 (inclusive), representing a range from 0% to 100%.
-    * * Quantity: Quantity cannot be zero. Every order line must have a valid non-zero quantity.
-    * * UnitPrice: Unit price must be greater than or equal to zero to prevent negative pricing on order lines.
-    * * Table-Level: If both the service period start and end dates are provided, the end date must be on or after the start date to ensure a valid date range.
+    * * DiscountPct: The discount percentage must be a value between 0 and 1 (inclusive), representing a range from 0% to 100%.
+    * * Quantity: The quantity for an order line cannot be zero. This ensures that every line item represents an actual transaction of some amount, whether positive or negative.
+    * * UnitPrice: The unit price for an order line must be greater than or equal to zero.
+    * * Table-Level: The service period end date must be on or after the service period start date.
     * @public
     * @method
     * @override
@@ -4956,7 +5075,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
         const result = super.Validate();
         this.ValidateDiscountPctRange(result);
         this.ValidateQuantityNotZero(result);
-        this.ValidateUnitPriceNotNegative(result);
+        this.ValidateUnitPriceGreaterThanOrEqualToZero(result);
         this.ValidateServicePeriodEndAfterStart(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
@@ -4964,7 +5083,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
 
     /**
-    * Discount percentage must be a value between 0 and 1 (inclusive), representing a range from 0% to 100%.
+    * The discount percentage must be a value between 0 and 1 (inclusive), representing a range from 0% to 100%.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
@@ -4973,7 +5092,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     	if (this.DiscountPct != null && (this.DiscountPct < 0 || this.DiscountPct > 1)) {
     		result.Errors.push(new ValidationErrorInfo(
     			"DiscountPct",
-    			"Discount percentage must be between 0 and 1 (inclusive).",
+    			"Discount percentage must be a value between 0 and 1 (inclusive).",
     			this.DiscountPct,
     			ValidationErrorType.Failure
     		));
@@ -4981,16 +5100,16 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
 
     /**
-    * Quantity cannot be zero. Every order line must have a valid non-zero quantity.
+    * The quantity for an order line cannot be zero. This ensures that every line item represents an actual transaction of some amount, whether positive or negative.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
     public ValidateQuantityNotZero(result: ValidationResult) {
-    	if (this.Quantity === 0) {
+    	if (this.Quantity !== null && this.Quantity !== undefined && this.Quantity === 0) {
     		result.Errors.push(new ValidationErrorInfo(
     			"Quantity",
-    			"Quantity cannot be zero. Please specify a valid quantity.",
+    			"Quantity cannot be zero.",
     			this.Quantity,
     			ValidationErrorType.Failure
     		));
@@ -4998,16 +5117,16 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
 
     /**
-    * Unit price must be greater than or equal to zero to prevent negative pricing on order lines.
+    * The unit price for an order line must be greater than or equal to zero.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidateUnitPriceNotNegative(result: ValidationResult) {
+    public ValidateUnitPriceGreaterThanOrEqualToZero(result: ValidationResult) {
     	if (this.UnitPrice != null && this.UnitPrice < 0) {
     		result.Errors.push(new ValidationErrorInfo(
     			"UnitPrice",
-    			"Unit price cannot be negative.",
+    			"Unit price cannot be negative. Please enter a value of 0 or greater.",
     			this.UnitPrice,
     			ValidationErrorType.Failure
     		));
@@ -5015,14 +5134,16 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
 
     /**
-    * If both the service period start and end dates are provided, the end date must be on or after the start date to ensure a valid date range.
+    * The service period end date must be on or after the service period start date.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
     public ValidateServicePeriodEndAfterStart(result: ValidationResult) {
     	if (this.ServicePeriodStart != null && this.ServicePeriodEnd != null) {
-    		if (this.ServicePeriodEnd < this.ServicePeriodStart) {
+    		const startDate = new Date(this.ServicePeriodStart);
+    		const endDate = new Date(this.ServicePeriodEnd);
+    		if (endDate < startDate) {
     			result.Errors.push(new ValidationErrorInfo(
     				"ServicePeriodEnd",
     				"The service period end date must be on or after the service period start date.",
@@ -5048,7 +5169,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: OrderHeaderID
-    * * Display Name: Order Header
+    * * Display Name: Order
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
     */
@@ -5141,7 +5262,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: LineTotalNet
-    * * Display Name: Line Total Net
+    * * Display Name: Net Total
     * * SQL Data Type: decimal(18, 2)
     * * Description: Engine-computed stored net line total = Quantity * UnitPrice * (1 - DiscountPct). Frozen after Confirm.
     */
@@ -5154,7 +5275,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: LineTax
-    * * Display Name: Line Tax
+    * * Display Name: Tax
     * * SQL Data Type: decimal(18, 2)
     * * Default Value: 0
     * * Description: Tax amount for this line. 0 until the tax subsystem lands (O4).
@@ -5168,7 +5289,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: LineTotalGross
-    * * Display Name: Line Total Gross
+    * * Display Name: Gross Total
     * * SQL Data Type: decimal(18, 2)
     * * Description: Engine-computed stored gross line total = LineTotalNet + LineTax. Frozen after Confirm.
     */
@@ -5181,7 +5302,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: ServicePeriodStart
-    * * Display Name: Service Period Start
+    * * Display Name: Service Start Date
     * * SQL Data Type: date
     * * Description: Start of the service period for Deferred products (UPD-2 service-period recognition shape). Nullable.
     */
@@ -5194,7 +5315,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: ServicePeriodEnd
-    * * Display Name: Service Period End
+    * * Display Name: Service End Date
     * * SQL Data Type: date
     * * Description: End of the service period for Deferred products (>= ServicePeriodStart). Nullable.
     */
@@ -5352,7 +5473,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: RootReversesOrderLineID
-    * * Display Name: Root Reverses Order Line
+    * * Display Name: Root Reversed Order Line
     * * SQL Data Type: uniqueidentifier
     */
     get RootReversesOrderLineID(): string | null {
@@ -5393,7 +5514,7 @@ export class mjBizAppsOrdersOrderSequenceEntity extends BaseEntity<mjBizAppsOrde
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Order Sequences entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * NextSequenceNumber: The next sequence number must be a positive number greater than 0 to ensure proper sequencing.
+    * * NextSequenceNumber: The next sequence number must be a positive number greater than zero to ensure valid sequencing.
     * @public
     * @method
     * @override
@@ -5407,16 +5528,16 @@ export class mjBizAppsOrdersOrderSequenceEntity extends BaseEntity<mjBizAppsOrde
     }
 
     /**
-    * The next sequence number must be a positive number greater than 0 to ensure proper sequencing.
+    * The next sequence number must be a positive number greater than zero to ensure valid sequencing.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
     public ValidateNextSequenceNumberGreaterThanZero(result: ValidationResult) {
-    	if (this.NextSequenceNumber != null && this.NextSequenceNumber <= 0) {
+    	if (this.NextSequenceNumber !== undefined && this.NextSequenceNumber !== null && this.NextSequenceNumber <= 0) {
     		result.Errors.push(new ValidationErrorInfo(
     			"NextSequenceNumber",
-    			"The next sequence number must be greater than 0.",
+    			"The next sequence number must be greater than zero.",
     			this.NextSequenceNumber,
     			ValidationErrorType.Failure
     		));
@@ -5499,6 +5620,38 @@ export class mjBizAppsOrdersPaymentDetailEntity extends BaseEntity<mjBizAppsOrde
         const compositeKey: CompositeKey = new CompositeKey();
         compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
         return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * Validate() method override for MJ_BizApps_Orders: Payment Details entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * ExpiryMonth: The expiration month must be a valid calendar month between 1 and 12, if it is provided.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateExpiryMonthRange(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * The expiration month must be a valid calendar month between 1 and 12, if it is provided.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateExpiryMonthRange(result: ValidationResult) {
+    	if (this.ExpiryMonth != null && (this.ExpiryMonth < 1 || this.ExpiryMonth > 12)) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"ExpiryMonth",
+    			"Expiry month must be between 1 and 12.",
+    			this.ExpiryMonth,
+    			ValidationErrorType.Failure
+    		));
+    	}
     }
 
     /**
@@ -5924,7 +6077,7 @@ export class mjBizAppsOrdersPaymentHeaderEntity extends BaseEntity<mjBizAppsOrde
 
     /**
     * * Field Name: ProcessingFeeAmount
-    * * Display Name: Processing Fee
+    * * Display Name: Processing Fee Amount
     * * SQL Data Type: decimal(18, 2)
     * * Default Value: 0
     * * Description: Processor fee withheld from this payment.
@@ -6016,7 +6169,7 @@ export class mjBizAppsOrdersPaymentHeaderEntity extends BaseEntity<mjBizAppsOrde
 
     /**
     * * Field Name: ReversesPaymentHeaderID
-    * * Display Name: Reverses Payment
+    * * Display Name: Reverses Payment Header
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Headers (vwPaymentHeaders.ID)
     */
@@ -6159,7 +6312,7 @@ export class mjBizAppsOrdersPaymentHeaderEntity extends BaseEntity<mjBizAppsOrde
 
     /**
     * * Field Name: RootReversesPaymentHeaderID
-    * * Display Name: Root Reverses Payment
+    * * Display Name: Root Reverses Payment Header
     * * SQL Data Type: uniqueidentifier
     */
     get RootReversesPaymentHeaderID(): string | null {
@@ -6272,7 +6425,7 @@ export class mjBizAppsOrdersPaymentIntentEntity extends BaseEntity<mjBizAppsOrde
 
     /**
     * * Field Name: OrderHeaderID
-    * * Display Name: Order Header
+    * * Display Name: Order
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
     */
@@ -6395,7 +6548,7 @@ export class mjBizAppsOrdersPaymentLineEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Payment Lines entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Amount: The transaction or allocation amount cannot be zero. A non-zero value is required to ensure valid financial records.
+    * * Amount: The transaction or allocation amount cannot be zero. Every record must have a non-zero amount to be valid.
     * @public
     * @method
     * @override
@@ -6409,13 +6562,13 @@ export class mjBizAppsOrdersPaymentLineEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
-    * The transaction or allocation amount cannot be zero. A non-zero value is required to ensure valid financial records.
+    * The transaction or allocation amount cannot be zero. Every record must have a non-zero amount to be valid.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
     public ValidateAmountNotZero(result: ValidationResult) {
-    	if (this.Amount !== undefined && this.Amount !== null && this.Amount === 0) {
+    	if (this.Amount !== null && this.Amount === 0) {
     		result.Errors.push(new ValidationErrorInfo(
     			"Amount",
     			"The amount cannot be zero. Please enter a valid non-zero value.",
@@ -6453,7 +6606,7 @@ export class mjBizAppsOrdersPaymentLineEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: OrderHeaderID
-    * * Display Name: Order
+    * * Display Name: Order Header
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
     */
@@ -6918,6 +7071,38 @@ export class mjBizAppsOrdersPaymentSequenceEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * Validate() method override for MJ_BizApps_Orders: Payment Sequences entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * NextSequenceNumber: The next sequence number must be greater than zero to ensure valid sequencing.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateNextSequenceNumberGreaterThanZero(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * The next sequence number must be greater than zero to ensure valid sequencing.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateNextSequenceNumberGreaterThanZero(result: ValidationResult) {
+    	if (this.NextSequenceNumber !== undefined && this.NextSequenceNumber !== null && this.NextSequenceNumber <= 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"NextSequenceNumber",
+    			"The next sequence number must be greater than 0.",
+    			this.NextSequenceNumber,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
     * * Field Name: ID
     * * Display Name: ID
     * * SQL Data Type: int
@@ -7018,10 +7203,10 @@ export class mjBizAppsOrdersPaymentTermsTypeEntity extends BaseEntity<mjBizAppsO
     * @method
     */
     public ValidateNetDaysGreaterThanOrEqualToZero(result: ValidationResult) {
-    	if (this.NetDays !== undefined && this.NetDays !== null && this.NetDays < 0) {
+    	if (this.NetDays !== null && this.NetDays !== undefined && this.NetDays < 0) {
     		result.Errors.push(new ValidationErrorInfo(
     			"NetDays",
-    			"Net days must be 0 or greater.",
+    			"Net days must be greater than or equal to 0.",
     			this.NetDays,
     			ValidationErrorType.Failure
     		));
@@ -7096,7 +7281,7 @@ export class mjBizAppsOrdersPaymentTermsTypeEntity extends BaseEntity<mjBizAppsO
 
     /**
     * * Field Name: IsActive
-    * * Display Name: Active
+    * * Display Name: Is Active
     * * SQL Data Type: bit
     * * Default Value: 1
     * * Description: Whether these terms are active and selectable.
@@ -7352,7 +7537,7 @@ export class mjBizAppsOrdersPriceListEntity extends BaseEntity<mjBizAppsOrdersPr
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Price Lists entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Table-Level: The effective end date must be on or after the effective start date when both dates are provided.
+    * * Table-Level: The effective end date must be on or after the effective start date to ensure a valid date range.
     * @public
     * @method
     * @override
@@ -7366,7 +7551,7 @@ export class mjBizAppsOrdersPriceListEntity extends BaseEntity<mjBizAppsOrdersPr
     }
 
     /**
-    * The effective end date must be on or after the effective start date when both dates are provided.
+    * The effective end date must be on or after the effective start date to ensure a valid date range.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
@@ -7529,39 +7714,6 @@ export class mjBizAppsOrdersPriceTierEntity extends BaseEntity<mjBizAppsOrdersPr
     }
 
     /**
-    * Validate() method override for MJ_BizApps_Orders: Price Tiers entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Table-Level: If a maximum quantity is specified, it must be greater than or equal to the minimum quantity to ensure a valid quantity range.
-    * @public
-    * @method
-    * @override
-    */
-    public override Validate(): ValidationResult {
-        const result = super.Validate();
-        this.ValidateMaxQuantityGreaterThanOrEqualToMinQuantity(result);
-        result.Success = result.Success && (result.Errors.length === 0);
-
-        return result;
-    }
-
-    /**
-    * If a maximum quantity is specified, it must be greater than or equal to the minimum quantity to ensure a valid quantity range.
-    * @param result - the ValidationResult object to add any errors or warnings to
-    * @public
-    * @method
-    */
-    public ValidateMaxQuantityGreaterThanOrEqualToMinQuantity(result: ValidationResult) {
-    	// Check if MaxQuantity is specified before comparing to MinQuantity
-    	if (this.MaxQuantity != null && this.MaxQuantity < this.MinQuantity) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"MaxQuantity",
-    			"The maximum quantity (" + this.MaxQuantity + ") cannot be less than the minimum quantity (" + this.MinQuantity + ").",
-    			this.MaxQuantity,
-    			ValidationErrorType.Failure
-    		));
-    	}
-    }
-
-    /**
     * * Field Name: ID
     * * Display Name: ID
     * * SQL Data Type: uniqueidentifier
@@ -7694,7 +7846,7 @@ export class mjBizAppsOrdersProductBundleItemEntity extends BaseEntity<mjBizApps
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Product Bundle Items entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Quantity: The quantity of a product component in a bundle must be greater than zero to ensure valid product configurations.
+    * * Quantity: The quantity of the product bundle component must be greater than zero to ensure valid order configurations and prevent zero or negative quantities.
     * @public
     * @method
     * @override
@@ -7708,7 +7860,7 @@ export class mjBizAppsOrdersProductBundleItemEntity extends BaseEntity<mjBizApps
     }
 
     /**
-    * The quantity of a product component in a bundle must be greater than zero to ensure valid product configurations.
+    * The quantity of the product bundle component must be greater than zero to ensure valid order configurations and prevent zero or negative quantities.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
@@ -7717,7 +7869,7 @@ export class mjBizAppsOrdersProductBundleItemEntity extends BaseEntity<mjBizApps
         if (this.Quantity != null && this.Quantity <= 0) {
             result.Errors.push(new ValidationErrorInfo(
                 "Quantity",
-                "Quantity must be greater than 0.",
+                "Quantity must be greater than zero.",
                 this.Quantity,
                 ValidationErrorType.Failure
             ));
@@ -7739,7 +7891,7 @@ export class mjBizAppsOrdersProductBundleItemEntity extends BaseEntity<mjBizApps
 
     /**
     * * Field Name: BundleProductID
-    * * Display Name: Bundle Product ID
+    * * Display Name: Bundle Product
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
     */
@@ -7752,7 +7904,7 @@ export class mjBizAppsOrdersProductBundleItemEntity extends BaseEntity<mjBizApps
 
     /**
     * * Field Name: ComponentProductID
-    * * Display Name: Component Product ID
+    * * Display Name: Component Product
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
     */
@@ -7831,7 +7983,7 @@ export class mjBizAppsOrdersProductBundleItemEntity extends BaseEntity<mjBizApps
 
     /**
     * * Field Name: BundleProduct
-    * * Display Name: Bundle Product
+    * * Display Name: Bundle Product Name
     * * SQL Data Type: nvarchar(200)
     */
     get BundleProduct(): string {
@@ -7840,7 +7992,7 @@ export class mjBizAppsOrdersProductBundleItemEntity extends BaseEntity<mjBizApps
 
     /**
     * * Field Name: ComponentProduct
-    * * Display Name: Component Product
+    * * Display Name: Component Product Name
     * * SQL Data Type: nvarchar(200)
     */
     get ComponentProduct(): string {
@@ -7881,26 +8033,26 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Product Categories entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Table-Level: A product category cannot be set as its own parent category to prevent circular references in the category hierarchy.
+    * * Table-Level: A product category cannot be its own parent category. The parent category must be a different category or left empty.
     * @public
     * @method
     * @override
     */
     public override Validate(): ValidationResult {
         const result = super.Validate();
-        this.ValidateParentProductCategoryIDNotEqualToID(result);
+        this.ValidateParentProductCategoryIDNotSelfReferencing(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
     }
 
     /**
-    * A product category cannot be set as its own parent category to prevent circular references in the category hierarchy.
+    * A product category cannot be its own parent category. The parent category must be a different category or left empty.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidateParentProductCategoryIDNotEqualToID(result: ValidationResult) {
+    public ValidateParentProductCategoryIDNotSelfReferencing(result: ValidationResult) {
     	if (this.ParentProductCategoryID != null && this.ParentProductCategoryID === this.ID) {
     		result.Errors.push(new ValidationErrorInfo(
     			"ParentProductCategoryID",
@@ -7940,7 +8092,7 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
 
     /**
     * * Field Name: Code
-    * * Display Name: Code
+    * * Display Name: Category Code
     * * SQL Data Type: nvarchar(40)
     * * Description: Stable machine code for the category. Unique when present.
     */
@@ -7953,7 +8105,7 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
 
     /**
     * * Field Name: Name
-    * * Display Name: Name
+    * * Display Name: Category Name
     * * SQL Data Type: nvarchar(200)
     * * Description: Display name of the category.
     */
@@ -8169,7 +8321,7 @@ export class mjBizAppsOrdersProductEntitlementEntity extends BaseEntity<mjBizApp
 
     /**
     * * Field Name: UnitOfMeasure
-    * * Display Name: Unit of Measure
+    * * Display Name: Unit Of Measure
     * * SQL Data Type: nvarchar(40)
     * * Description: Unit for Quantity (GB, seats, hours, ...).
     */
@@ -8264,7 +8416,7 @@ export class mjBizAppsOrdersProductPerformanceObligationEntity extends BaseEntit
     */
     public override Validate(): ValidationResult {
         const result = super.Validate();
-        this.ValidateStandaloneSellingPriceNonNegative(result);
+        this.ValidateStandaloneSellingPriceGreaterThanOrEqualToZero(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
@@ -8276,8 +8428,8 @@ export class mjBizAppsOrdersProductPerformanceObligationEntity extends BaseEntit
     * @public
     * @method
     */
-    public ValidateStandaloneSellingPriceNonNegative(result: ValidationResult) {
-    	if (this.StandaloneSellingPrice !== null && this.StandaloneSellingPrice !== undefined && this.StandaloneSellingPrice < 0) {
+    public ValidateStandaloneSellingPriceGreaterThanOrEqualToZero(result: ValidationResult) {
+    	if (this.StandaloneSellingPrice != null && this.StandaloneSellingPrice < 0) {
     		result.Errors.push(new ValidationErrorInfo(
     			"StandaloneSellingPrice",
     			"The standalone selling price cannot be negative.",
@@ -8315,7 +8467,7 @@ export class mjBizAppsOrdersProductPerformanceObligationEntity extends BaseEntit
 
     /**
     * * Field Name: Name
-    * * Display Name: Obligation Name
+    * * Display Name: Name
     * * SQL Data Type: nvarchar(200)
     * * Description: Display name of the obligation.
     */
@@ -8327,20 +8479,16 @@ export class mjBizAppsOrdersProductPerformanceObligationEntity extends BaseEntit
     }
 
     /**
-    * * Field Name: RevenueRecognitionType
-    * * Display Name: Revenue Recognition Type
-    * * SQL Data Type: nvarchar(20)
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Deferred
-    *   * Immediate
-    * * Description: Recognition pattern for THIS obligation (Immediate | Deferred), independent of siblings.
+    * * Field Name: RevenueRecognitionTypeID
+    * * Display Name: Revenue Recognition Type ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Revenue Recognition Types (vwRevenueRecognitionTypes.ID)
     */
-    get RevenueRecognitionType(): 'Deferred' | 'Immediate' {
-        return this.Get('RevenueRecognitionType');
+    get RevenueRecognitionTypeID(): string {
+        return this.Get('RevenueRecognitionTypeID');
     }
-    set RevenueRecognitionType(value: 'Deferred' | 'Immediate') {
-        this.Set('RevenueRecognitionType', value);
+    set RevenueRecognitionTypeID(value: string) {
+        this.Set('RevenueRecognitionTypeID', value);
     }
 
     /**
@@ -8384,6 +8532,15 @@ export class mjBizAppsOrdersProductPerformanceObligationEntity extends BaseEntit
     get Product(): string {
         return this.Get('Product');
     }
+
+    /**
+    * * Field Name: RevenueRecognitionType
+    * * Display Name: Revenue Recognition Type
+    * * SQL Data Type: nvarchar(200)
+    */
+    get RevenueRecognitionType(): string {
+        return this.Get('RevenueRecognitionType');
+    }
 }
 
 
@@ -8419,7 +8576,6 @@ export class mjBizAppsOrdersProductPriceEntity extends BaseEntity<mjBizAppsOrder
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Product Prices entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Table-Level: The end date (Effective To) must be on or after the start date (Effective From) if an end date is specified.
     * * Table-Level: The maximum quantity must be greater than or equal to the minimum quantity when both values are specified.
     * @public
     * @method
@@ -8427,30 +8583,10 @@ export class mjBizAppsOrdersProductPriceEntity extends BaseEntity<mjBizAppsOrder
     */
     public override Validate(): ValidationResult {
         const result = super.Validate();
-        this.ValidateEffectiveToGreaterOrEqualEffectiveFrom(result);
         this.ValidateMaxQuantityGreaterThanOrEqualToMinQuantity(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
-    }
-
-    /**
-    * The end date (Effective To) must be on or after the start date (Effective From) if an end date is specified.
-    * @param result - the ValidationResult object to add any errors or warnings to
-    * @public
-    * @method
-    */
-    public ValidateEffectiveToGreaterOrEqualEffectiveFrom(result: ValidationResult) {
-        if (this.EffectiveTo != null && this.EffectiveFrom != null) {
-            if (this.EffectiveTo < this.EffectiveFrom) {
-                result.Errors.push(new ValidationErrorInfo(
-                    "EffectiveTo",
-                    "The end date (Effective To) must be on or after the start date (Effective From).",
-                    this.EffectiveTo,
-                    ValidationErrorType.Failure
-                ));
-            }
-        }
     }
 
     /**
@@ -8460,13 +8596,15 @@ export class mjBizAppsOrdersProductPriceEntity extends BaseEntity<mjBizAppsOrder
     * @method
     */
     public ValidateMaxQuantityGreaterThanOrEqualToMinQuantity(result: ValidationResult) {
-    	if (this.MinQuantity != null && this.MaxQuantity != null && this.MaxQuantity < this.MinQuantity) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"MaxQuantity",
-    			"The maximum quantity must be greater than or equal to the minimum quantity.",
-    			this.MaxQuantity,
-    			ValidationErrorType.Failure
-    		));
+    	if (this.MinQuantity != null && this.MaxQuantity != null) {
+    		if (this.MaxQuantity < this.MinQuantity) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"MaxQuantity",
+    				"The maximum quantity (" + this.MaxQuantity + ") cannot be less than the minimum quantity (" + this.MinQuantity + ").",
+    				this.MaxQuantity,
+    				ValidationErrorType.Failure
+    			));
+    		}
     	}
     }
 
@@ -8766,20 +8904,16 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
-    * * Field Name: DefaultRevenueRecognitionType
-    * * Display Name: Default Revenue Recognition Type
-    * * SQL Data Type: nvarchar(20)
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Deferred
-    *   * Immediate
-    * * Description: Default recognition type stamped onto new products of this type (Immediate | Deferred).
+    * * Field Name: DefaultRevenueRecognitionTypeID
+    * * Display Name: Default Revenue Recognition Type ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Revenue Recognition Types (vwRevenueRecognitionTypes.ID)
     */
-    get DefaultRevenueRecognitionType(): 'Deferred' | 'Immediate' | null {
-        return this.Get('DefaultRevenueRecognitionType');
+    get DefaultRevenueRecognitionTypeID(): string | null {
+        return this.Get('DefaultRevenueRecognitionTypeID');
     }
-    set DefaultRevenueRecognitionType(value: 'Deferred' | 'Immediate' | null) {
-        this.Set('DefaultRevenueRecognitionType', value);
+    set DefaultRevenueRecognitionTypeID(value: string | null) {
+        this.Set('DefaultRevenueRecognitionTypeID', value);
     }
 
     /**
@@ -8870,7 +9004,7 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: IsActive
-    * * Display Name: Is Active
+    * * Display Name: Active
     * * SQL Data Type: bit
     * * Default Value: 1
     * * Description: Whether this type is active and selectable.
@@ -8900,6 +9034,15 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: DefaultRevenueRecognitionType
+    * * Display Name: Default Revenue Recognition Type
+    * * SQL Data Type: nvarchar(200)
+    */
+    get DefaultRevenueRecognitionType(): string | null {
+        return this.Get('DefaultRevenueRecognitionType');
     }
 }
 
@@ -8936,8 +9079,8 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Products entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Table-Level: The product's availability end date must be on or after its start date when both dates are specified.
-    * * Table-Level: A product cannot be configured as its own successor to prevent circular references.
+    * * Table-Level: The availability end date must be on or after the availability start date, if both dates are specified.
+    * * Table-Level: A product cannot be its own successor. If a successor product is specified, it must be a different product to prevent self-referencing loops.
     * @public
     * @method
     * @override
@@ -8952,19 +9095,19 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
 
     /**
-    * The product's availability end date must be on or after its start date when both dates are specified.
+    * The availability end date must be on or after the availability start date, if both dates are specified.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
     public ValidateAvailableToAfterAvailableFrom(result: ValidationResult) {
     	if (this.AvailableFrom != null && this.AvailableTo != null) {
-    		const fromTime = new Date(this.AvailableFrom).getTime();
-    		const toTime = new Date(this.AvailableTo).getTime();
-    		if (toTime < fromTime) {
+    		const fromDate = new Date(this.AvailableFrom);
+    		const toDate = new Date(this.AvailableTo);
+    		if (toDate < fromDate) {
     			result.Errors.push(new ValidationErrorInfo(
     				"AvailableTo",
-    				"The availability end date must be on or after the availability start date.",
+    				"The 'Available To' date cannot be earlier than the 'Available From' date.",
     				this.AvailableTo,
     				ValidationErrorType.Failure
     			));
@@ -8973,7 +9116,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
 
     /**
-    * A product cannot be configured as its own successor to prevent circular references.
+    * A product cannot be its own successor. If a successor product is specified, it must be a different product to prevent self-referencing loops.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
@@ -8982,7 +9125,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     	if (this.SuccessorProductID != null && this.SuccessorProductID === this.ID) {
     		result.Errors.push(new ValidationErrorInfo(
     			"SuccessorProductID",
-    			"A product cannot be its own successor. Please select a different successor product.",
+    			"A product cannot be its own successor. Please select a different product.",
     			this.SuccessorProductID,
     			ValidationErrorType.Failure
     		));
@@ -9030,7 +9173,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
 
     /**
     * * Field Name: ProductTypeID
-    * * Display Name: Product Type ID
+    * * Display Name: Product Type
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Types (vwProductTypes.ID)
     */
@@ -9043,7 +9186,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
 
     /**
     * * Field Name: ProductCategoryID
-    * * Display Name: Product Category ID
+    * * Display Name: Product Category
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Categories (vwProductCategories.ID)
     */
@@ -9056,7 +9199,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
 
     /**
     * * Field Name: CompanyID
-    * * Display Name: Company ID
+    * * Display Name: Company
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
     * * Description: The company whose revenue this product accrues to — the SOURCE OF TRUTH for order-line ownership (D6). Stamped onto OrderLine.CompanyID at line save. GL routing is via accounting's GLAccountLink, anchored at this company (D5).
@@ -9090,7 +9233,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
 
     /**
     * * Field Name: SuccessorProductID
-    * * Display Name: Successor Product ID
+    * * Display Name: Successor Product
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
     */
@@ -9128,38 +9271,17 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
 
     /**
-    * * Field Name: RevenueRecognitionType
+    * * Field Name: RevenueRecognitionTypeID
     * * Display Name: Revenue Recognition Type
-    * * SQL Data Type: nvarchar(20)
-    * * Default Value: Immediate
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Deferred
-    *   * Immediate
-    * * Description: Immediate (Dr AR / Cr Sales) or Deferred (Dr AR / Cr Deferred Revenue). Drives the credit side of the order-booking journal entry.
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Revenue Recognition Types (vwRevenueRecognitionTypes.ID)
+    * * Description: HOW revenue for this product is earned (plan D43). Resolves to a pluggable driver via RevenueRecognitionType.DriverClass; the driver returns a schedule and the order entity turns it into forward-dated journal entries.
     */
-    get RevenueRecognitionType(): 'Deferred' | 'Immediate' {
-        return this.Get('RevenueRecognitionType');
+    get RevenueRecognitionTypeID(): string {
+        return this.Get('RevenueRecognitionTypeID');
     }
-    set RevenueRecognitionType(value: 'Deferred' | 'Immediate') {
-        this.Set('RevenueRecognitionType', value);
-    }
-
-    /**
-    * * Field Name: DeferredRecognitionShape
-    * * Display Name: Deferred Recognition Shape
-    * * SQL Data Type: nvarchar(20)
-    * * Value List Type: List
-    * * Possible Values 
-    *   * ServicePeriod
-    *   * SingleDate
-    * * Description: For Deferred products: SingleDate (100 percent recognized on the event date) or ServicePeriod (spread over the line's service dates). Robert's two deferred shapes on their own axis (UPD-2).
-    */
-    get DeferredRecognitionShape(): 'ServicePeriod' | 'SingleDate' | null {
-        return this.Get('DeferredRecognitionShape');
-    }
-    set DeferredRecognitionShape(value: 'ServicePeriod' | 'SingleDate' | null) {
-        this.Set('DeferredRecognitionShape', value);
+    set RevenueRecognitionTypeID(value: string) {
+        this.Set('RevenueRecognitionTypeID', value);
     }
 
     /**
@@ -9302,7 +9424,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
 
     /**
     * * Field Name: ProductType
-    * * Display Name: Product Type
+    * * Display Name: Product Type Name
     * * SQL Data Type: nvarchar(100)
     */
     get ProductType(): string {
@@ -9311,7 +9433,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
 
     /**
     * * Field Name: ProductCategory
-    * * Display Name: Product Category
+    * * Display Name: Product Category Name
     * * SQL Data Type: nvarchar(200)
     */
     get ProductCategory(): string {
@@ -9320,7 +9442,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
 
     /**
     * * Field Name: Company
-    * * Display Name: Company
+    * * Display Name: Company Name
     * * SQL Data Type: nvarchar(50)
     */
     get Company(): string {
@@ -9329,7 +9451,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
 
     /**
     * * Field Name: SuccessorProduct
-    * * Display Name: Successor Product
+    * * Display Name: Successor Product Name
     * * SQL Data Type: nvarchar(200)
     */
     get SuccessorProduct(): string | null {
@@ -9337,8 +9459,17 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
 
     /**
+    * * Field Name: RevenueRecognitionType
+    * * Display Name: Revenue Recognition Type Name
+    * * SQL Data Type: nvarchar(200)
+    */
+    get RevenueRecognitionType(): string {
+        return this.Get('RevenueRecognitionType');
+    }
+
+    /**
     * * Field Name: RootSuccessorProductID
-    * * Display Name: Root Successor Product ID
+    * * Display Name: Root Successor Product
     * * SQL Data Type: uniqueidentifier
     */
     get RootSuccessorProductID(): string | null {
@@ -9379,26 +9510,26 @@ export class mjBizAppsOrdersRevRecScheduleLineEntity extends BaseEntity<mjBizApp
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Rev Rec Schedule Lines entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Table-Level: The period end date must be on or after the period start date to ensure chronological consistency.
+    * * Table-Level: The period end date must be on or after the period start date. This ensures that the duration of the period is valid and does not end before it begins.
     * @public
     * @method
     * @override
     */
     public override Validate(): ValidationResult {
         const result = super.Validate();
-        this.ValidatePeriodEndAfterOrEqualToPeriodStart(result);
+        this.ValidatePeriodEndGreaterThanOrEqualToPeriodStart(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
     }
 
     /**
-    * The period end date must be on or after the period start date to ensure chronological consistency.
+    * The period end date must be on or after the period start date. This ensures that the duration of the period is valid and does not end before it begins.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidatePeriodEndAfterOrEqualToPeriodStart(result: ValidationResult) {
+    public ValidatePeriodEndGreaterThanOrEqualToPeriodStart(result: ValidationResult) {
     	if (this.PeriodStart != null && this.PeriodEnd != null) {
     		if (this.PeriodEnd < this.PeriodStart) {
     			result.Errors.push(new ValidationErrorInfo(
@@ -9543,6 +9674,40 @@ export class mjBizAppsOrdersRevenueRecognitionScheduleEntity extends BaseEntity<
     }
 
     /**
+    * Validate() method override for MJ_BizApps_Orders: Revenue Recognition Schedules entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * Table-Level: The end date must be on or after the start date to ensure the validity of the revenue recognition period.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateEndDateAfterStartDate(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * The end date must be on or after the start date to ensure the validity of the revenue recognition period.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateEndDateAfterStartDate(result: ValidationResult) {
+    	if (this.StartDate != null && this.EndDate != null) {
+    		if (new Date(this.EndDate) < new Date(this.StartDate)) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"EndDate",
+    				"The End Date must be greater than or equal to the Start Date.",
+    				this.EndDate,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
+    }
+
+    /**
     * * Field Name: ID
     * * Display Name: ID
     * * SQL Data Type: uniqueidentifier
@@ -9556,22 +9721,16 @@ export class mjBizAppsOrdersRevenueRecognitionScheduleEntity extends BaseEntity<
     }
 
     /**
-    * * Field Name: SchedulingMethod
-    * * Display Name: Scheduling Method
-    * * SQL Data Type: nvarchar(20)
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Custom
-    *   * Milestone
-    *   * SingleDate
-    *   * StraightLine
-    * * Description: StraightLine (service-period spread) | SingleDate (100 percent on the event date) | Milestone | Custom.
+    * * Field Name: RevenueRecognitionTypeID
+    * * Display Name: Revenue Recognition Type
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Revenue Recognition Types (vwRevenueRecognitionTypes.ID)
     */
-    get SchedulingMethod(): 'Custom' | 'Milestone' | 'SingleDate' | 'StraightLine' {
-        return this.Get('SchedulingMethod');
+    get RevenueRecognitionTypeID(): string {
+        return this.Get('RevenueRecognitionTypeID');
     }
-    set SchedulingMethod(value: 'Custom' | 'Milestone' | 'SingleDate' | 'StraightLine') {
-        this.Set('SchedulingMethod', value);
+    set RevenueRecognitionTypeID(value: string) {
+        this.Set('RevenueRecognitionTypeID', value);
     }
 
     /**
@@ -9660,6 +9819,179 @@ export class mjBizAppsOrdersRevenueRecognitionScheduleEntity extends BaseEntity<
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
     }
+
+    /**
+    * * Field Name: RevenueRecognitionType
+    * * Display Name: Revenue Recognition Type Name
+    * * SQL Data Type: nvarchar(200)
+    */
+    get RevenueRecognitionType(): string {
+        return this.Get('RevenueRecognitionType');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Revenue Recognition Types - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: RevenueRecognitionType
+ * * Base View: vwRevenueRecognitionTypes
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Revenue Recognition Types')
+export class mjBizAppsOrdersRevenueRecognitionTypeEntity extends BaseEntity<mjBizAppsOrdersRevenueRecognitionTypeEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Revenue Recognition Types record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Revenue Recognition Types record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersRevenueRecognitionTypeEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: Code
+    * * Display Name: Code
+    * * SQL Data Type: nvarchar(40)
+    */
+    get Code(): string {
+        return this.Get('Code');
+    }
+    set Code(value: string) {
+        this.Set('Code', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(200)
+    */
+    get Name(): string {
+        return this.Get('Name');
+    }
+    set Name(value: string) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * Display Name: Description
+    * * SQL Data Type: nvarchar(MAX)
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: DriverClass
+    * * Display Name: Driver Class
+    * * SQL Data Type: nvarchar(200)
+    */
+    get DriverClass(): string {
+        return this.Get('DriverClass');
+    }
+    set DriverClass(value: string) {
+        this.Set('DriverClass', value);
+    }
+
+    /**
+    * * Field Name: IsDeferred
+    * * Display Name: Is Deferred
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    */
+    get IsDeferred(): boolean {
+        return this.Get('IsDeferred');
+    }
+    set IsDeferred(value: boolean) {
+        this.Set('IsDeferred', value);
+    }
+
+    /**
+    * * Field Name: RequiresServicePeriod
+    * * Display Name: Requires Service Period
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    */
+    get RequiresServicePeriod(): boolean {
+        return this.Get('RequiresServicePeriod');
+    }
+    set RequiresServicePeriod(value: boolean) {
+        this.Set('RequiresServicePeriod', value);
+    }
+
+    /**
+    * * Field Name: Sequence
+    * * Display Name: Sequence
+    * * SQL Data Type: int
+    * * Default Value: 0
+    */
+    get Sequence(): number {
+        return this.Get('Sequence');
+    }
+    set Sequence(value: number) {
+        this.Set('Sequence', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
 }
 
 
@@ -9720,7 +10052,7 @@ export class mjBizAppsOrdersSalesAuthorityEntity extends BaseEntity<mjBizAppsOrd
     	if (this.MaxDiscountPct != null && (this.MaxDiscountPct < 0 || this.MaxDiscountPct > 1)) {
     		result.Errors.push(new ValidationErrorInfo(
     			"MaxDiscountPct",
-    			"The maximum discount percentage must be between 0 and 1 (inclusive).",
+    			"The maximum discount percentage must be between 0 and 1 (representing 0% to 100%).",
     			this.MaxDiscountPct,
     			ValidationErrorType.Failure
     		));
@@ -9737,7 +10069,7 @@ export class mjBizAppsOrdersSalesAuthorityEntity extends BaseEntity<mjBizAppsOrd
     	if (this.MaxOrderValue != null && this.MaxOrderValue < 0) {
     		result.Errors.push(new ValidationErrorInfo(
     			"MaxOrderValue",
-    			"The maximum order value cannot be negative.",
+    			"The maximum order value must be greater than or equal to 0.",
     			this.MaxOrderValue,
     			ValidationErrorType.Failure
     		));
@@ -9858,7 +10190,7 @@ export class mjBizAppsOrdersSalesAuthorityEntity extends BaseEntity<mjBizAppsOrd
 
     /**
     * * Field Name: SalesRepUser
-    * * Display Name: Sales Rep Name
+    * * Display Name: Sales Representative
     * * SQL Data Type: nvarchar(100)
     */
     get SalesRepUser(): string {
@@ -9912,7 +10244,7 @@ export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSa
 
     /**
     * * Field Name: Name
-    * * Display Name: Rule Name
+    * * Display Name: Name
     * * SQL Data Type: nvarchar(200)
     * * Description: Display name of the rule.
     */
@@ -9978,7 +10310,7 @@ export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSa
 
     /**
     * * Field Name: PredicateJson
-    * * Display Name: Rule Logic
+    * * Display Name: Predicate Logic
     * * SQL Data Type: nvarchar(MAX)
     * * Description: JSON rule expression (admin-editable; evaluated by the F8 engine).
     */
@@ -9991,7 +10323,7 @@ export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSa
 
     /**
     * * Field Name: ApprovalRequiredRoleID
-    * * Display Name: Approval Role ID
+    * * Display Name: Approval Required Role ID
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ: Roles (vwRoles.ID)
     */
@@ -10004,7 +10336,7 @@ export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSa
 
     /**
     * * Field Name: IsActive
-    * * Display Name: Active
+    * * Display Name: Is Active
     * * SQL Data Type: bit
     * * Default Value: 1
     * * Description: Whether this rule participates in Confirm evaluation.
@@ -10038,7 +10370,7 @@ export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSa
 
     /**
     * * Field Name: ApprovalRequiredRole
-    * * Display Name: Approval Role
+    * * Display Name: Approval Required Role
     * * SQL Data Type: nvarchar(50)
     */
     get ApprovalRequiredRole(): string | null {
@@ -10078,6 +10410,38 @@ export class mjBizAppsOrdersStoredValueAccountEntity extends BaseEntity<mjBizApp
     }
 
     /**
+    * Validate() method override for MJ_BizApps_Orders: Stored Value Accounts entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * InitialAmount: The initial amount must be greater than zero to ensure the record starts with a positive monetary value.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateInitialAmountGreaterThanZero(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * The initial amount must be greater than zero to ensure the record starts with a positive monetary value.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateInitialAmountGreaterThanZero(result: ValidationResult) {
+    	if (this.InitialAmount != null && this.InitialAmount <= 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"InitialAmount",
+    			"The initial amount must be greater than zero.",
+    			this.InitialAmount,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
     * * Field Name: ID
     * * Display Name: ID
     * * SQL Data Type: uniqueidentifier
@@ -10092,7 +10456,7 @@ export class mjBizAppsOrdersStoredValueAccountEntity extends BaseEntity<mjBizApp
 
     /**
     * * Field Name: Code
-    * * Display Name: Card Number
+    * * Display Name: Gift Card Code
     * * SQL Data Type: nvarchar(60)
     * * Description: The gift-card number / instrument code. Unique.
     */
@@ -10165,7 +10529,7 @@ export class mjBizAppsOrdersStoredValueAccountEntity extends BaseEntity<mjBizApp
 
     /**
     * * Field Name: IssuedFromOrderLineID
-    * * Display Name: Issued From Order Line
+    * * Display Name: Source Order Line
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
     */
@@ -10206,7 +10570,7 @@ export class mjBizAppsOrdersStoredValueAccountEntity extends BaseEntity<mjBizApp
 
     /**
     * * Field Name: ExpiresAt
-    * * Display Name: Expires At
+    * * Display Name: Expiration Date
     * * SQL Data Type: date
     * * Description: Expiration date where legally permitted. NULL = never.
     */
@@ -10298,7 +10662,7 @@ export class mjBizAppsOrdersStoredValueTransactionEntity extends BaseEntity<mjBi
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Stored Value Transactions entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * Amount: The transaction amount cannot be zero. Every transaction must record a positive or negative value to be valid.
+    * * Amount: The transaction amount cannot be zero. Every transaction must represent either a positive or negative value.
     * @public
     * @method
     * @override
@@ -10312,20 +10676,20 @@ export class mjBizAppsOrdersStoredValueTransactionEntity extends BaseEntity<mjBi
     }
 
     /**
-    * The transaction amount cannot be zero. Every transaction must record a positive or negative value to be valid.
+    * The transaction amount cannot be zero. Every transaction must represent either a positive or negative value.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
     public ValidateAmountNotZero(result: ValidationResult) {
-    	if (this.Amount === 0) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"Amount",
-    			"The transaction amount cannot be zero.",
-    			this.Amount,
-    			ValidationErrorType.Failure
-    		));
-    	}
+        if (this.Amount === 0) {
+            result.Errors.push(new ValidationErrorInfo(
+                "Amount",
+                "The transaction amount cannot be zero.",
+                this.Amount,
+                ValidationErrorType.Failure
+            ));
+        }
     }
 
     /**
@@ -10598,7 +10962,7 @@ export class mjBizAppsOrdersSubscriptionEventEntity extends BaseEntity<mjBizApps
 
     /**
     * * Field Name: RelatedOrderHeaderID
-    * * Display Name: Related Order Header
+    * * Display Name: Related Order
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
     */
@@ -10663,8 +11027,8 @@ export class mjBizAppsOrdersSubscriptionPlanEntity extends BaseEntity<mjBizAppsO
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Subscription Plans entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * CustomCycleDays: If custom cycle days are specified, the number of days must be greater than zero to ensure a valid billing cycle duration.
-    * * TrialDays: Trial days must be a non-negative number (0 or greater) to ensure a valid trial period configuration.
+    * * CustomCycleDays: Custom cycle days, if specified, must be a positive number greater than zero.
+    * * TrialDays: The number of trial days must be zero or a positive number.
     * @public
     * @method
     * @override
@@ -10672,14 +11036,14 @@ export class mjBizAppsOrdersSubscriptionPlanEntity extends BaseEntity<mjBizAppsO
     public override Validate(): ValidationResult {
         const result = super.Validate();
         this.ValidateCustomCycleDaysGreaterThanZero(result);
-        this.ValidateTrialDaysNonNegative(result);
+        this.ValidateTrialDaysMinLimit(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
     }
 
     /**
-    * If custom cycle days are specified, the number of days must be greater than zero to ensure a valid billing cycle duration.
+    * Custom cycle days, if specified, must be a positive number greater than zero.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
@@ -10696,20 +11060,20 @@ export class mjBizAppsOrdersSubscriptionPlanEntity extends BaseEntity<mjBizAppsO
     }
 
     /**
-    * Trial days must be a non-negative number (0 or greater) to ensure a valid trial period configuration.
+    * The number of trial days must be zero or a positive number.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidateTrialDaysNonNegative(result: ValidationResult) {
-        if (this.TrialDays != null && this.TrialDays < 0) {
-            result.Errors.push(new ValidationErrorInfo(
-                "TrialDays",
-                "Trial days must be 0 or greater.",
-                this.TrialDays,
-                ValidationErrorType.Failure
-            ));
-        }
+    public ValidateTrialDaysMinLimit(result: ValidationResult) {
+    	if (this.TrialDays != null && this.TrialDays < 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"TrialDays",
+    			"Trial days must be 0 or greater.",
+    			this.TrialDays,
+    			ValidationErrorType.Failure
+    		));
+    	}
     }
 
     /**
@@ -10846,7 +11210,7 @@ export class mjBizAppsOrdersSubscriptionPlanEntity extends BaseEntity<mjBizAppsO
 
     /**
     * * Field Name: Product
-    * * Display Name: Product Name
+    * * Display Name: Product
     * * SQL Data Type: nvarchar(200)
     */
     get Product(): string {
@@ -10887,9 +11251,9 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Subscriptions entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
-    * * RenewalLeadDays: The renewal lead days must be 0 or greater to ensure valid scheduling for subscription renewals.
-    * * Table-Level: The current period end date must be on or after the current period start date to ensure a valid subscription period range.
-    * * Table-Level: A subscription cannot migrate from itself. If a prior subscription is specified, its ID must be different from the current subscription's ID.
+    * * RenewalLeadDays: The number of renewal lead days must be zero or greater to ensure a valid timeframe is set for subscription renewals.
+    * * Table-Level: The current period end date must be on or after the current period start date to ensure logical subscription periods.
+    * * Table-Level: A subscription cannot be set to migrate to itself. This prevents circular reference errors by ensuring the destination subscription is a different record.
     * @public
     * @method
     * @override
@@ -10898,23 +11262,23 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
         const result = super.Validate();
         this.ValidateRenewalLeadDaysGreaterThanOrEqualToZero(result);
         this.ValidateCurrentPeriodEndAfterOrEqualStart(result);
-        this.ValidateMigratesFromSubscriptionIDNotEqualToID(result);
+        this.ValidateMigratesToSubscriptionIDNotEqualToID(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
     }
 
     /**
-    * The renewal lead days must be 0 or greater to ensure valid scheduling for subscription renewals.
+    * The number of renewal lead days must be zero or greater to ensure a valid timeframe is set for subscription renewals.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
     public ValidateRenewalLeadDaysGreaterThanOrEqualToZero(result: ValidationResult) {
-    	if (this.RenewalLeadDays !== null && this.RenewalLeadDays !== undefined && this.RenewalLeadDays < 0) {
+    	if (this.RenewalLeadDays != null && this.RenewalLeadDays < 0) {
     		result.Errors.push(new ValidationErrorInfo(
     			"RenewalLeadDays",
-    			"Renewal lead days must be 0 or greater.",
+    			"Renewal lead days must be greater than or equal to 0.",
     			this.RenewalLeadDays,
     			ValidationErrorType.Failure
     		));
@@ -10922,36 +11286,38 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     }
 
     /**
-    * The current period end date must be on or after the current period start date to ensure a valid subscription period range.
+    * The current period end date must be on or after the current period start date to ensure logical subscription periods.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
     public ValidateCurrentPeriodEndAfterOrEqualStart(result: ValidationResult) {
-    	if (this.CurrentPeriodEnd != null && this.CurrentPeriodStart != null) {
-    		if (this.CurrentPeriodEnd < this.CurrentPeriodStart) {
-    			result.Errors.push(new ValidationErrorInfo(
-    				"CurrentPeriodEnd",
-    				"The current period end date must be on or after the current period start date.",
-    				this.CurrentPeriodEnd,
-    				ValidationErrorType.Failure
-    			));
-    		}
-    	}
+        if (this.CurrentPeriodStart != null && this.CurrentPeriodEnd != null) {
+            const start = new Date(this.CurrentPeriodStart);
+            const end = new Date(this.CurrentPeriodEnd);
+            if (end < start) {
+                result.Errors.push(new ValidationErrorInfo(
+                    "CurrentPeriodEnd",
+                    "The current period end date must be on or after the current period start date.",
+                    this.CurrentPeriodEnd,
+                    ValidationErrorType.Failure
+                ));
+            }
+        }
     }
 
     /**
-    * A subscription cannot migrate from itself. If a prior subscription is specified, its ID must be different from the current subscription's ID.
+    * A subscription cannot be set to migrate to itself. This prevents circular reference errors by ensuring the destination subscription is a different record.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidateMigratesFromSubscriptionIDNotEqualToID(result: ValidationResult) {
-    	if (this.MigratesFromSubscriptionID != null && this.MigratesFromSubscriptionID === this.ID) {
+    public ValidateMigratesToSubscriptionIDNotEqualToID(result: ValidationResult) {
+    	if (this.MigratesToSubscriptionID != null && this.MigratesToSubscriptionID === this.ID) {
     		result.Errors.push(new ValidationErrorInfo(
-    			"MigratesFromSubscriptionID",
-    			"A subscription cannot migrate from itself. The 'Migrates From' subscription ID must be different from the subscription's own ID.",
-    			this.MigratesFromSubscriptionID,
+    			"MigratesToSubscriptionID",
+    			"A subscription cannot migrate to itself. Please select a different subscription for the migration destination.",
+    			this.MigratesToSubscriptionID,
     			ValidationErrorType.Failure
     		));
     	}
@@ -11218,7 +11584,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
 
     /**
     * * Field Name: MigratesFromSubscriptionID
-    * * Display Name: Migrates From Subscription
+    * * Display Name: Migrates From
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscriptions (vwSubscriptions.ID)
     */
@@ -11231,7 +11597,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
 
     /**
     * * Field Name: MigratesToSubscriptionID
-    * * Display Name: Migrates To Subscription
+    * * Display Name: Migrates To
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscriptions (vwSubscriptions.ID)
     */
@@ -11318,7 +11684,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
 
     /**
     * * Field Name: RootMigratesFromSubscriptionID
-    * * Display Name: Root Migrates From Subscription
+    * * Display Name: Root Migrates From
     * * SQL Data Type: uniqueidentifier
     */
     get RootMigratesFromSubscriptionID(): string | null {
@@ -11327,7 +11693,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
 
     /**
     * * Field Name: RootMigratesToSubscriptionID
-    * * Display Name: Root Migrates To Subscription
+    * * Display Name: Root Migrates To
     * * SQL Data Type: uniqueidentifier
     */
     get RootMigratesToSubscriptionID(): string | null {
