@@ -21,6 +21,8 @@
     "mj": "node apps/MJAPI/node_modules/@memberjunction/cli/bin/run.js",
     "mj:migrate": "node apps/MJAPI/node_modules/@memberjunction/cli/bin/run.js migrate",
     "mj:codegen": "node apps/MJAPI/node_modules/@memberjunction/cli/bin/run.js codegen",
+    "postinstall": "node scripts/link-local-apps.mjs",
+    "link:local": "node scripts/link-local-apps.mjs",
     "install:deps": "npm install",
     "setup": "echo 'Please run: npm run mj:migrate && npm run mj:codegen && npm run build'"
   },

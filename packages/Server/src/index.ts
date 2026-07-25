@@ -10,6 +10,11 @@
 import '@mj-biz-apps/orders-entities';
 import '@mj-biz-apps/orders-actions';
 
+// Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
+// auto-increment gives these higher priority than the generated classes.
+import '@mj-biz-apps/orders-core-entities-server';
+import { LoadOrderEntityServer, LoadOrderLineEntityServer } from '@mj-biz-apps/orders-core-entities-server';
+
 // Import generated GraphQL resolvers
 import './generated/generated.js';
 
@@ -40,5 +45,8 @@ export const RESOLVER_PATHS = [
  * startupExport entry point.
  */
 export function LoadBizAppsOrdersServer(): void {
-    // Static imports above ensure all classes are registered.
+    // Static imports above ensure all classes are registered; these anchor the server-only
+    // subclasses against tree-shaking (booking lives in OrderEntityServer.Save).
+    LoadOrderEntityServer();
+    LoadOrderLineEntityServer();
 }
