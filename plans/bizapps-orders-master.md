@@ -687,6 +687,12 @@ future (fields ship now, D21).
 
 ## 10. Pricing and coupons
 
+> **Detailed design:** [`pricing-charges-and-promotions.md`](./pricing-charges-and-promotions.md) —
+> the price/adjustment/charge separation, the resolver walk, promotion rules and stacking, charges
+> with allocation to lines, tax modelled AS charges, and the per-component audit trail.
+> Supersedes D21's "tables built, engine future" framing: the tables are incomplete and the engine
+> is the point. Nothing built yet; build order is §10 of that document.
+
 - **Pricing per D21:** tables built; deterministic precedence with `UnitPrice` direct entry as the
   base; `ResolvePrice` engine on top; contract-override slot reserved at the top of the chain for
   future Contracts.
