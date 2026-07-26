@@ -37,5 +37,46 @@ export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './Cancel
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
 export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
 
+export {
+    BuildGLAccountResolver,
+    EntityIDFor,
+    LoadAccountingEngine,
+    ResolverEntities,
+} from './AccountingBridge.js';
+export type { AccountingEngineSurface } from './AccountingBridge.js';
+
+export { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
+export type {
+    PaymentJEDraft,
+    PaymentJELine,
+    PaymentCaptureContext,
+    PaymentCaptureResult,
+} from './PaymentJournalEntryFactory.js';
+
+// The intercompany half of D13 — one journal entry per (payment line × company).
+export {
+    PaymentAllocationFactory,
+    AllocateByCompany,
+    IntercompanyPairMissingError,
+} from './PaymentAllocationFactory.js';
+export type {
+    OrderLineShare,
+    CompanyShare,
+    IntercompanyPair,
+    IntercompanyLookup,
+    PaymentLineAllocationContext,
+    PaymentAllocationResult,
+} from './PaymentAllocationFactory.js';
+
+export { PaymentHeaderEntityServer, LoadPaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
+export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentLineEntityServer.js';
+
+export { RefundPaymentOperation, LoadRefundPaymentOperation } from './RefundPaymentOperation.js';
+export type { RefundPaymentInput, RefundPaymentOutput } from './RefundPaymentOperation.js';
+export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './ApplyAccountCreditOperation.js';
+export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyAccountCreditOperation.js';
+
+export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
+
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';

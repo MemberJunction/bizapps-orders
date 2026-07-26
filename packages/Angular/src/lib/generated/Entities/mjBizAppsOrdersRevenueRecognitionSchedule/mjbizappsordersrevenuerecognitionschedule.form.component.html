@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Recognition Configuration Section -->
+    <!-- Recognition Details Section -->
     <mj-collapsible-panel
-        SectionKey="recognitionConfiguration"
-        SectionName="Recognition Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="recognitionDetails"
+        SectionName="Recognition Details"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -29,10 +29,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Recognition Timeline Section -->
+    <!-- Recognition Schedule Section -->
     <mj-collapsible-panel
-        SectionKey="recognitionTimeline"
-        SectionName="Recognition Timeline"
+        SectionKey="recognitionSchedule"
+        SectionName="Recognition Schedule"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -52,14 +52,22 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsComplete"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financials Section -->
+    <!-- Financial Values Section -->
     <mj-collapsible-panel
-        SectionKey="financials"
-        SectionName="Financials"
-        Icon="fa fa-dollar-sign"
+        SectionKey="financialValues"
+        SectionName="Financial Values"
+        Icon="fa fa-money-bill-wave"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -75,14 +83,6 @@
             [ShowLabel]="true"
             FieldName="TotalRecognized"
             Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsComplete"
-            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

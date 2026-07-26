@@ -95,7 +95,7 @@ interface DueRow {
     SubscriptionNumber: string;
     CompanyID: string;
     ProductID: string;
-    CustomerOrganizationID: string | null;
+    HolderOrganizationID: string | null;
     BeneficiaryPersonID: string | null;
     SubscriptionRenewalLeadDays: number | null;
     TypeRenewalLeadDays: number | null;
@@ -201,7 +201,7 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
                 s.SubscriptionNumber,
                 s.CompanyID,
                 s.ProductID,
-                s.CustomerOrganizationID,
+                s.HolderOrganizationID,
                 s.BeneficiaryPersonID,
                 s.RenewalLeadDays     AS SubscriptionRenewalLeadDays,
                 t.RenewalLeadDays     AS TypeRenewalLeadDays,
@@ -231,9 +231,8 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
         const rv = new RunView(provider as unknown as IRunViewProvider);
         const result = await rv.RunView<{ ID: string }>(
             {
-                EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter:
-                    `RenewsSubscriptionID='${due.SubscriptionID}' AND Status NOT IN ('Voided','Draft')`,
+                EntityName: ORDER_LINE_ENTITY,
+                ExtraFilter: `RenewsSubscriptionID='${due.SubscriptionID}'`,
                 Fields: ['ID'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -290,15 +289,22 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             // happened to run.
             order.Set('OrderDate', this.dayAfter(due.TermEndDate));
             order.Set('CompanyID', due.CompanyID);
-            order.Set('CustomerOrganizationID', due.CustomerOrganizationID);
-            order.Set('CustomerPersonID', due.BeneficiaryPersonID);
-            order.Set('RenewsSubscriptionID', due.SubscriptionID);
+            order.Set('BillToOrganizationID', due.HolderOrganizationID);
+            order.Set('BillToPersonID', due.BeneficiaryPersonID);
             order.Set('Notes', `Automatic renewal of ${due.SubscriptionNumber} (term ${due.TermNumber + 1})`);
 
             const line = await provider.GetEntityObject<BaseEntity>(ORDER_LINE_ENTITY, user);
             line.NewRecord();
             line.Set('ProductID', due.ProductID);
             line.Set('LineNumber', 1);
+            // Per-LINE (D61): renewal is a line-level act, so one order could renew several
+            // subscriptions. Naming the target also removes the guesswork from resolution — the
+            // engine renews exactly this one rather than searching by subscriber and product.
+            line.Set('RenewsSubscriptionID', due.SubscriptionID);
+            // The subscription's own subscriber, carried onto the line's ship-to so the renewal
+            // lands on the same holder even when the order's customer differs.
+            line.Set('ShipToOrganizationID', due.HolderOrganizationID);
+            line.Set('ShipToPersonID', due.BeneficiaryPersonID);
             // Renew at what they last paid. Re-pricing from the current ProductPrice is a policy
             // decision (grandfathering, notice periods) that nobody has made yet — carrying the
             // price forward is the choice that cannot surprise a customer.

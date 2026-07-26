@@ -46,9 +46,12 @@ import {
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { GLAccountResolver } from './GLAccountResolver.js';
+import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import {
     SubscriptionBehavior,
+    type SubscriberIdentity,
     type ExistingSubscription,
     type SubscriptionDecision,
     type SubscriptionTypeRules,
@@ -71,12 +74,16 @@ const ORDER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
+/** IsA Disjoint child of Product (BO-D37) — present only for products that ARE events. */
+const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
 const COMPANY_ENTITY = 'MJ: Companies';
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
+const RELATIONSHIP_ENTITY = 'MJ.BizApps.Common: Relationships';
+const COMMON_SCHEMA = '__mj_BizAppsCommon';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 
@@ -116,6 +123,8 @@ interface SubscriptionDecisionForLine {
     Product: ProductRow;
     Rules: SubscriptionTypeRules;
     Decision: SubscriptionDecision;
+    /** Resolved once during the decision pass so persistence uses the same answer. */
+    Subscriber: SubscriberIdentity;
     /** The resolved behaviour — reused for RecognitionMonths so a driver's override still applies. */
     Behavior: SubscriptionBehavior;
 }
@@ -289,6 +298,9 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 line.Quantity = Math.round(line.Quantity * term.ProrationFactor * 1e4) / 1e4;
             }
 
+            // Events carry their own service period — the event happens when it happens.
+            await this.applyEventServicePeriod(line);
+
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
@@ -297,6 +309,52 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             }
         }
         this._lines = [];
+    }
+
+    /**
+     * Stamp an event line's service period from the EVENT's own dates (D-EVENT).
+     *
+     * WHY THIS IS NOT LEFT TO THE CALLER
+     * An event product is bought in advance and earned on the day it happens: the money is deferred
+     * revenue until then. That behaviour needs `ServicePeriodStart`/`End` — `AllBackEnd` recognizes
+     * 100% on the END date, and `RequireServicePeriod` refuses to run without one.
+     *
+     * Leaving those dates to whoever creates the line means the recognition date for a conference is
+     * hand-typed on every ticket sold, and a typo silently books revenue in the wrong period. The
+     * event already knows when it is. Reading it from `EventProduct` makes the correct answer the
+     * default and the ticket line carry no date at all.
+     *
+     * An explicitly-set period WINS and is never overwritten: a line covering only part of a
+     * multi-day event, or a deliberate override, is a legitimate thing to express. Subscription
+     * lines are untouched — their period comes from the term, which is decided later and is
+     * authoritative over anything typed (see `materializeSubscriptions`).
+     *
+     * A product with no `EventProduct` row is simply not an event; nothing happens.
+     */
+    private async applyEventServicePeriod(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        if (line.ServicePeriodStart || line.ServicePeriodEnd) return;
+        if (!line.ProductID) return;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ EventStartsAt: string; EventEndsAt: string | null }>(
+            {
+                EntityName: EVENT_PRODUCT_ENTITY,
+                ExtraFilter: `ID='${line.ProductID}'`,
+                Fields: ['EventStartsAt', 'EventEndsAt'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        const event = res?.Results?.[0];
+        if (!event?.EventStartsAt) return;
+
+        const start = new Date(event.EventStartsAt);
+        // A single-day event has no end date; the period is that one day, so recognition lands on
+        // the event itself rather than being left without an end for AllBackEnd to aim at.
+        const end = event.EventEndsAt ? new Date(event.EventEndsAt) : start;
+        line.ServicePeriodStart = start;
+        line.ServicePeriodEnd = end;
     }
 
     /**
@@ -465,8 +523,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
             const subscriptionID =
                 decision.Action === 'CreateNew'
-                    ? await this.createSubscription(line, product, rules, decision, options)
-                    : await this.touchExistingSubscription(decision, options);
+                    ? await this.createSubscription(line, product, rules, decision, decided.Subscriber, options)
+                    : await this.touchExistingSubscription(decision, !!line.RenewsSubscriptionID, options);
 
             const term = decision.Term!;
 
@@ -529,9 +587,28 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const subLines = await this.subscriptionLines(this._lines);
         if (subLines.length === 0) return out;
 
+        // Settings drive whether the organization is inferred at all, so load the cache once here
+        // rather than per line.
+        await OrdersSettings.Load(this.ProviderToUse as unknown as IMetadataProvider, this.ContextCurrentUser);
+
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
-            const existing = await this.findExistingSubscription(product.ID);
+            let subscriber = await this.withInferredOrganization(this.resolveSubscriber(line));
+            // An explicitly named subscription wins; otherwise find one for this subscriber and
+            // product, scoped by the type's BenefitModel (D62).
+            const existing = line.RenewsSubscriptionID
+                ? await this.loadSubscriptionState(`ID='${line.RenewsSubscriptionID}'`)
+                : await this.findExistingSubscription(product.ID, behavior.DedupeIdentity(rules, subscriber));
+
+            // NAMING a subscription IS the statement of who the subscriber is. Requiring the line to
+            // restate it would make renewing a seat impossible without repeating the person, and any
+            // mismatch between the two would be a silent contradiction. The target wins.
+            if (line.RenewsSubscriptionID && existing) {
+                subscriber = {
+                    OrganizationID: existing.HolderOrganizationID ?? null,
+                    PersonID: existing.BeneficiaryPersonID ?? null,
+                };
+            }
 
             const decision = behavior.Decide({
                 Rules: rules,
@@ -540,10 +617,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 // figure OrderLineEntityServer will: quantity × price, less the discount.
                 Amount: this.pendingLineNet(line),
                 Existing: existing,
-                SubscriberIsOrganization: !!this.CustomerOrganizationID,
-                // D55: a renewal continues the named subscription rather than starting one, so the
-                // concurrency rule must not refuse it.
-                IsRenewal: !!this.RenewsSubscriptionID,
+                Subscriber: subscriber,
+                // A renewal continues the NAMED subscription rather than starting one, so the
+                // concurrency rule must not refuse it (D55).
+                IsRenewal: !!line.RenewsSubscriptionID,
             });
 
             if (decision.Action === 'Reject') {
@@ -554,9 +631,99 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 );
             }
 
-            out.set(line, { Product: product, Rules: rules, Decision: decision, Behavior: behavior });
+            out.set(line, { Product: product, Rules: rules, Decision: decision, Behavior: behavior, Subscriber: subscriber });
         }
         return out;
+    }
+
+    /**
+     * WHO a line is for: the line's ship-to, falling back to the order header (D61).
+     *
+     * Ship-to on a line means "where this goes" for a physical product and "who this is for" when
+     * there is nothing to ship. A subscription line therefore reads its subscriber from the same
+     * fields a shipped line reads its destination from — one question, two kinds of answer.
+     *
+     * The fallback is per-side, not all-or-nothing: a line may name only a person (a seat bought
+     * under the order's customer organization) and still inherit that organization from the header.
+     */
+    private resolveSubscriber(line: mjBizAppsOrdersOrderLineEntity): SubscriberIdentity {
+        // THREE tiers, resolved per side independently: the line's ship-to, then the ORDER's
+        // ship-to, then the order's customer. Nothing is required at the line — an order shipping
+        // everything to one recipient states them once on the header, and a line only overrides
+        // when it genuinely differs.
+        return {
+            OrganizationID:
+                line.ShipToOrganizationID ?? this.ShipToOrganizationID ?? this.BillToOrganizationID ?? null,
+            PersonID: line.ShipToPersonID ?? this.ShipToPersonID ?? this.BillToPersonID ?? null,
+        };
+    }
+
+    /**
+     * Fill in the organization from the person's affiliation, when it was left blank (D64).
+     *
+     * Only ever ADDS: an organization that was stated — on the line, the order's ship-to, or its
+     * customer — is never second-guessed. And it only runs when the setting says so, so a
+     * deployment that would rather not infer anything simply turns it off and blank stays blank.
+     */
+    private async withInferredOrganization(subscriber: SubscriberIdentity): Promise<SubscriberIdentity> {
+        if (subscriber.OrganizationID) return subscriber;
+        if (!subscriber.PersonID) return subscriber;
+        if (!OrdersSettings.AutoPopulateOrganizationFromPerson) return subscriber;
+
+        const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();
+        const inferred = await this.organizationAsOf(subscriber.PersonID, asOf);
+        return inferred ? { ...subscriber, OrganizationID: inferred } : subscriber;
+    }
+
+    /**
+     * The organization a person belonged to AS OF the order date (D64).
+     *
+     * `Person` has no organization column — bizapps-common models affiliation as a dated
+     * `Relationship` (FromPersonID → ToOrganizationID, with StartDate/EndDate/Status). So this is a
+     * point-in-time question, and the answer legitimately changes when someone moves employer. That
+     * is exactly why the result is STAMPED onto the order rather than resolved on read: deriving it
+     * later would silently rewrite the history of an order that is otherwise immutable once booked.
+     *
+     * The rule, per Amith:
+     *   zero qualifying affiliations → leave blank. That IS a personal order — no flag needed,
+     *                                  because "person, no organization" already says it.
+     *   exactly one                  → use it.
+     *   more than one                → the most recent by StartDate. A person can hold several at
+     *                                  once (employee here, board member there), and Relationship
+     *                                  has no uniqueness constraint, so this case is normal rather
+     *                                  than exceptional and needs a stated rule instead of a guess.
+     *
+     * Which relationship types qualify is a SETTING, defaulting to `Employee` — being a `Vendor` to
+     * an organization must not make it your bill-to.
+     */
+    private async organizationAsOf(personID: string, asOf: Date): Promise<string | null> {
+        const types = OrdersSettings.OrganizationAffiliationRelationshipTypes;
+        if (types.length === 0) return null;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const quoted = types.map((t) => `'${t.replace(/'/g, "''")}'`).join(',');
+        const date = asOf.toISOString().slice(0, 10);
+
+        const result = await rv.RunView<{ ToOrganizationID: string; StartDate: string }>(
+            {
+                EntityName: RELATIONSHIP_ENTITY,
+                ExtraFilter:
+                    `FromPersonID='${personID}' AND ToOrganizationID IS NOT NULL ` +
+                    `AND Status='Active' ` +
+                    `AND (StartDate IS NULL OR StartDate <= '${date}') ` +
+                    `AND (EndDate IS NULL OR EndDate >= '${date}') ` +
+                    `AND RelationshipTypeID IN (SELECT ID FROM ${COMMON_SCHEMA}.RelationshipType WHERE Name IN (${quoted}))`,
+                Fields: ['ToOrganizationID', 'StartDate'],
+                // Most recent affiliation first. NULL StartDate sorts last: an undated relationship
+                // is weaker evidence than one that says when it began.
+                OrderBy: 'StartDate DESC',
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+
+        return result?.Results?.[0]?.ToOrganizationID ?? null;
     }
 
     /** Net for a line that has not been saved yet — mirrors OrderLineEntityServer's own formula. */
@@ -635,28 +802,40 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      * would be a guess, and would pick the wrong one whenever a customer holds two subscriptions to
      * the same product under an `AllowMultiple` type.
      */
-    private async findExistingSubscription(productID: string): Promise<ExistingSubscription | null> {
-        if (this.RenewsSubscriptionID) {
-            return this.loadSubscriptionState(`ID='${this.RenewsSubscriptionID}'`);
-        }
-        const scope = this.CustomerOrganizationID
-            ? `CustomerOrganizationID='${this.CustomerOrganizationID}'`
-            : this.CustomerPersonID
-              ? `BeneficiaryPersonID='${this.CustomerPersonID}'`
-              : null;
-        if (!scope) return null;
+    private async findExistingSubscription(
+        productID: string,
+        identity: SubscriberIdentity,
+    ): Promise<ExistingSubscription | null> {
+        // Match on exactly the axes the BenefitModel says define a duplicate. An org-members type
+        // ignores the person entirely (one company membership, however many employees); a seat type
+        // matches BOTH, so two seats for two people never collide.
+        const clauses: string[] = [];
+        clauses.push(
+            identity.OrganizationID
+                ? `HolderOrganizationID='${identity.OrganizationID}'`
+                : `HolderOrganizationID IS NULL`,
+        );
+        clauses.push(
+            identity.PersonID ? `BeneficiaryPersonID='${identity.PersonID}'` : `BeneficiaryPersonID IS NULL`,
+        );
+        if (!identity.OrganizationID && !identity.PersonID) return null;
 
-        return this.loadSubscriptionState(`ProductID='${productID}' AND ${scope}`);
+        return this.loadSubscriptionState(`ProductID='${productID}' AND ${clauses.join(' AND ')}`);
     }
 
     /** Load a subscription plus the end and number of its latest term, by whatever filter. */
     private async loadSubscriptionState(filter: string): Promise<ExistingSubscription | null> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ ID: string; Status: string }>(
+        const res = await rv.RunView<{
+            ID: string;
+            Status: string;
+            HolderOrganizationID: string | null;
+            BeneficiaryPersonID: string | null;
+        }>(
             {
                 EntityName: SUBSCRIPTION_ENTITY,
                 ExtraFilter: filter,
-                Fields: ['ID', 'Status'],
+                Fields: ['ID', 'Status', 'HolderOrganizationID', 'BeneficiaryPersonID'],
                 OrderBy: '__mj_CreatedAt DESC',
                 MaxRows: 1,
                 ResultType: 'simple',
@@ -683,6 +862,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         return {
             ID: sub.ID,
             Status: sub.Status,
+            HolderOrganizationID: sub.HolderOrganizationID,
+            BeneficiaryPersonID: sub.BeneficiaryPersonID,
             LatestTermEnd: latest?.EndDate ? new Date(latest.EndDate) : null,
             LatestTermNumber: latest?.TermNumber ?? 0,
         };
@@ -693,6 +874,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         product: ProductRow,
         rules: SubscriptionTypeRules,
         decision: SubscriptionDecision,
+        subscriber: SubscriberIdentity,
         options?: EntitySaveOptions,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
@@ -705,8 +887,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         sub.Set('OrderLineID', line.ID);
         sub.Set('SubscriptionTypeID', rules.ID);
         sub.Set('ProductID', product.ID);
-        sub.Set('CustomerOrganizationID', this.CustomerOrganizationID);
-        sub.Set('BeneficiaryPersonID', this.CustomerPersonID);
+        // The RESOLVED subscriber, which may differ from the order's customer: the customer pays,
+        // the ship-to holds and benefits.
+        sub.Set('HolderOrganizationID', subscriber.OrganizationID);
+        sub.Set('BeneficiaryPersonID', subscriber.PersonID);
         sub.Set('Status', rules.TrialDays > 0 ? 'Trialing' : 'Active');
         sub.Set('StartDate', decision.Term!.StartDate);
         sub.Set('AutoRenew', rules.AutoRenewDefault);
@@ -772,6 +956,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     /** Extension or reactivation — the term is what changes; the subscription just re-activates. */
     private async touchExistingSubscription(
         decision: SubscriptionDecision,
+        isRenewal: boolean,
         options?: EntitySaveOptions,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
@@ -794,8 +979,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // 'Extended' is the CUSTOMER buying more coverage. The system renewing them under standing
         // authority logs 'RenewalOrderSpawned' from SpawnRenewalsOperation instead — same table,
         // opposite answers to "why is this member still here", and retention reporting needs both.
-        // A renewal order reaches this method too, so it must not also log the customer-side event.
-        if (!this.RenewsSubscriptionID) {
+        // A renewal reaches this method too, so it must not also log the customer-side event. The
+        // marker is now per-LINE (D61): one order can renew several subscriptions, so "is this a
+        // renewal" is a question about the line, not the order.
+        if (!isRenewal) {
             await this.logSubscriptionEvent(
                 decision.SubscriptionID!,
                 decision.Action === 'Reactivate' ? 'Activated' : 'Extended',
@@ -893,7 +1080,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         payment.NewRecord();
         payment.Set('PaymentNumber', await this.assignPaymentNumber());
         payment.Set('ReceivingCompanyID', this.CompanyID);
-        payment.Set('CustomerOrganizationID', this.CustomerOrganizationID);
+        payment.Set('BillToOrganizationID', this.BillToOrganizationID);
+        payment.Set('BillToPersonID', this.BillToPersonID);
         payment.Set('PaymentDate', this.OrderDate ?? new Date());
         payment.Set('PaymentTypeID', this.InitialPaymentTypeID);
         payment.Set('Amount', amount);
@@ -901,25 +1089,21 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         payment.Set('Status', 'Captured');
         payment.Set('Description', `Initial payment for order ${this.OrderNumber}`);
 
-        if (!(await payment.Save(options))) {
-            throw new Error(
-                `Failed to create the initial payment for order ${this.OrderNumber}: ` +
-                    `${payment.LatestResult?.CompleteMessage ?? 'unknown error'}`,
-            );
-        }
-
+        // The allocation rides the payment's Lines collection so both land in ONE save (D68). The
+        // payment's Amount must equal the sum of its lines at capture, so writing the header first
+        // and the allocation second would fail on a payment that is about to be exactly consistent.
         const line = await provider.GetEntityObject<BaseEntity>(PAYMENT_LINE_ENTITY, user);
         line.NewRecord();
-        line.Set('PaymentHeaderID', payment.Get('ID'));
         line.Set('OrderHeaderID', this.ID);
         line.Set('Amount', amount);
         line.Set('AllocatedAt', new Date());
         line.Set('AllocatedByUserID', user?.ID ?? null);
+        (payment as unknown as { Lines: BaseEntity[] }).Lines = [line];
 
-        if (!(await line.Save(options))) {
+        if (!(await payment.Save(options))) {
             throw new Error(
-                `Failed to apply the initial payment to order ${this.OrderNumber}: ` +
-                    `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                `Failed to create the initial payment for order ${this.OrderNumber}: ` +
+                    `${payment.LatestResult?.CompleteMessage ?? 'unknown error'}`,
             );
         }
     }
@@ -959,52 +1143,13 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
     // ─── Helpers ───────────────────────────────────────────────────────────────
 
+    /** Resolver + accounting engine come from the shared bridge — see AccountingBridge.ts. */
     private async buildResolver(provider: IMetadataProvider, user: UserInfo): Promise<GLAccountResolver> {
-        const engine = await this.loadAccountingEngine(provider, user);
-
-        return new GLAccountResolver(
-            {
-                Product: this.entityIDFor(PRODUCT_ENTITY),
-                ProductCategory: this.entityIDFor(PRODUCT_CATEGORY_ENTITY),
-                Company: this.entityIDFor(COMPANY_ENTITY),
-            },
-            provider,
-            user,
-            (entityId, recordId, role, asOf) => {
-                // ResolveLinkedAccount returns { Link, Dimensions } — the account is on the link.
-                const hit = engine.ResolveLinkedAccount(entityId, recordId, role, asOf);
-                const glAccountID = hit?.Link?.GLAccountID;
-                if (!glAccountID) return null;
-
-                // The company comes from the ACCOUNT, which is what accounting uses to derive the
-                // JE's company (their CH-2) — so this is the value the D6 guard must compare.
-                const account = engine.GLAccountByID(glAccountID);
-                return { GLAccountID: glAccountID, CompanyID: account?.CompanyID ?? '' };
-            },
-        );
-    }
-
-    /** Loaded dynamically so the accounting peer stays optional at build time. */
-    private async loadAccountingEngine(
-        provider: IMetadataProvider,
-        user: UserInfo,
-    ): Promise<AccountingEngineSurface> {
-        const mod = (await import('@mj-biz-apps/accounting-engine-base')) as unknown as {
-            AccountingEngineBase: { Instance: AccountingEngineSurface };
-        };
-
-        const engine = mod.AccountingEngineBase.Instance;
-        await engine.ConfigEx({ contextUser: user, provider });
-        return engine;
+        return BuildGLAccountResolver(provider, user);
     }
 
     private entityIDFor(entityName: string): string {
-        const md = new Metadata();
-        const entity = md.Entities.find((e) => e.Name === entityName);
-        if (!entity) {
-            throw new Error(`Entity '${entityName}' was not found in metadata.`);
-        }
-        return entity.ID;
+        return EntityIDFor(entityName);
     }
 
     private async loadLinesForBooking(): Promise<mjBizAppsOrdersOrderLineEntity[]> {

@@ -17,13 +17,13 @@ export class mjBizAppsOrdersRevenueRecognitionTypeFormComponent extends BaseForm
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'typeConfiguration', sectionName: 'Type Configuration', isExpanded: true },
-            { sectionKey: 'recognitionLogic', sectionName: 'Recognition Logic', isExpanded: true },
+            { sectionKey: 'logicAndBehavior', sectionName: 'Logic and Behavior', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersRevenueRecognitionSchedules', sectionName: 'Revenue Recognition Schedules', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductPerformanceObligations', sectionName: 'Product Performance Obligations', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductTypes', sectionName: 'Product Types', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductPerformanceObligations', sectionName: 'Product Performance Obligations', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersRevenueRecognitionSchedules', sectionName: 'Revenue Recognition Schedules', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false }
         ]);
     }
 }

@@ -27,6 +27,11 @@ const ALL_BUNDLES = [
     'subscription-cancellation',
     'subscription-renewal',
     'payments-rollups',
+    'payment-ledger',
+    'intercompany',
+    'account-credit',
+    'events',
+    'line-subscriber',
 ];
 
 const args = process.argv.slice(2);

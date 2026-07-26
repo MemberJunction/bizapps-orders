@@ -18,6 +18,9 @@
  *   subscription-cancellation SC1–SC10  Orders.CancelSubscription: policy → reversal (design §5)
  *   subscription-renewal      SR1–SR11  Orders.SpawnRenewals: the scheduled continuation (D55)
  *   payments-rollups     PR1–PR9   rollup triggers, numbering, initial payment (D30/D39/D42)
+ *   payment-ledger       PL1–PL12  the CASH leg: capture/refund journal entries, AR reconciliation (D17/D18)
+ *   line-subscriber      LS1–LS8   per-line ship-to and BenefitModel dedupe scope (D61/D62)
+ *   account-credit       AC1–AC10  the allocation invariant, over-payment, credit as tender (D68)
  *
  * Every check is `RequiresMutation` — this suite exists to write to the database. They are safe to
  * run repeatedly because each one rolls its transaction back; see `fixture.ts` for the model.
@@ -39,12 +42,18 @@ LoadBizAppsOrdersServer();
 
 export * from './fixture.js';
 export * from './order-builder.js';
+export * from './payment-builder.js';
 export * from './checks/order-booking.checks.js';
 export * from './checks/revenue-recognition.checks.js';
 export * from './checks/subscriptions.checks.js';
 export * from './checks/subscription-cancellation.checks.js';
 export * from './checks/subscription-renewal.checks.js';
+export * from './checks/line-subscriber.checks.js';
 export * from './checks/payments-rollups.checks.js';
+export * from './checks/payment-ledger.checks.js';
+export * from './checks/intercompany.checks.js';
+export * from './checks/events.checks.js';
+export * from './checks/account-credit.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

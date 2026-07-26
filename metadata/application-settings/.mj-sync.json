@@ -1,0 +1,5 @@
+{
+  "entity": "MJ: Application Settings",
+  "filePattern": "**/.*.json",
+  "pull": { "filter": "ApplicationID IN (SELECT ID FROM __mj.Application WHERE Name = '__mj_BizAppsOrders')" }
+}

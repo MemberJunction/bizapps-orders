@@ -10,22 +10,13 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Provider Details Section -->
+    <!-- Payment Details Section -->
     <mj-collapsible-panel
-        SectionKey="paymentProviderDetails"
-        SectionName="Payment Provider Details"
-        Icon="fa fa-university"
+        SectionKey="paymentDetails"
+        SectionName="Payment Details"
+        Icon="fa fa-money-bill"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PaymentProviderID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -34,16 +25,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Payment Status and Amount Section -->
-    <mj-collapsible-panel
-        SectionKey="paymentStatusAndAmount"
-        SectionName="Payment Status and Amount"
-        Icon="fa fa-money-bill"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -63,10 +44,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Related Entities Section -->
+    <!-- Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="relatedEntities"
-        SectionName="Related Entities"
+        SectionKey="relationships"
+        SectionName="Relationships"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
@@ -82,7 +63,16 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="CustomerOrganizationID"
+            FieldName="BillToPersonID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="BillToOrganizationID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -91,10 +81,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Integration Logs Section -->
+    <!-- Event Tracking Section -->
     <mj-collapsible-panel
-        SectionKey="integrationLogs"
-        SectionName="Integration Logs"
+        SectionKey="eventTracking"
+        SectionName="Event Tracking"
         Icon="fa fa-history"
         [Form]="this"
         [FormContext]="formContext">
@@ -127,6 +117,15 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="PaymentProviderID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="__mj_CreatedAt"
             Type="textbox"
             [EditMode]="EditMode"
@@ -153,7 +152,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPaymentHeaders"
         SectionName="Payment Headers"
-        Icon="fa fa-money-bill-wave"
+        Icon="fa fa-money-check-alt"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

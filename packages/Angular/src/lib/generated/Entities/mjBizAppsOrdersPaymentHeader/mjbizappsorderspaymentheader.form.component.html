@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Information Section -->
+    <!-- Payment Details Section -->
     <mj-collapsible-panel
-        SectionKey="paymentInformation"
-        SectionName="Payment Information"
-        Icon="fa fa-info-circle"
+        SectionKey="paymentDetails"
+        SectionName="Payment Details"
+        Icon="fa fa-money-check"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -72,7 +72,16 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="CustomerOrganizationID"
+            FieldName="BillToPersonID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="BillToOrganizationID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -81,10 +90,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financial Details Section -->
+    <!-- Financials Section -->
     <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
+        SectionKey="financials"
+        SectionName="Financials"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -124,10 +133,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Provider Details Section -->
+    <!-- Provider Information Section -->
     <mj-collapsible-panel
-        SectionKey="providerDetails"
-        SectionName="Provider Details"
+        SectionKey="providerInformation"
+        SectionName="Provider Information"
         Icon="fa fa-network-wired"
         [Form]="this"
         [FormContext]="formContext">
@@ -212,10 +221,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Notes and Descriptions Section -->
+    <!-- Notes and Metadata Section -->
     <mj-collapsible-panel
-        SectionKey="notesAndDescriptions"
-        SectionName="Notes and Descriptions"
+        SectionKey="notesAndMetadata"
+        SectionName="Notes and Metadata"
         Icon="fa fa-file-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -270,31 +279,6 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Stored Value Transactions Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersStoredValueTransactions"
-        SectionName="Stored Value Transactions"
-        Icon="fa fa-wallet"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersStoredValueTransactions')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Stored Value Transactions','RelatedPaymentID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersStoredValueTransactions')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersStoredValueTransactions', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Payment Lines Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPaymentLines"
@@ -324,7 +308,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPaymentHeaders"
         SectionName="Payment Headers"
-        Icon="fa fa-money-bill-wave"
+        Icon="fa fa-money-check-alt"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
@@ -364,6 +348,31 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionEvents', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Stored Value Transactions Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersStoredValueTransactions"
+        SectionName="Stored Value Transactions"
+        Icon="fa fa-wallet"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersStoredValueTransactions')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Stored Value Transactions','RelatedPaymentID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersStoredValueTransactions')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersStoredValueTransactions', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

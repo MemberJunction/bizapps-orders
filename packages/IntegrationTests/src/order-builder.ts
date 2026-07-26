@@ -19,6 +19,15 @@ export interface LineSpec {
     /** Coverage window for deferred lines that have no subscription (events, plain deferred services). */
     ServicePeriodStart?: string;
     ServicePeriodEnd?: string;
+    /**
+     * Ship-to (D61): where a physical line goes, or WHO an intangible line is for. Each side falls
+     * back to the order header independently.
+     */
+    ShipToOrganizationID?: string;
+    ShipToPersonID?: string;
+    ShipToAddressID?: string;
+    /** Renew this exact subscription rather than letting the engine resolve one (D61). */
+    RenewsSubscriptionID?: string;
 }
 
 export interface OrderSpec {
@@ -26,9 +35,12 @@ export interface OrderSpec {
     Lines: LineSpec[];
     /** Defaults to today; set explicitly whenever a check asserts dates. */
     OrderDate?: Date;
-    /** Who is buying — required for subscriptions (the behaviour validates subscriber scope). */
-    CustomerOrganizationID?: string;
-    CustomerPersonID?: string;
+    /** WHO PAYS (D65). Either side, or both. Falls through as the last tier of subscriber resolution. */
+    BillToOrganizationID?: string;
+    BillToPersonID?: string;
+    /** Order-level ship-to — the default every line inherits unless it overrides (D61). */
+    ShipToOrganizationID?: string;
+    ShipToPersonID?: string;
     /** D42 initial-payment intent, captured at order entry and turned into a real payment at confirm. */
     InitialPaymentTypeID?: string;
     InitialPaymentAmount?: number;
@@ -52,8 +64,10 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
     order.OrderDate = spec.OrderDate ?? new Date();
     order.Status = 'Draft';
     order.CompanyID = spec.CompanyID;
-    if (spec.CustomerOrganizationID) order.CustomerOrganizationID = spec.CustomerOrganizationID;
-    if (spec.CustomerPersonID) order.CustomerPersonID = spec.CustomerPersonID;
+    if (spec.BillToOrganizationID) order.BillToOrganizationID = spec.BillToOrganizationID;
+    if (spec.BillToPersonID) order.BillToPersonID = spec.BillToPersonID;
+    if (spec.ShipToOrganizationID) order.ShipToOrganizationID = spec.ShipToOrganizationID;
+    if (spec.ShipToPersonID) order.ShipToPersonID = spec.ShipToPersonID;
     if (spec.InitialPaymentTypeID) order.InitialPaymentTypeID = spec.InitialPaymentTypeID;
     if (spec.InitialPaymentAmount != null) order.InitialPaymentAmount = spec.InitialPaymentAmount;
     if (spec.InitialPaymentDetailID) order.InitialPaymentDetailID = spec.InitialPaymentDetailID;
@@ -73,6 +87,10 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
         line.DiscountPct = ls.DiscountPct ?? 0;
         if (ls.ServicePeriodStart) line.ServicePeriodStart = new Date(ls.ServicePeriodStart);
         if (ls.ServicePeriodEnd) line.ServicePeriodEnd = new Date(ls.ServicePeriodEnd);
+        if (ls.ShipToOrganizationID) line.ShipToOrganizationID = ls.ShipToOrganizationID;
+        if (ls.ShipToPersonID) line.ShipToPersonID = ls.ShipToPersonID;
+        if (ls.ShipToAddressID) line.ShipToAddressID = ls.ShipToAddressID;
+        if (ls.RenewsSubscriptionID) line.RenewsSubscriptionID = ls.RenewsSubscriptionID;
         lines.push(line);
     }
 

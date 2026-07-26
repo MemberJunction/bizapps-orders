@@ -10,7 +10,7 @@
  * runs ZERO checks — so "the suite passed" is only meaningful if something independently asserts
  * that the checks still exist.
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -26,6 +26,11 @@ import '../checks/subscriptions.checks.js';
 import '../checks/subscription-cancellation.checks.js';
 import '../checks/subscription-renewal.checks.js';
 import '../checks/payments-rollups.checks.js';
+import '../checks/payment-ledger.checks.js';
+import '../checks/intercompany.checks.js';
+import '../checks/events.checks.js';
+import '../checks/line-subscriber.checks.js';
+import '../checks/account-credit.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -45,6 +50,11 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'subscription-cancellation': 10,
     'subscription-renewal': 11,
     'payments-rollups': 9,
+    'payment-ledger': 12,
+    intercompany: 12,
+    events: 10,
+    'line-subscriber': 12,
+    'account-credit': 11,
 };
 
 /**
@@ -107,12 +117,14 @@ describe('the bundle name agrees everywhere it is written down', () => {
     it('every registered bundle has a MJ: Tests record naming it', () => {
         // Without this, `mj test suite` never dispatches the bundle — the suite goes green having
         // run strictly less than it appears to.
-        const tests = read('metadata-tests/tests/.ORD-01-order-booking.json')
-            + read('metadata-tests/tests/.ORD-02-revenue-recognition.json')
-            + read('metadata-tests/tests/.ORD-03-subscriptions.json')
-            + read('metadata-tests/tests/.ORD-04-payments-rollups.json')
-            + read('metadata-tests/tests/.ORD-05-subscription-cancellation.json')
-            + read('metadata-tests/tests/.ORD-06-subscription-renewal.json');
+        // Read the DIRECTORY, not a hand-maintained list. This was a concatenation of ten explicit
+        // reads, and adding an eleventh bundle meant remembering to extend it — which is the same
+        // failure mode the assertion is trying to prevent, one level up.
+        const testsDir = resolve(repoRoot, 'metadata-tests/tests');
+        const tests = readdirSync(testsDir)
+            .filter((f) => f.endsWith('.json') && f !== '.mj-sync.json')
+            .map((f) => read(`metadata-tests/tests/${f}`))
+            .join('\n');
         for (const bundle of ourBundles()) {
             expect(tests, `a Test record declares '${bundle}'`).toContain(`"type": "${bundle}"`);
         }
@@ -120,7 +132,7 @@ describe('the bundle name agrees everywhere it is written down', () => {
 
     it('every Test record is a member of the suite', () => {
         const suite = read('metadata-tests/test-suites/.orders-integration-suite.json');
-        for (const name of ['ORD-01', 'ORD-02', 'ORD-03', 'ORD-04', 'ORD-05', 'ORD-06']) {
+        for (const name of ['ORD-01', 'ORD-02', 'ORD-03', 'ORD-04', 'ORD-05', 'ORD-06', 'ORD-07', 'ORD-08']) {
             expect(suite, `${name} is in the suite`).toContain(name);
         }
     });
@@ -146,5 +158,33 @@ describe('the bundle name agrees everywhere it is written down', () => {
         const config = read('mj.config.cjs');
         expect(config).toContain('@mj-biz-apps/orders-integration-tests');
         expect(config).toContain('checkModules');
+    });
+});
+
+/**
+ * The completeness check this file was missing.
+ *
+ * Everything above compares the registry against `EXPECTED_BUNDLES` — but the registry only holds
+ * what this file explicitly imports, so a BRAND-NEW bundle was invisible to all of it. Adding
+ * `account-credit` proved that in the worst way: the suite stayed green while a whole bundle went
+ * unlisted, which is precisely the drift these tests exist to catch.
+ *
+ * So compare against the filesystem, which cannot be forgotten the way an import can.
+ */
+describe('no check file escapes this test', () => {
+    it('imports every *.checks.ts in the checks directory', () => {
+        const checksDir = resolve(dirname(fileURLToPath(import.meta.url)), '../checks');
+        const onDisk = readdirSync(checksDir)
+            .filter((f) => f.endsWith('.checks.ts'))
+            .map((f) => f.replace(/\.ts$/, '.js'))
+            .sort();
+        const self = readFileSync(fileURLToPath(import.meta.url), 'utf8');
+        for (const file of onDisk) {
+            expect(
+                self,
+                `registry-parity.test.ts must import '../checks/${file}' — a bundle nobody imports is a ` +
+                    `bundle nobody verifies, and the rest of this file would stay green without it`,
+            ).toContain(`import '../checks/${file}';`);
+        }
     });
 });

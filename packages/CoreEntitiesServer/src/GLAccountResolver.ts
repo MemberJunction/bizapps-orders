@@ -30,6 +30,14 @@ export const GL_ROLE = {
     SalesDiscounts: 'Sales Discounts',
     DeferredRevenue: 'Deferred Revenue',
     SalesReturnsAndAllowances: 'Sales Returns and Allowances',
+    /** Where captured cash lands. Company-level only — a payment has no product to walk from. */
+    Cash: 'Cash',
+    /**
+     * The provider's cut on a capture (D18). NOT seeded by accounting's starter roles, so callers
+     * must tolerate it failing to resolve — see PaymentJournalEntryFactory, which books the gross
+     * to Cash and reports the shortfall rather than silently misstating the bank line.
+     */
+    ProcessingFee: 'Processing Fee',
 } as const;
 
 export type GLRole = (typeof GL_ROLE)[keyof typeof GL_ROLE];
@@ -87,13 +95,18 @@ export class GLAccountResolver {
      */
     public async Resolve(
         role: GLRole,
-        productID: string,
+        /**
+         * NULL for company-level roles. A payment clears a receivable for a COMPANY — there is no
+         * product or category to walk from, so the company default is both the start and the end of
+         * the resolution.
+         */
+        productID: string | null,
         productCategoryID: string | null,
         expectedCompanyID: string,
         asOf: Date,
     ): Promise<string> {
         const hit =
-            this._resolveLink(this._entityIDs.Product, productID, role, asOf) ??
+            (productID ? this._resolveLink(this._entityIDs.Product, productID, role, asOf) : null) ??
             (await this.resolveUpCategoryTree(role, productCategoryID, asOf)) ??
             this._resolveLink(this._entityIDs.Company, expectedCompanyID, role, asOf);
 
@@ -101,9 +114,13 @@ export class GLAccountResolver {
             throw new GLAccountResolutionError(
                 role,
                 productID,
-                `No GL account is linked for role '${role}'. Checked the product, its category tree, ` +
-                    `and the company default for company ${expectedCompanyID}. Link an account for this ` +
-                    `role (product, category, or company level) before booking.`,
+                productID
+                    ? `No GL account is linked for role '${role}'. Checked the product, its category ` +
+                      `tree, and the company default for company ${expectedCompanyID}. Link an account ` +
+                      `for this role (product, category, or company level) before booking.`
+                    : `No GL account is linked for role '${role}' at the company level for company ` +
+                      `${expectedCompanyID}. This role is resolved company-wide (there is no product ` +
+                      `involved), so link an account to the company before booking.`,
             );
         }
 
@@ -113,7 +130,7 @@ export class GLAccountResolver {
                 role,
                 productID,
                 `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ` +
-                    `${hit.CompanyID}, but this order line books to company ${expectedCompanyID}. ` +
+                    `${hit.CompanyID}, but this books to company ${expectedCompanyID}. ` +
                     `Cross-company account mapping is refused — the journal entry would book revenue ` +
                     `to the wrong legal entity.`,
             );

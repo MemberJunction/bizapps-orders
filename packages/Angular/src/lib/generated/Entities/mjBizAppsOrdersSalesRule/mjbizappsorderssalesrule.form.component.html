@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Rule Definition Section -->
+    <!-- Rule Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="ruleDefinition"
-        SectionName="Rule Definition"
-        Icon="fa fa-info-circle"
+        SectionKey="ruleConfiguration"
+        SectionName="Rule Configuration"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -44,10 +44,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Scope and Targeting Section -->
+    <!-- Evaluation Scope Section -->
     <mj-collapsible-panel
-        SectionKey="scopeAndTargeting"
-        SectionName="Scope and Targeting"
+        SectionKey="evaluationScope"
+        SectionName="Evaluation Scope"
         Icon="fa fa-crosshairs"
         [Form]="this"
         [FormContext]="formContext">
@@ -70,34 +70,24 @@
 
     </mj-collapsible-panel>
 
-    <!-- Logic Configuration Section -->
+    <!-- Logic and Approval Section -->
     <mj-collapsible-panel
-        SectionKey="logicConfiguration"
-        SectionName="Logic Configuration"
-        Icon="fa fa-code"
+        SectionKey="logicAndApproval"
+        SectionName="Logic and Approval"
+        Icon="fa fa-check-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="PredicateJson"
             Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Approval Workflow Section -->
-    <mj-collapsible-panel
-        SectionKey="approvalWorkflow"
-        SectionName="Approval Workflow"
-        Icon="fa fa-user-check"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="ApprovalRequiredRoleID"
             Type="textbox"
             [EditMode]="EditMode"

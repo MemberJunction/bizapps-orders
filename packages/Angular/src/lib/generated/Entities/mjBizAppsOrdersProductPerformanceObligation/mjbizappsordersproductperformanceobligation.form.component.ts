@@ -15,9 +15,8 @@ export class mjBizAppsOrdersProductPerformanceObligationFormComponent extends Ba
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'productInformation', sectionName: 'Product Information', isExpanded: true },
             { sectionKey: 'obligationDetails', sectionName: 'Obligation Details', isExpanded: true },
-            { sectionKey: 'revenueRecognition', sectionName: 'Revenue Recognition', isExpanded: true },
+            { sectionKey: 'financialConfiguration', sectionName: 'Financial Configuration', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

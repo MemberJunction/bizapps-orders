@@ -48,6 +48,11 @@ const FIXTURE_ACCOUNTS = [
     { Key: 'AR', Code: '11201', Name: 'Accounts Receivable', Type: 'Asset' },
     { Key: 'Sales', Code: '40100', Name: 'Sales Revenue', Type: 'Revenue' },
     { Key: 'Deferred', Code: '21301', Name: 'Deferred Revenue', Type: 'Liability' },
+    // Cash is a BASELINE requirement, not a payments-only nicety: once capture books
+    // `Dr Cash / Cr AR` (D18), any order carrying an initial payment fails to confirm without it.
+    // That is correct — you cannot book cash with no cash account — but it makes the Cash link part
+    // of the minimum setup for using the feature at all.
+    { Key: 'Cash', Code: '10100', Name: 'Cash — Operating', Type: 'Asset' },
 ] as const;
 
 export interface FixtureCompany {
@@ -75,7 +80,9 @@ export interface OrdersFixture {
     SubscriptionTypeIDs: Map<string, string>;
     /** PaymentType IDs by Code. */
     PaymentTypeIDs: Map<string, string>;
-    ProductTypeIDs: { Simple: string; Subscription: string };
+    ProductTypeIDs: { Simple: string; Subscription: string; Event: string };
+    /** The event a ticket product is for — its dates drive the line's service period (D-EVENT). */
+    Event: { StartsAt: Date; EndsAt: Date };
     /**
      * Who buys. Subscriptions are scoped to a subscriber, and `SubscriberScope` on the type decides
      * WHICH of these is legal — so we need both an organization and an individual to prove the
@@ -275,7 +282,10 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
         RevRecTypeIDs: await codeMap(ctx, `${ORDERS_SCHEMA}.RevenueRecognitionType`),
         SubscriptionTypeIDs: await codeMap(ctx, `${ORDERS_SCHEMA}.SubscriptionType`),
         PaymentTypeIDs: await codeMap(ctx, `${ORDERS_SCHEMA}.PaymentType`),
-        ProductTypeIDs: { Simple: '', Subscription: '' },
+        ProductTypeIDs: { Simple: '', Subscription: '', Event: '' },
+        // A FUTURE, fixed event window. Fixed rather than relative so a recognition date can be
+        // asserted exactly; future so the deferral is real rather than already-earned.
+        Event: { StartsAt: new Date('2027-04-15T09:00:00Z'), EndsAt: new Date('2027-04-17T17:00:00Z') },
         Customers: { OrganizationID: '', SecondOrganizationID: '', PersonID: '' },
         Products: {},
     };
@@ -293,6 +303,7 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             ['Accounts Receivable', 'AR'],
             ['Sales', 'Sales'],
             ['Deferred Revenue', 'Deferred'],
+            ['Cash', 'Cash'],
         ] as const) {
             const rid = roleID.get(role);
             Assert(rid != null, `GL account role '${role}' missing — push accounting metadata first`);
@@ -307,18 +318,26 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
     Assert(fixture.RevRecTypeIDs.size >= 3, 'revenue recognition types missing — push the orders app metadata');
     Assert(fixture.SubscriptionTypeIDs.size >= 4, 'subscription types missing — push the orders app metadata');
 
-    fixture.ProductTypeIDs.Simple = await createProductType(ctx, run, 'Service');
-    fixture.ProductTypeIDs.Subscription = await createProductType(ctx, run, 'Subscription');
-
-    const catA = await createCategory(ctx, run, fixture.CoA.ID, 'Cat A');
-    const catB = await createCategory(ctx, run, fixture.CoB.ID, 'Cat B');
-    const catC = await createCategory(ctx, run, fixture.CoC.ID, 'Cat C');
-
     const rr = (code: string) => {
         const id = fixture.RevRecTypeIDs.get(code);
         Assert(id != null, `RevenueRecognitionType '${code}' not found`);
         return id!;
     };
+
+    fixture.ProductTypeIDs.Simple = await createProductType(ctx, run, 'Service');
+    fixture.ProductTypeIDs.Subscription = await createProductType(ctx, run, 'Subscription');
+    // The extension pointers are what make this type an EVENT type rather than a label: they name
+    // the IsA children that carry event data (BO-D37).
+    fixture.ProductTypeIDs.Event = await createProductType(ctx, run, 'Event', {
+        ProductExtensionEntity: 'MJ_BizApps_Orders: Event Products',
+        OrderLineExtensionEntity: 'MJ_BizApps_Orders: Event Order Lines',
+        DefaultRevenueRecognitionTypeID: rr('AllBackEnd'),
+    });
+
+    const catA = await createCategory(ctx, run, fixture.CoA.ID, 'Cat A');
+    const catB = await createCategory(ctx, run, fixture.CoB.ID, 'Cat B');
+    const catC = await createCategory(ctx, run, fixture.CoC.ID, 'Cat C');
+
     const st = (code: string) => {
         const id = fixture.SubscriptionTypeIDs.get(code);
         Assert(id != null, `SubscriptionType '${code}' not found`);
@@ -342,9 +361,32 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
         SubCalendar: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Calendar', rr('EvenOverTime'), st('CalendarYear')),
         /** Jul-1 anchored, ChargeFull, QUARTERLY recognition, RejectDuplicate — the opposite corner of every axis. */
         SubFiscal: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Fiscal', rr('EvenOverTime'), st('FiscalYearJul')),
+        /** A SEAT: the org holds and pays, a named person benefits (D62 NamedIndividual). */
+        SubSeat: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Seat', rr('EvenOverTime'), st('CorporateSeat')),
         /** Monthly rolling subscription — the short-cadence case. */
         SubMonthly: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Monthly', rr('EvenOverTime'), st('MonthlyRolling')),
+        /**
+         * A REAL event ticket: an Event-typed product with an `EventProduct` extension row carrying
+         * the event dates. Unlike `EventA` above — which only borrows the AllBackEnd rev-rec rule and
+         * needs its service period hand-set — this one has the dates on the EVENT, so the order line
+         * needs none (D-EVENT).
+         */
+        EventTicket: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Event, catA, 'Conference Ticket', rr('AllBackEnd')),
+        /** A second ticket to the same event, owned by Co B — events crossing companies. */
+        EventTicketB: await createProduct(ctx, run, fixture.CoB.ID, fixture.ProductTypeIDs.Event, catB, 'Conference Ticket B', rr('AllBackEnd')),
     };
+
+    // The IsA extension rows. PK = the SAME UUID as the parent Product (BO-D37), which is what
+    // makes `WHERE ID = <productID>` on Event Products the "is this product an event?" test.
+    for (const ticket of [fixture.Products.EventTicket, fixture.Products.EventTicketB]) {
+        await PoolQuery(
+            ctx,
+            `INSERT INTO ${ORDERS_SCHEMA}.EventProduct
+                (ID, EventStartsAt, EventEndsAt, VenueName, Capacity, RequiresAttendeeInfo)
+             VALUES ('${ticket}','${fixture.Event.StartsAt.toISOString()}','${fixture.Event.EndsAt.toISOString()}',
+                     '${run} Convention Center', 500, 1)`,
+        );
+    }
 
     // The GL links we just wrote are invisible to booking until the accounting engine reloads.
     // `AccountingEngineBase` is a BaseEngine: it caches accounts, roles and links in-process on
@@ -416,12 +458,26 @@ async function createPerson(ctx: IntegrationCheckContext, run: string): Promise<
     return id;
 }
 
-async function createProductType(ctx: IntegrationCheckContext, run: string, label: string): Promise<string> {
+async function createProductType(
+    ctx: IntegrationCheckContext,
+    run: string,
+    label: string,
+    opts: {
+        ProductExtensionEntity?: string;
+        OrderLineExtensionEntity?: string;
+        DefaultRevenueRecognitionTypeID?: string;
+    } = {},
+): Promise<string> {
     const id = randomUUID();
+    const q = (v?: string) => (v ? `'${v.replace(/'/g, "''")}'` : 'NULL');
     await PoolQuery(
         ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.ProductType (ID, Name, RequiresFulfillment, IsActive)
-         VALUES ('${id}','${run} ${label}',0,1)`,
+        `INSERT INTO ${ORDERS_SCHEMA}.ProductType
+            (ID, Name, RequiresFulfillment, IsActive,
+             ProductExtensionEntity, OrderLineExtensionEntity, DefaultRevenueRecognitionTypeID)
+         VALUES ('${id}','${run} ${label}',0,1,
+                 ${q(opts.ProductExtensionEntity)}, ${q(opts.OrderLineExtensionEntity)},
+                 ${q(opts.DefaultRevenueRecognitionTypeID)})`,
     );
     return id;
 }
@@ -492,14 +548,21 @@ export async function TeardownOrdersFixture(ctx: IntegrationCheckContext): Promi
         `DELETE FROM ${ORDERS_SCHEMA}.PaymentLine WHERE OrderHeaderID IN (${orderScope})`,
         `DELETE FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE ReceivingCompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS_SCHEMA}.PaymentDetail WHERE CompanyID IN (${companies})`,
+        // The renewal pointer lives on the LINE now and carries no FK (D61), so nothing needs
+        // clearing before Subscriptions go — deleting the lines takes it with them.
         `DELETE FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE SubscriptionID IN
             (SELECT ID FROM ${ORDERS_SCHEMA}.Subscription WHERE CompanyID IN (${companies}))`,
         `DELETE FROM ${ORDERS_SCHEMA}.SubscriptionEvent WHERE SubscriptionID IN
             (SELECT ID FROM ${ORDERS_SCHEMA}.Subscription WHERE CompanyID IN (${companies}))`,
         `DELETE FROM ${ORDERS_SCHEMA}.Subscription WHERE CompanyID IN (${companies})`,
+        // IsA children go before their parents: same PK, but the FK points child → parent.
+        `DELETE FROM ${ORDERS_SCHEMA}.EventOrderLine WHERE ID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID IN (${orderScope}))`,
         `DELETE FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID IN (${orderScope})`,
         `DELETE FROM ${ORDERS_SCHEMA}.OrderHeader WHERE CompanyID IN (${companies})`,
         // the catalog itself — the only rows that normally exist
+        `DELETE FROM ${ORDERS_SCHEMA}.EventProduct WHERE ID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))`,
         `DELETE FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS_SCHEMA}.ProductCategory WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS_SCHEMA}.ProductType WHERE Name LIKE '${f.Run}%'`,

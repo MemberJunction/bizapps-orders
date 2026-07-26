@@ -20,7 +20,7 @@
  *   SR8   a RejectDuplicate type still renews itself
  *   SR9   Subscription.RenewalLeadDays overrides the type's default
  *   SR10  Preview reports what is due without placing anything
- *   SR11  the order links back via RenewsSubscriptionID and logs a lifecycle event
+ *   SR11  the renewal LINE links back via RenewsSubscriptionID and logs a lifecycle event
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -89,7 +89,7 @@ async function buySubscription(ctx: IntegrationCheckContext, productKey: string,
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         OrderDate: JAN_1,
-        CustomerOrganizationID: f.Customers.OrganizationID,
+        BillToOrganizationID: f.Customers.OrganizationID,
         Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price }],
     });
     Assert(result.Saved, `confirm failed: ${result.Message}`);
@@ -289,9 +289,9 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
 
                 const orders = await TxQuery(
                     ctx,
-                    `SELECT ID FROM ${ORDERS_SCHEMA}.OrderHeader WHERE RenewsSubscriptionID = '${SubscriptionID}'`,
+                    `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID = '${SubscriptionID}'`,
                 );
-                AssertEqual(orders.length, 1, 'exactly one renewal order exists');
+                AssertEqual(orders.length, 1, 'exactly one renewal line exists');
             }),
     },
     {
@@ -362,7 +362,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 AssertEqual(terms.length, 1, 'no term was created');
                 const orders = await TxQuery(
                     ctx,
-                    `SELECT ID FROM ${ORDERS_SCHEMA}.OrderHeader WHERE RenewsSubscriptionID = '${SubscriptionID}'`,
+                    `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID = '${SubscriptionID}'`,
                 );
                 AssertEqual(orders.length, 0, 'no order was placed');
             }),
@@ -379,12 +379,16 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
 
                 // A system-placed order must be traceable to what caused it — otherwise an
                 // unexplained invoice appears on the customer's account with no origin.
+                // The marker lives on the LINE now (D61) — renewal is a per-line act, so one order
+                // could renew several subscriptions and a header-level pointer could not say so.
                 const order = await TxOne<{ RenewsSubscriptionID: string; OrderType: string; Notes: string }>(
                     ctx,
-                    `SELECT RenewsSubscriptionID, OrderType, Notes FROM ${ORDERS_SCHEMA}.OrderHeader
-                     WHERE ID = '${out.Candidates[0].OrderID}'`,
+                    `SELECT ol.RenewsSubscriptionID, o.OrderType, o.Notes
+                     FROM ${ORDERS_SCHEMA}.OrderHeader o
+                     JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.OrderHeaderID = o.ID
+                     WHERE o.ID = '${out.Candidates[0].OrderID}'`,
                 );
-                Assert(SameID(order.RenewsSubscriptionID, SubscriptionID), 'the order names the subscription it renews');
+                Assert(SameID(order.RenewsSubscriptionID, SubscriptionID), 'the line names the subscription it renews');
                 AssertEqual(order.OrderType, 'Sale', 'a renewal is an ordinary sale');
                 Assert(/renewal/i.test(order.Notes ?? ''), `the note explains its origin: ${order.Notes}`);
 

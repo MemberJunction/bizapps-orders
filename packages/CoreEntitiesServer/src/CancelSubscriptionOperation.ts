@@ -100,7 +100,7 @@ interface SubscriptionRow {
     SubscriptionTypeID: string;
     ProductID: string;
     Status: string;
-    CustomerOrganizationID: string | null;
+    HolderOrganizationID: string | null;
     BeneficiaryPersonID: string | null;
 }
 
@@ -222,7 +222,7 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
                     'SubscriptionTypeID',
                     'ProductID',
                     'Status',
-                    'CustomerOrganizationID',
+                    'HolderOrganizationID',
                     'BeneficiaryPersonID',
                 ],
                 ResultType: 'simple',
@@ -313,8 +313,8 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         order.Set('OrderType', 'Cancellation');
         order.Set('OrderDate', decision.EffectiveDate);
         order.Set('CompanyID', subscription.CompanyID);
-        order.Set('CustomerOrganizationID', subscription.CustomerOrganizationID);
-        order.Set('CustomerPersonID', subscription.BeneficiaryPersonID);
+        order.Set('BillToOrganizationID', subscription.HolderOrganizationID);
+        order.Set('BillToPersonID', subscription.BeneficiaryPersonID);
         order.Set('Notes', reason ? `Subscription cancellation: ${reason}` : 'Subscription cancellation');
 
         const line = await provider.GetEntityObject<BaseEntity>(ORDER_LINE_ENTITY, user);
