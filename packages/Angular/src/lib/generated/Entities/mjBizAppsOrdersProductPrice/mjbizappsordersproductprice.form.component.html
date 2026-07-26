@@ -10,17 +10,26 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Identification Section -->
+    <!-- Product Association Section -->
     <mj-collapsible-panel
-        SectionKey="productIdentification"
-        SectionName="Product Identification"
+        SectionKey="productAssociation"
+        SectionName="Product Association"
         Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="ProductID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="PriceListID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -33,18 +42,9 @@
     <mj-collapsible-panel
         SectionKey="pricingConfiguration"
         SectionName="Pricing Configuration"
-        Icon="fa fa-sliders-h"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PriceListID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -61,16 +61,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Pricing Details Section -->
-    <mj-collapsible-panel
-        SectionKey="pricingDetails"
-        SectionName="Pricing Details"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -87,6 +77,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Quantity Tiers Section -->
+    <mj-collapsible-panel
+        SectionKey="quantityTiers"
+        SectionName="Quantity Tiers"
+        Icon="fa fa-layer-group"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -168,7 +168,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPriceTiers"
         SectionName="Price Tiers"
-        Icon="fa fa-tags"
+        Icon="fa fa-layer-group"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

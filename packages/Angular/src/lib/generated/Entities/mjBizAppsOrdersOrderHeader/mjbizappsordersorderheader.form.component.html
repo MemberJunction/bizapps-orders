@@ -122,40 +122,13 @@
     <mj-collapsible-panel
         SectionKey="relationships"
         SectionName="Relationships"
-        Icon="fa fa-users"
+        Icon="fa fa-building"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="CompanyID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CustomerOrganizationID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CustomerPersonID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="SalesRepUserID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -173,8 +146,45 @@
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
+            FieldName="BillToPersonID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="BillToOrganizationID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="BillToAddressID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Sales Attribution Section -->
+    <mj-collapsible-panel
+        SectionKey="salesAttribution"
+        SectionName="Sales Attribution"
+        Icon="fa fa-user-tie"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
+            FieldName="SalesRepUserID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -228,10 +238,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financial Details Section -->
+    <!-- Financials Section -->
     <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
+        SectionKey="financials"
+        SectionName="Financials"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -339,32 +349,6 @@
 
     </mj-collapsible-panel>
 
-    <!-- Details Section -->
-    <mj-collapsible-panel
-        SectionKey="details"
-        SectionName="Details"
-        Icon="fa fa-align-left"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="__mj_Latitude"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="__mj_Longitude"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
     <!-- System Metadata Section -->
     <mj-collapsible-panel
         SectionKey="systemMetadata"
@@ -396,6 +380,56 @@
     <!-- ========================================
          RELATED ENTITY PANELS
          ======================================== -->
+
+    <!-- Stored Value Transactions Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersStoredValueTransactions"
+        SectionName="Stored Value Transactions"
+        Icon="fa fa-wallet"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersStoredValueTransactions')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Stored Value Transactions','RelatedOrderHeaderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersStoredValueTransactions')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersStoredValueTransactions', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Payment Intents Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPaymentIntents"
+        SectionName="Payment Intents"
+        Icon="fa fa-credit-card"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentIntents')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Intents','OrderHeaderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Intents')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentIntents')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentIntents', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
 
     <!-- Order Lines Section -->
     <mj-collapsible-panel
@@ -447,56 +481,6 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Payment Intents Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPaymentIntents"
-        SectionName="Payment Intents"
-        Icon="fa fa-credit-card"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentIntents')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Intents','OrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Intents')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentIntents')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentIntents', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Payment Lines Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPaymentLines"
-        SectionName="Payment Lines"
-        Icon="fa fa-money-check-alt"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentLines')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Lines','OrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Lines')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentLines')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentLines', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Subscription Events Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersSubscriptionEvents"
@@ -522,25 +506,25 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Stored Value Transactions Section -->
+    <!-- Payment Lines Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersStoredValueTransactions"
-        SectionName="Stored Value Transactions"
-        Icon="fa fa-wallet"
+        SectionKey="mJBizAppsOrdersPaymentLines"
+        SectionName="Payment Lines"
+        Icon="fa fa-money-check-alt"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersStoredValueTransactions')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentLines')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Stored Value Transactions','RelatedOrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersStoredValueTransactions')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Lines','OrderHeaderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Lines')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentLines')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersStoredValueTransactions', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentLines', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

@@ -70,7 +70,7 @@ async function buySubscription(
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         OrderDate: JULY_1,
-        CustomerOrganizationID: f.Customers.OrganizationID,
+        BillToOrganizationID: f.Customers.OrganizationID,
         Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price }],
         ...overrides,
     });
@@ -110,11 +110,11 @@ export const SubscriptionChecks: NamedCheck[] = [
                     SubscriptionNumber: string;
                     Status: string;
                     CompanyID: string;
-                    CustomerOrganizationID: string;
+                    HolderOrganizationID: string;
                     SubscriptionTypeID: string;
                 }>(
                     ctx,
-                    `SELECT SubscriptionNumber, Status, CompanyID, CustomerOrganizationID, SubscriptionTypeID
+                    `SELECT SubscriptionNumber, Status, CompanyID, HolderOrganizationID, SubscriptionTypeID
                      FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${terms[0].SubscriptionID}'`,
                 );
                 Assert(
@@ -126,7 +126,7 @@ export const SubscriptionChecks: NamedCheck[] = [
                     SameID(sub.CompanyID, f.CoA.ID),
                     "the subscription must belong to the PRODUCT's company (D6)",
                 );
-                Assert(SameID(sub.CustomerOrganizationID, f.Customers.OrganizationID), 'subscriber');
+                Assert(SameID(sub.HolderOrganizationID, f.Customers.OrganizationID), 'subscriber');
             }),
     },
     {
@@ -319,7 +319,7 @@ export const SubscriptionChecks: NamedCheck[] = [
                     ctx,
                     `SELECT ID FROM ${ORDERS_SCHEMA}.Subscription
                      WHERE ProductID = '${f.Products.SubFiscal}'
-                       AND CustomerOrganizationID = '${f.Customers.OrganizationID}'`,
+                       AND HolderOrganizationID = '${f.Customers.OrganizationID}'`,
                 );
                 AssertEqual(subs.length, 1, 'still exactly one subscription for this (customer, product)');
             }),
@@ -335,7 +335,7 @@ export const SubscriptionChecks: NamedCheck[] = [
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     OrderDate: JULY_1,
-                    CustomerPersonID: f.Customers.PersonID,
+                    BillToPersonID: f.Customers.PersonID,
                     Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 900 }],
                 });
                 Assert(!result.Saved, 'an organization-only subscription must reject an individual buyer');
@@ -433,7 +433,7 @@ export const SubscriptionChecks: NamedCheck[] = [
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     OrderDate: JULY_1,
-                    CustomerOrganizationID: f.Customers.OrganizationID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
                     Lines: [
                         {
                             ProductID: f.Products.SubCalendar,

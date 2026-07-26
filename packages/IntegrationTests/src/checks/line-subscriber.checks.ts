@@ -1,7 +1,7 @@
 /**
  * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS8).
  *
- * Subscriptions were a HEADER concern: the flow read `OrderHeader.CustomerOrganizationID` and every
+ * Subscriptions were a HEADER concern: the flow read `OrderHeader.HolderOrganizationID` and every
  * line on an order therefore had the same subscriber. An association buying ten memberships for ten
  * staff needed ten orders — and worse, under `RejectDuplicate` all ten lines collided as one
  * subscriber, so it could not be done at all.
@@ -64,12 +64,12 @@ async function makePerson(ctx: IntegrationCheckContext, label: string): Promise<
 const subscriptionsOf = (ctx: IntegrationCheckContext, orderID: string) =>
   TxQuery<{
     ID: string;
-    CustomerOrganizationID: string | null;
+    HolderOrganizationID: string | null;
     BeneficiaryPersonID: string | null;
     SubscriptionNumber: string;
   }>(
     ctx,
-    `SELECT DISTINCT s.ID, s.CustomerOrganizationID, s.BeneficiaryPersonID, s.SubscriptionNumber
+    `SELECT DISTINCT s.ID, s.HolderOrganizationID, s.BeneficiaryPersonID, s.SubscriptionNumber
      FROM ${ORDERS_SCHEMA}.Subscription s
      JOIN ${ORDERS_SCHEMA}.SubscriptionTerm t ON t.SubscriptionID = s.ID
      JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = t.OrderLineID
@@ -88,7 +88,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
         // for a chapter. The customer pays; the ship-to holds and benefits.
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          CustomerOrganizationID: f.Customers.OrganizationID,
+          BillToOrganizationID: f.Customers.OrganizationID,
           Lines: [
             {
               ProductID: f.Products.SubRolling,
@@ -102,11 +102,11 @@ export const LineSubscriberChecks: NamedCheck[] = [
 
         const [sub] = await subscriptionsOf(ctx, result.Order.ID as string);
         Assert(
-          SameID(sub.CustomerOrganizationID, f.Customers.SecondOrganizationID),
+          SameID(sub.HolderOrganizationID, f.Customers.SecondOrganizationID),
           "the subscription belongs to the SHIP-TO organization, not the paying customer",
         );
         Assert(
-          !SameID(sub.CustomerOrganizationID, f.Customers.OrganizationID),
+          !SameID(sub.HolderOrganizationID, f.Customers.OrganizationID),
           "and specifically not the order's customer",
         );
       }),
@@ -121,14 +121,14 @@ export const LineSubscriberChecks: NamedCheck[] = [
         // The common case, and the one that must not have regressed when ship-to was introduced.
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          CustomerOrganizationID: f.Customers.OrganizationID,
+          BillToOrganizationID: f.Customers.OrganizationID,
           Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
         });
         Assert(result.Saved, `confirm failed: ${result.Message}`);
 
         const [sub] = await subscriptionsOf(ctx, result.Order.ID as string);
         Assert(
-          SameID(sub.CustomerOrganizationID, f.Customers.OrganizationID),
+          SameID(sub.HolderOrganizationID, f.Customers.OrganizationID),
           "with no ship-to, the header's customer is the subscriber",
         );
       }),
@@ -146,7 +146,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
         // paying org and turn a seat into an individual membership.
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          CustomerOrganizationID: f.Customers.OrganizationID,
+          BillToOrganizationID: f.Customers.OrganizationID,
           Lines: [
             {
               ProductID: f.Products.SubSeat,
@@ -161,7 +161,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
         const [sub] = await subscriptionsOf(ctx, result.Order.ID as string);
         Assert(SameID(sub.BeneficiaryPersonID, person), "the named person benefits");
         Assert(
-          SameID(sub.CustomerOrganizationID, f.Customers.OrganizationID),
+          SameID(sub.HolderOrganizationID, f.Customers.OrganizationID),
           "and the header's organization is still the holder",
         );
       }),
@@ -191,7 +191,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
 
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          CustomerOrganizationID: f.Customers.OrganizationID,
+          BillToOrganizationID: f.Customers.OrganizationID,
           Lines: lines,
         });
         Assert(result.Saved, `confirm failed: ${result.Message}`);
@@ -210,7 +210,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
           Assert(beneficiaries.has(person.toLowerCase()), `seat missing for person ${person}`);
         }
         Assert(
-          subs.every((s) => SameID(s.CustomerOrganizationID, f.Customers.OrganizationID)),
+          subs.every((s) => SameID(s.HolderOrganizationID, f.Customers.OrganizationID)),
           "every seat is held by the paying organization",
         );
 
@@ -235,7 +235,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
         // people from the same company must NOT produce two memberships — the org holds one.
         const first = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          CustomerOrganizationID: f.Customers.OrganizationID,
+          BillToOrganizationID: f.Customers.OrganizationID,
           Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 1, UnitPrice: 1200 }],
           OrderDate: new Date("2026-07-01T00:00:00Z"),
         });
@@ -246,7 +246,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
         const person = await makePerson(ctx, "Employee");
         const second = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          CustomerOrganizationID: f.Customers.OrganizationID,
+          BillToOrganizationID: f.Customers.OrganizationID,
           Lines: [
             {
               ProductID: f.Products.SubCalendar,
@@ -270,7 +270,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
           ctx,
           `SELECT ID FROM ${ORDERS_SCHEMA}.Subscription
            WHERE ProductID='${f.Products.SubCalendar}'
-             AND CustomerOrganizationID='${f.Customers.OrganizationID}'`,
+             AND HolderOrganizationID='${f.Customers.OrganizationID}'`,
         );
         AssertEqual(all.length, 1, "still exactly one company membership");
       }),
@@ -288,7 +288,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
         // Requiring it per line would make a bulk order for a single recipient absurd.
         const inherited = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          CustomerOrganizationID: f.Customers.OrganizationID,
+          BillToOrganizationID: f.Customers.OrganizationID,
           ShipToPersonID: person,
           Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300 }],
         });
@@ -300,7 +300,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
         // genuinely is nobody to benefit, and THAT is the failure worth reporting.
         const nobody = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          CustomerOrganizationID: f.Customers.OrganizationID,
+          BillToOrganizationID: f.Customers.OrganizationID,
           Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300 }],
         });
         Assert(!nobody.Saved, "with no person resolvable anywhere it must be refused");
@@ -321,7 +321,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
         // No organization anywhere — there are no members to spread the benefit across.
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          CustomerPersonID: person,
+          BillToPersonID: person,
           Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 1, UnitPrice: 1200 }],
         });
         Assert(!result.Saved, "an org-members benefit cannot be held by an individual");
@@ -343,7 +343,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
 
         const initial = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          CustomerOrganizationID: f.Customers.OrganizationID,
+          BillToOrganizationID: f.Customers.OrganizationID,
           Lines: [
             { ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300, ShipToPersonID: personA },
             { ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300, ShipToPersonID: personB },
@@ -359,7 +359,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
         // third subscription rather than extending B's.
         const renewal = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          CustomerOrganizationID: f.Customers.OrganizationID,
+          BillToOrganizationID: f.Customers.OrganizationID,
           Lines: [
             {
               ProductID: f.Products.SubSeat,
@@ -385,7 +385,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
           ctx,
           `SELECT ID FROM ${ORDERS_SCHEMA}.Subscription
            WHERE ProductID='${f.Products.SubSeat}'
-             AND CustomerOrganizationID='${f.Customers.OrganizationID}'`,
+             AND HolderOrganizationID='${f.Customers.OrganizationID}'`,
         );
         AssertEqual(total.length, 2, "and no third subscription was created");
       }),
@@ -436,14 +436,14 @@ LineSubscriberChecks.push({
       // is STAMPED, so the order still says so after that person changes employer.
       const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
-        CustomerPersonID: person,
+        BillToPersonID: person,
         Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
       });
       Assert(result.Saved, `confirm failed: ${result.Message}`);
 
       const [sub] = await subscriptionsOf(ctx, result.Order.ID as string);
       Assert(
-        SameID(sub.CustomerOrganizationID, f.Customers.SecondOrganizationID),
+        SameID(sub.HolderOrganizationID, f.Customers.SecondOrganizationID),
         "the person's employer was stamped onto the subscription",
       );
     }),
@@ -465,13 +465,13 @@ LineSubscriberChecks.push({
 
       const chosen = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
-        CustomerPersonID: multi,
+        BillToPersonID: multi,
         Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
       });
       Assert(chosen.Saved, `confirm failed: ${chosen.Message}`);
       const [multiSub] = await subscriptionsOf(ctx, chosen.Order.ID as string);
       Assert(
-        SameID(multiSub.CustomerOrganizationID, f.Customers.SecondOrganizationID),
+        SameID(multiSub.HolderOrganizationID, f.Customers.SecondOrganizationID),
         "the most recently started affiliation wins",
       );
 
@@ -479,12 +479,12 @@ LineSubscriberChecks.push({
       const solo = await makePerson(ctx, "Unaffiliated");
       const personal = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
-        CustomerPersonID: solo,
+        BillToPersonID: solo,
         Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
       });
       Assert(personal.Saved, `personal order failed: ${personal.Message}`);
       const [personalSub] = await subscriptionsOf(ctx, personal.Order.ID as string);
-      Assert(personalSub.CustomerOrganizationID == null, "a personal order keeps a blank organization");
+      Assert(personalSub.HolderOrganizationID == null, "a personal order keeps a blank organization");
       Assert(SameID(personalSub.BeneficiaryPersonID, solo), "and the person is the subscriber");
     }),
 });
@@ -503,13 +503,13 @@ LineSubscriberChecks.push({
       await affiliate(ctx, vendor, f.Customers.SecondOrganizationID, "Vendor", "2020-01-01");
       const vendorOrder = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
-        CustomerPersonID: vendor,
+        BillToPersonID: vendor,
         Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
       });
       Assert(vendorOrder.Saved, `confirm failed: ${vendorOrder.Message}`);
       const [vendorSub] = await subscriptionsOf(ctx, vendorOrder.Order.ID as string);
       Assert(
-        vendorSub.CustomerOrganizationID == null,
+        vendorSub.HolderOrganizationID == null,
         "a Vendor relationship must not be treated as an employer",
       );
 
@@ -517,13 +517,13 @@ LineSubscriberChecks.push({
       await setSetting(ctx, "OrganizationAffiliationRelationshipTypes", "Employee,Vendor");
       const widened = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
-        CustomerPersonID: vendor,
+        BillToPersonID: vendor,
         Lines: [{ ProductID: f.Products.SubMonthly, Quantity: 1, UnitPrice: 40 }],
       });
       Assert(widened.Saved, `confirm failed: ${widened.Message}`);
       const [widenedSub] = await subscriptionsOf(ctx, widened.Order.ID as string);
       Assert(
-        SameID(widenedSub.CustomerOrganizationID, f.Customers.SecondOrganizationID),
+        SameID(widenedSub.HolderOrganizationID, f.Customers.SecondOrganizationID),
         "with Vendor listed, the affiliation now qualifies",
       );
 
@@ -531,7 +531,7 @@ LineSubscriberChecks.push({
       await setSetting(ctx, "AutoPopulateOrganizationFromPerson", "false");
       const off = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
-        CustomerPersonID: await (async () => {
+        BillToPersonID: await (async () => {
           const p = await makePerson(ctx, "SwitchedOff");
           await affiliate(ctx, p, f.Customers.OrganizationID, "Employee", "2020-01-01");
           return p;
@@ -541,7 +541,7 @@ LineSubscriberChecks.push({
       Assert(off.Saved, `confirm failed: ${off.Message}`);
       const [offSub] = await subscriptionsOf(ctx, off.Order.ID as string);
       Assert(
-        offSub.CustomerOrganizationID == null,
+        offSub.HolderOrganizationID == null,
         "with the setting off, only what the caller supplied is stored",
       );
     }),
@@ -559,7 +559,7 @@ LineSubscriberChecks.push({
 
       const first = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
-        CustomerOrganizationID: f.Customers.OrganizationID,
+        BillToOrganizationID: f.Customers.OrganizationID,
         Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300, ShipToPersonID: personA }],
       });
       Assert(first.Saved, `first confirm failed: ${first.Message}`);
@@ -569,7 +569,7 @@ LineSubscriberChecks.push({
       // refused as a duplicate — which is exactly what blocked bulk seat purchases before D62.
       const second = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
-        CustomerOrganizationID: f.Customers.OrganizationID,
+        BillToOrganizationID: f.Customers.OrganizationID,
         Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300, ShipToPersonID: personB }],
       });
       Assert(second.Saved, `a seat for a DIFFERENT person must be allowed: ${second.Message}`);
@@ -581,7 +581,7 @@ LineSubscriberChecks.push({
       // The SAME person again. RejectDuplicate must still bite — the pair matches this time.
       const repeat = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
-        CustomerOrganizationID: f.Customers.OrganizationID,
+        BillToOrganizationID: f.Customers.OrganizationID,
         Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300, ShipToPersonID: personA }],
       });
       Assert(!repeat.Saved, "a second seat for the SAME person must be refused");

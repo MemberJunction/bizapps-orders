@@ -19,8 +19,8 @@ export class mjBizAppsOrdersProductCategoryFormComponent extends BaseFormCompone
             { sectionKey: 'categoryHierarchy', sectionName: 'Category Hierarchy', isExpanded: true },
             { sectionKey: 'categoryDetails', sectionName: 'Category Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductCategories', sectionName: 'Product Categories', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersProductCategories', sectionName: 'Product Categories', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false }
         ]);
     }
 }

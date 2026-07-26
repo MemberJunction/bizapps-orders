@@ -71,7 +71,8 @@ interface PaymentRow {
     ID: string;
     PaymentNumber: string;
     ReceivingCompanyID: string;
-    CustomerOrganizationID: string | null;
+    BillToOrganizationID: string | null;
+    BillToPersonID: string | null;
     PaymentTypeID: string;
     PaymentDetailID: string | null;
     Amount: number;
@@ -196,7 +197,8 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
                     'ID',
                     'PaymentNumber',
                     'ReceivingCompanyID',
-                    'CustomerOrganizationID',
+                    'BillToOrganizationID',
+                    'BillToPersonID',
                     'PaymentTypeID',
                     'PaymentDetailID',
                     'Amount',
@@ -265,7 +267,8 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
         refund.NewRecord();
         refund.Set('PaymentNumber', await this.nextPaymentNumber(provider));
         refund.Set('ReceivingCompanyID', original.ReceivingCompanyID);
-        refund.Set('CustomerOrganizationID', original.CustomerOrganizationID);
+        refund.Set('BillToOrganizationID', original.BillToOrganizationID);
+        refund.Set('BillToPersonID', original.BillToPersonID);
         refund.Set('PaymentDate', new Date());
         refund.Set('PaymentTypeID', original.PaymentTypeID);
         refund.Set('Amount', amount);

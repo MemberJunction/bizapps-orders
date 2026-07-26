@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Type Details Section -->
+    <!-- Product Type Definition Section -->
     <mj-collapsible-panel
-        SectionKey="productTypeDetails"
-        SectionName="Product Type Details"
-        Icon="fa fa-info-circle"
+        SectionKey="productTypeDefinition"
+        SectionName="Product Type Definition"
+        Icon="fa fa-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -52,11 +52,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Fulfillment and Tax Settings Section -->
+    <!-- Operational Settings Section -->
     <mj-collapsible-panel
-        SectionKey="fulfillmentAndTaxSettings"
-        SectionName="Fulfillment and Tax Settings"
-        Icon="fa fa-truck"
+        SectionKey="operationalSettings"
+        SectionName="Operational Settings"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -72,6 +72,22 @@
             [ShowLabel]="true"
             FieldName="DefaultIsTaxable"
             Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProductExtensionEntity"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="OrderLineExtensionEntity"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -102,32 +118,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- System Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="systemConfiguration"
-        SectionName="System Configuration"
-        Icon="fa fa-cogs"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProductExtensionEntity"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="OrderLineExtensionEntity"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>

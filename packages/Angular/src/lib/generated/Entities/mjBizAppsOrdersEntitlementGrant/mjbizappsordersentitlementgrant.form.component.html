@@ -29,32 +29,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="Quantity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Order Context Section -->
-    <mj-collapsible-panel
-        SectionKey="orderContext"
-        SectionName="Order Context"
-        Icon="fa fa-shopping-cart"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="OrderLineID"
             Type="textbox"
             [EditMode]="EditMode"
@@ -70,6 +44,14 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Quantity"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -77,7 +59,7 @@
     <mj-collapsible-panel
         SectionKey="beneficiaryInformation"
         SectionName="Beneficiary Information"
-        Icon="fa fa-user-check"
+        Icon="fa fa-user"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -101,11 +83,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Validity Period Section -->
+    <!-- Validity and Status Section -->
     <mj-collapsible-panel
-        SectionKey="validityPeriod"
-        SectionName="Validity Period"
-        Icon="fa fa-calendar-alt"
+        SectionKey="validityAndStatus"
+        SectionName="Validity and Status"
+        Icon="fa fa-calendar-check"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -121,6 +103,14 @@
             [ShowLabel]="true"
             FieldName="ValidTo"
             Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

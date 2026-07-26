@@ -89,7 +89,7 @@ async function buyAndFindSubscription(ctx: IntegrationCheckContext, productKey: 
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         OrderDate: JULY_1,
-        CustomerOrganizationID: f.Customers.OrganizationID,
+        BillToOrganizationID: f.Customers.OrganizationID,
         Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price }],
     });
     Assert(result.Saved, `confirm failed: ${result.Message}`);
@@ -279,7 +279,7 @@ export const SubscriptionCancellationChecks: NamedCheck[] = [
                     ctx,
                     `SELECT ID FROM ${ORDERS_SCHEMA}.Subscription
                      WHERE ProductID='${f.Products.SubCalendar}'
-                       AND CustomerOrganizationID='${f.Customers.OrganizationID}'`,
+                       AND HolderOrganizationID='${f.Customers.OrganizationID}'`,
                 );
                 AssertEqual(subs.length, 1, 'cancelling must not mint a second subscription');
 

@@ -37,18 +37,19 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
+            FieldName="ProductID"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
+            LinkType="Record"
         ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Relationships Section -->
+    <!-- Entity Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="relationships"
-        SectionName="Relationships"
+        SectionKey="entityRelationships"
+        SectionName="Entity Relationships"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
@@ -73,16 +74,7 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ProductID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CustomerOrganizationID"
+            FieldName="HolderOrganizationID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -97,50 +89,24 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="MigratesFromSubscriptionID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="MigratesToSubscriptionID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="RootMigratesFromSubscriptionID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="RootMigratesToSubscriptionID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Timeline Section -->
+    <!-- Subscription Lifecycle Section -->
     <mj-collapsible-panel
-        SectionKey="timeline"
-        SectionName="Timeline"
-        Icon="fa fa-calendar-alt"
+        SectionKey="subscriptionLifecycle"
+        SectionName="Subscription Lifecycle"
+        Icon="fa fa-clock"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -202,11 +168,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Billing and Provider Section -->
+    <!-- Billing and Migration Section -->
     <mj-collapsible-panel
-        SectionKey="billingAndProvider"
-        SectionName="Billing and Provider"
-        Icon="fa fa-credit-card"
+        SectionKey="billingAndMigration"
+        SectionName="Billing and Migration"
+        Icon="fa fa-money-check-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -226,16 +192,40 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Display Labels Section -->
-    <mj-collapsible-panel
-        SectionKey="displayLabels"
-        SectionName="Display Labels"
-        Icon="fa fa-tag"
-        [Form]="this"
-        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MigratesFromSubscriptionID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MigratesToSubscriptionID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RootMigratesFromSubscriptionID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RootMigratesToSubscriptionID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -271,50 +261,50 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Subscription Terms Section -->
+    <!-- Subscriptions (Migrates To) Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersSubscriptionTerms"
-        SectionName="Subscription Terms"
-        Icon="fa fa-calendar-alt"
+        SectionKey="mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID"
+        SectionName="Subscriptions (Migrates To)"
+        Icon="fa fa-sync-alt"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionTerms')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Terms','SubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Terms')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionTerms')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','MigratesToSubscriptionID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionTerms', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
         }
     </mj-collapsible-panel>
 
-    <!-- Entitlement Grants Section -->
+    <!-- Subscriptions (Migrates From) Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersEntitlementGrants"
-        SectionName="Entitlement Grants"
-        Icon="fa fa-ticket-alt"
+        SectionKey="mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID"
+        SectionName="Subscriptions (Migrates From)"
+        Icon="fa fa-sync-alt"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersEntitlementGrants')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Grants','SubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Grants')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersEntitlementGrants')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','MigratesFromSubscriptionID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersEntitlementGrants', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
@@ -346,56 +336,6 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Subscriptions (Migrates From) Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID"
-        SectionName="Subscriptions (Migrates From)"
-        Icon="fa fa-sync"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','MigratesFromSubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Subscriptions (Migrates To) Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID"
-        SectionName="Subscriptions (Migrates To)"
-        Icon="fa fa-sync"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','MigratesToSubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Order Lines Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderLines"
@@ -415,6 +355,56 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Entitlement Grants Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersEntitlementGrants"
+        SectionName="Entitlement Grants"
+        Icon="fa fa-ticket-alt"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersEntitlementGrants')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Grants','SubscriptionID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Grants')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersEntitlementGrants')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersEntitlementGrants', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Subscription Terms Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersSubscriptionTerms"
+        SectionName="Subscription Terms"
+        Icon="fa fa-calendar-check"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionTerms')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Terms','SubscriptionID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Terms')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionTerms')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionTerms', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

@@ -24,7 +24,8 @@ export interface PaymentSpec {
     /** Defaults to `Captured` — the status that books. Pass `Pending` for an unbooked payment. */
     Status?: string;
     PaymentDate?: Date;
-    CustomerOrganizationID?: string | null;
+    BillToOrganizationID?: string | null;
+    BillToPersonID?: string | null;
     PaymentDetailID?: string | null;
 }
 
@@ -46,7 +47,8 @@ export async function CreatePayment(user: UserInfo, spec: PaymentSpec): Promise<
     payment.ProcessingFeeAmount = spec.ProcessingFeeAmount ?? 0;
     payment.PaymentDate = spec.PaymentDate ?? new Date();
     payment.Status = spec.Status ?? 'Captured';
-    if (spec.CustomerOrganizationID) payment.CustomerOrganizationID = spec.CustomerOrganizationID;
+    if (spec.BillToOrganizationID) payment.BillToOrganizationID = spec.BillToOrganizationID;
+    if (spec.BillToPersonID) payment.BillToPersonID = spec.BillToPersonID;
     if (spec.PaymentDetailID) payment.PaymentDetailID = spec.PaymentDetailID;
 
     const saved = await payment.Save();

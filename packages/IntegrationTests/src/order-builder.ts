@@ -35,9 +35,9 @@ export interface OrderSpec {
     Lines: LineSpec[];
     /** Defaults to today; set explicitly whenever a check asserts dates. */
     OrderDate?: Date;
-    /** Who is buying — required for subscriptions (the behaviour validates subscriber scope). */
-    CustomerOrganizationID?: string;
-    CustomerPersonID?: string;
+    /** WHO PAYS (D65). Either side, or both. Falls through as the last tier of subscriber resolution. */
+    BillToOrganizationID?: string;
+    BillToPersonID?: string;
     /** Order-level ship-to — the default every line inherits unless it overrides (D61). */
     ShipToOrganizationID?: string;
     ShipToPersonID?: string;
@@ -64,8 +64,8 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
     order.OrderDate = spec.OrderDate ?? new Date();
     order.Status = 'Draft';
     order.CompanyID = spec.CompanyID;
-    if (spec.CustomerOrganizationID) order.CustomerOrganizationID = spec.CustomerOrganizationID;
-    if (spec.CustomerPersonID) order.CustomerPersonID = spec.CustomerPersonID;
+    if (spec.BillToOrganizationID) order.BillToOrganizationID = spec.BillToOrganizationID;
+    if (spec.BillToPersonID) order.BillToPersonID = spec.BillToPersonID;
     if (spec.ShipToOrganizationID) order.ShipToOrganizationID = spec.ShipToOrganizationID;
     if (spec.ShipToPersonID) order.ShipToPersonID = spec.ShipToPersonID;
     if (spec.InitialPaymentTypeID) order.InitialPaymentTypeID = spec.InitialPaymentTypeID;

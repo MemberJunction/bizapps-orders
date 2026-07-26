@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Order Relationships Section -->
+    <!-- Line Item Context Section -->
     <mj-collapsible-panel
-        SectionKey="orderRelationships"
-        SectionName="Order Relationships"
-        Icon="fa fa-link"
+        SectionKey="lineItemContext"
+        SectionName="Line Item Context"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -26,50 +26,6 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="RenewsSubscriptionID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReversesOrderLineID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="SubscriptionID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="RootReversesOrderLineID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Product Information Section -->
-    <mj-collapsible-panel
-        SectionKey="productInformation"
-        SectionName="Product Information"
-        Icon="fa fa-box"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -91,45 +47,18 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="SourceBundleProductID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Order Details Section -->
-    <mj-collapsible-panel
-        SectionKey="orderDetails"
-        SectionName="Order Details"
-        Icon="fa fa-info-circle"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="LineNumber"
             Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Description"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Pricing and Charges Section -->
+    <!-- Pricing and Revenue Section -->
     <mj-collapsible-panel
-        SectionKey="pricingAndCharges"
-        SectionName="Pricing and Charges"
+        SectionKey="pricingAndRevenue"
+        SectionName="Pricing and Revenue"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -181,23 +110,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="RevenueRecognitionScheduleID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Shipping Details Section -->
+    <!-- Shipping and Fulfillment Section -->
     <mj-collapsible-panel
-        SectionKey="shippingDetails"
-        SectionName="Shipping Details"
-        Icon="fa fa-shipping-fast"
+        SectionKey="shippingAndFulfillment"
+        SectionName="Shipping and Fulfillment"
+        Icon="fa fa-truck"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -226,16 +146,32 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="FulfillmentStatus"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Service and Fulfillment Section -->
+    <!-- Subscription and Revenue Section -->
     <mj-collapsible-panel
-        SectionKey="serviceAndFulfillment"
-        SectionName="Service and Fulfillment"
-        Icon="fa fa-tasks"
+        SectionKey="subscriptionAndRevenue"
+        SectionName="Subscription and Revenue"
+        Icon="fa fa-sync-alt"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RenewsSubscriptionID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -255,29 +191,64 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="FulfillmentStatus"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Accounting Information Section -->
-    <mj-collapsible-panel
-        SectionKey="accountingInformation"
-        SectionName="Accounting Information"
-        Icon="fa fa-book"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="false"
-            FieldName="JournalEntryID"
+            FieldName="SubscriptionID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RevenueRecognitionScheduleID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Order History Section -->
+    <mj-collapsible-panel
+        SectionKey="orderHistory"
+        SectionName="Order History"
+        Icon="fa fa-history"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ReversesOrderLineID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="SourceBundleProductID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Description"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RootReversesOrderLineID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
@@ -289,6 +260,15 @@
         Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="JournalEntryID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -313,131 +293,6 @@
     <!-- ========================================
          RELATED ENTITY PANELS
          ======================================== -->
-
-    <!-- Subscription Terms Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersSubscriptionTerms"
-        SectionName="Subscription Terms"
-        Icon="fa fa-calendar-alt"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionTerms')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Terms','OrderLineID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Terms')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionTerms')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionTerms', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Entitlement Grants Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersEntitlementGrants"
-        SectionName="Entitlement Grants"
-        Icon="fa fa-ticket-alt"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersEntitlementGrants')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Grants','OrderLineID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Grants')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersEntitlementGrants')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersEntitlementGrants', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Order Lines Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersOrderLines"
-        SectionName="Order Lines"
-        Icon="fa fa-list-ul"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderLines')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','ReversesOrderLineID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLines')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Subscriptions Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersSubscriptions"
-        SectionName="Subscriptions"
-        Icon="fa fa-sync"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptions')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','OrderLineID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptions')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptions', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Order Line Dimensions Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersOrderLineDimensions"
-        SectionName="Order Line Dimensions"
-        Icon="fa fa-tags"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderLineDimensions')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Line Dimensions','OrderLineID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Line Dimensions')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLineDimensions')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLineDimensions', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
 
     <!-- Payment Lines Section -->
     <mj-collapsible-panel
@@ -483,6 +338,131 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersStoredValueAccounts', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Order Lines Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersOrderLines"
+        SectionName="Order Lines"
+        Icon="fa fa-list-ul"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderLines')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','ReversesOrderLineID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLines')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Subscription Terms Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersSubscriptionTerms"
+        SectionName="Subscription Terms"
+        Icon="fa fa-calendar-check"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionTerms')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Terms','OrderLineID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Terms')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionTerms')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionTerms', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Entitlement Grants Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersEntitlementGrants"
+        SectionName="Entitlement Grants"
+        Icon="fa fa-ticket-alt"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersEntitlementGrants')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Grants','OrderLineID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Grants')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersEntitlementGrants')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersEntitlementGrants', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Order Line Dimensions Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersOrderLineDimensions"
+        SectionName="Order Line Dimensions"
+        Icon="fa fa-tags"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderLineDimensions')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Line Dimensions','OrderLineID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Line Dimensions')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLineDimensions')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLineDimensions', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Subscriptions Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersSubscriptions"
+        SectionName="Subscriptions"
+        Icon="fa fa-sync-alt"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptions')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','OrderLineID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptions')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptions', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

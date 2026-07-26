@@ -89,7 +89,7 @@ async function buySubscription(ctx: IntegrationCheckContext, productKey: string,
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         OrderDate: JAN_1,
-        CustomerOrganizationID: f.Customers.OrganizationID,
+        BillToOrganizationID: f.Customers.OrganizationID,
         Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price }],
     });
     Assert(result.Saved, `confirm failed: ${result.Message}`);

@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Provider Identification Section -->
+    <!-- Provider Details Section -->
     <mj-collapsible-panel
-        SectionKey="providerIdentification"
-        SectionName="Provider Identification"
+        SectionKey="providerDetails"
+        SectionName="Provider Details"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -41,13 +41,29 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Sequence"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Integration Settings Section -->
+    <!-- Integration Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="integrationSettings"
-        SectionName="Integration Settings"
+        SectionKey="integrationConfiguration"
+        SectionName="Integration Configuration"
         Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
@@ -79,32 +95,6 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="SupportsWebhooks"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="configuration"
-        SectionName="Configuration"
-        Icon="fa fa-sliders-h"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Sequence"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
             Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"

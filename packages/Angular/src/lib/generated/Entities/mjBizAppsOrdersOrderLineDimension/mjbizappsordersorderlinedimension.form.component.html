@@ -10,32 +10,22 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Order Line Context Section -->
+    <!-- Order Line Reference Section -->
     <mj-collapsible-panel
-        SectionKey="orderLineContext"
-        SectionName="Order Line Context"
-        Icon="fa fa-list-ol"
+        SectionKey="orderLineReference"
+        SectionName="Order Line Reference"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="OrderLineID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Dimension Mapping Section -->
-    <mj-collapsible-panel
-        SectionKey="dimensionMapping"
-        SectionName="Dimension Mapping"
-        Icon="fa fa-tags"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -54,6 +44,16 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Dimension Details Section -->
+    <mj-collapsible-panel
+        SectionKey="dimensionDetails"
+        SectionName="Dimension Details"
+        Icon="fa fa-tag"
+        [Form]="this"
+        [FormContext]="formContext">
 
     </mj-collapsible-panel>
 

@@ -130,7 +130,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersRevenueRecognitionSchedules"
         SectionName="Revenue Recognition Schedules"
-        Icon="fa fa-chart-line"
+        Icon="fa fa-calendar-check"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
@@ -151,25 +151,50 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Subscription Terms Section -->
+    <!-- Product Performance Obligations Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersSubscriptionTerms"
-        SectionName="Subscription Terms"
-        Icon="fa fa-calendar-alt"
+        SectionKey="mJBizAppsOrdersProductPerformanceObligations"
+        SectionName="Product Performance Obligations"
+        Icon="fa fa-tasks"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionTerms')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductPerformanceObligations')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Terms','RevenueRecognitionTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Terms')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionTerms')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Performance Obligations','RevenueRecognitionTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Performance Obligations')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductPerformanceObligations')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionTerms', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductPerformanceObligations', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Product Types Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersProductTypes"
+        SectionName="Product Types"
+        Icon="fa fa-box-open"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductTypes')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Types','DefaultRevenueRecognitionTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Types')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductTypes')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductTypes', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
@@ -201,50 +226,25 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Product Types Section -->
+    <!-- Subscription Terms Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersProductTypes"
-        SectionName="Product Types"
-        Icon="fa fa-tags"
+        SectionKey="mJBizAppsOrdersSubscriptionTerms"
+        SectionName="Subscription Terms"
+        Icon="fa fa-calendar-check"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductTypes')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionTerms')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Types','DefaultRevenueRecognitionTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Types')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductTypes')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Terms','RevenueRecognitionTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Terms')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionTerms')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductTypes', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Product Performance Obligations Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersProductPerformanceObligations"
-        SectionName="Product Performance Obligations"
-        Icon="fa fa-tasks"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductPerformanceObligations')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Performance Obligations','RevenueRecognitionTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Performance Obligations')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductPerformanceObligations')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductPerformanceObligations', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionTerms', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

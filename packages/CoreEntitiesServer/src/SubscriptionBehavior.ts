@@ -71,7 +71,7 @@ export interface ExistingSubscription {
     ID: string;
     Status: string;
     /** Who holds it — an explicit renewal adopts these rather than re-resolving from the line. */
-    CustomerOrganizationID?: string | null;
+    HolderOrganizationID?: string | null;
     BeneficiaryPersonID?: string | null;
     /** End of the latest term, if any. */
     LatestTermEnd?: Date | null;

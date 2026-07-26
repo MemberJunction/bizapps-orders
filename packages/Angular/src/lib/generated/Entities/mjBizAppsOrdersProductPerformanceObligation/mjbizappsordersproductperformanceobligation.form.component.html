@@ -33,7 +33,7 @@
     <mj-collapsible-panel
         SectionKey="obligationDetails"
         SectionName="Obligation Details"
-        Icon="fa fa-tasks"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -56,26 +56,16 @@
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="RevenueRecognitionTypeID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Pricing Section -->
-    <mj-collapsible-panel
-        SectionKey="pricing"
-        SectionName="Pricing"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="StandaloneSellingPrice"
             Type="number"
             [EditMode]="EditMode"

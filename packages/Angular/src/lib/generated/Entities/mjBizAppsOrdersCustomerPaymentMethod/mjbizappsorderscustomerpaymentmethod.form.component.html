@@ -10,17 +10,26 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Customer Information Section -->
+    <!-- Ownership Section -->
     <mj-collapsible-panel
-        SectionKey="customerInformation"
-        SectionName="Customer Information"
-        Icon="fa fa-building"
+        SectionKey="ownership"
+        SectionName="Ownership"
+        Icon="fa fa-user-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
-            FieldName="CustomerOrganizationID"
+            [ShowLabel]="true"
+            FieldName="OwnerPersonID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="OwnerOrganizationID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -29,10 +38,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Payment Method Details Section -->
+    <!-- Payment Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="paymentMethodDetails"
-        SectionName="Payment Method Details"
+        SectionKey="paymentConfiguration"
+        SectionName="Payment Configuration"
         Icon="fa fa-credit-card"
         [Form]="this"
         [FormContext]="formContext">

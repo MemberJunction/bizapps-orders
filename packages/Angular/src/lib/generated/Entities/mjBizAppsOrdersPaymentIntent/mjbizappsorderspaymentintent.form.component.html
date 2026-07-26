@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Provider Details Section -->
+    <!-- Provider Information Section -->
     <mj-collapsible-panel
-        SectionKey="paymentProviderDetails"
-        SectionName="Payment Provider Details"
+        SectionKey="providerInformation"
+        SectionName="Provider Information"
         Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
@@ -34,6 +34,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProviderEventID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -41,7 +49,7 @@
     <mj-collapsible-panel
         SectionKey="paymentStatus"
         SectionName="Payment Status"
-        Icon="fa fa-check-circle"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -63,14 +71,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ProviderEventID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="LastEventAt"
             Type="datepicker"
             [EditMode]="EditMode"
@@ -79,11 +79,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Customer and Order Reference Section -->
+    <!-- Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="customerAndOrderReference"
-        SectionName="Customer and Order Reference"
-        Icon="fa fa-user-tag"
+        SectionKey="relationships"
+        SectionName="Relationships"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -98,7 +98,16 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="CustomerOrganizationID"
+            FieldName="BillToPersonID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="BillToOrganizationID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"

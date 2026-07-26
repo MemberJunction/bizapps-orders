@@ -554,7 +554,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             // mismatch between the two would be a silent contradiction. The target wins.
             if (line.RenewsSubscriptionID && existing) {
                 subscriber = {
-                    OrganizationID: existing.CustomerOrganizationID ?? null,
+                    OrganizationID: existing.HolderOrganizationID ?? null,
                     PersonID: existing.BeneficiaryPersonID ?? null,
                 };
             }
@@ -602,8 +602,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // when it genuinely differs.
         return {
             OrganizationID:
-                line.ShipToOrganizationID ?? this.ShipToOrganizationID ?? this.CustomerOrganizationID ?? null,
-            PersonID: line.ShipToPersonID ?? this.ShipToPersonID ?? this.CustomerPersonID ?? null,
+                line.ShipToOrganizationID ?? this.ShipToOrganizationID ?? this.BillToOrganizationID ?? null,
+            PersonID: line.ShipToPersonID ?? this.ShipToPersonID ?? this.BillToPersonID ?? null,
         };
     }
 
@@ -761,8 +761,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const clauses: string[] = [];
         clauses.push(
             identity.OrganizationID
-                ? `CustomerOrganizationID='${identity.OrganizationID}'`
-                : `CustomerOrganizationID IS NULL`,
+                ? `HolderOrganizationID='${identity.OrganizationID}'`
+                : `HolderOrganizationID IS NULL`,
         );
         clauses.push(
             identity.PersonID ? `BeneficiaryPersonID='${identity.PersonID}'` : `BeneficiaryPersonID IS NULL`,
@@ -778,13 +778,13 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const res = await rv.RunView<{
             ID: string;
             Status: string;
-            CustomerOrganizationID: string | null;
+            HolderOrganizationID: string | null;
             BeneficiaryPersonID: string | null;
         }>(
             {
                 EntityName: SUBSCRIPTION_ENTITY,
                 ExtraFilter: filter,
-                Fields: ['ID', 'Status', 'CustomerOrganizationID', 'BeneficiaryPersonID'],
+                Fields: ['ID', 'Status', 'HolderOrganizationID', 'BeneficiaryPersonID'],
                 OrderBy: '__mj_CreatedAt DESC',
                 MaxRows: 1,
                 ResultType: 'simple',
@@ -811,7 +811,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         return {
             ID: sub.ID,
             Status: sub.Status,
-            CustomerOrganizationID: sub.CustomerOrganizationID,
+            HolderOrganizationID: sub.HolderOrganizationID,
             BeneficiaryPersonID: sub.BeneficiaryPersonID,
             LatestTermEnd: latest?.EndDate ? new Date(latest.EndDate) : null,
             LatestTermNumber: latest?.TermNumber ?? 0,
@@ -838,7 +838,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         sub.Set('ProductID', product.ID);
         // The RESOLVED subscriber, which may differ from the order's customer: the customer pays,
         // the ship-to holds and benefits.
-        sub.Set('CustomerOrganizationID', subscriber.OrganizationID);
+        sub.Set('HolderOrganizationID', subscriber.OrganizationID);
         sub.Set('BeneficiaryPersonID', subscriber.PersonID);
         sub.Set('Status', rules.TrialDays > 0 ? 'Trialing' : 'Active');
         sub.Set('StartDate', decision.Term!.StartDate);
@@ -1029,7 +1029,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         payment.NewRecord();
         payment.Set('PaymentNumber', await this.assignPaymentNumber());
         payment.Set('ReceivingCompanyID', this.CompanyID);
-        payment.Set('CustomerOrganizationID', this.CustomerOrganizationID);
+        payment.Set('BillToOrganizationID', this.BillToOrganizationID);
+        payment.Set('BillToPersonID', this.BillToPersonID);
         payment.Set('PaymentDate', this.OrderDate ?? new Date());
         payment.Set('PaymentTypeID', this.InitialPaymentTypeID);
         payment.Set('Amount', amount);

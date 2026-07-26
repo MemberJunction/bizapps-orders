@@ -16,9 +16,8 @@ export class mjBizAppsOrdersPaymentProviderTypeFormComponent extends BaseFormCom
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'providerIdentification', sectionName: 'Provider Identification', isExpanded: true },
-            { sectionKey: 'integrationSettings', sectionName: 'Integration Settings', isExpanded: true },
-            { sectionKey: 'configuration', sectionName: 'Configuration', isExpanded: true },
+            { sectionKey: 'providerDetails', sectionName: 'Provider Details', isExpanded: true },
+            { sectionKey: 'integrationConfiguration', sectionName: 'Integration Configuration', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentProviders', sectionName: 'Payment Providers', isExpanded: false }
         ]);
