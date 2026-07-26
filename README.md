@@ -375,6 +375,12 @@ Refunds go through the atomic `Orders.RefundPayment` remote operation (reversal 
 
 SQL Server is the **source of truth** for migrations. PostgreSQL is supported via automatic conversion using [`@memberjunction/sql-converter`](https://github.com/MemberJunction/MJ/tree/main/packages/SQLConverter) — we consume MJ's toolchain directly.
 
+The baseline is deliberately **two** files. Migrations run as one transaction per file, and a
+trigger that declares a variable of a user-defined table type cannot be compiled inside the
+transaction that created the type — so `B…__Schema_and_Types.sql` commits the schema and the table
+type, and `V…__Tables_and_Objects.sql` carries everything else. Merging them back deadlocks the
+migration; the header of the first file explains it in full.
+
 ```
 migrations/                       ←  T-SQL, hand-written
   V<TS>__v<X.Y.x>__Foo.sql
@@ -385,13 +391,6 @@ migrations-pg/                    ←  PG, produced by `npx mj sql-convert`
 ```
 
 At runtime `mj migrate` reads `DB_PLATFORM` and picks the right directory (`sqlserver` → `migrations/`, `postgresql` → `migrations-pg/`). CI applies the PG set to a fresh `postgres:17` container on every PR that touches migrations. Note the standing pre-production practice: schema changes **edit the original baseline migration in place** (clean rebuild + CodeGen re-run) — no incremental fix-up migrations until publish *(plan §2)*.
-
-> ⚠️ **`mj migrate` currently cannot apply this baseline** — it deadlocks on a CodeGen-emitted
-> `__mj_CreatedAt` backfill. The identical SQL applies cleanly through a single serial `sqlcmd`
-> connection, which is how local databases are being built today. Details, evidence and what has
-> been ruled out are in
-> [`plans/integration-testing-plan.md`](plans/integration-testing-plan.md#blocking-defect-found--mj-migrate-cannot-apply-this-baseline-2026-07-26).
-> This blocks `mj app install` for adopters and needs an MJ-side fix.
 
 Editing the baseline in place is only safe because rebuilding from zero is routine:
 

@@ -99,34 +99,49 @@ total absence of the feature.
 | `scripts/rebuild-db.sh` | Phase 2's provisioning script — the four-layer build, encoded |
 | `scripts/append-codegen.sh` | folds CodeGen output back into the baseline migration |
 
-### BLOCKING DEFECT FOUND — `mj migrate` cannot apply this baseline (2026-07-26)
+### A migration-ordering bug, found and fixed (2026-07-26)
 
-`mj migrate --schema __mj_BizAppsOrders` fails **consistently** on a clean database:
+`mj migrate` failed consistently on a clean database:
 
 ```
-Failed at batch 283/954 (lines 5380-5382):
-Transaction (Process ID 54) was deadlocked on lock resources with another process
-and has been chosen as the deadlock victim.
+Failed at batch 283/954: Transaction (Process ID 54) was deadlocked on lock resources
+with another process and has been chosen as the deadlock victim.
 ```
 
-What is established:
+I initially wrote this up as an MJ CLI defect, reasoning that a single-connection run cannot
+deadlock with itself so the runner must be pipelining batches. **That was wrong**, and the
+correction is worth recording because the reasoning error is instructive.
 
-- The failing statement is **CodeGen-emitted**, not hand-authored — the `__mj_CreatedAt` /
-  `__mj_UpdatedAt` backfill (`UPDATE OrderLine SET __mj_CreatedAt = GETUTCDATE() WHERE ... IS NULL`).
-- The deadlock graph shows the victim waiting `Sch-S` on a **METADATA: USER_TYPE** lock — our
-  `__mj_BizAppsOrders.OrderHeaderIDList` table type, which the OrderLine rollup trigger references.
-- **The identical SQL applies cleanly through a single serial `sqlcmd` connection**, which is how the
-  current dev database was built. So the SQL is valid; the failure is in how the runner executes it.
-- Ruled out: the new `OrderHeader → Subscription` FK (removing it changes nothing), intra-query
-  parallelism (`MAXDOP = 1` at database scope changes nothing), and concurrent connections of mine
-  (reproduces with zero other `node-mssql` sessions).
+Amith pushed back — skyway just runs each file's batches serially inside one transaction — and
+suggested running the same SQL through `sqlcmd`. Doing that *with a `BEGIN TRAN` wrapper*, which is
+what skyway does and what my earlier bare-`sqlcmd` comparison had omitted, reproduced it instantly
+and printed the detail the CLI had swallowed:
 
-Why it matters: adopters install via `mj app install` / `mj migrate`. A baseline that only applies
-through hand-run `sqlcmd` is not shippable, however green the tests are.
+```
+Msg 1205 ... Procedure trg_OrderLine_RollupTotals, Line 13
+```
 
-Next step is an MJ-side investigation — either the runner is pipelining batches (which would explain
-a second process holding `Sch-M` on the type while the UPDATE wants `Sch-S`), or it needs the
-deadlock-victim retry that flyway does not do. Not fixable from this repo.
+**The cause was ours.** Migrations run as one transaction per file. `OrderHeaderIDList` is created in
+that transaction; the rollup triggers declare variables of it; and CodeGen's `__mj_CreatedAt`
+backfill (`UPDATE OrderLine ... WHERE col IS NULL`) fires those triggers — SQL Server fires AFTER
+triggers even for zero-row statements. Compiling the trigger body needs a schema lock on the type
+that the creating transaction still holds, and it dies.
+
+Returning early from the trigger does **not** help: compilation precedes execution, so the type is
+needed even when no rows change. The fix is to commit the type first, which is why the baseline is
+now two files — `B…__Schema_and_Types.sql` then `V…__Tables_and_Objects.sql`. `mj migrate` applies
+both cleanly.
+
+Two things this cost that were avoidable:
+
+- **The isolation of my comparison was wrong.** Bare `sqlcmd` differed from skyway in two ways at
+  once — no transaction *and* a different client. I attributed the difference to the wrong one.
+- **I stated the CLI conclusion with more confidence than the evidence supported**, in a PR comment,
+  before ruling out the ordering explanation.
+
+The genuinely reportable part was the diagnostics, not the runner: the deadlock's `Procedure` and
+`Line` fields, and the preceding errors behind SQL Server's "See previous errors" summaries, were
+being dropped on the way out. Fixed upstream in MemberJunction/skyway#22 and MemberJunction/MJ#3283.
 
 ### Still open
 

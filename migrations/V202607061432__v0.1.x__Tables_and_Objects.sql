@@ -1,113 +1,4 @@
 -- =============================================================================
--- BizApps Orders — Baseline Schema (v0.1.0)
--- =============================================================================
--- Creates the entire __mj_BizAppsOrders schema: the product catalog + order
--- lifecycle, per the CONSOLIDATED master plan (plans/bizapps-orders-master.md,
--- decisions D1–D35; collapse-into-baseline strategy — this file is edited in
--- place pre-release, clean-DB rebuild + CodeGen after every change).
--- 2026-07-23: donor-branch baseline brought current with the S1 company-model
--- wave (D6/D7) and the D14 rev-rec rework:
---   * ProductType         — flat lookup + RequiresFulfillment (fulfillment hold, D15)
---   * ProductCategory     — PER-COMPANY (CompanyID NOT NULL, D7); hierarchical
---                           (ParentProductCategoryID self-FK) within one company
---   * Product             — CompanyID NOT NULL = source of truth for line ownership
---                           (D6); NO GL columns (D5 — accounting's polymorphic
---                           GLAccountLink points AT Product/ProductCategory rows)
---   * Order               — Status lifecycle + the A/R field set (order = the
---                           receivable, D2); CompanyID NOT NULL = the ORIGINATING/
---                           owning company — document/visibility/sales-attribution
---                           anchor, NEVER GL resolution (D6); NO currency (D24)
---   * OrderLine           — ProductID / Quantity / UnitPrice + line totals, service
---                           period, fulfillment status, reversal lineage; CompanyID
---                           NOT NULL = denormalized stamp of the product's company
---                           at save (D6); JournalEntryID = per-line booked JE (D10)
---   * PaymentTermsType    — payment-terms lookup (Net30 …; seed rows via metadata/)
---   * OrderSequence       — global singleton counter for gap-conscious ORD-{seq} numbers (D30)
---   * Payments subsystem (§4.7/§8): PaymentProvider / CustomerPaymentMethod /
---                           PaymentIntent / Payment / PaymentLine / PaymentSequence —
---                           receipts, reversals, cash application; NO currency columns (D24)
---   * Subscriptions + rev-rec envelope (§4.5/§4.6): SubscriptionType / SubscriptionTerm / Subscription /
---                           SubscriptionEvent / RevenueRecognitionSchedule / RevRecScheduleLine —
---                           schedules hang off ORDER LINES (renewals carry their own).
---                           D14: the LEDGER truth is real forward-dated JEs written at
---                           booking-lock; the ScheduledJournalEntry bridge is RETIRED —
---                           RevRecScheduleLine.JournalEntryID points at the staged dated JE.
---   * Catalog depth (§4.1): ProductType/Product behavior + lifecycle fields, bundles,
---                           entitlements + grants, PPO, EventProduct/EventOrderLine (IsA),
---                           StoredValue pair, OrderLineDimension, PriceList/ProductPrice/PriceTier;
---                           seeded product types via metadata/. NO GL columns (D5), NO currency (D24)
---   * Sales rules (§4.8): SalesRule / SalesAuthority + Order.ApprovalTaskID —
---                           evaluation engine + tasks-app routing deferred (D26, §18)
---
--- Cross-app references are REAL FOREIGN KEYS (§4.A), not soft UUID columns.
--- BizApps install in dependency order, so bizapps-common and bizapps-accounting
--- are already present when this migration runs and the database — not
--- convention — enforces referential integrity across app schemas:
---   * → __mj_BizAppsCommon.Organization / Person / Address
---       Order.CustomerOrganizationID, Order.CustomerPersonID,
---       Order.BillToAddressID, Order.ShipToAddressID,
---       PaymentIntent.CustomerOrganizationID, Payment.CustomerOrganizationID,
---       CustomerPaymentMethod.CustomerOrganizationID,
---       Subscription.CustomerOrganizationID, Subscription.BeneficiaryPersonID,
---       EntitlementGrant.BeneficiaryPersonID/BeneficiaryOrganizationID,
---       StoredValueAccount.BeneficiaryPersonID/BeneficiaryOrganizationID,
---       EventProduct.VenueAddressID
---   * → __mj_BizAppsAccounting.JournalEntry / Dimension / DimensionValue
---       OrderLine.JournalEntryID (per-line booked JE; D10),
---       Payment.JournalEntryID, RevRecScheduleLine.JournalEntryID (D14),
---       OrderLineDimension.DimensionID / DimensionValueID
---
--- INSTALL-ORDER DEPENDENCY: bizapps-common and bizapps-accounting MUST be
--- installed BEFORE bizapps-orders. Applying this migration without them fails
--- at §4.A — deliberately, as the dependency check.
---
--- Two references stay SOFT (plain UNIQUEIDENTIFIER, no FK) because the target
--- app is absent, not because the coupling is unwanted — see §4.A:
---   * Order.ApprovalTaskID → bizapps-tasks is not installed here (D26, §18)
---
--- CodeGen handles __mj_CreatedAt/__mj_UpdatedAt and FK indexes — do NOT add them here.
--- SQL Server is the source of truth; the PostgreSQL counterpart is produced via
--- @memberjunction/sql-converter (see migrations-pg/README.md).
--- Reference: plans/bizapps-orders-master.md §4 (entity model), §18 (sequencing).
--- =============================================================================
-
--- =============================================================================
--- 1. SCHEMA
--- =============================================================================
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = '__mj_BizAppsOrders')
-    EXEC('CREATE SCHEMA __mj_BizAppsOrders');
-GO
-
--- =============================================================================
--- 2. SCHEMA INFO — entity-name prefix for CodeGen (must match mj.config.cjs)
--- =============================================================================
-INSERT INTO __mj.SchemaInfo
-(
-  ID,
-  SchemaName,
-  EntityIDMin, EntityIDMax,
-  Comments,
-  Description,
-  EntityNamePrefix, EntityNameSuffix
-)
-VALUES
-(
-  'B6E2A4C1-7F03-4E52-9C8A-2D6F1B0E9A47',
-  '__mj_BizAppsOrders',
-  1, 1000000,
-  NULL,
-  'MemberJunction: BizApps Orders — product catalog + order lifecycle',
-  'MJ_BizApps_Orders: ', NULL
-);
-GO
-
--- =============================================================================
--- 2.A TYPES — the id list the rollup recalc takes (plan D41)
--- =============================================================================
-CREATE TYPE __mj_BizAppsOrders.OrderHeaderIDList AS TABLE (ID UNIQUEIDENTIFIER NOT NULL PRIMARY KEY);
-GO
-
--- =============================================================================
 -- 3. TABLES
 -- =============================================================================
 
@@ -1921,6 +1812,16 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    -- Nothing changed, nothing to recalculate. This is not just an optimization: SQL Server fires
+    -- AFTER triggers even for statements that affect ZERO rows, and CodeGen's `__mj_CreatedAt` /
+    -- `__mj_UpdatedAt` backfills are exactly that — `UPDATE ... WHERE col IS NULL` against an empty
+    -- table, inside the migration's transaction. Touching a variable of a user-defined table type
+    -- there DEADLOCKS, because the transaction that created the type still holds its metadata lock
+    -- (see the migration header note). Returning first means the type is never referenced during
+    -- the migration at all.
+    IF NOT EXISTS (SELECT 1 FROM inserted) AND NOT EXISTS (SELECT 1 FROM deleted) RETURN;
+
     DECLARE @ids __mj_BizAppsOrders.OrderHeaderIDList;
     INSERT INTO @ids (ID)
         SELECT OrderHeaderID FROM inserted
@@ -1936,6 +1837,16 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    -- Nothing changed, nothing to recalculate. This is not just an optimization: SQL Server fires
+    -- AFTER triggers even for statements that affect ZERO rows, and CodeGen's `__mj_CreatedAt` /
+    -- `__mj_UpdatedAt` backfills are exactly that — `UPDATE ... WHERE col IS NULL` against an empty
+    -- table, inside the migration's transaction. Touching a variable of a user-defined table type
+    -- there DEADLOCKS, because the transaction that created the type still holds its metadata lock
+    -- (see the migration header note). Returning first means the type is never referenced during
+    -- the migration at all.
+    IF NOT EXISTS (SELECT 1 FROM inserted) AND NOT EXISTS (SELECT 1 FROM deleted) RETURN;
+
     DECLARE @ids __mj_BizAppsOrders.OrderHeaderIDList;
     INSERT INTO @ids (ID)
         SELECT OrderHeaderID FROM inserted
@@ -1953,6 +1864,9 @@ AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
+    -- Same zero-row guard as the sibling rollup triggers; `UPDATE(Status)` already screens out
+    -- CodeGen's backfills, but making the rule uniform means no future column addition reopens it.
+    IF NOT EXISTS (SELECT 1 FROM inserted) RETURN;
     IF NOT UPDATE(Status) RETURN;
     DECLARE @ids __mj_BizAppsOrders.OrderHeaderIDList;
     INSERT INTO @ids (ID)

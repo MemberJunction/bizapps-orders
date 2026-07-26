@@ -14,7 +14,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-MIGRATION="${1:-migrations/B202607061431__v0.1.x__Schema_and_Tables.sql}"
+MIGRATION="${1:-migrations/V202607061432__v0.1.x__Tables_and_Objects.sql}"
 GENERATED_DIR="migrations/codegen"
 MARKER='CODEGEN OUTPUT — GENERATED CODE BELOW THIS LINE'
 
