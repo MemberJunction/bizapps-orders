@@ -414,7 +414,7 @@ Two layers, both green as of the current build.
 **Unit** — `npm test` per package. Pure logic only (`SubscriptionBehavior`'s term arithmetic, the
 rev-rec allocators), no database.
 
-**Integration** — 58 checks across 6 bundles, driving a live database through the real stack:
+**Integration** — 70 checks across 7 bundles, driving a live database through the real stack:
 entity subclasses, DB triggers, remote operations, and accounting's ledger all participate. Nothing
 is mocked.
 
@@ -426,6 +426,7 @@ is mocked.
 | `subscription-cancellation` | SC1–SC10 | `Orders.CancelSubscription`: policy → mirrored reversal, atomically *(D52/D53)* |
 | `subscription-renewal` | SR1–SR11 | `Orders.SpawnRenewals`: the scheduled continuation, and everything it must **not** do *(D55)* |
 | `payments-rollups` | PR1–PR9 | rollup triggers, document numbering, instrument copy-on-use *(D30/D39/D42)* |
+| `payment-ledger` | PL1–PL12 | the **cash leg** — capture/refund journal entries, AR reconciliation, application guards *(D17/D18/D57–D59)* |
 
 ```bash
 # fast inner loop — one bundle, or one check, with a stack trace on failure
@@ -439,6 +440,22 @@ RUN_MUTATION_TESTS=1 MJ_INTEGRATION_TEST=1 \
 
 `RUN_MUTATION_TESTS=1` is **required**: every check is mutation-class by nature, so a run without it
 reports zero checks and passes vacuously.
+
+### Demo data you can click through
+
+The suite leaves nothing behind by design — every check rolls back, which is what makes it
+re-runnable and also why the database looks empty after a green run. For hands-on review there is a
+seed that **commits**:
+
+```bash
+node test-harnesses/seed-demo-data.mjs --reset
+```
+
+It drives the same engine paths and leaves one company (`DEMO Publishing Co`) with orders in
+deliberately different states — unpaid, paid at confirm, partially paid, an event deferral, a rolling
+membership, a prorated calendar membership, one cancelled, one renewed, one refunded — then prints a
+trial balance so you can see the ledger reconciles. Safe to re-run; `--reset` clears the previous
+set first.
 
 Checks are safe to run repeatedly against a working database. Each one owns a transaction that
 always rolls back, so orders, journal entries, payments and subscription terms never reach disk;

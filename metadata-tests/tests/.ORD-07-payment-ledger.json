@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-07 - Payment Ledger",
+    "Description": "The CASH leg (PL1-PL12, D17/D18). Order confirm booked Dr AR / Cr Revenue while payment capture booked nothing, so the sub-ledger read paid while the general ledger carried the receivable forever. Central assertion is not that an entry exists but that AR NETS TO ZERO across booking and capture. Also covers the fee split (cash net, AR gross), the missing fee-account fallback, capture idempotency, the auto initial payment's cash leg, the over-application and un-application guards, and Orders.RefundPayment including accumulating partial refunds and its refusals.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Capture stamps JournalEntryID and books Dr Cash / Cr AR; AR nets to 0 after payment and back to the order total after a full refund; a fee splits cash net + fee expense while AR clears gross; re-saving a captured payment books nothing further; applying more than the order total or un-applying more than was applied is refused; over-refunding and refunding an uncaptured payment are refused."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "payment-ledger"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "73060FEA-B385-4F77-92EF-86F319690FBC"
+  },
+  "sync": {
+    "lastModified": "2026-07-26T14:07:29.937Z",
+    "checksum": "0ef35368a52feeff746cdb204675e77dc8a51e72e5f5c8242fd3b05a034f00de"
+  }
+}

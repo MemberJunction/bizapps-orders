@@ -48,6 +48,11 @@ const FIXTURE_ACCOUNTS = [
     { Key: 'AR', Code: '11201', Name: 'Accounts Receivable', Type: 'Asset' },
     { Key: 'Sales', Code: '40100', Name: 'Sales Revenue', Type: 'Revenue' },
     { Key: 'Deferred', Code: '21301', Name: 'Deferred Revenue', Type: 'Liability' },
+    // Cash is a BASELINE requirement, not a payments-only nicety: once capture books
+    // `Dr Cash / Cr AR` (D18), any order carrying an initial payment fails to confirm without it.
+    // That is correct — you cannot book cash with no cash account — but it makes the Cash link part
+    // of the minimum setup for using the feature at all.
+    { Key: 'Cash', Code: '10100', Name: 'Cash — Operating', Type: 'Asset' },
 ] as const;
 
 export interface FixtureCompany {
@@ -293,6 +298,7 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             ['Accounts Receivable', 'AR'],
             ['Sales', 'Sales'],
             ['Deferred Revenue', 'Deferred'],
+            ['Cash', 'Cash'],
         ] as const) {
             const rid = roleID.get(role);
             Assert(rid != null, `GL account role '${role}' missing — push accounting metadata first`);
@@ -492,6 +498,9 @@ export async function TeardownOrdersFixture(ctx: IntegrationCheckContext): Promi
         `DELETE FROM ${ORDERS_SCHEMA}.PaymentLine WHERE OrderHeaderID IN (${orderScope})`,
         `DELETE FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE ReceivingCompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS_SCHEMA}.PaymentDetail WHERE CompanyID IN (${companies})`,
+        // RenewsSubscriptionID closes a cycle (Subscription → OrderLine → OrderHeader →
+        // Subscription), so the renewal pointer must be cleared before any Subscription can go.
+        `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET RenewsSubscriptionID=NULL WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE SubscriptionID IN
             (SELECT ID FROM ${ORDERS_SCHEMA}.Subscription WHERE CompanyID IN (${companies}))`,
         `DELETE FROM ${ORDERS_SCHEMA}.SubscriptionEvent WHERE SubscriptionID IN

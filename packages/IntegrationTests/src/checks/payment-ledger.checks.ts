@@ -1,0 +1,706 @@
+/**
+ * payment-ledger.checks.ts — the `payment-ledger` bundle (PL1–PL12).
+ *
+ * The gap this closes was the worst kind: everything LOOKED right. Rollup triggers moved
+ * `AmountPaid` / `Balance` / `PaymentStatus`, the order read "Paid", and the general ledger still
+ * carried the receivable — forever, with nothing reconciling the two. `PaymentHeader.JournalEntryID`
+ * existed and nothing set it.
+ *
+ * So the central assertion here is not "a journal entry was written". It is **AR nets to zero**:
+ * what order booking debited, payment capture must credit back. A test that only counted entries
+ * would have passed against a capture entry pointed at the wrong account.
+ *
+ * WHAT IT PROVES
+ *   PL1   capturing a payment books an entry and stamps JournalEntryID
+ *   PL2   the entry is Dr Cash / Cr AR — cash in, receivable relieved
+ *   PL3   AR NETS TO ZERO across booking + capture (the reconciliation that matters)
+ *   PL4   a processing fee splits Dr Cash (net) + Dr Fee, still crediting AR gross
+ *   PL5   a fee with no Processing Fee account books gross to Cash rather than failing
+ *   PL6   re-saving a captured payment does not book a second entry
+ *   PL7   the auto initial payment books its cash leg too, end to end from the order
+ *   PL8   over-applying cash to an order is refused
+ *   PL9   un-applying more than was applied is refused
+ *   PL10  a refund reverses the capture — Dr AR / Cr Cash — and reopens the order balance
+ *   PL11  refunding more than remains is refused, and partial refunds accumulate
+ *   PL12  refunding an uncaptured payment is refused
+ *
+ * Deterministic. Every check runs inside a rolled-back transaction.
+ */
+import { randomUUID } from "node:crypto";
+import { BaseRemotableOperation } from "@memberjunction/core";
+import { MJGlobal } from "@memberjunction/global";
+import {
+  Assert,
+  AssertEqual,
+  IntegrationCheckRegistry,
+  type IntegrationCheckContext,
+  type NamedCheck,
+} from "@memberjunction/testing-integration";
+import {
+  ACCT_SCHEMA,
+  CreateOrdersFixture,
+  Fx,
+  InRolledBackTransaction,
+  ORDERS_SCHEMA,
+  TeardownOrdersFixture,
+  TxOne,
+  TxQuery,
+} from "../fixture.js";
+import { ConfirmOrder } from "../order-builder.js";
+import {
+  ApplyPayment,
+  CreatePayment,
+  type LooseEntity,
+} from "../payment-builder.js";
+
+const CASH_CODE = "10100";
+const AR_CODE = "11201";
+const FEE_CODE = "60500";
+
+interface RefundOutput {
+  Success: boolean;
+  Message?: string;
+  RefundAmount?: number;
+  RemainingRefundable?: number;
+  RefundPaymentHeaderID?: string;
+  RefundPaymentNumber?: string;
+}
+
+async function refund(
+  ctx: IntegrationCheckContext,
+  input: Record<string, unknown>,
+): Promise<RefundOutput> {
+  const op = MJGlobal.Instance.ClassFactory.CreateInstance<
+    BaseRemotableOperation<Record<string, unknown>, RefundOutput>
+  >(BaseRemotableOperation, "Orders.RefundPayment");
+  Assert(op != null, "'Orders.RefundPayment' is not registered");
+
+  const result = await op!.Execute(input, {
+    provider: ctx.Provider,
+    user: ctx.User,
+  });
+  Assert(
+    result.Success,
+    `the operation did not execute: ${result.ErrorMessage ?? "unknown"}`,
+  );
+  Assert(result.Output != null, "the operation returned no payload");
+  return result.Output as RefundOutput;
+}
+
+/** A confirmed $250 order in Co A. */
+async function confirmOrder(ctx: IntegrationCheckContext, price = 250) {
+  const f = Fx();
+  const result = await ConfirmOrder(ctx.User, {
+    CompanyID: f.CoA.ID,
+    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: price }],
+  });
+  Assert(result.Saved, `confirm failed: ${result.Message}`);
+  return result;
+}
+
+/** Capture a payment and, unless told otherwise, apply it to the order. */
+async function capturePayment(
+  ctx: IntegrationCheckContext,
+  orderID: string,
+  amount: number,
+  opts: { fee?: number; apply?: boolean } = {},
+): Promise<LooseEntity> {
+  const f = Fx();
+  const cash = f.PaymentTypeIDs.get("Cash");
+  Assert(
+    cash != null,
+    "PaymentType 'Cash' missing — push the orders app metadata",
+  );
+
+  const { Payment, Saved, Message } = await CreatePayment(ctx.User, {
+    PaymentNumber: `IT-${randomUUID().slice(0, 8).toUpperCase()}`,
+    ReceivingCompanyID: f.CoA.ID,
+    PaymentTypeID: cash!,
+    Amount: amount,
+    ProcessingFeeAmount: opts.fee ?? 0,
+  });
+  Assert(Saved, `capture failed: ${Message}`);
+
+  if (opts.apply !== false) {
+    const applied = await ApplyPayment(
+      ctx.User,
+      Payment.ID as string,
+      orderID,
+      amount,
+    );
+    Assert(applied.Saved, `apply failed: ${applied.Message}`);
+  }
+  return Payment;
+}
+
+/** Ledger lines of a payment's entry, by account code. */
+const entryLines = (ctx: IntegrationCheckContext, journalEntryID: string) =>
+  TxQuery<{ Code: string; DebitAmount: number; CreditAmount: number }>(
+    ctx,
+    `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
+         FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+         JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+         WHERE jel.JournalEntryID = '${journalEntryID}'`,
+  );
+
+/** Net movement on one account across EVERY entry for a company — the reconciliation view. */
+const netOnAccount = (
+  ctx: IntegrationCheckContext,
+  companyID: string,
+  code: string,
+) =>
+  TxOne<{ Net: number }>(
+    ctx,
+    // ISNULL per COLUMN, not around the subtraction. A ledger line populates exactly one side
+    // and leaves the other NULL, so `SUM(Debit) - SUM(Credit)` is `250 - NULL` = NULL, and an
+    // outer ISNULL turns that into a confident, wrong 0 — a balance check that can never fail.
+    `SELECT SUM(ISNULL(jel.DebitAmount, 0)) - SUM(ISNULL(jel.CreditAmount, 0)) AS Net
+         FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+         JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+         JOIN ${ACCT_SCHEMA}.JournalEntry je ON je.ID = jel.JournalEntryID
+         WHERE gl.Code = '${code}' AND je.CompanyID = '${companyID}'`,
+  );
+
+/**
+ * PL4's body, factored out so the engine-cache restore can wrap it in a `finally`.
+ *
+ * Everything it writes rolls back; what does NOT roll back is the accounting engine's in-process
+ * cache, which this check deliberately warms so booking can see the fee link it just created.
+ */
+async function PL4Body(ctx: IntegrationCheckContext): Promise<void> {
+  await InRolledBackTransaction(ctx, async () => {
+    const f = Fx();
+    // Give this company a Processing Fee account so the fee leg can resolve.
+    await TxQuery(
+      ctx,
+      `INSERT INTO ${ACCT_SCHEMA}.GLAccount (ID, CompanyID, Code, Name, AccountType, IsActive)
+                     VALUES ('${randomUUID()}','${f.CoA.ID}','${FEE_CODE}','Payment Processing Fees','Expense',1)`,
+    );
+    const fee = await TxOne<{ ID: string }>(
+      ctx,
+      `SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${f.CoA.ID}' AND Code='${FEE_CODE}'`,
+    );
+    // 'Processing Fee' is NOT one of accounting's eight seeded roles — that is exactly
+    // why the factory tolerates it missing (PL5). Here we create it to exercise the
+    // path where it IS configured.
+    const roleID = randomUUID();
+    await TxQuery(
+      ctx,
+      `IF NOT EXISTS (SELECT 1 FROM ${ACCT_SCHEMA}.GLAccountRole WHERE Name='Processing Fee')
+                        INSERT INTO ${ACCT_SCHEMA}.GLAccountRole (ID, Name, Description)
+                        VALUES ('${roleID}','Processing Fee','Payment processor fees expensed on capture (D18).')`,
+    );
+    const role = await TxOne<{ ID: string }>(
+      ctx,
+      `SELECT ID FROM ${ACCT_SCHEMA}.GLAccountRole WHERE Name='Processing Fee'`,
+    );
+    await TxQuery(
+      ctx,
+      `INSERT INTO ${ACCT_SCHEMA}.GLAccountLink (ID, GLAccountID, GLAccountRoleID, EntityID, RecordID, Status)
+                     VALUES ('${randomUUID()}','${fee.ID}','${role.ID}','${f.CompanyEntityID}','${f.CoA.ID}','Active')`,
+    );
+    await ReloadAccountingEngine(ctx);
+
+    const order = await confirmOrder(ctx);
+    const payment = await capturePayment(ctx, order.Order.ID as string, 250, {
+      fee: 7.25,
+    });
+    const lines = await entryLines(ctx, payment.JournalEntryID as string);
+
+    const cash = lines.find((l) => l.Code === CASH_CODE);
+    const feeLine = lines.find((l) => l.Code === FEE_CODE);
+    const ar = lines.find((l) => l.Code === AR_CODE);
+
+    AssertEqual(
+      Number(cash?.DebitAmount),
+      242.75,
+      "cash is NET of the fee — what the bank got",
+    );
+    AssertEqual(Number(feeLine?.DebitAmount), 7.25, "the fee is our expense");
+    // GROSS. A fee netted against AR would leave a residue on the customer's balance
+    // that no payment could ever clear.
+    AssertEqual(
+      Number(ar?.CreditAmount),
+      250,
+      "the receivable clears for the FULL amount",
+    );
+  });
+}
+
+export const PaymentLedgerChecks: NamedCheck[] = [
+  {
+    Id: "payment-ledger.PL1",
+    Name: "PL1: capturing a payment books an entry and stamps JournalEntryID",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const order = await confirmOrder(ctx);
+        const payment = await capturePayment(
+          ctx,
+          order.Order.ID as string,
+          250,
+        );
+
+        const journalEntryID = payment.JournalEntryID as string;
+        Assert(
+          journalEntryID != null,
+          "capture must stamp JournalEntryID — this was the gap",
+        );
+
+        const entry = await TxOne<{ EntryType: string }>(
+          ctx,
+          `SELECT EntryType FROM ${ACCT_SCHEMA}.JournalEntry WHERE ID='${journalEntryID}'`,
+        );
+        AssertEqual(
+          entry.EntryType,
+          "PaymentReceipt",
+          "entry type — accounting's vocabulary, not ours",
+        );
+      }),
+  },
+  {
+    Id: "payment-ledger.PL2",
+    Name: "PL2: the capture entry debits Cash and credits Accounts Receivable",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const order = await confirmOrder(ctx);
+        const payment = await capturePayment(
+          ctx,
+          order.Order.ID as string,
+          250,
+        );
+        const lines = await entryLines(ctx, payment.JournalEntryID as string);
+
+        AssertEqual(
+          lines.length,
+          2,
+          `no-fee capture has two lines: ${JSON.stringify(lines)}`,
+        );
+        const cash = lines.find((l) => l.Code === CASH_CODE);
+        const ar = lines.find((l) => l.Code === AR_CODE);
+        Assert(cash != null, `no Cash line: ${JSON.stringify(lines)}`);
+        Assert(ar != null, `no AR line: ${JSON.stringify(lines)}`);
+        AssertEqual(Number(cash!.DebitAmount), 250, "cash debited");
+        AssertEqual(Number(ar!.CreditAmount), 250, "receivable relieved");
+      }),
+  },
+  {
+    Id: "payment-ledger.PL3",
+    Name: "PL3: AR nets to zero across booking and capture",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const order = await confirmOrder(ctx);
+
+        // Booking alone leaves the receivable outstanding — that is the correct interim state.
+        const afterBooking = await netOnAccount(ctx, f.CoA.ID, AR_CODE);
+        AssertEqual(
+          Number(afterBooking.Net),
+          250,
+          "AR is a debit balance after booking",
+        );
+
+        await capturePayment(ctx, order.Order.ID as string, 250);
+
+        // THE assertion. Before this feature the ledger stayed at 250 forever while the
+        // order's Balance read 0 — the sub-ledger and the GL disagreeing permanently.
+        const afterCapture = await netOnAccount(ctx, f.CoA.ID, AR_CODE);
+        AssertEqual(
+          Number(afterCapture.Net),
+          0,
+          "AR nets to ZERO once the customer has paid",
+        );
+
+        const cash = await netOnAccount(ctx, f.CoA.ID, CASH_CODE);
+        AssertEqual(Number(cash.Net), 250, "and the cash landed");
+
+        // The sub-ledger agrees with the ledger, which is the whole point.
+        const row = await TxOne<{ Balance: number; PaymentStatus: string }>(
+          ctx,
+          `SELECT Balance, PaymentStatus FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
+        );
+        AssertEqual(Number(row.Balance), 0, "order balance");
+        AssertEqual(row.PaymentStatus, "Paid", "payment status");
+      }),
+  },
+  {
+    Id: "payment-ledger.PL4",
+    Name: "PL4: a processing fee splits cash and fee while still crediting AR gross",
+    RequiresMutation: true,
+    // The engine cache OUTLIVES the transaction. This check creates a Processing Fee role and
+    // link, then reloads the engine so booking can see them — and the rollback removes the rows
+    // but CANNOT remove them from the in-process cache. PL5 would then resolve a fee account
+    // that no longer exists and fail on a dangling GLAccountID. Reloading again AFTER the
+    // rollback is what keeps the cache honest; the transaction alone is not enough isolation
+    // once a check has warmed a cache.
+    Fn: async (ctx) => {
+      try {
+        await PL4Body(ctx);
+      } finally {
+        await ReloadAccountingEngine(ctx);
+      }
+    },
+  },
+  {
+    Id: "payment-ledger.PL5",
+    Name: "PL5: a fee with no Processing Fee account books gross to cash rather than failing",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // No Processing Fee link exists on the fixture company — the role is not one of
+        // accounting's seeded eight. Capture must still succeed.
+        const order = await confirmOrder(ctx);
+        const payment = await capturePayment(
+          ctx,
+          order.Order.ID as string,
+          250,
+          { fee: 7.25 },
+        );
+        const lines = await entryLines(ctx, payment.JournalEntryID as string);
+
+        AssertEqual(
+          lines.length,
+          2,
+          "no fee line, because no fee account resolved",
+        );
+        AssertEqual(
+          Number(lines.find((l) => l.Code === CASH_CODE)?.DebitAmount),
+          250,
+          "the whole gross went to cash",
+        );
+        AssertEqual(
+          Number(lines.find((l) => l.Code === AR_CODE)?.CreditAmount),
+          250,
+          "and AR still clears in full",
+        );
+      }),
+  },
+  {
+    Id: "payment-ledger.PL6",
+    Name: "PL6: re-saving a captured payment does not book a second entry",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const order = await confirmOrder(ctx);
+        const payment = await capturePayment(
+          ctx,
+          order.Order.ID as string,
+          250,
+        );
+        const first = payment.JournalEntryID as string;
+
+        // An ordinary edit of a captured row. Booking again would credit AR twice and put
+        // the customer's balance permanently negative.
+        payment.Notes = "reconciled by finance";
+        Assert(
+          await payment.Save(),
+          `re-save failed: ${payment.LatestResult?.CompleteMessage}`,
+        );
+
+        AssertEqual(
+          payment.JournalEntryID as string,
+          first,
+          "JournalEntryID is unchanged",
+        );
+        const ar = await netOnAccount(ctx, f.CoA.ID, AR_CODE);
+        AssertEqual(Number(ar.Net), 0, "AR still nets to zero, not -250");
+      }),
+  },
+  {
+    Id: "payment-ledger.PL7",
+    Name: "PL7: the auto initial payment books its cash leg end to end",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        // The D42 path: intent on the order, confirmed once, everything else automatic.
+        const result = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 400 },
+          ],
+          InitialPaymentTypeID: f.PaymentTypeIDs.get("Check")!,
+          InitialPaymentAmount: 400,
+        });
+        Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+        const payment = await TxOne<{ JournalEntryID: string | null }>(
+          ctx,
+          `SELECT ph.JournalEntryID FROM ${ORDERS_SCHEMA}.PaymentHeader ph
+                     JOIN ${ORDERS_SCHEMA}.PaymentLine pl ON pl.PaymentHeaderID = ph.ID
+                     WHERE pl.OrderHeaderID = '${result.Order.ID}'`,
+        );
+        Assert(
+          payment.JournalEntryID != null,
+          "the auto payment must book its cash leg too",
+        );
+
+        const ar = await netOnAccount(ctx, f.CoA.ID, AR_CODE);
+        AssertEqual(Number(ar.Net), 0, "AR nets to zero from a single confirm");
+      }),
+  },
+  {
+    Id: "payment-ledger.PL8",
+    Name: "PL8: over-applying cash to an order is refused",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const order = await confirmOrder(ctx, 100);
+        const payment = await capturePayment(
+          ctx,
+          order.Order.ID as string,
+          100,
+        );
+
+        // Nothing prevented this before: Balance would read -400 and PaymentStatus 'Paid'.
+        const attempt = await ApplyPayment(
+          ctx.User,
+          payment.ID as string,
+          order.Order.ID as string,
+          500,
+        );
+        Assert(
+          !attempt.Saved,
+          "applying 500 against a 100 order must be refused",
+        );
+        Assert(
+          /more than the order/i.test(attempt.Message),
+          `the refusal should explain, got: ${attempt.Message}`,
+        );
+
+        const row = await TxOne<{ Balance: number }>(
+          ctx,
+          `SELECT Balance FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
+        );
+        AssertEqual(
+          Number(row.Balance),
+          0,
+          "the balance is untouched by the refused application",
+        );
+      }),
+  },
+  {
+    Id: "payment-ledger.PL9",
+    Name: "PL9: un-applying more than was applied is refused",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const order = await confirmOrder(ctx, 100);
+        const payment = await capturePayment(
+          ctx,
+          order.Order.ID as string,
+          100,
+        );
+
+        const attempt = await ApplyPayment(
+          ctx.User,
+          payment.ID as string,
+          order.Order.ID as string,
+          -250,
+        );
+        Assert(
+          !attempt.Saved,
+          "un-applying 250 when only 100 was applied must be refused",
+        );
+        Assert(
+          /nothing more to/i.test(attempt.Message),
+          `the refusal should explain, got: ${attempt.Message}`,
+        );
+      }),
+  },
+  {
+    Id: "payment-ledger.PL10",
+    Name: "PL10: a refund reverses the capture and reopens the order balance",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const order = await confirmOrder(ctx, 250);
+        const payment = await capturePayment(
+          ctx,
+          order.Order.ID as string,
+          250,
+        );
+
+        const out = await refund(ctx, {
+          PaymentHeaderID: payment.ID,
+          Reason: "customer returned the goods",
+        });
+        Assert(out.Success, `refund failed: ${out.Message}`);
+        AssertEqual(Number(out.RefundAmount), 250, "full refund");
+
+        const reversal = await TxOne<{
+          ID: string;
+          JournalEntryID: string;
+          Status: string;
+        }>(
+          ctx,
+          `SELECT ID, JournalEntryID, Status FROM ${ORDERS_SCHEMA}.PaymentHeader
+                     WHERE ID = '${out.RefundPaymentHeaderID}'`,
+        );
+        AssertEqual(
+          reversal.Status,
+          "Refunded",
+          "the reversal is its own payment record",
+        );
+        Assert(reversal.JournalEntryID != null, "the reversal books an entry");
+
+        // Mirrored: Dr AR / Cr Cash — the receivable comes back, the bank goes down.
+        const lines = await entryLines(ctx, reversal.JournalEntryID);
+        AssertEqual(
+          Number(lines.find((l) => l.Code === AR_CODE)?.DebitAmount),
+          250,
+          "AR debited back",
+        );
+        AssertEqual(
+          Number(lines.find((l) => l.Code === CASH_CODE)?.CreditAmount),
+          250,
+          "cash credited",
+        );
+
+        // Net across all four entries: AR is owed again, cash is gone.
+        AssertEqual(
+          Number((await netOnAccount(ctx, f.CoA.ID, AR_CODE)).Net),
+          250,
+          "AR outstanding again",
+        );
+        AssertEqual(
+          Number((await netOnAccount(ctx, f.CoA.ID, CASH_CODE)).Net),
+          0,
+          "cash nets out",
+        );
+
+        const row = await TxOne<{ Balance: number; PaymentStatus: string }>(
+          ctx,
+          `SELECT Balance, PaymentStatus FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
+        );
+        AssertEqual(Number(row.Balance), 250, "the order is owed again");
+        AssertEqual(row.PaymentStatus, "Unpaid", "and reads unpaid");
+      }),
+  },
+  {
+    Id: "payment-ledger.PL11",
+    Name: "PL11: partial refunds accumulate and over-refunding is refused",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const order = await confirmOrder(ctx, 250);
+        const payment = await capturePayment(
+          ctx,
+          order.Order.ID as string,
+          250,
+        );
+
+        const first = await refund(ctx, {
+          PaymentHeaderID: payment.ID,
+          Amount: 100,
+        });
+        Assert(first.Success, `first refund failed: ${first.Message}`);
+        AssertEqual(
+          Number(first.RemainingRefundable),
+          150,
+          "remaining after a partial refund",
+        );
+
+        const second = await refund(ctx, {
+          PaymentHeaderID: payment.ID,
+          Amount: 100,
+        });
+        Assert(second.Success, `second refund failed: ${second.Message}`);
+        AssertEqual(
+          Number(second.RemainingRefundable),
+          50,
+          "refunds accumulate",
+        );
+
+        // 200 of 250 refunded — asking for 100 more must be refused, not silently clamped.
+        const third = await refund(ctx, {
+          PaymentHeaderID: payment.ID,
+          Amount: 100,
+        });
+        Assert(!third.Success, "over-refunding must be refused");
+        Assert(
+          /only 50 remains refundable/i.test(third.Message ?? ""),
+          `the refusal should state what remains, got: ${third.Message}`,
+        );
+
+        const row = await TxOne<{ Balance: number }>(
+          ctx,
+          `SELECT Balance FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
+        );
+        AssertEqual(
+          Number(row.Balance),
+          200,
+          "balance reflects exactly the 200 refunded",
+        );
+      }),
+  },
+  {
+    Id: "payment-ledger.PL12",
+    Name: "PL12: refunding an uncaptured payment is refused",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const paymentID = randomUUID();
+        // Pending: authorized but never captured, so no money ever moved.
+        await TxQuery(
+          ctx,
+          `INSERT INTO ${ORDERS_SCHEMA}.PaymentHeader
+                        (ID, PaymentNumber, ReceivingCompanyID, PaymentTypeID, Amount, PaymentDate, Status)
+                     VALUES ('${paymentID}','IT-PEND-${paymentID.slice(0, 6).toUpperCase()}','${f.CoA.ID}',
+                             '${f.PaymentTypeIDs.get("Cash")}', 100, GETDATE(), 'Pending')`,
+        );
+
+        const out = await refund(ctx, { PaymentHeaderID: paymentID });
+        Assert(!out.Success, "a Pending payment has nothing to refund");
+        Assert(
+          /not Captured/i.test(out.Message ?? ""),
+          `the refusal should name the status, got: ${out.Message}`,
+        );
+
+        const unknown = await refund(ctx, {
+          PaymentHeaderID: "00000000-0000-0000-0000-000000000000",
+        });
+        Assert(
+          !unknown.Success,
+          "an unknown payment fails in the output, not as a throw",
+        );
+        Assert(
+          /no payment found/i.test(unknown.Message ?? ""),
+          `got: ${unknown.Message}`,
+        );
+      }),
+  },
+];
+
+/**
+ * Force the accounting engine to re-read GL links.
+ *
+ * It caches accounts and links in-process (BaseEngine), so a link created INSIDE a check is
+ * invisible to booking until it reloads — the same trap the fixture setup documents.
+ */
+async function ReloadAccountingEngine(
+  ctx: IntegrationCheckContext,
+): Promise<void> {
+  const { AccountingEngineBase } =
+    await import("@mj-biz-apps/accounting-engine-base");
+  await AccountingEngineBase.Instance.Config(true, ctx.User, ctx.Provider);
+}
+
+for (const check of PaymentLedgerChecks) {
+  IntegrationCheckRegistry.Instance.Register(check);
+}
+
+IntegrationCheckRegistry.Instance.RegisterLifecycle("payment-ledger", {
+  Setup: async (ctx) => {
+    // Cash comes from the shared fixture — see FIXTURE_ACCOUNTS. It stopped being a
+    // payment-ledger concern the moment capture became part of the ordinary confirm path.
+    await CreateOrdersFixture(ctx);
+    await ReloadAccountingEngine(ctx);
+  },
+  Teardown: TeardownOrdersFixture,
+});

@@ -136,6 +136,7 @@ async function seedFixtures(pool, md, user, companyEntityID) {
         await link(pool, companyEntityID, co.id, roleID.get('Accounts Receivable'), co.ar);
         await link(pool, companyEntityID, co.id, roleID.get('Sales'), co.sales);
         await link(pool, companyEntityID, co.id, roleID.get('Deferred Revenue'), co.deferred);
+        await link(pool, companyEntityID, co.id, roleID.get('Cash'), co.cash);
     }
 
     // Catalog: one Immediate product per company + one Deferred product in company A.
@@ -190,6 +191,9 @@ async function makeCompany(md, user, rv, name, currencyCode, pool) {
         { key: 'ar', code: '11201', name: 'Accounts Receivable', type: 'Asset' },
         { key: 'sales', code: '40100', name: 'Sales Revenue', type: 'Revenue' },
         { key: 'deferred', code: '21301', name: 'Deferred Revenue', type: 'Liability' },
+        // Cash became a prerequisite when payment capture started booking Dr Cash / Cr AR (D18):
+        // any order carrying an initial payment now fails to confirm without a linked Cash account.
+        { key: 'cash', code: '10100', name: 'Cash — Operating', type: 'Asset' },
     ];
 
     const out = { id: companyID };

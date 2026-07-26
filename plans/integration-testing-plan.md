@@ -1,6 +1,6 @@
 # Integration Testing Plan — BizApps Orders
 
-> **Status:** BUILT (2026-07-26). Phases 0-3 are done and green — 58 checks across 6 bundles,
+> **Status:** BUILT (2026-07-26). Phases 0-3 are done and green — 70 checks across 7 bundles,
 > dispatched by `mj test suite --name "BizApps Orders Integration"` and by
 > `node test-harnesses/integration.mjs`. Phases 4-5 (breadth, CI) remain. Sections below are the
 > original proposal; **§0 records what the build actually decided**, including where it diverged.
@@ -37,7 +37,7 @@ until the request timed out. `fixture.ts` routes everything through the provider
 
 | Proposed | Built | Why |
 |---|---|---|
-| 12 bundles (`orders-*`) | 6 bundles: `order-booking`, `revenue-recognition`, `subscriptions`, `subscription-cancellation`, `subscription-renewal`, `payments-rollups` | Bundles follow the code that exists. Events, permissions and concurrent numbering have no implementation to test yet; writing their bundles first would have produced tests that assert nothing. |
+| 12 bundles (`orders-*`) | 6 bundles: `order-booking`, `revenue-recognition`, `subscriptions`, `subscription-cancellation`, `subscription-renewal`, `payments-rollups`, `payment-ledger` | Bundles follow the code that exists. Events, permissions and concurrent numbering have no implementation to test yet; writing their bundles first would have produced tests that assert nothing. |
 | Author a `MJ: Test Types` row | Use MJ core's | `Integration Test` (`502A3E67-…`) ships in MJ core metadata and was already present after `mj migrate`. Authoring a duplicate would have split the driver lookup. |
 | Assertions via `RunView` because "raw-SQL helpers won't reach our schemas" | Assertions via `provider.ExecuteSQL` with explicit schema names | The premise was wrong: `ctx.Schema` only defaults the CORE schema for MJ's own helpers; a query we write ourselves can name any schema. Direct SQL also lets us assert on the LEDGER (journal entry lines, balances) which no orders entity exposes. |
 | `ctx.Pool` for fixture setup | the provider for everything | `ctx.Pool` is only populated when the driver owned the bootstrap. Under `mj test` the CLI installs the instrumented cache first, so it arrives `undefined` — a pool-based fixture fails at setup with a message that reads like a platform problem. |

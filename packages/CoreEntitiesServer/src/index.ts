@@ -37,5 +37,27 @@ export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './Cancel
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
 export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
 
+export {
+    BuildGLAccountResolver,
+    EntityIDFor,
+    LoadAccountingEngine,
+    ResolverEntities,
+} from './AccountingBridge.js';
+export type { AccountingEngineSurface } from './AccountingBridge.js';
+
+export { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
+export type {
+    PaymentJEDraft,
+    PaymentJELine,
+    PaymentCaptureContext,
+    PaymentCaptureResult,
+} from './PaymentJournalEntryFactory.js';
+
+export { PaymentHeaderEntityServer, LoadPaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
+export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentLineEntityServer.js';
+
+export { RefundPaymentOperation, LoadRefundPaymentOperation } from './RefundPaymentOperation.js';
+export type { RefundPaymentInput, RefundPaymentOutput } from './RefundPaymentOperation.js';
+
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';

@@ -99,6 +99,21 @@
             "lastModified": "2026-07-26T13:41:10.508Z",
             "checksum": "6b71cacf1d7d3be7ce519512ed3bdcf2669009965f33d7ca3df2e0f0b489f7e2"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-07 - Payment Ledger",
+            "Sequence": 7,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "8D25506F-D7B9-4541-85EE-68C595D3DAAD"
+          },
+          "sync": {
+            "lastModified": "2026-07-26T14:07:29.955Z",
+            "checksum": "93f952a4670057745fafa1b4be46ebc3677c048a454221fafe15d889274717f5"
+          }
         }
       ]
     },

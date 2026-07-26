@@ -46,6 +46,7 @@ import {
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { GLAccountResolver } from './GLAccountResolver.js';
+import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import {
     SubscriptionBehavior,
@@ -959,52 +960,13 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
     // ─── Helpers ───────────────────────────────────────────────────────────────
 
+    /** Resolver + accounting engine come from the shared bridge — see AccountingBridge.ts. */
     private async buildResolver(provider: IMetadataProvider, user: UserInfo): Promise<GLAccountResolver> {
-        const engine = await this.loadAccountingEngine(provider, user);
-
-        return new GLAccountResolver(
-            {
-                Product: this.entityIDFor(PRODUCT_ENTITY),
-                ProductCategory: this.entityIDFor(PRODUCT_CATEGORY_ENTITY),
-                Company: this.entityIDFor(COMPANY_ENTITY),
-            },
-            provider,
-            user,
-            (entityId, recordId, role, asOf) => {
-                // ResolveLinkedAccount returns { Link, Dimensions } — the account is on the link.
-                const hit = engine.ResolveLinkedAccount(entityId, recordId, role, asOf);
-                const glAccountID = hit?.Link?.GLAccountID;
-                if (!glAccountID) return null;
-
-                // The company comes from the ACCOUNT, which is what accounting uses to derive the
-                // JE's company (their CH-2) — so this is the value the D6 guard must compare.
-                const account = engine.GLAccountByID(glAccountID);
-                return { GLAccountID: glAccountID, CompanyID: account?.CompanyID ?? '' };
-            },
-        );
-    }
-
-    /** Loaded dynamically so the accounting peer stays optional at build time. */
-    private async loadAccountingEngine(
-        provider: IMetadataProvider,
-        user: UserInfo,
-    ): Promise<AccountingEngineSurface> {
-        const mod = (await import('@mj-biz-apps/accounting-engine-base')) as unknown as {
-            AccountingEngineBase: { Instance: AccountingEngineSurface };
-        };
-
-        const engine = mod.AccountingEngineBase.Instance;
-        await engine.ConfigEx({ contextUser: user, provider });
-        return engine;
+        return BuildGLAccountResolver(provider, user);
     }
 
     private entityIDFor(entityName: string): string {
-        const md = new Metadata();
-        const entity = md.Entities.find((e) => e.Name === entityName);
-        if (!entity) {
-            throw new Error(`Entity '${entityName}' was not found in metadata.`);
-        }
-        return entity.ID;
+        return EntityIDFor(entityName);
     }
 
     private async loadLinesForBooking(): Promise<mjBizAppsOrdersOrderLineEntity[]> {

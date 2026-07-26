@@ -17,6 +17,9 @@ import {
     LoadCancelSubscriptionOperation,
     LoadOrderEntityServer,
     LoadOrderLineEntityServer,
+    LoadPaymentHeaderEntityServer,
+    LoadPaymentLineEntityServer,
+    LoadRefundPaymentOperation,
     LoadRevenueRecognitionDrivers,
     LoadSpawnRenewalsOperation,
     LoadSubscriptionBehavior,
@@ -56,6 +59,9 @@ export function LoadBizAppsOrdersServer(): void {
     // subclasses against tree-shaking (booking lives in OrderEntityServer.Save).
     LoadOrderEntityServer();
     LoadOrderLineEntityServer();
+    LoadPaymentHeaderEntityServer();  // books the cash leg on capture/refund (D18)
+    LoadPaymentLineEntityServer();    // the over-application guard
+    LoadRefundPaymentOperation();     // the 'Orders.RefundPayment' remote operation (D17)
     LoadRevenueRecognitionDrivers();   // the three shipped rev-rec drivers (D43)
     LoadSubscriptionBehavior();        // the base subscription rules engine (D45)
     LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation
