@@ -11,8 +11,10 @@
  * where a human can see them.
  *
  * WHAT IT BUILDS
- *   One company ("Demo Publishing Co") with a real chart-of-accounts subset: AR, Sales, Deferred
- *   Revenue, Cash. Two customers. A product catalog spanning every revenue behaviour we support.
+ *   TWO companies ("Demo Publishing Co" and "Demo Partner Press"), each with a real
+ *   chart-of-accounts subset (AR, Sales, Deferred Revenue, Cash) plus Due To/Due From accounts and
+ *   the ORDERED intercompany pairs between them. Two customers. A product catalog spanning every
+ *   revenue behaviour we support, including a real event whose dates drive recognition.
  *   Then a set of orders in deliberately different states, so each screen has something to show:
  *
  *     ORD-1  a plain sale, unpaid                       → open receivable
@@ -23,6 +25,7 @@
  *     ORD-6  a calendar-anchored membership, prorated   → short first term, prorated price
  *     ORD-7  a membership later CANCELLED               → mirrored reversal + refund
  *     ORD-8  a membership RENEWED by the engine         → contiguous term 2
+ *     ORD-9  a TWO-COMPANY order, paid in one cheque     → intercompany Due To/Due From legs
  *
  * Usage:
  *   node test-harnesses/seed-demo-data.mjs           # add a demo dataset
@@ -108,8 +111,11 @@ if (doReset) {
         `DELETE FROM ${ORDERS}.SubscriptionEvent WHERE SubscriptionID IN (SELECT ID FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope}))`,
         `DELETE FROM ${ORDERS}.SubscriptionTerm WHERE SubscriptionID IN (SELECT ID FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope}))`,
         `DELETE FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope})`,
+        `DELETE FROM ${ORDERS}.EventOrderLine WHERE ID IN (SELECT ID FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders}))`,
         `DELETE FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders})`,
         `DELETE FROM ${ORDERS}.OrderHeader WHERE CompanyID IN (${scope})`,
+        `DELETE FROM ${ACCT}.IntercompanyAccountMatch WHERE SourceCompanyID IN (${scope}) OR TargetCompanyID IN (${scope})`,
+        `DELETE FROM ${ORDERS}.EventProduct WHERE ID IN (SELECT ID FROM ${ORDERS}.Product WHERE CompanyID IN (${scope}))`,
         `DELETE FROM ${ORDERS}.Product WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.ProductCategory WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.ProductType WHERE Name LIKE '${DEMO_TAG}%'`,
@@ -140,30 +146,68 @@ step('Company and chart of accounts');
 const currency = (await q(`SELECT TOP 1 Code FROM ${ACCT}.Currency`))[0]?.Code;
 if (!currency) throw new Error('No currencies — push the accounting app metadata first.');
 
-const companyID = randomUUID();
-const companyName = `${DEMO_TAG} Publishing Co`;
-await q(`INSERT INTO __mj.Company (ID, Name, Description)
-         VALUES ('${companyID}','${companyName}','Demo data for hands-on review — safe to delete')`);
-await q(`INSERT INTO ${ACCT}.AccountingCompanyProfile
-            (ID, CompanyCode, FunctionalCurrencyCode, EntityType, OperatingTimeZone, IsActive)
-         VALUES ('${companyID}','${companyID.slice(0, 8).toUpperCase()}','${currency}','Subsidiary','UTC',1)`);
-
 const COA = [
     { role: 'Cash', code: '10100', name: 'Cash — Operating', type: 'Asset' },
     { role: 'Accounts Receivable', code: '11201', name: 'Accounts Receivable', type: 'Asset' },
     { role: 'Deferred Revenue', code: '21301', name: 'Deferred Revenue', type: 'Liability' },
     { role: 'Sales', code: '40100', name: 'Sales Revenue', type: 'Revenue' },
 ];
+/**
+ * Intercompany accounts. Not role-linked: an intercompany account is per-company-PAIR, which a
+ * per-record role lookup cannot express, so `IntercompanyAccountMatch` is the only path to them
+ * (accounting BA-D28).
+ */
+const IC_ACCOUNTS = [
+    { key: 'DueTo', code: '21900', name: 'Due To Affiliates', type: 'Liability' },
+    { key: 'DueFrom', code: '11900', name: 'Due From Affiliates', type: 'Asset' },
+];
+
 const roleIDs = new Map((await q(`SELECT ID, Name FROM ${ACCT}.GLAccountRole`)).map((r) => [r.Name, r.ID]));
-const accounts = {};
-for (const a of COA) {
+
+/** Create a company with the demo chart of accounts, role links, and its intercompany accounts. */
+async function createCompany(label) {
     const id = randomUUID();
-    await q(`INSERT INTO ${ACCT}.GLAccount (ID, CompanyID, Code, Name, AccountType, IsActive)
-             VALUES ('${id}','${companyID}','${a.code}','${a.name}','${a.type}',1)`);
-    await q(`INSERT INTO ${ACCT}.GLAccountLink (ID, GLAccountID, GLAccountRoleID, EntityID, RecordID, Status)
-             VALUES ('${randomUUID()}','${id}','${roleIDs.get(a.role)}','${entityID('MJ: Companies')}','${companyID}','Active')`);
-    accounts[a.role] = id;
-    say(`  ${a.code} ${a.name} → role '${a.role}'`);
+    const name = `${DEMO_TAG} ${label}`;
+    await q(`INSERT INTO __mj.Company (ID, Name, Description)
+             VALUES ('${id}','${name}','Demo data for hands-on review — safe to delete')`);
+    await q(`INSERT INTO ${ACCT}.AccountingCompanyProfile
+                (ID, CompanyCode, FunctionalCurrencyCode, EntityType, OperatingTimeZone, IsActive)
+             VALUES ('${id}','${id.slice(0, 8).toUpperCase()}','${currency}','Subsidiary','UTC',1)`);
+
+    const accounts = {};
+    for (const a of COA) {
+        const accountID = randomUUID();
+        await q(`INSERT INTO ${ACCT}.GLAccount (ID, CompanyID, Code, Name, AccountType, IsActive)
+                 VALUES ('${accountID}','${id}','${a.code}','${a.name}','${a.type}',1)`);
+        await q(`INSERT INTO ${ACCT}.GLAccountLink (ID, GLAccountID, GLAccountRoleID, EntityID, RecordID, Status)
+                 VALUES ('${randomUUID()}','${accountID}','${roleIDs.get(a.role)}','${entityID('MJ: Companies')}','${id}','Active')`);
+        accounts[a.role] = accountID;
+    }
+    for (const a of IC_ACCOUNTS) {
+        const accountID = randomUUID();
+        await q(`INSERT INTO ${ACCT}.GLAccount (ID, CompanyID, Code, Name, AccountType, IsActive)
+                 VALUES ('${accountID}','${id}','${a.code}','${a.name}','${a.type}',1)`);
+        accounts[a.key] = accountID;
+    }
+    say(`  ${name}  (${COA.length} role-linked accounts + Due To/Due From)`);
+    return { ID: id, Name: name, Accounts: accounts };
+}
+
+const publisher = await createCompany('Publishing Co');
+const press = await createCompany('Partner Press');
+const companyID = publisher.ID;
+const companyName = publisher.Name;
+const accounts = publisher.Accounts;
+
+// The ORDERED intercompany pairs (accounting BA-D27): one row per direction. A row means
+// "Source collected cash on Target's behalf, so Source owes Target" — reading it backwards would
+// still BALANCE, which is exactly why the direction is explicit and trigger-enforced.
+for (const [source, target] of [[publisher, press], [press, publisher]]) {
+    await q(`INSERT INTO ${ACCT}.IntercompanyAccountMatch
+                (ID, SourceCompanyID, TargetCompanyID, DueToGLAccountID, DueFromGLAccountID, Status)
+             VALUES ('${randomUUID()}','${source.ID}','${target.ID}',
+                     '${source.Accounts.DueTo}','${target.Accounts.DueFrom}','Active')`);
+    say(`  intercompany pair: ${source.Name} owes ${target.Name}`);
 }
 
 // The engine caches accounts and links, so it must re-read them before anything books.
@@ -209,13 +253,41 @@ async function product(name, revRecCode, subTypeCode = null, typeID = servicesTy
     return id;
 }
 
+// An EVENT product type. The extension pointers are what make it an event type rather than a
+// label — they name the IsA children that carry event data (BO-D37).
+const eventTypeID = randomUUID();
+await q(`INSERT INTO ${ORDERS}.ProductType
+            (ID, Name, RequiresFulfillment, IsActive, ProductExtensionEntity, OrderLineExtensionEntity, DefaultRevenueRecognitionTypeID)
+         VALUES ('${eventTypeID}','${DEMO_TAG} Event',0,1,
+                 'MJ_BizApps_Orders: Event Products','MJ_BizApps_Orders: Event Order Lines','${revRec.get('AllBackEnd')}')`);
+
 const products = {
     handbook: await product(`${DEMO_TAG} Style Handbook`, 'UpFront', null, goodsTypeID),
     workshop: await product(`${DEMO_TAG} Editing Workshop Seat`, 'UpFront'),
-    conference: await product(`${DEMO_TAG} Annual Conference Ticket`, 'AllBackEnd'),
+    conference: await product(`${DEMO_TAG} Annual Conference Ticket`, 'AllBackEnd', null, eventTypeID),
     membership: await product(`${DEMO_TAG} Individual Membership`, 'EvenOverTime', 'AnnualRolling'),
     calendarMembership: await product(`${DEMO_TAG} Institutional Membership`, 'EvenOverTime', 'CalendarYear'),
 };
+
+// The conference is a REAL event: its dates live on the EventProduct row, so a ticket line needs
+// none and still recognizes on the day (D-EVENT).
+const CONFERENCE = { StartsAt: '2027-05-12T09:00:00Z', EndsAt: '2027-05-14T17:00:00Z' };
+await q(`INSERT INTO ${ORDERS}.EventProduct
+            (ID, EventStartsAt, EventEndsAt, VenueName, Capacity, RequiresAttendeeInfo)
+         VALUES ('${products.conference}','${CONFERENCE.StartsAt}','${CONFERENCE.EndsAt}',
+                 '${DEMO_TAG} Riverside Convention Center', 400, 1)`);
+say(`  conference runs ${CONFERENCE.StartsAt.slice(0, 10)} → ${CONFERENCE.EndsAt.slice(0, 10)} (revenue deferred until then)`);
+
+// A product owned by the OTHER company, so an order can span both and produce intercompany legs.
+const pressCatID = randomUUID();
+await q(`INSERT INTO ${ORDERS}.ProductCategory (ID, CompanyID, Name, IsActive)
+         VALUES ('${pressCatID}','${press.ID}','${DEMO_TAG} Press Catalog',1)`);
+products.pressAnthology = randomUUID();
+await q(`INSERT INTO ${ORDERS}.Product
+            (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, IsTaxable)
+         VALUES ('${products.pressAnthology}','${press.ID}','${goodsTypeID}','${pressCatID}',
+                 '${DEMO_TAG} Partner Press Anthology','Active','${revRec.get('UpFront')}',0)`);
+say(`  ${DEMO_TAG} Partner Press Anthology  (UpFront, owned by ${press.Name})`);
 
 // ─── Orders ────────────────────────────────────────────────────────────────────
 
@@ -226,8 +298,8 @@ async function confirmOrder({ lines, customer, orderDate, initialPayment, note }
     order.OrderDate = orderDate ?? new Date();
     order.Status = 'Draft';
     order.CompanyID = companyID;
-    if (customer?.org) order.CustomerOrganizationID = customer.org;
-    if (customer?.person) order.CustomerPersonID = customer.person;
+    if (customer?.org) order.BillToOrganizationID = customer.org;
+    if (customer?.person) order.BillToPersonID = customer.person;
     if (note) order.Notes = note;
     if (initialPayment) {
         order.InitialPaymentTypeID = payTypes.get(initialPayment.type);
@@ -339,6 +411,59 @@ const o6 = await confirmOrder({
     note: 'Calendar-year membership bought mid-year — short first term at a prorated price',
 });
 
+// ─── Intercompany ──────────────────────────────────────────────────────────────
+
+step('Intercompany order (two companies, one payment)');
+
+// The order carries a line from EACH company. Line ownership is the PRODUCT's company (D6), so
+// this is a two-company order even though one company placed it.
+const o9 = await confirmOrder({
+    lines: [
+        { product: products.handbook, qty: 2, price: 45 },          // Publishing Co — 90
+        { product: products.pressAnthology, qty: 1, price: 210 },   // Partner Press — 210
+    ],
+    customer: { org: orgID },
+    note: 'Two companies on one order — paying it raises the intercompany legs',
+});
+
+// Cash lands with the Publishing Co, but 210 of it settles the Partner Press's line. Without the
+// intercompany legs this would credit the WRONG receivable and leave the Press's open forever —
+// balanced, posted, and invisible (D13).
+const icPayment = await md.GetEntityObject('MJ_BizApps_Orders: Payment Headers', user);
+icPayment.NewRecord();
+icPayment.PaymentNumber = `${DEMO_TAG}-IC-${randomUUID().slice(0, 6).toUpperCase()}`;
+icPayment.ReceivingCompanyID = publisher.ID;
+icPayment.PaymentTypeID = payTypes.get('Check');
+icPayment.Amount = 300;
+icPayment.Status = 'Captured';
+icPayment.PaymentDate = new Date();
+icPayment.BillToOrganizationID = orgID;
+if (!(await icPayment.Save())) throw new Error(`IC capture failed: ${icPayment.LatestResult?.CompleteMessage}`);
+
+const icLine = await md.GetEntityObject('MJ_BizApps_Orders: Payment Lines', user);
+icLine.NewRecord();
+icLine.PaymentHeaderID = icPayment.ID;
+icLine.OrderHeaderID = o9.ID;
+icLine.Amount = 300;
+icLine.AllocatedAt = new Date();
+if (!(await icLine.Save())) throw new Error(`IC allocation failed: ${icLine.LatestResult?.CompleteMessage}`);
+
+const icEntries = await q(`
+    SELECT je.EntryNumber, c.Name AS Company, gl.Code, gl.Name AS Account,
+           jel.DebitAmount AS Dr, jel.CreditAmount AS Cr
+    FROM ${ORDERS}.PaymentLine pl
+    JOIN ${ACCT}.JournalEntry je ON LOWER(je.LinkedRecordID) = LOWER(CAST(pl.ID AS NVARCHAR(400)))
+    JOIN ${ACCT}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+    JOIN ${ACCT}.GLAccount gl ON gl.ID = jel.GLAccountID
+    JOIN __mj.Company c ON c.ID = gl.CompanyID
+    WHERE pl.ID='${icLine.ID}'
+    ORDER BY c.Name, gl.Code`);
+say(`  one payment of 300 produced ${new Set(icEntries.map((r) => r.EntryNumber)).size} journal entries:`);
+for (const r of icEntries) {
+    const amount = r.Dr ? `Dr ${String(r.Dr).padStart(8)}` : `Cr ${String(r.Cr).padStart(8)}`;
+    say(`    ${String(r.Company).padEnd(24)} ${r.Code} ${String(r.Account).padEnd(22)} ${amount}`);
+}
+
 // ─── Cancellation ──────────────────────────────────────────────────────────────
 
 step('Cancellation');
@@ -418,17 +543,23 @@ for (const row of counts) say(`  ${String(row.N).padStart(4)}  ${row.Thing}`);
 
 step('Ledger position');
 const trial = await q(`
-    SELECT gl.Code, gl.Name,
+    SELECT c.Name AS Company, gl.Code, gl.Name,
            SUM(ISNULL(jel.DebitAmount,0))  AS Debits,
            SUM(ISNULL(jel.CreditAmount,0)) AS Credits,
            SUM(ISNULL(jel.DebitAmount,0)) - SUM(ISNULL(jel.CreditAmount,0)) AS Net
     FROM ${ACCT}.JournalEntryLine jel
     JOIN ${ACCT}.GLAccount gl ON gl.ID = jel.GLAccountID
     JOIN ${ACCT}.JournalEntry je ON je.ID = jel.JournalEntryID
-    WHERE je.CompanyID='${companyID}'
-    GROUP BY gl.Code, gl.Name ORDER BY gl.Code`);
+    JOIN __mj.Company c ON c.ID = je.CompanyID
+    WHERE je.CompanyID IN ('${publisher.ID}','${press.ID}')
+    GROUP BY c.Name, gl.Code, gl.Name ORDER BY c.Name, gl.Code`);
+let currentCompany = null;
 for (const r of trial) {
-    say(`  ${r.Code}  ${String(r.Name).padEnd(22)} Dr ${String(r.Debits).padStart(10)}  Cr ${String(r.Credits).padStart(10)}  net ${String(r.Net).padStart(10)}`);
+    if (r.Company !== currentCompany) {
+        currentCompany = r.Company;
+        say(`\n  ${currentCompany}`);
+    }
+    say(`    ${r.Code}  ${String(r.Name).padEnd(22)} Dr ${String(r.Debits).padStart(10)}  Cr ${String(r.Credits).padStart(10)}  net ${String(r.Net).padStart(10)}`);
 }
 const totalDr = trial.reduce((s, r) => s + Number(r.Debits), 0);
 const totalCr = trial.reduce((s, r) => s + Number(r.Credits), 0);

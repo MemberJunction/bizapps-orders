@@ -1,7 +1,10 @@
 # Intercompany balancing entries — design
 
-> **Status:** Approved design (Amith, 2026-07-26). Schema + resolution build in
-> [`bizapps-accounting`](https://github.com/MemberJunction/bizapps-accounting); orders consumes it.
+> **Status: BUILT (2026-07-26).** Schema, triggers and resolution shipped in
+> [`bizapps-accounting` PR #25](https://github.com/MemberJunction/bizapps-accounting/pull/25)
+> (merged); the payment-side legs ship in this repo. Covered by the `intercompany` bundle
+> (IC1–IC12) plus 27 mutation-verified unit tests. What remains unbuilt is **settlement** (§8) —
+> the balances accumulate correctly and nothing clears them, which is deliberate and named.
 > **Parent plan:** [`bizapps-orders-master.md`](./bizapps-orders-master.md) §9, D13.
 > **AR grain:** SETTLED — A/R is **per company, per line**. The seller-of-record alternative is
 > withdrawn, not deferred, so this design rests on a closed decision rather than an open one.
@@ -14,23 +17,30 @@ D13 rules that orders create **no** due-to/due-from at booking: *"you don't know
 anything until you get cash."* Each line's journal entry is a complete single-company story, and the
 intercompany legs arise on the **payment** side.
 
-The booking half of that is built and proven (`order-booking` OB1–OB9). **The payment half is not,
-and its absence is currently a correctness bug rather than a missing feature.**
+The booking half of that has been built and proven since early on (`order-booking` OB1–OB9). **The
+payment half was NOT, and its absence was a correctness bug rather than a missing feature.** It is
+now built; the description below is kept in the past tense because understanding the failure is what
+justifies the shape of the fix.
 
-Payment capture books `Dr Cash / Cr AR` in the **receiving** company only. So when Company A receives
-cash that settles a line owned by Company B, today we:
+Payment capture booked `Dr Cash / Cr AR` in the **receiving** company only. So when Company A
+received cash that settled a line owned by Company B, we:
 
-- debit A's cash — correct, the money is there;
-- credit **A's** accounts receivable — **wrong**, A never had that receivable;
-- leave B's receivable outstanding forever — **wrong**, the customer has paid.
+- debited A's cash — correct, the money is there;
+- credited **A's** accounts receivable — **wrong**, A never had that receivable;
+- left B's receivable outstanding forever — **wrong**, the customer has paid.
 
-Both companies' books are misstated by the same amount, in opposite directions, with nothing to
+Both companies' books were misstated by the same amount, in opposite directions, with nothing to
 reconcile them.
 
-> ⚠️ **The integration suite does not catch this.** Every check in `payment-ledger` uses a
-> single-company order, so `PL3` ("AR nets to zero") passes while the multi-company case is silently
-> unexercised. A bundle that reads as comprehensive coverage of the cash leg has a hole in exactly
-> the place this document addresses. Closing it is part of the work, not a follow-on.
+> ⚠️ **The integration suite did not catch this, and that is the lesson worth keeping.** Every check
+> in `payment-ledger` used a single-company order, so `PL3` ("AR nets to zero") passed while the
+> multi-company case went silently unexercised. A bundle that read as comprehensive coverage of the
+> cash leg had a hole in exactly the place this document addresses.
+>
+> The entry **balanced**. That is the defining property of this whole area: every wrong answer here
+> is a balanced, posted, plausible-looking entry, so no assertion about the ledger footing will ever
+> find one. The `intercompany` bundle therefore asserts **whose books** each amount landed on — and
+> re-introducing the original bug fails 10 of its 12 checks.
 
 ---
 
