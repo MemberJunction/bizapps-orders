@@ -47,6 +47,12 @@
 21. [Out of scope and future-app boundaries](#21-out-of-scope-and-future-app-boundaries)
 22. [Build inventory (state as of consolidation, 2026-07-23)](#22-build-inventory-state-as-of-consolidation-2026-07-23)
 
+**Companion design docs** (each stands alone; linked from the section it revises):
+- [`subscriptions-design.md`](./subscriptions-design.md) — subscription type rules, first-class
+  terms, and where revenue-recognition entries anchor (revises §4.5 / D20)
+- [`integration-testing-plan.md`](./integration-testing-plan.md) — the headless end-to-end suite
+  built on MJ's testing framework: clean DB through catalog → orders → payments → subs → cancellation
+
 ---
 
 ## 1. Context, positioning, and guiding principles
@@ -408,6 +414,14 @@ __mj_BizAppsOrders.Subscription         -- continuity record: OrderLineID (birth
                                         -- RevenueRecognitionScheduleID, migration trail (MigratesFrom/To)
 __mj_BizAppsOrders.SubscriptionEvent    -- immutable log; ProviderEventID UNIQUE (webhook idempotency)
 ```
+
+> **⚠ Under revision — see [`subscriptions-design.md`](./subscriptions-design.md) (2026-07-25).**
+> The model below expresses far less than real recurring behaviour needs: no term record (only a
+> moving `CurrentPeriodStart/End` pointer), no calendar-anchored starts or proration, no separation
+> of billing cadence from recognition cadence, and no rules for concurrency, reactivation,
+> cancellation, or grace. That design proposes a `SubscriptionType` rules table (pluggable driver,
+> same pattern as D43) plus a first-class `SubscriptionTerm`, and proposes anchoring **recognition**
+> entries to the term while **booking** entries stay on the order line.
 
 Lifecycle per D20: first sale creates; renewals spawn per-cycle Orders (Draft at launch;
 `RenewalSpawnStatus` per type/plan later); downgrade = cancel + new. Stripe-driven subs mirror
