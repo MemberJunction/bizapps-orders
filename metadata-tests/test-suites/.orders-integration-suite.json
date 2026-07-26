@@ -69,6 +69,21 @@
             "lastModified": "2026-07-26T02:30:26.939Z",
             "checksum": "887a0a0ecc6fb62dfcad88bb4c70dc486d1cc2cfacea28cf078db726cfdfdfb0"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-05 - Subscription Cancellation",
+            "Sequence": 5,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "D6A97782-301B-4AFA-9578-726E781BB42A"
+          },
+          "sync": {
+            "lastModified": "2026-07-26T03:29:37.704Z",
+            "checksum": "b449aaaad7dca3fd40f1fe302c5a6ed65dac64bf37022e742878a93578c09799"
+          }
         }
       ]
     },

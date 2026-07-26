@@ -31,7 +31,7 @@
     "fields": {
       "Code": "CalendarYear",
       "Name": "Calendar Year (Jan 1 anchor)",
-      "Description": "Membership year runs 1/1-12/31 for everyone. A mid-year join is PRORATED to the next anchor, so all members renew together. Bills annually, recognizes monthly.",
+      "Description": "Membership year runs 1/1-12/31 for everyone. A mid-year join is PRORATED to the next anchor, so all members renew together. Bills annually, recognizes monthly. Cancels IMMEDIATELY and refunds the unused portion — `EndOfTerm` would be contradictory here, since coverage running to the term end leaves nothing unused to prorate.",
       "SubscriberScope": "Either",
       "StartMode": "CalendarAnchored",
       "AnchorMonth": 1,
@@ -45,7 +45,7 @@
       "ReactivationWindowDays": 90,
       "AutoRenewDefault": 1,
       "RenewalLeadDays": 90,
-      "CancellationMode": "EndOfTerm",
+      "CancellationMode": "Immediate",
       "CancellationRefundMode": "ProrateUnused",
       "GracePeriodDays": 30,
       "Sequence": 20
@@ -54,8 +54,8 @@
       "ID": "C5E1A870-9B24-4D63-8E17-5A6B7C8D9E02"
     },
     "sync": {
-      "lastModified": "2026-07-26T02:26:50.017Z",
-      "checksum": "7fd590425a2cb1778c8f1127ca8d0733b1c1a823f67f772688671e21197714c0"
+      "lastModified": "2026-07-26T03:15:08.577Z",
+      "checksum": "b0e8b73df49ca89aea385e921497ed98436dc2cd3de0381d7a63b3e953cc0410"
     }
   },
   {
@@ -103,16 +103,17 @@
       "AutoRenewDefault": 1,
       "RenewalLeadDays": 15,
       "CancellationMode": "EndOfBillingPeriod",
-      "CancellationRefundMode": "NoRefund",
+      "CancellationRefundMode": "FullRefundWithinWindow",
       "GracePeriodDays": 0,
-      "Sequence": 40
+      "Sequence": 40,
+      "CancellationWindowDays": 14
     },
     "primaryKey": {
       "ID": "C5E1A870-9B24-4D63-8E17-5A6B7C8D9E04"
     },
     "sync": {
-      "lastModified": "2026-07-26T02:26:50.049Z",
-      "checksum": "04ab4eebe0c8570fb388e4d0ccf2479c29738ca959be956e444f6b6e173b7f30"
+      "lastModified": "2026-07-26T03:15:08.591Z",
+      "checksum": "d1ed358a987282490c1f66e1c3627de1ba6a26c6066408c0c9ec194542679704"
     }
   }
 ]

@@ -1,6 +1,6 @@
 # Integration Testing Plan — BizApps Orders
 
-> **Status:** BUILT (2026-07-25). Phases 0-3 are done and green — 37 checks across 4 bundles,
+> **Status:** BUILT (2026-07-25). Phases 0-3 are done and green — 47 checks across 5 bundles,
 > dispatched by `mj test suite --name "BizApps Orders Integration"` and by
 > `node test-harnesses/integration.mjs`. Phases 4-5 (breadth, CI) remain. Sections below are the
 > original proposal; **§0 records what the build actually decided**, including where it diverged.
@@ -37,7 +37,7 @@ until the request timed out. `fixture.ts` routes everything through the provider
 
 | Proposed | Built | Why |
 |---|---|---|
-| 12 bundles (`orders-*`) | 4 bundles: `order-booking`, `revenue-recognition`, `subscriptions`, `payments-rollups` | Bundles follow the code that exists. Events, permissions and concurrent numbering have no implementation to test yet; writing their bundles first would have produced tests that assert nothing. |
+| 12 bundles (`orders-*`) | 5 bundles: `order-booking`, `revenue-recognition`, `subscriptions`, `subscription-cancellation`, `payments-rollups` | Bundles follow the code that exists. Events, permissions and concurrent numbering have no implementation to test yet; writing their bundles first would have produced tests that assert nothing. |
 | Author a `MJ: Test Types` row | Use MJ core's | `Integration Test` (`502A3E67-…`) ships in MJ core metadata and was already present after `mj migrate`. Authoring a duplicate would have split the driver lookup. |
 | Assertions via `RunView` because "raw-SQL helpers won't reach our schemas" | Assertions via `provider.ExecuteSQL` with explicit schema names | The premise was wrong: `ctx.Schema` only defaults the CORE schema for MJ's own helpers; a query we write ourselves can name any schema. Direct SQL also lets us assert on the LEDGER (journal entry lines, balances) which no orders entity exposes. |
 | `ctx.Pool` for fixture setup | the provider for everything | `ctx.Pool` is only populated when the driver owned the bootstrap. Under `mj test` the CLI installs the instrumented cache first, so it arrives `undefined` — a pool-based fixture fails at setup with a message that reads like a platform problem. |
@@ -45,8 +45,8 @@ until the request timed out. `fixture.ts` routes everything through the provider
 
 ### What the suite found
 
-Writing the tests was worth it before the code was "finished" — five real defects surfaced, four of
-them in product code:
+Writing the tests was worth it before the code was "finished" — **eight** real defects surfaced,
+seven of them in product code:
 
 1. **`Subscription.OrderLineID` was never set** — NOT NULL, so every subscription purchase failed.
 2. **Calendar-anchored terms could end before they started.** `OrderDate` returns as UTC midnight
@@ -60,8 +60,24 @@ them in product code:
 4. **`SubscriptionNumber` was derived from the order number plus a timestamp suffix** — collides
    when one order buys two subscription products in the same millisecond. Now a real
    `SubscriptionSequence` singleton, matching `OrderSequence`/`PaymentSequence`.
-5. **(harness, not product)** `AccountingEngineBase` caches GL links in-process, so a second
+5. **D16's negative-quantity reversal had never actually booked.** The factory passed negative
+   amounts through, which accounting refuses outright (`line amount must be … > 0`). Reversal is
+   mirroring — the same accounts with debit and credit swapped — not negation. Nothing exercised
+   this path until the cancellation bundle did.
+6. **Proration never reached the order line.** Only the term recorded the reduction, so a
+   calendar-anchored membership bought mid-year was invoiced the FULL price for a partial period,
+   and the booking entry could never reconcile with the recognition schedule.
+7. **A GUID-case Map lookup bug in the booking path.** Products were keyed by DB-uppercased IDs and
+   looked up by the caller's lowercase ones, so subscription lines silently resolved to nothing.
+   Now funnelled through one `uuidKey` normalizer — the third time this trap bit, and the reason it
+   is now a named helper rather than another inline `.toLowerCase()`.
+8. **(harness, not product)** `AccountingEngineBase` caches GL links in-process, so a second
    bundle's fixture was invisible to booking. Setup forces a refresh.
+
+It also caught **contradictory seed configuration**: a subscription type pairing `EndOfTerm`
+cancellation with `ProrateUnused` refunds can never pay out, because coverage running to the term
+end leaves nothing unused to prorate. Fixed in the seed data and pinned by a unit test, since the
+combination is legal-but-pointless rather than something a CHECK constraint should forbid.
 
 Two checks also had to be **hardened after passing for the wrong reason**: `OB7`/`OB8`/`OB9`
 asserted only that a confirm was rejected, which is also true when the entity subclasses were never
@@ -76,7 +92,8 @@ total absence of the feature.
 |---|---|
 | `packages/IntegrationTests/src/fixture.ts` | catalog fixture, transaction discipline, GUID/query helpers |
 | `packages/IntegrationTests/src/order-builder.ts` | build/confirm orders through the ENTITY API, so the Save override fires |
-| `packages/IntegrationTests/src/checks/*.checks.ts` | the 4 bundles |
+| `packages/IntegrationTests/src/checks/*.checks.ts` | the 5 bundles |
+| `packages/IntegrationTests/src/__tests__/registry-parity.test.ts` | the §5 drift guards — bundle counts, and name parity across all four places it is written down |
 | `test-harnesses/integration.mjs` | standalone dispatcher over the same registry — the fast inner loop |
 | `metadata-tests/` | `MJ: Tests` × 4 + `MJ: Test Suites` + membership, kept OUT of the production-pushed `metadata/` |
 | `scripts/rebuild-db.sh` | Phase 2's provisioning script — the four-layer build, encoded |
@@ -86,8 +103,6 @@ total absence of the feature.
 
 - **Phase 4 breadth** — the eight bundles listed in §3 that have no implementation behind them yet.
 - **Phase 5 CI** — Docker SQL Server → `scripts/rebuild-db.sh` → `mj test suite` as a blocking gate.
-- **The drift guards from §5** — per-bundle count table and sibling-parity test. Not yet written;
-  with 4 bundles the drift risk is small but it grows with every addition.
 - **`mj test` needs `RUN_MUTATION_TESTS=1`.** Every check is mutation-class, so a run without the
   gate reports zero checks and passes. That is skip-as-pass, exactly what §4 warns about, and it is
   the first thing CI must assert against.

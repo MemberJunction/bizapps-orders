@@ -26,7 +26,13 @@ export type {
     SubscriptionPurchaseContext,
     SubscriptionDecision,
     ExistingSubscription,
+    CancellableTerm,
+    CancellationContext,
+    CancellationDecision,
 } from './SubscriptionBehavior.js';
+
+export { CancelSubscriptionOperation, LoadCancelSubscriptionOperation } from './CancelSubscriptionOperation.js';
+export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './CancelSubscriptionOperation.js';
 
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';

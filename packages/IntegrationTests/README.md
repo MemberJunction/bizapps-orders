@@ -73,6 +73,16 @@ For a check that deliberately trips a database guard, use `OutsideTransaction(bo
 instead: a trigger raising a severity-16 error dooms the enclosing transaction outright, savepoints
 included, so rollback-based isolation is impossible for that check.
 
+## Drift guards
+
+`npm test` in this package is not an integration run — it is the wiring check. Bundle names live in
+four places (check IDs, `src/index.ts`, `ALL_BUNDLES`, and a `MJ: Tests` record) and a miss in any
+one produces a bundle nothing dispatches: no error, just silently absent coverage. The parity test
+asserts exact per-bundle check counts and cross-checks all four places.
+
+It matters more than it looks. `mj test` reports a **green suite when it runs zero checks**, so
+"the suite passed" only means something if something else independently asserts the checks exist.
+
 ## Adding a bundle
 
 1. `src/checks/<name>.checks.ts` — export `NamedCheck[]`, `Register` each, `RegisterLifecycle` for
@@ -81,6 +91,6 @@ included, so rollback-based isolation is impossible for that check.
 3. Add it to `ALL_BUNDLES` in `test-harnesses/integration.mjs`.
 4. Add a `MJ: Tests` record under `metadata-tests/tests/` naming the bundle in
    `Configuration.checks[].type`, plus suite membership, then `mj sync push --dir metadata-tests`.
+5. Add it to `EXPECTED_BUNDLES` in `src/__tests__/registry-parity.test.ts` with its check count.
 
-The bundle name lives in four places; miss one and you get a bundle nothing dispatches, silently.
-MJ's suite guards this with a sibling-parity test — worth porting once we have more bundles.
+Step 5 is what makes steps 1–4 hard to get wrong: the guard fails until all of them are done.

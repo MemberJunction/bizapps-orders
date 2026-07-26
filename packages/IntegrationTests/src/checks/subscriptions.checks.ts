@@ -190,7 +190,7 @@ export const SubscriptionChecks: NamedCheck[] = [
     },
     {
         Id: 'subscriptions.SB5',
-        Name: 'SB5: a prorated partial term charges only the fraction of the year it covers',
+        Name: 'SB5: a prorated partial term bills the fraction, on the line as well as the term',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -206,12 +206,38 @@ export const SubscriptionChecks: NamedCheck[] = [
                     Math.abs(factor - expectedFactor) < 1e-5,
                     `proration factor ${factor} should be ~${expectedFactor.toFixed(6)} (184/365 days)`,
                 );
-                AssertEqual(
-                    Number(term.Amount),
-                    Math.round(1200 * factor * 100) / 100,
-                    'term amount is the list price times the proration factor',
+
+                // PRORATION MUST REACH THE ORDER LINE. If only the term recorded the reduction, the
+                // customer would be invoiced the full 1200 for six months of coverage and the
+                // booking entry would never reconcile with what the schedule recognizes.
+                const line = await TxOne<{ Quantity: number; LineTotalNet: number }>(
+                    ctx,
+                    `SELECT Quantity, LineTotalNet FROM ${ORDERS_SCHEMA}.OrderLine
+                     WHERE OrderHeaderID = '${result.Order.ID}'`,
                 );
+                Assert(
+                    Math.abs(Number(line.Quantity) - factor) < 1e-3,
+                    `the line quantity ${line.Quantity} must carry the proration (~${factor.toFixed(4)}), not stay at 1`,
+                );
+
+                // The three numbers that must agree or deferred revenue never clears to zero:
+                // what was billed (line net), what the term says, and what the schedule recognizes.
+                AssertEqual(Number(term.Amount), Number(line.LineTotalNet), 'term amount equals the line net');
                 Assert(Number(term.Amount) < 1200, 'a prorated term must cost less than a full one');
+
+                const released = await TxOne<{ Total: number }>(
+                    ctx,
+                    `SELECT SUM(jel.DebitAmount) AS Total
+                     FROM ${ACCT_SCHEMA}.JournalEntry je
+                     JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+                     WHERE je.EntryType = 'RevenueRecognition' AND je.LinkedRecordID = '${term.ID}'
+                       AND jel.DebitAmount > 0`,
+                );
+                AssertEqual(
+                    Math.round(Number(released.Total) * 100) / 100,
+                    Number(term.Amount),
+                    'the recognition schedule releases exactly the prorated amount',
+                );
             }),
     },
     {

@@ -227,3 +227,132 @@ describe('recognition cadence', () => {
         expect(months({ RecognitionCadence: 'MatchBilling', BillingCadence: 'Monthly' })).toBe(1);
     });
 });
+
+describe('cancellation policy', () => {
+    /** A term running the full 2026 calendar year at 1200 — Amith's example case. */
+    const term = {
+        StartDate: new Date('2026-01-01T00:00:00Z'),
+        EndDate: new Date('2026-12-31T00:00:00Z'),
+        Amount: 1200,
+        TermNumber: 1,
+    };
+
+    const cancelWith = (r: Partial<SubscriptionTypeRules>, request: string) =>
+        new SubscriptionBehavior().DecideCancellation({
+            Rules: rules(r),
+            RequestDate: new Date(`${request}T00:00:00Z`),
+            Term: term,
+        });
+
+    describe('when coverage ends (CancellationMode)', () => {
+        it('Immediate ends coverage on the request date', () => {
+            const d = cancelWith({ CancellationMode: 'Immediate' }, '2026-07-01');
+            expect(iso(d.EffectiveDate)).toBe('2026-07-01');
+        });
+
+        it('EndOfTerm rides the term out', () => {
+            const d = cancelWith({ CancellationMode: 'EndOfTerm' }, '2026-07-01');
+            expect(iso(d.EffectiveDate)).toBe('2026-12-31');
+            // The customer received everything they paid for — that is not a cancelled term.
+            expect(d.TermStatus).toBe('Completed');
+        });
+
+        it('EndOfBillingPeriod ends at the close of the cycle the request falls in', () => {
+            // Monthly cycles counted from the term start: cancelling Mar 20 runs to Mar 31.
+            const d = cancelWith(
+                { CancellationMode: 'EndOfBillingPeriod', BillingCadence: 'Monthly' },
+                '2026-03-20',
+            );
+            expect(iso(d.EffectiveDate)).toBe('2026-03-31');
+        });
+
+        it('never ends coverage outside the term, however odd the request', () => {
+            const early = cancelWith({ CancellationMode: 'Immediate' }, '2025-06-01');
+            expect(iso(early.EffectiveDate)).toBe('2026-01-01');
+            const late = cancelWith({ CancellationMode: 'Immediate' }, '2028-06-01');
+            expect(iso(late.EffectiveDate)).toBe('2026-12-31');
+        });
+    });
+
+    describe('what comes back (CancellationRefundMode)', () => {
+        it('NoRefund reverses nothing, whenever it is asked', () => {
+            const d = cancelWith({ CancellationMode: 'Immediate', CancellationRefundMode: 'NoRefund' }, '2026-02-01');
+            expect(d.RefundAmount).toBe(0);
+            expect(d.ReversalFraction).toBe(0);
+            expect(d.Explanation).toMatch(/does not refund/i);
+        });
+
+        it('ProrateUnused refunds the unused remainder — the half-year case', () => {
+            // Amith's example: 1/1–12/31 cancelled on 7/1 should come out near a half.
+            const d = cancelWith(
+                { CancellationMode: 'Immediate', CancellationRefundMode: 'ProrateUnused' },
+                '2026-07-01',
+            );
+            expect(d.ReversalFraction).toBeCloseTo(0.5, 2);
+            expect(d.RefundAmount).toBeCloseTo(1200 * d.ReversalFraction, 2);
+            expect(d.TermStatus).toBe('Canceled');
+        });
+
+        it('rounds the reversal to the order line’s own 4dp scale', () => {
+            const d = cancelWith(
+                { CancellationMode: 'Immediate', CancellationRefundMode: 'ProrateUnused' },
+                '2026-08-13',
+            );
+            // More precision than DECIMAL(18,4) would be truncated on insert, and the line total
+            // recomputed from the truncated value would no longer match the stored one.
+            expect(d.ReversalFraction).toBe(Math.round(d.ReversalFraction * 1e4) / 1e4);
+            expect(d.RefundAmount).toBeCloseTo(1200 * d.ReversalFraction, 2);
+        });
+
+        it('FullRefundWithinWindow refunds everything inside the window and nothing outside it', () => {
+            const r = {
+                CancellationMode: 'Immediate' as const,
+                CancellationRefundMode: 'FullRefundWithinWindow' as const,
+                CancellationWindowDays: 14,
+            };
+            const inside = cancelWith(r, '2026-01-10');
+            expect(inside.RefundAmount).toBe(1200);
+            expect(inside.ReversalFraction).toBe(1);
+            expect(inside.Explanation).toMatch(/within the 14-day refund window/i);
+
+            const outside = cancelWith(r, '2026-02-10');
+            expect(outside.RefundAmount).toBe(0);
+            expect(outside.Explanation).toMatch(/past the 14-day refund window/i);
+        });
+
+        it('never refunds more than the term cost', () => {
+            for (const day of ['2026-01-01', '2026-06-15', '2026-12-31']) {
+                const d = cancelWith(
+                    { CancellationMode: 'Immediate', CancellationRefundMode: 'ProrateUnused' },
+                    day,
+                );
+                expect(d.RefundAmount, day).toBeLessThanOrEqual(1200);
+                expect(d.RefundAmount, day).toBeGreaterThanOrEqual(0);
+            }
+        });
+
+        it('yields no refund when EndOfTerm leaves nothing unused — a contradictory pairing', () => {
+            // Worth pinning: `EndOfTerm` + `ProrateUnused` is configuration that cannot pay out,
+            // because coverage running to the term end leaves no unused period to prorate.
+            const d = cancelWith(
+                { CancellationMode: 'EndOfTerm', CancellationRefundMode: 'ProrateUnused' },
+                '2026-07-01',
+            );
+            expect(d.RefundAmount).toBe(0);
+            expect(d.Explanation).toMatch(/no unused period/i);
+        });
+    });
+
+    describe('grace', () => {
+        it('extends ACCESS past the revenue cut-off, not the term', () => {
+            const d = cancelWith({ CancellationMode: 'Immediate', GracePeriodDays: 30 }, '2026-07-01');
+            expect(iso(d.EffectiveDate)).toBe('2026-07-01');
+            expect(iso(d.AccessThroughDate)).toBe('2026-07-31');
+        });
+
+        it('collapses to the effective date when there is no grace', () => {
+            const d = cancelWith({ CancellationMode: 'Immediate', GracePeriodDays: 0 }, '2026-07-01');
+            expect(iso(d.AccessThroughDate)).toBe(iso(d.EffectiveDate));
+        });
+    });
+});

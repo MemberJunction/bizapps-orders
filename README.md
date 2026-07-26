@@ -408,14 +408,16 @@ Two layers, both green as of the current build.
 **Unit** — `npm test` per package. Pure logic only (`SubscriptionBehavior`'s term arithmetic, the
 rev-rec allocators), no database.
 
-**Integration** — 37 checks across 4 bundles, driving a live database through the real stack:
-entity subclasses, DB triggers, and accounting's remote operation all participate. Nothing is mocked.
+**Integration** — 47 checks across 5 bundles, driving a live database through the real stack:
+entity subclasses, DB triggers, remote operations, and accounting's ledger all participate. Nothing
+is mocked.
 
 | Bundle | Checks | Proves |
 |---|---|---|
 | `order-booking` | OB1–OB9 | confirm books one balanced JE per line, single-company, atomically *(D10/D12/D25)* |
 | `revenue-recognition` | RR1–RR7 | forward-dated release schedules that sum exactly to the line *(D14/D43)* |
 | `subscriptions` | SB1–SB12 | `SubscriptionType` rules → Subscription + terms, anchoring, proration, concurrency *(D45/D46)* |
+| `subscription-cancellation` | SC1–SC10 | `Orders.CancelSubscription`: policy → mirrored reversal, atomically *(D52/D53)* |
 | `payments-rollups` | PR1–PR9 | rollup triggers, document numbering, instrument copy-on-use *(D30/D39/D42)* |
 
 ```bash

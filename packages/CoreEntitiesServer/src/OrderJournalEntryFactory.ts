@@ -97,6 +97,21 @@ interface LineDimensionRow {
     DimensionValueID: string;
 }
 
+/**
+ * Swap every line's debit and credit side. This is what "reversing" means in double-entry: the
+ * original `Dr AR / Cr Deferred Revenue` becomes `Dr Deferred Revenue / Cr AR`, at the same
+ * positive amount. Returns the input untouched when `reverse` is false, so callers can apply it
+ * unconditionally.
+ */
+function mirrorIf(reverse: boolean, lines: JELineDraft[]): JELineDraft[] {
+    if (!reverse) return lines;
+    return lines.map((l) => ({
+        ...l,
+        DebitAmount: l.CreditAmount,
+        CreditAmount: l.DebitAmount,
+    }));
+}
+
 function money(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
 }
@@ -181,10 +196,17 @@ export class OrderJournalEntryFactory {
         const companyID = line.CompanyID ?? product.CompanyID;
         const lineDims = dimensions.get(line.ID) ?? [];
 
-        const gross = money(line.Quantity * line.UnitPrice);
+        // REVERSALS ARE MIRRORED, NOT NEGATED (D16). A negative quantity means "unwind this much of
+        // that purchase" — and the correct double-entry for unwinding is the SAME accounts with the
+        // debit and credit sides swapped, at a positive amount. Feeding a negative amount through
+        // instead produces `Dr AR -593.52`, which accounting rightly refuses: a ledger line with a
+        // negative debit is not a thing. So every amount below is computed on the ABSOLUTE quantity
+        // and the finished lines are flipped once, at the end, when the line reverses.
+        const isReversal = line.Quantity < 0;
+        const gross = money(Math.abs(line.Quantity) * line.UnitPrice);
         const discount = money(gross * (line.DiscountPct ?? 0));
         const net = money(gross - discount);
-        const tax = money(line.LineTax ?? 0);
+        const tax = money(Math.abs(line.LineTax ?? 0));
 
         const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]) =>
             this._resolver.Resolve(role, product.ID, product.ProductCategoryID, companyID, asOf);
@@ -221,7 +243,8 @@ export class OrderJournalEntryFactory {
                 Dimensions: lineDims,
             });
         }
-        this.assertBalanced(bookingLines, order, line, 'booking');
+        const bookingEntryLines = mirrorIf(isReversal, bookingLines);
+        this.assertBalanced(bookingEntryLines, order, line, 'booking');
 
         const out: OrderLineDraft[] = [
             {
@@ -230,10 +253,12 @@ export class OrderJournalEntryFactory {
                 Draft: {
                     EffectiveDate: effectiveDate,
                     EntryType: 'OrderBooking',
-                    Description: `Order ${order.OrderNumber} line ${line.LineNumber} — ${product.Name}`,
+                    Description:
+                        `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                        `${isReversal ? 'REVERSAL of ' : ''}${product.Name}`,
                     LinkedEntityID: this._orderLineEntityID,
                     LinkedRecordID: line.ID,
-                    Lines: bookingLines,
+                    Lines: bookingEntryLines,
                 },
             },
         ];
@@ -266,7 +291,8 @@ export class OrderJournalEntryFactory {
                         Dimensions: lineDims,
                     },
                 ];
-                this.assertBalanced(releaseLines, order, line, 'recognition');
+                const releaseEntryLines = mirrorIf(isReversal, releaseLines);
+                this.assertBalanced(releaseEntryLines, order, line, 'recognition');
 
                 out.push({
                     OrderLineID: line.ID,
@@ -276,12 +302,14 @@ export class OrderJournalEntryFactory {
                     Draft: {
                         EffectiveDate: isoDate(entry.RecognitionDate),
                         EntryType: 'RevenueRecognition',
-                        Description: `Order ${order.OrderNumber} line ${line.LineNumber} — recognize ${product.Name}`,
+                        Description:
+                            `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                            `${isReversal ? 'unrecognize' : 'recognize'} ${product.Name}`,
                         // D46: anchor to the TERM when there is one; otherwise the line (event
                         // products are deferred but have no subscription and therefore no term).
                         LinkedEntityID: term ? this._subscriptionTermEntityID : this._orderLineEntityID,
                         LinkedRecordID: term ? term.ID : line.ID,
-                        Lines: releaseLines,
+                        Lines: releaseEntryLines,
                     },
                 });
             }

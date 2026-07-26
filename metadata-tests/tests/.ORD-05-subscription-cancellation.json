@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-05 - Subscription Cancellation",
+    "Description": "Orders.CancelSubscription end to end (SC1-SC10, design section 5). The user picks a DATE; the operation applies CancellationMode / CancellationRefundMode / CancellationWindowDays / GracePeriodDays, derives the reversal fraction itself, and emits the reversal order atomically. Covers Preview (compute without writing), EndOfTerm + NoRefund (ride the term out, reverse nothing, complete the term), ProrateUnused (refund the unused fraction and reverse exactly that much), mirrored journal entries, the guard that stops a reversal line minting a second subscription, term and subscription stamping, grace reflected in EndDate, the lifecycle event, double-cancellation refusal, and logical failure returned as OUTPUT rather than thrown.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Preview writes nothing; EndOfTerm+NoRefund completes the term with zero reversal; a ProrateUnused cancellation reverses the unused fraction with mirrored Dr Deferred / Cr AR entries equal to the refund; grace extends EndDate past the effective date; a second cancellation is refused; an unknown subscription returns Success:false."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "subscription-cancellation"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "5E1B01CA-E1B2-4CA3-95AA-24D281C4CDDC"
+  },
+  "sync": {
+    "lastModified": "2026-07-26T03:29:37.678Z",
+    "checksum": "fa927babd7c9af7937034489a5e18a71d403d6b83736ebd27ee2182dfa0d077c"
+  }
+}

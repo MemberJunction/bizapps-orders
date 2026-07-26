@@ -13,7 +13,13 @@ import '@mj-biz-apps/orders-actions';
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
 import '@mj-biz-apps/orders-core-entities-server';
-import { LoadOrderEntityServer, LoadOrderLineEntityServer, LoadRevenueRecognitionDrivers, LoadSubscriptionBehavior } from '@mj-biz-apps/orders-core-entities-server';
+import {
+    LoadCancelSubscriptionOperation,
+    LoadOrderEntityServer,
+    LoadOrderLineEntityServer,
+    LoadRevenueRecognitionDrivers,
+    LoadSubscriptionBehavior,
+} from '@mj-biz-apps/orders-core-entities-server';
 
 // Import generated GraphQL resolvers
 import './generated/generated.js';
@@ -51,4 +57,5 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOrderLineEntityServer();
     LoadRevenueRecognitionDrivers();   // the three shipped rev-rec drivers (D43)
     LoadSubscriptionBehavior();        // the base subscription rules engine (D45)
+    LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation
 }

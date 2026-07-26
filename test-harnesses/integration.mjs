@@ -20,7 +20,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '..', '.env'), quiet: true });
 
 /** Bundles in dependency-free order — each owns its own fixture, so order is presentational. */
-const ALL_BUNDLES = ['order-booking', 'revenue-recognition', 'subscriptions', 'payments-rollups'];
+const ALL_BUNDLES = [
+    'order-booking',
+    'revenue-recognition',
+    'subscriptions',
+    'subscription-cancellation',
+    'payments-rollups',
+];
 
 const args = process.argv.slice(2);
 const only = args.filter((a) => !a.startsWith('-'));

@@ -84,6 +84,49 @@ export interface SubscriptionDecision {
     RejectReason?: string;
 }
 
+/** The term being canceled, as plain data. */
+export interface CancellableTerm {
+    StartDate: Date;
+    EndDate: Date;
+    /** What was charged for this term — the ceiling on any refund. */
+    Amount: number;
+    TermNumber: number;
+}
+
+export interface CancellationContext {
+    Rules: SubscriptionTypeRules;
+    /** When the customer asked to cancel. */
+    RequestDate: Date;
+    /** The term whose window covers the request (or the latest one). */
+    Term: CancellableTerm;
+}
+
+/**
+ * What cancelling actually does. Like {@link SubscriptionDecision} this is COMPUTED ONLY — the
+ * caller performs the reversal, updates the rows, and logs the event.
+ */
+export interface CancellationDecision {
+    /** When coverage ends for revenue purposes. Never before the request, never after the term. */
+    EffectiveDate: Date;
+    /** When ACCESS ends. Equals EffectiveDate plus GracePeriodDays — grace extends access, not revenue. */
+    AccessThroughDate: Date;
+    /** What to give back. 0 under NoRefund, and never more than the term charged. */
+    RefundAmount: number;
+    /**
+     * Fraction of the term to reverse — the reversal order line's quantity is the NEGATIVE of this
+     * (plan D16). Derived from RefundAmount so the reversed revenue and the refunded cash always
+     * agree; a term cancelled with no refund reverses nothing.
+     */
+    ReversalFraction: number;
+    /**
+     * `Canceled` when coverage is cut short, `Completed` when the customer simply declines renewal
+     * and rides the term out — the difference matters for "why did this lapse" reporting.
+     */
+    TermStatus: 'Canceled' | 'Completed';
+    /** Which rules produced this, in a sentence. Surfaced to the user, so it names the policy. */
+    Explanation: string;
+}
+
 export interface SubscriptionPurchaseContext {
     Rules: SubscriptionTypeRules;
     /** Order date — when the purchase happened. */
@@ -130,6 +173,11 @@ function addDays(d: Date, n: number): Date {
 
 function daysBetween(a: Date, b: Date): number {
     return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+/** Calendar date for user-facing explanations. */
+function isoDay(d: Date): string {
+    return d.toISOString().slice(0, 10);
 }
 
 @RegisterClass(SubscriptionBehavior, 'Default')
@@ -307,6 +355,147 @@ export class SubscriptionBehavior {
     public RecognitionMonths(rules: SubscriptionTypeRules): number {
         const cadence = rules.RecognitionCadence === 'MatchBilling' ? rules.BillingCadence : rules.RecognitionCadence;
         return this.MonthsForCadence(cadence as SubscriptionTypeRules['BillingCadence'], rules.CustomCycleDays);
+    }
+
+    // ─── Cancellation (design §5) ──────────────────────────────────────────────
+    //
+    // The mechanics of a cancellation already work: a reversal order line with a negative quantity
+    // produces mirrored journal entries through the ordinary booking path (D16). What was missing is
+    // the POLICY — and the raw mechanic is terrible data entry. Amith's case: a subscription running
+    // 1/1-12/31, cancelled on 7/1, needs a line of quantity -0.5. The user should pick a DATE; the
+    // engine derives the fraction. That is what this computes.
+
+    /**
+     * Apply the type's cancellation rules to a request. Pure — computes dates and amounts, touches
+     * nothing. Override any protected piece below to change one aspect.
+     */
+    public DecideCancellation(rawContext: CancellationContext): CancellationDecision {
+        const ctx: CancellationContext = {
+            ...rawContext,
+            RequestDate: utcDay(rawContext.RequestDate),
+            Term: {
+                ...rawContext.Term,
+                StartDate: utcDay(rawContext.Term.StartDate),
+                EndDate: utcDay(rawContext.Term.EndDate),
+            },
+        };
+
+        const effective = this.ClampToTerm(ctx, this.ComputeCancellationDate(ctx));
+        const { amount, explanation } = this.ComputeRefund(ctx, effective);
+        const uncapped = money(Math.min(Math.max(amount, 0), ctx.Term.Amount));
+
+        // Round the FRACTION to the reversal line's own precision, then derive the refund back from
+        // it — not the other way round. `OrderLine.Quantity` is DECIMAL(18,4), so a fraction with
+        // more precision than that is silently truncated on insert, and the line total recomputed
+        // from the truncated quantity no longer matches the one stored at insert. The immutability
+        // trigger sees a "changed" financial column and rejects the very next write to that line.
+        // Deriving both numbers from one rounded fraction keeps the reversed revenue and the
+        // refunded cash exactly equal, which is the invariant that actually matters.
+        const rawFraction = ctx.Term.Amount > 0 ? uncapped / ctx.Term.Amount : 0;
+        const fraction = Math.round(rawFraction * 1e4) / 1e4;
+        const refund = money(ctx.Term.Amount * fraction);
+
+        return {
+            EffectiveDate: effective,
+            AccessThroughDate: addDays(effective, ctx.Rules.GracePeriodDays ?? 0),
+            RefundAmount: refund,
+            ReversalFraction: fraction,
+            // Riding the term out is not a cancellation of coverage — the customer got everything
+            // they paid for. Only a cut-short term is `Canceled`.
+            TermStatus: effective.getTime() >= ctx.Term.EndDate.getTime() ? 'Completed' : 'Canceled',
+            Explanation: explanation,
+        };
+    }
+
+    /** When coverage ends, per `CancellationMode`. */
+    protected ComputeCancellationDate(ctx: CancellationContext): Date {
+        switch (ctx.Rules.CancellationMode) {
+            case 'Immediate':
+                return ctx.RequestDate;
+            case 'EndOfTerm':
+                return ctx.Term.EndDate;
+            case 'EndOfBillingPeriod':
+                return this.EndOfBillingPeriod(ctx);
+        }
+    }
+
+    /**
+     * The last day of the billing cycle the request falls in. Cycles are counted forward from the
+     * TERM START, not from the request — a monthly subscription started on the 12th bills on the
+     * 12th, and cancelling on the 20th runs to the 11th of the next month.
+     */
+    protected EndOfBillingPeriod(ctx: CancellationContext): Date {
+        const step = this.MonthsForCadence(ctx.Rules.BillingCadence, ctx.Rules.CustomCycleDays);
+        let boundary = addMonths(ctx.Term.StartDate, step);
+        // Bounded by the term itself, so a mis-configured cadence cannot spin.
+        while (boundary.getTime() <= ctx.RequestDate.getTime() && boundary.getTime() < ctx.Term.EndDate.getTime()) {
+            boundary = addMonths(boundary, step);
+        }
+        return addDays(boundary, -1);
+    }
+
+    /** Cancellation never resurrects a finished term, and never ends coverage before it began. */
+    protected ClampToTerm(ctx: CancellationContext, date: Date): Date {
+        if (date.getTime() < ctx.Term.StartDate.getTime()) return ctx.Term.StartDate;
+        if (date.getTime() > ctx.Term.EndDate.getTime()) return ctx.Term.EndDate;
+        return date;
+    }
+
+    /** What to give back, per `CancellationRefundMode`. */
+    protected ComputeRefund(
+        ctx: CancellationContext,
+        effective: Date,
+    ): { amount: number; explanation: string } {
+        const { Rules: rules, Term: term } = ctx;
+
+        switch (rules.CancellationRefundMode) {
+            case 'NoRefund':
+                return {
+                    amount: 0,
+                    explanation:
+                        `Coverage ends ${isoDay(effective)} (${rules.CancellationMode}). This subscription ` +
+                        `type does not refund, so nothing is reversed.`,
+                };
+
+            case 'FullRefundWithinWindow': {
+                const window = rules.CancellationWindowDays ?? 0;
+                const elapsed = daysBetween(term.StartDate, ctx.RequestDate);
+                if (elapsed <= window) {
+                    return {
+                        amount: term.Amount,
+                        explanation:
+                            `Cancelled ${elapsed} day(s) into the term, within the ${window}-day refund ` +
+                            `window — the full ${term.Amount} is refunded and reversed.`,
+                    };
+                }
+                return {
+                    amount: 0,
+                    explanation:
+                        `Cancelled ${elapsed} day(s) into the term, past the ${window}-day refund window. ` +
+                        `Coverage ends ${isoDay(effective)} with no refund.`,
+                };
+            }
+
+            case 'ProrateUnused': {
+                // Inclusive day counts on both sides, so a cancellation on the term's first day
+                // refunds the whole term rather than all-but-one-day.
+                const totalDays = daysBetween(term.StartDate, term.EndDate) + 1;
+                const unusedDays = daysBetween(effective, term.EndDate);
+                if (totalDays <= 0 || unusedDays <= 0) {
+                    return {
+                        amount: 0,
+                        explanation: `Coverage ends ${isoDay(effective)} with no unused period remaining.`,
+                    };
+                }
+                const fraction = unusedDays / totalDays;
+                return {
+                    amount: term.Amount * fraction,
+                    explanation:
+                        `Coverage ends ${isoDay(effective)}; ${unusedDays} of ${totalDays} day(s) go ` +
+                        `unused, so ${Math.round(fraction * 1000) / 10}% of the term is refunded.`,
+                };
+            }
+        }
     }
 }
 

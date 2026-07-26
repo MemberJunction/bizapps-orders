@@ -76,6 +76,7 @@ const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
+const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 
@@ -99,6 +100,26 @@ interface AccountingEngineSurface {
 }
 
 /** Shape of the result accounting returns for the JE set. */
+/**
+ * Normalize a GUID for use as a Map key.
+ *
+ * SQL Server returns `UNIQUEIDENTIFIER` uppercased, while an ID that arrived from a caller (or from
+ * `randomUUID()`) is lowercase. Both name the same row, and SQL compares them correctly — but a JS
+ * `Map` does not, so any lookup that crosses the boundary between "value I was handed" and "value
+ * that came back from the database" MUST go through here. Every place this was skipped produced the
+ * same failure shape: a silent miss that looks like missing data rather than a key mismatch.
+ */
+const uuidKey = (id: string | null | undefined): string => (id ?? '').toLowerCase();
+
+/** A line's subscription decision, carried from the pre-insert pass to the persistence pass. */
+interface SubscriptionDecisionForLine {
+    Product: ProductRow;
+    Rules: SubscriptionTypeRules;
+    Decision: SubscriptionDecision;
+    /** The resolved behaviour — reused for RecognitionMonths so a driver's override still applies. */
+    Behavior: SubscriptionBehavior;
+}
+
 interface CreateJournalEntriesResult {
     Success: boolean;
     Results?: Array<{ Success: boolean; JournalEntryID?: string; EntryNumber?: string }>;
@@ -186,13 +207,21 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 );
             }
 
-            await this.savePendingLines(options);
+            // DECIDE BEFORE THE LINES ARE INSERTED. The rules may shorten the first period, and a
+            // prorated term must bill the prorated amount — but the header is already Confirmed by
+            // now, so the immutability trigger (correctly) refuses to let a saved line's Quantity
+            // change afterwards. Deciding first means the line is INSERTED at its final quantity
+            // and never updated, which keeps the trigger's guarantee intact instead of working
+            // around it.
+            const decisions = booking ? await this.decideSubscriptions() : new Map();
+
+            await this.savePendingLines(options, decisions);
 
             if (booking) {
                 const lines = await this.loadLinesForBooking();
-                // Subscriptions first: a term must exist before booking so recognition entries can
-                // anchor to it (D46) and use its anchored/prorated window rather than raw line dates.
-                const subs = await this.materializeSubscriptions(lines, options);
+                // Subscriptions before booking: a term must exist so recognition entries can anchor
+                // to it (D46) and use its anchored/prorated window rather than raw line dates.
+                const subs = await this.materializeSubscriptions(lines, decisions, options);
                 await this.bookLines(lines, options, subs);
                 await this.createInitialPayment(options);
             }
@@ -242,9 +271,24 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         return true;
     }
 
-    private async savePendingLines(options?: EntitySaveOptions): Promise<void> {
+    private async savePendingLines(
+        options?: EntitySaveOptions,
+        decisions?: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
+    ): Promise<void> {
         for (const line of this._lines) {
             line.OrderHeaderID = this.ID;
+
+            // Scale the QUANTITY, not DiscountPct: a short first period is not a concession, and
+            // routing it through the discount field would corrupt discount reporting and post the
+            // difference to the Sales Discounts contra account, where it does not belong.
+            // Rounded to 4dp — `OrderLine.Quantity`'s scale — so the stored value and any later
+            // recomputation of the line total agree exactly.
+            const decided = decisions?.get(line);
+            const term = decided?.Decision.Term;
+            if (term?.IsProrated && term.ProrationFactor != null) {
+                line.Quantity = Math.round(line.Quantity * term.ProrationFactor * 1e4) / 1e4;
+            }
+
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
@@ -394,34 +438,30 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      */
     private async materializeSubscriptions(
         lines: mjBizAppsOrdersOrderLineEntity[],
+        decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
         options?: EntitySaveOptions,
     ): Promise<SubscriptionMaterialization> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser;
         const out: SubscriptionMaterialization = { TermsByLine: new Map(), RecognitionMonthsByLine: new Map() };
 
-        const subLines = await this.subscriptionLines(lines);
-        if (subLines.length === 0) return out;
+        if (decisions.size === 0) return out;
 
-        for (const { line, product, rules } of subLines) {
-            const behavior = this.behaviorFor(rules);
-            const existing = await this.findExistingSubscription(product.ID);
+        // The decisions were made against the PENDING line objects; re-key them by ID so they can
+        // be matched to the freshly loaded, now-persisted lines.
+        //
+        // LOWERCASED: a GUID that round-trips through SQL Server comes back uppercased, so keying
+        // on the raw value silently misses every lookup — the subscription would be created with no
+        // term attached, and the recognition schedule would then fail for want of a coverage window.
+        const byLineID = new Map<string, SubscriptionDecisionForLine>();
+        for (const [pending, decided] of decisions) {
+            if (pending.ID) byLineID.set(uuidKey(pending.ID), decided);
+        }
 
-            const decision = behavior.Decide({
-                Rules: rules,
-                PurchaseDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
-                Amount: line.LineTotalNet ?? 0,
-                Existing: existing,
-                SubscriberIsOrganization: !!this.CustomerOrganizationID,
-            });
-
-            if (decision.Action === 'Reject') {
-                // A rules violation must fail the whole confirm — booking is all-or-none, and a
-                // silently-dropped subscription would leave a paid-for line with no coverage.
-                throw new Error(
-                    `Order line ${line.LineNumber} (${product.Name}) cannot be subscribed: ${decision.RejectReason}`,
-                );
-            }
+        for (const line of lines) {
+            const decided = byLineID.get(uuidKey(line.ID));
+            if (!decided) continue;
+            const { Product: product, Rules: rules, Decision: decision } = decided;
 
             const subscriptionID =
                 decision.Action === 'CreateNew'
@@ -429,6 +469,13 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                     : await this.touchExistingSubscription(decision, options);
 
             const term = decision.Term!;
+
+            // The LINE is the authority on price — `savePendingLines` already inserted it at the
+            // prorated quantity. Taking the term's amount from it makes booking (line net), the
+            // term, and the recognition schedule reconcile exactly; three numbers that must agree
+            // or deferred revenue never clears to zero.
+            term.Amount = line.LineTotalNet ?? term.Amount;
+
             const termEntity = await provider.GetEntityObject<BaseEntity>(SUBSCRIPTION_TERM_ENTITY, user);
             termEntity.NewRecord();
             termEntity.Set('SubscriptionID', subscriptionID);
@@ -459,7 +506,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 EndDate: term.EndDate,
                 Amount: term.Amount,
             });
-            out.RecognitionMonthsByLine.set(line.ID, behavior.RecognitionMonths(rules));
+            out.RecognitionMonthsByLine.set(line.ID, decided.Behavior.RecognitionMonths(rules));
 
             // The line's stored service period reflects the TERM, not what a user typed.
             line.ServicePeriodStart = term.StartDate;
@@ -468,6 +515,52 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         }
 
         return out;
+    }
+
+    /**
+     * Evaluate the subscription rules for every pending line, BEFORE any of them is inserted.
+     *
+     * Pure with respect to this app's tables — it reads the catalog and any existing subscription,
+     * then asks the behaviour what to do. Nothing is written, so a rules rejection aborts the
+     * confirm before a single line exists.
+     */
+    private async decideSubscriptions(): Promise<Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>> {
+        const out = new Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>();
+        const subLines = await this.subscriptionLines(this._lines);
+        if (subLines.length === 0) return out;
+
+        for (const { line, product, rules } of subLines) {
+            const behavior = this.behaviorFor(rules);
+            const existing = await this.findExistingSubscription(product.ID);
+
+            const decision = behavior.Decide({
+                Rules: rules,
+                PurchaseDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
+                // The line is not saved yet, so `LineTotalNet` is not computed — derive the same
+                // figure OrderLineEntityServer will: quantity × price, less the discount.
+                Amount: this.pendingLineNet(line),
+                Existing: existing,
+                SubscriberIsOrganization: !!this.CustomerOrganizationID,
+            });
+
+            if (decision.Action === 'Reject') {
+                // A rules violation fails the WHOLE confirm — booking is all-or-none, and a
+                // silently-dropped subscription would leave a paid-for line with no coverage.
+                throw new Error(
+                    `Order line ${line.LineNumber} (${product.Name}) cannot be subscribed: ${decision.RejectReason}`,
+                );
+            }
+
+            out.set(line, { Product: product, Rules: rules, Decision: decision, Behavior: behavior });
+        }
+        return out;
+    }
+
+    /** Net for a line that has not been saved yet — mirrors OrderLineEntityServer's own formula. */
+    private pendingLineNet(line: mjBizAppsOrdersOrderLineEntity): number {
+        const gross = (line.Quantity ?? 0) * (line.UnitPrice ?? 0);
+        const net = gross * (1 - (line.DiscountPct ?? 0));
+        return Math.round((net + Number.EPSILON) * 100) / 100;
     }
 
     /** Lines whose product carries a subscription type, joined to their rules. */
@@ -487,20 +580,24 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             },
             this.ContextCurrentUser,
         );
-        const products = new Map((prod?.Results ?? []).map(p => [p.ID, p]));
+        const products = new Map((prod?.Results ?? []).map(p => [uuidKey(p.ID), p]));
         if (products.size === 0) return [];
 
         const types = await rv.RunView<SubscriptionTypeRules>(
             { EntityName: SUBSCRIPTION_TYPE_ENTITY, ResultType: 'simple' },
             this.ContextCurrentUser,
         );
-        const rulesByID = new Map((types?.Results ?? []).map(t => [t.ID, t]));
+        const rulesByID = new Map((types?.Results ?? []).map(t => [uuidKey(t.ID), t]));
 
         const out = [];
         for (const line of lines) {
-            const product = products.get(line.ProductID);
+            const product = products.get(uuidKey(line.ProductID));
             if (!product) continue;
-            const rules = rulesByID.get(product.SubscriptionTypeID!);
+            // A REVERSAL line buys nothing — it unwinds a purchase (D16). Materializing here would
+            // create a second subscription (and a second term) every time one was cancelled, which
+            // is the exact opposite of what the line means.
+            if (line.ReversesOrderLineID || (line.Quantity ?? 0) < 0) continue;
+            const rules = rulesByID.get(uuidKey(product.SubscriptionTypeID));
             if (!rules) {
                 throw new Error(`Product '${product.Name}' names a subscription type that was not found.`);
             }
@@ -594,6 +691,13 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         sub.Set('Status', rules.TrialDays > 0 ? 'Trialing' : 'Active');
         sub.Set('StartDate', decision.Term!.StartDate);
         sub.Set('AutoRenew', rules.AutoRenewDefault);
+        // A trial with no end date is not a trial. Without this, `Status='Trialing'` is a label
+        // nothing can ever act on — no job can find trials about to expire.
+        if (rules.TrialDays > 0) {
+            const trialEnd = new Date(decision.Term!.StartDate);
+            trialEnd.setUTCDate(trialEnd.getUTCDate() + rules.TrialDays);
+            sub.Set('TrialEndDate', trialEnd);
+        }
 
         if (!(await sub.Save(options))) {
             throw new Error(
@@ -601,7 +705,49 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                     `${sub.LatestResult?.CompleteMessage ?? 'unknown error'}`,
             );
         }
-        return sub.Get('ID') as string;
+
+        const subscriptionID = sub.Get('ID') as string;
+        await this.logSubscriptionEvent(
+            subscriptionID,
+            rules.TrialDays > 0 ? 'TrialStarted' : 'Created',
+            options,
+        );
+        return subscriptionID;
+    }
+
+    /**
+     * Append to the subscription's immutable lifecycle log.
+     *
+     * The log is the answer to "what happened to this membership, and when" — the question support
+     * actually gets asked. Writing it at every transition is the only thing that makes the table
+     * worth having; a `SubscriptionEvent` table nobody writes to is just schema.
+     */
+    private async logSubscriptionEvent(
+        subscriptionID: string,
+        eventType: string,
+        options?: EntitySaveOptions,
+        data?: Record<string, unknown>,
+    ): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const event = await provider.GetEntityObject<BaseEntity>(
+            SUBSCRIPTION_EVENT_ENTITY,
+            this.ContextCurrentUser,
+        );
+        event.NewRecord();
+        event.Set('SubscriptionID', subscriptionID);
+        event.Set('EventType', eventType);
+        event.Set('OccurredAt', new Date());
+        event.Set('RelatedOrderHeaderID', this.ID);
+        if (data) event.Set('EventData', JSON.stringify(data));
+
+        if (!(await event.Save(options))) {
+            // Inside the booking transaction: a lost lifecycle record is a silent hole in the
+            // audit trail, so it fails the confirm rather than being swallowed.
+            throw new Error(
+                `Failed to log the '${eventType}' subscription event: ` +
+                    `${event.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
     }
 
     /** Extension or reactivation — the term is what changes; the subscription just re-activates. */
@@ -619,12 +765,19 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             sub.Set('Status', 'Active');
             sub.Set('CanceledAt', null);
             sub.Set('EndDate', null);
+            sub.Set('AutoRenew', true);
             if (!(await sub.Save(options))) {
                 throw new Error(
                     `Failed to reactivate subscription: ${sub.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                 );
             }
         }
+        await this.logSubscriptionEvent(
+            decision.SubscriptionID!,
+            decision.Action === 'Reactivate' ? 'Activated' : 'RenewalOrderSpawned',
+            options,
+            { TermNumber: decision.Term?.TermNumber, Action: decision.Action },
+        );
         return decision.SubscriptionID!;
     }
 
