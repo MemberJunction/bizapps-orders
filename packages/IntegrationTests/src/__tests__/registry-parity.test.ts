@@ -28,6 +28,7 @@ import '../checks/subscription-renewal.checks.js';
 import '../checks/payments-rollups.checks.js';
 import '../checks/payment-ledger.checks.js';
 import '../checks/intercompany.checks.js';
+import '../checks/events.checks.js';
 import '../checks/line-subscriber.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -50,6 +51,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'payments-rollups': 9,
     'payment-ledger': 12,
     intercompany: 12,
+    events: 10,
     'line-subscriber': 12,
 };
 
@@ -121,7 +123,8 @@ describe('the bundle name agrees everywhere it is written down', () => {
             + read('metadata-tests/tests/.ORD-06-subscription-renewal.json')
             + read('metadata-tests/tests/.ORD-07-payment-ledger.json')
             + read('metadata-tests/tests/.ORD-08-line-subscriber.json')
-            + read('metadata-tests/tests/.ORD-09-intercompany.json');
+            + read('metadata-tests/tests/.ORD-09-intercompany.json')
+            + read('metadata-tests/tests/.ORD-10-events.json');
         for (const bundle of ourBundles()) {
             expect(tests, `a Test record declares '${bundle}'`).toContain(`"type": "${bundle}"`);
         }

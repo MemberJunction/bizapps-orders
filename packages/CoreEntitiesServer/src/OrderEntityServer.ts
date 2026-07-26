@@ -74,6 +74,8 @@ const ORDER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
+/** IsA Disjoint child of Product (BO-D37) — present only for products that ARE events. */
+const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
 const COMPANY_ENTITY = 'MJ: Companies';
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -296,6 +298,9 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 line.Quantity = Math.round(line.Quantity * term.ProrationFactor * 1e4) / 1e4;
             }
 
+            // Events carry their own service period — the event happens when it happens.
+            await this.applyEventServicePeriod(line);
+
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
@@ -304,6 +309,52 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             }
         }
         this._lines = [];
+    }
+
+    /**
+     * Stamp an event line's service period from the EVENT's own dates (D-EVENT).
+     *
+     * WHY THIS IS NOT LEFT TO THE CALLER
+     * An event product is bought in advance and earned on the day it happens: the money is deferred
+     * revenue until then. That behaviour needs `ServicePeriodStart`/`End` — `AllBackEnd` recognizes
+     * 100% on the END date, and `RequireServicePeriod` refuses to run without one.
+     *
+     * Leaving those dates to whoever creates the line means the recognition date for a conference is
+     * hand-typed on every ticket sold, and a typo silently books revenue in the wrong period. The
+     * event already knows when it is. Reading it from `EventProduct` makes the correct answer the
+     * default and the ticket line carry no date at all.
+     *
+     * An explicitly-set period WINS and is never overwritten: a line covering only part of a
+     * multi-day event, or a deliberate override, is a legitimate thing to express. Subscription
+     * lines are untouched — their period comes from the term, which is decided later and is
+     * authoritative over anything typed (see `materializeSubscriptions`).
+     *
+     * A product with no `EventProduct` row is simply not an event; nothing happens.
+     */
+    private async applyEventServicePeriod(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        if (line.ServicePeriodStart || line.ServicePeriodEnd) return;
+        if (!line.ProductID) return;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ EventStartsAt: string; EventEndsAt: string | null }>(
+            {
+                EntityName: EVENT_PRODUCT_ENTITY,
+                ExtraFilter: `ID='${line.ProductID}'`,
+                Fields: ['EventStartsAt', 'EventEndsAt'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        const event = res?.Results?.[0];
+        if (!event?.EventStartsAt) return;
+
+        const start = new Date(event.EventStartsAt);
+        // A single-day event has no end date; the period is that one day, so recognition lands on
+        // the event itself rather than being left without an end for AllBackEnd to aim at.
+        const end = event.EventEndsAt ? new Date(event.EventEndsAt) : start;
+        line.ServicePeriodStart = start;
+        line.ServicePeriodEnd = end;
     }
 
     /**
