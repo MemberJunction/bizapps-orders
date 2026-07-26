@@ -38,6 +38,9 @@ export interface OrderSpec {
     /** Who is buying — required for subscriptions (the behaviour validates subscriber scope). */
     CustomerOrganizationID?: string;
     CustomerPersonID?: string;
+    /** Order-level ship-to — the default every line inherits unless it overrides (D61). */
+    ShipToOrganizationID?: string;
+    ShipToPersonID?: string;
     /** D42 initial-payment intent, captured at order entry and turned into a real payment at confirm. */
     InitialPaymentTypeID?: string;
     InitialPaymentAmount?: number;
@@ -63,6 +66,8 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
     order.CompanyID = spec.CompanyID;
     if (spec.CustomerOrganizationID) order.CustomerOrganizationID = spec.CustomerOrganizationID;
     if (spec.CustomerPersonID) order.CustomerPersonID = spec.CustomerPersonID;
+    if (spec.ShipToOrganizationID) order.ShipToOrganizationID = spec.ShipToOrganizationID;
+    if (spec.ShipToPersonID) order.ShipToPersonID = spec.ShipToPersonID;
     if (spec.InitialPaymentTypeID) order.InitialPaymentTypeID = spec.InitialPaymentTypeID;
     if (spec.InitialPaymentAmount != null) order.InitialPaymentAmount = spec.InitialPaymentAmount;
     if (spec.InitialPaymentDetailID) order.InitialPaymentDetailID = spec.InitialPaymentDetailID;

@@ -226,9 +226,9 @@ describe('subscriber scope', () => {
 describe('benefit model (D62)', () => {
     const behavior = new SubscriptionBehavior();
 
-    it('an org-members type must be held by an organization', () => {
+    it('an Organization-benefit type must be held by an organization', () => {
         const decision = decide(
-            rules({ BenefitModel: 'OrganizationMembers', SubscriberScope: 'Organization' }),
+            rules({ BenefitModel: 'Organization', SubscriberScope: 'Organization' }),
             new Date('2026-07-01T00:00:00Z'),
             1200,
             { Subscriber: { PersonID: PERSON } },
@@ -237,12 +237,12 @@ describe('benefit model (D62)', () => {
     });
 
     it('a seat needs BOTH an organization and a named person', () => {
-        const seat = rules({ BenefitModel: 'NamedIndividual', SubscriberScope: 'Organization' });
+        const seat = rules({ BenefitModel: 'Individual', SubscriberScope: 'Organization' });
         const missingPerson = decide(seat, new Date('2026-07-01T00:00:00Z'), 300, {
             Subscriber: { OrganizationID: ORG },
         });
         expect(missingPerson.Action).toBe('Reject');
-        expect(missingPerson.RejectReason).toMatch(/ship-to organization and a ship-to person/i);
+        expect(missingPerson.RejectReason).toMatch(/benefits a named person/i);
 
         const complete = decide(seat, new Date('2026-07-01T00:00:00Z'), 300);
         expect(complete.Action).toBe('CreateNew');
@@ -251,22 +251,26 @@ describe('benefit model (D62)', () => {
     describe('dedupe identity — what counts as the same subscription', () => {
         const subscriber = { OrganizationID: ORG, PersonID: PERSON };
 
-        it('OrganizationMembers keys on the ORG, ignoring the person', () => {
+        it('Organization keys on the ORG, ignoring the person', () => {
             // A trade association: the company holds one membership however many employees benefit,
             // so naming a person must not create a second.
-            expect(behavior.DedupeIdentity(rules({ BenefitModel: 'OrganizationMembers' }), subscriber))
+            expect(behavior.DedupeIdentity(rules({ BenefitModel: 'Organization' }), subscriber))
                 .toEqual({ OrganizationID: ORG, PersonID: null });
         });
 
-        it('NamedIndividual keys on the PAIR, so seats never collide', () => {
+        it('Individual keys on the PAIR, so seats never collide', () => {
             // This is what makes ten seats for ten staff ten subscriptions rather than ten
             // collisions under RejectDuplicate.
-            expect(behavior.DedupeIdentity(rules({ BenefitModel: 'NamedIndividual' }), subscriber))
+            expect(behavior.DedupeIdentity(rules({ BenefitModel: 'Individual' }), subscriber))
                 .toEqual({ OrganizationID: ORG, PersonID: PERSON });
         });
 
         it('Holder keys on whichever side actually holds it', () => {
-            expect(behavior.DedupeIdentity(rules(), subscriber))
+            // A person with no org holds it themselves; anything with an org is org-held. This is
+            // the value that lets a SubscriberScope='Either' type work at all — collapsing it into
+            // `Individual` would make it demand a named person and break org purchases (22 checks
+            // failed proving exactly that).
+            expect(behavior.DedupeIdentity(rules(), { PersonID: PERSON }))
                 .toEqual({ OrganizationID: null, PersonID: PERSON });
             expect(behavior.DedupeIdentity(rules(), { OrganizationID: ORG }))
                 .toEqual({ OrganizationID: ORG, PersonID: null });

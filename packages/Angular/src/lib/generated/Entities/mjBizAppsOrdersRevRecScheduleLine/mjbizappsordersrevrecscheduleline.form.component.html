@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="recognitionDetails"
         SectionName="Recognition Details"
-        Icon="fa fa-clock"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -42,6 +42,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Financial Details Section -->
+    <mj-collapsible-panel
+        SectionKey="financialDetails"
+        SectionName="Financial Details"
+        Icon="fa fa-money-bill-wave"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -50,19 +60,9 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Accounting Integration Section -->
-    <mj-collapsible-panel
-        SectionKey="accountingIntegration"
-        SectionName="Accounting Integration"
-        Icon="fa fa-book"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="JournalEntryID"
             Type="textbox"
             [EditMode]="EditMode"

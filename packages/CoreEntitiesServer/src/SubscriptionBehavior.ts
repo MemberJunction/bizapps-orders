@@ -36,8 +36,15 @@ export interface SubscriptionTypeRules {
     Code: string;
     DriverClass?: string | null;
     SubscriberScope: 'Organization' | 'Person' | 'Either';
-    /** Who derives the benefit — a different question from who holds it (D62). */
-    BenefitModel: 'Holder' | 'OrganizationMembers' | 'NamedIndividual';
+    /**
+     * WHO derives the benefit — a different question from who HOLDS it, which `SubscriberScope`
+     * answers.
+     *
+     * `Holder` is NOT redundant with `Individual`, though it looks it: it means the benefit follows
+     * whoever holds the subscription, which is what a `SubscriberScope='Either'` type needs. Forcing
+     * those to `Individual` makes them demand a named person and breaks org purchases outright.
+     */
+    BenefitModel: 'Holder' | 'Individual' | 'Organization';
     StartMode: 'Immediate' | 'Deferred' | 'CalendarAnchored';
     DeferredStartDays?: number | null;
     AnchorMonth?: number | null;
@@ -287,22 +294,23 @@ export class SubscriptionBehavior {
         }
 
         // The benefit model is the stricter of the two rules, so it is checked second.
-        if (BenefitModel === 'OrganizationMembers') {
-            if (!org) {
-                return (
-                    `Subscription type ${Code} spreads its benefit across an organization's members, ` +
-                    `so it must be held by an organization — none was resolved for this line.`
-                );
-            }
+        if (BenefitModel === 'Organization' && !org) {
+            return (
+                `Subscription type ${Code} benefits an organization's members, so it must be held by ` +
+                `an organization — none was resolved for this line, the order's ship-to, or its customer.`
+            );
         }
-        if (BenefitModel === 'NamedIndividual') {
-            if (!org || !person) {
-                return (
-                    `Subscription type ${Code} is a seat: the organization holds and pays and a NAMED ` +
-                    `person benefits, so the line needs both a ship-to organization and a ship-to ` +
-                    `person. Got organization=${org ?? 'none'}, person=${person ?? 'none'}.`
-                );
-            }
+        // `Holder` needs no extra check: SubscriberScope already guaranteed a holder exists, and
+        // the benefit simply follows them.
+        if (BenefitModel === 'Individual' && !person) {
+            // Note WHERE this can be satisfied from. The person is NOT required on the line: it
+            // falls back to the order's ship-to and then its customer, so a bulk order for one
+            // recipient states them once on the header. The failure only fires when no person is
+            // resolvable ANYWHERE, which genuinely leaves nobody to benefit.
+            return (
+                `Subscription type ${Code} benefits a named person, but none was resolved from the ` +
+                `line's ship-to, the order's ship-to, or the order's customer.`
+            );
         }
 
         return null;
@@ -311,23 +319,28 @@ export class SubscriptionBehavior {
     /**
      * The identity a duplicate is judged against — the heart of the concurrency rule.
      *
-     * `OrganizationMembers` keys on the ORG alone: a company holds ONE membership however many
-     * employees benefit, so a second purchase extends it. `NamedIndividual` keys on the PAIR, so
+     * `Organization` keys on the ORG alone: a company holds ONE membership however many
+     * employees benefit, so a second purchase extends it. `Individual` keys on the PAIR, so
      * ten seats bought for ten staff on one order are ten distinct subscriptions rather than ten
      * collisions with each other. Getting this wrong is what made a bulk seat purchase impossible.
      */
     public DedupeIdentity(rules: SubscriptionTypeRules, subscriber: SubscriberIdentity): SubscriberIdentity {
         switch (rules.BenefitModel) {
-            case 'OrganizationMembers':
-                return { OrganizationID: subscriber.OrganizationID, PersonID: null };
-            case 'NamedIndividual':
-                return { OrganizationID: subscriber.OrganizationID, PersonID: subscriber.PersonID };
             case 'Holder':
-                // Whichever side actually holds it — a person for an individual membership, the org
-                // when the type allows an org to hold one directly.
-                return subscriber.PersonID
+                // Key on whichever side holds it, so a personal membership dedupes by person and an
+                // org-held one by org — without either leaking into the other's identity.
+                return subscriber.PersonID && !subscriber.OrganizationID
                     ? { OrganizationID: null, PersonID: subscriber.PersonID }
-                    : { OrganizationID: subscriber.OrganizationID, PersonID: null };
+                    : { OrganizationID: subscriber.OrganizationID ?? null, PersonID: null };
+            case 'Organization':
+                // The org holds ONE, however many of its people benefit — so a second purchase
+                // extends rather than duplicating.
+                return { OrganizationID: subscriber.OrganizationID, PersonID: null };
+            case 'Individual':
+                // Both sides as resolved. For a seat that is (org, person), so ten staff are ten
+                // subscriptions. For a personal membership the org is simply absent, leaving the
+                // person as the key.
+                return { OrganizationID: subscriber.OrganizationID ?? null, PersonID: subscriber.PersonID };
         }
     }
 

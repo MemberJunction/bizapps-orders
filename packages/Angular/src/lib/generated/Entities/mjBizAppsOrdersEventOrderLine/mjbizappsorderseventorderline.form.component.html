@@ -45,11 +45,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Order Line Details Section -->
+    <!-- Order Lines Section -->
     <mj-collapsible-panel
-        SectionKey="orderLineDetails"
-        SectionName="Order Line Details"
-        Icon="fa fa-list-ul"
+        SectionKey="orderLines"
+        SectionName="Order Lines"
+        Icon="fa fa-list-ol"
         Variant="inherited"
         InheritedFromEntity="MJ_BizApps_Orders: Order Lines"
         [Form]="this"
@@ -245,7 +245,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

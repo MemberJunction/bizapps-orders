@@ -34,14 +34,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProviderEventID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -71,6 +63,14 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="ProviderEventID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="LastEventAt"
             Type="datepicker"
             [EditMode]="EditMode"
@@ -79,11 +79,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Related Entities Section -->
+    <!-- Customer and Order Reference Section -->
     <mj-collapsible-panel
-        SectionKey="relatedEntities"
-        SectionName="Related Entities"
-        Icon="fa fa-link"
+        SectionKey="customerAndOrderReference"
+        SectionName="Customer and Order Reference"
+        Icon="fa fa-user-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

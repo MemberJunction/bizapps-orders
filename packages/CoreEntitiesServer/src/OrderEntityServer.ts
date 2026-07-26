@@ -589,9 +589,14 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      * under the order's customer organization) and still inherit that organization from the header.
      */
     private resolveSubscriber(line: mjBizAppsOrdersOrderLineEntity): SubscriberIdentity {
+        // THREE tiers, resolved per side independently: the line's ship-to, then the ORDER's
+        // ship-to, then the order's customer. Nothing is required at the line — an order shipping
+        // everything to one recipient states them once on the header, and a line only overrides
+        // when it genuinely differs.
         return {
-            OrganizationID: line.ShipToOrganizationID ?? this.CustomerOrganizationID ?? null,
-            PersonID: line.ShipToPersonID ?? this.CustomerPersonID ?? null,
+            OrganizationID:
+                line.ShipToOrganizationID ?? this.ShipToOrganizationID ?? this.CustomerOrganizationID ?? null,
+            PersonID: line.ShipToPersonID ?? this.ShipToPersonID ?? this.CustomerPersonID ?? null,
         };
     }
 

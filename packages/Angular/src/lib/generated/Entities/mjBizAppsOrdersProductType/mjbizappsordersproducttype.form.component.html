@@ -10,18 +10,18 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Type Definition Section -->
+    <!-- Product Type Details Section -->
     <mj-collapsible-panel
-        SectionKey="productTypeDefinition"
-        SectionName="Product Type Definition"
-        Icon="fa fa-tag"
+        SectionKey="productTypeDetails"
+        SectionName="Product Type Details"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
             FieldName="Code"
-            Type="code"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -56,7 +56,7 @@
     <mj-collapsible-panel
         SectionKey="fulfillmentAndTaxSettings"
         SectionName="Fulfillment and Tax Settings"
-        Icon="fa fa-receipt"
+        Icon="fa fa-truck"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -70,19 +70,29 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="DefaultIsTaxable"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Financial Defaults Section -->
+    <mj-collapsible-panel
+        SectionKey="financialDefaults"
+        SectionName="Financial Defaults"
+        Icon="fa fa-dollar-sign"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="DefaultRevenueRecognitionTypeID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="DefaultIsTaxable"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
@@ -96,11 +106,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Extension Configuration Section -->
+    <!-- System Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="extensionConfiguration"
-        SectionName="Extension Configuration"
-        Icon="fa fa-puzzle-piece"
+        SectionKey="systemConfiguration"
+        SectionName="System Configuration"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -126,7 +136,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-cog"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

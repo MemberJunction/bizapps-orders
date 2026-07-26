@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Definition Section -->
+    <!-- Type Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="definition"
-        SectionName="Definition"
-        Icon="fa fa-info-circle"
+        SectionKey="typeConfiguration"
+        SectionName="Type Configuration"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -41,14 +41,30 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Sequence"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Configuration Section -->
+    <!-- Recognition Logic Section -->
     <mj-collapsible-panel
-        SectionKey="configuration"
-        SectionName="Configuration"
-        Icon="fa fa-cogs"
+        SectionKey="recognitionLogic"
+        SectionName="Recognition Logic"
+        Icon="fa fa-calculator"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -71,22 +87,6 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="RequiresServicePeriod"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Sequence"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
             Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -126,61 +126,11 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Product Types Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersProductTypes"
-        SectionName="Product Types"
-        Icon="fa fa-box-open"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductTypes')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Types','DefaultRevenueRecognitionTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Types')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductTypes')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductTypes', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Product Performance Obligations Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersProductPerformanceObligations"
-        SectionName="Product Performance Obligations"
-        Icon="fa fa-tasks"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductPerformanceObligations')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Performance Obligations','RevenueRecognitionTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Performance Obligations')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductPerformanceObligations')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductPerformanceObligations', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Revenue Recognition Schedules Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersRevenueRecognitionSchedules"
         SectionName="Revenue Recognition Schedules"
-        Icon="fa fa-calendar-check"
+        Icon="fa fa-chart-line"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
@@ -245,6 +195,56 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProducts', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Product Types Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersProductTypes"
+        SectionName="Product Types"
+        Icon="fa fa-tags"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductTypes')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Types','DefaultRevenueRecognitionTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Types')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductTypes')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductTypes', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Product Performance Obligations Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersProductPerformanceObligations"
+        SectionName="Product Performance Obligations"
+        Icon="fa fa-tasks"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductPerformanceObligations')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Performance Obligations','RevenueRecognitionTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Performance Obligations')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductPerformanceObligations')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductPerformanceObligations', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

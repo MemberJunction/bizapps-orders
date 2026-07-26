@@ -18,7 +18,7 @@ export class mjBizAppsOrdersPaymentIntentFormComponent extends BaseFormComponent
         this.initSections([
             { sectionKey: 'paymentProviderDetails', sectionName: 'Payment Provider Details', isExpanded: true },
             { sectionKey: 'paymentStatus', sectionName: 'Payment Status', isExpanded: true },
-            { sectionKey: 'relatedEntities', sectionName: 'Related Entities', isExpanded: true },
+            { sectionKey: 'customerAndOrderReference', sectionName: 'Customer and Order Reference', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false }
         ]);

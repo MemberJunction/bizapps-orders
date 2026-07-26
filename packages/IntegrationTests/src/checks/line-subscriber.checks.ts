@@ -17,9 +17,9 @@
  *   LS2  a line with no ship-to still inherits the header — nothing regressed
  *   LS3  the fallback is per-SIDE: a line naming only a person keeps the header's organization
  *   LS4  ONE order, TEN seats, TEN people → ten subscriptions (the case that was impossible)
- *   LS5  an OrganizationMembers type dedupes on the ORG — a second purchase extends the one membership
- *   LS6  a NamedIndividual type requires BOTH sides and says so when one is missing
- *   LS7  an OrganizationMembers type refuses to be held by a person alone
+ *   LS5  an Organization-benefit type dedupes on the ORG — a second purchase extends the one membership
+ *   LS6  a seat inherits its person from the ORDER's ship-to; it fails only when nobody resolves
+ *   LS7  an Organization-benefit type refuses to be held by a person alone
  *   LS8  an explicit RenewsSubscriptionID targets that subscription instead of searching
  *   LS9  ACROSS orders the dedupe scope bites: a different person is new, the same person is refused
  *
@@ -223,7 +223,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
   },
   {
     Id: "line-subscriber.LS5",
-    Name: "LS5: an OrganizationMembers type dedupes on the organization alone",
+    Name: "LS5: an Organization-benefit type dedupes on the organization alone",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -274,27 +274,42 @@ export const LineSubscriberChecks: NamedCheck[] = [
   },
   {
     Id: "line-subscriber.LS6",
-    Name: "LS6: a seat type requires both an organization and a named person",
+    Name: "LS6: a seat line with no ship-to person inherits it from the order, and only fails when nobody resolves",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        // Org but no person — a seat with nobody sitting in it.
-        const result = await ConfirmOrder(ctx.User, {
+        const person = await makePerson(ctx, "Inherited");
+
+        // The line names NO person. It must not be refused — the order's ship-to supplies one.
+        // Requiring it per line would make a bulk order for a single recipient absurd.
+        const inherited = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          CustomerOrganizationID: f.Customers.OrganizationID,
+          ShipToPersonID: person,
+          Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300 }],
+        });
+        Assert(inherited.Saved, `a seat should inherit the order's ship-to person: ${inherited.Message}`);
+        const [sub] = await subscriptionsOf(ctx, inherited.Order.ID as string);
+        Assert(SameID(sub.BeneficiaryPersonID, person), "the order's ship-to person benefits");
+
+        // With no person anywhere — not on the line, the order's ship-to, or its customer — there
+        // genuinely is nobody to benefit, and THAT is the failure worth reporting.
+        const nobody = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           CustomerOrganizationID: f.Customers.OrganizationID,
           Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300 }],
         });
-        Assert(!result.Saved, "a seat with no named person must be refused");
+        Assert(!nobody.Saved, "with no person resolvable anywhere it must be refused");
         Assert(
-          /needs both a ship-to organization and a ship-to person/i.test(result.Message),
-          `the refusal should say what is missing, got: ${result.Message}`,
+          /no[nb]e was resolved|none was resolved|benefits a named person/i.test(nobody.Message),
+          `the refusal should say the person could not be resolved, got: ${nobody.Message}`,
         );
       }),
   },
   {
     Id: "line-subscriber.LS7",
-    Name: "LS7: an OrganizationMembers type refuses to be held by a person alone",
+    Name: "LS7: an Organization-benefit type refuses to be held by a person alone",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {

@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Event Scheduling Section -->
+    <!-- Event Details Section -->
     <mj-collapsible-panel
-        SectionKey="eventScheduling"
-        SectionName="Event Scheduling"
-        Icon="fa fa-clock"
+        SectionKey="eventDetails"
+        SectionName="Event Details"
+        Icon="fa fa-map-marker-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -33,16 +33,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Venue Details Section -->
-    <mj-collapsible-panel
-        SectionKey="venueDetails"
-        SectionName="Venue Details"
-        Icon="fa fa-map-marker-alt"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -63,11 +53,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Event Configuration Section -->
+    <!-- Event Management Section -->
     <mj-collapsible-panel
-        SectionKey="eventConfiguration"
-        SectionName="Event Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="eventManagement"
+        SectionName="Event Management"
+        Icon="fa fa-users-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Organization Details Section -->
+    <!-- Account Information Section -->
     <mj-collapsible-panel
-        SectionKey="organizationDetails"
-        SectionName="Organization Details"
+        SectionKey="accountInformation"
+        SectionName="Account Information"
         Icon="fa fa-building"
         [Form]="this"
         [FormContext]="formContext">
@@ -63,16 +63,6 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Provider Integration Section -->
-    <mj-collapsible-panel
-        SectionKey="providerIntegration"
-        SectionName="Provider Integration"
-        Icon="fa fa-plug"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -92,10 +82,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Instrument Details Section -->
+    <!-- Payment Instrument Details Section -->
     <mj-collapsible-panel
-        SectionKey="instrumentDetails"
-        SectionName="Instrument Details"
+        SectionKey="paymentInstrumentDetails"
+        SectionName="Payment Instrument Details"
         Icon="fa fa-credit-card"
         [Form]="this"
         [FormContext]="formContext">
@@ -184,11 +174,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Transaction Details Section -->
+    <!-- Transaction Metadata Section -->
     <mj-collapsible-panel
-        SectionKey="transactionDetails"
-        SectionName="Transaction Details"
-        Icon="fa fa-file-invoice-dollar"
+        SectionKey="transactionMetadata"
+        SectionName="Transaction Metadata"
+        Icon="fa fa-file-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

@@ -17,12 +17,12 @@ export class mjBizAppsOrdersPaymentProviderFormComponent extends BaseFormCompone
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'providerConfiguration', sectionName: 'Provider Configuration', isExpanded: true },
-            { sectionKey: 'securityAndSettings', sectionName: 'Security and Settings', isExpanded: true },
+            { sectionKey: 'securityAndIntegration', sectionName: 'Security and Integration', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentIntents', sectionName: 'Payment Intents', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentDetails', sectionName: 'Payment Details', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentDetails', sectionName: 'Payment Details', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPaymentIntents', sectionName: 'Payment Intents', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false }
         ]);
     }
 }

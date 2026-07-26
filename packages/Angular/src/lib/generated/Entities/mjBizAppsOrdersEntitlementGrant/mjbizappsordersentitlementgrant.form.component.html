@@ -29,6 +29,32 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="Quantity"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Order Context Section -->
+    <mj-collapsible-panel
+        SectionKey="orderContext"
+        SectionName="Order Context"
+        Icon="fa fa-shopping-cart"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="OrderLineID"
             Type="textbox"
             [EditMode]="EditMode"
@@ -51,7 +77,7 @@
     <mj-collapsible-panel
         SectionKey="beneficiaryInformation"
         SectionName="Beneficiary Information"
-        Icon="fa fa-user"
+        Icon="fa fa-user-check"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -75,21 +101,13 @@
 
     </mj-collapsible-panel>
 
-    <!-- Grant Terms Section -->
+    <!-- Validity Period Section -->
     <mj-collapsible-panel
-        SectionKey="grantTerms"
-        SectionName="Grant Terms"
-        Icon="fa fa-calendar-check"
+        SectionKey="validityPeriod"
+        SectionName="Validity Period"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Quantity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -103,14 +121,6 @@
             [ShowLabel]="true"
             FieldName="ValidTo"
             Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
