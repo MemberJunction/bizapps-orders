@@ -19,6 +19,21 @@
  * On the transition INTO `Captured`, once, and only when there IS a fee with an account to book it
  * to. `JournalEntryID` is NULL→value-once and is checked first, so a re-save never books twice.
  *
+ * ── THE ALLOCATION INVARIANT (D68) ─────────────────────────────────────────────────────────────
+ * `Amount` MUST equal the sum of the payment's lines. A payment that says 1000 arrived while its
+ * allocations total 600 is internally inconsistent, and the missing 400 has no home in the ledger —
+ * which is how "unapplied cash" became a concept that needed inventing. Requiring the two to agree
+ * removes it: every dollar lands on an order, and allocating MORE than an order is worth simply
+ * drives that order's balance negative, which is a customer credit and spendable as tender.
+ *
+ * The invariant is enforced at the CAPTURE TRANSITION, not on every save. A `Pending` payment is a
+ * draft — half-entered, correctable, booking nothing — exactly as a `Draft` order may sit with no
+ * lines. Locking on save rather than on status would make an ordinary typo permanent.
+ *
+ * Lines are held in memory on `Lines` and saved with the header inside ONE transaction (the shape
+ * `OrderEntityServer` uses), so there is never a persisted moment where the header and its lines
+ * disagree. After capture both are frozen — the header by trigger 51005, the lines by 51010/51011.
+ *
  * ATOMICITY
  * The entry is written inside the caller's transaction, exactly as order booking is. A payment that
  * fails to book does not persist as captured.
@@ -40,7 +55,9 @@ import {
     DatabaseProviderBase,
     EntitySaveOptions,
     IMetadataProvider,
+    IRunViewProvider,
     LogError,
+    RunView,
     UserInfo,
     ValidationErrorInfo,
     ValidationErrorType,
@@ -52,6 +69,7 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
+const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 
 /** Statuses whose entry belongs in the ledger. */
 const BOOKED_STATUSES = new Set(['Captured', 'Refunded']);
@@ -64,6 +82,21 @@ interface CreateJournalEntriesResult {
 
 @RegisterClass(BaseEntity, PAYMENT_HEADER_ENTITY)
 export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntity {
+    private _lines: BaseEntity[] = [];
+
+    /**
+     * Unsaved allocation lines to persist with this payment (D68). Populate before `Save()`;
+     * they are written inside the same transaction as the header, so the two can never be seen
+     * disagreeing. Lines already persisted from an earlier save are counted too — this collection
+     * is only the NEW ones.
+     */
+    public get Lines(): BaseEntity[] {
+        return this._lines;
+    }
+    public set Lines(value: BaseEntity[]) {
+        this._lines = value ?? [];
+    }
+
     public override Validate(): ValidationResult {
         const result = super.Validate();
 
@@ -86,8 +119,10 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
     }
 
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
-        const booking = this.willBookOnThisSave();
-        if (!booking) {
+        const capturing = this.willBookOnThisSave();
+
+        // A Pending payment with no new lines is an ordinary row save — nothing to co-ordinate.
+        if (!capturing && this._lines.length === 0) {
             return super.Save(options);
         }
 
@@ -101,7 +136,21 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
                 );
             }
 
-            await this.bookProcessingFee(options);
+            // The lines go down BEFORE the invariant is checked, because the check reads what is
+            // actually persisted rather than what this object happens to be holding — a line that
+            // silently failed to save would otherwise still count toward the total.
+            await this.savePendingLines(options);
+
+            if (capturing) {
+                await this.assertAllocationInvariant();
+                // Only reach the fee builder when there IS a fee. Since the cash leg moved to the
+                // allocation (D13), this is the header's ONLY entry — so a payment without a fee has
+                // nothing to book here, and an account-credit transfer (Amount 0, D68) would
+                // otherwise trip the builder's zero-gross guard even though it is perfectly valid.
+                if (Number(this.ProcessingFeeAmount ?? 0) > 0) {
+                    await this.bookProcessingFee(options);
+                }
+            }
 
             await dbProvider.CommitTransaction();
             return true;
@@ -129,6 +178,86 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
         if (!BOOKED_STATUSES.has(this.Status)) return false;
         if (this.JournalEntryID) return false;
         return true;
+    }
+
+    /**
+     * Persist the in-memory allocation lines against this payment.
+     *
+     * `PaymentLineEntityServer` books each one's journal entries as it saves, and it reads the
+     * payment's status to decide whether to — so by the time these run the header is already
+     * `Captured` and the cash leg follows automatically.
+     */
+    private async savePendingLines(options?: EntitySaveOptions): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        for (const line of this._lines) {
+            line.Set('PaymentHeaderID', this.ID);
+            if (!line.Get('AllocatedAt')) line.Set('AllocatedAt', new Date());
+            if (!(await line.Save(options))) {
+                throw new Error(
+                    `Failed to save a payment allocation for ${this.PaymentNumber}: ` +
+                        `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+        }
+        this._lines = [];
+        void provider;
+        void user;
+    }
+
+    /**
+     * `Amount` must equal the sum of the payment's persisted lines (D68).
+     *
+     * Checked at CAPTURE only. A `Pending` payment is a draft and may be as inconsistent as a
+     * half-typed form; capture is the moment it becomes a claim about money that actually moved,
+     * and from then on the header and lines are both frozen.
+     *
+     * Read from the database rather than from `this._lines`: that is the number the ledger and
+     * every downstream report will see.
+     */
+    private async assertAllocationInvariant(): Promise<void> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ Amount: number }>(
+            {
+                EntityName: PAYMENT_LINE_ENTITY,
+                ExtraFilter: `PaymentHeaderID='${this.ID}'`,
+                Fields: ['Amount'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        if (!res?.Success) {
+            throw new Error(
+                `Could not read the allocations for payment ${this.PaymentNumber}: ${res?.ErrorMessage ?? 'unknown error'}`,
+            );
+        }
+
+        const rows = res.Results ?? [];
+        const allocated = Math.round(rows.reduce((sum, l) => sum + Number(l.Amount ?? 0), 0) * 100) / 100;
+        const amount = Math.round(Number(this.Amount ?? 0) * 100) / 100;
+
+        // DIRECTION. `Amount` is stored as a positive magnitude on both a capture and a refund —
+        // "how much moved" — while the LINES are signed by which way it moved: positive applies cash
+        // to an order, negative takes it back off. So a refund of 250 is Amount 250 with lines
+        // totalling -250, and comparing the two naively would fail every refund ever written.
+        // `Status === 'Refunded'` is the same discriminator the booking path already uses to decide
+        // whether to mirror the entry (D53), so the two stay in step by construction.
+        const reversal = this.Status === 'Refunded';
+        const expected = reversal ? -amount : amount;
+        if (allocated === expected) return;
+
+        const shortfall = Math.round((expected - allocated) * 100) / 100;
+        const verb = reversal ? 'refunded' : 'captured';
+        throw new Error(
+            `Payment ${this.PaymentNumber} cannot be ${verb}: it is for ${amount} but its ` +
+                `${rows.length} allocation${rows.length === 1 ? '' : 's'} total ${allocated} ` +
+                `(expected ${expected}), leaving ${shortfall} unaccounted for. Every part of a payment must ` +
+                `land on an order — allocating MORE than an order is worth is allowed and simply leaves that ` +
+                `order with a credit balance, which can be spent on another order later. Adjust the ` +
+                `allocations, or record the payment for what actually moved.`,
+        );
     }
 
     private async bookProcessingFee(options?: EntitySaveOptions): Promise<void> {

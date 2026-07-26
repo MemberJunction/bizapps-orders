@@ -16,14 +16,14 @@ export class mjBizAppsOrdersRevenueRecognitionTypeFormComponent extends BaseForm
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'recognitionDefinition', sectionName: 'Recognition Definition', isExpanded: true },
-            { sectionKey: 'recognitionConfiguration', sectionName: 'Recognition Configuration', isExpanded: true },
+            { sectionKey: 'typeConfiguration', sectionName: 'Type Configuration', isExpanded: true },
+            { sectionKey: 'logicAndBehavior', sectionName: 'Logic and Behavior', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersRevenueRecognitionSchedules', sectionName: 'Revenue Recognition Schedules', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductPerformanceObligations', sectionName: 'Product Performance Obligations', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductTypes', sectionName: 'Product Types', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductPerformanceObligations', sectionName: 'Product Performance Obligations', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersRevenueRecognitionSchedules', sectionName: 'Revenue Recognition Schedules', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false }
         ]);
     }
 }

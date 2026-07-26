@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- General Information Section -->
+    <!-- Product Type Details Section -->
     <mj-collapsible-panel
-        SectionKey="generalInformation"
-        SectionName="General Information"
+        SectionKey="productTypeDetails"
+        SectionName="Product Type Details"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -52,17 +52,25 @@
 
     </mj-collapsible-panel>
 
-    <!-- Order Processing Section -->
+    <!-- Fulfillment and Tax Section -->
     <mj-collapsible-panel
-        SectionKey="orderProcessing"
-        SectionName="Order Processing"
-        Icon="fa fa-tasks"
+        SectionKey="fulfillmentAndTax"
+        SectionName="Fulfillment and Tax"
+        Icon="fa fa-truck"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="RequiresFulfillment"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DefaultIsTaxable"
             Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -89,14 +97,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="DefaultIsTaxable"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="DefaultSubscriptionTypeID"
             Type="textbox"
             [EditMode]="EditMode"
@@ -106,11 +106,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Configuration Section -->
+    <!-- System Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="configuration"
-        SectionName="Configuration"
-        Icon="fa fa-cog"
+        SectionKey="systemConfiguration"
+        SectionName="System Configuration"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

@@ -29,10 +29,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Pricing Strategy Section -->
+    <!-- Pricing Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="pricingStrategy"
-        SectionName="Pricing Strategy"
+        SectionKey="pricingConfiguration"
+        SectionName="Pricing Configuration"
         Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
@@ -64,10 +64,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financial Details Section -->
+    <!-- Pricing Values Section -->
     <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
+        SectionKey="pricingValues"
+        SectionName="Pricing Values"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -87,16 +87,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Quantity Tiers Section -->
-    <mj-collapsible-panel
-        SectionKey="quantityTiers"
-        SectionName="Quantity Tiers"
-        Icon="fa fa-layer-group"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

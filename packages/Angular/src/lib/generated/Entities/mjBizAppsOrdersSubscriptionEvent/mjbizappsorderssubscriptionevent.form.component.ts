@@ -15,8 +15,9 @@ export class mjBizAppsOrdersSubscriptionEventFormComponent extends BaseFormCompo
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'eventContext', sectionName: 'Event Context', isExpanded: true },
+            { sectionKey: 'subscriptionContext', sectionName: 'Subscription Context', isExpanded: true },
             { sectionKey: 'eventDetails', sectionName: 'Event Details', isExpanded: true },
+            { sectionKey: 'eventPayload', sectionName: 'Event Payload', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

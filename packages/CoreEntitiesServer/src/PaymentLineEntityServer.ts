@@ -6,17 +6,21 @@
  * order. The rollup triggers would dutifully compute `Balance = -400` and `PaymentStatus = 'Paid'`,
  * and the customer would appear to be owed money the ledger has no record of.
  *
- * TWO RULES
- *   1. A positive application may not push the order's applied total ABOVE its gross. Over-payment
- *      is a real business event, but it is a credit balance to be handled deliberately (a credit
- *      memo, a refund), not something a data-entry slip should create silently.
- *   2. A negative application (unapply / credit memo — legal per D18) may not push the applied total
- *      BELOW zero. Un-applying more than was ever applied is always a mistake.
+ * ONE RULE HERE (D68 revised the other away)
+ *   A negative application (un-apply, or spending a credit) may not push the order's applied total
+ *   BELOW zero. Un-applying more than was ever applied is always a mistake.
  *
- * WHAT IS DELIBERATELY NOT GUARDED HERE: whether the PAYMENT has enough left to allocate. One
- * payment can settle many orders, so that is a payment-side sum, and enforcing it from the line
- * would need a lock over every sibling line of the same payment. It is a separate check (PL-side)
- * rather than a half-measure bolted on here.
+ * THERE IS DELIBERATELY NO CEILING. An earlier version refused any application that pushed the
+ * order's applied total above its gross, on the reasoning that an over-payment should be recorded
+ * "deliberately" as a credit memo. That was wrong, and it made the honest case unrecordable: a
+ * customer who sends 1000 for a 900 order has done nothing unusual, and the money is in the bank
+ * whether or not the schema likes it. Over-applying now simply drives the order's balance negative,
+ * and a negative balance IS the credit — spendable on another order via the Account Credit tender.
+ *
+ * WHAT GUARDS THE PAYMENT INSTEAD: `PaymentHeaderEntityServer` requires a captured payment's Amount
+ * to equal the sum of its lines (D68). That is a payment-side sum, so it belongs on the payment —
+ * and being an equality rather than a ceiling, it makes over-allocating a payment impossible by
+ * construction rather than by a second check.
  *
  * ── THE CASH LEG MOVED HERE (2026-07-26, D13 payment half) ──────────────────────────────────
  * It used to live on `PaymentHeader` capture, which booked `Dr Cash / Cr AR` against the RECEIVING
@@ -345,16 +349,14 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             .filter((l) => !this.ID || l.ID.toLowerCase() !== String(this.ID).toLowerCase())
             .reduce((sum, l) => sum + Number(l.Amount ?? 0), 0);
 
-        const gross = Number(order.TotalGross ?? 0);
         const proposed = Math.round((existing + Number(this.Amount)) * 100) / 100;
 
-        if (proposed > gross + TOLERANCE) {
-            return (
-                `Applying ${this.Amount} would take the total applied against order ${order.OrderNumber} ` +
-                `to ${proposed}, which is more than the order's ${gross}. ${existing} is already applied. ` +
-                `Record an over-payment as a credit memo or a refund rather than over-applying cash.`
-            );
-        }
+        // NO CEILING. Over-applying is deliberately permitted (D68): a customer paying more than an
+        // order is worth is an everyday event, and the resulting NEGATIVE balance is exactly how this
+        // system represents a customer credit — spendable on another order through the Account Credit
+        // tender. The ceiling that used to live here refused that, which is why a payment could not be
+        // recorded for what actually arrived. Consistency between a payment and its own allocations is
+        // enforced instead, on the payment side (PaymentHeaderEntityServer, D68).
 
         if (proposed < -TOLERANCE) {
             return (

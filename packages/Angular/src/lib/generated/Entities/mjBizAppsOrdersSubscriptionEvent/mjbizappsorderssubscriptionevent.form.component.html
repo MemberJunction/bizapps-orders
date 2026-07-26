@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Event Context Section -->
+    <!-- Subscription Context Section -->
     <mj-collapsible-panel
-        SectionKey="eventContext"
-        SectionName="Event Context"
+        SectionKey="subscriptionContext"
+        SectionName="Subscription Context"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
@@ -70,6 +70,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Event Payload Section -->
+    <mj-collapsible-panel
+        SectionKey="eventPayload"
+        SectionName="Event Payload"
+        Icon="fa fa-code"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

@@ -16,6 +16,7 @@ export class mjBizAppsOrdersProductBundleItemFormComponent extends BaseFormCompo
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'bundleConfiguration', sectionName: 'Bundle Configuration', isExpanded: true },
+            { sectionKey: 'componentDetails', sectionName: 'Component Details', isExpanded: true },
             { sectionKey: 'pricingAndDisplay', sectionName: 'Pricing and Display', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);

@@ -73,6 +73,8 @@ export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentL
 
 export { RefundPaymentOperation, LoadRefundPaymentOperation } from './RefundPaymentOperation.js';
 export type { RefundPaymentInput, RefundPaymentOutput } from './RefundPaymentOperation.js';
+export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './ApplyAccountCreditOperation.js';
+export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyAccountCreditOperation.js';
 
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 

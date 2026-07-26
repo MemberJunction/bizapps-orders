@@ -98,12 +98,19 @@ async function confirmOrder(ctx: IntegrationCheckContext, price = 250) {
   return result;
 }
 
-/** Capture a payment and, unless told otherwise, apply it to the order. */
+/**
+ * Capture a payment WITH its allocation, in one save (D68).
+ *
+ * The two used to be separate calls. They cannot be now: a captured payment's Amount must equal the
+ * sum of its lines, so capturing first and allocating second would pass through a state the
+ * invariant forbids. Pass `allocate: false` to get a Pending draft instead — the only shape in
+ * which a payment may legitimately sit unallocated.
+ */
 async function capturePayment(
   ctx: IntegrationCheckContext,
   orderID: string,
   amount: number,
-  opts: { fee?: number; apply?: boolean } = {},
+  opts: { fee?: number; allocate?: boolean; allocation?: number } = {},
 ): Promise<LooseEntity> {
   const f = Fx();
   const cash = f.PaymentTypeIDs.get("Cash");
@@ -112,24 +119,19 @@ async function capturePayment(
     "PaymentType 'Cash' missing — push the orders app metadata",
   );
 
+  const draft = opts.allocate === false;
   const { Payment, Saved, Message } = await CreatePayment(ctx.User, {
     PaymentNumber: `IT-${randomUUID().slice(0, 8).toUpperCase()}`,
     ReceivingCompanyID: f.CoA.ID,
     PaymentTypeID: cash!,
     Amount: amount,
     ProcessingFeeAmount: opts.fee ?? 0,
+    Status: draft ? "Pending" : "Captured",
+    Allocations: draft
+      ? []
+      : [{ OrderHeaderID: orderID, Amount: opts.allocation ?? amount }],
   });
   Assert(Saved, `capture failed: ${Message}`);
-
-  if (opts.apply !== false) {
-    const applied = await ApplyPayment(
-      ctx.User,
-      Payment.ID as string,
-      orderID,
-      amount,
-    );
-    Assert(applied.Saved, `apply failed: ${applied.Message}`);
-  }
   return Payment;
 }
 
@@ -504,41 +506,35 @@ export const PaymentLedgerChecks: NamedCheck[] = [
   },
   {
     Id: "payment-ledger.PL8",
-    Name: "PL8: over-applying cash to an order is refused",
+    Name: "PL8: over-paying an order is ALLOWED and leaves a credit balance",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
+        // This check used to assert the OPPOSITE — that over-application was refused. That rule was
+        // wrong (D68): a customer sending 500 for a 100 order has done nothing unusual, and refusing
+        // it made the honest case unrecordable while the money sat in the bank regardless. The
+        // surplus now stays on the order as a NEGATIVE balance, which is the credit.
         const order = await confirmOrder(ctx, 100);
         const payment = await capturePayment(
           ctx,
           order.Order.ID as string,
-          100,
-        );
-
-        // Nothing prevented this before: Balance would read -400 and PaymentStatus 'Paid'.
-        const attempt = await ApplyPayment(
-          ctx.User,
-          payment.ID as string,
-          order.Order.ID as string,
           500,
         );
-        Assert(
-          !attempt.Saved,
-          "applying 500 against a 100 order must be refused",
-        );
-        Assert(
-          /more than the order/i.test(attempt.Message),
-          `the refusal should explain, got: ${attempt.Message}`,
-        );
+        Assert(payment.ID != null, "the over-payment must be recordable");
 
-        const row = await TxOne<{ Balance: number }>(
+        const row = await TxOne<{ Balance: number; AmountPaid: number; PaymentStatus: string }>(
           ctx,
-          `SELECT Balance FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
+          `SELECT Balance, AmountPaid, PaymentStatus FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
+        );
+        AssertEqual(
+          Number(row.AmountPaid),
+          500,
+          "all 500 is applied — the payment and its allocation agree",
         );
         AssertEqual(
           Number(row.Balance),
-          0,
-          "the balance is untouched by the refused application",
+          -400,
+          "the 400 surplus shows as a NEGATIVE balance: that is the customer credit",
         );
       }),
   },
@@ -555,6 +551,8 @@ export const PaymentLedgerChecks: NamedCheck[] = [
           100,
         );
 
+        // The FLOOR survives D68 while the ceiling did not: un-applying more than was ever applied
+        // is incoherent no matter how permissive the model is about over-payment.
         const attempt = await ApplyPayment(
           ctx.User,
           payment.ID as string,

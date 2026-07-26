@@ -50,7 +50,7 @@ import {
   TxQuery,
 } from "../fixture.js";
 import { ConfirmOrder } from "../order-builder.js";
-import { ApplyPayment, CreatePayment, type LooseEntity } from "../payment-builder.js";
+import { CreatePayment, type LooseEntity } from "../payment-builder.js";
 
 const CASH_CODE = "10100";
 const AR_CODE = "11201";
@@ -131,19 +131,22 @@ async function payToCoA(
   const cash = f.PaymentTypeIDs.get("Cash");
   Assert(cash != null, "PaymentType 'Cash' missing — push the orders app metadata");
 
+  // Header + allocation in ONE save (D68). When the allocation is EXPECTED to fail — the missing
+  // intercompany pair case — the whole save fails with it, which is the point: an unbookable
+  // allocation must take the payment down rather than leaving cash recorded against nothing.
   const { Payment, Saved, Message } = await CreatePayment(ctx.User, {
     PaymentNumber: `IC-${randomUUID().slice(0, 8).toUpperCase()}`,
     ReceivingCompanyID: f.CoA.ID,
     PaymentTypeID: cash!,
     Amount: amount,
+    Allocations: [
+      { OrderHeaderID: orderID, Amount: amount, OrderLineID: opts.targetOrderLineID ?? null },
+    ],
   });
-  Assert(Saved, `capture failed: ${Message}`);
-
-  const applied = await ApplyPayment(ctx.User, Payment.ID as string, orderID, amount);
   if (!opts.expectFailure) {
-    Assert(applied.Saved, `apply failed: ${applied.Message}`);
+    Assert(Saved, `capture/apply failed: ${Message}`);
   }
-  return { Payment, Applied: applied.Saved, Message: applied.Message };
+  return { Payment, Applied: Saved, Message };
 }
 
 async function reloadEngine(ctx: IntegrationCheckContext): Promise<void> {
@@ -377,11 +380,15 @@ export const IntercompanyChecks: NamedCheck[] = [
         );
 
         const cash = f.PaymentTypeIDs.get("Cash")!;
+        // PENDING on purpose: this check writes its line with raw SQL to inspect the stored shape,
+        // and a Pending payment is the state in which allocations may be added independently. A
+        // captured one would have had to carry the line through its own save (D68).
         const { Payment, Saved } = await CreatePayment(ctx.User, {
           PaymentNumber: `IC-${randomUUID().slice(0, 8).toUpperCase()}`,
           ReceivingCompanyID: f.CoA.ID,
           PaymentTypeID: cash,
           Amount: 100,
+          Status: "Pending",
         });
         Assert(Saved, "capture failed");
 
@@ -532,18 +539,19 @@ export const IntercompanyChecks: NamedCheck[] = [
         const order2 = await confirmMultiCompanyOrder(ctx, [["WidgetB", 400]]);
 
         const cash = f.PaymentTypeIDs.get("Cash")!;
-        const { Payment, Saved } = await CreatePayment(ctx.User, {
+        // One payment settling TWO orders — both allocations ride the same save, and together they
+        // account for exactly the 500 that arrived (D68).
+        const { Payment, Saved, Message } = await CreatePayment(ctx.User, {
           PaymentNumber: `IC-${randomUUID().slice(0, 8).toUpperCase()}`,
           ReceivingCompanyID: f.CoA.ID,
           PaymentTypeID: cash,
           Amount: 500,
+          Allocations: [
+            { OrderHeaderID: order1.Order.ID as string, Amount: 300 },
+            { OrderHeaderID: order2.Order.ID as string, Amount: 200 },
+          ],
         });
-        Assert(Saved, "capture failed");
-
-        const a1 = await ApplyPayment(ctx.User, Payment.ID as string, order1.Order.ID as string, 300);
-        Assert(a1.Saved, `first allocation failed: ${a1.Message}`);
-        const a2 = await ApplyPayment(ctx.User, Payment.ID as string, order2.Order.ID as string, 200);
-        Assert(a2.Saved, `second allocation failed: ${a2.Message}`);
+        Assert(Saved, `split capture failed: ${Message}`);
 
         const lines = await allocationLines(ctx, Payment.ID as string);
         // TWO per allocation, so four in all. Order 2 is entirely Co B's product, but Co A still

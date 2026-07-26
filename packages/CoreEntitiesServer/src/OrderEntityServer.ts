@@ -1089,25 +1089,21 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         payment.Set('Status', 'Captured');
         payment.Set('Description', `Initial payment for order ${this.OrderNumber}`);
 
-        if (!(await payment.Save(options))) {
-            throw new Error(
-                `Failed to create the initial payment for order ${this.OrderNumber}: ` +
-                    `${payment.LatestResult?.CompleteMessage ?? 'unknown error'}`,
-            );
-        }
-
+        // The allocation rides the payment's Lines collection so both land in ONE save (D68). The
+        // payment's Amount must equal the sum of its lines at capture, so writing the header first
+        // and the allocation second would fail on a payment that is about to be exactly consistent.
         const line = await provider.GetEntityObject<BaseEntity>(PAYMENT_LINE_ENTITY, user);
         line.NewRecord();
-        line.Set('PaymentHeaderID', payment.Get('ID'));
         line.Set('OrderHeaderID', this.ID);
         line.Set('Amount', amount);
         line.Set('AllocatedAt', new Date());
         line.Set('AllocatedByUserID', user?.ID ?? null);
+        (payment as unknown as { Lines: BaseEntity[] }).Lines = [line];
 
-        if (!(await line.Save(options))) {
+        if (!(await payment.Save(options))) {
             throw new Error(
-                `Failed to apply the initial payment to order ${this.OrderNumber}: ` +
-                    `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                `Failed to create the initial payment for order ${this.OrderNumber}: ` +
+                    `${payment.LatestResult?.CompleteMessage ?? 'unknown error'}`,
             );
         }
     }

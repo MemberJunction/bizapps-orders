@@ -157,8 +157,11 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
         const dbProvider = provider as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
-            const refund = await this.createReversal(provider, user, payment, requested, input);
-            await this.unapply(provider, user, refund.ID, payment, applications, requested);
+            // The un-apply lines are built BEFORE the header is saved and ride its Lines collection,
+            // because the header's save is what checks the D68 invariant — saving it first with no
+            // allocations would fail on a payment that is about to be perfectly consistent.
+            const lines = await this.buildUnapplyLines(provider, user, payment, applications, requested);
+            const refund = await this.createReversal(provider, user, payment, requested, input, lines);
 
             await dbProvider.CommitTransaction();
             return {
@@ -262,6 +265,7 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
         original: PaymentRow,
         amount: number,
         input: RefundPaymentInput,
+        lines: BaseEntity[],
     ): Promise<{ ID: string; Number: string; JournalEntryID?: string }> {
         const refund = await provider.GetEntityObject<BaseEntity>(PAYMENT_HEADER_ENTITY, user);
         refund.NewRecord();
@@ -286,6 +290,10 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
             refund.Set('PaymentDetailID', await this.copyDetail(provider, user, original.PaymentDetailID));
         }
 
+        // Header + un-apply lines in ONE save (D68): the invariant is checked across the pair, and
+        // the mirrored entries book as the lines go down.
+        (refund as unknown as { Lines: BaseEntity[] }).Lines = lines;
+
         if (!(await refund.Save())) {
             throw new Error(
                 `Failed to create the refund for ${original.PaymentNumber}: ` +
@@ -307,14 +315,14 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
      * across the same three rather than dumping the whole reversal on whichever happened to be
      * first. The final line absorbs the rounding remainder so the un-applied total is exact.
      */
-    private async unapply(
+    private async buildUnapplyLines(
         provider: IMetadataProvider,
         user: UserInfo,
-        refundPaymentID: string,
         original: PaymentRow,
         applications: AppliedRow[],
         refundAmount: number,
-    ): Promise<void> {
+    ): Promise<BaseEntity[]> {
+        const built: BaseEntity[] = [];
         const appliedTotal = applications.reduce((s, a) => s + Number(a.Amount), 0);
         let allocated = 0;
 
@@ -329,20 +337,15 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
 
             const line = await provider.GetEntityObject<BaseEntity>(PAYMENT_LINE_ENTITY, user);
             line.NewRecord();
-            line.Set('PaymentHeaderID', refundPaymentID);
             line.Set('OrderHeaderID', app.OrderHeaderID);
             // NEGATIVE: this removes cash from the order, which is what moves Balance back up.
             line.Set('Amount', -share);
             line.Set('AllocatedAt', new Date());
             line.Set('AllocatedByUserID', user?.ID ?? null);
-
-            if (!(await line.Save())) {
-                throw new Error(
-                    `Failed to un-apply ${share} from order ${app.OrderHeaderID} for the refund of ` +
-                        `${original.PaymentNumber}: ${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
-                );
-            }
+            built.push(line);
         }
+        void original;
+        return built;
     }
 
     private async copyDetail(provider: IMetadataProvider, user: UserInfo, sourceID: string): Promise<string> {

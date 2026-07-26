@@ -426,8 +426,11 @@ is mocked.
 | `subscription-cancellation` | SC1–SC10 | `Orders.CancelSubscription`: policy → mirrored reversal, atomically *(D52/D53)* |
 | `subscription-renewal` | SR1–SR11 | `Orders.SpawnRenewals`: the scheduled continuation, and everything it must **not** do *(D55)* |
 | `payments-rollups` | PR1–PR9 | rollup triggers, document numbering, instrument copy-on-use *(D30/D39/D42)* |
-| `line-subscriber` | LS1–LS12 | per-line ship-to and the benefit model's dedupe scope *(D61/D62)* |
 | `payment-ledger` | PL1–PL12 | the **cash leg** — capture/refund journal entries, AR reconciliation, application guards *(D17/D18/D57–D59)* |
+| `intercompany` | IC1–IC12 | whose books each amount lands on when one company collects for another *(D66)* |
+| `account-credit` | AC1–AC11 | the allocation invariant, over-payment, and credit as tender *(D68)* |
+| `events` | EV1–EV10 | an event's own dates drive its line's service period and recognition *(D67)* |
+| `line-subscriber` | LS1–LS12 | per-line ship-to and the benefit model's dedupe scope *(D61/D62)* |
 
 ```bash
 # fast inner loop — one bundle, or one check, with a stack trace on failure
