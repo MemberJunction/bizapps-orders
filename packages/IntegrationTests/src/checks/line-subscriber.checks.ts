@@ -21,6 +21,9 @@
  *   LS6  a seat inherits its person from the ORDER's ship-to; it fails only when nobody resolves
  *   LS7  an Organization-benefit type refuses to be held by a person alone
  *   LS8  an explicit RenewsSubscriptionID targets that subscription instead of searching
+ *   LS10 a person's organization is stamped from their affiliation AS OF the order date
+ *   LS11 several affiliations → most recent wins; none → it stays a personal order
+ *   LS12 the app setting governs it, including which relationship types qualify
  *   LS9  ACROSS orders the dedupe scope bites: a different person is new, the same person is refused
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
@@ -388,6 +391,161 @@ export const LineSubscriberChecks: NamedCheck[] = [
       }),
   },
 ];
+
+/** Affiliate a person to an organization for a dated window. */
+async function affiliate(
+  ctx: IntegrationCheckContext,
+  personID: string,
+  organizationID: string,
+  typeName: string,
+  startDate: string,
+): Promise<void> {
+  await TxQuery(
+    ctx,
+    `INSERT INTO ${COMMON_SCHEMA}.Relationship
+        (ID, RelationshipTypeID, FromPersonID, ToOrganizationID, Status, StartDate)
+     VALUES ('${randomUUID()}',
+             (SELECT ID FROM ${COMMON_SCHEMA}.RelationshipType WHERE Name='${typeName}'),
+             '${personID}','${organizationID}','Active','${startDate}')`,
+  );
+}
+
+/** Point the app setting at a value for the duration of a check. */
+async function setSetting(ctx: IntegrationCheckContext, name: string, value: string): Promise<void> {
+  await TxQuery(
+    ctx,
+    `UPDATE __mj.ApplicationSetting SET Value='${value}'
+     WHERE Name='${name}'
+       AND ApplicationID = (SELECT ID FROM __mj.Application WHERE Name='__mj_BizAppsOrders')`,
+  );
+  const { ApplicationSettingEngine } = await import("@memberjunction/core-entities");
+  await ApplicationSettingEngine.Instance.Config(true, ctx.User, ctx.Provider);
+}
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS10",
+  Name: "LS10: a person's organization is stamped from their affiliation as of the order date",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      const person = await makePerson(ctx, "Affiliated");
+      await affiliate(ctx, person, f.Customers.SecondOrganizationID, "Employee", "2020-01-01");
+
+      // No organization anywhere on the order — only a person. The affiliation supplies it, and it
+      // is STAMPED, so the order still says so after that person changes employer.
+      const result = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        CustomerPersonID: person,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+      });
+      Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+      const [sub] = await subscriptionsOf(ctx, result.Order.ID as string);
+      Assert(
+        SameID(sub.CustomerOrganizationID, f.Customers.SecondOrganizationID),
+        "the person's employer was stamped onto the subscription",
+      );
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS11",
+  Name: "LS11: with several affiliations the most recent wins; with none it stays a personal order",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+
+      // A person can hold several at once — Relationship has no uniqueness constraint — so this is
+      // normal rather than exceptional, and the rule must be stated rather than guessed.
+      const multi = await makePerson(ctx, "Multi");
+      await affiliate(ctx, multi, f.Customers.OrganizationID, "Employee", "2019-01-01");
+      await affiliate(ctx, multi, f.Customers.SecondOrganizationID, "Employee", "2024-06-01");
+
+      const chosen = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        CustomerPersonID: multi,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+      });
+      Assert(chosen.Saved, `confirm failed: ${chosen.Message}`);
+      const [multiSub] = await subscriptionsOf(ctx, chosen.Order.ID as string);
+      Assert(
+        SameID(multiSub.CustomerOrganizationID, f.Customers.SecondOrganizationID),
+        "the most recently started affiliation wins",
+      );
+
+      // Nobody affiliated: blank stays blank, which IS the personal order — no flag required.
+      const solo = await makePerson(ctx, "Unaffiliated");
+      const personal = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        CustomerPersonID: solo,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+      });
+      Assert(personal.Saved, `personal order failed: ${personal.Message}`);
+      const [personalSub] = await subscriptionsOf(ctx, personal.Order.ID as string);
+      Assert(personalSub.CustomerOrganizationID == null, "a personal order keeps a blank organization");
+      Assert(SameID(personalSub.BeneficiaryPersonID, solo), "and the person is the subscriber");
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS12",
+  Name: "LS12: the setting governs it — off stamps nothing, and only listed relationship types qualify",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+
+      // A VENDOR relationship must not make that organization the bill-to. Only the types listed in
+      // the setting qualify, and the default is Employee alone.
+      const vendor = await makePerson(ctx, "VendorOnly");
+      await affiliate(ctx, vendor, f.Customers.SecondOrganizationID, "Vendor", "2020-01-01");
+      const vendorOrder = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        CustomerPersonID: vendor,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+      });
+      Assert(vendorOrder.Saved, `confirm failed: ${vendorOrder.Message}`);
+      const [vendorSub] = await subscriptionsOf(ctx, vendorOrder.Order.ID as string);
+      Assert(
+        vendorSub.CustomerOrganizationID == null,
+        "a Vendor relationship must not be treated as an employer",
+      );
+
+      // Widening the setting is a DATA change — no release needed.
+      await setSetting(ctx, "OrganizationAffiliationRelationshipTypes", "Employee,Vendor");
+      const widened = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        CustomerPersonID: vendor,
+        Lines: [{ ProductID: f.Products.SubMonthly, Quantity: 1, UnitPrice: 40 }],
+      });
+      Assert(widened.Saved, `confirm failed: ${widened.Message}`);
+      const [widenedSub] = await subscriptionsOf(ctx, widened.Order.ID as string);
+      Assert(
+        SameID(widenedSub.CustomerOrganizationID, f.Customers.SecondOrganizationID),
+        "with Vendor listed, the affiliation now qualifies",
+      );
+
+      // And the master switch turns the whole inference off.
+      await setSetting(ctx, "AutoPopulateOrganizationFromPerson", "false");
+      const off = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        CustomerPersonID: await (async () => {
+          const p = await makePerson(ctx, "SwitchedOff");
+          await affiliate(ctx, p, f.Customers.OrganizationID, "Employee", "2020-01-01");
+          return p;
+        })(),
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+      });
+      Assert(off.Saved, `confirm failed: ${off.Message}`);
+      const [offSub] = await subscriptionsOf(ctx, off.Order.ID as string);
+      Assert(
+        offSub.CustomerOrganizationID == null,
+        "with the setting off, only what the caller supplied is stored",
+      );
+    }),
+});
 
 LineSubscriberChecks.push({
   Id: "line-subscriber.LS9",

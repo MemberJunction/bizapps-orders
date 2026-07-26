@@ -47,6 +47,7 @@ import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import {
     SubscriptionBehavior,
@@ -79,6 +80,8 @@ const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
+const RELATIONSHIP_ENTITY = 'MJ.BizApps.Common: Relationships';
+const COMMON_SCHEMA = '__mj_BizAppsCommon';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 
@@ -533,9 +536,13 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const subLines = await this.subscriptionLines(this._lines);
         if (subLines.length === 0) return out;
 
+        // Settings drive whether the organization is inferred at all, so load the cache once here
+        // rather than per line.
+        await OrdersSettings.Load(this.ProviderToUse as unknown as IMetadataProvider, this.ContextCurrentUser);
+
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
-            let subscriber = this.resolveSubscriber(line);
+            let subscriber = await this.withInferredOrganization(this.resolveSubscriber(line));
             // An explicitly named subscription wins; otherwise find one for this subscriber and
             // product, scoped by the type's BenefitModel (D62).
             const existing = line.RenewsSubscriptionID
@@ -598,6 +605,74 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 line.ShipToOrganizationID ?? this.ShipToOrganizationID ?? this.CustomerOrganizationID ?? null,
             PersonID: line.ShipToPersonID ?? this.ShipToPersonID ?? this.CustomerPersonID ?? null,
         };
+    }
+
+    /**
+     * Fill in the organization from the person's affiliation, when it was left blank (D64).
+     *
+     * Only ever ADDS: an organization that was stated — on the line, the order's ship-to, or its
+     * customer — is never second-guessed. And it only runs when the setting says so, so a
+     * deployment that would rather not infer anything simply turns it off and blank stays blank.
+     */
+    private async withInferredOrganization(subscriber: SubscriberIdentity): Promise<SubscriberIdentity> {
+        if (subscriber.OrganizationID) return subscriber;
+        if (!subscriber.PersonID) return subscriber;
+        if (!OrdersSettings.AutoPopulateOrganizationFromPerson) return subscriber;
+
+        const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();
+        const inferred = await this.organizationAsOf(subscriber.PersonID, asOf);
+        return inferred ? { ...subscriber, OrganizationID: inferred } : subscriber;
+    }
+
+    /**
+     * The organization a person belonged to AS OF the order date (D64).
+     *
+     * `Person` has no organization column — bizapps-common models affiliation as a dated
+     * `Relationship` (FromPersonID → ToOrganizationID, with StartDate/EndDate/Status). So this is a
+     * point-in-time question, and the answer legitimately changes when someone moves employer. That
+     * is exactly why the result is STAMPED onto the order rather than resolved on read: deriving it
+     * later would silently rewrite the history of an order that is otherwise immutable once booked.
+     *
+     * The rule, per Amith:
+     *   zero qualifying affiliations → leave blank. That IS a personal order — no flag needed,
+     *                                  because "person, no organization" already says it.
+     *   exactly one                  → use it.
+     *   more than one                → the most recent by StartDate. A person can hold several at
+     *                                  once (employee here, board member there), and Relationship
+     *                                  has no uniqueness constraint, so this case is normal rather
+     *                                  than exceptional and needs a stated rule instead of a guess.
+     *
+     * Which relationship types qualify is a SETTING, defaulting to `Employee` — being a `Vendor` to
+     * an organization must not make it your bill-to.
+     */
+    private async organizationAsOf(personID: string, asOf: Date): Promise<string | null> {
+        const types = OrdersSettings.OrganizationAffiliationRelationshipTypes;
+        if (types.length === 0) return null;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const quoted = types.map((t) => `'${t.replace(/'/g, "''")}'`).join(',');
+        const date = asOf.toISOString().slice(0, 10);
+
+        const result = await rv.RunView<{ ToOrganizationID: string; StartDate: string }>(
+            {
+                EntityName: RELATIONSHIP_ENTITY,
+                ExtraFilter:
+                    `FromPersonID='${personID}' AND ToOrganizationID IS NOT NULL ` +
+                    `AND Status='Active' ` +
+                    `AND (StartDate IS NULL OR StartDate <= '${date}') ` +
+                    `AND (EndDate IS NULL OR EndDate >= '${date}') ` +
+                    `AND RelationshipTypeID IN (SELECT ID FROM ${COMMON_SCHEMA}.RelationshipType WHERE Name IN (${quoted}))`,
+                Fields: ['ToOrganizationID', 'StartDate'],
+                // Most recent affiliation first. NULL StartDate sorts last: an undated relationship
+                // is weaker evidence than one that says when it began.
+                OrderBy: 'StartDate DESC',
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+
+        return result?.Results?.[0]?.ToOrganizationID ?? null;
     }
 
     /** Net for a line that has not been saved yet — mirrors OrderLineEntityServer's own formula. */

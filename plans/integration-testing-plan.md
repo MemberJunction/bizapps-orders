@@ -1,6 +1,6 @@
 # Integration Testing Plan — BizApps Orders
 
-> **Status:** BUILT (2026-07-26). Phases 0-3 are done and green — 79 checks across 8 bundles,
+> **Status:** BUILT (2026-07-26). Phases 0-3 are done and green — 82 checks across 8 bundles,
 > dispatched by `mj test suite --name "BizApps Orders Integration"` and by
 > `node test-harnesses/integration.mjs`. Phases 4-5 (breadth, CI) remain. Sections below are the
 > original proposal; **§0 records what the build actually decided**, including where it diverged.

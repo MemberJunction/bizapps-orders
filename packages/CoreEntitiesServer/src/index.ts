@@ -59,5 +59,7 @@ export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentL
 export { RefundPaymentOperation, LoadRefundPaymentOperation } from './RefundPaymentOperation.js';
 export type { RefundPaymentInput, RefundPaymentOutput } from './RefundPaymentOperation.js';
 
+export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
+
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';
