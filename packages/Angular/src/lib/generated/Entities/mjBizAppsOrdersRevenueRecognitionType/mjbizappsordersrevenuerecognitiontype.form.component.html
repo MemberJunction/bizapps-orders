@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Type Configuration Section -->
+    <!-- Recognition Definition Section -->
     <mj-collapsible-panel
-        SectionKey="typeConfiguration"
-        SectionName="Type Configuration"
-        Icon="fa fa-cog"
+        SectionKey="recognitionDefinition"
+        SectionName="Recognition Definition"
+        Icon="fa fa-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -41,30 +41,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Sequence"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Recognition Logic Section -->
+    <!-- Recognition Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="recognitionLogic"
-        SectionName="Recognition Logic"
-        Icon="fa fa-calculator"
+        SectionKey="recognitionConfiguration"
+        SectionName="Recognition Configuration"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -87,6 +71,22 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="RequiresServicePeriod"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Sequence"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
             Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -180,7 +180,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersProductTypes"
         SectionName="Product Types"
-        Icon="fa fa-box-open"
+        Icon="fa fa-tags"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

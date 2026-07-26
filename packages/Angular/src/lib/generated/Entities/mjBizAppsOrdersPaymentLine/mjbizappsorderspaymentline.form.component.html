@@ -55,11 +55,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Allocation Audit Section -->
+    <!-- Audit and Tracking Section -->
     <mj-collapsible-panel
-        SectionKey="allocationAudit"
-        SectionName="Allocation Audit"
-        Icon="fa fa-user-clock"
+        SectionKey="auditAndTracking"
+        SectionName="Audit and Tracking"
+        Icon="fa fa-history"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -78,6 +78,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="BookedAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>

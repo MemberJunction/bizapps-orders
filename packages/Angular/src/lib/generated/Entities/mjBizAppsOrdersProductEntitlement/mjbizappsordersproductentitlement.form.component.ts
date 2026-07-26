@@ -17,8 +17,8 @@ export class mjBizAppsOrdersProductEntitlementFormComponent extends BaseFormComp
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'productAssociation', sectionName: 'Product Association', isExpanded: true },
-            { sectionKey: 'entitlementConfiguration', sectionName: 'Entitlement Configuration', isExpanded: true },
-            { sectionKey: 'resourceAllocation', sectionName: 'Resource Allocation', isExpanded: true },
+            { sectionKey: 'entitlementDefinition', sectionName: 'Entitlement Definition', isExpanded: true },
+            { sectionKey: 'resourceConfiguration', sectionName: 'Resource Configuration', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false }
         ]);

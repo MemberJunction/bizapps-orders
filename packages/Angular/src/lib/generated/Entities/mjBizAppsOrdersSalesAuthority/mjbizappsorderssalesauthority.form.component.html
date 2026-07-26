@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Sales Representative Section -->
+    <!-- Assignment Section -->
     <mj-collapsible-panel
-        SectionKey="salesRepresentative"
-        SectionName="Sales Representative"
+        SectionKey="assignment"
+        SectionName="Assignment"
         Icon="fa fa-user-tie"
         [Form]="this"
         [FormContext]="formContext">
@@ -33,7 +33,7 @@
     <mj-collapsible-panel
         SectionKey="authorityLimits"
         SectionName="Authority Limits"
-        Icon="fa fa-sliders-h"
+        Icon="fa fa-hand-holding-usd"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -52,6 +52,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Operational Scope Section -->
+    <mj-collapsible-panel
+        SectionKey="operationalScope"
+        SectionName="Operational Scope"
+        Icon="fa fa-sliders-h"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

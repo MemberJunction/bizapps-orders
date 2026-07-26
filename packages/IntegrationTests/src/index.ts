@@ -50,6 +50,7 @@ export * from './checks/subscription-renewal.checks.js';
 export * from './checks/line-subscriber.checks.js';
 export * from './checks/payments-rollups.checks.js';
 export * from './checks/payment-ledger.checks.js';
+export * from './checks/intercompany.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Rule Configuration Section -->
+    <!-- Rule Definition Section -->
     <mj-collapsible-panel
-        SectionKey="ruleConfiguration"
-        SectionName="Rule Configuration"
+        SectionKey="ruleDefinition"
+        SectionName="Rule Definition"
         Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
@@ -36,24 +36,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Scope and Targeting Section -->
-    <mj-collapsible-panel
-        SectionKey="scopeAndTargeting"
-        SectionName="Scope and Targeting"
-        Icon="fa fa-crosshairs"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="Scope"
             Type="select"
             [EditMode]="EditMode"
@@ -67,27 +49,45 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Logic and Approval Section -->
+    <!-- Rule Logic Section -->
     <mj-collapsible-panel
-        SectionKey="logicAndApproval"
-        SectionName="Logic and Approval"
-        Icon="fa fa-check-double"
+        SectionKey="ruleLogic"
+        SectionName="Rule Logic"
+        Icon="fa fa-code"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="PredicateJson"
             Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Approval Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="approvalConfiguration"
+        SectionName="Approval Configuration"
+        Icon="fa fa-check-circle"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="ApprovalRequiredRoleID"
             Type="textbox"
             [EditMode]="EditMode"

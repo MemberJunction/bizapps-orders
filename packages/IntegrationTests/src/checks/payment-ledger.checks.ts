@@ -143,6 +143,51 @@ const entryLines = (ctx: IntegrationCheckContext, journalEntryID: string) =>
          WHERE jel.JournalEntryID = '${journalEntryID}'`,
   );
 
+/**
+ * The ALLOCATION entries a payment produced, found through accounting's D25 provenance pair.
+ *
+ * The cash/AR side moved off `PaymentHeader.JournalEntryID` when intercompany balancing landed:
+ * one payment LINE now produces one entry per company owning a line on the order, so there is no
+ * single id for the header to hold. The entries are found the other way round — by asking which
+ * entries point back at the payment's lines.
+ *
+ * Matching is case-insensitive because `LinkedRecordID` is text written by JS (lowercase) while
+ * SQL Server renders a uniqueidentifier uppercase.
+ */
+const allocationEntryLines = (ctx: IntegrationCheckContext, paymentID: string) =>
+  TxQuery<{ Code: string; DebitAmount: number; CreditAmount: number; CompanyID: string; EntryID: string }>(
+    ctx,
+    `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount, gl.CompanyID, je.ID AS EntryID
+         FROM ${ORDERS_SCHEMA}.PaymentLine pl
+         JOIN ${ACCT_SCHEMA}.JournalEntry je
+           ON LOWER(je.LinkedRecordID) = LOWER(CAST(pl.ID AS NVARCHAR(400)))
+         JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+         JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+         WHERE pl.PaymentHeaderID = '${paymentID}'`,
+  );
+
+/** Distinct allocation entries for a payment, with their type — one per company involved. */
+const allocationEntries = (ctx: IntegrationCheckContext, paymentID: string) =>
+  TxQuery<{ ID: string; EntryType: string; CompanyID: string }>(
+    ctx,
+    `SELECT DISTINCT je.ID, je.EntryType, je.CompanyID
+         FROM ${ORDERS_SCHEMA}.PaymentLine pl
+         JOIN ${ACCT_SCHEMA}.JournalEntry je
+           ON LOWER(je.LinkedRecordID) = LOWER(CAST(pl.ID AS NVARCHAR(400)))
+         WHERE pl.PaymentHeaderID = '${paymentID}'`,
+  );
+
+/** Net movement on one account code across a payment's allocation entries only. */
+function netOn(
+  lines: Array<{ Code: string; DebitAmount: number; CreditAmount: number }>,
+  code: string,
+): number {
+  const n = lines
+    .filter((l) => l.Code === code)
+    .reduce((s, l) => s + Number(l.DebitAmount ?? 0) - Number(l.CreditAmount ?? 0), 0);
+  return Math.round(n * 100) / 100;
+}
+
 /** Net movement on one account across EVERY entry for a company — the reconciliation view. */
 const netOnAccount = (
   ctx: IntegrationCheckContext,
@@ -205,32 +250,43 @@ async function PL4Body(ctx: IntegrationCheckContext): Promise<void> {
     const payment = await capturePayment(ctx, order.Order.ID as string, 250, {
       fee: 7.25,
     });
-    const lines = await entryLines(ctx, payment.JournalEntryID as string);
 
-    const cash = lines.find((l) => l.Code === CASH_CODE);
-    const feeLine = lines.find((l) => l.Code === FEE_CODE);
-    const ar = lines.find((l) => l.Code === AR_CODE);
-
+    // The fee is a HEADER fact — the processor takes its cut from the payment as a whole, not
+    // from any one order — so it books its own entry at capture: Dr Fee / Cr Cash.
+    const feeLines = await entryLines(ctx, payment.JournalEntryID as string);
+    AssertEqual(feeLines.length, 2, `the fee entry has two lines: ${JSON.stringify(feeLines)}`);
     AssertEqual(
-      Number(cash?.DebitAmount),
-      242.75,
-      "cash is NET of the fee — what the bank got",
+      Number(feeLines.find((l) => l.Code === FEE_CODE)?.DebitAmount),
+      7.25,
+      "the fee is our expense",
     );
-    AssertEqual(Number(feeLine?.DebitAmount), 7.25, "the fee is our expense");
-    // GROSS. A fee netted against AR would leave a residue on the customer's balance
-    // that no payment could ever clear.
     AssertEqual(
-      Number(ar?.CreditAmount),
+      Number(feeLines.find((l) => l.Code === CASH_CODE)?.CreditAmount),
+      7.25,
+      "the processor never deposited it",
+    );
+
+    // The allocation books the GROSS to cash and clears AR in full. A fee netted against AR
+    // would leave a residue on the customer's balance that no payment could ever clear.
+    const allocLines = await allocationEntryLines(ctx, payment.ID as string);
+    AssertEqual(netOn(allocLines, CASH_CODE), 250, "the allocation books the gross");
+    AssertEqual(
+      Number(allocLines.find((l) => l.Code === AR_CODE)?.CreditAmount),
       250,
       "the receivable clears for the FULL amount",
     );
+
+    // What actually matters, and the reason the split is safe: the bank ends up net.
+    const f2 = Fx();
+    const cashNet = await netOnAccount(ctx, f2.CoA.ID, CASH_CODE);
+    AssertEqual(Number(cashNet.Net), 242.75, "cash nets to what the bank received");
   });
 }
 
 export const PaymentLedgerChecks: NamedCheck[] = [
   {
     Id: "payment-ledger.PL1",
-    Name: "PL1: capturing a payment books an entry and stamps JournalEntryID",
+    Name: "PL1: applying a captured payment books an entry against the payment line",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -241,26 +297,30 @@ export const PaymentLedgerChecks: NamedCheck[] = [
           250,
         );
 
-        const journalEntryID = payment.JournalEntryID as string;
-        Assert(
-          journalEntryID != null,
-          "capture must stamp JournalEntryID — this was the gap",
-        );
-
-        const entry = await TxOne<{ EntryType: string }>(
-          ctx,
-          `SELECT EntryType FROM ${ACCT_SCHEMA}.JournalEntry WHERE ID='${journalEntryID}'`,
+        // The entry hangs off the payment LINE, not the header: one allocation produces one entry
+        // per company owning a line on the order, so the header has no single id to hold.
+        const entries = await allocationEntries(ctx, payment.ID as string);
+        AssertEqual(
+          entries.length,
+          1,
+          `a single-company order produces exactly one allocation entry: ${JSON.stringify(entries)}`,
         );
         AssertEqual(
-          entry.EntryType,
+          entries[0].EntryType,
           "PaymentReceipt",
           "entry type — accounting's vocabulary, not ours",
         );
+
+        const booked = await TxOne<{ BookedAt: string | null }>(
+          ctx,
+          `SELECT BookedAt FROM ${ORDERS_SCHEMA}.PaymentLine WHERE PaymentHeaderID='${payment.ID}'`,
+        );
+        Assert(booked.BookedAt != null, "the allocation must stamp BookedAt — the idempotency key");
       }),
   },
   {
     Id: "payment-ledger.PL2",
-    Name: "PL2: the capture entry debits Cash and credits Accounts Receivable",
+    Name: "PL2: the allocation entry debits Cash and credits Accounts Receivable",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -270,12 +330,12 @@ export const PaymentLedgerChecks: NamedCheck[] = [
           order.Order.ID as string,
           250,
         );
-        const lines = await entryLines(ctx, payment.JournalEntryID as string);
+        const lines = await allocationEntryLines(ctx, payment.ID as string);
 
         AssertEqual(
           lines.length,
           2,
-          `no-fee capture has two lines: ${JSON.stringify(lines)}`,
+          `a no-fee single-company allocation has two lines: ${JSON.stringify(lines)}`,
         );
         const cash = lines.find((l) => l.Code === CASH_CODE);
         const ar = lines.find((l) => l.Code === AR_CODE);
@@ -358,13 +418,16 @@ export const PaymentLedgerChecks: NamedCheck[] = [
           250,
           { fee: 7.25 },
         );
-        const lines = await entryLines(ctx, payment.JournalEntryID as string);
 
-        AssertEqual(
-          lines.length,
-          2,
-          "no fee line, because no fee account resolved",
+        // Nothing is booked for the fee — not an approximation of it. Booking it somewhere
+        // plausible would misstate whichever account absorbed it.
+        Assert(
+          payment.JournalEntryID == null,
+          "no fee entry, because no Processing Fee account resolved",
         );
+
+        const lines = await allocationEntryLines(ctx, payment.ID as string);
+        AssertEqual(lines.length, 2, "the allocation is unaffected by the unbooked fee");
         AssertEqual(
           Number(lines.find((l) => l.Code === CASH_CODE)?.DebitAmount),
           250,
@@ -390,7 +453,8 @@ export const PaymentLedgerChecks: NamedCheck[] = [
           order.Order.ID as string,
           250,
         );
-        const first = payment.JournalEntryID as string;
+        const before = await allocationEntries(ctx, payment.ID as string);
+        AssertEqual(before.length, 1, "one allocation entry to begin with");
 
         // An ordinary edit of a captured row. Booking again would credit AR twice and put
         // the customer's balance permanently negative.
@@ -400,11 +464,8 @@ export const PaymentLedgerChecks: NamedCheck[] = [
           `re-save failed: ${payment.LatestResult?.CompleteMessage}`,
         );
 
-        AssertEqual(
-          payment.JournalEntryID as string,
-          first,
-          "JournalEntryID is unchanged",
-        );
+        const after = await allocationEntries(ctx, payment.ID as string);
+        AssertEqual(after.length, 1, "still one allocation entry — BookedAt held the line");
         const ar = await netOnAccount(ctx, f.CoA.ID, AR_CODE);
         AssertEqual(Number(ar.Net), 0, "AR still nets to zero, not -250");
       }),
@@ -427,15 +488,14 @@ export const PaymentLedgerChecks: NamedCheck[] = [
         });
         Assert(result.Saved, `confirm failed: ${result.Message}`);
 
-        const payment = await TxOne<{ JournalEntryID: string | null }>(
+        const line = await TxOne<{ ID: string; BookedAt: string | null }>(
           ctx,
-          `SELECT ph.JournalEntryID FROM ${ORDERS_SCHEMA}.PaymentHeader ph
-                     JOIN ${ORDERS_SCHEMA}.PaymentLine pl ON pl.PaymentHeaderID = ph.ID
+          `SELECT pl.ID, pl.BookedAt FROM ${ORDERS_SCHEMA}.PaymentLine pl
                      WHERE pl.OrderHeaderID = '${result.Order.ID}'`,
         );
         Assert(
-          payment.JournalEntryID != null,
-          "the auto payment must book its cash leg too",
+          line.BookedAt != null,
+          "the auto payment's allocation must book its cash leg too",
         );
 
         const ar = await netOnAccount(ctx, f.CoA.ID, AR_CODE);
@@ -546,10 +606,11 @@ export const PaymentLedgerChecks: NamedCheck[] = [
           "Refunded",
           "the reversal is its own payment record",
         );
-        Assert(reversal.JournalEntryID != null, "the reversal books an entry");
 
-        // Mirrored: Dr AR / Cr Cash — the receivable comes back, the bank goes down.
-        const lines = await entryLines(ctx, reversal.JournalEntryID);
+        // Mirrored: Dr AR / Cr Cash — the receivable comes back, the bank goes down. The
+        // reversal's entries hang off ITS allocation, the same as the original capture's.
+        const lines = await allocationEntryLines(ctx, reversal.ID);
+        Assert(lines.length > 0, "the reversal books its allocation entries");
         AssertEqual(
           Number(lines.find((l) => l.Code === AR_CODE)?.DebitAmount),
           250,

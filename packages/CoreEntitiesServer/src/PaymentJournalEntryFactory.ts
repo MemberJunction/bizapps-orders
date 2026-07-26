@@ -1,33 +1,39 @@
 /**
- * Payment-side journal entries — the cash leg (plan D18).
+ * Payment-side journal entries — the PROCESSING FEE at capture (plan D18).
  *
- * WHY THIS EXISTS
- * Confirming an order books `Dr AR / Cr Revenue`. Until this, the money arriving booked NOTHING: the
- * rollup fields moved (`AmountPaid`, `Balance`, `PaymentStatus` — D41) but the general ledger never
- * saw the cash. The sub-ledger said paid while the GL still carried the receivable, permanently, and
- * nothing reconciled the two. This closes that.
+ * WHAT THIS BOOKS, AND WHAT IT NO LONGER BOOKS
+ * This class used to book the whole cash leg at capture: `Dr Cash / Dr Fee / Cr AR`. That was
+ * wrong the moment an order carried a second company's product, because it credited the RECEIVING
+ * company's receivable for money that company was never owed (D13, intercompany-balancing.md §1).
  *
- * THE ENTRY (D18)
- *   Dr Cash              net of fees      — what actually landed in the bank
- *   Dr Processing Fee    fee, when any    — the provider's cut, expensed on capture
- *   Cr Accounts Receivable  gross         — the receivable is relieved in FULL
+ * The AR/Cash side moved to `PaymentAllocationFactory`, driven by `PaymentLine`, because
+ * ALLOCATION is the earliest point at which the owning companies are known at all. A capture says
+ * how much cash arrived; only an allocation says whose revenue it settles.
  *
- * The gross/net split is the point: the customer's debt is cleared for the whole amount they paid,
- * and the fee is our cost, not a discount to them. A fee booked against AR would leave a permanent
- * residue on the customer's balance that no payment could ever clear.
+ * What remains here is the part that genuinely IS a header fact:
  *
- * FEES ARE OPTIONAL BY DESIGN. There is no seeded `Processing Fee` GL role — accounting ships eight
- * roles and that is not one of them. So a fee is only booked when the role resolves; otherwise the
- * whole gross goes to Cash and `ProcessingFeeAmount` is reported as unbooked rather than silently
- * folded into the cash line, which would misstate the bank position.
+ *   Dr Processing Fee   the provider's cut
+ *   Cr Cash             the provider never deposited it
+ *
+ * The fee is incurred when the processor takes it, against the payment as a whole — it does not
+ * belong to any one order, and pro-rating it across allocations would invent a precision that the
+ * underlying fact does not have. Booking it separately also keeps the customer's debt clearing for
+ * the FULL amount they paid: a fee netted against AR would leave a permanent residue on their
+ * balance that no payment could ever clear.
+ *
+ * FEES ARE OPTIONAL BY DESIGN. There is no seeded `Processing Fee` GL role — accounting ships
+ * eight roles and that is not one of them. When it does not resolve, NOTHING is booked here and
+ * the shortfall is reported, rather than being folded into a line that would misstate the bank
+ * position.
  *
  * REVERSALS mirror — same accounts, debit and credit swapped, positive amounts (D53). Refunds and
  * chargebacks are the same entry read backwards, never a negative-amount entry.
  *
  * CONNECTS TO:
- *   RESOLVER: GLAccountResolver (./GLAccountResolver.ts)
- *   CALLER:   PaymentHeaderEntityServer (./PaymentHeaderEntityServer.ts)
- *   OP:       'Accounting.CreateJournalEntries' — the same op order booking uses
+ *   ALLOCATION: PaymentAllocationFactory (./PaymentAllocationFactory.ts) — the AR/Cash side
+ *   RESOLVER:   GLAccountResolver (./GLAccountResolver.ts)
+ *   CALLER:     PaymentHeaderEntityServer (./PaymentHeaderEntityServer.ts)
+ *   OP:         'Accounting.CreateJournalEntries' — the same op order booking uses
  */
 import { GL_ROLE, type GLAccountResolver } from './GLAccountResolver.js';
 
@@ -63,11 +69,15 @@ export interface PaymentCaptureContext {
 }
 
 export interface PaymentCaptureResult {
-    Draft: PaymentJEDraft;
     /**
-     * Set when a fee was present but no Processing Fee account could be resolved, so the gross went
-     * to Cash. Surfaced rather than swallowed: the entry still balances, but the bank line is
-     * overstated by this much and someone needs to know.
+     * The fee entry, or null when there is no fee — or when there IS one but no Processing Fee
+     * account resolves. Null means "book nothing", never "book something approximate".
+     */
+    Draft: PaymentJEDraft | null;
+    /**
+     * Set when a fee was present but no Processing Fee account could be resolved. Surfaced rather
+     * than swallowed: the cash line elsewhere is then gross, so the bank position is overstated by
+     * this much and someone needs to know.
      */
     UnbookedFeeAmount?: number;
 }
@@ -91,7 +101,7 @@ export class PaymentJournalEntryFactory {
     ) {}
 
     /**
-     * Build the capture entry for a payment.
+     * Build the fee entry for a payment, or null when there is nothing to book.
      *
      * Amounts are always positive; `IsReversal` decides the direction. The caller owns the
      * transaction and the write — this computes only.
@@ -105,53 +115,36 @@ export class PaymentJournalEntryFactory {
             );
         }
 
+        const fee = money(Math.abs(ctx.ProcessingFeeAmount ?? 0));
+        if (fee <= 0) return { Draft: null };
+
         const asOf = new Date(ctx.PaymentDate);
+        let feeAccount: string;
+        try {
+            feeAccount = await this._resolver.Resolve(GL_ROLE.ProcessingFee, null, null, ctx.CompanyID, asOf);
+        } catch {
+            // No Processing Fee role/account configured — see the header. Book nothing and report.
+            return { Draft: null, UnbookedFeeAmount: fee };
+        }
+
         // Payments are company-level: there is no product to walk from, so the company default is
         // both the start and the end of the resolution (D12).
         const cashAccount = await this._resolver.Resolve(GL_ROLE.Cash, null, null, ctx.CompanyID, asOf);
-        const arAccount = await this._resolver.Resolve(
-            GL_ROLE.AccountsReceivable,
-            null,
-            null,
-            ctx.CompanyID,
-            asOf,
-        );
-
-        const fee = money(Math.abs(ctx.ProcessingFeeAmount ?? 0));
-        let feeAccount: string | null = null;
-        if (fee > 0) {
-            try {
-                feeAccount = await this._resolver.Resolve(GL_ROLE.ProcessingFee, null, null, ctx.CompanyID, asOf);
-            } catch {
-                // No Processing Fee role/account configured — see the header. The gross goes to Cash
-                // and the shortfall is reported.
-                feeAccount = null;
-            }
-        }
-
-        const netToCash = feeAccount ? money(gross - fee) : gross;
         const label = ctx.IsReversal ? 'Refund' : 'Payment';
 
         const lines: PaymentJELine[] = [
             {
-                GLAccountID: cashAccount,
-                DebitAmount: netToCash,
-                Description: `${label} ${ctx.PaymentNumber} — cash`,
-            },
-        ];
-        if (feeAccount) {
-            lines.push({
                 GLAccountID: feeAccount,
                 DebitAmount: fee,
                 Description: `${label} ${ctx.PaymentNumber} — processing fee`,
-            });
-        }
-        lines.push({
-            // GROSS, always. The customer's debt clears for what they paid; the fee is our cost.
-            GLAccountID: arAccount,
-            CreditAmount: gross,
-            Description: `${label} ${ctx.PaymentNumber} — clear receivable`,
-        });
+            },
+            {
+                // The processor kept this; it never reached the bank.
+                GLAccountID: cashAccount,
+                CreditAmount: fee,
+                Description: `${label} ${ctx.PaymentNumber} — fee withheld from deposit`,
+            },
+        ];
 
         const finalLines = mirrorIf(ctx.IsReversal, lines);
         this.assertBalanced(finalLines, ctx);
@@ -164,12 +157,11 @@ export class PaymentJournalEntryFactory {
                 // rejected at the draft gate, correctly: the entry type is accounting's taxonomy to
                 // define, not ours to extend from the orders side.
                 EntryType: ctx.IsReversal ? 'Refund' : 'PaymentReceipt',
-                Description: `${label} ${ctx.PaymentNumber}`,
+                Description: `${label} ${ctx.PaymentNumber} — processing fee`,
                 LinkedEntityID: this._paymentEntityID,
                 LinkedRecordID: ctx.PaymentID,
                 Lines: finalLines,
             },
-            UnbookedFeeAmount: fee > 0 && !feeAccount ? fee : undefined,
         };
     }
 

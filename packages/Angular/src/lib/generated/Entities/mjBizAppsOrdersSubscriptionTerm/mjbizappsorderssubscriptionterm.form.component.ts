@@ -16,8 +16,8 @@ export class mjBizAppsOrdersSubscriptionTermFormComponent extends BaseFormCompon
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'subscriptionDetails', sectionName: 'Subscription Details', isExpanded: true },
-            { sectionKey: 'timelineAndStatus', sectionName: 'Timeline and Status', isExpanded: true },
-            { sectionKey: 'financialInformation', sectionName: 'Financial Information', isExpanded: true },
+            { sectionKey: 'termTimeline', sectionName: 'Term Timeline', isExpanded: true },
+            { sectionKey: 'financials', sectionName: 'Financials', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

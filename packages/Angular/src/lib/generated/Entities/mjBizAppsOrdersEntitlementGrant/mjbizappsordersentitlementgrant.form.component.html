@@ -44,14 +44,6 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Quantity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -83,13 +75,21 @@
 
     </mj-collapsible-panel>
 
-    <!-- Validity and Status Section -->
+    <!-- Grant Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="validityAndStatus"
-        SectionName="Validity and Status"
-        Icon="fa fa-calendar-check"
+        SectionKey="grantConfiguration"
+        SectionName="Grant Configuration"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Quantity"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

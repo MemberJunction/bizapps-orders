@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Revenue Recognition Details Section -->
+    <!-- Schedule Details Section -->
     <mj-collapsible-panel
-        SectionKey="revenueRecognitionDetails"
-        SectionName="Revenue Recognition Details"
-        Icon="fa fa-chart-line"
+        SectionKey="scheduleDetails"
+        SectionName="Schedule Details"
+        Icon="fa fa-clock"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -26,6 +26,24 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Amount"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Recognition Timeline Section -->
+    <mj-collapsible-panel
+        SectionKey="recognitionTimeline"
+        SectionName="Recognition Timeline"
+        Icon="fa fa-calendar-alt"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -42,14 +60,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Amount"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -57,7 +67,7 @@
     <mj-collapsible-panel
         SectionKey="accountingIntegration"
         SectionName="Accounting Integration"
-        Icon="fa fa-file-invoice-dollar"
+        Icon="fa fa-balance-scale"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

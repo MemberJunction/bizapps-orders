@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-09 - Intercompany Balancing",
+    "Description": "The INTERCOMPANY half of the cash leg (IC1-IC12, D13). The payment-ledger bundle proved the cash leg thoroughly using only SINGLE-COMPANY orders, and that blind spot hid a real correctness bug: cash collected by company A against a line owned by company B credited A's receivable and left B's outstanding, misstating both books with nothing reconciling them. Nothing caught it because the entry BALANCED, which is the defining property of this area - every wrong answer is a balanced, posted, plausible-looking entry. These checks therefore assert WHOSE books each amount landed on, not merely that the ledger foots. Covers one entry per (payment line x company), the collector's Dr Cash / Cr own AR / Cr Due To shape, the counterparty's Dr Due From / Cr its own AR, per-company AR reconciliation, pro-rated partial payments, line-level targeting, a shared-services collector owning no line, mirrored refunds, allocation idempotency, and one payment split across two orders with different company mixes.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A two-company order books one journal entry per company; the collector debits Cash for the gross, credits only its OWN share of AR, and credits a separate Due To line per counterparty; each other company debits Due From and credits ITS OWN AR; AR nets to zero for each company separately; a missing IntercompanyAccountMatch refuses the allocation rather than defaulting to any account; partial payments pro-rate across companies; a refund mirrors every leg on every company with all amounts positive; re-saving an allocation does not double the Due To."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "intercompany"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "E8036F9F-FBDA-4222-A27C-BDE2F9FE8468"
+  },
+  "sync": {
+    "lastModified": "2026-07-26T19:42:52.730Z",
+    "checksum": "e1438f1eae74cb6c59f0f9e8bfd6b8a48c13d6025399e63770e3c014c91e6e46"
+  }
+}

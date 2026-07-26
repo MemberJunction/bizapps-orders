@@ -53,6 +53,21 @@ export type {
     PaymentCaptureResult,
 } from './PaymentJournalEntryFactory.js';
 
+// The intercompany half of D13 — one journal entry per (payment line × company).
+export {
+    PaymentAllocationFactory,
+    AllocateByCompany,
+    IntercompanyPairMissingError,
+} from './PaymentAllocationFactory.js';
+export type {
+    OrderLineShare,
+    CompanyShare,
+    IntercompanyPair,
+    IntercompanyLookup,
+    PaymentLineAllocationContext,
+    PaymentAllocationResult,
+} from './PaymentAllocationFactory.js';
+
 export { PaymentHeaderEntityServer, LoadPaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentLineEntityServer.js';
 

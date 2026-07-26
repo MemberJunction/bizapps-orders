@@ -16,19 +16,21 @@ export class mjBizAppsOrdersOrderLineFormComponent extends BaseFormComponent {
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'lineItemContext', sectionName: 'Line Item Context', isExpanded: true },
-            { sectionKey: 'pricingAndRevenue', sectionName: 'Pricing and Revenue', isExpanded: true },
-            { sectionKey: 'shippingAndFulfillment', sectionName: 'Shipping and Fulfillment', isExpanded: true },
+            { sectionKey: 'orderRelationships', sectionName: 'Order Relationships', isExpanded: true },
+            { sectionKey: 'productAndServiceDetails', sectionName: 'Product and Service Details', isExpanded: true },
+            { sectionKey: 'orderDetails', sectionName: 'Order Details', isExpanded: true },
+            { sectionKey: 'pricingAndFinancials', sectionName: 'Pricing and Financials', isExpanded: true },
+            { sectionKey: 'shippingDetails', sectionName: 'Shipping Details', isExpanded: true },
             { sectionKey: 'subscriptionAndRevenue', sectionName: 'Subscription and Revenue', isExpanded: true },
-            { sectionKey: 'orderHistory', sectionName: 'Order History', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersStoredValueAccounts', sectionName: 'Stored Value Accounts', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersStoredValueAccounts', sectionName: 'Stored Value Accounts', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLineDimensions', sectionName: 'Order Line Dimensions', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false }
         ]);
     }
 }

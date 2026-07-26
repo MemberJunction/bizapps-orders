@@ -1,30 +1,37 @@
 /**
- * PaymentHeader server subclass — books the cash leg when a payment is captured (plan D18).
+ * PaymentHeader server subclass — books the PROCESSING FEE when a payment is captured (plan D18).
  *
- * THE GAP THIS CLOSES
- * Order confirm booked `Dr AR / Cr Revenue`. Payment capture booked NOTHING: the rollup triggers
- * moved `AmountPaid` / `Balance` / `PaymentStatus` (D41), so the sub-ledger read "paid" while the
- * general ledger still carried the receivable — permanently, with nothing reconciling the two.
- * `PaymentHeader.JournalEntryID` existed and was never set by anything.
+ * WHAT THIS BOOKS, AND WHY IT IS ONLY THE FEE
+ * Capture used to book the whole cash leg here: `Dr Cash / Dr Fee / Cr AR` against the receiving
+ * company. That was wrong as soon as an order carried another company's product — it credited the
+ * collector's receivable for money the collector was never owed, and left the owner's receivable
+ * open forever. Balanced, posted, and invisible (D13; intercompany-balancing.md §1).
+ *
+ * The cash and receivable sides moved to `PaymentLineEntityServer`, because ALLOCATION is the
+ * earliest point at which the owning companies are known at all. A capture says how much cash
+ * arrived; only an allocation says whose revenue it settles.
+ *
+ * The fee stays here because it genuinely is a header fact: the processor takes its cut from the
+ * payment as a whole, not from any one order, and pro-rating it across allocations would invent
+ * precision the underlying fact does not have.
  *
  * WHEN IT BOOKS
- * On the transition INTO `Captured`, once. Not on create-as-Pending, not on a later edit of a
- * captured row, and never twice — `JournalEntryID` is NULL→value-once and is checked before
- * booking, so a re-save of a captured payment is a no-op rather than a second credit to AR.
+ * On the transition INTO `Captured`, once, and only when there IS a fee with an account to book it
+ * to. `JournalEntryID` is NULL→value-once and is checked first, so a re-save never books twice.
  *
  * ATOMICITY
  * The entry is written inside the caller's transaction, exactly as order booking is. A payment that
- * fails to book does not persist as captured; the sub-ledger and the ledger move together or not at
- * all. That is the whole point — the two disagreeing is the bug being fixed.
+ * fails to book does not persist as captured.
  *
  * REFUNDS reverse. A payment saved as `Refunded` books the mirror of its capture (D53): same
  * accounts, debit and credit swapped, positive amounts.
  *
  * CONNECTS TO:
- *   FACTORY:  PaymentJournalEntryFactory (./PaymentJournalEntryFactory.ts)
- *   RESOLVER: GLAccountResolver (./GLAccountResolver.ts)
- *   OP:       'Accounting.CreateJournalEntries' — the same op OrderEntityServer uses
- *   TABLE:    __mj_BizAppsOrders.PaymentHeader
+ *   FACTORY:    PaymentJournalEntryFactory (./PaymentJournalEntryFactory.ts)
+ *   ALLOCATION: PaymentLineEntityServer (./PaymentLineEntityServer.ts) — the cash/AR side
+ *   RESOLVER:   GLAccountResolver (./GLAccountResolver.ts)
+ *   OP:         'Accounting.CreateJournalEntries' — the same op OrderEntityServer uses
+ *   TABLE:      __mj_BizAppsOrders.PaymentHeader
  */
 import {
     BaseEntity,
@@ -94,7 +101,7 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
                 );
             }
 
-            await this.bookCashLeg(options);
+            await this.bookProcessingFee(options);
 
             await dbProvider.CommitTransaction();
             return true;
@@ -124,7 +131,7 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
         return true;
     }
 
-    private async bookCashLeg(options?: EntitySaveOptions): Promise<void> {
+    private async bookProcessingFee(options?: EntitySaveOptions): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
 
@@ -144,14 +151,19 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
         });
 
         if (UnbookedFeeAmount) {
-            // Not fatal — the entry balances and the cash line is simply gross. But the bank
-            // position is overstated by this much, so it must not pass silently.
+            // Not fatal — the allocation entries still book the gross to Cash. But the bank
+            // position is then overstated by this much, so it must not pass silently.
             LogError(
                 `Payment ${this.PaymentNumber}: processing fee of ${UnbookedFeeAmount} was NOT booked ` +
-                    `separately because no 'Processing Fee' GL account is linked for company ` +
-                    `${this.ReceivingCompanyID}. The full gross was booked to Cash.`,
+                    `because no 'Processing Fee' GL account is linked for company ` +
+                    `${this.ReceivingCompanyID}. Cash will read gross by that amount.`,
             );
         }
+
+        // No fee, or no account for it: there is nothing for the HEADER to book. The cash and
+        // receivable sides belong to the allocation (PaymentLineEntityServer), which is the
+        // earliest point the owning companies are known.
+        if (!Draft) return;
 
         const result = await this.createJournalEntries([Draft], provider, user);
         const journalEntryID = result.Results?.[0]?.JournalEntryID;
