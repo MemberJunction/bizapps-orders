@@ -348,6 +348,8 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
         SubCalendar: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Calendar', rr('EvenOverTime'), st('CalendarYear')),
         /** Jul-1 anchored, ChargeFull, QUARTERLY recognition, RejectDuplicate — the opposite corner of every axis. */
         SubFiscal: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Fiscal', rr('EvenOverTime'), st('FiscalYearJul')),
+        /** A SEAT: the org holds and pays, a named person benefits (D62 NamedIndividual). */
+        SubSeat: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Seat', rr('EvenOverTime'), st('CorporateSeat')),
         /** Monthly rolling subscription — the short-cadence case. */
         SubMonthly: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Monthly', rr('EvenOverTime'), st('MonthlyRolling')),
     };
@@ -498,9 +500,8 @@ export async function TeardownOrdersFixture(ctx: IntegrationCheckContext): Promi
         `DELETE FROM ${ORDERS_SCHEMA}.PaymentLine WHERE OrderHeaderID IN (${orderScope})`,
         `DELETE FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE ReceivingCompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS_SCHEMA}.PaymentDetail WHERE CompanyID IN (${companies})`,
-        // RenewsSubscriptionID closes a cycle (Subscription → OrderLine → OrderHeader →
-        // Subscription), so the renewal pointer must be cleared before any Subscription can go.
-        `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET RenewsSubscriptionID=NULL WHERE CompanyID IN (${companies})`,
+        // The renewal pointer lives on the LINE now and carries no FK (D61), so nothing needs
+        // clearing before Subscriptions go — deleting the lines takes it with them.
         `DELETE FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE SubscriptionID IN
             (SELECT ID FROM ${ORDERS_SCHEMA}.Subscription WHERE CompanyID IN (${companies}))`,
         `DELETE FROM ${ORDERS_SCHEMA}.SubscriptionEvent WHERE SubscriptionID IN

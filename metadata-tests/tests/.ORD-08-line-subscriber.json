@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-08 - Line Subscriber and Benefit Model",
+    "Description": "Per-line ship-to and the benefit model (LS1-LS8, D61/D62). Subscriptions were a HEADER concern, so every line shared one subscriber: an association buying ten memberships for ten staff needed ten orders, and under RejectDuplicate could not do it at all. Ship-to moved to the line (routing for physical goods, WHO the line is for when there is nothing to ship) and BenefitModel separates who HOLDS a subscription from who BENEFITS, which is what sets the dedupe scope.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A line's ship-to org overrides the order customer; absent ship-to inherits the header per-side; ONE order with ten seats for ten people yields ten subscriptions and ten terms; an OrganizationMembers type dedupes on the org so a second purchase extends; a seat type refuses without both sides; an org-members type refuses a person-only holder; an explicit RenewsSubscriptionID extends that exact subscription."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "line-subscriber"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "E86415FD-546D-411E-BBBA-C892A8676BE8"
+  },
+  "sync": {
+    "lastModified": "2026-07-26T15:21:01.885Z",
+    "checksum": "e89b8747fc1c8cce0ee01bea63a1e32102a4db19bc62967097e2e76a5176452c"
+  }
+}

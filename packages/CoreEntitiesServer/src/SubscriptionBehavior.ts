@@ -36,6 +36,8 @@ export interface SubscriptionTypeRules {
     Code: string;
     DriverClass?: string | null;
     SubscriberScope: 'Organization' | 'Person' | 'Either';
+    /** Who derives the benefit — a different question from who holds it (D62). */
+    BenefitModel: 'Holder' | 'OrganizationMembers' | 'NamedIndividual';
     StartMode: 'Immediate' | 'Deferred' | 'CalendarAnchored';
     DeferredStartDays?: number | null;
     AnchorMonth?: number | null;
@@ -61,6 +63,9 @@ export interface SubscriptionTypeRules {
 export interface ExistingSubscription {
     ID: string;
     Status: string;
+    /** Who holds it — an explicit renewal adopts these rather than re-resolving from the line. */
+    CustomerOrganizationID?: string | null;
+    BeneficiaryPersonID?: string | null;
     /** End of the latest term, if any. */
     LatestTermEnd?: Date | null;
     LatestTermNumber?: number | null;
@@ -127,6 +132,18 @@ export interface CancellationDecision {
     Explanation: string;
 }
 
+/**
+ * The two roles a subscription has, which `SubscriberScope` alone could not express.
+ *
+ * A trade-association company membership has an organization and no person — every employee
+ * benefits by virtue of the company holding it. An individual membership has a person. A corporate
+ * seat has both: the org holds and pays, the person benefits.
+ */
+export interface SubscriberIdentity {
+    OrganizationID?: string | null;
+    PersonID?: string | null;
+}
+
 export interface SubscriptionPurchaseContext {
     Rules: SubscriptionTypeRules;
     /** Order date — when the purchase happened. */
@@ -135,8 +152,12 @@ export interface SubscriptionPurchaseContext {
     Amount: number;
     /** The active/most-recent subscription for (product, subscriber), if one exists. */
     Existing?: ExistingSubscription | null;
-    /** True when the buyer is an organization (for SubscriberScope validation). */
-    SubscriberIsOrganization: boolean;
+    /**
+     * WHO this purchase is for, already resolved from the line's ship-to falling back to the
+     * order header. Both sides may be present: a corporate seat is held by the org and benefits a
+     * named person.
+     */
+    Subscriber: SubscriberIdentity;
     /**
      * True when this purchase is a RENEWAL of `Existing` rather than a fresh buy (D55).
      *
@@ -247,14 +268,67 @@ export class SubscriptionBehavior {
     // ─── Overridable pieces ────────────────────────────────────────────────────
 
     protected ValidateSubscriberScope(ctx: SubscriptionPurchaseContext): string | null {
-        const { SubscriberScope } = ctx.Rules;
-        if (SubscriberScope === 'Organization' && !ctx.SubscriberIsOrganization) {
-            return `Subscription type ${ctx.Rules.Code} is organization-only, but this order has no customer organization.`;
+        const { SubscriberScope, BenefitModel, Code } = ctx.Rules;
+        const org = ctx.Subscriber.OrganizationID;
+        const person = ctx.Subscriber.PersonID;
+
+        if (!org && !person) {
+            return (
+                `Subscription type ${Code} needs a subscriber, but neither a ship-to organization nor ` +
+                `a ship-to person is set on the order line, and the order header names no customer.`
+            );
         }
-        if (SubscriberScope === 'Person' && ctx.SubscriberIsOrganization) {
-            return `Subscription type ${ctx.Rules.Code} is individual-only, but this order is for an organization.`;
+
+        if (SubscriberScope === 'Organization' && !org) {
+            return `Subscription type ${Code} is organization-only, but no organization was resolved for this line.`;
         }
+        if (SubscriberScope === 'Person' && !person) {
+            return `Subscription type ${Code} is individual-only, but no person was resolved for this line.`;
+        }
+
+        // The benefit model is the stricter of the two rules, so it is checked second.
+        if (BenefitModel === 'OrganizationMembers') {
+            if (!org) {
+                return (
+                    `Subscription type ${Code} spreads its benefit across an organization's members, ` +
+                    `so it must be held by an organization — none was resolved for this line.`
+                );
+            }
+        }
+        if (BenefitModel === 'NamedIndividual') {
+            if (!org || !person) {
+                return (
+                    `Subscription type ${Code} is a seat: the organization holds and pays and a NAMED ` +
+                    `person benefits, so the line needs both a ship-to organization and a ship-to ` +
+                    `person. Got organization=${org ?? 'none'}, person=${person ?? 'none'}.`
+                );
+            }
+        }
+
         return null;
+    }
+
+    /**
+     * The identity a duplicate is judged against — the heart of the concurrency rule.
+     *
+     * `OrganizationMembers` keys on the ORG alone: a company holds ONE membership however many
+     * employees benefit, so a second purchase extends it. `NamedIndividual` keys on the PAIR, so
+     * ten seats bought for ten staff on one order are ten distinct subscriptions rather than ten
+     * collisions with each other. Getting this wrong is what made a bulk seat purchase impossible.
+     */
+    public DedupeIdentity(rules: SubscriptionTypeRules, subscriber: SubscriberIdentity): SubscriberIdentity {
+        switch (rules.BenefitModel) {
+            case 'OrganizationMembers':
+                return { OrganizationID: subscriber.OrganizationID, PersonID: null };
+            case 'NamedIndividual':
+                return { OrganizationID: subscriber.OrganizationID, PersonID: subscriber.PersonID };
+            case 'Holder':
+                // Whichever side actually holds it — a person for an individual membership, the org
+                // when the type allows an org to hold one directly.
+                return subscriber.PersonID
+                    ? { OrganizationID: null, PersonID: subscriber.PersonID }
+                    : { OrganizationID: subscriber.OrganizationID, PersonID: null };
+        }
     }
 
     protected ChooseAction(ctx: SubscriptionPurchaseContext): SubscriptionDecision['Action'] {

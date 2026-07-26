@@ -16,6 +16,7 @@ function rules(overrides: Partial<SubscriptionTypeRules> = {}): SubscriptionType
         ID: 'st-1',
         Code: 'Test',
         SubscriberScope: 'Either',
+        BenefitModel: 'Holder',
         StartMode: 'Immediate',
         DefaultTermMonths: 12,
         BillingCadence: 'Annual',
@@ -32,12 +33,16 @@ function rules(overrides: Partial<SubscriptionTypeRules> = {}): SubscriptionType
     };
 }
 
+const ORG = 'org-1';
+const PERSON = 'person-1';
+
 const decide = (r: SubscriptionTypeRules, purchase: Date, amount = 1200, extra = {}) =>
     new SubscriptionBehavior().Decide({
         Rules: r,
         PurchaseDate: purchase,
         Amount: amount,
-        SubscriberIsOrganization: true,
+        // Both sides present by default; individual tests narrow it.
+        Subscriber: { OrganizationID: ORG, PersonID: PERSON },
         ...extra,
     });
 
@@ -195,21 +200,77 @@ describe('concurrency and reactivation', () => {
 });
 
 describe('subscriber scope', () => {
-    it('rejects an individual buyer for an organization-only type', () => {
-        const decision = new SubscriptionBehavior().Decide({
-            Rules: rules({ SubscriberScope: 'Organization' }),
-            PurchaseDate: new Date('2026-07-01T00:00:00Z'),
-            Amount: 1200,
-            SubscriberIsOrganization: false,
+    it('rejects an organization-only type when no organization was resolved', () => {
+        const decision = decide(rules({ SubscriberScope: 'Organization' }), new Date('2026-07-01T00:00:00Z'), 1200, {
+            Subscriber: { PersonID: PERSON },
         });
         expect(decision.Action).toBe('Reject');
         expect(decision.RejectReason).toMatch(/organization-only/i);
     });
 
-    it('rejects an organization buyer for an individual-only type', () => {
-        const decision = decide(rules({ SubscriberScope: 'Person' }), new Date('2026-07-01T00:00:00Z'));
+    it('rejects an individual-only type when no person was resolved', () => {
+        const decision = decide(rules({ SubscriberScope: 'Person' }), new Date('2026-07-01T00:00:00Z'), 1200, {
+            Subscriber: { OrganizationID: ORG },
+        });
         expect(decision.Action).toBe('Reject');
         expect(decision.RejectReason).toMatch(/individual-only/i);
+    });
+
+    it('rejects when neither side resolved at all', () => {
+        const decision = decide(rules(), new Date('2026-07-01T00:00:00Z'), 1200, { Subscriber: {} });
+        expect(decision.Action).toBe('Reject');
+        expect(decision.RejectReason).toMatch(/needs a subscriber/i);
+    });
+});
+
+describe('benefit model (D62)', () => {
+    const behavior = new SubscriptionBehavior();
+
+    it('an org-members type must be held by an organization', () => {
+        const decision = decide(
+            rules({ BenefitModel: 'OrganizationMembers', SubscriberScope: 'Organization' }),
+            new Date('2026-07-01T00:00:00Z'),
+            1200,
+            { Subscriber: { PersonID: PERSON } },
+        );
+        expect(decision.Action).toBe('Reject');
+    });
+
+    it('a seat needs BOTH an organization and a named person', () => {
+        const seat = rules({ BenefitModel: 'NamedIndividual', SubscriberScope: 'Organization' });
+        const missingPerson = decide(seat, new Date('2026-07-01T00:00:00Z'), 300, {
+            Subscriber: { OrganizationID: ORG },
+        });
+        expect(missingPerson.Action).toBe('Reject');
+        expect(missingPerson.RejectReason).toMatch(/ship-to organization and a ship-to person/i);
+
+        const complete = decide(seat, new Date('2026-07-01T00:00:00Z'), 300);
+        expect(complete.Action).toBe('CreateNew');
+    });
+
+    describe('dedupe identity — what counts as the same subscription', () => {
+        const subscriber = { OrganizationID: ORG, PersonID: PERSON };
+
+        it('OrganizationMembers keys on the ORG, ignoring the person', () => {
+            // A trade association: the company holds one membership however many employees benefit,
+            // so naming a person must not create a second.
+            expect(behavior.DedupeIdentity(rules({ BenefitModel: 'OrganizationMembers' }), subscriber))
+                .toEqual({ OrganizationID: ORG, PersonID: null });
+        });
+
+        it('NamedIndividual keys on the PAIR, so seats never collide', () => {
+            // This is what makes ten seats for ten staff ten subscriptions rather than ten
+            // collisions under RejectDuplicate.
+            expect(behavior.DedupeIdentity(rules({ BenefitModel: 'NamedIndividual' }), subscriber))
+                .toEqual({ OrganizationID: ORG, PersonID: PERSON });
+        });
+
+        it('Holder keys on whichever side actually holds it', () => {
+            expect(behavior.DedupeIdentity(rules(), subscriber))
+                .toEqual({ OrganizationID: null, PersonID: PERSON });
+            expect(behavior.DedupeIdentity(rules(), { OrganizationID: ORG }))
+                .toEqual({ OrganizationID: ORG, PersonID: null });
+        });
     });
 });
 

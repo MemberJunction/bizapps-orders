@@ -19,6 +19,15 @@ export interface LineSpec {
     /** Coverage window for deferred lines that have no subscription (events, plain deferred services). */
     ServicePeriodStart?: string;
     ServicePeriodEnd?: string;
+    /**
+     * Ship-to (D61): where a physical line goes, or WHO an intangible line is for. Each side falls
+     * back to the order header independently.
+     */
+    ShipToOrganizationID?: string;
+    ShipToPersonID?: string;
+    ShipToAddressID?: string;
+    /** Renew this exact subscription rather than letting the engine resolve one (D61). */
+    RenewsSubscriptionID?: string;
 }
 
 export interface OrderSpec {
@@ -73,6 +82,10 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
         line.DiscountPct = ls.DiscountPct ?? 0;
         if (ls.ServicePeriodStart) line.ServicePeriodStart = new Date(ls.ServicePeriodStart);
         if (ls.ServicePeriodEnd) line.ServicePeriodEnd = new Date(ls.ServicePeriodEnd);
+        if (ls.ShipToOrganizationID) line.ShipToOrganizationID = ls.ShipToOrganizationID;
+        if (ls.ShipToPersonID) line.ShipToPersonID = ls.ShipToPersonID;
+        if (ls.ShipToAddressID) line.ShipToAddressID = ls.ShipToAddressID;
+        if (ls.RenewsSubscriptionID) line.RenewsSubscriptionID = ls.RenewsSubscriptionID;
         lines.push(line);
     }
 

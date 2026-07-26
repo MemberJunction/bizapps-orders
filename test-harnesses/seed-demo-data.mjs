@@ -105,9 +105,6 @@ if (doReset) {
         `DELETE FROM ${ORDERS}.PaymentLine WHERE OrderHeaderID IN (${orders})`,
         `DELETE FROM ${ORDERS}.PaymentHeader WHERE ReceivingCompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.PaymentDetail WHERE CompanyID IN (${scope})`,
-        // RenewsSubscriptionID closes a cycle (Subscription → OrderLine → OrderHeader →
-        // Subscription), so the renewal pointer must be cleared before any Subscription can go.
-        `UPDATE ${ORDERS}.OrderHeader SET RenewsSubscriptionID=NULL WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.SubscriptionEvent WHERE SubscriptionID IN (SELECT ID FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope}))`,
         `DELETE FROM ${ORDERS}.SubscriptionTerm WHERE SubscriptionID IN (SELECT ID FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope}))`,
         `DELETE FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope})`,

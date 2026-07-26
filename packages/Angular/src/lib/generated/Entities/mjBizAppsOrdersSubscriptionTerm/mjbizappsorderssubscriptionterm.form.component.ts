@@ -15,10 +15,9 @@ export class mjBizAppsOrdersSubscriptionTermFormComponent extends BaseFormCompon
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'subscriptionContext', sectionName: 'Subscription Context', isExpanded: true },
+            { sectionKey: 'subscriptionDetails', sectionName: 'Subscription Details', isExpanded: true },
             { sectionKey: 'termTimeline', sectionName: 'Term Timeline', isExpanded: true },
             { sectionKey: 'financials', sectionName: 'Financials', isExpanded: true },
-            { sectionKey: 'termStatus', sectionName: 'Term Status', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

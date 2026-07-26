@@ -50,6 +50,7 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import {
     SubscriptionBehavior,
+    type SubscriberIdentity,
     type ExistingSubscription,
     type SubscriptionDecision,
     type SubscriptionTypeRules,
@@ -117,6 +118,8 @@ interface SubscriptionDecisionForLine {
     Product: ProductRow;
     Rules: SubscriptionTypeRules;
     Decision: SubscriptionDecision;
+    /** Resolved once during the decision pass so persistence uses the same answer. */
+    Subscriber: SubscriberIdentity;
     /** The resolved behaviour — reused for RecognitionMonths so a driver's override still applies. */
     Behavior: SubscriptionBehavior;
 }
@@ -466,8 +469,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
             const subscriptionID =
                 decision.Action === 'CreateNew'
-                    ? await this.createSubscription(line, product, rules, decision, options)
-                    : await this.touchExistingSubscription(decision, options);
+                    ? await this.createSubscription(line, product, rules, decision, decided.Subscriber, options)
+                    : await this.touchExistingSubscription(decision, !!line.RenewsSubscriptionID, options);
 
             const term = decision.Term!;
 
@@ -532,7 +535,22 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
-            const existing = await this.findExistingSubscription(product.ID);
+            let subscriber = this.resolveSubscriber(line);
+            // An explicitly named subscription wins; otherwise find one for this subscriber and
+            // product, scoped by the type's BenefitModel (D62).
+            const existing = line.RenewsSubscriptionID
+                ? await this.loadSubscriptionState(`ID='${line.RenewsSubscriptionID}'`)
+                : await this.findExistingSubscription(product.ID, behavior.DedupeIdentity(rules, subscriber));
+
+            // NAMING a subscription IS the statement of who the subscriber is. Requiring the line to
+            // restate it would make renewing a seat impossible without repeating the person, and any
+            // mismatch between the two would be a silent contradiction. The target wins.
+            if (line.RenewsSubscriptionID && existing) {
+                subscriber = {
+                    OrganizationID: existing.CustomerOrganizationID ?? null,
+                    PersonID: existing.BeneficiaryPersonID ?? null,
+                };
+            }
 
             const decision = behavior.Decide({
                 Rules: rules,
@@ -541,10 +559,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 // figure OrderLineEntityServer will: quantity × price, less the discount.
                 Amount: this.pendingLineNet(line),
                 Existing: existing,
-                SubscriberIsOrganization: !!this.CustomerOrganizationID,
-                // D55: a renewal continues the named subscription rather than starting one, so the
-                // concurrency rule must not refuse it.
-                IsRenewal: !!this.RenewsSubscriptionID,
+                Subscriber: subscriber,
+                // A renewal continues the NAMED subscription rather than starting one, so the
+                // concurrency rule must not refuse it (D55).
+                IsRenewal: !!line.RenewsSubscriptionID,
             });
 
             if (decision.Action === 'Reject') {
@@ -555,9 +573,26 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 );
             }
 
-            out.set(line, { Product: product, Rules: rules, Decision: decision, Behavior: behavior });
+            out.set(line, { Product: product, Rules: rules, Decision: decision, Behavior: behavior, Subscriber: subscriber });
         }
         return out;
+    }
+
+    /**
+     * WHO a line is for: the line's ship-to, falling back to the order header (D61).
+     *
+     * Ship-to on a line means "where this goes" for a physical product and "who this is for" when
+     * there is nothing to ship. A subscription line therefore reads its subscriber from the same
+     * fields a shipped line reads its destination from — one question, two kinds of answer.
+     *
+     * The fallback is per-side, not all-or-nothing: a line may name only a person (a seat bought
+     * under the order's customer organization) and still inherit that organization from the header.
+     */
+    private resolveSubscriber(line: mjBizAppsOrdersOrderLineEntity): SubscriberIdentity {
+        return {
+            OrganizationID: line.ShipToOrganizationID ?? this.CustomerOrganizationID ?? null,
+            PersonID: line.ShipToPersonID ?? this.CustomerPersonID ?? null,
+        };
     }
 
     /** Net for a line that has not been saved yet — mirrors OrderLineEntityServer's own formula. */
@@ -636,28 +671,40 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      * would be a guess, and would pick the wrong one whenever a customer holds two subscriptions to
      * the same product under an `AllowMultiple` type.
      */
-    private async findExistingSubscription(productID: string): Promise<ExistingSubscription | null> {
-        if (this.RenewsSubscriptionID) {
-            return this.loadSubscriptionState(`ID='${this.RenewsSubscriptionID}'`);
-        }
-        const scope = this.CustomerOrganizationID
-            ? `CustomerOrganizationID='${this.CustomerOrganizationID}'`
-            : this.CustomerPersonID
-              ? `BeneficiaryPersonID='${this.CustomerPersonID}'`
-              : null;
-        if (!scope) return null;
+    private async findExistingSubscription(
+        productID: string,
+        identity: SubscriberIdentity,
+    ): Promise<ExistingSubscription | null> {
+        // Match on exactly the axes the BenefitModel says define a duplicate. An org-members type
+        // ignores the person entirely (one company membership, however many employees); a seat type
+        // matches BOTH, so two seats for two people never collide.
+        const clauses: string[] = [];
+        clauses.push(
+            identity.OrganizationID
+                ? `CustomerOrganizationID='${identity.OrganizationID}'`
+                : `CustomerOrganizationID IS NULL`,
+        );
+        clauses.push(
+            identity.PersonID ? `BeneficiaryPersonID='${identity.PersonID}'` : `BeneficiaryPersonID IS NULL`,
+        );
+        if (!identity.OrganizationID && !identity.PersonID) return null;
 
-        return this.loadSubscriptionState(`ProductID='${productID}' AND ${scope}`);
+        return this.loadSubscriptionState(`ProductID='${productID}' AND ${clauses.join(' AND ')}`);
     }
 
     /** Load a subscription plus the end and number of its latest term, by whatever filter. */
     private async loadSubscriptionState(filter: string): Promise<ExistingSubscription | null> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ ID: string; Status: string }>(
+        const res = await rv.RunView<{
+            ID: string;
+            Status: string;
+            CustomerOrganizationID: string | null;
+            BeneficiaryPersonID: string | null;
+        }>(
             {
                 EntityName: SUBSCRIPTION_ENTITY,
                 ExtraFilter: filter,
-                Fields: ['ID', 'Status'],
+                Fields: ['ID', 'Status', 'CustomerOrganizationID', 'BeneficiaryPersonID'],
                 OrderBy: '__mj_CreatedAt DESC',
                 MaxRows: 1,
                 ResultType: 'simple',
@@ -684,6 +731,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         return {
             ID: sub.ID,
             Status: sub.Status,
+            CustomerOrganizationID: sub.CustomerOrganizationID,
+            BeneficiaryPersonID: sub.BeneficiaryPersonID,
             LatestTermEnd: latest?.EndDate ? new Date(latest.EndDate) : null,
             LatestTermNumber: latest?.TermNumber ?? 0,
         };
@@ -694,6 +743,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         product: ProductRow,
         rules: SubscriptionTypeRules,
         decision: SubscriptionDecision,
+        subscriber: SubscriberIdentity,
         options?: EntitySaveOptions,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
@@ -706,8 +756,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         sub.Set('OrderLineID', line.ID);
         sub.Set('SubscriptionTypeID', rules.ID);
         sub.Set('ProductID', product.ID);
-        sub.Set('CustomerOrganizationID', this.CustomerOrganizationID);
-        sub.Set('BeneficiaryPersonID', this.CustomerPersonID);
+        // The RESOLVED subscriber, which may differ from the order's customer: the customer pays,
+        // the ship-to holds and benefits.
+        sub.Set('CustomerOrganizationID', subscriber.OrganizationID);
+        sub.Set('BeneficiaryPersonID', subscriber.PersonID);
         sub.Set('Status', rules.TrialDays > 0 ? 'Trialing' : 'Active');
         sub.Set('StartDate', decision.Term!.StartDate);
         sub.Set('AutoRenew', rules.AutoRenewDefault);
@@ -773,6 +825,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     /** Extension or reactivation — the term is what changes; the subscription just re-activates. */
     private async touchExistingSubscription(
         decision: SubscriptionDecision,
+        isRenewal: boolean,
         options?: EntitySaveOptions,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
@@ -795,8 +848,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // 'Extended' is the CUSTOMER buying more coverage. The system renewing them under standing
         // authority logs 'RenewalOrderSpawned' from SpawnRenewalsOperation instead — same table,
         // opposite answers to "why is this member still here", and retention reporting needs both.
-        // A renewal order reaches this method too, so it must not also log the customer-side event.
-        if (!this.RenewsSubscriptionID) {
+        // A renewal reaches this method too, so it must not also log the customer-side event. The
+        // marker is now per-LINE (D61): one order can renew several subscriptions, so "is this a
+        // renewal" is a question about the line, not the order.
+        if (!isRenewal) {
             await this.logSubscriptionEvent(
                 decision.SubscriptionID!,
                 decision.Action === 'Reactivate' ? 'Activated' : 'Extended',
