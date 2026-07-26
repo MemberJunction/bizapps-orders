@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Event Details Section -->
+    <!-- Event Scheduling Section -->
     <mj-collapsible-panel
-        SectionKey="eventDetails"
-        SectionName="Event Details"
-        Icon="fa fa-calendar-check"
+        SectionKey="eventScheduling"
+        SectionName="Event Scheduling"
+        Icon="fa fa-clock"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -33,29 +33,13 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Capacity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="RequiresAttendeeInfo"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Venue Information Section -->
+    <!-- Event Venue Section -->
     <mj-collapsible-panel
-        SectionKey="venueInformation"
-        SectionName="Venue Information"
+        SectionKey="eventVenue"
+        SectionName="Event Venue"
         Icon="fa fa-map-marker-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -75,6 +59,32 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Event Logistics Section -->
+    <mj-collapsible-panel
+        SectionKey="eventLogistics"
+        SectionName="Event Logistics"
+        Icon="fa fa-clipboard-list"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Capacity"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RequiresAttendeeInfo"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>

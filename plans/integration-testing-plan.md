@@ -1,6 +1,6 @@
 # Integration Testing Plan — BizApps Orders
 
-> **Status:** BUILT (2026-07-25). Phases 0-3 are done and green — 47 checks across 5 bundles,
+> **Status:** BUILT (2026-07-26). Phases 0-3 are done and green — 58 checks across 6 bundles,
 > dispatched by `mj test suite --name "BizApps Orders Integration"` and by
 > `node test-harnesses/integration.mjs`. Phases 4-5 (breadth, CI) remain. Sections below are the
 > original proposal; **§0 records what the build actually decided**, including where it diverged.
@@ -37,7 +37,7 @@ until the request timed out. `fixture.ts` routes everything through the provider
 
 | Proposed | Built | Why |
 |---|---|---|
-| 12 bundles (`orders-*`) | 5 bundles: `order-booking`, `revenue-recognition`, `subscriptions`, `subscription-cancellation`, `payments-rollups` | Bundles follow the code that exists. Events, permissions and concurrent numbering have no implementation to test yet; writing their bundles first would have produced tests that assert nothing. |
+| 12 bundles (`orders-*`) | 6 bundles: `order-booking`, `revenue-recognition`, `subscriptions`, `subscription-cancellation`, `subscription-renewal`, `payments-rollups` | Bundles follow the code that exists. Events, permissions and concurrent numbering have no implementation to test yet; writing their bundles first would have produced tests that assert nothing. |
 | Author a `MJ: Test Types` row | Use MJ core's | `Integration Test` (`502A3E67-…`) ships in MJ core metadata and was already present after `mj migrate`. Authoring a duplicate would have split the driver lookup. |
 | Assertions via `RunView` because "raw-SQL helpers won't reach our schemas" | Assertions via `provider.ExecuteSQL` with explicit schema names | The premise was wrong: `ctx.Schema` only defaults the CORE schema for MJ's own helpers; a query we write ourselves can name any schema. Direct SQL also lets us assert on the LEDGER (journal entry lines, balances) which no orders entity exposes. |
 | `ctx.Pool` for fixture setup | the provider for everything | `ctx.Pool` is only populated when the driver owned the bootstrap. Under `mj test` the CLI installs the instrumented cache first, so it arrives `undefined` — a pool-based fixture fails at setup with a message that reads like a platform problem. |
@@ -98,6 +98,35 @@ total absence of the feature.
 | `metadata-tests/` | `MJ: Tests` × 4 + `MJ: Test Suites` + membership, kept OUT of the production-pushed `metadata/` |
 | `scripts/rebuild-db.sh` | Phase 2's provisioning script — the four-layer build, encoded |
 | `scripts/append-codegen.sh` | folds CodeGen output back into the baseline migration |
+
+### BLOCKING DEFECT FOUND — `mj migrate` cannot apply this baseline (2026-07-26)
+
+`mj migrate --schema __mj_BizAppsOrders` fails **consistently** on a clean database:
+
+```
+Failed at batch 283/954 (lines 5380-5382):
+Transaction (Process ID 54) was deadlocked on lock resources with another process
+and has been chosen as the deadlock victim.
+```
+
+What is established:
+
+- The failing statement is **CodeGen-emitted**, not hand-authored — the `__mj_CreatedAt` /
+  `__mj_UpdatedAt` backfill (`UPDATE OrderLine SET __mj_CreatedAt = GETUTCDATE() WHERE ... IS NULL`).
+- The deadlock graph shows the victim waiting `Sch-S` on a **METADATA: USER_TYPE** lock — our
+  `__mj_BizAppsOrders.OrderHeaderIDList` table type, which the OrderLine rollup trigger references.
+- **The identical SQL applies cleanly through a single serial `sqlcmd` connection**, which is how the
+  current dev database was built. So the SQL is valid; the failure is in how the runner executes it.
+- Ruled out: the new `OrderHeader → Subscription` FK (removing it changes nothing), intra-query
+  parallelism (`MAXDOP = 1` at database scope changes nothing), and concurrent connections of mine
+  (reproduces with zero other `node-mssql` sessions).
+
+Why it matters: adopters install via `mj app install` / `mj migrate`. A baseline that only applies
+through hand-run `sqlcmd` is not shippable, however green the tests are.
+
+Next step is an MJ-side investigation — either the runner is pipelining batches (which would explain
+a second process holding `Sch-M` on the type while the UPDATE wants `Sch-S`), or it needs the
+deadlock-victim retry that flyway does not do. Not fixable from this repo.
 
 ### Still open
 

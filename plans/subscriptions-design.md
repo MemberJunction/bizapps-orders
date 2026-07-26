@@ -183,7 +183,7 @@ which is another argument for term-anchored recognition entries (§4).
   the `Subscription` → create the `SubscriptionTerm` → then book. Today D20's
   find-or-extend-or-create is still unbuilt, so this is the natural moment.
 
-## 6b. Built, and the one thing that is not (2026-07-25)
+## 6b. Built (2026-07-26)
 
 Everything in §3–§5 is built and covered by the `subscriptions` (SB1–SB12) and
 `subscription-cancellation` (SC1–SC10) integration bundles, plus 31 unit tests over the pure engine.
@@ -191,16 +191,15 @@ Everything in §3–§5 is built and covered by the `subscriptions` (SB1–SB12)
 handling, both cadences, concurrency, reactivation, cancellation mode, refund policy, refund window,
 and grace.
 
-**The exception is `RenewalLeadDays`, on both `SubscriptionType` and `Subscription`.** Its consumer
-is a renewal-spawning job — "for every auto-renewing subscription whose term ends within N days,
-create the renewal order" — which needs a scheduler and a decision about who owns it. That is a
-feature in its own right, not a loose end of this one, so the column is declared and documented but
-deliberately unread. `Subscription.RenewalLeadDays`'s NULL-means-inherit rule is likewise stated in
-the schema and not yet implemented.
+**`RenewalLeadDays` is now consumed too (D55).** `Orders.SpawnRenewals` resolves
+`Subscription.RenewalLeadDays ?? SubscriptionType.RenewalLeadDays` — the NULL-means-inherit rule the
+schema documented — and places a confirmed renewal order for every auto-renewing subscription whose
+latest term expires inside that window. The open question this section previously named ("is a
+renewal an order the customer approves, or one the system places for them?") is answered by
+`AutoRenew`: true means they already consented and the system places it; false means it simply ends.
 
-Flagging it explicitly because the same audit that produced this section is what caught the
-cancellation columns being dead. One knowingly-dormant column with a named future consumer is fine;
-a table full of them is the problem.
+**Every `SubscriptionType` column now has a consumer.** The audit that produced this section found
+four dead cancellation columns and two dead renewal ones; both sets are closed.
 
 ## 7. Open questions
 
@@ -219,5 +218,7 @@ a table full of them is the problem.
    date. Storing the revenue date in `EndDate` instead would silently revoke access early. Covered
    by SC7.
 
-**Still open:** renewal automation (§6b) — who runs it, and whether a renewal is a new order the
-customer approves or one the system places on their behalf.
+**Still open:** nothing in the subscription lifecycle itself. The remaining `SubscriptionEvent`
+types that nothing writes — `TrialEnded`, `Paused`, `Resumed`, `PaymentSucceeded`/`Failed`,
+`Migrated` — belong to features that genuinely do not exist yet (trial expiry, pausing, provider
+webhooks, plan migration), not to gaps in what is built.

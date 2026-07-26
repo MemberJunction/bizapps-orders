@@ -24,6 +24,7 @@ import '../checks/order-booking.checks.js';
 import '../checks/revenue-recognition.checks.js';
 import '../checks/subscriptions.checks.js';
 import '../checks/subscription-cancellation.checks.js';
+import '../checks/subscription-renewal.checks.js';
 import '../checks/payments-rollups.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -42,6 +43,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'revenue-recognition': 7,
     subscriptions: 12,
     'subscription-cancellation': 10,
+    'subscription-renewal': 11,
     'payments-rollups': 9,
 };
 
@@ -109,7 +111,8 @@ describe('the bundle name agrees everywhere it is written down', () => {
             + read('metadata-tests/tests/.ORD-02-revenue-recognition.json')
             + read('metadata-tests/tests/.ORD-03-subscriptions.json')
             + read('metadata-tests/tests/.ORD-04-payments-rollups.json')
-            + read('metadata-tests/tests/.ORD-05-subscription-cancellation.json');
+            + read('metadata-tests/tests/.ORD-05-subscription-cancellation.json')
+            + read('metadata-tests/tests/.ORD-06-subscription-renewal.json');
         for (const bundle of ourBundles()) {
             expect(tests, `a Test record declares '${bundle}'`).toContain(`"type": "${bundle}"`);
         }
@@ -117,7 +120,7 @@ describe('the bundle name agrees everywhere it is written down', () => {
 
     it('every Test record is a member of the suite', () => {
         const suite = read('metadata-tests/test-suites/.orders-integration-suite.json');
-        for (const name of ['ORD-01', 'ORD-02', 'ORD-03', 'ORD-04', 'ORD-05']) {
+        for (const name of ['ORD-01', 'ORD-02', 'ORD-03', 'ORD-04', 'ORD-05', 'ORD-06']) {
             expect(suite, `${name} is in the suite`).toContain(name);
         }
     });

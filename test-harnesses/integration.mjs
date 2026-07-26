@@ -25,6 +25,7 @@ const ALL_BUNDLES = [
     'revenue-recognition',
     'subscriptions',
     'subscription-cancellation',
+    'subscription-renewal',
     'payments-rollups',
 ];
 

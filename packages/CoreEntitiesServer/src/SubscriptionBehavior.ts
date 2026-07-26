@@ -137,6 +137,16 @@ export interface SubscriptionPurchaseContext {
     Existing?: ExistingSubscription | null;
     /** True when the buyer is an organization (for SubscriberScope validation). */
     SubscriberIsOrganization: boolean;
+    /**
+     * True when this purchase is a RENEWAL of `Existing` rather than a fresh buy (D55).
+     *
+     * Renewals bypass `ConcurrencyMode` deliberately. That rule answers "may this subscriber hold a
+     * SECOND concurrent subscription?" — and a renewal is not a second one, it is the same one
+     * continuing. Without this, a `RejectDuplicate` type would refuse to renew itself: the engine
+     * would find an active subscription, apply the concurrency rule, and reject its own renewal
+     * order every cycle.
+     */
+    IsRenewal?: boolean;
 }
 
 function money(v: number): number {
@@ -251,7 +261,11 @@ export class SubscriptionBehavior {
         const existing = ctx.Existing;
         if (!existing) return 'CreateNew';
 
+        // A renewal continues THIS subscription, whatever the concurrency rule says (see IsRenewal).
+        // Reactivation still applies below when the subscription has lapsed — a renewal arriving
+        // after a lapse should revive it rather than silently extend a dead one.
         const isActive = existing.Status === 'Active' || existing.Status === 'Trialing';
+        if (ctx.IsRenewal && isActive) return 'ExtendExisting';
         if (isActive) {
             switch (ctx.Rules.ConcurrencyMode) {
                 case 'AllowMultiple': return 'CreateNew';

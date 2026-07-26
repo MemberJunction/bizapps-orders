@@ -73,6 +73,17 @@ For a check that deliberately trips a database guard, use `OutsideTransaction(bo
 instead: a trigger raising a severity-16 error dooms the enclosing transaction outright, savepoints
 included, so rollback-based isolation is impossible for that check.
 
+## Bundles
+
+| Bundle | Checks |
+|---|---|
+| `order-booking` | OB1–OB9 |
+| `revenue-recognition` | RR1–RR7 |
+| `subscriptions` | SB1–SB12 |
+| `subscription-cancellation` | SC1–SC10 |
+| `subscription-renewal` | SR1–SR11 |
+| `payments-rollups` | PR1–PR9 |
+
 ## Drift guards
 
 `npm test` in this package is not an integration run — it is the wiring check. Bundle names live in

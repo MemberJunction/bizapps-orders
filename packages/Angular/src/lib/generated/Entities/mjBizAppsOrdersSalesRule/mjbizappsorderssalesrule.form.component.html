@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Rule Configuration Section -->
+    <!-- Rule Definition Section -->
     <mj-collapsible-panel
-        SectionKey="ruleConfiguration"
-        SectionName="Rule Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="ruleDefinition"
+        SectionName="Rule Definition"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -44,10 +44,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Rule Scope Section -->
+    <!-- Scope and Targeting Section -->
     <mj-collapsible-panel
-        SectionKey="ruleScope"
-        SectionName="Rule Scope"
+        SectionKey="scopeAndTargeting"
+        SectionName="Scope and Targeting"
         Icon="fa fa-crosshairs"
         [Form]="this"
         [FormContext]="formContext">
@@ -70,10 +70,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Rule Logic Section -->
+    <!-- Logic Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="ruleLogic"
-        SectionName="Rule Logic"
+        SectionKey="logicConfiguration"
+        SectionName="Logic Configuration"
         Icon="fa fa-code"
         [Form]="this"
         [FormContext]="formContext">
@@ -92,7 +92,7 @@
     <mj-collapsible-panel
         SectionKey="approvalWorkflow"
         SectionName="Approval Workflow"
-        Icon="fa fa-check-double"
+        Icon="fa fa-user-check"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

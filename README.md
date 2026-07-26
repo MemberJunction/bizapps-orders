@@ -386,6 +386,13 @@ migrations-pg/                    ←  PG, produced by `npx mj sql-convert`
 
 At runtime `mj migrate` reads `DB_PLATFORM` and picks the right directory (`sqlserver` → `migrations/`, `postgresql` → `migrations-pg/`). CI applies the PG set to a fresh `postgres:17` container on every PR that touches migrations. Note the standing pre-production practice: schema changes **edit the original baseline migration in place** (clean rebuild + CodeGen re-run) — no incremental fix-up migrations until publish *(plan §2)*.
 
+> ⚠️ **`mj migrate` currently cannot apply this baseline** — it deadlocks on a CodeGen-emitted
+> `__mj_CreatedAt` backfill. The identical SQL applies cleanly through a single serial `sqlcmd`
+> connection, which is how local databases are being built today. Details, evidence and what has
+> been ruled out are in
+> [`plans/integration-testing-plan.md`](plans/integration-testing-plan.md#blocking-defect-found--mj-migrate-cannot-apply-this-baseline-2026-07-26).
+> This blocks `mj app install` for adopters and needs an MJ-side fix.
+
 Editing the baseline in place is only safe because rebuilding from zero is routine:
 
 ```bash
@@ -408,7 +415,7 @@ Two layers, both green as of the current build.
 **Unit** — `npm test` per package. Pure logic only (`SubscriptionBehavior`'s term arithmetic, the
 rev-rec allocators), no database.
 
-**Integration** — 47 checks across 5 bundles, driving a live database through the real stack:
+**Integration** — 58 checks across 6 bundles, driving a live database through the real stack:
 entity subclasses, DB triggers, remote operations, and accounting's ledger all participate. Nothing
 is mocked.
 
@@ -418,6 +425,7 @@ is mocked.
 | `revenue-recognition` | RR1–RR7 | forward-dated release schedules that sum exactly to the line *(D14/D43)* |
 | `subscriptions` | SB1–SB12 | `SubscriptionType` rules → Subscription + terms, anchoring, proration, concurrency *(D45/D46)* |
 | `subscription-cancellation` | SC1–SC10 | `Orders.CancelSubscription`: policy → mirrored reversal, atomically *(D52/D53)* |
+| `subscription-renewal` | SR1–SR11 | `Orders.SpawnRenewals`: the scheduled continuation, and everything it must **not** do *(D55)* |
 | `payments-rollups` | PR1–PR9 | rollup triggers, document numbering, instrument copy-on-use *(D30/D39/D42)* |
 
 ```bash

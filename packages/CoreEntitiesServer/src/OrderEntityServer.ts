@@ -541,6 +541,9 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 Amount: this.pendingLineNet(line),
                 Existing: existing,
                 SubscriberIsOrganization: !!this.CustomerOrganizationID,
+                // D55: a renewal continues the named subscription rather than starting one, so the
+                // concurrency rule must not refuse it.
+                IsRenewal: !!this.RenewsSubscriptionID,
             });
 
             if (decision.Action === 'Reject') {
@@ -625,9 +628,17 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         return driver;
     }
 
-    /** The most recent subscription for this (customer, product), whatever its status. */
+    /**
+     * The subscription this purchase attaches to.
+     *
+     * A RENEWAL names its subscription outright (D55) — resolving by (customer, product) instead
+     * would be a guess, and would pick the wrong one whenever a customer holds two subscriptions to
+     * the same product under an `AllowMultiple` type.
+     */
     private async findExistingSubscription(productID: string): Promise<ExistingSubscription | null> {
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        if (this.RenewsSubscriptionID) {
+            return this.loadSubscriptionState(`ID='${this.RenewsSubscriptionID}'`);
+        }
         const scope = this.CustomerOrganizationID
             ? `CustomerOrganizationID='${this.CustomerOrganizationID}'`
             : this.CustomerPersonID
@@ -635,14 +646,21 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
               : null;
         if (!scope) return null;
 
+        return this.loadSubscriptionState(`ProductID='${productID}' AND ${scope}`);
+    }
+
+    /** Load a subscription plus the end and number of its latest term, by whatever filter. */
+    private async loadSubscriptionState(filter: string): Promise<ExistingSubscription | null> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const res = await rv.RunView<{ ID: string; Status: string }>(
             {
                 EntityName: SUBSCRIPTION_ENTITY,
-                ExtraFilter: `ProductID='${productID}' AND ${scope}`,
+                ExtraFilter: filter,
                 Fields: ['ID', 'Status'],
                 OrderBy: '__mj_CreatedAt DESC',
                 MaxRows: 1,
                 ResultType: 'simple',
+                BypassCache: true,
             },
             this.ContextCurrentUser,
         );
@@ -657,6 +675,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 OrderBy: 'TermNumber DESC',
                 MaxRows: 1,
                 ResultType: 'simple',
+                BypassCache: true,
             },
             this.ContextCurrentUser,
         );
@@ -772,12 +791,18 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 );
             }
         }
-        await this.logSubscriptionEvent(
-            decision.SubscriptionID!,
-            decision.Action === 'Reactivate' ? 'Activated' : 'RenewalOrderSpawned',
-            options,
-            { TermNumber: decision.Term?.TermNumber, Action: decision.Action },
-        );
+        // 'Extended' is the CUSTOMER buying more coverage. The system renewing them under standing
+        // authority logs 'RenewalOrderSpawned' from SpawnRenewalsOperation instead — same table,
+        // opposite answers to "why is this member still here", and retention reporting needs both.
+        // A renewal order reaches this method too, so it must not also log the customer-side event.
+        if (!this.RenewsSubscriptionID) {
+            await this.logSubscriptionEvent(
+                decision.SubscriptionID!,
+                decision.Action === 'Reactivate' ? 'Activated' : 'Extended',
+                options,
+                { TermNumber: decision.Term?.TermNumber, Action: decision.Action },
+            );
+        }
         return decision.SubscriptionID!;
     }
 

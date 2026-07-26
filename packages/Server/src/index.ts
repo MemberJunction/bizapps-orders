@@ -18,6 +18,7 @@ import {
     LoadOrderEntityServer,
     LoadOrderLineEntityServer,
     LoadRevenueRecognitionDrivers,
+    LoadSpawnRenewalsOperation,
     LoadSubscriptionBehavior,
 } from '@mj-biz-apps/orders-core-entities-server';
 
@@ -58,4 +59,5 @@ export function LoadBizAppsOrdersServer(): void {
     LoadRevenueRecognitionDrivers();   // the three shipped rev-rec drivers (D43)
     LoadSubscriptionBehavior();        // the base subscription rules engine (D45)
     LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation
+    LoadSpawnRenewalsOperation();      // the 'Orders.SpawnRenewals' remote operation (D55)
 }

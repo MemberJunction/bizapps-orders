@@ -37,7 +37,7 @@ SQLCMD="sqlcmd -S ${DB_HOST},${DB_PORT:-1433} -U ${DB_USERNAME} -P ${DB_PASSWORD
 
 say() { printf '\n\033[1m=== %s ===\033[0m\n' "$1"; }
 
-say "1/5  Recreating ${DB_DATABASE}"
+say "1/6  Recreating ${DB_DATABASE}"
 $SQLCMD -d master -Q "
     IF DB_ID('${DB_DATABASE}') IS NOT NULL
     BEGIN
@@ -46,10 +46,10 @@ $SQLCMD -d master -Q "
     END
     CREATE DATABASE [${DB_DATABASE}];"
 
-say "2/5  MJ core @ ${MJ_VERSION}"
+say "2/6  MJ core @ ${MJ_VERSION}"
 $MJ migrate -t "${MJ_VERSION}"
 
-say "3/5  bizapps-common"
+say "3/6  bizapps-common"
 # These migrations target ${flyway:defaultSchema} = __mj (common EXTENDS core rather than living in
 # its own schema), so they are applied directly with the substitution done here. `mj migrate` would
 # rewrite the placeholder to this app's schema and put common's tables in the wrong place.
@@ -59,14 +59,20 @@ for f in "$COMMON_REPO"/migrations/*.sql; do
         | $SQLCMD -d "${DB_DATABASE}" -i /dev/stdin
 done
 
-say "4/5  bizapps-accounting"
+say "4/6  bizapps-accounting"
 $MJ migrate --schema __mj_BizAppsAccounting --dir "$ACCOUNTING_REPO/migrations"
 
-say "5/5  bizapps-orders"
+say "5/6  bizapps-orders"
 # --schema is REQUIRED, not optional. Without it `mj migrate` uses the CORE schema's flyway history,
 # which already carries a SQL_BASELINE from step 2 — so flyway skips this app's `B` baseline
 # entirely and reports "0 applied" while creating nothing.
 $MJ migrate --schema __mj_BizAppsOrders --dir "$ROOT/migrations"
+
+say "6/6  Dependency seed metadata"
+# Accounting's currencies and GL account roles are seed METADATA, not migration DDL — booking needs
+# both (a company profile names a functional currency; the resolver looks up roles by name), so a
+# rebuild that stops at the migrations produces a database where every confirm fails at fixture time.
+$MJ sync push --dir "$ACCOUNTING_REPO/metadata"
 
 say "Done"
 cat <<'NEXT'
