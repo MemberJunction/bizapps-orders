@@ -4,6 +4,7 @@
 > **Parent plan:** [`bizapps-orders-master.md`](./bizapps-orders-master.md) §10, D21/D22/D23.
 > **Supersedes:** the "tables built, engine future" position in D21 — the tables are incomplete and
 > the engine is the point.
+> **Proposed schema:** [`pricing-schema.md`](./pricing-schema.md)
 
 ---
 
