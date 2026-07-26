@@ -183,17 +183,41 @@ which is another argument for term-anchored recognition entries (§4).
   the `Subscription` → create the `SubscriptionTerm` → then book. Today D20's
   find-or-extend-or-create is still unbuilt, so this is the natural moment.
 
+## 6b. Built, and the one thing that is not (2026-07-25)
+
+Everything in §3–§5 is built and covered by the `subscriptions` (SB1–SB12) and
+`subscription-cancellation` (SC1–SC10) integration bundles, plus 31 unit tests over the pure engine.
+`SubscriptionType`'s columns are all consumed — scope, start mode, anchoring, partial-period
+handling, both cadences, concurrency, reactivation, cancellation mode, refund policy, refund window,
+and grace.
+
+**The exception is `RenewalLeadDays`, on both `SubscriptionType` and `Subscription`.** Its consumer
+is a renewal-spawning job — "for every auto-renewing subscription whose term ends within N days,
+create the renewal order" — which needs a scheduler and a decision about who owns it. That is a
+feature in its own right, not a loose end of this one, so the column is declared and documented but
+deliberately unread. `Subscription.RenewalLeadDays`'s NULL-means-inherit rule is likewise stated in
+the schema and not yet implemented.
+
+Flagging it explicitly because the same audit that produced this section is what caught the
+cancellation columns being dead. One knowingly-dormant column with a named future consumer is fine;
+a table full of them is the problem.
+
 ## 7. Open questions
 
-1. **Recognition anchor for non-subscription deferred revenue** (§4) — two rules, or generalize the
-   term into a neutral recognition period?
-2. **Does `SubscriptionPlan` survive?** Its `BillingCycle`/`PricePerCycle`/`TrialDays` overlap
-   `SubscriptionType` and pricing. It may collapse into `SubscriptionType` + `ProductPrice`, leaving
-   plans purely as a multi-tier presentation concept — or be dropped.
-3. **Proration basis** — days, months, or billing periods? Affects both the charge and the
-   recognition split, and finance will have an opinion.
-4. **`ExtendExisting` and revenue** — when a purchase extends an active sub rather than creating a
-   new one, does it create a new `SubscriptionTerm` (recommended: yes, terms stay contiguous and
-   auditable) or lengthen the current one (loses the record of what was bought when)?
-5. **Grace period semantics** — does grace extend *access* only, or also the term (and therefore
-   recognition)? These give different revenue answers.
+1. ~~**Recognition anchor for non-subscription deferred revenue** (§4)~~ — **RESOLVED (D46):** two
+   rules. Recognition anchors to the `SubscriptionTerm` when one exists and falls back to the
+   `OrderLine` when it does not (an event product is deferred but has no subscription). Covered by
+   SB10 and RR6.
+2. ~~**Does `SubscriptionPlan` survive?**~~ — **RESOLVED (D46):** dropped.
+3. ~~**Proration basis**~~ — **RESOLVED:** DAYS, for both the charge and the refund. A Jul-1
+   purchase on a Jan-1 anchor is 184/365. Finance may still have an opinion; the basis is one
+   overridable method (`ComputeProration`), so changing it is a subclass, not a migration.
+4. ~~**`ExtendExisting` and revenue**~~ — **RESOLVED (D46):** a NEW term, starting the day after the
+   previous one ends. Terms stay contiguous and auditable. Covered by SB7.
+5. ~~**Grace period semantics**~~ — **RESOLVED (D52):** ACCESS only. Grace sets
+   `Subscription.EndDate` past the cancellation's effective date; revenue stops at the effective
+   date. Storing the revenue date in `EndDate` instead would silently revoke access early. Covered
+   by SC7.
+
+**Still open:** renewal automation (§6b) — who runs it, and whether a renewal is a new order the
+customer approves or one the system places on their behalf.
