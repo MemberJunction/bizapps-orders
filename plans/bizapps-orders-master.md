@@ -184,7 +184,7 @@ The current decision set. Each is the standing ruling — superseded ancestors l
 | D10 | **ONE JE PER ORDER LINE — always** (even multiple lines of the same company). The order's journal entry is a **virtual concept** — a UI aggregation of the line JEs; batching nets them later anyway. Linkage = **`OrderLine.JournalEntryID`** (nullable, soft ref until include-mode; the Order header carries NO JE ref; no junction table). | Amith 2026-07-21 ("always separate journal entries per order line — it's just simpler"); supersedes the one-JE-per-company split and the junction idea. |
 | D11 | **Line JE shape (single-company by construction):** Dr the line company's **AR (net)** · Cr its **Sales (gross)** at the resolved role accounts · **discounts via the contra-account pattern** — Dr Sales-Discounts for the discount; absent a linked discounts account, net into the sales credit. Deferred-revenue-typed products credit the **Deferred Revenue** role instead of Sales (recognition staged per D14). Returns & Allowances role exists alongside. | Amith 2026-07-21. Coupon/campaign-code dimensions acknowledged as coming — deferred. |
 | D12 | **Booking encapsulation:** an **`OrderJournalEntryFactory`** (orders server package) iterates the order's lines (parallelizable) and books each line's JE via the accounting engine; the **server-only Order entity subclass overrides `Save()`** — on transition into the locked status: outer transaction → `super.Save()` → factory books per-line JEs → stamp each `OrderLine.JournalEntryID` → commit; **any failure rolls back everything** (a locked order without its JEs is invalid state). The order object carries a **`Lines` array of unsaved OrderLine entities + a `Validate()` override** (≥1 line; children validate) so the entity guards its own invariants. Provider discipline: the entity's own provider throughout — never a fresh global `Metadata` in the transaction path. The JE-side encapsulation is now BUILT: accounting ships a first-class **`JournalEntryServerExtended`** (a `Lines` getter + properly scoped transactions for the full JE + lines persistence), so the factory composes with it — direct object manipulation server-side; the remote operations remain the client-facing atomic boundary. | Amith 2026-07-21 — the build basis; built and harness-proven on the donor branch (§22). JE-entity encapsulation un-deferred: built, Amith 2026-07-23. |
-| D13 | **Intercompany: orders create NO due-to/due-from at booking.** "You don't know about intercompany anything until you get cash" — each line's AR sits with the LINE's company; IC legs and settlement mechanics arise on the **payment side** when built. No `IntercompanyFlow` table exists. Each line's JE stands alone as a complete single-company story (AR, Sales, Discounts, DefRev, …); when cash received by one entity is applied to an order carrying other companies' products, the payment-application step books the IC balancing entries. Amith re-affirmed this as the right design 2026-07-23 and **personally owns the Robert + Jeremy re-closure** (§19); we build this shape meanwhile. | Amith 2026-07-21, re-affirmed 2026-07-23; accounting D18 is the mirror. |
+| D13 | **Intercompany: orders create NO due-to/due-from at booking.** "You don't know about intercompany anything until you get cash" — each line's AR sits with the LINE's company; IC legs and settlement mechanics arise on the **payment side** when built. No `IntercompanyFlow` table exists. Each line's JE stands alone as a complete single-company story (AR, Sales, Discounts, DefRev, …); when cash received by one entity is applied to an order carrying other companies' products, the payment-application step books the IC balancing entries. Amith re-affirmed this as the right design 2026-07-23 and **settled the AR grain 2026-07-26: A/R is per company, per line** — the seller-of-record alternative is withdrawn, not deferred. | Amith 2026-07-21, re-affirmed 2026-07-23, AR grain settled 2026-07-26; accounting D18 is the mirror. |
 | D14 | **Revenue recognition = REAL forward-dated JEs written at booking-lock.** A 12-month $1,200 sub → 12 × $100 Dr DefRev / Cr Revenue JEs dated on the monthly anniversaries; an event product → ONE entry dated the event date. **Two recognition shapes:** single-date (100% on the date) and period waterfall (over the line's `ServicePeriodStart/End`). No schedule-bridge tables, no materializer, no daily job. **Changes/cancellations = correcting Orders whose entries NET against what's staged** — staged entries are never edited or deleted. Batches sweep forward-dated entries only when the date filter explicitly reaches forward (default cutoff = today, accounting-side). | Robert's model ("a wake-up job is fragile — just create them"), Jeremy sign-off; Marcelo adopted 2026-07-13/14. Accounting D15 is the mirror. Engine rework to this shape pending (§18). |
 | D15 | **Fulfillment ↔ revenue recognition are DISCONNECTED.** Fulfillment is a logistics fact; NO JE fires on Posted→Fulfilled. If no line's product requires fulfillment, a Posted order **auto-advances to Fulfilled**; fulfillment-requiring lines hold the order for the fulfiller role (per-line flip queue deferred). | Robert 2026-07-09/2026-07-10. |
 | D16 | **Reversals at every layer, each emitting its own reversal JEs:** Order → return/cancellation/amendment/credit-memo Orders with negative-quantity lines (`ReversesOrderID`/`ReversesOrderLineID`; partial reversals stack); Payment → refund/chargeback/bank-return PaymentHeaders (negative `Amount`, `ReversesPaymentHeaderID`); Subscription → cancellation with proration refund. Credit settlement paths: refund payment · apply-to-another-order (zero-cash credit-application Payment) · write-off (deferred until a real need). | Standard subledger pattern; audit trail by construction. |
@@ -651,7 +651,11 @@ future (fields ship now, D21).
 
 > **Detailed design:** [`intercompany-balancing.md`](./intercompany-balancing.md) — the
 > `IntercompanyAccountMatch` lookup, the one-JE-per-(payment line × company) shape, worked examples,
-> and the allocation rules. Nothing built; §19.1 must close first.
+> and the allocation rules.
+>
+> **AR grain is SETTLED (Amith, 2026-07-26): A/R is per company, per line.** The seller-of-record
+> alternative is withdrawn, not deferred — it is no longer an open question and no longer costed.
+> Booking stands exactly as built; the intercompany legs belong to the payment path.
 
 - **Line ownership is the product's company** (D6): a three-company order is three lines whose JEs
   book AR + revenue in each product's own company. There are no cross-company mapping routes —
@@ -664,10 +668,10 @@ future (fields ship now, D21).
   line credits A's receivable and leaves B's outstanding — both books misstated, nothing reconciling
   them. The integration suite does not catch it because every `payment-ledger` check uses a
   single-company order. See [`intercompany-balancing.md`](./intercompany-balancing.md) §1.
-- **Consequence for booking:** no due-to/due-from at booking, no seller-of-record AR concentration.
-  The customer-facing invoice can still present as one document (the order's JE is a virtual
-  aggregation); the LEDGER holds per-line-company AR until payment allocates cash and raises the IC
-  legs. ⚠ Robert/Jeremy re-closure pending (§19.1).
+- **Consequence for booking:** no due-to/due-from at booking, and no AR concentration into a single
+  selling entity. The customer-facing invoice can still present as one document (the order's JE is a
+  virtual aggregation); the LEDGER holds per-line-company AR until payment allocates cash and raises
+  the IC legs.
 - **Company-scope UX semantics are deliberately unruled** — Marcelo's model (selected companies make
   the others *not exist* in the frontend, not mere query filters) awaits his dedicated scope
   planning pass; until then, no scope doctrine and no scope code. Interim: Payments scope by
@@ -862,15 +866,7 @@ claim until its gate's tests are green.
 Only genuine unresolved tensions inside the architecture. Where we have a defensible default we
 proceed on it and the answer adjusts course.
 
-1. **Seller-of-record re-closure (HIGH — Amith owns it).** Amith's per-line-company AR +
-   payment-side intercompany (D13) superseded Robert's 2026-07-20 seller-of-record booking shape,
-   and Jeremy's finance co-sign was given against the old shape. Amith confirmed 2026-07-23 that
-   this is the right design and will handle the Robert + Jeremy conversations himself; the open
-   questions for them are whether one-receivable-per-customer needs the payment engine to
-   REALLOCATE at capture (vs. per-line AR standing), and Jeremy's tax-remit position under
-   per-line AR. Building Amith's shape meanwhile; the payments-slice IC design and the launch-date
-   costing both hang off this.
-2. **GL account resolution — hierarchy rules, ownership, and volume (Amith, 2026-07-24; DO NEXT).**
+1. **GL account resolution — hierarchy rules, ownership, and volume (Amith, 2026-07-24; DO NEXT).**
    The walk (product → its category → category ancestors → company default) is stated as a
    one-liner here (D5) and in accounting (D11), but **the rules are nowhere written down**, and
    the first implementation (orders' `GLAccountResolver`, 2026-07-24) had to decide all of the
@@ -903,13 +899,13 @@ proceed on it and the answer adjusts course.
    `Config()` time keyed `entityID|recordID|roleID → candidates[]`, making each lookup O(1).
    Also still open: denormalizing `CompanyID` onto `GLAccountLink` (engine-stamped,
    trigger-verified — liked, not yet approved).
-3. **Company-scope UX semantics** (shared with accounting): Marcelo's "unselected companies don't
+2. **Company-scope UX semantics** (shared with accounting): Marcelo's "unselected companies don't
    exist in the frontend" model awaits his dedicated scope planning pass — no scope doctrine or
    code until then.
-4. **Pending-JE void semantics** (shared with accounting): a source order voided before its JEs
+3. **Pending-JE void semantics** (shared with accounting): a source order voided before its JEs
    batch — hard-delete the Pending JEs or flag-and-carry at zero? Audit purity leans flag; branch
    unresolved.
-5. **Order-status vs financial-status split:** fulfillment and GL progress are independent
+4. **Order-status vs financial-status split:** fulfillment and GL progress are independent
    concerns overloaded on one linear status — deliberately kept single for v1; revisit
    post-baseline.
 

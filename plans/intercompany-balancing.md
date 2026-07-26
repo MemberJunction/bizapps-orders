@@ -1,8 +1,10 @@
 # Intercompany balancing entries — design
 
-> **Status:** Design for review (2026-07-26). Nothing built.
+> **Status:** Approved design (Amith, 2026-07-26). Schema + resolution build in
+> [`bizapps-accounting`](https://github.com/MemberJunction/bizapps-accounting); orders consumes it.
 > **Parent plan:** [`bizapps-orders-master.md`](./bizapps-orders-master.md) §9, D13.
-> **Owner of the open finance question:** Amith (§19.1 re-closure with Robert and Jeremy).
+> **AR grain:** SETTLED — A/R is **per company, per line**. The seller-of-record alternative is
+> withdrawn, not deferred, so this design rests on a closed decision rather than an open one.
 
 ---
 
@@ -338,13 +340,9 @@ settle them will eventually need one, and it should be a deliberate follow-on ra
 
 ## 9. Open questions
 
-1. **§19.1 re-closure (Amith owns).** Robert's seller-of-record shape versus per-line AR, with
-   Jeremy's finance co-sign given against the old shape. **This design assumes per-line AR.** If
-   seller-of-record wins, the intercompany legs move to booking and most of this document changes.
-   That is why nothing here should be built until the re-closure lands.
-2. **Timing: capture or settlement?** This design raises the IC legs at **capture**, when cash
+1. **Timing: capture or settlement?** This design raises the IC legs at **capture**, when cash
    lands. The alternative — raising them only when entities actually settle — leaves the receiving
    company's books overstated in the interim. Capture is the right call under per-line AR, but it
    deserves Jeremy's confirmation.
-3. **Does the receiving company's AR line disappear entirely when it owns no line?** Yes under this
+2. **Does the receiving company's AR line disappear entirely when it owns no line?** Yes under this
    design (§2). Worth confirming that is acceptable presentation for a shared-services collector.
