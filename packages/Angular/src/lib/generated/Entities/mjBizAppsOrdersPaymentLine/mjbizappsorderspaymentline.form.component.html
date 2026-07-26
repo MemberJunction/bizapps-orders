@@ -10,17 +10,17 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Allocation Section -->
+    <!-- Payment and Order Allocation Section -->
     <mj-collapsible-panel
-        SectionKey="paymentAllocation"
-        SectionName="Payment Allocation"
+        SectionKey="paymentAndOrderAllocation"
+        SectionName="Payment and Order Allocation"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="PaymentID"
+            FieldName="PaymentHeaderID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -29,7 +29,7 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="OrderID"
+            FieldName="OrderHeaderID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"

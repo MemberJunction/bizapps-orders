@@ -12,4 +12,40 @@
  *            ENABLE_INTROSPECTION, MJ_API_KEY
  * Auth:      AUTH0_* / MSAL_* as configured
  */
-module.exports = {};
+module.exports = {
+  dynamicPackages: {
+    server: [
+      {
+        PackageName: '@mj-biz-apps/common-server',
+        StartupExport: 'LoadBizAppsCommonServer',
+        AppName: 'mj-bizapps-common',
+        Enabled: true
+      },
+    ],
+    client: [
+      {
+        PackageName: '@mj-biz-apps/common-ng',
+        AppName: 'mj-bizapps-common',
+        Enabled: true
+      },
+    
+      {
+        PackageName: '@mj-biz-apps/common-entities',
+        AppName: 'mj-bizapps-common',
+        Enabled: true
+      },
+    
+      {
+        PackageName: '@mj-biz-apps/common-actions',
+        AppName: 'mj-bizapps-common',
+        Enabled: true
+      },
+    ]
+  },
+
+  entityPackageName: {
+    '__mj_BizAppsCommon': '@mj-biz-apps/common-entities',
+  },
+
+  excludeSchemas: ['__mj_BizAppsCommon'],
+};

@@ -1,5 +1,21 @@
+require('dotenv').config({ quiet: true });
+
 /** @type {import('@memberjunction/config').MJConfig} */
 module.exports = {
+  /**
+   * Database connection for the CLI tools that DON'T go through MJServer's config merging —
+   * `mj test` and `mj sync` read these keys directly and fail with "Database configuration
+   * missing" without them. Values come from .env, which stays the single place credentials live.
+   */
+  dbHost: process.env.DB_HOST || 'localhost',
+  dbPort: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 1433,
+  dbDatabase: process.env.DB_DATABASE,
+  dbUsername: process.env.DB_USERNAME,
+  dbPassword: process.env.DB_PASSWORD,
+  dbTrustServerCertificate:
+    process.env.DB_TRUST_SERVER_CERTIFICATE === '1' || process.env.DB_TRUST_SERVER_CERTIFICATE === 'true',
+  coreSchema: process.env.MJ_CORE_SCHEMA || '__mj',
+
   /**
    * MemberJunction CodeGen + server configuration for BizApps Orders.
    *
@@ -83,10 +99,25 @@ module.exports = {
     ],
   },
 
-  // Exclude core (__mj) AND every dependency schema. Orders references common /
-  // accounting / tasks only by SOFT UUID (no cross-schema FKs), so their entities
-  // ship from their own installed packages and must NOT be regenerated here.
+  // Exclude core (__mj) AND every dependency schema. Orders DOES take hard
+  // cross-schema foreign keys into common and accounting — those are real
+  // constraints, not soft UUID refs — but their ENTITIES ship from their own
+  // installed packages and must not be regenerated here.
   excludeSchemas: ['sys', 'staging', 'dbo', '__mj', '__mj_BizAppsCommon', '__mj_BizAppsAccounting', '__mj_BizAppsTasks'],
+
+  /**
+   * Integration testing. `mj test` loads these modules before resolving a
+   * `MJ: Tests` record's check bundles, which is the extension seam MJ's testing
+   * framework exposes for external adopters. Our package registers its bundles on
+   * `IntegrationCheckRegistry` as an import side effect.
+   *
+   * NOTE the module must be resolvable from the CLI's location — run the WORKSPACE
+   * cli (`./node_modules/.bin/mj`), never a globally installed one, which ships its
+   * own published testing packages and cannot see this private package.
+   */
+  testing: {
+    checkModules: ['@mj-biz-apps/orders-integration-tests'],
+  },
 
   SQLOutput: {
     enabled: true,

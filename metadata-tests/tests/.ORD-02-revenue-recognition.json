@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-02 - Revenue Recognition",
+    "Description": "Recognition is forward-dated LEDGER, not a nightly job (RR1-RR7, D14/D43). A straight-line deferred line writes one booking entry plus twelve forward-dated releases that sum exactly to the line amount; each release is Dr Deferred / Cr Sales so the deferral round-trip closes; the order line points at the BOOKING entry; an event line earns 100% on its end date; an up-front line credits Sales directly and writes no releases at all.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "12 releases summing to 1200 with distinct future dates; 24 ledger lines Dr 21301 / Cr 40100; AllBackEnd earns on the end date; UpFront writes zero releases."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "revenue-recognition"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "4350B9D2-5B43-4DA4-8D83-4E3BD8AA3568"
+  },
+  "sync": {
+    "lastModified": "2026-07-26T13:41:10.342Z",
+    "checksum": "9df46e3f355341dd872a0deba95a05a755393318c188abb2b58d135b42f628fe"
+  }
+}

@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Dimension Assignment Section -->
+    <!-- Dimension Mapping Section -->
     <mj-collapsible-panel
-        SectionKey="dimensionAssignment"
-        SectionName="Dimension Assignment"
-        Icon="fa fa-tag"
+        SectionKey="dimensionMapping"
+        SectionName="Dimension Mapping"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -33,6 +33,7 @@
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
+            LinkType="Record"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
@@ -41,7 +42,18 @@
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
+            LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Dimension Details Section -->
+    <mj-collapsible-panel
+        SectionKey="dimensionDetails"
+        SectionName="Dimension Details"
+        Icon="fa fa-tag"
+        [Form]="this"
+        [FormContext]="formContext">
 
     </mj-collapsible-panel>
 

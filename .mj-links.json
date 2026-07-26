@@ -1,0 +1,22 @@
+{
+  "$comment": [
+    "Local development links to sibling Open App checkouts — the interim stand-in for",
+    "`mj app link` (proposed: MemberJunction/MJ#3273).",
+    "",
+    "Applied by scripts/link-local-apps.mjs, which runs on `postinstall` so the links",
+    "survive `npm install` (raw symlinks in node_modules are otherwise destroyed by it —",
+    "the main defect of `npm link`).",
+    "",
+    "Paths are relative to this file. Client (-ng) packages are deliberately NOT linked:",
+    "duplicate @angular/* copies in one browser bundle break DI, which is class-identity",
+    "based. Server-side duplication is safe — MJ's BaseSingleton stores instances on",
+    "globalThis, so one ClassFactory is shared across copies (verified: 32 Orders + 22",
+    "Accounting registrations in a single registry)."
+  ],
+  "links": {
+    "mj-bizapps-accounting": {
+      "path": "../bizapps-accounting",
+      "scope": "server"
+    }
+  }
+}

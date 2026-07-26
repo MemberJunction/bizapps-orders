@@ -1,0 +1,119 @@
+[
+  {
+    "fields": {
+      "Code": "AnnualRolling",
+      "Name": "Annual — Rolling",
+      "Description": "Standard annual subscription starting the day it is purchased. Bills annually, recognizes monthly. A repeat purchase extends the existing term rather than creating a second concurrent subscription.",
+      "SubscriberScope": "Either",
+      "StartMode": "Immediate",
+      "DefaultTermMonths": 12,
+      "BillingCadence": "Annual",
+      "RecognitionCadence": "Monthly",
+      "ConcurrencyMode": "ExtendExisting",
+      "ReactivationMode": "ReactivateWithinWindow",
+      "ReactivationWindowDays": 90,
+      "AutoRenewDefault": 1,
+      "RenewalLeadDays": 90,
+      "CancellationMode": "EndOfTerm",
+      "CancellationRefundMode": "NoRefund",
+      "GracePeriodDays": 30,
+      "Sequence": 10
+    },
+    "primaryKey": {
+      "ID": "C5E1A870-9B24-4D63-8E17-5A6B7C8D9E01"
+    },
+    "sync": {
+      "lastModified": "2026-07-26T13:41:05.371Z",
+      "checksum": "540941c439903251efb48fcbadb20f2999cd3de9d5429e6509f4baf1709010de"
+    }
+  },
+  {
+    "fields": {
+      "Code": "CalendarYear",
+      "Name": "Calendar Year (Jan 1 anchor)",
+      "Description": "Membership year runs 1/1-12/31 for everyone. A mid-year join is PRORATED to the next anchor, so all members renew together. Bills annually, recognizes monthly. Cancels IMMEDIATELY and refunds the unused portion — `EndOfTerm` would be contradictory here, since coverage running to the term end leaves nothing unused to prorate.",
+      "SubscriberScope": "Either",
+      "StartMode": "CalendarAnchored",
+      "AnchorMonth": 1,
+      "AnchorDay": 1,
+      "PartialPeriodMode": "Prorate",
+      "DefaultTermMonths": 12,
+      "BillingCadence": "Annual",
+      "RecognitionCadence": "Monthly",
+      "ConcurrencyMode": "ExtendExisting",
+      "ReactivationMode": "ReactivateWithinWindow",
+      "ReactivationWindowDays": 90,
+      "AutoRenewDefault": 1,
+      "RenewalLeadDays": 90,
+      "CancellationMode": "Immediate",
+      "CancellationRefundMode": "ProrateUnused",
+      "GracePeriodDays": 30,
+      "Sequence": 20
+    },
+    "primaryKey": {
+      "ID": "C5E1A870-9B24-4D63-8E17-5A6B7C8D9E02"
+    },
+    "sync": {
+      "lastModified": "2026-07-26T13:41:05.394Z",
+      "checksum": "b0e8b73df49ca89aea385e921497ed98436dc2cd3de0381d7a63b3e953cc0410"
+    }
+  },
+  {
+    "fields": {
+      "Code": "FiscalYearJul",
+      "Name": "Fiscal Year (Jul 1 anchor, charge full)",
+      "Description": "Fiscal-year membership anchored 7/1. A mid-year join is charged the FULL year rather than prorated (the alternative policy to CalendarYear). Recognizes quarterly.",
+      "SubscriberScope": "Organization",
+      "StartMode": "CalendarAnchored",
+      "AnchorMonth": 7,
+      "AnchorDay": 1,
+      "PartialPeriodMode": "ChargeFull",
+      "DefaultTermMonths": 12,
+      "BillingCadence": "Annual",
+      "RecognitionCadence": "Quarterly",
+      "ConcurrencyMode": "RejectDuplicate",
+      "ReactivationMode": "ReactivateExisting",
+      "AutoRenewDefault": 1,
+      "RenewalLeadDays": 120,
+      "CancellationMode": "EndOfTerm",
+      "CancellationRefundMode": "NoRefund",
+      "GracePeriodDays": 60,
+      "Sequence": 30
+    },
+    "primaryKey": {
+      "ID": "C5E1A870-9B24-4D63-8E17-5A6B7C8D9E03"
+    },
+    "sync": {
+      "lastModified": "2026-07-26T13:41:05.410Z",
+      "checksum": "6e207cbd12aba092f85ba4a825a9380ac9ec1621b61ab8fbf3131dd4150a6385"
+    }
+  },
+  {
+    "fields": {
+      "Code": "MonthlyRolling",
+      "Name": "Monthly — Rolling",
+      "Description": "Month-to-month subscription. Bills and recognizes monthly, cancellable at the end of the current billing period, no grace.",
+      "SubscriberScope": "Either",
+      "StartMode": "Immediate",
+      "DefaultTermMonths": 1,
+      "BillingCadence": "Monthly",
+      "RecognitionCadence": "MatchBilling",
+      "ConcurrencyMode": "ExtendExisting",
+      "ReactivationMode": "AlwaysCreateNew",
+      "AutoRenewDefault": 1,
+      "RenewalLeadDays": 15,
+      "CancellationMode": "EndOfBillingPeriod",
+      "CancellationRefundMode": "FullRefundWithinWindow",
+      "GracePeriodDays": 0,
+      "Sequence": 40,
+      "CancellationWindowDays": 14
+    },
+    "primaryKey": {
+      "ID": "C5E1A870-9B24-4D63-8E17-5A6B7C8D9E04"
+    },
+    "sync": {
+      "lastModified": "2026-07-26T13:41:05.423Z",
+      "checksum": "d1ed358a987282490c1f66e1c3627de1ba6a26c6066408c0c9ec194542679704"
+    }
+  }
+]

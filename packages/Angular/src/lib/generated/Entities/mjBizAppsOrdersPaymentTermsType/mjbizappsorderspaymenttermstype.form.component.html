@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="paymentTermsDetails"
         SectionName="Payment Terms Details"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-file-invoice-dollar"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -92,25 +92,25 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Orders Section -->
+    <!-- Order Headers Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersOrders"
-        SectionName="Orders"
+        SectionKey="mJBizAppsOrdersOrderHeaders"
+        SectionName="Order Headers"
         Icon="fa fa-shopping-cart"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrders')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderHeaders')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Orders','PaymentTermsTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Orders')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrders')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Headers','PaymentTermsTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Headers')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderHeaders')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrders', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderHeaders', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

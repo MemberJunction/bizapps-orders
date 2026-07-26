@@ -1,0 +1,16 @@
+{
+  "version": "1.0.0",
+  "push": {
+    "autoCreateMissingRecords": true
+  },
+  "directoryOrder": [
+    "revenue-recognition-types",
+    "subscription-types",
+    "payment-provider-types",
+    "payment-types"
+  ],
+  "sqlLogging": {
+    "enabled": true,
+    "outputDirectory": "./sql_logging"
+  }
+}

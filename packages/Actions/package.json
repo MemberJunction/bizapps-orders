@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-actions",
   "type": "module",
-  "version": "0.1.0",
+  "version": "5.0.0",
   "description": "Generated action subclasses maintained by the CodeGen utility.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

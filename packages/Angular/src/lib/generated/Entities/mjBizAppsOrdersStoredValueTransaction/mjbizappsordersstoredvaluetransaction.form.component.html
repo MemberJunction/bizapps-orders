@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="transactionDetails"
         SectionName="Transaction Details"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-exchange-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -45,11 +45,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financial Activity Section -->
+    <!-- Financial Details Section -->
     <mj-collapsible-panel
-        SectionKey="financialActivity"
-        SectionName="Financial Activity"
-        Icon="fa fa-money-bill-wave"
+        SectionKey="financialDetails"
+        SectionName="Financial Details"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -71,10 +71,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- References Section -->
+    <!-- Related Records Section -->
     <mj-collapsible-panel
-        SectionKey="references"
-        SectionName="References"
+        SectionKey="relatedRecords"
+        SectionName="Related Records"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
@@ -90,7 +90,7 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="RelatedOrderID"
+            FieldName="RelatedOrderHeaderID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"

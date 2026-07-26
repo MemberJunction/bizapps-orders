@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-entities",
   "type": "module",
-  "version": "0.1.0",
+  "version": "5.0.0",
   "description": "MJ BizApps Orders Entity Subclasses",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

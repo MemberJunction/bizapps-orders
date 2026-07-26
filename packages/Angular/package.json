@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-ng",
   "type": "module",
-  "version": "0.1.0",
+  "version": "5.0.0",
   "description": "BizApps Orders Angular bootstrap - generated form components and module for the unified order-management Open App",
   "main": "dist/public-api.js",
   "types": "dist/public-api.d.ts",
@@ -18,7 +18,7 @@
   "author": "MemberJunction.com",
   "license": "ISC",
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "0.1.0",
+    "@mj-biz-apps/orders-entities": "5.0.0",
     "ag-grid-angular": "^35.0.1",
     "ag-grid-community": "^35.0.1"
   },

@@ -18,7 +18,7 @@ export class mjBizAppsOrdersPaymentTermsTypeFormComponent extends BaseFormCompon
         this.initSections([
             { sectionKey: 'paymentTermsDetails', sectionName: 'Payment Terms Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrders', sectionName: 'Orders', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersOrderHeaders', sectionName: 'Order Headers', isExpanded: false }
         ]);
     }
 }
