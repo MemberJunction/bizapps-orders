@@ -10,32 +10,22 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Association Section -->
+    <!-- Pricing Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="productAssociation"
-        SectionName="Product Association"
-        Icon="fa fa-box"
+        SectionKey="pricingConfiguration"
+        SectionName="Pricing Configuration"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="ProductPriceID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Tier Definition Section -->
-    <mj-collapsible-panel
-        SectionKey="tierDefinition"
-        SectionName="Tier Definition"
-        Icon="fa fa-sliders-h"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

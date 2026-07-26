@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Sales Representative Section -->
+    <!-- Assignment Section -->
     <mj-collapsible-panel
-        SectionKey="salesRepresentative"
-        SectionName="Sales Representative"
+        SectionKey="assignment"
+        SectionName="Assignment"
         Icon="fa fa-user"
         [Form]="this"
         [FormContext]="formContext">
@@ -33,7 +33,7 @@
     <mj-collapsible-panel
         SectionKey="authorityLimits"
         SectionName="Authority Limits"
-        Icon="fa fa-lock"
+        Icon="fa fa-balance-scale"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -55,26 +55,8 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Authorized Permissions Section -->
-    <mj-collapsible-panel
-        SectionKey="authorizedPermissions"
-        SectionName="Authorized Permissions"
-        Icon="fa fa-check-circle"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="AllowedPaymentTermsTypeIDs"
-            Type="textarea"
+            Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -82,7 +64,25 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="AllowedProductCategoryIDs"
-            Type="textarea"
+            Type="code"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Status Section -->
+    <mj-collapsible-panel
+        SectionKey="status"
+        SectionName="Status"
+        Icon="fa fa-check-circle"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
+            FieldName="IsActive"
+            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

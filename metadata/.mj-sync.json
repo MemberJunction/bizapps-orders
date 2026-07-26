@@ -5,6 +5,7 @@
   },
   "directoryOrder": [
     "revenue-recognition-types",
+    "subscription-types",
     "payment-provider-types",
     "payment-types"
   ],

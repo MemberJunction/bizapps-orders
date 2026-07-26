@@ -16,6 +16,7 @@ export class mjBizAppsOrdersRevRecScheduleLineFormComponent extends BaseFormComp
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'revenueRecognitionDetails', sectionName: 'Revenue Recognition Details', isExpanded: true },
+            { sectionKey: 'financialAccounting', sectionName: 'Financial Accounting', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

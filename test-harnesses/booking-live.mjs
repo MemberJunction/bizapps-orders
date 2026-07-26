@@ -229,11 +229,11 @@ async function makeCategory(pool, companyID, name) {
     return id;
 }
 
-async function makeProduct(pool, companyID, typeID, categoryID, name, revRecTypeID) {
+async function makeProduct(pool, companyID, typeID, categoryID, name, revRecTypeID, subTypeID = null) {
     const id = randomUUID();
     await pool.request().query(
-        `INSERT INTO ${ORDERS}.Product (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, IsTaxable, IsActive)
-         VALUES ('${id}','${companyID}','${typeID}','${categoryID}','${name}','Active','${revRecTypeID}',0,1)`,
+        `INSERT INTO ${ORDERS}.Product (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, SubscriptionTypeID, IsTaxable)
+         VALUES ('${id}','${companyID}','${typeID}','${categoryID}','${name}','Active','${revRecTypeID}',${subTypeID ? `'${subTypeID}'` : 'NULL'},0)`,
     );
     return id;
 }

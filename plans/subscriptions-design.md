@@ -51,17 +51,25 @@ Two new tables. The shape mirrors patterns already proven in this schema — a r
 pluggable driver (like `RevenueRecognitionType`, D43) plus a period record that the ledger can
 point at.
 
-### 3.1 `SubscriptionType` — the rules
+### 3.1 `SubscriptionType` — the rules (DATA-first; driver optional)
 
-Replaces `Product.SubscriptionType`'s string. Every row names a `DriverClass` resolved through
-`ClassFactory`, exactly like `RevenueRecognitionType` (D43): the types we ship are ordinary
-implementations with overridable methods, so an adopter subclasses one and re-registers under the
-same key. No "standard vs custom" split.
+Replaces `Product.SubscriptionType`'s string.
+
+**This is deliberately a different pattern from `RevenueRecognitionType` (D43).** RevRec is
+*behaviour-first*: the row names a driver and the driver computes everything, because "how is
+revenue earned" is genuinely an algorithm. Subscription rules are mostly *configuration* — anchor
+dates, cadences, concurrency, grace windows — so the **columns ARE the rules**, a base behaviour
+class reads them and implements the standard flows, and `DriverClass` is **nullable**. Supply one
+only when a customer needs something the columns cannot express; it **subclasses the base class**
+rather than replacing it, inheriting every rule it does not override.
+
+A driver-only model would have forced a class per permutation of anchor × cadence × concurrency,
+which is exactly the combinatorial explosion configuration avoids.
 
 ```sql
 SubscriptionType (
   ID, Code UNIQUE, Name, Description,
-  DriverClass,                     -- @RegisterClass key for the behaviour object
+  DriverClass NULL,                -- OPTIONAL @RegisterClass key; NULL = base class drives from columns
 
   -- WHO holds it
   SubscriberScope,                 -- Organization | Person | Either
@@ -115,6 +123,10 @@ SubscriptionTerm (
   UNIQUE (SubscriptionID, TermNumber)
 )
 ```
+
+`SubscriptionPlan` is **removed** — its content was three concerns wearing one hat: cadence and
+trial are RULES (→ `SubscriptionType`), `PricePerCycle` is PRICING (→ `ProductPrice`, already
+effective-dated), and multi-tier is just separate Products.
 
 `Subscription` then keeps identity and continuity (subscriber, product, status, auto-renew) and
 loses `CurrentPeriodStart/End` — "current" becomes the term whose window covers today, which is a

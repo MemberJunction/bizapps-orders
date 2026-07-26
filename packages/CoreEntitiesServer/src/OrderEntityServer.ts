@@ -46,6 +46,25 @@ import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
+import {
+    SubscriptionBehavior,
+    type ExistingSubscription,
+    type SubscriptionDecision,
+    type SubscriptionTypeRules,
+} from './SubscriptionBehavior.js';
+
+interface ProductRow {
+    ID: string;
+    Name: string;
+    SubscriptionTypeID?: string | null;
+    RevenueRecognitionTypeID: string;
+}
+
+/** Terms created during a confirm, and the recognition cadence each line inherits from its type. */
+interface SubscriptionMaterialization {
+    TermsByLine: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number }>;
+    RecognitionMonthsByLine: Map<string, number>;
+}
 
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
@@ -55,6 +74,9 @@ const COMPANY_ENTITY = 'MJ: Companies';
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
+const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
+const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 
 /** Statuses at or beyond the booking lock (plan D8/D9). */
 const BOOKED_STATUSES = new Set(['Confirmed', 'Posted', 'Fulfilled']);
@@ -167,7 +189,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
             if (booking) {
                 const lines = await this.loadLinesForBooking();
-                await this.bookLines(lines, options);
+                // Subscriptions first: a term must exist before booking so recognition entries can
+                // anchor to it (D46) and use its anchored/prorated window rather than raw line dates.
+                const subs = await this.materializeSubscriptions(lines, options);
+                await this.bookLines(lines, options, subs);
                 await this.createInitialPayment(options);
             }
 
@@ -213,6 +238,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     private async bookLines(
         lines: mjBizAppsOrdersOrderLineEntity[],
         options?: EntitySaveOptions,
+        subs?: SubscriptionMaterialization,
     ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
@@ -223,11 +249,12 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const factory = new OrderJournalEntryFactory(
             await this.buildResolver(provider, user),
             this.entityIDFor(ORDER_LINE_ENTITY),
+            this.entityIDFor(SUBSCRIPTION_TERM_ENTITY),
             provider,
             user,
         );
 
-        const drafts = await factory.BuildDrafts(this, unbooked);
+        const drafts = await factory.BuildDrafts(this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine);
         const result = await this.submitDrafts(drafts, provider, user);
 
         if (!result.Success) {
@@ -326,6 +353,258 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         }
     }
 
+
+
+    // ─── Subscriptions (D45/D46) ───────────────────────────────────────────────
+
+    /**
+     * For every subscription line, apply the type's rules and materialize the Subscription (find,
+     * extend, reactivate, or create) plus the SubscriptionTerm this purchase bought.
+     *
+     * Runs BEFORE booking so the recognition entries can anchor to the term and use its
+     * anchored/prorated window — a calendar-anchored membership bought in July does NOT recognize
+     * over July→July; it recognizes over July→Dec at a prorated amount.
+     *
+     * All rule evaluation is delegated to `SubscriptionBehavior`, which is pure. This method does
+     * the persistence, inside the caller's transaction.
+     */
+    private async materializeSubscriptions(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        options?: EntitySaveOptions,
+    ): Promise<SubscriptionMaterialization> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser;
+        const out: SubscriptionMaterialization = { TermsByLine: new Map(), RecognitionMonthsByLine: new Map() };
+
+        const subLines = await this.subscriptionLines(lines);
+        if (subLines.length === 0) return out;
+
+        for (const { line, product, rules } of subLines) {
+            const behavior = this.behaviorFor(rules);
+            const existing = await this.findExistingSubscription(product.ID);
+
+            const decision = behavior.Decide({
+                Rules: rules,
+                PurchaseDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
+                Amount: line.LineTotalNet ?? 0,
+                Existing: existing,
+                SubscriberIsOrganization: !!this.CustomerOrganizationID,
+            });
+
+            if (decision.Action === 'Reject') {
+                // A rules violation must fail the whole confirm — booking is all-or-none, and a
+                // silently-dropped subscription would leave a paid-for line with no coverage.
+                throw new Error(
+                    `Order line ${line.LineNumber} (${product.Name}) cannot be subscribed: ${decision.RejectReason}`,
+                );
+            }
+
+            const subscriptionID =
+                decision.Action === 'CreateNew'
+                    ? await this.createSubscription(product, rules, decision, options)
+                    : await this.touchExistingSubscription(decision, options);
+
+            const term = decision.Term!;
+            const termEntity = await provider.GetEntityObject<BaseEntity>(SUBSCRIPTION_TERM_ENTITY, user);
+            termEntity.NewRecord();
+            termEntity.Set('SubscriptionID', subscriptionID);
+            termEntity.Set('TermNumber', term.TermNumber);
+            termEntity.Set('OrderLineID', line.ID);
+            termEntity.Set('StartDate', term.StartDate);
+            termEntity.Set('EndDate', term.EndDate);
+            termEntity.Set('Amount', term.Amount);
+            termEntity.Set('IsProrated', term.IsProrated);
+            termEntity.Set('ProrationFactor', term.ProrationFactor);
+            // Frozen at purchase: later changes to the product's rules must never restate a
+            // term that has already been booked.
+            termEntity.Set('RevenueRecognitionTypeID', product.RevenueRecognitionTypeID);
+            termEntity.Set('Status', 'Active');
+
+            if (!(await termEntity.Save(options))) {
+                throw new Error(
+                    `Failed to create the subscription term for order line ${line.LineNumber}: ` +
+                        `${termEntity.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+
+            // The term is the coverage window the schedule must follow, and its cadence decides
+            // how many slices that window produces.
+            out.TermsByLine.set(line.ID, {
+                ID: termEntity.Get('ID') as string,
+                StartDate: term.StartDate,
+                EndDate: term.EndDate,
+                Amount: term.Amount,
+            });
+            out.RecognitionMonthsByLine.set(line.ID, behavior.RecognitionMonths(rules));
+
+            // The line's stored service period reflects the TERM, not what a user typed.
+            line.ServicePeriodStart = term.StartDate;
+            line.ServicePeriodEnd = term.EndDate;
+            await line.Save(options);
+        }
+
+        return out;
+    }
+
+    /** Lines whose product carries a subscription type, joined to their rules. */
+    private async subscriptionLines(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+    ): Promise<Array<{ line: mjBizAppsOrdersOrderLineEntity; product: ProductRow; rules: SubscriptionTypeRules }>> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const ids = [...new Set(lines.map(l => l.ProductID))].map(id => `'${id}'`).join(',');
+        if (!ids) return [];
+
+        const prod = await rv.RunView<ProductRow>(
+            {
+                EntityName: PRODUCT_ENTITY,
+                ExtraFilter: `ID IN (${ids}) AND SubscriptionTypeID IS NOT NULL`,
+                Fields: ['ID', 'Name', 'SubscriptionTypeID', 'RevenueRecognitionTypeID'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        const products = new Map((prod?.Results ?? []).map(p => [p.ID, p]));
+        if (products.size === 0) return [];
+
+        const types = await rv.RunView<SubscriptionTypeRules>(
+            { EntityName: SUBSCRIPTION_TYPE_ENTITY, ResultType: 'simple' },
+            this.ContextCurrentUser,
+        );
+        const rulesByID = new Map((types?.Results ?? []).map(t => [t.ID, t]));
+
+        const out = [];
+        for (const line of lines) {
+            const product = products.get(line.ProductID);
+            if (!product) continue;
+            const rules = rulesByID.get(product.SubscriptionTypeID!);
+            if (!rules) {
+                throw new Error(`Product '${product.Name}' names a subscription type that was not found.`);
+            }
+            out.push({ line, product, rules });
+        }
+        return out;
+    }
+
+    /**
+     * The behaviour object: the base class when the type has no driver (the common case — the
+     * columns ARE the rules, D45), or a registered subclass when one is named.
+     */
+    private behaviorFor(rules: SubscriptionTypeRules): SubscriptionBehavior {
+        if (!rules.DriverClass) return new SubscriptionBehavior();
+        const driver = MJGlobal.Instance.ClassFactory.CreateInstance<SubscriptionBehavior>(
+            SubscriptionBehavior,
+            rules.DriverClass,
+        );
+        if (!driver) {
+            throw new Error(
+                `Subscription type '${rules.Code}' names driver '${rules.DriverClass}', which is not ` +
+                    `registered. Register a SubscriptionBehavior subclass under that key.`,
+            );
+        }
+        return driver;
+    }
+
+    /** The most recent subscription for this (customer, product), whatever its status. */
+    private async findExistingSubscription(productID: string): Promise<ExistingSubscription | null> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const scope = this.CustomerOrganizationID
+            ? `CustomerOrganizationID='${this.CustomerOrganizationID}'`
+            : this.CustomerPersonID
+              ? `BeneficiaryPersonID='${this.CustomerPersonID}'`
+              : null;
+        if (!scope) return null;
+
+        const res = await rv.RunView<{ ID: string; Status: string }>(
+            {
+                EntityName: SUBSCRIPTION_ENTITY,
+                ExtraFilter: `ProductID='${productID}' AND ${scope}`,
+                Fields: ['ID', 'Status'],
+                OrderBy: '__mj_CreatedAt DESC',
+                MaxRows: 1,
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        const sub = res?.Results?.[0];
+        if (!sub) return null;
+
+        const terms = await rv.RunView<{ EndDate: string; TermNumber: number }>(
+            {
+                EntityName: SUBSCRIPTION_TERM_ENTITY,
+                ExtraFilter: `SubscriptionID='${sub.ID}'`,
+                Fields: ['EndDate', 'TermNumber'],
+                OrderBy: 'TermNumber DESC',
+                MaxRows: 1,
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        const latest = terms?.Results?.[0];
+        return {
+            ID: sub.ID,
+            Status: sub.Status,
+            LatestTermEnd: latest?.EndDate ? new Date(latest.EndDate) : null,
+            LatestTermNumber: latest?.TermNumber ?? 0,
+        };
+    }
+
+    private async createSubscription(
+        product: ProductRow,
+        rules: SubscriptionTypeRules,
+        decision: SubscriptionDecision,
+        options?: EntitySaveOptions,
+    ): Promise<string> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const sub = await provider.GetEntityObject<BaseEntity>(SUBSCRIPTION_ENTITY, this.ContextCurrentUser);
+        sub.NewRecord();
+        sub.Set('SubscriptionNumber', await this.assignSubscriptionNumber());
+        sub.Set('CompanyID', this.CompanyID);
+        sub.Set('SubscriptionTypeID', rules.ID);
+        sub.Set('ProductID', product.ID);
+        sub.Set('CustomerOrganizationID', this.CustomerOrganizationID);
+        sub.Set('BeneficiaryPersonID', this.CustomerPersonID);
+        sub.Set('Status', rules.TrialDays > 0 ? 'Trialing' : 'Active');
+        sub.Set('StartDate', decision.Term!.StartDate);
+        sub.Set('AutoRenew', rules.AutoRenewDefault);
+
+        if (!(await sub.Save(options))) {
+            throw new Error(
+                `Failed to create the subscription for '${product.Name}': ` +
+                    `${sub.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+        return sub.Get('ID') as string;
+    }
+
+    /** Extension or reactivation — the term is what changes; the subscription just re-activates. */
+    private async touchExistingSubscription(
+        decision: SubscriptionDecision,
+        options?: EntitySaveOptions,
+    ): Promise<string> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const sub = await provider.GetEntityObject<BaseEntity>(
+            SUBSCRIPTION_ENTITY,
+            CompositeKey.FromID(decision.SubscriptionID!),
+            this.ContextCurrentUser,
+        );
+        if (decision.Action === 'Reactivate') {
+            sub.Set('Status', 'Active');
+            sub.Set('CanceledAt', null);
+            sub.Set('EndDate', null);
+            if (!(await sub.Save(options))) {
+                throw new Error(
+                    `Failed to reactivate subscription: ${sub.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+        }
+        return decision.SubscriptionID!;
+    }
+
+    private async assignSubscriptionNumber(): Promise<string> {
+        // Subscriptions have no dedicated sequence table; derive from the order number, which is
+        // already gap-conscious and unique, plus the term index appended by the caller.
+        return `SUB-${(this.OrderNumber ?? this.ID).replace(/^ORD-/, '')}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+    }
 
     // ─── Numbering (D30) ───────────────────────────────────────────────────────
 

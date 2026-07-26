@@ -21,7 +21,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="Code"
-            Type="textbox"
+            Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -71,15 +71,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="IssuedFromOrderLineID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="ExpiresAt"
             Type="datepicker"
             [EditMode]="EditMode"
@@ -88,13 +79,22 @@
 
     </mj-collapsible-panel>
 
-    <!-- Beneficiary Information Section -->
+    <!-- Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="beneficiaryInformation"
-        SectionName="Beneficiary Information"
-        Icon="fa fa-user-friends"
+        SectionKey="relationships"
+        SectionName="Relationships"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IssuedFromOrderLineID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

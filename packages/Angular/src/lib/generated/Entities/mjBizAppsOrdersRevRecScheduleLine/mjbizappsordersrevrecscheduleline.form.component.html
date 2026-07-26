@@ -50,9 +50,19 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Financial Accounting Section -->
+    <mj-collapsible-panel
+        SectionKey="financialAccounting"
+        SectionName="Financial Accounting"
+        Icon="fa fa-book"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="JournalEntryID"
             Type="textbox"
             [EditMode]="EditMode"

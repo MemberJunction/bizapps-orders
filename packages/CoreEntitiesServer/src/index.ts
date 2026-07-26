@@ -20,5 +20,13 @@ export {
 } from './RevenueRecognition.js';
 export type { RevRecContext, RevRecEntry, RevRecSchedule } from './RevenueRecognition.js';
 
+export { SubscriptionBehavior, LoadSubscriptionBehavior } from './SubscriptionBehavior.js';
+export type {
+    SubscriptionTypeRules,
+    SubscriptionPurchaseContext,
+    SubscriptionDecision,
+    ExistingSubscription,
+} from './SubscriptionBehavior.js';
+
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';

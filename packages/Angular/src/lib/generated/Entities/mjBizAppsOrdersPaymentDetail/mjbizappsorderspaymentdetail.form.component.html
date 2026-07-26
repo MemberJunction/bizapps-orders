@@ -29,11 +29,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Payment Configuration Section -->
+    <!-- Payment Method Section -->
     <mj-collapsible-panel
-        SectionKey="paymentConfiguration"
-        SectionName="Payment Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="paymentMethod"
+        SectionName="Payment Method"
+        Icon="fa fa-credit-card"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -96,7 +96,7 @@
     <mj-collapsible-panel
         SectionKey="paymentDetails"
         SectionName="Payment Details"
-        Icon="fa fa-credit-card"
+        Icon="fa fa-wallet"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -142,10 +142,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Bank Account Information Section -->
+    <!-- Bank Information Section -->
     <mj-collapsible-panel
-        SectionKey="bankAccountInformation"
-        SectionName="Bank Account Information"
+        SectionKey="bankInformation"
+        SectionName="Bank Information"
         Icon="fa fa-university"
         [Form]="this"
         [FormContext]="formContext">
@@ -188,7 +188,7 @@
     <mj-collapsible-panel
         SectionKey="transactionDetails"
         SectionName="Transaction Details"
-        Icon="fa fa-file-invoice"
+        Icon="fa fa-file-invoice-dollar"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

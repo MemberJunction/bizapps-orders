@@ -35,6 +35,12 @@ export interface RevRecContext {
     ServicePeriodEnd?: Date | null;
     /** For informative descriptions only. */
     ProductName?: string;
+    /**
+     * Months per recognition slice (D45 `RecognitionCadence`). Absent = monthly. This is how a
+     * subscription that recognizes QUARTERLY gets 4 slices a year instead of 12 — the cadence is
+     * the subscription type's rule, not the driver's assumption.
+     */
+    PeriodMonths?: number;
 }
 
 export interface RevRecEntry {
@@ -124,13 +130,14 @@ export class UpFrontDriver extends RevenueRecognitionDriver {
 export class EvenOverTimeDriver extends RevenueRecognitionDriver {
     public BuildSchedule(context: RevRecContext): RevRecSchedule {
         const { start, end } = this.RequireServicePeriod(context, 'EvenOverTime');
-        const periods = this.MonthSpan(start, end);
+        const step = Math.max(1, context.PeriodMonths ?? 1);
+        const periods = Math.max(1, Math.ceil(this.MonthSpan(start, end) / step));
         const amounts = this.AllocateEvenly(context.Amount, periods);
 
         return {
             Entries: amounts.map((amount, i) => {
-                const periodStart = addMonths(start, i);
-                const periodEnd = i === periods - 1 ? end : addMonths(start, i + 1);
+                const periodStart = addMonths(start, i * step);
+                const periodEnd = i === periods - 1 ? end : addMonths(start, (i + 1) * step);
                 return { RecognitionDate: periodStart, Amount: amount, PeriodStart: periodStart, PeriodEnd: periodEnd };
             }),
         };

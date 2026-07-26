@@ -52,11 +52,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Operational Settings Section -->
+    <!-- Order Processing Section -->
     <mj-collapsible-panel
-        SectionKey="operationalSettings"
-        SectionName="Operational Settings"
-        Icon="fa fa-cogs"
+        SectionKey="orderProcessing"
+        SectionName="Order Processing"
+        Icon="fa fa-tasks"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -75,36 +75,29 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsBillableRecurring"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="DefaultSubscriptionType"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financial Configuration Section -->
+    <!-- Financial Defaults Section -->
     <mj-collapsible-panel
-        SectionKey="financialConfiguration"
-        SectionName="Financial Configuration"
+        SectionKey="financialDefaults"
+        SectionName="Financial Defaults"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="DefaultRevenueRecognitionTypeID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DefaultSubscriptionTypeID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -113,11 +106,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Technical Configuration Section -->
+    <!-- System Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="technicalConfiguration"
-        SectionName="Technical Configuration"
-        Icon="fa fa-code"
+        SectionKey="systemConfiguration"
+        SectionName="System Configuration"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -132,14 +125,6 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="OrderLineExtensionEntity"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="BehaviorClass"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"

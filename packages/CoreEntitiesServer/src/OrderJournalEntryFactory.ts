@@ -69,6 +69,8 @@ export interface JEDraft {
 export interface OrderLineDraft {
     OrderLineID: string;
     IsBooking: boolean;
+    /** The term a recognition draft belongs to, when the line created one (D46). */
+    SubscriptionTermID?: string;
     /** Set on recognition drafts — carries the period bounds through for RevRecScheduleLine. */
     RecognitionEntry?: RevRecEntry;
     Draft: JEDraft;
@@ -107,6 +109,7 @@ export class OrderJournalEntryFactory {
     constructor(
         private readonly _resolver: GLAccountResolver,
         private readonly _orderLineEntityID: string,
+        private readonly _subscriptionTermEntityID: string,
         private readonly _provider: IMetadataProvider,
         private readonly _contextUser: UserInfo,
     ) {}
@@ -119,6 +122,14 @@ export class OrderJournalEntryFactory {
     public async BuildDrafts(
         order: mjBizAppsOrdersOrderHeaderEntity,
         lines: mjBizAppsOrdersOrderLineEntity[],
+        /**
+         * Terms created for subscription lines during this confirm, keyed by OrderLineID (D46).
+         * Recognition entries anchor to the TERM — the release is caused by time passing over that
+         * coverage period. The booking entry stays on the line: that is caused by the sale.
+         */
+        termsByLine?: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number }>,
+        /** Months per recognition slice, per line, from the subscription type's cadence (D45). */
+        recognitionMonthsByLine?: Map<string, number>,
     ): Promise<OrderLineDraft[]> {
         if (lines.length === 0) {
             throw new Error(`Order ${order.OrderNumber} has no lines to book.`);
@@ -133,7 +144,10 @@ export class OrderJournalEntryFactory {
         const drafts: OrderLineDraft[] = [];
         for (const line of lines) {
             drafts.push(
-                ...(await this.buildLineDrafts(order, line, products, revRecTypes, dimensions, effectiveDate, asOf)),
+                ...(await this.buildLineDrafts(
+                    order, line, products, revRecTypes, dimensions, effectiveDate, asOf,
+                    termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
+                )),
             );
         }
         return drafts;
@@ -147,6 +161,8 @@ export class OrderJournalEntryFactory {
         dimensions: Map<string, Array<{ DimensionID: string; DimensionValueID: string }>>,
         effectiveDate: string,
         asOf: Date,
+        term?: { ID: string; StartDate: Date; EndDate: Date; Amount: number },
+        recognitionMonths?: number,
     ): Promise<OrderLineDraft[]> {
         const product = products.get(line.ProductID);
         if (!product) {
@@ -224,12 +240,15 @@ export class OrderJournalEntryFactory {
 
         // ── the forward-dated releases (D14/D43) ──
         if (revRec.IsDeferred) {
+            // A subscription line's coverage window comes from its TERM (which applied anchoring,
+            // deferral and proration); a non-subscription deferred line uses the line's own dates.
             const schedule = this.driverFor(revRec).BuildSchedule({
-                Amount: net,
+                Amount: term ? term.Amount : net,
                 BookingDate: new Date(effectiveDate),
-                ServicePeriodStart: line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null,
-                ServicePeriodEnd: line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null,
+                ServicePeriodStart: term ? term.StartDate : (line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null),
+                ServicePeriodEnd: term ? term.EndDate : (line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null),
                 ProductName: product.Name,
+                PeriodMonths: recognitionMonths,
             });
 
             for (const entry of schedule.Entries) {
@@ -252,13 +271,16 @@ export class OrderJournalEntryFactory {
                 out.push({
                     OrderLineID: line.ID,
                     IsBooking: false,
+                    SubscriptionTermID: term?.ID,
                     RecognitionEntry: entry,
                     Draft: {
                         EffectiveDate: isoDate(entry.RecognitionDate),
                         EntryType: 'RevenueRecognition',
                         Description: `Order ${order.OrderNumber} line ${line.LineNumber} — recognize ${product.Name}`,
-                        LinkedEntityID: this._orderLineEntityID,
-                        LinkedRecordID: line.ID,
+                        // D46: anchor to the TERM when there is one; otherwise the line (event
+                        // products are deferred but have no subscription and therefore no term).
+                        LinkedEntityID: term ? this._subscriptionTermEntityID : this._orderLineEntityID,
+                        LinkedRecordID: term ? term.ID : line.ID,
                         Lines: releaseLines,
                     },
                 });

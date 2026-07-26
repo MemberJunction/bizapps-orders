@@ -10,22 +10,32 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Method Details Section -->
+    <!-- Customer Information Section -->
     <mj-collapsible-panel
-        SectionKey="paymentMethodDetails"
-        SectionName="Payment Method Details"
-        Icon="fa fa-info-circle"
+        SectionKey="customerInformation"
+        SectionName="Customer Information"
+        Icon="fa fa-building"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="CustomerOrganizationID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Payment Method Details Section -->
+    <mj-collapsible-panel
+        SectionKey="paymentMethodDetails"
+        SectionName="Payment Method Details"
+        Icon="fa fa-credit-card"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -43,16 +53,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Payment Method Settings Section -->
-    <mj-collapsible-panel
-        SectionKey="paymentMethodSettings"
-        SectionName="Payment Method Settings"
-        Icon="fa fa-sliders-h"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
