@@ -649,12 +649,21 @@ future (fields ship now, D21).
 
 ## 9. Multi-company and intercompany
 
+> **Detailed design:** [`intercompany-balancing.md`](./intercompany-balancing.md) — the
+> `IntercompanyAccountMatch` lookup, the one-JE-per-(payment line × company) shape, worked examples,
+> and the allocation rules. Nothing built; §19.1 must close first.
+
 - **Line ownership is the product's company** (D6): a three-company order is three lines whose JEs
   book AR + revenue in each product's own company. There are no cross-company mapping routes —
   cross-company revenue flows are intercompany TRANSACTIONS, and those arise **only at payment
   time** (D13).
 - `Order.CompanyID` (owning company) anchors the document, visibility (D28), and the customer
   relationship — never GL resolution.
+- **⚠️ The payment half of D13 is NOT built, and its absence is a correctness bug, not a gap.**
+  Capture books `Dr Cash / Cr AR` in the RECEIVING company only, so cash collected by A against B's
+  line credits A's receivable and leaves B's outstanding — both books misstated, nothing reconciling
+  them. The integration suite does not catch it because every `payment-ledger` check uses a
+  single-company order. See [`intercompany-balancing.md`](./intercompany-balancing.md) §1.
 - **Consequence for booking:** no due-to/due-from at booking, no seller-of-record AR concentration.
   The customer-facing invoice can still present as one document (the order's JE is a virtual
   aggregation); the LEDGER holds per-line-company AR until payment allocates cash and raises the IC
