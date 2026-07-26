@@ -100,8 +100,10 @@ if (doReset) {
     const statements = [
         `DISABLE TRIGGER ${ORDERS}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS}.OrderLine`,
         `DISABLE TRIGGER ${ORDERS}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS}.PaymentHeader`,
+        `DISABLE TRIGGER ${ORDERS}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS}.PaymentLine`,
         `UPDATE ${ORDERS}.OrderLine SET JournalEntryID=NULL WHERE OrderHeaderID IN (${orders})`,
         `UPDATE ${ORDERS}.PaymentHeader SET JournalEntryID=NULL WHERE ReceivingCompanyID IN (${scope})`,
+        `UPDATE ${ORDERS}.PaymentLine SET BookedAt=NULL WHERE OrderHeaderID IN (${orders})`,
         `DELETE jel FROM ${ACCT}.JournalEntryLine jel JOIN ${ACCT}.JournalEntry je ON je.ID=jel.JournalEntryID WHERE je.CompanyID IN (${scope})`,
         `DELETE FROM ${ACCT}.JournalEntry WHERE CompanyID IN (${scope})`,
         `UPDATE ${ORDERS}.OrderHeader SET InitialPaymentDetailID=NULL WHERE CompanyID IN (${scope})`,
@@ -128,6 +130,7 @@ if (doReset) {
         `DELETE FROM ${COMMON}.Person WHERE LastName LIKE '${DEMO_TAG}%'`,
         `ENABLE TRIGGER ${ORDERS}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS}.OrderLine`,
         `ENABLE TRIGGER ${ORDERS}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS}.PaymentHeader`,
+        `ENABLE TRIGGER ${ORDERS}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS}.PaymentLine`,
     ];
     for (const s of statements) {
         try {
@@ -337,8 +340,9 @@ async function confirmOrder({ lines, customer, orderDate, initialPayment, note }
  *
  * Needed because the D42 initial-payment intent is stated at order ENTRY, before the total is known
  * — and a prorated subscription's price is only computed at confirm. So "pay this order in full"
- * cannot be pre-declared for those; it has to read the balance the order actually landed on. The
- * over-application guard rejects a guess, which is how this got noticed.
+ * cannot be pre-declared for those; it has to read the balance the order actually landed on.
+ * Guessing is no longer REJECTED — over-paying is legitimate now (D68) and would simply leave a
+ * credit — so reading the real balance is what keeps the demo data saying what it means.
  */
 async function payOrder(orderID, typeCode, amount) {
     const balance = amount ?? Number((await q(`SELECT Balance FROM ${ORDERS}.OrderHeader WHERE ID='${orderID}'`))[0].Balance);
@@ -350,17 +354,19 @@ async function payOrder(orderID, typeCode, amount) {
     payment.Amount = balance;
     payment.PaymentDate = new Date();
     payment.Status = 'Captured';
-    if (!(await payment.Save())) {
-        throw new Error(`payment failed: ${payment.LatestResult?.CompleteMessage ?? 'unknown'}`);
-    }
+
+    // Header + allocation in ONE save (D68). A captured payment's Amount must equal the sum of its
+    // lines, so capturing first and allocating second passes through a state the invariant forbids —
+    // which is exactly how this script failed the first time it ran after that rule landed.
     const line = await md.GetEntityObject('MJ_BizApps_Orders: Payment Lines', user);
     line.NewRecord();
-    line.PaymentHeaderID = payment.ID;
     line.OrderHeaderID = orderID;
     line.Amount = balance;
     line.AllocatedAt = new Date();
-    if (!(await line.Save())) {
-        throw new Error(`apply failed: ${line.LatestResult?.CompleteMessage ?? 'unknown'}`);
+    payment.Lines = [line];
+
+    if (!(await payment.Save())) {
+        throw new Error(`payment failed: ${payment.LatestResult?.CompleteMessage ?? 'unknown'}`);
     }
     say(`  paid ${balance} via ${typeCode} → ${payment.PaymentNumber}`);
     return payment;
@@ -438,15 +444,15 @@ icPayment.Amount = 300;
 icPayment.Status = 'Captured';
 icPayment.PaymentDate = new Date();
 icPayment.BillToOrganizationID = orgID;
-if (!(await icPayment.Save())) throw new Error(`IC capture failed: ${icPayment.LatestResult?.CompleteMessage}`);
 
 const icLine = await md.GetEntityObject('MJ_BizApps_Orders: Payment Lines', user);
 icLine.NewRecord();
-icLine.PaymentHeaderID = icPayment.ID;
 icLine.OrderHeaderID = o9.ID;
 icLine.Amount = 300;
 icLine.AllocatedAt = new Date();
-if (!(await icLine.Save())) throw new Error(`IC allocation failed: ${icLine.LatestResult?.CompleteMessage}`);
+icPayment.Lines = [icLine];
+
+if (!(await icPayment.Save())) throw new Error(`IC capture failed: ${icPayment.LatestResult?.CompleteMessage}`);
 
 const icEntries = await q(`
     SELECT je.EntryNumber, c.Name AS Company, gl.Code, gl.Name AS Account,
@@ -524,6 +530,68 @@ if (paidPayment) {
     );
     say(`  ${paidPayment.PaymentNumber}: ${refunded.Output?.Message ?? refunded.ErrorMessage}`);
 }
+
+// ─── Account credit: over-pay one order, spend the surplus on another (D68) ───
+
+step('Account credit');
+
+// A customer sends more than the order is worth. This is an ordinary event — and until D68 it could
+// not be recorded at all, because the allocation guard refused it while the money sat in the bank.
+const creditOrder = await confirmOrder({
+    lines: [{ product: products.handbook, qty: 4, price: 50 }],
+    customer: { org: orgID },
+    note: 'Over-paid — the surplus becomes a spendable credit (D68)',
+});
+const overPayment = await md.GetEntityObject('MJ_BizApps_Orders: Payment Headers', user);
+overPayment.NewRecord();
+overPayment.PaymentNumber = `${DEMO_TAG}-OVER-${randomUUID().slice(0, 6).toUpperCase()}`;
+overPayment.ReceivingCompanyID = companyID;
+overPayment.PaymentTypeID = payTypes.get('Check');
+overPayment.Amount = 250;
+overPayment.PaymentDate = new Date();
+overPayment.Status = 'Captured';
+overPayment.BillToOrganizationID = orgID;
+
+const overLine = await md.GetEntityObject('MJ_BizApps_Orders: Payment Lines', user);
+overLine.NewRecord();
+overLine.OrderHeaderID = creditOrder.ID;
+overLine.Amount = 250;          // 50 more than the order — the surplus becomes the credit
+overLine.AllocatedAt = new Date();
+overPayment.Lines = [overLine];
+
+if (!(await overPayment.Save())) {
+    throw new Error(`over-payment failed: ${overPayment.LatestResult?.CompleteMessage}`);
+}
+const credited = (await q(`SELECT OrderNumber, TotalGross, AmountPaid, Balance FROM ${ORDERS}.OrderHeader WHERE ID='${creditOrder.ID}'`))[0];
+say(`  ${credited.OrderNumber}: gross ${credited.TotalGross}, paid ${credited.AmountPaid}, balance ${credited.Balance} — the negative balance IS the credit`);
+
+// Now spend it. No new cash: a zero-amount transfer whose two lines move A/R between the orders.
+const spendTarget = await confirmOrder({
+    lines: [{ product: products.workshop, qty: 1, price: 120 }],
+    customer: { org: orgID },
+    note: 'Settled partly by the credit sitting on the over-paid order',
+});
+const creditOp = MJGlobal.Instance.ClassFactory.CreateInstance(BaseRemotableOperation, 'Orders.ApplyAccountCredit');
+const applied = await creditOp.Execute(
+    { SourceOrderHeaderID: creditOrder.ID, TargetOrderHeaderID: spendTarget.ID, Amount: 50 },
+    { provider, user },
+);
+say(`  ${applied.Output?.Message ?? applied.ErrorMessage}`);
+
+const creditLedger = await q(`
+    SELECT c.Name AS Company, gl.Code, gl.Name AS Account,
+           SUM(ISNULL(jel.DebitAmount,0)) AS Dr, SUM(ISNULL(jel.CreditAmount,0)) AS Cr
+      FROM ${ORDERS}.PaymentLine pl
+      JOIN ${ACCT}.JournalEntry je ON je.LinkedRecordID = CAST(pl.ID AS NVARCHAR(400))
+      JOIN ${ACCT}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
+      JOIN ${ACCT}.GLAccount gl ON gl.ID = jel.GLAccountID
+      JOIN __mj.Company c ON c.ID = gl.CompanyID
+     WHERE pl.PaymentHeaderID = '${applied.Output?.PaymentHeaderID}'
+     GROUP BY c.Name, gl.Code, gl.Name ORDER BY gl.Code`);
+for (const l of creditLedger) {
+    say(`    ${String(l.Company).padEnd(22)} ${l.Code}  ${String(l.Account).padEnd(22)} Dr ${String(l.Dr).padStart(6)}  Cr ${String(l.Cr).padStart(6)}`);
+}
+say('    cash nets to zero — this re-attributes money already received, it does not receive more');
 
 // ─── Summary ───────────────────────────────────────────────────────────────────
 
