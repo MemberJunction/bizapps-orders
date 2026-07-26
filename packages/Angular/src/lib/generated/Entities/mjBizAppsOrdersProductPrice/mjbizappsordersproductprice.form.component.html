@@ -64,10 +64,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Pricing Details Section -->
+    <!-- Financial Details Section -->
     <mj-collapsible-panel
-        SectionKey="pricingDetails"
-        SectionName="Pricing Details"
+        SectionKey="financialDetails"
+        SectionName="Financial Details"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -87,6 +87,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Quantity Constraints Section -->
+    <mj-collapsible-panel
+        SectionKey="quantityConstraints"
+        SectionName="Quantity Constraints"
+        Icon="fa fa-sort-numeric-down"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -106,10 +116,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Validity Period Section -->
+    <!-- Validity Dates Section -->
     <mj-collapsible-panel
-        SectionKey="validityPeriod"
-        SectionName="Validity Period"
+        SectionKey="validityDates"
+        SectionName="Validity Dates"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">

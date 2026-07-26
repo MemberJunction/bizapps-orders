@@ -49,6 +49,7 @@ import { mjBizAppsOrdersSalesRuleFormComponent } from "./Entities/mjBizAppsOrder
 import { mjBizAppsOrdersStoredValueAccountFormComponent } from "./Entities/mjBizAppsOrdersStoredValueAccount/mjbizappsordersstoredvalueaccount.form.component";
 import { mjBizAppsOrdersStoredValueTransactionFormComponent } from "./Entities/mjBizAppsOrdersStoredValueTransaction/mjbizappsordersstoredvaluetransaction.form.component";
 import { mjBizAppsOrdersSubscriptionEventFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionEvent/mjbizappsorderssubscriptionevent.form.component";
+import { mjBizAppsOrdersSubscriptionSequenceFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionSequence/mjbizappsorderssubscriptionsequence.form.component";
 import { mjBizAppsOrdersSubscriptionTermFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionTerm/mjbizappsorderssubscriptionterm.form.component";
 import { mjBizAppsOrdersSubscriptionTypeFormComponent } from "./Entities/mjBizAppsOrdersSubscriptionType/mjbizappsorderssubscriptiontype.form.component";
 import { mjBizAppsOrdersSubscriptionFormComponent } from "./Entities/mjBizAppsOrdersSubscription/mjbizappsorderssubscription.form.component";
@@ -106,6 +107,7 @@ declarations: [
     mjBizAppsOrdersStoredValueAccountFormComponent,
     mjBizAppsOrdersStoredValueTransactionFormComponent,
     mjBizAppsOrdersSubscriptionEventFormComponent,
+    mjBizAppsOrdersSubscriptionSequenceFormComponent,
     mjBizAppsOrdersSubscriptionTermFormComponent,
     mjBizAppsOrdersSubscriptionTypeFormComponent,
     mjBizAppsOrdersSubscriptionFormComponent],

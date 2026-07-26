@@ -100,18 +100,32 @@ function money(v: number): number {
     return Math.round((v + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Snap to UTC midnight — the ONLY safe basis for this arithmetic.
+ *
+ * Every date here is a calendar date, not an instant: `SubscriptionTerm.StartDate`/`EndDate` are
+ * SQL `DATE` columns, and a term "starts July 1" regardless of who is looking. But `OrderDate`
+ * round-trips through the database as UTC midnight while `new Date(y, m, d)` builds LOCAL midnight,
+ * so mixing the two puts them hours apart. West of Greenwich that is enough to make a term END
+ * BEFORE IT STARTS — a purchase on the anchor date resolves its "next anchor" to the SAME day it was
+ * bought, and `EndDate = anchor − 1 day` lands before the start, violating CK_SubscriptionTerm_Dates.
+ *
+ * So: normalize at the boundary, and do all shifting in UTC.
+ */
+function utcDay(d: Date): Date {
+    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
 function addMonths(d: Date, n: number): Date {
-    const r = new Date(d.getTime());
-    const day = r.getDate();
-    r.setMonth(r.getMonth() + n);
-    if (r.getDate() < day) r.setDate(0);
-    return r;
+    const day = d.getUTCDate();
+    const shifted = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, day));
+    // Clamp: Jan 31 + 1 month is Feb 28/29, not Mar 2/3.
+    if (shifted.getUTCDate() < day) shifted.setUTCDate(0);
+    return shifted;
 }
 
 function addDays(d: Date, n: number): Date {
-    const r = new Date(d.getTime());
-    r.setDate(r.getDate() + n);
-    return r;
+    return new Date(d.getTime() + n * 86400000);
 }
 
 function daysBetween(a: Date, b: Date): number {
@@ -124,7 +138,16 @@ export class SubscriptionBehavior {
      * The one entry point: given the rules and what already exists, decide what to do and compute
      * the term. Override individual `protected` members below to customize a single aspect.
      */
-    public Decide(ctx: SubscriptionPurchaseContext): SubscriptionDecision {
+    public Decide(rawContext: SubscriptionPurchaseContext): SubscriptionDecision {
+        // Normalize once, here, so every protected method below is guaranteed a calendar date.
+        const ctx: SubscriptionPurchaseContext = {
+            ...rawContext,
+            PurchaseDate: utcDay(rawContext.PurchaseDate),
+            Existing: rawContext.Existing
+                ? { ...rawContext.Existing, LatestTermEnd: rawContext.Existing.LatestTermEnd ? utcDay(rawContext.Existing.LatestTermEnd) : null }
+                : rawContext.Existing,
+        };
+
         const scopeError = this.ValidateSubscriberScope(ctx);
         if (scopeError) {
             return { Action: 'Reject', RejectReason: scopeError };
@@ -143,8 +166,8 @@ export class SubscriptionBehavior {
         // An extension starts where the existing coverage ends — never overlapping it.
         const extending = action === 'ExtendExisting';
         const start = extending && ctx.Existing?.LatestTermEnd
-            ? addDays(new Date(ctx.Existing.LatestTermEnd), 1)
-            : this.ComputeStartDate(ctx);
+            ? addDays(ctx.Existing.LatestTermEnd, 1)
+            : utcDay(this.ComputeStartDate(ctx));
 
         const end = this.ComputeEndDate(ctx, start, extending);
         const { isProrated, factor } = this.ComputeProration(ctx, start, end, extending);
@@ -206,7 +229,7 @@ export class SubscriptionBehavior {
 
     /** Immediate / Deferred / snap-forward to the calendar anchor. */
     protected ComputeStartDate(ctx: SubscriptionPurchaseContext): Date {
-        const purchase = new Date(ctx.PurchaseDate);
+        const purchase = ctx.PurchaseDate;
         switch (ctx.Rules.StartMode) {
             case 'Immediate':
                 return purchase;
@@ -261,9 +284,12 @@ export class SubscriptionBehavior {
     protected NextAnchor(ctx: SubscriptionPurchaseContext, from: Date): Date {
         const month = (ctx.Rules.AnchorMonth ?? 1) - 1;
         const day = ctx.Rules.AnchorDay ?? 1;
-        let anchor = new Date(from.getFullYear(), month, day);
-        if (anchor.getTime() <= from.getTime()) {
-            anchor = new Date(from.getFullYear() + 1, month, day);
+        const base = utcDay(from);
+        let anchor = new Date(Date.UTC(base.getUTCFullYear(), month, day));
+        // Strictly after: buying ON the anchor date starts a FULL term at that anchor rather than
+        // a zero-length stub ending the day before itself.
+        if (anchor.getTime() <= base.getTime()) {
+            anchor = new Date(Date.UTC(base.getUTCFullYear() + 1, month, day));
         }
         return anchor;
     }

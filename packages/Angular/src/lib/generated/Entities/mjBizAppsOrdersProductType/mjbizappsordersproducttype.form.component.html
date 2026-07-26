@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- General Information Section -->
+    <!-- Product Type Details Section -->
     <mj-collapsible-panel
-        SectionKey="generalInformation"
-        SectionName="General Information"
+        SectionKey="productTypeDetails"
+        SectionName="Product Type Details"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -52,11 +52,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Order Processing Section -->
+    <!-- Operational Settings Section -->
     <mj-collapsible-panel
-        SectionKey="orderProcessing"
-        SectionName="Order Processing"
-        Icon="fa fa-tasks"
+        SectionKey="operationalSettings"
+        SectionName="Operational Settings"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -110,7 +110,7 @@
     <mj-collapsible-panel
         SectionKey="systemConfiguration"
         SectionName="System Configuration"
-        Icon="fa fa-cogs"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -136,7 +136,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

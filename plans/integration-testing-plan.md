@@ -1,12 +1,96 @@
 # Integration Testing Plan — BizApps Orders
 
-> **Status:** Proposal for review (2026-07-25).
+> **Status:** BUILT (2026-07-25). Phases 0-3 are done and green — 37 checks across 4 bundles,
+> dispatched by `mj test suite --name "BizApps Orders Integration"` and by
+> `node test-harnesses/integration.mjs`. Phases 4-5 (breadth, CI) remain. Sections below are the
+> original proposal; **§0 records what the build actually decided**, including where it diverged.
 > **Parent plan:** [`bizapps-orders-master.md`](./bizapps-orders-master.md)
 > **Goal:** a deterministic, headless, end-to-end suite that drives a clean database through the real
 > stack — product setup → GL linking → orders → payments → subscriptions → cancellations — and
 > asserts actual table state (`OrderHeader`, `OrderLine`, `JournalEntry`, `JournalEntryLine`,
 > `PaymentHeader`, `PaymentLine`, `SubscriptionTerm`, …) against expected. Run it to *find* defects;
 > keep it as the regression harness.
+
+---
+
+## 0. What was built, and what the build changed
+
+### Phase 0 answered: transaction-per-check ROLLBACK, and it holds
+
+The spike ran the real thing — an outer test transaction, `OrderEntityServer.Save`'s transaction
+inside it, `CreateJournalEntries`' savepoints inside that — and confirmed all of it:
+
+- the confirm SUCCEEDS three deep, and the journal entry is visible INSIDE the transaction;
+- after rollback, zero `OrderHeader` / `OrderLine` / `JournalEntry` / `JournalEntryLine` rows;
+- teardown is a plain FK-ordered sweep with **no `DISABLE TRIGGER` at all** — the fallback's worst
+  part is gone, because there is no booked history left to fight.
+
+Two runs of the full suite plus the legacy harness leave the database at exactly zero residue.
+
+**The spike also found the constraint that governs every check we write:** while a check's
+transaction is open, reads must go through the PROVIDER, never a second connection. The first probe
+attempt read an in-flight row via the raw pool and BLOCKED on the transaction's own write locks
+until the request timed out. `fixture.ts` routes everything through the provider for this reason
+(and a second one — see below).
+
+### Divergences from the proposal
+
+| Proposed | Built | Why |
+|---|---|---|
+| 12 bundles (`orders-*`) | 4 bundles: `order-booking`, `revenue-recognition`, `subscriptions`, `payments-rollups` | Bundles follow the code that exists. Events, permissions and concurrent numbering have no implementation to test yet; writing their bundles first would have produced tests that assert nothing. |
+| Author a `MJ: Test Types` row | Use MJ core's | `Integration Test` (`502A3E67-…`) ships in MJ core metadata and was already present after `mj migrate`. Authoring a duplicate would have split the driver lookup. |
+| Assertions via `RunView` because "raw-SQL helpers won't reach our schemas" | Assertions via `provider.ExecuteSQL` with explicit schema names | The premise was wrong: `ctx.Schema` only defaults the CORE schema for MJ's own helpers; a query we write ourselves can name any schema. Direct SQL also lets us assert on the LEDGER (journal entry lines, balances) which no orders entity exposes. |
+| `ctx.Pool` for fixture setup | the provider for everything | `ctx.Pool` is only populated when the driver owned the bootstrap. Under `mj test` the CLI installs the instrumented cache first, so it arrives `undefined` — a pool-based fixture fails at setup with a message that reads like a platform problem. |
+| Fixture state on the check context | module-scoped holder in our package | `IntegrationCheckContext` is a CLOSED interface owned by MJ; it enumerates MJ's own fixtures as named optional fields, so an external adopter has no slot to assign to. |
+
+### What the suite found
+
+Writing the tests was worth it before the code was "finished" — five real defects surfaced, four of
+them in product code:
+
+1. **`Subscription.OrderLineID` was never set** — NOT NULL, so every subscription purchase failed.
+2. **Calendar-anchored terms could end before they started.** `OrderDate` returns as UTC midnight
+   while `new Date(y, m, d)` builds LOCAL midnight; west of Greenwich a purchase on the anchor date
+   resolved "next anchor" to the same day and `EndDate = anchor − 1` landed before the start,
+   violating `CK_SubscriptionTerm_Dates`. All the arithmetic is UTC now, with a unit regression
+   guard that fails on the old code.
+3. **A rejected confirm told the caller nothing** — `Save()` returned bare `false` while
+   `LatestResult` still held the header's SUCCESSFUL save. The reason now lands on `LatestResult`,
+   which the UI and the API need as much as the tests do.
+4. **`SubscriptionNumber` was derived from the order number plus a timestamp suffix** — collides
+   when one order buys two subscription products in the same millisecond. Now a real
+   `SubscriptionSequence` singleton, matching `OrderSequence`/`PaymentSequence`.
+5. **(harness, not product)** `AccountingEngineBase` caches GL links in-process, so a second
+   bundle's fixture was invisible to booking. Setup forces a refresh.
+
+Two checks also had to be **hardened after passing for the wrong reason**: `OB7`/`OB8`/`OB9`
+asserted only that a confirm was rejected, which is also true when the entity subclasses were never
+registered and no booking logic ran at all. They now assert the rejection MESSAGE names the
+unresolvable GL role. `SB8` got the same treatment. This is the anti-vacuity rule in §4 biting in a
+form the proposal didn't anticipate: not an empty collection, but a negative assertion satisfied by
+total absence of the feature.
+
+### Deliverables
+
+| Path | What |
+|---|---|
+| `packages/IntegrationTests/src/fixture.ts` | catalog fixture, transaction discipline, GUID/query helpers |
+| `packages/IntegrationTests/src/order-builder.ts` | build/confirm orders through the ENTITY API, so the Save override fires |
+| `packages/IntegrationTests/src/checks/*.checks.ts` | the 4 bundles |
+| `test-harnesses/integration.mjs` | standalone dispatcher over the same registry — the fast inner loop |
+| `metadata-tests/` | `MJ: Tests` × 4 + `MJ: Test Suites` + membership, kept OUT of the production-pushed `metadata/` |
+| `scripts/rebuild-db.sh` | Phase 2's provisioning script — the four-layer build, encoded |
+| `scripts/append-codegen.sh` | folds CodeGen output back into the baseline migration |
+
+### Still open
+
+- **Phase 4 breadth** — the eight bundles listed in §3 that have no implementation behind them yet.
+- **Phase 5 CI** — Docker SQL Server → `scripts/rebuild-db.sh` → `mj test suite` as a blocking gate.
+- **The drift guards from §5** — per-bundle count table and sibling-parity test. Not yet written;
+  with 4 bundles the drift risk is small but it grows with every addition.
+- **`mj test` needs `RUN_MUTATION_TESTS=1`.** Every check is mutation-class, so a run without the
+  gate reports zero checks and passes. That is skip-as-pass, exactly what §4 warns about, and it is
+  the first thing CI must assert against.
 
 ---
 

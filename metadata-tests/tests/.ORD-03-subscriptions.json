@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-03 - Subscriptions",
+    "Description": "SubscriptionType columns ARE the rules (SB1-SB12, D45/D46). Buying a subscription product materializes a Subscription plus a term-1 SubscriptionTerm with the recognition type FROZEN at purchase; calendar anchoring produces a partial first term that Prorate reduces and ChargeFull does not; ExtendExisting appends a contiguous term 2 while RejectDuplicate rejects the confirm; organization-only scope rejects an individual buyer; recognition entries anchor to the TERM while booking stays on the order line; and RecognitionCadence drives the slice count.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Jul-1 purchase of a Jan-1 anchored type yields a 2026-07-01..2026-12-31 term at 184/365 of list; extension starts the day after the prior term ends; quarterly cadence yields 4 slices where monthly yields 12."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "subscriptions"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "6EA5F3B7-0D7E-4868-987C-B763C8816217"
+  },
+  "sync": {
+    "lastModified": "2026-07-26T02:30:26.849Z",
+    "checksum": "94526c4a10c69531d69471861c3ea5afd8f68deebfdda7f8f1237e029fb83c6f"
+  }
+}

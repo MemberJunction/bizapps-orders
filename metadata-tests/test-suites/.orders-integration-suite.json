@@ -1,0 +1,80 @@
+[
+  {
+    "fields": {
+      "Name": "BizApps Orders Integration",
+      "Description": "Every integration bundle for this app, in one deterministic tier. All checks are mutation-class by nature (the suite exists to write to the database) and are gated at runtime by RUN_MUTATION_TESTS, so a run without that gate reports zero rather than failing. Bundles are independent: each owns its own committed catalog fixture and every check rolls its own transaction back, so ordering is presentational and a failure in one bundle cannot contaminate the next.",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "6B020733-1554-4BB4-A75B-7D5F1E1F3A84"
+    },
+    "relatedEntities": {
+      "MJ: Test Suite Tests": [
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-01 - Order Booking",
+            "Sequence": 1,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "B6026461-420E-4A7D-B48F-DFCBB1A4BE17"
+          },
+          "sync": {
+            "lastModified": "2026-07-26T02:30:26.911Z",
+            "checksum": "765982a21ee8803cdbead2df2b0be879c458ad0f46e8d87e0ca5dc85c4e71294"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-02 - Revenue Recognition",
+            "Sequence": 2,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "E49C1BA6-A759-4A1F-B8EA-71CDBD64B1D5"
+          },
+          "sync": {
+            "lastModified": "2026-07-26T02:30:26.920Z",
+            "checksum": "e6cd18fe29d74e9493b21b9e18fd4e3a4acf7ddefd40c5777f2a5e42cc392c26"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-03 - Subscriptions",
+            "Sequence": 3,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "B269A58F-D05E-435A-915C-8DF9D5BDC3A8"
+          },
+          "sync": {
+            "lastModified": "2026-07-26T02:30:26.930Z",
+            "checksum": "e751ffc7bd24d07f77b8fd27f34dba2035df82932fee7779dc6c155cf86533c4"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-04 - Payments and Rollups",
+            "Sequence": 4,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "3EFFD0B7-3A25-4D8B-8FAF-3F256C3FFE5E"
+          },
+          "sync": {
+            "lastModified": "2026-07-26T02:30:26.939Z",
+            "checksum": "887a0a0ecc6fb62dfcad88bb4c70dc486d1cc2cfacea28cf078db726cfdfdfb0"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-07-26T02:30:26.887Z",
+      "checksum": "d6b470323cd54e28680d18f6e3993cdbe4d8b7b15c08fcdfbcc08ae29796c3b2"
+    }
+  }
+]

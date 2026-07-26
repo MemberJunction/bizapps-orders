@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Allocation Section -->
+    <!-- Payment and Order Allocation Section -->
     <mj-collapsible-panel
-        SectionKey="paymentAllocation"
-        SectionName="Payment Allocation"
-        Icon="fa fa-link"
+        SectionKey="paymentAndOrderAllocation"
+        SectionName="Payment and Order Allocation"
+        Icon="fa fa-hand-holding-usd"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -44,16 +44,6 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Financial Details Section -->
-    <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -62,6 +52,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Allocation Audit Section -->
+    <mj-collapsible-panel
+        SectionKey="allocationAudit"
+        SectionName="Allocation Audit"
+        Icon="fa fa-history"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -70,19 +70,9 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- User Attribution Section -->
-    <mj-collapsible-panel
-        SectionKey="userAttribution"
-        SectionName="User Attribution"
-        Icon="fa fa-user"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="AllocatedByUserID"
             Type="textbox"
             [EditMode]="EditMode"

@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="paymentProviderDetails"
         SectionName="Payment Provider Details"
-        Icon="fa fa-plug"
+        Icon="fa fa-university"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -34,21 +34,13 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProviderEventID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Payment Status and Financials Section -->
+    <!-- Payment Status and Amount Section -->
     <mj-collapsible-panel
-        SectionKey="paymentStatusAndFinancials"
-        SectionName="Payment Status and Financials"
+        SectionKey="paymentStatusAndAmount"
+        SectionName="Payment Status and Amount"
         Icon="fa fa-money-bill"
         [Form]="this"
         [FormContext]="formContext">
@@ -65,14 +57,6 @@
             [ShowLabel]="true"
             FieldName="Amount"
             Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="LastEventAt"
-            Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -103,6 +87,32 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Provider Sync Details Section -->
+    <mj-collapsible-panel
+        SectionKey="providerSyncDetails"
+        SectionName="Provider Sync Details"
+        Icon="fa fa-sync"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProviderEventID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="LastEventAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>

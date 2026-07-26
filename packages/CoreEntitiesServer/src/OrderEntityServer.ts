@@ -28,6 +28,7 @@
  */
 import {
     BaseEntity,
+    BaseEntityResult,
     BaseRemotableOperation,
     CompositeKey,
     DatabaseProviderBase,
@@ -205,8 +206,31 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             } catch (rollbackErr) {
                 LogError(`Rollback failed after OrderEntityServer.Save error: ${rollbackErr}`);
             }
+            // Surface WHY. Without this the caller gets a bare `false` and `LatestResult` still
+            // holds the header's SUCCESSFUL save — so a subscription rule rejection or an
+            // unresolvable GL account reads as "it just didn't work". The UI, the API and the
+            // integration suite all need the reason; the log is not a return value.
+            this.RegisterResultHistoryEntry(this.buildFailureResult(err));
             return false;
         }
+    }
+
+    /**
+     * Turn a thrown booking error into the `BaseEntityResult` a caller can read off `LatestResult`.
+     * The message is the error's own text — GLAccountResolver and SubscriptionBehavior both write
+     * messages meant for a human, so passing them through beats a generic "save failed".
+     */
+    private buildFailureResult(err: unknown): BaseEntityResult {
+        const result = new BaseEntityResult();
+        result.Success = false;
+        result.Type = this.IsSaved ? 'update' : 'create';
+        result.Message = err instanceof Error ? err.message : String(err);
+        result.Error = err;
+        result.OriginalValues = this.Fields.map(f => ({ FieldName: f.Name, Value: f.OldValue }));
+        result.NewValues = this.Fields.map(f => ({ FieldName: f.Name, Value: f.Value }));
+        result.StartedAt = new Date();
+        result.EndedAt = new Date();
+        return result;
     }
 
     // ─── Booking ───────────────────────────────────────────────────────────────
@@ -401,7 +425,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
             const subscriptionID =
                 decision.Action === 'CreateNew'
-                    ? await this.createSubscription(product, rules, decision, options)
+                    ? await this.createSubscription(line, product, rules, decision, options)
                     : await this.touchExistingSubscription(decision, options);
 
             const term = decision.Term!;
@@ -549,6 +573,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     }
 
     private async createSubscription(
+        line: mjBizAppsOrdersOrderLineEntity,
         product: ProductRow,
         rules: SubscriptionTypeRules,
         decision: SubscriptionDecision,
@@ -559,6 +584,9 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         sub.NewRecord();
         sub.Set('SubscriptionNumber', await this.assignSubscriptionNumber());
         sub.Set('CompanyID', this.CompanyID);
+        // The BIRTH line (D39/D40) — which purchase brought this subscription into existence.
+        // Renewals append terms that carry their own OrderLineID; this one never changes.
+        sub.Set('OrderLineID', line.ID);
         sub.Set('SubscriptionTypeID', rules.ID);
         sub.Set('ProductID', product.ID);
         sub.Set('CustomerOrganizationID', this.CustomerOrganizationID);
@@ -600,10 +628,14 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         return decision.SubscriptionID!;
     }
 
+    /**
+     * Mint the next `SUB-{seq}` from the SubscriptionSequence singleton.
+     *
+     * A subscription number is member-facing — it is the "membership number" someone reads over the
+     * phone — so it gets its own counter rather than being derived from whichever order created it.
+     */
     private async assignSubscriptionNumber(): Promise<string> {
-        // Subscriptions have no dedicated sequence table; derive from the order number, which is
-        // already gap-conscious and unique, plus the term index appended by the caller.
-        return `SUB-${(this.OrderNumber ?? this.ID).replace(/^ORD-/, '')}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+        return `SUB-${String(await this.nextSequence('SubscriptionSequence')).padStart(6, '0')}`;
     }
 
     // ─── Numbering (D30) ───────────────────────────────────────────────────────
@@ -619,12 +651,24 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      * change would be a WHERE clause here plus a CompanyID on the sequence table.
      */
     private async assignOrderNumber(): Promise<string> {
+        return `ORD-${String(await this.nextSequence('OrderSequence')).padStart(6, '0')}`;
+    }
+
+    /**
+     * Take the next value from one of the singleton counter tables.
+     *
+     * Taken with UPDLOCK+HOLDLOCK inside the CALLER'S transaction, so concurrent confirms serialize
+     * on the counter row rather than colliding on the UNIQUE index — and a confirm that rolls back
+     * releases its number rather than burning it.
+     *
+     * `OUTPUT ... INTO` (not a bare `OUTPUT`): CodeGen puts an `__mj_UpdatedAt` trigger on every
+     * table, and SQL Server forbids a bare OUTPUT clause on a table that has triggers.
+     */
+    private async nextSequence(table: 'OrderSequence' | 'PaymentSequence' | 'SubscriptionSequence'): Promise<number> {
         const provider = this.ProviderToUse as unknown as { ExecuteSQL: (sql: string, params?: unknown[]) => Promise<unknown> };
         const rows = (await provider.ExecuteSQL(
-            // OUTPUT ... INTO (not a bare OUTPUT): CodeGen puts an __mj_UpdatedAt trigger on every
-            // table, and SQL Server forbids a bare OUTPUT clause on a table that has triggers.
             `DECLARE @seq TABLE (Seq INT);
-             UPDATE __mj_BizAppsOrders.OrderSequence WITH (UPDLOCK, HOLDLOCK)
+             UPDATE __mj_BizAppsOrders.${table} WITH (UPDLOCK, HOLDLOCK)
              SET NextSequenceNumber = NextSequenceNumber + 1
              OUTPUT deleted.NextSequenceNumber INTO @seq(Seq)
              WHERE ID = 1;
@@ -634,11 +678,11 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const seq = rows?.[0]?.Seq;
         if (!seq) {
             throw new Error(
-                `Could not obtain the next order number — the OrderSequence singleton (ID=1) is missing. ` +
+                `Could not obtain the next number from ${table} — its singleton row (ID=1) is missing. ` +
                     `It is seeded by the baseline migration.`,
             );
         }
-        return `ORD-${String(seq).padStart(6, '0')}`;
+        return seq;
     }
 
     // ─── Initial payment (D42) ─────────────────────────────────────────────────
@@ -732,20 +776,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     }
 
     private async assignPaymentNumber(): Promise<string> {
-        const provider = this.ProviderToUse as unknown as { ExecuteSQL: (sql: string, params?: unknown[]) => Promise<unknown> };
-        const rows = (await provider.ExecuteSQL(
-            // OUTPUT ... INTO (not a bare OUTPUT): CodeGen puts an __mj_UpdatedAt trigger on every
-            // table, and SQL Server forbids a bare OUTPUT clause on a table that has triggers.
-            `DECLARE @seq TABLE (Seq INT);
-             UPDATE __mj_BizAppsOrders.PaymentSequence WITH (UPDLOCK, HOLDLOCK)
-             SET NextSequenceNumber = NextSequenceNumber + 1
-             OUTPUT deleted.NextSequenceNumber INTO @seq(Seq)
-             WHERE ID = 1;
-             SELECT Seq FROM @seq;`,
-        )) as Array<{ Seq: number }>;
-        const seq = rows?.[0]?.Seq;
-        if (!seq) throw new Error('Could not obtain the next payment number — PaymentSequence (ID=1) is missing.');
-        return `PAY-${String(seq).padStart(6, '0')}`;
+        return `PAY-${String(await this.nextSequence('PaymentSequence')).padStart(6, '0')}`;
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────────

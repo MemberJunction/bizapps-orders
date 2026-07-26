@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Attendee Information Section -->
+    <!-- Attendee Details Section -->
     <mj-collapsible-panel
-        SectionKey="attendeeInformation"
-        SectionName="Attendee Information"
+        SectionKey="attendeeDetails"
+        SectionName="Attendee Details"
         Icon="fa fa-user-check"
         [Form]="this"
         [FormContext]="formContext">
@@ -45,10 +45,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Order Line Details Section -->
+    <!-- Order Line Information Section -->
     <mj-collapsible-panel
-        SectionKey="orderLineDetails"
-        SectionName="Order Line Details"
+        SectionKey="orderLineInformation"
+        SectionName="Order Line Information"
         Icon="fa fa-list-ol"
         Variant="inherited"
         InheritedFromEntity="MJ_BizApps_Orders: Order Lines"
@@ -213,7 +213,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-cog"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

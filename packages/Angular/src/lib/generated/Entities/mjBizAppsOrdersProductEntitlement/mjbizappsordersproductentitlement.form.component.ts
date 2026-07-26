@@ -18,7 +18,7 @@ export class mjBizAppsOrdersProductEntitlementFormComponent extends BaseFormComp
         this.initSections([
             { sectionKey: 'productAssociation', sectionName: 'Product Association', isExpanded: true },
             { sectionKey: 'entitlementConfiguration', sectionName: 'Entitlement Configuration', isExpanded: true },
-            { sectionKey: 'grantDetails', sectionName: 'Grant Details', isExpanded: true },
+            { sectionKey: 'resourceAllocation', sectionName: 'Resource Allocation', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false }
         ]);

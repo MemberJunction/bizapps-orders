@@ -44,22 +44,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="DriverClass"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="SubscriberScope"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="Sequence"
             Type="number"
             [EditMode]="EditMode"
@@ -76,11 +60,45 @@
 
     </mj-collapsible-panel>
 
+    <!-- Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="configuration"
+        SectionName="Configuration"
+        Icon="fa fa-cog"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DriverClass"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="SubscriberScope"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ConcurrencyMode"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
     <!-- Lifecycle Settings Section -->
     <mj-collapsible-panel
         SectionKey="lifecycleSettings"
         SectionName="Lifecycle Settings"
-        Icon="fa fa-clock"
+        Icon="fa fa-sync"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -123,13 +141,45 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ReactivationMode"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ReactivationWindowDays"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CancellationMode"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CancellationWindowDays"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financial and Billing Section -->
+    <!-- Financial Settings Section -->
     <mj-collapsible-panel
-        SectionKey="financialAndBilling"
-        SectionName="Financial and Billing"
+        SectionKey="financialSettings"
+        SectionName="Financial Settings"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -173,40 +223,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Renewal and Cancellation Section -->
-    <mj-collapsible-panel
-        SectionKey="renewalAndCancellation"
-        SectionName="Renewal and Cancellation"
-        Icon="fa fa-sync-alt"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ConcurrencyMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReactivationMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReactivationWindowDays"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -226,24 +242,8 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="CancellationMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="CancellationRefundMode"
             Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CancellationWindowDays"
-            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -262,7 +262,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-cog"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -289,31 +289,6 @@
     <!-- ========================================
          RELATED ENTITY PANELS
          ======================================== -->
-
-    <!-- Subscriptions Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersSubscriptions"
-        SectionName="Subscriptions"
-        Icon="fa fa-sync-alt"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptions')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','SubscriptionTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptions')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptions', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
 
     <!-- Products Section -->
     <mj-collapsible-panel
@@ -359,6 +334,31 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductTypes', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Subscriptions Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersSubscriptions"
+        SectionName="Subscriptions"
+        Icon="fa fa-sync-alt"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptions')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','SubscriptionTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptions')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptions', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

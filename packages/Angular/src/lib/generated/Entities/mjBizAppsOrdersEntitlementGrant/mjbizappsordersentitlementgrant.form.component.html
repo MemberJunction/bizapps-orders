@@ -44,6 +44,14 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Quantity"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -75,21 +83,13 @@
 
     </mj-collapsible-panel>
 
-    <!-- Grant Terms Section -->
+    <!-- Validity Period Section -->
     <mj-collapsible-panel
-        SectionKey="grantTerms"
-        SectionName="Grant Terms"
+        SectionKey="validityPeriod"
+        SectionName="Validity Period"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Quantity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -114,19 +114,9 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Provisioning Status Section -->
-    <mj-collapsible-panel
-        SectionKey="provisioningStatus"
-        SectionName="Provisioning Status"
-        Icon="fa fa-server"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="ProvisionedAt"
             Type="datepicker"
             [EditMode]="EditMode"

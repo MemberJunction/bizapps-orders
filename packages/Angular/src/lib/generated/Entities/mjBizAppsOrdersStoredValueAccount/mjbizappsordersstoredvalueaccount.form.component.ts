@@ -20,8 +20,8 @@ export class mjBizAppsOrdersStoredValueAccountFormComponent extends BaseFormComp
             { sectionKey: 'financials', sectionName: 'Financials', isExpanded: true },
             { sectionKey: 'relationships', sectionName: 'Relationships', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentDetails', sectionName: 'Payment Details', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersStoredValueTransactions', sectionName: 'Stored Value Transactions', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersStoredValueTransactions', sectionName: 'Stored Value Transactions', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentDetails', sectionName: 'Payment Details', isExpanded: false }
         ]);
     }
 }

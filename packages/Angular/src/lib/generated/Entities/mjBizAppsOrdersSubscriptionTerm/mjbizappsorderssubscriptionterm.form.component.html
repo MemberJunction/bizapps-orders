@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Subscription Context Section -->
+    <!-- Subscription Details Section -->
     <mj-collapsible-panel
-        SectionKey="subscriptionContext"
-        SectionName="Subscription Context"
-        Icon="fa fa-link"
+        SectionKey="subscriptionDetails"
+        SectionName="Subscription Details"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -43,14 +43,22 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Term Timeline Section -->
+    <!-- Timeline and Financials Section -->
     <mj-collapsible-panel
-        SectionKey="termTimeline"
-        SectionName="Term Timeline"
-        Icon="fa fa-calendar-alt"
+        SectionKey="timelineAndFinancials"
+        SectionName="Timeline and Financials"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -69,32 +77,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CanceledAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CancellationEffectiveDate"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Financial Details Section -->
-    <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -119,9 +101,19 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Revenue Recognition Section -->
+    <mj-collapsible-panel
+        SectionKey="revenueRecognition"
+        SectionName="Revenue Recognition"
+        Icon="fa fa-chart-line"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="RevenueRecognitionTypeID"
             Type="textbox"
             [EditMode]="EditMode"
@@ -131,18 +123,26 @@
 
     </mj-collapsible-panel>
 
-    <!-- Status and Audit Section -->
+    <!-- Cancellation Details Section -->
     <mj-collapsible-panel
-        SectionKey="statusAndAudit"
-        SectionName="Status and Audit"
-        Icon="fa fa-flag"
+        SectionKey="cancellationDetails"
+        SectionName="Cancellation Details"
+        Icon="fa fa-ban"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
-            FieldName="Status"
-            Type="select"
+            [ShowLabel]="true"
+            FieldName="CanceledAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CancellationEffectiveDate"
+            Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

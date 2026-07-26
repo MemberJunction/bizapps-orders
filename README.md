@@ -386,6 +386,56 @@ migrations-pg/                    ←  PG, produced by `npx mj sql-convert`
 
 At runtime `mj migrate` reads `DB_PLATFORM` and picks the right directory (`sqlserver` → `migrations/`, `postgresql` → `migrations-pg/`). CI applies the PG set to a fresh `postgres:17` container on every PR that touches migrations. Note the standing pre-production practice: schema changes **edit the original baseline migration in place** (clean rebuild + CodeGen re-run) — no incremental fix-up migrations until publish *(plan §2)*.
 
+Editing the baseline in place is only safe because rebuilding from zero is routine:
+
+```bash
+scripts/rebuild-db.sh                      # drop → MJ core → common → accounting → orders → seed metadata
+npm run mj:codegen                         # regenerate entity metadata + SQL objects
+scripts/append-codegen.sh                  # fold that output back BELOW the migration's banner
+npm run mj -- sync push --dir metadata     # this app's lookup tables
+```
+
+> The `append-codegen.sh` step is not optional. The generated half of the baseline — entity/field
+> metadata, base views, CRUD procs, permissions — is what makes a fresh `mj migrate` produce a
+> **working** database rather than bare tables. Skipping it after a CodeGen run silently discards it.
+
+---
+
+## Testing
+
+Two layers, both green as of the current build.
+
+**Unit** — `npm test` per package. Pure logic only (`SubscriptionBehavior`'s term arithmetic, the
+rev-rec allocators), no database.
+
+**Integration** — 37 checks across 4 bundles, driving a live database through the real stack:
+entity subclasses, DB triggers, and accounting's remote operation all participate. Nothing is mocked.
+
+| Bundle | Checks | Proves |
+|---|---|---|
+| `order-booking` | OB1–OB9 | confirm books one balanced JE per line, single-company, atomically *(D10/D12/D25)* |
+| `revenue-recognition` | RR1–RR7 | forward-dated release schedules that sum exactly to the line *(D14/D43)* |
+| `subscriptions` | SB1–SB12 | `SubscriptionType` rules → Subscription + terms, anchoring, proration, concurrency *(D45/D46)* |
+| `payments-rollups` | PR1–PR9 | rollup triggers, document numbering, instrument copy-on-use *(D30/D39/D42)* |
+
+```bash
+# fast inner loop — one bundle, or one check, with a stack trace on failure
+node test-harnesses/integration.mjs subscriptions
+node test-harnesses/integration.mjs subscriptions.SB5
+
+# the CI path — same registry, same checks, results recorded against the metadata Test records
+RUN_MUTATION_TESTS=1 MJ_INTEGRATION_TEST=1 \
+  npm run mj -- test suite --name "BizApps Orders Integration"
+```
+
+`RUN_MUTATION_TESTS=1` is **required**: every check is mutation-class by nature, so a run without it
+reports zero checks and passes vacuously.
+
+Checks are safe to run repeatedly against a working database. Each one owns a transaction that
+always rolls back, so orders, journal entries, payments and subscription terms never reach disk;
+only the inert catalog fixture is committed, and teardown sweeps it in FK order *(D48 — the design,
+and the Phase 0 spike behind it, are in [`plans/integration-testing-plan.md`](plans/integration-testing-plan.md) §0)*.
+
 ---
 
 ## Repository Structure
@@ -402,10 +452,14 @@ bizapps-orders/
 │   ├── Actions/                   # @mj-biz-apps/orders-actions
 │   ├── Server/                    # @mj-biz-apps/orders-server (OrdersEngine + factory + providers + remote ops)
 │   ├── CoreEntitiesServer/        # @mj-biz-apps/orders-core-entities-server (Save-override + lifecycle hooks)
+│   ├── IntegrationTests/          # @mj-biz-apps/orders-integration-tests (check bundles for `mj test`)
 │   └── Angular/                   # @mj-biz-apps/orders-ng
 ├── migrations/                    # T-SQL migrations (source of truth)
 ├── migrations-pg/                 # PG migrations (converter output + .pg-only patches)
 ├── metadata/                      # Seed data + entity metadata (synced via mj-sync)
+├── metadata-tests/                # MJ: Tests + Test Suite records (pushed separately, not production seed)
+├── scripts/                       # rebuild-db.sh, append-codegen.sh, link-local-apps.mjs
+├── test-harnesses/                # standalone dispatchers (integration.mjs, booking-live.mjs)
 └── plans/
     └── bizapps-orders-master.md   # Master plan & decision log (D1–D35) — the single source of truth
 ```
