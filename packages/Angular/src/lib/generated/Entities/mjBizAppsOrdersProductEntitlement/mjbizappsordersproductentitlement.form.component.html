@@ -10,22 +10,32 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Entitlement Configuration Section -->
+    <!-- Product Association Section -->
     <mj-collapsible-panel
-        SectionKey="entitlementConfiguration"
-        SectionName="Entitlement Configuration"
-        Icon="fa fa-cogs"
+        SectionKey="productAssociation"
+        SectionName="Product Association"
+        Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="ProductID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Entitlement Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="entitlementConfiguration"
+        SectionName="Entitlement Configuration"
+        Icon="fa fa-sliders-h"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -42,16 +52,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Entitlement Details Section -->
-    <mj-collapsible-panel
-        SectionKey="entitlementDetails"
-        SectionName="Entitlement Details"
-        Icon="fa fa-info-circle"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -60,6 +60,24 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Resource Allocation Section -->
+    <mj-collapsible-panel
+        SectionKey="resourceAllocation"
+        SectionName="Resource Allocation"
+        Icon="fa fa-tachometer-alt"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -76,14 +94,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -91,7 +101,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -123,7 +133,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersEntitlementGrants"
         SectionName="Entitlement Grants"
-        Icon="fa fa-shield-alt"
+        Icon="fa fa-ticket-alt"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

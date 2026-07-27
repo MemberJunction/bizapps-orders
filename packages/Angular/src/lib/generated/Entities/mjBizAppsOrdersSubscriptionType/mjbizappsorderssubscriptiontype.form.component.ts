@@ -18,12 +18,12 @@ export class mjBizAppsOrdersSubscriptionTypeFormComponent extends BaseFormCompon
         this.initSections([
             { sectionKey: 'generalInformation', sectionName: 'General Information', isExpanded: true },
             { sectionKey: 'timelineAndLifecycle', sectionName: 'Timeline and Lifecycle', isExpanded: true },
-            { sectionKey: 'financialSettings', sectionName: 'Financial Settings', isExpanded: true },
-            { sectionKey: 'operationsAndRenewals', sectionName: 'Operations and Renewals', isExpanded: true },
+            { sectionKey: 'billingAndRenewals', sectionName: 'Billing and Renewals', isExpanded: true },
+            { sectionKey: 'renewalAndCancellation', sectionName: 'Renewal and Cancellation', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductTypes', sectionName: 'Product Types', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false }
         ]);
     }
 }

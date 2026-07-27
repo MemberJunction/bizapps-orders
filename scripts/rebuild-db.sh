@@ -62,7 +62,25 @@ done
 say "4/6  bizapps-accounting"
 $MJ migrate --schema __mj_BizAppsAccounting --dir "$ACCOUNTING_REPO/migrations"
 
-say "5/6  bizapps-orders"
+# TRIM THE GENERATED HALF BEFORE APPLYING. Once CodeGen output lives in the baseline, a rebuild
+# produces a database whose entity metadata is ALREADY current — so the next CodeGen run has nothing
+# to do and emits only a delta, which append-codegen.sh then refuses (rightly) as a partial. The
+# cycle is only self-consistent if the rebuild applies the hand-authored DDL alone and CodeGen
+# regenerates the rest from scratch. This is what makes "edit the baseline in place" safe.
+say "5/6  bizapps-orders (hand-authored DDL only)"
+MARKER='CODEGEN OUTPUT — GENERATED CODE BELOW THIS LINE'
+ORDERS_MIGRATION=$(grep -rl "$MARKER" "$ROOT/migrations"/*.sql | head -1)
+if [[ -n "$ORDERS_MIGRATION" ]]; then
+    MARKER_LINE=$(grep -n "$MARKER" "$ORDERS_MIGRATION" | head -1 | cut -d: -f1)
+    BANNER_END=$(awk -v s="$MARKER_LINE" 'NR>=s && /^-- =+$/ { print NR; exit }' "$ORDERS_MIGRATION")
+    GENERATED_LINES=$(( $(wc -l < "$ORDERS_MIGRATION") - BANNER_END ))
+    if (( GENERATED_LINES > 0 )); then
+        printf '  trimming %s lines of generated output (CodeGen will regenerate them)\n' "$GENERATED_LINES"
+        head -n "$BANNER_END" "$ORDERS_MIGRATION" > "$ORDERS_MIGRATION.tmp"
+        mv "$ORDERS_MIGRATION.tmp" "$ORDERS_MIGRATION"
+    fi
+fi
+
 # --schema is REQUIRED, not optional. Without it `mj migrate` uses the CORE schema's flyway history,
 # which already carries a SQL_BASELINE from step 2 — so flyway skips this app's `B` baseline
 # entirely and reports "0 applied" while creating nothing.

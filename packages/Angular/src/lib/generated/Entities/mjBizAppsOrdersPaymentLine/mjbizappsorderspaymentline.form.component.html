@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Allocation Section -->
+    <!-- Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="paymentAllocation"
-        SectionName="Payment Allocation"
+        SectionKey="relationships"
+        SectionName="Relationships"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
@@ -56,22 +56,12 @@
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="Amount"
             Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Audit and Processing Section -->
-    <mj-collapsible-panel
-        SectionKey="auditAndProcessing"
-        SectionName="Audit and Processing"
-        Icon="fa fa-history"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

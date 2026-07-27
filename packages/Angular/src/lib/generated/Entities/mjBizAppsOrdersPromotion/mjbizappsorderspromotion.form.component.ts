@@ -17,14 +17,12 @@ export class mjBizAppsOrdersPromotionFormComponent extends BaseFormComponent {
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'promotionDetails', sectionName: 'Promotion Details', isExpanded: true },
-            { sectionKey: 'assignment', sectionName: 'Assignment', isExpanded: true },
-            { sectionKey: 'financialRules', sectionName: 'Financial Rules', isExpanded: true },
+            { sectionKey: 'rulesAndEligibility', sectionName: 'Rules and Eligibility', isExpanded: true },
             { sectionKey: 'usageLimits', sectionName: 'Usage Limits', isExpanded: true },
-            { sectionKey: 'scheduleAndStatus', sectionName: 'Schedule and Status', isExpanded: true },
-            { sectionKey: 'advancedConfiguration', sectionName: 'Advanced Configuration', isExpanded: true },
+            { sectionKey: 'timeline', sectionName: 'Timeline', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPromotionTargets', sectionName: 'Promotion Targets', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPromotionCodes', sectionName: 'Promotion Codes', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPromotionTargets', sectionName: 'Promotion Targets', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderAdjustments', sectionName: 'Order Adjustments', isExpanded: false }
         ]);
     }

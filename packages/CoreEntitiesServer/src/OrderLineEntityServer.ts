@@ -10,8 +10,13 @@
  *
  *   2. COMPUTE THE TOTALS. `LineTotalNet` / `LineTotalGross` are engine-materialized and never
  *      user-entered:
- *          LineTotalNet   = Quantity × UnitPrice × (1 − DiscountPct)
+ *          LineTotalNet   = (Quantity × UnitPrice × (1 − DiscountPct)) − DiscountAmount
  *          LineTotalGross = LineTotalNet + LineTax
+ *
+ *      DiscountPct and DiscountAmount are both applied, in that order, because they mean different
+ *      things: a percentage is a negotiated concession on the line, an amount is an allocated share
+ *      of a promotion (D70). The net is floored at zero — a discount larger than the line is a
+ *      configuration mistake, and a NEGATIVE line would silently become revenue when booked.
  *      The journal entry is built from the same arithmetic, so a client-supplied total can never
  *      disagree with what was booked.
  *
@@ -93,7 +98,10 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
 
     private computeTotals(): void {
         const gross = money(this.Quantity * this.UnitPrice);
-        const net = money(gross * (1 - (this.DiscountPct ?? 0)));
+        const afterPct = money(gross * (1 - (this.DiscountPct ?? 0)));
+        // Floored at zero: over-discounting is a configuration mistake, and a negative line would
+        // flip sign in the journal entry and read as revenue.
+        const net = money(Math.max(0, afterPct - (this.DiscountAmount ?? 0)));
         this.LineTotalNet = net;
         this.LineTotalGross = money(net + (this.LineTax ?? 0));
     }

@@ -11,7 +11,8 @@
  *         Cr  Sales                gross               (recognized at booking)
  *         Cr  Deferred Revenue     gross               (deferred — released per the schedule)
  *
- * where gross = Quantity × UnitPrice, discount = gross × DiscountPct, net = gross − discount.
+ * where gross = Quantity × UnitPrice, discount = (gross × DiscountPct) + DiscountAmount, and
+ * net = gross − discount. Both discount fields are applied because the line applies both.
  * The entry balances by construction: net + discount = gross.
  *
  * Plan D14/D43 — RECOGNITION. The product's `RevenueRecognitionType` names a pluggable driver
@@ -204,7 +205,13 @@ export class OrderJournalEntryFactory {
         // and the finished lines are flipped once, at the end, when the line reverses.
         const isReversal = line.Quantity < 0;
         const gross = money(Math.abs(line.Quantity) * line.UnitPrice);
-        const discount = money(gross * (line.DiscountPct ?? 0));
+        // BOTH discount fields, and in the same order OrderLineEntityServer applies them (D70).
+        // The journal entry must mirror the line's arithmetic exactly — if the two disagree, the
+        // entry still BALANCES (AR simply differs from the line total) and nothing downstream
+        // reports it, which is the failure mode this whole area keeps producing.
+        const pctDiscount = money(gross * (line.DiscountPct ?? 0));
+        const amountDiscount = money(Math.min(Math.max(0, gross - pctDiscount), line.DiscountAmount ?? 0));
+        const discount = money(pctDiscount + amountDiscount);
         const net = money(gross - discount);
         const tax = money(Math.abs(line.LineTax ?? 0));
 

@@ -50,33 +50,31 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Assignment Section -->
-    <mj-collapsible-panel
-        SectionKey="assignment"
-        SectionName="Assignment"
-        Icon="fa fa-building"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="CompanyID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financial Rules Section -->
+    <!-- Rules and Eligibility Section -->
     <mj-collapsible-panel
-        SectionKey="financialRules"
-        SectionName="Financial Rules"
-        Icon="fa fa-dollar-sign"
+        SectionKey="rulesAndEligibility"
+        SectionName="Rules and Eligibility"
+        Icon="fa fa-check-double"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -127,6 +125,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="QualifierKey"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -134,7 +140,7 @@
     <mj-collapsible-panel
         SectionKey="usageLimits"
         SectionName="Usage Limits"
-        Icon="fa fa-chart-line"
+        Icon="fa fa-ban"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -156,10 +162,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Schedule and Status Section -->
+    <!-- Timeline Section -->
     <mj-collapsible-panel
-        SectionKey="scheduleAndStatus"
-        SectionName="Schedule and Status"
+        SectionKey="timeline"
+        SectionName="Timeline"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -211,32 +217,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Advanced Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="advancedConfiguration"
-        SectionName="Advanced Configuration"
-        Icon="fa fa-cogs"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="false"
-            FieldName="QualifierKey"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -244,7 +224,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -272,31 +252,6 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Promotion Targets Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPromotionTargets"
-        SectionName="Promotion Targets"
-        Icon="fa fa-bullseye"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPromotionTargets')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Targets','PromotionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionTargets')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionTargets', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Promotion Codes Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPromotionCodes"
@@ -322,11 +277,36 @@
         }
     </mj-collapsible-panel>
 
+    <!-- Promotion Targets Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPromotionTargets"
+        SectionName="Promotion Targets"
+        Icon="fa fa-bullseye"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPromotionTargets')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Targets','PromotionID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionTargets')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionTargets', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <!-- Order Adjustments Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderAdjustments"
         SectionName="Order Adjustments"
-        Icon="fa fa-money-bill-wave"
+        Icon="fa fa-tags"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

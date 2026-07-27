@@ -10,22 +10,32 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Bundle Configuration Section -->
+    <!-- Bundle Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="bundleConfiguration"
-        SectionName="Bundle Configuration"
-        Icon="fa fa-layer-group"
+        SectionKey="bundleRelationships"
+        SectionName="Bundle Relationships"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="BundleProductID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Component Details Section -->
+    <mj-collapsible-panel
+        SectionKey="componentDetails"
+        SectionName="Component Details"
+        Icon="fa fa-box"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -35,16 +45,6 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Pricing and Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="pricingAndConfiguration"
-        SectionName="Pricing and Configuration"
-        Icon="fa fa-tags"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -53,6 +53,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Pricing and Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="pricingAndConfiguration"
+        SectionName="Pricing and Configuration"
+        Icon="fa fa-sliders-h"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

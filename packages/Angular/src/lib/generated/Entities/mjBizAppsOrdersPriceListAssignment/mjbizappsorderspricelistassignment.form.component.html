@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="assignmentDetails"
         SectionName="Assignment Details"
-        Icon="fa fa-tasks"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -26,6 +26,32 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Priority"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Comments"
+            Type="textarea"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Target Entity Section -->
+    <mj-collapsible-panel
+        SectionKey="targetEntity"
+        SectionName="Target Entity"
+        Icon="fa fa-user-tag"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -44,22 +70,14 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Priority"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Timeline and Status Section -->
+    <!-- Validity Period Section -->
     <mj-collapsible-panel
-        SectionKey="timelineAndStatus"
-        SectionName="Timeline and Status"
-        Icon="fa fa-clock"
+        SectionKey="validityPeriod"
+        SectionName="Validity Period"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -86,24 +104,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Comments"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Reference Information Section -->
-    <mj-collapsible-panel
-        SectionKey="referenceInformation"
-        SectionName="Reference Information"
-        Icon="fa fa-info-circle"
-        [Form]="this"
-        [FormContext]="formContext">
 
     </mj-collapsible-panel>
 

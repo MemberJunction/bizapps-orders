@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Provider Configuration Section -->
+    <!-- Provider Details Section -->
     <mj-collapsible-panel
-        SectionKey="providerConfiguration"
-        SectionName="Provider Configuration"
-        Icon="fa fa-cogs"
+        SectionKey="providerDetails"
+        SectionName="Provider Details"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -43,6 +43,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="configuration"
+        SectionName="Configuration"
+        Icon="fa fa-sliders-h"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -51,16 +61,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Operational Settings Section -->
-    <mj-collapsible-panel
-        SectionKey="operationalSettings"
-        SectionName="Operational Settings"
-        Icon="fa fa-toggle-on"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -137,6 +137,31 @@
         }
     </mj-collapsible-panel>
 
+    <!-- Payment Intents Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPaymentIntents"
+        SectionName="Payment Intents"
+        Icon="fa fa-credit-card"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentIntents')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Intents','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Intents')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentIntents')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentIntents', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <!-- Subscriptions Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersSubscriptions"
@@ -181,31 +206,6 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentHeaders', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Payment Intents Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPaymentIntents"
-        SectionName="Payment Intents"
-        Icon="fa fa-credit-card"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentIntents')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Intents','PaymentProviderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Intents')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentIntents')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentIntents', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

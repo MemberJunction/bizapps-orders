@@ -52,11 +52,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Fulfillment and Tax Settings Section -->
+    <!-- Operational Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="fulfillmentAndTaxSettings"
-        SectionName="Fulfillment and Tax Settings"
-        Icon="fa fa-truck"
+        SectionKey="operationalConfiguration"
+        SectionName="Operational Configuration"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -72,6 +72,22 @@
             [ShowLabel]="true"
             FieldName="DefaultIsTaxable"
             Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProductExtensionEntity"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="OrderLineExtensionEntity"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -102,32 +118,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Technical Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="technicalConfiguration"
-        SectionName="Technical Configuration"
-        Icon="fa fa-code"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProductExtensionEntity"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="OrderLineExtensionEntity"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
