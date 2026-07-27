@@ -21,6 +21,8 @@ import {
     LoadPaymentLineEntityServer,
     LoadRefundPaymentOperation,
     LoadApplyAccountCreditOperation,
+    LoadPreviewPriceOperation,
+    LoadDefaultPriceResolver,
     LoadRevenueRecognitionDrivers,
     LoadSpawnRenewalsOperation,
     LoadSubscriptionBehavior,
@@ -64,6 +66,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadPaymentLineEntityServer();    // the over-application guard
     LoadRefundPaymentOperation();     // the 'Orders.RefundPayment' remote operation (D17)
     LoadApplyAccountCreditOperation(); // the 'Orders.ApplyAccountCredit' remote operation (D68)
+    LoadPreviewPriceOperation();       // the 'Orders.PreviewPrice' dry run (D69)
+    LoadDefaultPriceResolver();        // the data-driven price resolver the walk falls back to (D69)
     LoadRevenueRecognitionDrivers();   // the three shipped rev-rec drivers (D43)
     LoadSubscriptionBehavior();        // the base subscription rules engine (D45)
     LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation

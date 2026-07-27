@@ -16,24 +16,24 @@ export class mjBizAppsOrdersOrderLineFormComponent extends BaseFormComponent {
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'orderLineRelationships', sectionName: 'Order Line Relationships', isExpanded: true },
-            { sectionKey: 'productAndFulfillment', sectionName: 'Product and Fulfillment', isExpanded: true },
-            { sectionKey: 'orderLineDetails', sectionName: 'Order Line Details', isExpanded: true },
-            { sectionKey: 'pricingAndAmounts', sectionName: 'Pricing and Amounts', isExpanded: true },
-            { sectionKey: 'shippingAndFulfillment', sectionName: 'Shipping and Fulfillment', isExpanded: true },
-            { sectionKey: 'subscriptionAndRevenue', sectionName: 'Subscription and Revenue', isExpanded: true },
+            { sectionKey: 'orderRelationships', sectionName: 'Order Relationships', isExpanded: true },
+            { sectionKey: 'productInformation', sectionName: 'Product Information', isExpanded: true },
+            { sectionKey: 'orderDetails', sectionName: 'Order Details', isExpanded: true },
+            { sectionKey: 'pricingAndCharges', sectionName: 'Pricing and Charges', isExpanded: true },
+            { sectionKey: 'shippingDetails', sectionName: 'Shipping Details', isExpanded: true },
+            { sectionKey: 'accountingInformation', sectionName: 'Accounting Information', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLinePriceComponents', sectionName: 'Order Line Price Components', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderAdjustmentAllocations', sectionName: 'Order Adjustment Allocations', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersStoredValueAccounts', sectionName: 'Stored Value Accounts', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderAdjustmentAllocations', sectionName: 'Order Adjustment Allocations', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderChargeAllocations', sectionName: 'Order Charge Allocations', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLineDimensions', sectionName: 'Order Line Dimensions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderAdjustments', sectionName: 'Order Adjustments', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLineDimensions', sectionName: 'Order Line Dimensions', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersOrderChargeAllocations', sectionName: 'Order Charge Allocations', isExpanded: false }
         ]);
     }
 }

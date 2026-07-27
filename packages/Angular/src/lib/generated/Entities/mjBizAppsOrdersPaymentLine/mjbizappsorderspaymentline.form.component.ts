@@ -17,7 +17,7 @@ export class mjBizAppsOrdersPaymentLineFormComponent extends BaseFormComponent {
         this.initSections([
             { sectionKey: 'paymentAllocation', sectionName: 'Payment Allocation', isExpanded: true },
             { sectionKey: 'financialDetails', sectionName: 'Financial Details', isExpanded: true },
-            { sectionKey: 'auditAndTracking', sectionName: 'Audit and Tracking', isExpanded: true },
+            { sectionKey: 'auditAndProcessing', sectionName: 'Audit and Processing', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

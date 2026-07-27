@@ -47,6 +47,7 @@ import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { ResolvePrice, type ResolvedPrice } from './PriceResolver.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import {
@@ -138,6 +139,8 @@ interface CreateJournalEntriesResult {
 @RegisterClass(BaseEntity, ORDER_ENTITY)
 export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     private _lines: mjBizAppsOrdersOrderLineEntity[] = [];
+    /** Price decompositions produced during this save, written once the lines have IDs (D69). */
+    private readonly _priceComponents = new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>();
 
     /**
      * Unsaved child lines to persist with this order (plan D12). Populate before `Save()` when
@@ -225,6 +228,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             const decisions = booking ? await this.decideSubscriptions() : new Map();
 
             await this.savePendingLines(options, decisions);
+            await this.savePriceComponents(options);
 
             if (booking) {
                 const lines = await this.loadLinesForBooking();
@@ -301,6 +305,11 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             // Events carry their own service period — the event happens when it happens.
             await this.applyEventServicePeriod(line);
 
+            // Price BEFORE the line is written, and after proration has settled the quantity —
+            // quantity bands and tiers are a function of the quantity actually being bought, so
+            // pricing a pre-prorated quantity would band on a number that never reaches the line.
+            await this.applyResolvedPrice(line);
+
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
@@ -309,6 +318,143 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             }
         }
         this._lines = [];
+    }
+
+    /**
+     * Fill `UnitPrice` from the pricing engine when the caller did not state one (D69).
+     *
+     * DIRECT ENTRY STILL WINS, and that is deliberate rather than transitional (D21): a stated price
+     * is a decision somebody made, and an engine that overrode it would make the order say something
+     * other than what was agreed. Resolution fills a blank; it never argues.
+     *
+     * `ProductPriceID` records WHICH rule produced the number, so a disputed invoice can be traced
+     * back to the rule rather than to "the system". Without it the stamp is an assertion with no
+     * evidence behind it.
+     *
+     * Refusal is governed by `OrderCompanyPolicy.RefuseUnpricedLines` (default ON, per D12's
+     * precedent): a line nobody can price is refused rather than booked at zero, because an invoice
+     * for nothing looks exactly like a deliberate freebie.
+     */
+    private async applyResolvedPrice(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        // A stated price ends it. `UnitPrice` is NOT NULL with no sentinel, so "not stated" has to
+        // be read from the field's dirty state rather than from its value — 0 is a legitimate price
+        // for a free line and must not be mistaken for silence.
+        const field = line.GetFieldByName('UnitPrice');
+        const stated = field?.Dirty === true || (line.UnitPrice ?? 0) > 0;
+        if (stated) return;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        const product = await this.loadProductForPricing(line.ProductID);
+        const resolved = await ResolvePrice(
+            {
+                ProductID: line.ProductID,
+                ProductCategoryID: product?.ProductCategoryID ?? null,
+                CompanyID: product?.CompanyID ?? this.CompanyID,
+                Quantity: Number(line.Quantity ?? 0),
+                AsOf: this.OrderDate ? new Date(this.OrderDate) : new Date(),
+                OrganizationID: this.BillToOrganizationID ?? null,
+                PersonID: this.BillToPersonID ?? null,
+            },
+            provider,
+            user,
+        );
+
+        if (!resolved) {
+            if (await this.refusesUnpricedLines()) {
+                throw new Error(
+                    `Order line ${line.LineNumber} (${product?.Name ?? line.ProductID}) cannot be priced: no price ` +
+                        `rule was found for this product, and no UnitPrice was supplied. Add a price for the product ` +
+                        `or state one on the line.`,
+                );
+            }
+            return;
+        }
+
+        line.UnitPrice = resolved.UnitPrice;
+        line.ProductPriceID = resolved.ProductPriceID;
+        this._priceComponents.set(line, resolved);
+    }
+
+    /** Product facts pricing needs: its category (for the walk) and its company. */
+    private async loadProductForPricing(
+        productID: string,
+    ): Promise<{ ProductCategoryID: string | null; CompanyID: string; Name: string } | null> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ ProductCategoryID: string | null; CompanyID: string; Name: string }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Products',
+                ExtraFilter: `ID = '${productID}'`,
+                Fields: ['ProductCategoryID', 'CompanyID', 'Name'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        return res?.Results?.[0] ?? null;
+    }
+
+    /** Company policy, defaulting to REFUSE when no policy row exists. */
+    private async refusesUnpricedLines(): Promise<boolean> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ RefuseUnpricedLines: boolean }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Order Company Policies',
+                ExtraFilter: `ID = '${this.CompanyID}'`,
+                Fields: ['RefuseUnpricedLines'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        const row = res?.Results?.[0];
+        // No row means defaults, and the default is to refuse.
+        return row ? row.RefuseUnpricedLines !== false : true;
+    }
+
+    /**
+     * Write the price decomposition for lines that were priced by the engine (D69).
+     *
+     * Runs AFTER the lines are saved, because a component points at a line that must already exist.
+     * Pricing disputes are inevitable and "the system computed it" is not an answer to a customer or
+     * an auditor, so the reasoning is stored rather than recomputed later against rules that may by
+     * then have changed.
+     */
+    private async savePriceComponents(options?: EntitySaveOptions): Promise<void> {
+        if (!this._priceComponents.size) return;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const md = new Metadata();
+
+        for (const [line, resolved] of this._priceComponents) {
+            let seq = 0;
+            for (const c of resolved.Components) {
+                const row = await provider.GetEntityObject<BaseEntity>(
+                    'MJ_BizApps_Orders: Order Line Price Components',
+                    user,
+                );
+                row.NewRecord();
+                row.Set('OrderLineID', line.ID);
+                row.Set('Sequence', seq++);
+                row.Set('ComponentType', c.ComponentType);
+                row.Set('Label', c.Label);
+                row.Set('Amount', c.Amount);
+                row.Set('RunningTotal', c.RunningTotal);
+                if (c.SourceEntityName && c.SourceRecordID) {
+                    const ent = md.Entities.find((e) => e.Name === c.SourceEntityName);
+                    if (ent) {
+                        row.Set('SourceEntityID', ent.ID);
+                        row.Set('SourceRecordID', c.SourceRecordID);
+                    }
+                }
+                if (!(await row.Save(options))) {
+                    throw new Error(
+                        `Failed to record the price breakdown for line ${line.LineNumber}: ` +
+                            `${row.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    );
+                }
+            }
+        }
+        this._priceComponents.clear();
     }
 
     /**

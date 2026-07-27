@@ -10,13 +10,22 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Configuration Section -->
+    <!-- Payment Context Section -->
     <mj-collapsible-panel
-        SectionKey="paymentConfiguration"
-        SectionName="Payment Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="paymentContext"
+        SectionName="Payment Context"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CompanyID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -26,19 +35,20 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Payment Provider Details Section -->
+    <mj-collapsible-panel
+        SectionKey="paymentProviderDetails"
+        SectionName="Payment Provider Details"
+        Icon="fa fa-network-wired"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
             FieldName="PaymentProviderID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="SourceCustomerPaymentMethodID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -63,13 +73,22 @@
 
     </mj-collapsible-panel>
 
-    <!-- Card Details Section -->
+    <!-- Payment Instrument Section -->
     <mj-collapsible-panel
-        SectionKey="cardDetails"
-        SectionName="Card Details"
+        SectionKey="paymentInstrument"
+        SectionName="Payment Instrument"
         Icon="fa fa-credit-card"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="SourceCustomerPaymentMethodID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -214,15 +233,6 @@
         Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CompanyID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

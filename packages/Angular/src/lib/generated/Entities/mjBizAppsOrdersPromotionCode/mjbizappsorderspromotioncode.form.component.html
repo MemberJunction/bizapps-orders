@@ -10,25 +10,6 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Promotion Assignment Section -->
-    <mj-collapsible-panel
-        SectionKey="promotionAssignment"
-        SectionName="Promotion Assignment"
-        Icon="fa fa-link"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="false"
-            FieldName="PromotionID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
     <!-- Promotion Details Section -->
     <mj-collapsible-panel
         SectionKey="promotionDetails"
@@ -39,16 +20,51 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="PromotionID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="Code"
             Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Usage Restrictions Section -->
+    <mj-collapsible-panel
+        SectionKey="usageRestrictions"
+        SectionName="Usage Restrictions"
+        Icon="fa fa-calendar-alt"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MaxRedemptions"
+            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="MaxRedemptions"
-            Type="number"
+            FieldName="EffectiveFrom"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="EffectiveTo"
+            Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -63,11 +79,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Access Restrictions Section -->
+    <!-- Access Control Section -->
     <mj-collapsible-panel
-        SectionKey="accessRestrictions"
-        SectionName="Access Restrictions"
-        Icon="fa fa-user-lock"
+        SectionKey="accessControl"
+        SectionName="Access Control"
+        Icon="fa fa-shield-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -87,32 +103,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Validity Period Section -->
-    <mj-collapsible-panel
-        SectionKey="validityPeriod"
-        SectionName="Validity Period"
-        Icon="fa fa-calendar-alt"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="EffectiveFrom"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="EffectiveTo"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
@@ -153,7 +143,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderAdjustments"
         SectionName="Order Adjustments"
-        Icon="fa fa-tags"
+        Icon="fa fa-money-bill-wave"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

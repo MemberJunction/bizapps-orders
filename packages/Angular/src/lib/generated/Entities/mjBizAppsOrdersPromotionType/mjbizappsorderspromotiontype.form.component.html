@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Promotion Type Details Section -->
+    <!-- Promotion Definition Section -->
     <mj-collapsible-panel
-        SectionKey="promotionTypeDetails"
-        SectionName="Promotion Type Details"
+        SectionKey="promotionDefinition"
+        SectionName="Promotion Definition"
         Icon="fa fa-tag"
         [Form]="this"
         [FormContext]="formContext">
@@ -41,6 +41,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="configuration"
+        SectionName="Configuration"
+        Icon="fa fa-sliders-h"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

@@ -74,6 +74,28 @@ export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentL
 export { RefundPaymentOperation, LoadRefundPaymentOperation } from './RefundPaymentOperation.js';
 export type { RefundPaymentInput, RefundPaymentOutput } from './RefundPaymentOperation.js';
 export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './ApplyAccountCreditOperation.js';
+// Pricing (D69): the pure engine, the resolver walk + its plugin seam, the dry run, and the
+// write-time guard that stops an ambiguous rule set reaching an order.
+export { PreviewPriceOperation, LoadPreviewPriceOperation } from './PreviewPriceOperation.js';
+export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
+export { ProductPriceEntityServer } from './ProductPriceEntityServer.js';
+export {
+    BasePriceResolver,
+    DefaultPriceResolver,
+    LoadDefaultPriceResolver,
+    PriceResolutionError,
+    ResolvePrice,
+    ResolvePriceListForCustomer,
+} from './PriceResolver.js';
+export type { PriceResolutionContext, ResolvedPrice, PriceComponentDraft } from './PriceResolver.js';
+export {
+    AllocateProRata,
+    ComputeAmount,
+    IsRuleApplicable,
+    Money,
+    PickPriceRule,
+} from './PricingBehavior.js';
+export type { PriceRule, PriceTierRule, PriceContext, PricingModel, InapplicableReason, RulePick } from './PricingBehavior.js';
 export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyAccountCreditOperation.js';
 
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';

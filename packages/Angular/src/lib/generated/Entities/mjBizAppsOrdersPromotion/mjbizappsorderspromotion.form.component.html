@@ -50,9 +50,19 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Assignment Section -->
+    <mj-collapsible-panel
+        SectionKey="assignment"
+        SectionName="Assignment"
+        Icon="fa fa-building"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="CompanyID"
             Type="textbox"
             [EditMode]="EditMode"
@@ -101,32 +111,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Eligibility Rules Section -->
-    <mj-collapsible-panel
-        SectionKey="eligibilityRules"
-        SectionName="Eligibility Rules"
-        Icon="fa fa-check-circle"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="MaxRedemptions"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="MaxRedemptionsPerCustomer"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -143,11 +127,29 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Usage Limits Section -->
+    <mj-collapsible-panel
+        SectionKey="usageLimits"
+        SectionName="Usage Limits"
+        Icon="fa fa-chart-line"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="QualifierKey"
-            Type="textbox"
+            FieldName="MaxRedemptions"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MaxRedemptionsPerCustomer"
+            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -220,11 +222,29 @@
 
     </mj-collapsible-panel>
 
+    <!-- Advanced Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="advancedConfiguration"
+        SectionName="Advanced Configuration"
+        Icon="fa fa-cogs"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
+            FieldName="QualifierKey"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
     <!-- System Metadata Section -->
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-cog"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -256,7 +276,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPromotionTargets"
         SectionName="Promotion Targets"
-        Icon="fa fa-bullhorn"
+        Icon="fa fa-bullseye"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
@@ -306,7 +326,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderAdjustments"
         SectionName="Order Adjustments"
-        Icon="fa fa-tags"
+        Icon="fa fa-money-bill-wave"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

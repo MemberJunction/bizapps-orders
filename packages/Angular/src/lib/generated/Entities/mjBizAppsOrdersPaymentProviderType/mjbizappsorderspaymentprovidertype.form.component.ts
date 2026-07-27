@@ -18,7 +18,6 @@ export class mjBizAppsOrdersPaymentProviderTypeFormComponent extends BaseFormCom
         this.initSections([
             { sectionKey: 'providerDetails', sectionName: 'Provider Details', isExpanded: true },
             { sectionKey: 'capabilities', sectionName: 'Capabilities', isExpanded: true },
-            { sectionKey: 'configuration', sectionName: 'Configuration', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentProviders', sectionName: 'Payment Providers', isExpanded: false }
         ]);

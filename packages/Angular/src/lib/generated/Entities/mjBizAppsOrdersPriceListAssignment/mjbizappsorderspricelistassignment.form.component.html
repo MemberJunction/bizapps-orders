@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="assignmentDetails"
         SectionName="Assignment Details"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-tasks"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -29,8 +29,52 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="OrganizationID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="PersonID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="Priority"
             Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Timeline and Status Section -->
+    <mj-collapsible-panel
+        SectionKey="timelineAndStatus"
+        SectionName="Timeline and Status"
+        Icon="fa fa-clock"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="StartedAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="EndedAt"
+            Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -53,57 +97,13 @@
 
     </mj-collapsible-panel>
 
-    <!-- Target Entity Section -->
+    <!-- Reference Information Section -->
     <mj-collapsible-panel
-        SectionKey="targetEntity"
-        SectionName="Target Entity"
-        Icon="fa fa-user-friends"
+        SectionKey="referenceInformation"
+        SectionName="Reference Information"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="OrganizationID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PersonID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Timeline Section -->
-    <mj-collapsible-panel
-        SectionKey="timeline"
-        SectionName="Timeline"
-        Icon="fa fa-calendar-alt"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="StartedAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="EndedAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 

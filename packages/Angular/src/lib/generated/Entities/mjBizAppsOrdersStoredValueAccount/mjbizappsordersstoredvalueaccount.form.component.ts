@@ -18,7 +18,7 @@ export class mjBizAppsOrdersStoredValueAccountFormComponent extends BaseFormComp
         this.initSections([
             { sectionKey: 'instrumentDetails', sectionName: 'Instrument Details', isExpanded: true },
             { sectionKey: 'issuanceInformation', sectionName: 'Issuance Information', isExpanded: true },
-            { sectionKey: 'financials', sectionName: 'Financials', isExpanded: true },
+            { sectionKey: 'financialDetails', sectionName: 'Financial Details', isExpanded: true },
             { sectionKey: 'beneficiaryInformation', sectionName: 'Beneficiary Information', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersStoredValueTransactions', sectionName: 'Stored Value Transactions', isExpanded: false },

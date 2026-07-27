@@ -119,9 +119,21 @@ function isoDayOfWeek(d: Date): number {
     return js === 0 ? 7 : js;
 }
 
-/** Midnight-normalised copy, so a date-only window compares by day rather than by instant. */
-function startOfDay(d: Date): Date {
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+/** The LOCAL calendar day of a moment, as a comparable number (yyyymmdd). */
+function localDayNumber(d: Date): number {
+    return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+}
+
+/**
+ * The calendar day of an EffectiveFrom/EffectiveTo bound, as a comparable number.
+ *
+ * These come from SQL `DATE` columns, which arrive as midnight UTC — and JS parses a bare
+ * '2026-07-15' as UTC while parsing '2026-07-15T12:00' as LOCAL. Reading a bound with local getters
+ * therefore shifts it a day backwards for anyone west of UTC, which silently expires rules a day
+ * early. A DATE means a calendar day with no timezone, so its UTC parts are the honest reading.
+ */
+function boundDayNumber(d: Date): number {
+    return d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate();
 }
 
 /**
@@ -137,10 +149,10 @@ export function IsRuleApplicable(rule: PriceRule, ctx: PriceContext): Inapplicab
     if (rule.MinQuantity != null && ctx.Quantity < rule.MinQuantity - EPSILON) return 'QuantityBelowMin';
     if (rule.MaxQuantity != null && ctx.Quantity > rule.MaxQuantity + EPSILON) return 'QuantityAboveMax';
 
-    // Absolute window is DATE-grained: a rule effective from the 1st applies all of the 1st.
-    const day = startOfDay(ctx.AsOf).getTime();
-    if (day < startOfDay(new Date(rule.EffectiveFrom)).getTime()) return 'NotYetEffective';
-    if (rule.EffectiveTo != null && day > startOfDay(new Date(rule.EffectiveTo)).getTime()) return 'Expired';
+    // Absolute window is DATE-grained: a rule effective from the 1st applies for all of the 1st.
+    const day = localDayNumber(ctx.AsOf);
+    if (day < boundDayNumber(new Date(rule.EffectiveFrom))) return 'NotYetEffective';
+    if (rule.EffectiveTo != null && day > boundDayNumber(new Date(rule.EffectiveTo))) return 'Expired';
 
     const months = parseNumberList(rule.RecurrenceMonths);
     if (months && !months.has(ctx.AsOf.getMonth() + 1)) return 'MonthExcluded';
@@ -269,30 +281,32 @@ export function ComputeAmount(rule: PriceRule, quantity: number): number {
         case 'Tiered': {
             const tiers = orderedTiers(rule);
             if (!tiers.length) return Money(rule.Amount * quantity);
-            let remaining = quantity;
+            // GRADUATED: each band prices only the units that fall inside it.
+            //
+            // A band [Min, Max] covers the units ABOVE Min-1 and up to Max, so the count inside it
+            // is `min(quantity, Max) - (Min - 1)`, floored at zero. Expressing it as an exclusive
+            // lower bound rather than an inclusive count is what makes fractional quantities and
+            // the unbounded top band fall out without special cases.
             let total = 0;
-            let floor = 0;
             for (const t of tiers) {
-                if (remaining <= EPSILON) break;
-                // Units BELOW this tier's minimum are priced by earlier tiers (or by the rule's own
-                // Amount when the bands do not start at zero).
-                if (t.MinQuantity > floor + EPSILON) {
-                    const gap = Math.min(remaining, t.MinQuantity - floor);
-                    total += gap * rule.Amount;
-                    remaining -= gap;
-                    floor = t.MinQuantity;
-                    if (remaining <= EPSILON) break;
-                }
-                const top = t.MaxQuantity == null ? Infinity : t.MaxQuantity;
-                const width = top - Math.max(floor, t.MinQuantity - 1) === Infinity ? Infinity : top - floor;
-                const take = Math.min(remaining, width);
-                total += take * t.Amount;
-                remaining -= take;
-                floor += take;
+                const lower = t.MinQuantity - 1;
+                const upper = t.MaxQuantity == null ? Infinity : t.MaxQuantity;
+                const units = Math.max(0, Math.min(quantity, upper) - lower);
+                if (units <= EPSILON) continue;
+                total += units * t.Amount;
             }
-            // Anything past the top band keeps the top band's rate rather than falling off a cliff.
-            if (remaining > EPSILON) {
-                total += remaining * tiers[tiers.length - 1].Amount;
+            // Units below the first band's floor are priced by the rule's own Amount — a band table
+            // starting at 10 must not make an order for 5 free.
+            const firstFloor = tiers[0].MinQuantity - 1;
+            if (firstFloor > EPSILON) {
+                total += Math.min(quantity, firstFloor) * rule.Amount;
+            }
+            // Units ABOVE a bounded top band keep that band's rate rather than falling off a cliff.
+            // Without this a bounded table silently stops charging past its last bound, which reads
+            // as a discount and is really a hole.
+            const last = tiers[tiers.length - 1];
+            if (last.MaxQuantity != null && quantity > last.MaxQuantity + EPSILON) {
+                total += (quantity - last.MaxQuantity) * last.Amount;
             }
             return Money(total);
         }

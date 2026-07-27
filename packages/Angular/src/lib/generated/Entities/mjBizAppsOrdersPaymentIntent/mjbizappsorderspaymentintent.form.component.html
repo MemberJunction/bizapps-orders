@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Provider Information Section -->
+    <!-- Payment Provider Details Section -->
     <mj-collapsible-panel
-        SectionKey="providerInformation"
-        SectionName="Provider Information"
+        SectionKey="paymentProviderDetails"
+        SectionName="Payment Provider Details"
         Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
@@ -34,6 +34,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProviderEventID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -41,7 +49,7 @@
     <mj-collapsible-panel
         SectionKey="paymentStatus"
         SectionName="Payment Status"
-        Icon="fa fa-check-circle"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -55,8 +63,8 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ProviderEventID"
-            Type="textbox"
+            FieldName="Amount"
+            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -65,24 +73,6 @@
             [ShowLabel]="true"
             FieldName="LastEventAt"
             Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Financial Details Section -->
-    <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
-        Icon="fa fa-money-bill"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="false"
-            FieldName="Amount"
-            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

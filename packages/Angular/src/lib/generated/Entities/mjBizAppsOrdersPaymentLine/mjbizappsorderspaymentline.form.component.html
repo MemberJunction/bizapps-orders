@@ -56,12 +56,22 @@
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="Amount"
             Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Audit and Processing Section -->
+    <mj-collapsible-panel
+        SectionKey="auditAndProcessing"
+        SectionName="Audit and Processing"
+        Icon="fa fa-history"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -73,29 +83,19 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="BookedAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Audit and Tracking Section -->
-    <mj-collapsible-panel
-        SectionKey="auditAndTracking"
-        SectionName="Audit and Tracking"
-        Icon="fa fa-user-check"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="false"
             FieldName="AllocatedByUserID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="BookedAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
