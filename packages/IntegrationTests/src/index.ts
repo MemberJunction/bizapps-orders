@@ -20,7 +20,8 @@
  *   payments-rollups     PR1–PR9   rollup triggers, numbering, initial payment (D30/D39/D42)
  *   payment-ledger       PL1–PL12  the CASH leg: capture/refund journal entries, AR reconciliation (D17/D18)
  *   line-subscriber      LS1–LS8   per-line ship-to and BenefitModel dedupe scope (D61/D62)
- *   account-credit       AC1–AC10  the allocation invariant, over-payment, credit as tender (D68)
+ *   account-credit       AC1–AC11  the allocation invariant, over-payment, credit as tender (D68)
+ *   pricing              PC1–PC16  price resolution, the resolver walk, and the dry run (D69)
  *
  * Every check is `RequiresMutation` — this suite exists to write to the database. They are safe to
  * run repeatedly because each one rolls its transaction back; see `fixture.ts` for the model.
@@ -54,6 +55,7 @@ export * from './checks/payment-ledger.checks.js';
 export * from './checks/intercompany.checks.js';
 export * from './checks/events.checks.js';
 export * from './checks/account-credit.checks.js';
+export * from './checks/pricing.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

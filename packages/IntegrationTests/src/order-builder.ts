@@ -9,11 +9,17 @@
 import { Metadata } from '@memberjunction/core';
 import type { BaseEntity, UserInfo } from '@memberjunction/core';
 
-/** A line to put on the order. Only `ProductID`, `Quantity` and `UnitPrice` are ever required. */
+/**
+ * A line to put on the order. Only `ProductID` and `Quantity` are required.
+ *
+ * `UnitPrice` became OPTIONAL when the pricing engine landed (D69): omitting it is how a check asks
+ * the engine to resolve the price, and stating it is how a check asserts that direct entry still
+ * wins. Both are behaviours worth exercising, so neither can be the only option.
+ */
 export interface LineSpec {
     ProductID: string;
     Quantity: number;
-    UnitPrice: number;
+    UnitPrice?: number;
     /** 0–1. A discount with no linked contra account nets into the sales credit (D11). */
     DiscountPct?: number;
     /** Coverage window for deferred lines that have no subscription (events, plain deferred services). */
@@ -83,7 +89,9 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
         line.ProductID = ls.ProductID;
         line.LineNumber = lineNumber++;
         line.Quantity = ls.Quantity;
-        line.UnitPrice = ls.UnitPrice;
+        // Left UNSET when the caller omitted it, so the engine sees an untouched field. Assigning
+        // 0 would look like a deliberate free line and suppress resolution entirely.
+        if (ls.UnitPrice !== undefined) line.UnitPrice = ls.UnitPrice;
         line.DiscountPct = ls.DiscountPct ?? 0;
         if (ls.ServicePeriodStart) line.ServicePeriodStart = new Date(ls.ServicePeriodStart);
         if (ls.ServicePeriodEnd) line.ServicePeriodEnd = new Date(ls.ServicePeriodEnd);

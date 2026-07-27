@@ -30,6 +30,7 @@ const ALL_BUNDLES = [
     'payment-ledger',
     'intercompany',
     'account-credit',
+    'pricing',
     'events',
     'line-subscriber',
 ];
