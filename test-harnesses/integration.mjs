@@ -31,6 +31,7 @@ const ALL_BUNDLES = [
     'intercompany',
     'account-credit',
     'pricing',
+    'promotions',
     'events',
     'line-subscriber',
 ];

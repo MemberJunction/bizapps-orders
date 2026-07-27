@@ -32,6 +32,7 @@ import '../checks/events.checks.js';
 import '../checks/line-subscriber.checks.js';
 import '../checks/account-credit.checks.js';
 import '../checks/pricing.checks.js';
+import '../checks/promotions.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -57,6 +58,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'line-subscriber': 12,
     'account-credit': 11,
     pricing: 16,
+    promotions: 15,
 };
 
 /**

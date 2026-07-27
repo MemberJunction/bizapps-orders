@@ -155,6 +155,17 @@
           "primaryKey": {
             "ID": "34E6CF8F-F479-4CB0-AB0B-706B265354E7"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-13 - Promotions",
+            "Sequence": 11,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "991BBA4B-971C-41CE-8886-C8B702B2F302"
+          }
         }
       ]
     },

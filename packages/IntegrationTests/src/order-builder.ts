@@ -51,6 +51,10 @@ export interface OrderSpec {
     InitialPaymentTypeID?: string;
     InitialPaymentAmount?: number;
     InitialPaymentDetailID?: string;
+    /** Promotion codes the customer presented (D70). Resolved after the lines are priced. */
+    PromotionCodes?: string[];
+    /** Ad-hoc discounts, each gated by the applying user's SalesAuthority (D70). */
+    ManualDiscounts?: Array<{ OrderLineID?: string | null; Amount: number; Reason: string }>;
 }
 
 export interface BuiltOrder {
@@ -77,6 +81,13 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
     if (spec.InitialPaymentTypeID) order.InitialPaymentTypeID = spec.InitialPaymentTypeID;
     if (spec.InitialPaymentAmount != null) order.InitialPaymentAmount = spec.InitialPaymentAmount;
     if (spec.InitialPaymentDetailID) order.InitialPaymentDetailID = spec.InitialPaymentDetailID;
+    // Promotions ride the header the same way lines do — set here, resolved inside Save (D70).
+    if (spec.PromotionCodes) {
+        (order as unknown as { PromotionCodes: string[] }).PromotionCodes = spec.PromotionCodes;
+    }
+    if (spec.ManualDiscounts) {
+        (order as unknown as { ManualDiscounts: unknown[] }).ManualDiscounts = spec.ManualDiscounts;
+    }
 
     const lines: Array<BaseEntity & Record<string, unknown>> = [];
     let lineNumber = 1;

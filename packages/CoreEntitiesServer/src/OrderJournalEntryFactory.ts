@@ -250,25 +250,43 @@ export class OrderJournalEntryFactory {
                 Dimensions: lineDims,
             });
         }
-        const bookingEntryLines = mirrorIf(isReversal, bookingLines);
-        this.assertBalanced(bookingEntryLines, order, line, 'booking');
+        // Drop zero-amount lines. A fully-discounted line — a comped ticket, a 100%-off promotion —
+        // has net 0, and accounting rightly refuses a JE line for nothing (MALFORMED_DRAFT). The
+        // entry itself is still real and still balances: Dr Sales Discounts / Cr Sales for the
+        // discount. Without this a free item cannot be ordered at all, which is a legitimate thing
+        // to sell.
+        const bookingEntryLines = mirrorIf(
+            isReversal,
+            bookingLines.filter((l) => money(l.DebitAmount ?? 0) !== 0 || money(l.CreditAmount ?? 0) !== 0),
+        );
+        // NOTHING TO BOOK is a legitimate outcome, not a failure. A fully-comped line — 100% off, or
+        // a free item — nets to zero, and when the discount has no contra account it nets into the
+        // sales credit too, leaving an entry with no non-zero side. Double-entry needs two lines, so
+        // emitting one here would refuse the whole order for a line that has no ledger impact at all.
+        // The line still exists, still shows on the invoice, and still recognizes nothing.
+        const hasBooking = bookingEntryLines.length >= 2;
+        if (hasBooking) {
+            this.assertBalanced(bookingEntryLines, order, line, 'booking');
+        }
 
-        const out: OrderLineDraft[] = [
-            {
-                OrderLineID: line.ID,
-                IsBooking: true,
-                Draft: {
-                    EffectiveDate: effectiveDate,
-                    EntryType: 'OrderBooking',
-                    Description:
-                        `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
-                        `${isReversal ? 'REVERSAL of ' : ''}${product.Name}`,
-                    LinkedEntityID: this._orderLineEntityID,
-                    LinkedRecordID: line.ID,
-                    Lines: bookingEntryLines,
-                },
-            },
-        ];
+        const out: OrderLineDraft[] = hasBooking
+            ? [
+                  {
+                      OrderLineID: line.ID,
+                      IsBooking: true,
+                      Draft: {
+                          EffectiveDate: effectiveDate,
+                          EntryType: 'OrderBooking',
+                          Description:
+                              `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                              `${isReversal ? 'REVERSAL of ' : ''}${product.Name}`,
+                          LinkedEntityID: this._orderLineEntityID,
+                          LinkedRecordID: line.ID,
+                          Lines: bookingEntryLines,
+                      },
+                  },
+              ]
+            : [];
 
         // ── the forward-dated releases (D14/D43) ──
         if (revRec.IsDeferred) {

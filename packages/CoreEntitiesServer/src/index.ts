@@ -96,6 +96,35 @@ export {
     PickPriceRule,
 } from './PricingBehavior.js';
 export type { PriceRule, PriceTierRule, PriceContext, PricingModel, InapplicableReason, RulePick } from './PricingBehavior.js';
+
+// Promotions (D70): the pure engine, the DB-backed resolution, and the qualifier plugin seam.
+export { ApplyPromotions, ScreenPromotion, ValuePromotion } from './PromotionBehavior.js';
+export type {
+    PromotionRule,
+    PromotionContext,
+    PromotionOutcome,
+    RejectedPromotion,
+    ApplyPromotionsResult,
+    PromotionRejection,
+    PromotionValueKind,
+    StackingMode,
+} from './PromotionBehavior.js';
+export {
+    AuthorizeManualDiscount,
+    BasePromotionQualifier,
+    LoadPromotionEngine,
+    PromotionError,
+    RunPromotions,
+    WriteAdjustments,
+} from './PromotionEngine.js';
+export type {
+    ManualDiscountRequest,
+    PromotableLine,
+    PromotionApplication,
+    PromotionQualificationContext,
+    PromotionRunResult,
+    RunPromotionsInput,
+} from './PromotionEngine.js';
 export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyAccountCreditOperation.js';
 
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
