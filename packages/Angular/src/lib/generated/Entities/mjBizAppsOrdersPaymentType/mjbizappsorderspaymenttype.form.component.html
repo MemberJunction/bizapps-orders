@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Type Configuration Section -->
+    <!-- Payment Type Definition Section -->
     <mj-collapsible-panel
-        SectionKey="paymentTypeConfiguration"
-        SectionName="Payment Type Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="paymentTypeDefinition"
+        SectionName="Payment Type Definition"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -44,37 +44,29 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="IsReversal"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="Sequence"
             Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Validation Rules Section -->
+    <!-- Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="validationRules"
-        SectionName="Validation Rules"
-        Icon="fa fa-check-circle"
+        SectionKey="configuration"
+        SectionName="Configuration"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsReversal"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -104,6 +96,14 @@
             [ShowLabel]="true"
             FieldName="DetailExtensionEntity"
             Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -142,25 +142,25 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Payment Details Section -->
+    <!-- Order Headers Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPaymentDetails"
-        SectionName="Payment Details"
-        Icon="fa fa-credit-card"
+        SectionKey="mJBizAppsOrdersOrderHeaders"
+        SectionName="Order Headers"
+        Icon="fa fa-shopping-cart"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentDetails')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderHeaders')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Details','PaymentTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Details')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentDetails')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Headers','InitialPaymentTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Headers')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderHeaders')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentDetails', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderHeaders', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
@@ -171,7 +171,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPaymentHeaders"
         SectionName="Payment Headers"
-        Icon="fa fa-money-check-alt"
+        Icon="fa fa-money-bill-wave"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
@@ -192,25 +192,25 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Order Headers Section -->
+    <!-- Payment Details Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersOrderHeaders"
-        SectionName="Order Headers"
-        Icon="fa fa-file-invoice"
+        SectionKey="mJBizAppsOrdersPaymentDetails"
+        SectionName="Payment Details"
+        Icon="fa fa-credit-card"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderHeaders')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentDetails')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Headers','InitialPaymentTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Headers')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderHeaders')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Details','PaymentTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Details')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentDetails')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderHeaders', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentDetails', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Rule Configuration Section -->
+    <!-- Rule Definition Section -->
     <mj-collapsible-panel
-        SectionKey="ruleConfiguration"
-        SectionName="Rule Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="ruleDefinition"
+        SectionName="Rule Definition"
+        Icon="fa fa-tasks"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -36,6 +36,14 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="PredicateJson"
+            Type="code"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="IsActive"
             Type="checkbox"
             [EditMode]="EditMode"
@@ -44,10 +52,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Evaluation Scope Section -->
+    <!-- Rule Scope Section -->
     <mj-collapsible-panel
-        SectionKey="evaluationScope"
-        SectionName="Evaluation Scope"
+        SectionKey="ruleScope"
+        SectionName="Rule Scope"
         Icon="fa fa-crosshairs"
         [Form]="this"
         [FormContext]="formContext">
@@ -70,24 +78,16 @@
 
     </mj-collapsible-panel>
 
-    <!-- Logic and Approval Section -->
+    <!-- Approval Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="logicAndApproval"
-        SectionName="Logic and Approval"
-        Icon="fa fa-check-circle"
+        SectionKey="approvalConfiguration"
+        SectionName="Approval Configuration"
+        Icon="fa fa-check-double"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PredicateJson"
-            Type="code"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="ApprovalRequiredRoleID"
             Type="textbox"
             [EditMode]="EditMode"

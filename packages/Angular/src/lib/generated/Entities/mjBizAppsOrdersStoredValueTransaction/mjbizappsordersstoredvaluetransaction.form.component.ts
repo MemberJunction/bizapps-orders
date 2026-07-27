@@ -15,8 +15,9 @@ export class mjBizAppsOrdersStoredValueTransactionFormComponent extends BaseForm
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'transactionContext', sectionName: 'Transaction Context', isExpanded: true },
             { sectionKey: 'transactionDetails', sectionName: 'Transaction Details', isExpanded: true },
+            { sectionKey: 'financialSummary', sectionName: 'Financial Summary', isExpanded: true },
+            { sectionKey: 'relatedEntities', sectionName: 'Related Entities', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

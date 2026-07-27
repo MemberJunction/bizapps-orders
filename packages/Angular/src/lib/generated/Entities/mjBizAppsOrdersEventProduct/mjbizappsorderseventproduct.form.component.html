@@ -33,16 +33,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Event Location Section -->
-    <mj-collapsible-panel
-        SectionKey="eventLocation"
-        SectionName="Event Location"
-        Icon="fa fa-map-marker-alt"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -67,7 +57,7 @@
     <mj-collapsible-panel
         SectionKey="eventLogistics"
         SectionName="Event Logistics"
-        Icon="fa fa-users"
+        Icon="fa fa-clipboard-list"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -233,6 +223,14 @@
             [ShowLabel]="true"
             FieldName="Description"
             Type="textarea"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="TaxCategory"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

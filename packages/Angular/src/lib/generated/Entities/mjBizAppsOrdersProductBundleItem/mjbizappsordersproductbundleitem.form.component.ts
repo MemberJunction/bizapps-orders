@@ -15,9 +15,8 @@ export class mjBizAppsOrdersProductBundleItemFormComponent extends BaseFormCompo
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'bundleConfiguration', sectionName: 'Bundle Configuration', isExpanded: true },
-            { sectionKey: 'componentDetails', sectionName: 'Component Details', isExpanded: true },
-            { sectionKey: 'pricingAndDisplay', sectionName: 'Pricing and Display', isExpanded: true },
+            { sectionKey: 'bundleRelationships', sectionName: 'Bundle Relationships', isExpanded: true },
+            { sectionKey: 'configuration', sectionName: 'Configuration', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

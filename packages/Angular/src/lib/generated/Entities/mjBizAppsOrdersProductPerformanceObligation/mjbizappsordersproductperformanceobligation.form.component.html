@@ -10,6 +10,25 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
+    <!-- Product Association Section -->
+    <mj-collapsible-panel
+        SectionKey="productAssociation"
+        SectionName="Product Association"
+        Icon="fa fa-box"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
+            FieldName="ProductID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
     <!-- Obligation Details Section -->
     <mj-collapsible-panel
         SectionKey="obligationDetails"
@@ -20,30 +39,11 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ProductID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="Name"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Financial Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="financialConfiguration"
-        SectionName="Financial Configuration"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -53,9 +53,19 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Pricing and Allocation Section -->
+    <mj-collapsible-panel
+        SectionKey="pricingAndAllocation"
+        SectionName="Pricing and Allocation"
+        Icon="fa fa-dollar-sign"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="StandaloneSellingPrice"
             Type="number"
             [EditMode]="EditMode"

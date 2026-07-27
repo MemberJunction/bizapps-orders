@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { mjBizAppsOrdersSalesAuthorityEntity } from '@mj-biz-apps/orders-entities';
 import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import {  } from "@memberjunction/ng-entity-viewer"
 
 @RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Sales Authorities') // Tell MemberJunction about this class
 @Component({
@@ -15,10 +16,10 @@ export class mjBizAppsOrdersSalesAuthorityFormComponent extends BaseFormComponen
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'salesRepresentative', sectionName: 'Sales Representative', isExpanded: true },
+            { sectionKey: 'assignmentDetails', sectionName: 'Assignment Details', isExpanded: true },
             { sectionKey: 'authorityLimits', sectionName: 'Authority Limits', isExpanded: true },
-            { sectionKey: 'statusAndMetadata', sectionName: 'Status and Metadata', isExpanded: false },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderAdjustments', sectionName: 'Order Adjustments', isExpanded: false }
         ]);
     }
 }

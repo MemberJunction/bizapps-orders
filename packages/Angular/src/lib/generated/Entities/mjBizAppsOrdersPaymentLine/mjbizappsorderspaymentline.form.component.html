@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Relationships Section -->
+    <!-- Payment Allocation Section -->
     <mj-collapsible-panel
-        SectionKey="relationships"
-        SectionName="Relationships"
+        SectionKey="paymentAllocation"
+        SectionName="Payment Allocation"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
@@ -65,24 +65,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="BookedAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Allocation Details Section -->
-    <mj-collapsible-panel
-        SectionKey="allocationDetails"
-        SectionName="Allocation Details"
-        Icon="fa fa-user-clock"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="AllocatedAt"
             Type="datepicker"
             [EditMode]="EditMode"
@@ -91,6 +73,24 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="BookedAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Audit and Tracking Section -->
+    <mj-collapsible-panel
+        SectionKey="auditAndTracking"
+        SectionName="Audit and Tracking"
+        Icon="fa fa-user-check"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
             FieldName="AllocatedByUserID"
             Type="textbox"
             [EditMode]="EditMode"
