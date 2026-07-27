@@ -16,7 +16,6 @@ CREATE TABLE PriceList (
     Code            NVARCHAR(40)  NOT NULL,
     Name            NVARCHAR(200) NOT NULL,
     Description     NVARCHAR(MAX) NULL,
-    CompanyID       UNIQUEIDENTIFIER NULL,   -- NULL = spans companies
     EffectiveFrom   DATE NULL,
     EffectiveTo     DATE NULL,
     Status          NVARCHAR(10) NOT NULL DEFAULT 'Active',
@@ -28,10 +27,19 @@ CREATE TABLE PriceList (
 **`Segment` is dropped.** It was `NVARCHAR(40)` matched against nothing — the assignment table below
 replaces it with something FK-enforced.
 
-**`CompanyID` nullable rather than NOT NULL** (open question 4 in the design doc). `ProductCategory`
-is per-company by D7, but a price list is a *commercial* concept, not an ownership one — a "Member"
-list can legitimately span the group, and each price row already carries its company through
-`Product`. Nullable gives both shapes; NOT NULL would force duplication for the common case.
+**No `CompanyID` at all** — I proposed one and then withdrew it (Amith, 2026-07-26: *"not sure what
+this means since a product is company specific"*, which is the right instinct).
+
+A price list is a **container of prices**, and every price in it points at a `Product` that already
+carries its company. So the company is fully determined per row, and a column on the list would only
+be an administrative guardrail — "this list may contain nothing but CoA products" — enforcing a
+constraint nobody asked for.
+
+Dropping it is also the shape the business wants. A trade association whose three companies sell
+publications, events and courses gives its members one member rate across all three; that is ONE
+list containing prices for products from three companies, not three lists to keep in sync. And it
+costs nothing on visibility: a user granted only CoA sees the list, with the rows they are entitled
+to see, through the ordinary per-company rules (D28).
 
 ### `PriceListAssignment` *(new — the missing link)*
 
@@ -162,6 +170,13 @@ CREATE TABLE OrderCompanyPolicy (
 `ID` = `Company.ID`, mirroring `AccountingCompanyProfile`'s IS-A shape. A company with no row takes
 the defaults, so this never needs backfilling.
 
+**`StackingMode` is configurable per company, both modes supported** (Amith, 2026-07-26), defaulting
+to `Sequential` as the conservative choice — it discounts less, so a misconfiguration costs nothing.
+
+It is deliberately NOT per-promotion. The mode describes how a SET of promotions combines, not how
+one behaves: two promotions, one claiming additive and one sequential, has no coherent answer. The
+company is the smallest grain at which the question is well-posed.
+
 ---
 
 ## Phase 2 — promotions
@@ -217,6 +232,12 @@ CREATE TABLE Promotion (
 `AllowsStacking` defaults **false** — the conservative default; a promotion must opt in. The
 company-level flip lives on `OrderCompanyPolicy`.
 
+**When two non-stacking promotions collide, the HIGHEST VALUE wins** (Amith, 2026-07-26). The loser
+is still recorded — as an `OrderAdjustment`-shaped fact of what was offered and not applied — so
+"why didn't my code work?" has an answer. Resolving by `StackSequence` instead was rejected: it is
+deterministic but can silently hand the customer the worse of two offers, and reordering sequences
+would change what people pay without anyone editing a promotion.
+
 ### `PromotionTarget` *(new — what it applies to)*
 
 ```sql
@@ -268,15 +289,51 @@ CREATE TABLE OrderAdjustment (
     PromotionCodeID UNIQUEIDENTIFIER NULL,
     Amount          DECIMAL(19,4) NOT NULL,    -- positive; it is a reduction
     Sequence        INT NOT NULL DEFAULT 0,
-    Reason          NVARCHAR(MAX) NULL,        -- required for manual
+    Reason          NVARCHAR(MAX) NULL,        -- REQUIRED when PromotionID is NULL
     AppliedByUserID UNIQUEIDENTIFIER NULL,
     AppliedAt       DATETIMEOFFSET NOT NULL DEFAULT SYSDATETIMEOFFSET(),
-    CONSTRAINT CK_OrderAdjustment_Amount CHECK (Amount > 0)
+    -- authorization trail for manual discounts
+    AuthorizedBySalesAuthorityID UNIQUEIDENTIFIER NULL,  -- the authority that permitted it
+    ApprovedByUserID             UNIQUEIDENTIFIER NULL,  -- set when it needed escalation
+    ApprovedAt                   DATETIMEOFFSET NULL,
+    CONSTRAINT CK_OrderAdjustment_Amount CHECK (Amount > 0),
+    -- a discount tracing to no promotion must say why
+    CONSTRAINT CK_OrderAdjustment_ManualReason
+        CHECK (PromotionID IS NOT NULL OR (Reason IS NOT NULL AND LEN(LTRIM(Reason)) > 0))
 );
 ```
 
 Serves as both the applied discount **and** the redemption ledger — one concept, not two. Manual
-discounts (no promotion) ride the same table, which is why `Reason` exists.
+discounts (no promotion) ride the same table, which is why `Reason` exists — and the CHECK makes an
+unexplained manual discount unstorable rather than merely discouraged.
+
+### Manual discounts need authority — and the table already exists
+
+Amith asked whether manual discounts need an authorization level. They do, and **`SalesAuthority` was
+built for exactly this and has never been used**:
+
+```sql
+SalesAuthority (
+    SalesRepUserID,
+    MaxDiscountPct,              -- <- the cap on a manual discount
+    MaxOrderValue,
+    AllowedProductCategoryIDs,
+    IsActive
+)
+```
+
+So the rule needs no new table: a manual `OrderAdjustment` is permitted when the applying user holds
+an active `SalesAuthority` whose `MaxDiscountPct` covers the discount as a fraction of the line (or
+order) it reduces. `AuthorizedBySalesAuthorityID` stamps WHICH authority permitted it, so revoking or
+lowering a rep's limit later does not rewrite the history of what was legitimate at the time.
+
+**Beyond the cap, it escalates rather than refusing.** `SalesRule` (also unused) already models this:
+`RuleType='DiscountLimit'` with `ApprovalRequiredRoleID`. Over-limit discounts land needing approval
+and stamp `ApprovedByUserID`/`ApprovedAt` when granted. A hard refusal at the cap is what pushes
+people into recording the discount as something else, which is the outcome the cap exists to prevent.
+
+A user with **no** `SalesAuthority` row cannot apply a manual discount at all — absence is not
+permission.
 
 ### `OrderAdjustmentAllocation` *(new)*
 
@@ -432,7 +489,7 @@ needs — no schema change in accounting for new charge or promotion kinds.
 | Phase | New | Revised |
 |---|---|---|
 | 1 | `PriceListAssignment`, `OrderLinePriceComponent`, `OrderCompanyPolicy` | `PriceList`, `ProductPrice`, `OrderLine` |
-| 2 | `PromotionType`, `Promotion`, `PromotionTarget`, `PromotionCode`, `OrderAdjustment`, `OrderAdjustmentAllocation` | — |
+| 2 | `PromotionType`, `Promotion`, `PromotionTarget`, `PromotionCode`, `OrderAdjustment`, `OrderAdjustmentAllocation` | — *(plus WIRING the existing unused `SalesAuthority` + `SalesRule`)* |
 | 3 | `ChargeType`, `OrderCharge`, `OrderChargeAllocation` | — |
 | 4 | `CompanyTaxNexus` *(accounting)* | `Product`, `CustomerTaxProfile` *(accounting)* |
 
@@ -440,12 +497,18 @@ needs — no schema change in accounting for new charge or promotion kinds.
 
 ---
 
-## Open questions
+## Decisions taken (Amith, 2026-07-26)
 
-1. **`PriceList.CompanyID` nullable** — agreed, or per-company like `ProductCategory` (D7)?
-2. **`StackingMode`** — `Sequential` (two 10% → 19%) as the default, or `Additive` (→ 20%)?
-3. **Exclusive collision** — two non-stacking promotions presented together: highest value wins, or
-   first applied?
-4. **Manual discounts** — should `OrderAdjustment` with no `PromotionID` be allowed at all, or must
-   every discount trace to a promotion? Allowing it is realistic; forbidding it is auditable.
-5. **`CompanyTaxNexus` placement** — accounting (proposed) or orders?
+| Question | Answer |
+|---|---|
+| `PriceList.CompanyID` | **Dropped entirely** — the product already determines company per row |
+| Stacking arithmetic | **Both modes**, configured per company; `Sequential` default |
+| Exclusive collision | **Highest value wins**; the loser is recorded as offered-not-applied |
+| Manual discounts | **Allowed with a required reason**, gated by `SalesAuthority.MaxDiscountPct`, escalating via `SalesRule` rather than refusing |
+
+## Still open
+
+1. **`CompanyTaxNexus` placement** — accounting (proposed: it is a property of a legal entity and a
+   jurisdiction, not of an order) or orders. Phase 4, so not blocking.
+2. **Rate feed provider** — which service backs the sync posture, and who owns the credentials.
+   Phase 4.
