@@ -124,6 +124,30 @@ async function grantAuthority(ctx: IntegrationCheckContext, maxPct: number): Pro
   return id;
 }
 
+/** Configure a DiscountLimit rule naming the role that may approve over-cap discounts. */
+async function addDiscountLimitRule(ctx: IntegrationCheckContext, roleID: string | null): Promise<void> {
+  await TxQuery(ctx,
+    `INSERT INTO ${ORDERS_SCHEMA}.SalesRule (ID, Name, RuleType, Scope, ApprovalRequiredRoleID, IsActive)
+     VALUES ('${randomUUID()}','Discount limit','DiscountLimit','Global', ${roleID ? `'${roleID}'` : "NULL"}, 1)`);
+}
+
+/** A role the current user does NOT hold. */
+async function someRoleTheUserLacks(ctx: IntegrationCheckContext): Promise<string> {
+  const row = await TxOne<{ ID: string }>(ctx,
+    `SELECT TOP 1 r.ID FROM __mj.Role r
+      WHERE NOT EXISTS (SELECT 1 FROM __mj.UserRole ur WHERE ur.RoleID = r.ID AND ur.UserID = '${ctx.User.ID}')`);
+  Assert(row?.ID != null, 'no role exists that this user lacks');
+  return row.ID;
+}
+
+/** A role the current user DOES hold. */
+async function someRoleTheUserHolds(ctx: IntegrationCheckContext): Promise<string> {
+  const row = await TxOne<{ RoleID: string }>(ctx,
+    `SELECT TOP 1 RoleID FROM __mj.UserRole WHERE UserID = '${ctx.User.ID}'`);
+  Assert(row?.RoleID != null, 'this user holds no roles');
+  return row.RoleID;
+}
+
 /** Confirm an order carrying promotion codes and/or manual discounts. */
 async function confirmWith(
   ctx: IntegrationCheckContext,
@@ -494,6 +518,111 @@ export const PromotionChecks: NamedCheck[] = [
         const t = await totals(ctx, order.Order.ID as string);
         AssertEqual(Number(t.Discount), 30, "the discount is capped at the line value");
         AssertEqual(Number(t.Net), 0, "the line floors at zero, never negative");
+      }),
+  },
+  {
+    Id: "promotions.PR16",
+    Name: "PR16: an OVER-CAP manual discount is refused when no approving role is configured",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, 0.1); // 10% cap
+
+        // This used to APPLY SILENTLY: the code returned NeedsApproval and nothing read it, so the
+        // cap was decorative. 30% against a 10% cap must not simply go through.
+        const order = await confirmWith(ctx, {
+          lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          manual: [{ Amount: 300, Reason: "big customer" }],
+        });
+        Assert(!order.Saved, "an over-cap discount with no approver must be refused");
+        Assert(
+          /above the 10\.0% cap/i.test(order.Message),
+          `the refusal should name the cap, got: ${order.Message}`,
+        );
+      }),
+  },
+  {
+    Id: "promotions.PR17",
+    Name: "PR17: over-cap is refused when the user lacks the approving role",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, 0.1);
+        await addDiscountLimitRule(ctx, await someRoleTheUserLacks(ctx));
+
+        const order = await confirmWith(ctx, {
+          lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          manual: [{ Amount: 300, Reason: "big customer" }],
+        });
+        Assert(!order.Saved, "an over-cap discount must be refused without the approving role");
+        Assert(
+          /needs approval/i.test(order.Message),
+          `the refusal should say approval is needed, got: ${order.Message}`,
+        );
+      }),
+  },
+  {
+    Id: "promotions.PR18",
+    Name: "PR18: over-cap SUCCEEDS for an approver, and records the approval",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, 0.1);
+        await addDiscountLimitRule(ctx, await someRoleTheUserHolds(ctx));
+
+        const order = await confirmWith(ctx, {
+          lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          manual: [{ Amount: 300, Reason: "renewal concession, approved" }],
+        });
+        Assert(order.Saved, `an approver's over-cap discount should apply: ${order.Message}`);
+
+        const adj = await TxOne<{ Amount: number; ApprovedByUserID: string | null; ApprovedAt: Date | null }>(
+          ctx,
+          `SELECT TOP 1 Amount, ApprovedByUserID, ApprovedAt
+             FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${order.Order.ID}'`,
+        );
+        AssertEqual(Number(adj.Amount), 300, "the discount applied");
+        // The exception must be VISIBLE — otherwise an over-cap discount is indistinguishable from
+        // an ordinary one and nobody can review discretion.
+        AssertEqual(
+          String(adj.ApprovedByUserID).toLowerCase(),
+          String(ctx.User.ID).toLowerCase(),
+          "the approver is recorded",
+        );
+        Assert(adj.ApprovedAt != null, "and when they approved it");
+      }),
+  },
+  {
+    Id: "promotions.PR19",
+    Name: "PR19: a WITHIN-cap discount records no approval — the exception stays distinguishable",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, 0.5);
+        await addDiscountLimitRule(ctx, await someRoleTheUserHolds(ctx));
+
+        const order = await confirmWith(ctx, {
+          lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          manual: [{ Amount: 100, Reason: "ordinary concession" }],
+        });
+        Assert(order.Saved, `confirm failed: ${order.Message}`);
+
+        const adj = await TxOne<{ ApprovedByUserID: string | null }>(
+          ctx,
+          `SELECT TOP 1 ApprovedByUserID FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${order.Order.ID}'`,
+        );
+        Assert(
+          adj.ApprovedByUserID == null,
+          "a discount inside the cap needed no approval, so none should be recorded",
+        );
       }),
   },
 ];

@@ -59,7 +59,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'line-subscriber': 12,
     'account-credit': 11,
     pricing: 16,
-    promotions: 15,
+    promotions: 19,
     charges: 12,
 };
 

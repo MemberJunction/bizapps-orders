@@ -42,6 +42,7 @@ const PROMOTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Promotion Types';
 const ORDER_ADJUSTMENT_ENTITY = 'MJ_BizApps_Orders: Order Adjustments';
 const ORDER_ADJUSTMENT_ALLOCATION_ENTITY = 'MJ_BizApps_Orders: Order Adjustment Allocations';
 const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
+const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
@@ -123,6 +124,8 @@ export interface PromotionApplication {
     Reason?: string;
     AuthorizedBySalesAuthorityID?: string | null;
     NeedsApproval?: boolean;
+    /** Set when an over-cap discount was approved — the exception, made visible. */
+    ApprovedByUserID?: string | null;
 }
 
 export interface PromotionRunResult {
@@ -539,7 +542,13 @@ export async function AuthorizeManualDiscount(
     userID: string | null,
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<{ AuthorityID: string | null; NeedsApproval: boolean; Refusal?: string }> {
+): Promise<{
+    AuthorityID: string | null;
+    NeedsApproval: boolean;
+    /** Set when an over-cap discount was permitted, so the exception is visible in the record. */
+    ApprovedByUserID?: string | null;
+    Refusal?: string;
+}> {
     if (!request.Reason?.trim()) {
         return { AuthorityID: null, NeedsApproval: false, Refusal: 'A manual discount must state a reason.' };
     }
@@ -573,12 +582,87 @@ export async function AuthorizeManualDiscount(
     }
 
     const pct = baseAmount > 0 ? request.Amount / baseAmount : 1;
-    if (authority.MaxDiscountPct != null && pct > Number(authority.MaxDiscountPct) + 1e-9) {
-        // ESCALATE, do not refuse. A hard refusal at the cap is what pushes people to record the
-        // discount as something else, which is exactly what the cap exists to prevent.
-        return { AuthorityID: authority.ID, NeedsApproval: true };
+    if (authority.MaxDiscountPct == null || pct <= Number(authority.MaxDiscountPct) + 1e-9) {
+        return { AuthorityID: authority.ID, NeedsApproval: false, ApprovedByUserID: null };
     }
-    return { AuthorityID: authority.ID, NeedsApproval: false };
+
+    // ── OVER THE CAP ──────────────────────────────────────────────────────────
+    // This used to return `NeedsApproval: true` and nothing read it, so an over-cap discount applied
+    // SILENTLY — the cap was decorative. Escalation now actually resolves: a `SalesRule` of type
+    // DiscountLimit names the role that may approve, and the discount is permitted only when the
+    // applying user holds it. Anyone else is refused, and told what would be needed.
+    //
+    // Approving one's own over-cap discount is legitimate here: holding the approver role IS the
+    // authority. What matters is that it is recorded — `ApprovedByUserID` makes the exception
+    // visible rather than indistinguishable from an ordinary discount.
+    const cap = Number(authority.MaxDiscountPct);
+    const rule = await findDiscountLimitRule(provider, user);
+    if (!rule?.ApprovalRequiredRoleID) {
+        return {
+            AuthorityID: authority.ID,
+            NeedsApproval: true,
+            Refusal:
+                `This discount is ${(pct * 100).toFixed(1)}% of ${baseAmount}, above the ${(cap * 100).toFixed(1)}% ` +
+                `cap on this user's SalesAuthority. No SalesRule of type 'DiscountLimit' names an approving role, ` +
+                `so there is no one who could authorize it. Either lower the discount, raise the cap, or configure ` +
+                `a DiscountLimit rule with an ApprovalRequiredRoleID.`,
+        };
+    }
+
+    if (!(await userHoldsRole(rule.ApprovalRequiredRoleID, provider, user, userID))) {
+        return {
+            AuthorityID: authority.ID,
+            NeedsApproval: true,
+            Refusal:
+                `This discount is ${(pct * 100).toFixed(1)}% of ${baseAmount}, above the ${(cap * 100).toFixed(1)}% ` +
+                `cap on this user's SalesAuthority. It needs approval from someone holding the role named by ` +
+                `SalesRule '${rule.Name}'. Have an approver apply it, or lower the discount to the cap.`,
+        };
+    }
+
+    return { AuthorityID: authority.ID, NeedsApproval: true, ApprovedByUserID: userID };
+}
+
+/** The active DiscountLimit rule, if one is configured. */
+async function findDiscountLimitRule(
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<{ Name: string; ApprovalRequiredRoleID: string | null } | null> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<{ Name: string; ApprovalRequiredRoleID: string | null }>(
+        {
+            EntityName: SALES_RULE_ENTITY,
+            ExtraFilter: `RuleType = 'DiscountLimit' AND IsActive = 1`,
+            Fields: ['Name', 'ApprovalRequiredRoleID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    return res?.Results?.[0] ?? null;
+}
+
+/** Does this user hold the named MJ role? */
+async function userHoldsRole(
+    roleID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+    userID: string | null,
+): Promise<boolean> {
+    if (!userID) return false;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: 'MJ: User Roles',
+            ExtraFilter: `UserID = '${userID}' AND RoleID = '${roleID}'`,
+            Fields: ['ID'],
+            MaxRows: 1,
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    return (res?.Results?.length ?? 0) > 0;
 }
 
 /**
@@ -610,6 +694,10 @@ export async function WriteAdjustments(
         if (app.Reason) adj.Set('Reason', app.Reason);
         adj.Set('AppliedByUserID', userID);
         if (app.AuthorizedBySalesAuthorityID) adj.Set('AuthorizedBySalesAuthorityID', app.AuthorizedBySalesAuthorityID);
+        if (app.ApprovedByUserID) {
+            adj.Set('ApprovedByUserID', app.ApprovedByUserID);
+            adj.Set('ApprovedAt', new Date());
+        }
         if (!(await adj.Save())) {
             throw new PromotionError(
                 `Could not record the adjustment '${app.Label}': ${adj.LatestResult?.CompleteMessage ?? 'unknown error'}`,

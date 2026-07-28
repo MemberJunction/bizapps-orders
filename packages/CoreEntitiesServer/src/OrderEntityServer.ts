@@ -666,6 +666,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                     Label: 'manual discount',
                     Reason: md.Reason,
                     AuthorizedBySalesAuthorityID: auth.AuthorityID,
+                    ApprovedByUserID: auth.ApprovedByUserID ?? null,
                 });
                 run.PerLine.set(target.ID, Math.round(((run.PerLine.get(target.ID) ?? 0) + md.Amount) * 100) / 100);
             } else {
@@ -682,6 +683,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                         Label: 'manual discount (order-level share)',
                         Reason: md.Reason,
                         AuthorizedBySalesAuthorityID: auth.AuthorityID,
+                        ApprovedByUserID: auth.ApprovedByUserID ?? null,
                     });
                     run.PerLine.set(l.ID, Math.round(((run.PerLine.get(l.ID) ?? 0) + parts[i]) * 100) / 100);
                 });
