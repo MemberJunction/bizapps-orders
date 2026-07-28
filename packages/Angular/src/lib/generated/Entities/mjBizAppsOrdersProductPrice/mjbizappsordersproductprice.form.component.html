@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product and Pricing Context Section -->
+    <!-- Product Identification Section -->
     <mj-collapsible-panel
-        SectionKey="productAndPricingContext"
-        SectionName="Product and Pricing Context"
+        SectionKey="productIdentification"
+        SectionName="Product Identification"
         Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
@@ -88,11 +88,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Quantity and Availability Section -->
+    <!-- Eligibility and Constraints Section -->
     <mj-collapsible-panel
-        SectionKey="quantityAndAvailability"
-        SectionName="Quantity and Availability"
-        Icon="fa fa-calendar-alt"
+        SectionKey="eligibilityAndConstraints"
+        SectionName="Eligibility and Constraints"
+        Icon="fa fa-check-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -127,14 +127,38 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Priority"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Description"
+            Type="textarea"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Scheduling and Recurrence Section -->
+    <!-- Schedule Constraints Section -->
     <mj-collapsible-panel
-        SectionKey="schedulingAndRecurrence"
-        SectionName="Scheduling and Recurrence"
-        Icon="fa fa-clock"
+        SectionKey="scheduleConstraints"
+        SectionName="Schedule Constraints"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -182,40 +206,6 @@
             [ShowLabel]="true"
             FieldName="TimeOfDayEnd"
             Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Rule Management Section -->
-    <mj-collapsible-panel
-        SectionKey="ruleManagement"
-        SectionName="Rule Management"
-        Icon="fa fa-sliders-h"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Priority"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Description"
-            Type="textarea"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

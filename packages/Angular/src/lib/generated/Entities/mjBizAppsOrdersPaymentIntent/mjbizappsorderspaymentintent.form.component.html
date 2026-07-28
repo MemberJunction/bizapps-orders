@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Provider Details Section -->
+    <!-- Provider Information Section -->
     <mj-collapsible-panel
-        SectionKey="paymentProviderDetails"
-        SectionName="Payment Provider Details"
+        SectionKey="providerInformation"
+        SectionName="Provider Information"
         Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
@@ -45,11 +45,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Payment Status and Amount Section -->
+    <!-- Payment Status Section -->
     <mj-collapsible-panel
-        SectionKey="paymentStatusAndAmount"
-        SectionName="Payment Status and Amount"
-        Icon="fa fa-money-bill"
+        SectionKey="paymentStatus"
+        SectionName="Payment Status"
+        Icon="fa fa-check-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -79,10 +79,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Relationships Section -->
+    <!-- Related Entities Section -->
     <mj-collapsible-panel
-        SectionKey="relationships"
-        SectionName="Relationships"
+        SectionKey="relatedEntities"
+        SectionName="Related Entities"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">

@@ -42,14 +42,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -57,7 +49,7 @@
     <mj-collapsible-panel
         SectionKey="accessRestrictions"
         SectionName="Access Restrictions"
-        Icon="fa fa-user-lock"
+        Icon="fa fa-lock"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -101,6 +93,14 @@
             [ShowLabel]="true"
             FieldName="EffectiveTo"
             Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

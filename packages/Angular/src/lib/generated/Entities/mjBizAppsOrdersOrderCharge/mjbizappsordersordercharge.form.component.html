@@ -33,7 +33,7 @@
     <mj-collapsible-panel
         SectionKey="chargeConfiguration"
         SectionName="Charge Configuration"
-        Icon="fa fa-cog"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -53,13 +53,21 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CalculationSource"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financial Details Section -->
+    <!-- Financial Values Section -->
     <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
+        SectionKey="financialValues"
+        SectionName="Financial Values"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -98,10 +106,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Tax Information Section -->
+    <!-- Tax Details Section -->
     <mj-collapsible-panel
-        SectionKey="taxInformation"
-        SectionName="Tax Information"
+        SectionKey="taxDetails"
+        SectionName="Tax Details"
         Icon="fa fa-university"
         [Form]="this"
         [FormContext]="formContext">
@@ -121,22 +129,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CalculationSource"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Override Details Section -->
+    <!-- Override Audit Section -->
     <mj-collapsible-panel
-        SectionKey="overrideDetails"
-        SectionName="Override Details"
-        Icon="fa fa-exclamation-triangle"
+        SectionKey="overrideAudit"
+        SectionName="Override Audit"
+        Icon="fa fa-user-edit"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

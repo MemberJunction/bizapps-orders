@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Instrument Details Section -->
+    <!-- Account Details Section -->
     <mj-collapsible-panel
-        SectionKey="instrumentDetails"
-        SectionName="Instrument Details"
+        SectionKey="accountDetails"
+        SectionName="Account Details"
         Icon="fa fa-id-card"
         [Form]="this"
         [FormContext]="formContext">
@@ -21,7 +21,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="Code"
-            Type="textbox"
+            Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -76,9 +76,19 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Transaction History Section -->
+    <mj-collapsible-panel
+        SectionKey="transactionHistory"
+        SectionName="Transaction History"
+        Icon="fa fa-history"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="IssuedFromOrderLineID"
             Type="textbox"
             [EditMode]="EditMode"
@@ -88,11 +98,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Beneficiary Section -->
+    <!-- Beneficiary Information Section -->
     <mj-collapsible-panel
-        SectionKey="beneficiary"
-        SectionName="Beneficiary"
-        Icon="fa fa-user-friends"
+        SectionKey="beneficiaryInformation"
+        SectionName="Beneficiary Information"
+        Icon="fa fa-user"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

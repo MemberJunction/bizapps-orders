@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="subscriptionDetails"
         SectionName="Subscription Details"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-id-card"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -43,14 +43,6 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -77,30 +69,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CanceledAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CancellationEffectiveDate"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financials Section -->
+    <!-- Financial Details Section -->
     <mj-collapsible-panel
-        SectionKey="financials"
-        SectionName="Financials"
-        Icon="fa fa-dollar-sign"
+        SectionKey="financialDetails"
+        SectionName="Financial Details"
+        Icon="fa fa-money-bill"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -139,11 +115,45 @@
 
     </mj-collapsible-panel>
 
+    <!-- Status and Cancellation Section -->
+    <mj-collapsible-panel
+        SectionKey="statusAndCancellation"
+        SectionName="Status and Cancellation"
+        Icon="fa fa-flag"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CanceledAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CancellationEffectiveDate"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
     <!-- System Metadata Section -->
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

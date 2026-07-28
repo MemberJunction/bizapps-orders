@@ -17,6 +17,7 @@ import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 // Import Generated Components
 import { mjBizAppsOrdersChargeTypeFormComponent } from "./Entities/mjBizAppsOrdersChargeType/mjbizappsorderschargetype.form.component";
 import { mjBizAppsOrdersCustomerPaymentMethodFormComponent } from "./Entities/mjBizAppsOrdersCustomerPaymentMethod/mjbizappsorderscustomerpaymentmethod.form.component";
+import { mjBizAppsOrdersCustomerTaxExemptionFormComponent } from "./Entities/mjBizAppsOrdersCustomerTaxExemption/mjbizappsorderscustomertaxexemption.form.component";
 import { mjBizAppsOrdersEntitlementGrantFormComponent } from "./Entities/mjBizAppsOrdersEntitlementGrant/mjbizappsordersentitlementgrant.form.component";
 import { mjBizAppsOrdersEventOrderLineFormComponent } from "./Entities/mjBizAppsOrdersEventOrderLine/mjbizappsorderseventorderline.form.component";
 import { mjBizAppsOrdersEventProductFormComponent } from "./Entities/mjBizAppsOrdersEventProduct/mjbizappsorderseventproduct.form.component";
@@ -71,6 +72,7 @@ import { mjBizAppsOrdersSubscriptionFormComponent } from "./Entities/mjBizAppsOr
 declarations: [
     mjBizAppsOrdersChargeTypeFormComponent,
     mjBizAppsOrdersCustomerPaymentMethodFormComponent,
+    mjBizAppsOrdersCustomerTaxExemptionFormComponent,
     mjBizAppsOrdersEntitlementGrantFormComponent,
     mjBizAppsOrdersEventOrderLineFormComponent,
     mjBizAppsOrdersEventProductFormComponent,
@@ -87,8 +89,7 @@ declarations: [
     mjBizAppsOrdersPaymentDetailFormComponent,
     mjBizAppsOrdersPaymentHeaderFormComponent,
     mjBizAppsOrdersPaymentIntentFormComponent,
-    mjBizAppsOrdersPaymentLineFormComponent,
-    mjBizAppsOrdersPaymentProviderTypeFormComponent],
+    mjBizAppsOrdersPaymentLineFormComponent],
 imports: [
     CommonModule,
     FormsModule,
@@ -105,6 +106,7 @@ export class GeneratedForms_SubModule_0 { }
 
 @NgModule({
 declarations: [
+    mjBizAppsOrdersPaymentProviderTypeFormComponent,
     mjBizAppsOrdersPaymentProviderFormComponent,
     mjBizAppsOrdersPaymentSequenceFormComponent,
     mjBizAppsOrdersPaymentTermsTypeFormComponent,
@@ -123,8 +125,7 @@ declarations: [
     mjBizAppsOrdersPromotionTargetFormComponent,
     mjBizAppsOrdersPromotionTypeFormComponent,
     mjBizAppsOrdersPromotionFormComponent,
-    mjBizAppsOrdersRevRecScheduleLineFormComponent,
-    mjBizAppsOrdersRevenueRecognitionScheduleFormComponent],
+    mjBizAppsOrdersRevRecScheduleLineFormComponent],
 imports: [
     CommonModule,
     FormsModule,
@@ -141,6 +142,7 @@ export class GeneratedForms_SubModule_1 { }
 
 @NgModule({
 declarations: [
+    mjBizAppsOrdersRevenueRecognitionScheduleFormComponent,
     mjBizAppsOrdersRevenueRecognitionTypeFormComponent,
     mjBizAppsOrdersSalesAuthorityFormComponent,
     mjBizAppsOrdersSalesRuleFormComponent,

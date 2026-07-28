@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="paymentTypeDefinition"
         SectionName="Payment Type Definition"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -46,14 +46,6 @@
             [ShowLabel]="true"
             FieldName="Sequence"
             Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -104,6 +96,14 @@
             [ShowLabel]="true"
             FieldName="DetailExtensionEntity"
             Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

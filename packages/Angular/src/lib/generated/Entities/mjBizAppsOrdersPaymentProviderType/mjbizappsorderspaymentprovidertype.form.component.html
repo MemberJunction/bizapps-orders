@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Provider Identification Section -->
+    <!-- Provider Details Section -->
     <mj-collapsible-panel
-        SectionKey="providerIdentification"
-        SectionName="Provider Identification"
+        SectionKey="providerDetails"
+        SectionName="Provider Details"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -41,24 +41,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Technical Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="technicalConfiguration"
-        SectionName="Technical Configuration"
-        Icon="fa fa-cogs"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="DriverClass"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -72,6 +54,24 @@
             [ShowLabel]="true"
             FieldName="IsActive"
             Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Integration Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="integrationConfiguration"
+        SectionName="Integration Configuration"
+        Icon="fa fa-plug"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
+            FieldName="DriverClass"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -116,7 +116,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="chargeConfiguration"
         SectionName="Charge Configuration"
-        Icon="fa fa-cogs"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -49,13 +49,21 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Computation Logic Section -->
+    <!-- Computation Rules Section -->
     <mj-collapsible-panel
-        SectionKey="computationLogic"
-        SectionName="Computation Logic"
+        SectionKey="computationRules"
+        SectionName="Computation Rules"
         Icon="fa fa-calculator"
         [Form]="this"
         [FormContext]="formContext">
@@ -83,14 +91,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -98,7 +98,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -130,7 +130,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderCharges"
         SectionName="Order Charges"
-        Icon="fa fa-receipt"
+        Icon="fa fa-money-bill-wave"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

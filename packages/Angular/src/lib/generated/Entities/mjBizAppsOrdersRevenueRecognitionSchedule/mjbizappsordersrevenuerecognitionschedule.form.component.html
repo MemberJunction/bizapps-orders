@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Revenue Recognition Details Section -->
+    <!-- Recognition Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="revenueRecognitionDetails"
-        SectionName="Revenue Recognition Details"
-        Icon="fa fa-list-ul"
+        SectionKey="recognitionConfiguration"
+        SectionName="Recognition Configuration"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -55,11 +55,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financial Summary Section -->
+    <!-- Financial Totals Section -->
     <mj-collapsible-panel
-        SectionKey="financialSummary"
-        SectionName="Financial Summary"
-        Icon="fa fa-dollar-sign"
+        SectionKey="financialTotals"
+        SectionName="Financial Totals"
+        Icon="fa fa-money-bill-wave"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -93,7 +93,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-cog"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

@@ -130,25 +130,25 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Promotion Targets Section -->
+    <!-- Products Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPromotionTargets"
-        SectionName="Promotion Targets"
-        Icon="fa fa-bullhorn"
+        SectionKey="mJBizAppsOrdersProducts"
+        SectionName="Products"
+        Icon="fa fa-box"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPromotionTargets')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProducts')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Targets','ProductCategoryID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionTargets')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Products','ProductCategoryID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Products')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProducts')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionTargets', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProducts', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
@@ -180,25 +180,25 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Products Section -->
+    <!-- Promotion Targets Section -->
     <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersProducts"
-        SectionName="Products"
-        Icon="fa fa-box"
+        SectionKey="mJBizAppsOrdersPromotionTargets"
+        SectionName="Promotion Targets"
+        Icon="fa fa-bullhorn"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProducts')"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPromotionTargets')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
         <div>
             <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Products','ProductCategoryID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Products')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProducts')"
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Targets','ProductCategoryID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionTargets')"
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProducts', $event.totalRowCount)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionTargets', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

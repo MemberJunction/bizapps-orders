@@ -10,17 +10,17 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Allocation Section -->
+    <!-- Entity Association Section -->
     <mj-collapsible-panel
-        SectionKey="paymentAllocation"
-        SectionName="Payment Allocation"
-        Icon="fa fa-hand-holding-usd"
+        SectionKey="entityAssociation"
+        SectionName="Entity Association"
+        Icon="fa fa-users"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="PaymentHeaderID"
+            FieldName="OrganizationID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -29,43 +29,84 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="OrderHeaderID"
+            FieldName="PersonID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Exemption Details Section -->
+    <mj-collapsible-panel
+        SectionKey="exemptionDetails"
+        SectionName="Exemption Details"
+        Icon="fa fa-file-contract"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="OrderLineID"
+            FieldName="TaxJurisdictionID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
-            LinkType="Record"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="Amount"
-            Type="number"
+            FieldName="TaxCategory"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ExemptionType"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CertificateRef"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Comments"
+            Type="textarea"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Audit and Tracking Section -->
+    <!-- Exemption Timeline Section -->
     <mj-collapsible-panel
-        SectionKey="auditAndTracking"
-        SectionName="Audit and Tracking"
-        Icon="fa fa-history"
+        SectionKey="exemptionTimeline"
+        SectionName="Exemption Timeline"
+        Icon="fa fa-calendar"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="AllocatedAt"
+            FieldName="CertificateIssuedAt"
             Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -73,16 +114,23 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="AllocatedByUserID"
-            Type="textbox"
+            FieldName="CertificateExpiresAt"
+            Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
-            LinkType="Record"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="BookedAt"
+            FieldName="StartedAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="EndedAt"
             Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"

@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Order Context Section -->
+    <!-- Order Association Section -->
     <mj-collapsible-panel
-        SectionKey="orderContext"
-        SectionName="Order Context"
-        Icon="fa fa-shopping-cart"
+        SectionKey="orderAssociation"
+        SectionName="Order Association"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -42,7 +42,7 @@
     <mj-collapsible-panel
         SectionKey="promotionDetails"
         SectionName="Promotion Details"
-        Icon="fa fa-tags"
+        Icon="fa fa-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -66,10 +66,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financial Details Section -->
+    <!-- Adjustment Financials Section -->
     <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
+        SectionKey="adjustmentFinancials"
+        SectionName="Adjustment Financials"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -89,14 +89,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Reason"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -107,6 +99,14 @@
         Icon="fa fa-shield-alt"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Reason"
+            Type="textarea"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -155,7 +155,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
