@@ -34,37 +34,11 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Usage Rules Section -->
-    <mj-collapsible-panel
-        SectionKey="usageRules"
-        SectionName="Usage Rules"
-        Icon="fa fa-calendar-check"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
             FieldName="MaxRedemptions"
             Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="EffectiveFrom"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="EffectiveTo"
-            Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -79,11 +53,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Access Control Section -->
+    <!-- Access Restrictions Section -->
     <mj-collapsible-panel
-        SectionKey="accessControl"
-        SectionName="Access Control"
-        Icon="fa fa-user-shield"
+        SectionKey="accessRestrictions"
+        SectionName="Access Restrictions"
+        Icon="fa fa-user-lock"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -103,6 +77,32 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Validity Period Section -->
+    <mj-collapsible-panel
+        SectionKey="validityPeriod"
+        SectionName="Validity Period"
+        Icon="fa fa-calendar-alt"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="EffectiveFrom"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="EffectiveTo"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
@@ -143,7 +143,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderAdjustments"
         SectionName="Order Adjustments"
-        Icon="fa fa-tags"
+        Icon="fa fa-money-bill-wave"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

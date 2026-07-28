@@ -10,22 +10,32 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Pricing Context Section -->
+    <!-- Line Item Reference Section -->
     <mj-collapsible-panel
-        SectionKey="pricingContext"
-        SectionName="Pricing Context"
+        SectionKey="lineItemReference"
+        SectionName="Line Item Reference"
         Icon="fa fa-list-ol"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="OrderLineID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Pricing Logic Section -->
+    <mj-collapsible-panel
+        SectionKey="pricingLogic"
+        SectionName="Pricing Logic"
+        Icon="fa fa-calculator"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -42,16 +52,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Pricing Details Section -->
-    <mj-collapsible-panel
-        SectionKey="pricingDetails"
-        SectionName="Pricing Details"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -60,6 +60,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Financial Values Section -->
+    <mj-collapsible-panel
+        SectionKey="financialValues"
+        SectionName="Financial Values"
+        Icon="fa fa-dollar-sign"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

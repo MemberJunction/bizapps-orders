@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Type Details Section -->
+    <!-- Product Type Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="productTypeDetails"
-        SectionName="Product Type Details"
-        Icon="fa fa-info-circle"
+        SectionKey="productTypeConfiguration"
+        SectionName="Product Type Configuration"
+        Icon="fa fa-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -52,11 +52,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Operational Configuration Section -->
+    <!-- Fulfillment and Tax Settings Section -->
     <mj-collapsible-panel
-        SectionKey="operationalConfiguration"
-        SectionName="Operational Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="fulfillmentAndTaxSettings"
+        SectionName="Fulfillment and Tax Settings"
+        Icon="fa fa-receipt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -70,45 +70,19 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="DefaultIsTaxable"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProductExtensionEntity"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="OrderLineExtensionEntity"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Financial Defaults Section -->
-    <mj-collapsible-panel
-        SectionKey="financialDefaults"
-        SectionName="Financial Defaults"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="DefaultRevenueRecognitionTypeID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DefaultIsTaxable"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
@@ -129,6 +103,22 @@
         Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProductExtensionEntity"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="OrderLineExtensionEntity"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

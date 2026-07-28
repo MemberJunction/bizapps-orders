@@ -16,8 +16,9 @@ export class mjBizAppsOrdersEntitlementGrantFormComponent extends BaseFormCompon
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'entitlementDetails', sectionName: 'Entitlement Details', isExpanded: true },
+            { sectionKey: 'orderContext', sectionName: 'Order Context', isExpanded: true },
             { sectionKey: 'beneficiaryInformation', sectionName: 'Beneficiary Information', isExpanded: true },
-            { sectionKey: 'grantTerms', sectionName: 'Grant Terms', isExpanded: true },
+            { sectionKey: 'validityAndStatus', sectionName: 'Validity and Status', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

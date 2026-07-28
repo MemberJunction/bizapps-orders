@@ -55,6 +55,8 @@ export interface OrderSpec {
     PromotionCodes?: string[];
     /** Ad-hoc discounts, each gated by the applying user's SalesAuthority (D70). */
     ManualDiscounts?: Array<{ OrderLineID?: string | null; Amount: number; Reason: string }>;
+    /** Charges to apply — shipping, handling, tax layers (D71). Computed after promotions. */
+    Charges?: Array<Record<string, unknown>>;
 }
 
 export interface BuiltOrder {
@@ -87,6 +89,9 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
     }
     if (spec.ManualDiscounts) {
         (order as unknown as { ManualDiscounts: unknown[] }).ManualDiscounts = spec.ManualDiscounts;
+    }
+    if (spec.Charges) {
+        (order as unknown as { Charges: unknown[] }).Charges = spec.Charges;
     }
 
     const lines: Array<BaseEntity & Record<string, unknown>> = [];

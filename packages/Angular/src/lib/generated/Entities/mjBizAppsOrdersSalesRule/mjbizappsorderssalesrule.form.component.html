@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Rule Definition Section -->
+    <!-- Rule Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="ruleDefinition"
-        SectionName="Rule Definition"
-        Icon="fa fa-info-circle"
+        SectionKey="ruleConfiguration"
+        SectionName="Rule Configuration"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -36,24 +36,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Scope and Targeting Section -->
-    <mj-collapsible-panel
-        SectionKey="scopeAndTargeting"
-        SectionName="Scope and Targeting"
-        Icon="fa fa-crosshairs"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="Scope"
             Type="select"
             [EditMode]="EditMode"
@@ -64,6 +46,14 @@
             [ShowLabel]="true"
             FieldName="ScopeReferenceID"
             Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -92,7 +82,7 @@
     <mj-collapsible-panel
         SectionKey="approvalWorkflow"
         SectionName="Approval Workflow"
-        Icon="fa fa-user-check"
+        Icon="fa fa-check-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

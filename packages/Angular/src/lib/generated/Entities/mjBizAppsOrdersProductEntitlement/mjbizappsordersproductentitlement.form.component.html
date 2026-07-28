@@ -10,39 +10,21 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Association Section -->
+    <!-- Entitlement Details Section -->
     <mj-collapsible-panel
-        SectionKey="productAssociation"
-        SectionName="Product Association"
-        Icon="fa fa-box"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="false"
-            FieldName="ProductID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Entitlement Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="entitlementConfiguration"
-        SectionName="Entitlement Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="entitlementDetails"
+        SectionName="Entitlement Details"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="EntitlementType"
-            Type="select"
+            FieldName="ProductID"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
+            LinkType="Record"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
@@ -60,24 +42,24 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Resource Allocation Section -->
+    <!-- Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="resourceAllocation"
-        SectionName="Resource Allocation"
-        Icon="fa fa-tachometer-alt"
+        SectionKey="configuration"
+        SectionName="Configuration"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="EntitlementType"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -91,6 +73,14 @@
             [ShowLabel]="true"
             FieldName="UnitOfMeasure"
             Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

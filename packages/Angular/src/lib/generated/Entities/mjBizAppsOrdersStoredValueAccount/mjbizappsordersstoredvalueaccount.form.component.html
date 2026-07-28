@@ -10,18 +10,18 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Account Details Section -->
+    <!-- Instrument Details Section -->
     <mj-collapsible-panel
-        SectionKey="accountDetails"
-        SectionName="Account Details"
-        Icon="fa fa-info-circle"
+        SectionKey="instrumentDetails"
+        SectionName="Instrument Details"
+        Icon="fa fa-id-card"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
             FieldName="Code"
-            Type="code"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -42,6 +42,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ExpiresAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -49,7 +57,7 @@
     <mj-collapsible-panel
         SectionKey="financials"
         SectionName="Financials"
-        Icon="fa fa-money-bill"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -71,30 +79,22 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ExpiresAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Relationships Section -->
-    <mj-collapsible-panel
-        SectionKey="relationships"
-        SectionName="Relationships"
-        Icon="fa fa-link"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="IssuedFromOrderLineID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Beneficiary Section -->
+    <mj-collapsible-panel
+        SectionKey="beneficiary"
+        SectionName="Beneficiary"
+        Icon="fa fa-user-friends"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

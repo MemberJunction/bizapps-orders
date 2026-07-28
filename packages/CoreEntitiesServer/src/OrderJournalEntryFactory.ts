@@ -42,7 +42,7 @@
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
-import { GL_ROLE, GLAccountResolver } from './GLAccountResolver.js';
+import { GL_ROLE, GLAccountResolver, GLAccountResolutionError } from './GLAccountResolver.js';
 import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
 
 /** Mirrors accounting's `JournalEntryLineDraft`. */
@@ -126,6 +126,7 @@ export class OrderJournalEntryFactory {
         private readonly _resolver: GLAccountResolver,
         private readonly _orderLineEntityID: string,
         private readonly _subscriptionTermEntityID: string,
+        private readonly _chargeTypeEntityID: string,
         private readonly _provider: IMetadataProvider,
         private readonly _contextUser: UserInfo,
     ) {}
@@ -214,6 +215,7 @@ export class OrderJournalEntryFactory {
         const discount = money(pctDiscount + amountDiscount);
         const net = money(gross - discount);
         const tax = money(Math.abs(line.LineTax ?? 0));
+        const charges = money(Math.abs(line.ChargeAmount ?? 0));
 
         const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]) =>
             this._resolver.Resolve(role, product.ID, product.ProductCategoryID, companyID, asOf);
@@ -234,7 +236,12 @@ export class OrderJournalEntryFactory {
 
         // ── the booking entry (D10/D11) ──
         const bookingLines: JELineDraft[] = [
-            { GLAccountID: arAccount, DebitAmount: money(net + tax), Description: `AR — ${product.Name}`, Dimensions: lineDims },
+            {
+                GLAccountID: arAccount,
+                DebitAmount: money(net + tax + charges),
+                Description: `AR — ${product.Name}`,
+                Dimensions: lineDims,
+            },
             {
                 GLAccountID: bookingCreditAccount,
                 CreditAmount: discountAccount ? gross : net,
@@ -250,6 +257,26 @@ export class OrderJournalEntryFactory {
                 Dimensions: lineDims,
             });
         }
+        // ── CHARGE AND TAX CREDITS (D71) ──
+        // AR is debited for net + tax + charges, so every one of those needs a matching credit or
+        // the entry does not balance. Tax has been in the AR debit since booking was written and had
+        // no credit at all — it simply had never been non-zero, which is the kind of latent break
+        // that only surfaces the day the feature is used.
+        //
+        // Each charge credits an account resolved from its CHARGE TYPE, so shipping revenue and a
+        // tax liability go to different places without this factory knowing what either means. The
+        // role name is a lookup key, not a claim about the account's nature — a tax charge links to
+        // a liability account through the same mechanism.
+        const chargeCredits = await this.chargeCreditsFor(line, companyID, asOf);
+        for (const c of chargeCredits) {
+            bookingLines.push({
+                GLAccountID: c.GLAccountID,
+                CreditAmount: c.Amount,
+                Description: `${c.Label} — ${product.Name}`,
+                Dimensions: lineDims,
+            });
+        }
+
         // Drop zero-amount lines. A fully-discounted line — a comped ticket, a 100%-off promotion —
         // has net 0, and accounting rightly refuses a JE line for nothing (MALFORMED_DRAFT). The
         // entry itself is still real and still balances: Dr Sales Discounts / Cr Sales for the
@@ -435,4 +462,88 @@ export class OrderJournalEntryFactory {
         }
         return map;
     }
+
+    /**
+     * The credit side of every charge allocated to this line, grouped by charge type (D71).
+     *
+     * Read from `OrderChargeAllocation`, which exists by the time booking runs because charges are
+     * written with the lines. Each charge type resolves its own GL account, so shipping revenue and
+     * a tax liability land in different places without this factory needing to know which is which.
+     *
+     * An unresolvable account is a HARD FAILURE, per the plan: a charge with nowhere to go must not
+     * book, because the entry would balance only by omitting it and the customer would be billed for
+     * something the ledger never recorded.
+     */
+    private async chargeCreditsFor(
+        line: mjBizAppsOrdersOrderLineEntity,
+        companyID: string,
+        asOf: Date,
+    ): Promise<Array<{ GLAccountID: string; Amount: number; Label: string }>> {
+        const total = money(Math.abs(line.LineTax ?? 0)) + money(Math.abs(line.ChargeAmount ?? 0));
+        if (total === 0) return [];
+
+        const rv = new RunView(this._provider as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ Amount: number; OrderChargeID: string }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Order Charge Allocations',
+                ExtraFilter: `OrderLineID = '${line.ID}'`,
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this._contextUser,
+        );
+        const allocations = res?.Results ?? [];
+        if (!allocations.length) return [];
+
+        // The allocation says WHICH CHARGE and HOW MUCH, but not what KIND of charge — the type
+        // lives on OrderCharge. RunView does not join, so the parent rows are read separately and
+        // matched in memory.
+        const chargeRes = await rv.RunView<{ ID: string; ChargeTypeID: string; ChargeType: string }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Order Charges',
+                ExtraFilter: `ID IN (${[...new Set(allocations.map((a) => `'${a.OrderChargeID}'`))].join(',')})`,
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this._contextUser,
+        );
+        const chargeByID = new Map(
+            (chargeRes?.Results ?? []).map((c) => [String(c.ID).toLowerCase(), c]),
+        );
+
+        // One credit per charge TYPE, not per allocation row — several tax layers on one line each
+        // have their own account, but two shipping charges share theirs.
+        const byType = new Map<string, { Amount: number; Label: string }>();
+        for (const a of allocations) {
+            const parent = chargeByID.get(String(a.OrderChargeID).toLowerCase());
+            if (!parent?.ChargeTypeID) continue;
+            const cur = byType.get(parent.ChargeTypeID) ?? { Amount: 0, Label: parent.ChargeType ?? 'Charge' };
+            cur.Amount = money(cur.Amount + Math.abs(Number(a.Amount ?? 0)));
+            byType.set(parent.ChargeTypeID, cur);
+        }
+
+        const out: Array<{ GLAccountID: string; Amount: number; Label: string }> = [];
+        for (const [chargeTypeID, info] of byType) {
+            if (info.Amount === 0) continue;
+            const account = await this._resolver.ResolveForRecord(
+                GL_ROLE.Sales,
+                this._chargeTypeEntityID,
+                chargeTypeID,
+                companyID,
+                asOf,
+            );
+            if (!account) {
+                throw new GLAccountResolutionError(
+                    GL_ROLE.Sales,
+                    line.ProductID,
+                    `Charge '${info.Label}' has no GL account linked for company ${companyID}. Link one to the ` +
+                        `charge type before booking — a charge with nowhere to go would be billed to the customer ` +
+                        `and never recorded in the ledger.`,
+                );
+            }
+            out.push({ GLAccountID: account, Amount: info.Amount, Label: info.Label });
+        }
+        return out;
+    }
+
 }

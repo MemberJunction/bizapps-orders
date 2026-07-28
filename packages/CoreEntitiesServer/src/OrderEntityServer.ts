@@ -51,6 +51,13 @@ import { ResolvePrice, type ResolvedPrice } from './PriceResolver.js';
 import { AllocateProRata } from './PricingBehavior.js';
 import type { StackingMode } from './PromotionBehavior.js';
 import {
+    RunCharges,
+    SplitChargesByLine,
+    WriteCharges,
+    type RequestedCharge,
+} from './ChargeEngine.js';
+import type { ComputeChargesResult } from './ChargeBehavior.js';
+import {
     AuthorizeManualDiscount,
     RunPromotions,
     WriteAdjustments,
@@ -82,6 +89,7 @@ interface SubscriptionMaterialization {
 }
 
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
+const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
@@ -153,6 +161,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     private readonly _priceComponents = new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>();
     private _promotionCodes: string[] = [];
     private _manualDiscounts: ManualDiscountRequest[] = [];
+    private _charges: RequestedCharge[] = [];
     /** Codes that resolved to nothing usable, so the caller can tell the customer WHY. */
     private _unusableCodes: Array<{ Code: string; Reason: string }> = [];
 
@@ -173,6 +182,17 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     }
     public set ManualDiscounts(value: ManualDiscountRequest[]) {
         this._manualDiscounts = value ?? [];
+    }
+
+    /**
+     * Charges to apply to this order (D71) — shipping, handling, tax layers. Computed AFTER
+     * promotions, because a charge's basis is the discounted line.
+     */
+    public get Charges(): RequestedCharge[] {
+        return this._charges;
+    }
+    public set Charges(value: RequestedCharge[]) {
+        this._charges = value ?? [];
     }
 
     /**
@@ -361,6 +381,9 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
         // Promotions see priced lines and stamp DiscountAmount while they are still in memory.
         const pending = await this.decidePromotions();
+        // Charges follow promotions: their basis is the DISCOUNTED line, and tax computes on what
+        // the customer actually owes rather than on list price.
+        const charges = await this.decideCharges();
 
         const persisted: mjBizAppsOrdersOrderLineEntity[] = [];
         for (const line of this._lines) {
@@ -374,9 +397,62 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         }
         this._lines = [];
 
-        // The adjustment rows need line IDs, so they follow the insert — but they only ADD rows and
-        // never touch the frozen line again.
+        // The adjustment and charge rows need line IDs, so they follow the insert — but they only ADD
+        // rows and never touch the frozen line again.
         if (pending) await this.writePromotionRecords(pending, persisted);
+        if (charges) await this.writeChargeRecords(charges, persisted);
+    }
+
+    /**
+     * Compute charges over the in-memory lines and stamp each line's share (D71).
+     *
+     * Tax lands on `LineTax` and everything else on `ChargeAmount`. Both feed `LineTotalGross`
+     * identically; they are stored apart because tax is reported and remitted separately everywhere,
+     * and merging them would mean unpicking the two again exactly when it matters most.
+     */
+    private async decideCharges(): Promise<ComputeChargesResult | null> {
+        if (!this._charges.length || !this._lines.length) return null;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        // Nets AFTER promotions — decidePromotions has already stamped DiscountAmount.
+        const chargeable = this._lines.map((line, i) => {
+            const gross = Math.round(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) * 100) / 100;
+            const afterPct = Math.round(gross * (1 - Number(line.DiscountPct ?? 0)) * 100) / 100;
+            const net = Math.max(0, Math.round((afterPct - Number(line.DiscountAmount ?? 0)) * 100) / 100);
+            return { ID: String(i), Net: net };
+        });
+
+        const result = await RunCharges(this._charges, chargeable, provider, user);
+        const split = SplitChargesByLine(result);
+        for (let i = 0; i < this._lines.length; i++) {
+            const share = split.get(String(i));
+            if (!share) continue;
+            if (share.Tax) this._lines[i].LineTax = share.Tax;
+            if (share.Other) {
+                (this._lines[i] as unknown as { ChargeAmount: number }).ChargeAmount = share.Other;
+            }
+        }
+        return result;
+    }
+
+    /** Write the charge and allocation rows once the lines have real IDs. */
+    private async writeChargeRecords(
+        result: ComputeChargesResult,
+        persisted: mjBizAppsOrdersOrderLineEntity[],
+    ): Promise<void> {
+        if (!result.Charges.length) return;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        await WriteCharges(
+            this.ID,
+            result,
+            (positional) => persisted[Number(positional)]?.ID ?? null,
+            user?.ID ?? null,
+            provider,
+            user,
+        );
     }
 
     /**
@@ -726,6 +802,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             await this.buildResolver(provider, user),
             this.entityIDFor(ORDER_LINE_ENTITY),
             this.entityIDFor(SUBSCRIPTION_TERM_ENTITY),
+            this.entityIDFor(CHARGE_TYPE_ENTITY),
             provider,
             user,
         );

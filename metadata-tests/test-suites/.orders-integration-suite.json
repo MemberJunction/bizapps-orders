@@ -166,6 +166,17 @@
           "primaryKey": {
             "ID": "991BBA4B-971C-41CE-8886-C8B702B2F302"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-14 - Charges",
+            "Sequence": 12,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "963A076A-CFA3-498D-BF0E-604B3464538E"
+          }
         }
       ]
     },

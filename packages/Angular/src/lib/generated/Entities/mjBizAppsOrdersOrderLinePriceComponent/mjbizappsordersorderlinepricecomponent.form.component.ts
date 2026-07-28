@@ -15,8 +15,9 @@ export class mjBizAppsOrdersOrderLinePriceComponentFormComponent extends BaseFor
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'pricingContext', sectionName: 'Pricing Context', isExpanded: true },
-            { sectionKey: 'pricingDetails', sectionName: 'Pricing Details', isExpanded: true },
+            { sectionKey: 'lineItemReference', sectionName: 'Line Item Reference', isExpanded: true },
+            { sectionKey: 'pricingLogic', sectionName: 'Pricing Logic', isExpanded: true },
+            { sectionKey: 'financialValues', sectionName: 'Financial Values', isExpanded: true },
             { sectionKey: 'provenance', sectionName: 'Provenance', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);

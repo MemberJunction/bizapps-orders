@@ -117,6 +117,21 @@ export {
     RunPromotions,
     WriteAdjustments,
 } from './PromotionEngine.js';
+// Charges (D71): the pure engine and the DB-backed resolution. Tax is a CHARGE, which is what
+// makes multi-layer tax several rows rather than a special case.
+export { ComputeCharges } from './ChargeBehavior.js';
+export type {
+    ChargeBasis,
+    ChargeCategory,
+    ChargeRequest,
+    ChargeAllocation,
+    ComputedCharge,
+    ChargeableLine,
+    ComputeChargesResult,
+} from './ChargeBehavior.js';
+export { ChargeError, RunCharges, SplitChargesByLine, WriteCharges } from './ChargeEngine.js';
+export type { RequestedCharge } from './ChargeEngine.js';
+
 export type {
     ManualDiscountRequest,
     PromotableLine,

@@ -16,9 +16,9 @@ export class mjBizAppsOrdersPaymentIntentFormComponent extends BaseFormComponent
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'providerInformation', sectionName: 'Provider Information', isExpanded: true },
-            { sectionKey: 'paymentLifecycle', sectionName: 'Payment Lifecycle', isExpanded: true },
-            { sectionKey: 'associatedRecords', sectionName: 'Associated Records', isExpanded: true },
+            { sectionKey: 'paymentProviderDetails', sectionName: 'Payment Provider Details', isExpanded: true },
+            { sectionKey: 'paymentStatusAndAmount', sectionName: 'Payment Status and Amount', isExpanded: true },
+            { sectionKey: 'relationships', sectionName: 'Relationships', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false }
         ]);

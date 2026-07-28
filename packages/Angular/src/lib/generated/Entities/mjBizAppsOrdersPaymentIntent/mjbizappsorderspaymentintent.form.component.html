@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Provider Information Section -->
+    <!-- Payment Provider Details Section -->
     <mj-collapsible-panel
-        SectionKey="providerInformation"
-        SectionName="Provider Information"
-        Icon="fa fa-network-wired"
+        SectionKey="paymentProviderDetails"
+        SectionName="Payment Provider Details"
+        Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -45,11 +45,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Payment Lifecycle Section -->
+    <!-- Payment Status and Amount Section -->
     <mj-collapsible-panel
-        SectionKey="paymentLifecycle"
-        SectionName="Payment Lifecycle"
-        Icon="fa fa-sync"
+        SectionKey="paymentStatusAndAmount"
+        SectionName="Payment Status and Amount"
+        Icon="fa fa-money-bill"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -79,10 +79,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Associated Records Section -->
+    <!-- Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="associatedRecords"
-        SectionName="Associated Records"
+        SectionKey="relationships"
+        SectionName="Relationships"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">

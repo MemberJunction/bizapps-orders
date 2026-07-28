@@ -19,7 +19,7 @@ export class mjBizAppsOrdersOrderAdjustmentFormComponent extends BaseFormCompone
             { sectionKey: 'orderContext', sectionName: 'Order Context', isExpanded: true },
             { sectionKey: 'promotionDetails', sectionName: 'Promotion Details', isExpanded: true },
             { sectionKey: 'financialDetails', sectionName: 'Financial Details', isExpanded: true },
-            { sectionKey: 'auditAndApproval', sectionName: 'Audit and Approval', isExpanded: true },
+            { sectionKey: 'authorizationAndAudit', sectionName: 'Authorization and Audit', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderAdjustmentAllocations', sectionName: 'Order Adjustment Allocations', isExpanded: false }
         ]);

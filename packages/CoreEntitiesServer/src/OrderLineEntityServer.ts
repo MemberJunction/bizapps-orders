@@ -11,7 +11,7 @@
  *   2. COMPUTE THE TOTALS. `LineTotalNet` / `LineTotalGross` are engine-materialized and never
  *      user-entered:
  *          LineTotalNet   = (Quantity × UnitPrice × (1 − DiscountPct)) − DiscountAmount
- *          LineTotalGross = LineTotalNet + LineTax
+ *          LineTotalGross = LineTotalNet + LineTax + ChargeAmount
  *
  *      DiscountPct and DiscountAmount are both applied, in that order, because they mean different
  *      things: a percentage is a negotiated concession on the line, an amount is an allocated share
@@ -103,7 +103,7 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
         // flip sign in the journal entry and read as revenue.
         const net = money(Math.max(0, afterPct - (this.DiscountAmount ?? 0)));
         this.LineTotalNet = net;
-        this.LineTotalGross = money(net + (this.LineTax ?? 0));
+        this.LineTotalGross = money(net + (this.LineTax ?? 0) + (this.ChargeAmount ?? 0));
     }
 }
 

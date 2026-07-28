@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="orderAssociation"
         SectionName="Order Association"
-        Icon="fa fa-shopping-cart"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -90,8 +90,8 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="CalculationSource"
-            Type="textbox"
+            FieldName="ComputedAmount"
+            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -121,6 +121,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CalculationSource"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -128,7 +136,7 @@
     <mj-collapsible-panel
         SectionKey="overrideDetails"
         SectionName="Override Details"
-        Icon="fa fa-edit"
+        Icon="fa fa-exclamation-triangle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -136,14 +144,6 @@
             [ShowLabel]="true"
             FieldName="IsOverridden"
             Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ComputedAmount"
-            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

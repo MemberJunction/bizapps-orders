@@ -10,17 +10,26 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Identification Section -->
+    <!-- Product and Pricing Context Section -->
     <mj-collapsible-panel
-        SectionKey="productIdentification"
-        SectionName="Product Identification"
+        SectionKey="productAndPricingContext"
+        SectionName="Product and Pricing Context"
         Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="ProductID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="PriceListID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -36,15 +45,6 @@
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PriceListID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -88,10 +88,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Applicability Rules Section -->
+    <!-- Quantity and Availability Section -->
     <mj-collapsible-panel
-        SectionKey="applicabilityRules"
-        SectionName="Applicability Rules"
+        SectionKey="quantityAndAvailability"
+        SectionName="Quantity and Availability"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -127,6 +127,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Scheduling and Recurrence Section -->
+    <mj-collapsible-panel
+        SectionKey="schedulingAndRecurrence"
+        SectionName="Scheduling and Recurrence"
+        Icon="fa fa-clock"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -273,7 +283,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderLines"
         SectionName="Order Lines"
-        Icon="fa fa-list-ul"
+        Icon="fa fa-list-ol"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

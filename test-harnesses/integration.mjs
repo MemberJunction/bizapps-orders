@@ -32,6 +32,7 @@ const ALL_BUNDLES = [
     'account-credit',
     'pricing',
     'promotions',
+    'charges',
     'events',
     'line-subscriber',
 ];

@@ -51,7 +51,7 @@
     <mj-collapsible-panel
         SectionKey="eventDetails"
         SectionName="Event Details"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -70,6 +70,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Event Payload Section -->
+    <mj-collapsible-panel
+        SectionKey="eventPayload"
+        SectionName="Event Payload"
+        Icon="fa fa-code"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

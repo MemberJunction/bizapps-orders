@@ -53,6 +53,11 @@ const FIXTURE_ACCOUNTS = [
     // That is correct — you cannot book cash with no cash account — but it makes the Cash link part
     // of the minimum setup for using the feature at all.
     { Key: 'Cash', Code: '10100', Name: 'Cash — Operating', Type: 'Asset' },
+    // Charges book to their OWN accounts (D71) — shipping is revenue, tax is a liability you owe a
+    // jurisdiction. Both resolve through GLAccountLink on the charge TYPE, so the role name used to
+    // link them is a lookup key rather than a claim about what the account is.
+    { Key: 'Shipping', Code: '40200', Name: 'Shipping Revenue', Type: 'Revenue' },
+    { Key: 'TaxPayable', Code: '21500', Name: 'Sales Tax Payable', Type: 'Liability' },
 ] as const;
 
 export interface FixtureCompany {
@@ -315,6 +320,39 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
         }
     }
 
+    // CHARGE-TYPE GL links (D71). These belong in the FIXTURE rather than in a check, because
+    // `AccountingEngineBase` caches links in-process and is refreshed once here — a link inserted
+    // inside a check's rolled-back transaction is invisible to the cache, so the charge would refuse
+    // to book for a reason that has nothing to do with what the check is testing.
+    const chargeTypeEntityRows = await PoolQuery<{ ID: string }>(
+        ctx,
+        `SELECT ID FROM __mj.Entity WHERE Name = 'MJ_BizApps_Orders: Charge Types'`,
+    );
+    const chargeTypeEntityID = chargeTypeEntityRows[0]?.ID;
+    if (chargeTypeEntityID) {
+        const salesRoleID = roleID.get('Sales');
+        for (const co of [fixture.CoA, fixture.CoB]) {
+            for (const [code, key] of [
+                ['Shipping', 'Shipping'],
+                ['Handling', 'Shipping'],
+                ['SalesTax', 'TaxPayable'],
+                ['VAT', 'TaxPayable'],
+            ] as const) {
+                const ctRows = await PoolQuery<{ ID: string }>(
+                    ctx,
+                    `SELECT ID FROM ${ORDERS_SCHEMA}.ChargeType WHERE Code = '${code}'`,
+                );
+                const ctID = ctRows[0]?.ID;
+                if (!ctID) continue;
+                await PoolQuery(
+                    ctx,
+                    `INSERT INTO ${ACCT_SCHEMA}.GLAccountLink (ID, GLAccountID, GLAccountRoleID, EntityID, RecordID, Status)
+                     VALUES ('${randomUUID()}','${co.Accounts[key]}','${salesRoleID}','${chargeTypeEntityID}','${ctID}','Active')`,
+                );
+            }
+        }
+    }
+
     Assert(fixture.RevRecTypeIDs.size >= 3, 'revenue recognition types missing — push the orders app metadata');
     Assert(fixture.SubscriptionTypeIDs.size >= 4, 'subscription types missing — push the orders app metadata');
 
@@ -567,6 +605,10 @@ export async function TeardownOrdersFixture(ctx: IntegrationCheckContext): Promi
         `DELETE FROM ${ORDERS_SCHEMA}.ProductCategory WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS_SCHEMA}.ProductType WHERE Name LIKE '${f.Run}%'`,
         `DELETE FROM ${ACCT_SCHEMA}.GLAccountLink WHERE RecordID IN (${companies})`,
+        // Charge-type links are keyed by CHARGE TYPE, not by company, so the company sweep above
+        // does not reach them.
+        `DELETE FROM ${ACCT_SCHEMA}.GLAccountLink
+          WHERE RecordID IN (SELECT CAST(ID AS NVARCHAR(400)) FROM ${ORDERS_SCHEMA}.ChargeType)`,
         `DELETE FROM ${ACCT_SCHEMA}.JournalEntrySequence WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ACCT_SCHEMA}.AccountingCompanyProfile WHERE ID IN (${companies})`,
