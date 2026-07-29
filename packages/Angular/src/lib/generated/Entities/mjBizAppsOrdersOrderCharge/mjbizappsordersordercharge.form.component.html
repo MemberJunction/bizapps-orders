@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="orderAssociation"
         SectionName="Order Association"
-        Icon="fa fa-link"
+        Icon="fa fa-shopping-cart"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -53,21 +53,13 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CalculationSource"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financial Values Section -->
+    <!-- Financial Details Section -->
     <mj-collapsible-panel
-        SectionKey="financialValues"
-        SectionName="Financial Values"
+        SectionKey="financialDetails"
+        SectionName="Financial Details"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -106,10 +98,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Tax Details Section -->
+    <!-- Tax Information Section -->
     <mj-collapsible-panel
-        SectionKey="taxDetails"
-        SectionName="Tax Details"
+        SectionKey="taxInformation"
+        SectionName="Tax Information"
         Icon="fa fa-university"
         [Form]="this"
         [FormContext]="formContext">
@@ -129,13 +121,21 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CalculationSource"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Override Audit Section -->
+    <!-- Override Management Section -->
     <mj-collapsible-panel
-        SectionKey="overrideAudit"
-        SectionName="Override Audit"
+        SectionKey="overrideManagement"
+        SectionName="Override Management"
         Icon="fa fa-user-edit"
         [Form]="this"
         [FormContext]="formContext">

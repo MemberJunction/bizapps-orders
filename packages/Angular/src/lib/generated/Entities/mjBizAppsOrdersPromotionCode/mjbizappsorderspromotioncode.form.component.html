@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="promotionDetails"
         SectionName="Promotion Details"
-        Icon="fa fa-tag"
+        Icon="fa fa-ticket-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -39,6 +39,14 @@
             [ShowLabel]="true"
             FieldName="MaxRedemptions"
             Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -96,14 +104,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -143,7 +143,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderAdjustments"
         SectionName="Order Adjustments"
-        Icon="fa fa-money-bill-wave"
+        Icon="fa fa-hand-holding-usd"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

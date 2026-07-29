@@ -17,8 +17,8 @@ export class mjBizAppsOrdersPaymentProviderTypeFormComponent extends BaseFormCom
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'providerDetails', sectionName: 'Provider Details', isExpanded: true },
-            { sectionKey: 'integrationConfiguration', sectionName: 'Integration Configuration', isExpanded: true },
-            { sectionKey: 'capabilities', sectionName: 'Capabilities', isExpanded: true },
+            { sectionKey: 'providerConfiguration', sectionName: 'Provider Configuration', isExpanded: true },
+            { sectionKey: 'providerCapabilities', sectionName: 'Provider Capabilities', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentProviders', sectionName: 'Payment Providers', isExpanded: false }
         ]);

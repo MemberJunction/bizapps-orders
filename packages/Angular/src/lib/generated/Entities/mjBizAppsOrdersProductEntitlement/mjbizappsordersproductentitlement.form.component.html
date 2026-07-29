@@ -29,11 +29,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Entitlement Definition Section -->
+    <!-- Entitlement Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="entitlementDefinition"
-        SectionName="Entitlement Definition"
-        Icon="fa fa-tags"
+        SectionKey="entitlementConfiguration"
+        SectionName="Entitlement Configuration"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -48,7 +48,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="Code"
-            Type="textbox"
+            Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -71,11 +71,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Resource Configuration Section -->
+    <!-- Resource Limits Section -->
     <mj-collapsible-panel
-        SectionKey="resourceConfiguration"
-        SectionName="Resource Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="resourceLimits"
+        SectionName="Resource Limits"
+        Icon="fa fa-tachometer-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

@@ -38,6 +38,8 @@ const ACCOUNTING = '__mj_BizAppsAccounting';
 const TAX_JURISDICTION_ENTITY = `MJ_BizApps_Accounting: Tax Jurisdictions`;
 const TAX_RATE_ENTITY = `MJ_BizApps_Accounting: Tax Rates`;
 const EXEMPTION_ENTITY = 'MJ_BizApps_Orders: Customer Tax Exemptions';
+// SINGULAR — CodeGen leaves 'Nexus' alone rather than forming 'Nexuses'.
+const COMPANY_TAX_NEXUS_ENTITY = 'MJ_BizApps_Accounting: Company Tax Nexus';
 
 /** The address facts jurisdiction matching uses. */
 export interface TaxAddress {
@@ -61,9 +63,16 @@ export interface TaxResolutionResult {
     Layers: ResolvedTaxLayer[];
     /** Combined rate, for reporting. The CHARGES are per layer — this is not what gets applied. */
     CombinedRate: number;
-    /** Set when tax was suppressed, with the reason, so a zero is never silently ambiguous. */
+    /**
+     * Set whenever tax was SUPPRESSED, with the reason. A zero is never silently ambiguous: the
+     * three ways to owe nothing — the product is not taxable, we have no nexus, the buyer is
+     * exempt — are different facts, and an auditor asking "why was no tax charged" needs the
+     * right one.
+     */
     ExemptReason?: string;
     ExemptionID?: string;
+    /** Jurisdictions that matched the address but where this company has NO nexus. */
+    SkippedForNoNexus?: string[];
 }
 
 interface JurisdictionRow {
@@ -81,6 +90,92 @@ interface JurisdictionRow {
 }
 
 const norm = (v: string | null | undefined): string => (v ?? '').trim().toLowerCase();
+
+/** One level of the category tree, nearest first. */
+export interface TaxabilityCategoryLevel {
+    ID: string;
+    DefaultIsTaxable: boolean | null;
+    DefaultTaxCategory: string | null;
+}
+
+/** What the taxability walk resolved, and where the answer came from. */
+export interface ResolvedTaxability {
+    IsTaxable: boolean;
+    TaxCategory: string | null;
+    /** Which level answered — for the audit trail and for explaining a zero. */
+    DecidedAt: 'Product' | 'ProductCategory' | 'ProductType' | 'Default';
+    /**
+     * WHICH category answered, when one did. A three-deep tree that resolves at the root is a
+     * different configuration from one that resolves at the leaf, and 'ProductCategory' alone
+     * cannot tell them apart.
+     */
+    DecidedAtCategoryID?: string;
+}
+
+/**
+ * Is this product taxable, and as what? (D73)
+ *
+ * Walks product → its category → that category's ANCESTORS, nearest first → its type. Most specific
+ * wins. This is the same walk `GLAccountResolver` performs for accounts, deliberately: a deployment
+ * that organises products into a category tree expects "exempt" set at the root to reach every leaf
+ * beneath it, and expects a leaf to be able to override its parent.
+ *
+ * THE TWO QUESTIONS RESOLVE INDEPENDENTLY. A product can name its own tax category while inheriting
+ * taxability from three levels up — which is the common real shape, because "what kind of thing is
+ * this" and "is it taxed here" are different facts that different people maintain.
+ *
+ * The type is the backstop and its `DefaultIsTaxable` is NOT NULL, so the walk always terminates
+ * with an answer rather than a null nobody knows how to read.
+ */
+export function ResolveTaxability(
+    product: { IsTaxable: boolean | null; TaxCategory: string | null },
+    /** The category chain, NEAREST FIRST: the product's own category, then its parent, to the root. */
+    categoryChain: TaxabilityCategoryLevel[],
+    type: { DefaultIsTaxable: boolean; DefaultTaxCategory: string | null } | null,
+): ResolvedTaxability {
+    let isTaxable: boolean | null = product.IsTaxable;
+    let decidedAt: ResolvedTaxability['DecidedAt'] = 'Product';
+    let decidedAtCategoryID: string | undefined;
+
+    if (isTaxable == null) {
+        for (const level of categoryChain) {
+            if (level.DefaultIsTaxable == null) continue;
+            isTaxable = level.DefaultIsTaxable;
+            decidedAt = 'ProductCategory';
+            decidedAtCategoryID = level.ID;
+            break;
+        }
+    }
+    if (isTaxable == null && type) {
+        isTaxable = type.DefaultIsTaxable;
+        decidedAt = 'ProductType';
+    }
+    if (isTaxable == null) {
+        // Nothing answered at any level. Taxable is the safe default: under-collecting is the
+        // expensive direction, because the seller owes the tax it failed to charge and usually
+        // cannot recover it from the customer afterwards.
+        isTaxable = true;
+        decidedAt = 'Default';
+    }
+
+    // The category resolves through the SAME chain, independently of taxability.
+    let taxCategory: string | null = product.TaxCategory;
+    if (taxCategory == null) {
+        for (const level of categoryChain) {
+            if (level.DefaultTaxCategory == null) continue;
+            taxCategory = level.DefaultTaxCategory;
+            break;
+        }
+    }
+    if (taxCategory == null) taxCategory = type?.DefaultTaxCategory ?? null;
+
+    return {
+        IsTaxable: isTaxable,
+        TaxCategory: taxCategory,
+        DecidedAt: decidedAt,
+        ...(decidedAtCategoryID ? { DecidedAtCategoryID: decidedAtCategoryID } : {}),
+    };
+}
 
 /**
  * Which jurisdictions cover an address?
@@ -153,8 +248,12 @@ export class DefaultTaxJurisdictionResolver extends BaseTaxJurisdictionResolver 
 export async function ResolveTax(
     input: {
         Address: TaxAddress;
-        /** The product's `TaxCategory`. Null falls back to the catch-all rate. */
+        /** The product's `TaxCategory`. Null falls back to the Standard rate. */
         ProductTaxCategory: string | null;
+        /** False short-circuits everything — an untaxable product owes nothing anywhere. */
+        IsTaxable?: boolean;
+        /** The SELLING company. Tax is only collected where this company has nexus. */
+        CompanyID?: string | null;
         OrganizationID: string | null;
         PersonID: string | null;
         AsOf: Date;
@@ -162,6 +261,11 @@ export async function ResolveTax(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<TaxResolutionResult> {
+    // An untaxable product owes nothing anywhere — no point resolving jurisdictions for it.
+    if (input.IsTaxable === false) {
+        return { Layers: [], CombinedRate: 0, ExemptReason: 'the product is not taxable' };
+    }
+
     const resolver =
         MJGlobal.Instance.ClassFactory.CreateInstance<BaseTaxJurisdictionResolver>(BaseTaxJurisdictionResolver) ??
         new DefaultTaxJurisdictionResolver();
@@ -169,7 +273,29 @@ export async function ResolveTax(
     if (!jurisdictionIDs.length) return { Layers: [], CombinedRate: 0 };
 
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const quoted = jurisdictionIDs.map((id) => `'${id}'`).join(',');
+
+    // ── NEXUS GATE ────────────────────────────────────────────────────────────
+    // Matching a jurisdiction says where the customer IS. It does not say we must collect there.
+    // Tax is only owed where the SELLING company has an obligation, so jurisdictions we have no
+    // nexus in are dropped before any rate is looked up — the commonest reason a correct system
+    // charges nothing.
+    const skippedForNoNexus: string[] = [];
+    let eligible = jurisdictionIDs;
+    if (input.CompanyID) {
+        const nexus = await LoadNexusJurisdictions(input.CompanyID, input.AsOf, provider, user);
+        eligible = jurisdictionIDs.filter((id) => nexus.has(norm(id)));
+        for (const id of jurisdictionIDs) if (!nexus.has(norm(id))) skippedForNoNexus.push(id);
+        if (!eligible.length) {
+            return {
+                Layers: [],
+                CombinedRate: 0,
+                ExemptReason: 'this company has no tax nexus in the destination jurisdictions',
+                SkippedForNoNexus: skippedForNoNexus,
+            };
+        }
+    }
+
+    const quoted = eligible.map((id) => `'${id}'`).join(',');
 
     const jurRes = await rv.RunView<{ ID: string; Code: string; Name: string }>(
         {
@@ -214,7 +340,7 @@ export async function ResolveTax(
     // three-fold error.
     const wanted = norm(input.ProductTaxCategory);
     const layers: ResolvedTaxLayer[] = [];
-    for (const jid of jurisdictionIDs) {
+    for (const jid of eligible) {
         const forJur = inForce.filter((r) => norm(r.TaxJurisdictionID) === norm(jid));
         if (!forJur.length) continue;
         // The product's OWN category wins; 'Standard' is the fallback.
@@ -253,6 +379,7 @@ export async function ResolveTax(
     return {
         Layers: layers,
         CombinedRate: Math.round(layers.reduce((s, l) => s + l.Rate, 0) * 1e6) / 1e6,
+        ...(skippedForNoNexus.length ? { SkippedForNoNexus: skippedForNoNexus } : {}),
     };
 }
 
@@ -327,6 +454,51 @@ async function findExemption(
         };
     }
     return null;
+}
+
+/**
+ * The jurisdictions this company currently has an obligation to collect in.
+ *
+ * Honours BOTH dates on `CompanyTaxNexus`: a registration can have ended while the duty to collect
+ * has not. Trailing nexus is real and asymmetric — California holds a seller through the nexus year
+ * plus the whole following calendar year — so the obligation ends at
+ * `max(RegisteredTo, ObligationEndsAt)`, and stopping at the earlier of the two would stop
+ * collecting while still liable.
+ */
+export async function LoadNexusJurisdictions(
+    companyID: string,
+    asOf: Date,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Set<string>> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<{
+        TaxJurisdictionID: string;
+        RegisteredFrom: Date;
+        RegisteredTo: Date | null;
+        ObligationEndsAt: Date | null;
+    }>(
+        {
+            EntityName: COMPANY_TAX_NEXUS_ENTITY,
+            ExtraFilter: `CompanyID = '${companyID}' AND Status = 'Active'`,
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+
+    const at = asOf.getTime();
+    const out = new Set<string>();
+    for (const n of res?.Results ?? []) {
+        if (n.RegisteredFrom && at < new Date(n.RegisteredFrom).getTime()) continue;
+        const ends = [n.RegisteredTo, n.ObligationEndsAt]
+            .filter(Boolean)
+            .map((d) => new Date(d as Date).getTime());
+        // No end date at all means open-ended. Otherwise the LATER of the two governs.
+        if (ends.length && at > Math.max(...ends)) continue;
+        out.add(norm(n.TaxJurisdictionID));
+    }
+    return out;
 }
 
 /** Tree-shaking anchor so the default jurisdiction resolver's registration survives bundling. */

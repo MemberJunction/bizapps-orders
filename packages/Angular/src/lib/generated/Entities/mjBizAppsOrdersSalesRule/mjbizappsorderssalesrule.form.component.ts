@@ -16,8 +16,8 @@ export class mjBizAppsOrdersSalesRuleFormComponent extends BaseFormComponent {
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'ruleConfiguration', sectionName: 'Rule Configuration', isExpanded: true },
-            { sectionKey: 'ruleLogic', sectionName: 'Rule Logic', isExpanded: true },
-            { sectionKey: 'approvalWorkflow', sectionName: 'Approval Workflow', isExpanded: true },
+            { sectionKey: 'scopeAndTargeting', sectionName: 'Scope and Targeting', isExpanded: true },
+            { sectionKey: 'logicAndApproval', sectionName: 'Logic and Approval', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

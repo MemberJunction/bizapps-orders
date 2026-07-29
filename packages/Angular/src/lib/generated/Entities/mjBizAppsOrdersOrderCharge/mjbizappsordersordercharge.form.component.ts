@@ -18,9 +18,9 @@ export class mjBizAppsOrdersOrderChargeFormComponent extends BaseFormComponent {
         this.initSections([
             { sectionKey: 'orderAssociation', sectionName: 'Order Association', isExpanded: true },
             { sectionKey: 'chargeConfiguration', sectionName: 'Charge Configuration', isExpanded: true },
-            { sectionKey: 'financialValues', sectionName: 'Financial Values', isExpanded: true },
-            { sectionKey: 'taxDetails', sectionName: 'Tax Details', isExpanded: true },
-            { sectionKey: 'overrideAudit', sectionName: 'Override Audit', isExpanded: true },
+            { sectionKey: 'financialDetails', sectionName: 'Financial Details', isExpanded: true },
+            { sectionKey: 'taxInformation', sectionName: 'Tax Information', isExpanded: true },
+            { sectionKey: 'overrideManagement', sectionName: 'Override Management', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderChargeAllocations', sectionName: 'Order Charge Allocations', isExpanded: false }
         ]);

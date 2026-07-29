@@ -79,6 +79,24 @@ export interface OrdersFixture {
     CoB: FixtureCompany;
     /** Has GL accounts but NO links at all — the unresolvable case that must roll the whole confirm back (D12). */
     CoC: FixtureCompany;
+    /**
+     * REAL US tax geography (D73). Seeded HERE, in the integration fixture, and deliberately NOT in
+     * `metadata/` — these are test facts, not application seed data, and shipping a US rate table
+     * with the app would be a maintenance promise nobody made (Amith 2026-07-28).
+     *
+     * The set is chosen to exercise the four shapes that actually occur:
+     *   - COUNTY VARIATION inside one state: Santa Clara 9.125% vs San Mateo 9.375%
+     *   - a FLAT state with no locals: Maryland 6%, DC 6%
+     *   - a REGIONAL add-on: Northern Virginia 6% vs 5.3% elsewhere
+     *   - CITY + DISTRICT layering: NYC is state 4% + city 4.5% + MCTD 0.375%
+     * Rates are approximate and dated; they are here to prove resolution, not to file returns.
+     */
+    Tax: {
+        /** TaxJurisdiction IDs by short key. */
+        JurisdictionIDs: Map<string, string>;
+        /** Ship-to Address IDs by short key — the input to jurisdiction matching. */
+        AddressIDs: Map<string, string>;
+    };
     /** RevenueRecognitionType IDs by Code. */
     RevRecTypeIDs: Map<string, string>;
     /** SubscriptionType IDs by Code. */
@@ -293,6 +311,8 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
         Event: { StartsAt: new Date('2027-04-15T09:00:00Z'), EndsAt: new Date('2027-04-17T17:00:00Z') },
         Customers: { OrganizationID: '', SecondOrganizationID: '', PersonID: '' },
         Products: {},
+        // Populated below, once the jurisdictions and addresses exist.
+        Tax: { JurisdictionIDs: new Map(), AddressIDs: new Map() },
     };
 
     fixture.Customers = {
@@ -351,6 +371,104 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
                 );
             }
         }
+    }
+
+    // ── REAL US TAX GEOGRAPHY (D73) ───────────────────────────────────────────
+    // Layered on purpose: a jurisdiction row matches on the fields it SPECIFIES, so a state row
+    // (RegionCode only) and a county row (RegionCode + postal range) both match a Santa Clara
+    // address and produce TWO charges. That is how real US sales tax works and it is why tax is
+    // modelled as a charge rather than as one number.
+    const authorityID = randomUUID();
+    await PoolQuery(
+        ctx,
+        `INSERT INTO ${ACCT_SCHEMA}.TaxAuthority (ID, Code, Name, CountryCode, IsActive)
+         VALUES ('${authorityID}', '${run}-US', '${run} US Tax Authorities', 'US', 1)`,
+    );
+
+    // key, code, name, region, postalFrom, postalTo, city, rate  (rate is the LAYER, not the total)
+    const JURISDICTIONS: Array<[string, string, string, string | null, string | null, string | null, string | null, number]> = [
+        // California: 7.25% statewide, then district taxes by county. Neighbouring counties differ
+        // by a quarter point, which is the whole argument for resolving below state level.
+        ['CA',            'CA-STATE',      'California',             'CA', null,    null,    null, 0.0725],
+        ['CA-SANTACLARA', 'CA-SCL',        'Santa Clara County',     'CA', '95000', '95199', null, 0.01875],
+        ['CA-SANMATEO',   'CA-SMT',        'San Mateo County',       'CA', '94000', '94499', null, 0.02125],
+        // Flat states — one layer, no locals.
+        ['DC',            'DC-STATE',      'District of Columbia',   'DC', null,    null,    null, 0.06],
+        ['MD',            'MD-STATE',      'Maryland',               'MD', null,    null,    null, 0.06],
+        // Virginia: 5.3% base, Northern Virginia adds 0.7%.
+        ['VA',            'VA-STATE',      'Virginia',               'VA', null,    null,    null, 0.053],
+        ['VA-NOVA',       'VA-NOVA',       'Northern Virginia',      'VA', '22000', '22299', null, 0.007],
+        // New York: state + city + a transit district, three separate layers.
+        ['NY',            'NY-STATE',      'New York',               'NY', null,    null,    null, 0.04],
+        ['NY-NYC',        'NY-NYC',        'New York City',          'NY', '10001', '10299', null, 0.045],
+        ['NY-MCTD',       'NY-MCTD',       'Metropolitan Commuter Transportation District', 'NY', '10001', '10299', null, 0.00375],
+    ];
+
+    for (const [key, code, name, region, from, to, city, rate] of JURISDICTIONS) {
+        const jid = randomUUID();
+        fixture.Tax.JurisdictionIDs.set(key, jid);
+        const q = (v: string | null) => (v == null ? 'NULL' : `'${v}'`);
+        await PoolQuery(
+            ctx,
+            `INSERT INTO ${ACCT_SCHEMA}.TaxJurisdiction
+               (ID, TaxAuthorityID, Code, Name, CountryCode, RegionCode, PostalCodeStart, PostalCodeEnd, CityName, IsActive)
+             VALUES ('${jid}','${authorityID}','${run}-${code}','${run} ${name}','US',${q(region)},${q(from)},${q(to)},${q(city)},1)`,
+        );
+        // Standard rate for every jurisdiction.
+        await PoolQuery(
+            ctx,
+            `INSERT INTO ${ACCT_SCHEMA}.TaxRate (ID, TaxJurisdictionID, TaxCategory, Rate, EffectiveFrom, Source)
+             VALUES ('${randomUUID()}','${jid}','Standard',${rate},'2020-01-01','Manual')`,
+        );
+    }
+
+    // A CATEGORY-SPECIFIC rate: Maryland zero-rates the 'Reduced' category while taxing everything
+    // else at 6%. Proves the resolver picks the product's own category over the Standard fallback —
+    // a distinction worth three-fold errors when it is wrong.
+    //
+    // 'Reduced' rather than a name like 'Publications' because accounting's CK_TaxRate_Category
+    // enumerates exactly five values in DDL. That is too narrow for real product taxability —
+    // groceries, prescription drugs, digital goods, clothing and publications are each taxed
+    // differently in different states — and it is the same shape as the Source enum that was
+    // dropped for the same reason. Marcelo has offered to promote it to a first-class lookup; until
+    // then the fixture speaks the vocabulary that exists.
+    await PoolQuery(
+        ctx,
+        `INSERT INTO ${ACCT_SCHEMA}.TaxRate (ID, TaxJurisdictionID, TaxCategory, Rate, EffectiveFrom, Source)
+         VALUES ('${randomUUID()}','${fixture.Tax.JurisdictionIDs.get('MD')}','Reduced',0.0,'2020-01-01','Manual')`,
+    );
+
+    // Ship-to addresses, one per jurisdiction shape.
+    const ADDRESSES: Array<[string, string, string, string, string]> = [
+        ['SantaClara', '1 Innovation Way', 'San Jose',      'CA', '95110'],
+        ['SanMateo',   '2 Peninsula Ave',  'San Mateo',     'CA', '94401'],
+        ['DC',         '3 Capitol St',     'Washington',    'DC', '20001'],
+        ['Maryland',   '4 Bay Rd',         'Annapolis',     'MD', '21401'],
+        ['NoVA',       '5 Beltway Dr',     'Arlington',     'VA', '22201'],
+        ['Richmond',   '6 James River Rd', 'Richmond',      'VA', '23219'],
+        ['NYC',        '7 Broadway',       'New York',      'NY', '10013'],
+    ];
+    for (const [key, line1, city, state, zip] of ADDRESSES) {
+        const aid = randomUUID();
+        fixture.Tax.AddressIDs.set(key, aid);
+        await PoolQuery(
+            ctx,
+            `INSERT INTO ${COMMON_SCHEMA}.Address (ID, Line1, City, StateProvince, PostalCode, Country)
+             VALUES ('${aid}','${line1}','${city}','${state}','${zip}','US')`,
+        );
+    }
+
+    // NEXUS: CoA collects in California, DC and Maryland — and deliberately NOT in New York or
+    // Virginia. Without a gap there is no way to prove the commonest reason a correct system
+    // charges nothing: we have no obligation there.
+    for (const key of ['CA', 'CA-SANTACLARA', 'CA-SANMATEO', 'DC', 'MD']) {
+        await PoolQuery(
+            ctx,
+            `INSERT INTO ${ACCT_SCHEMA}.CompanyTaxNexus
+               (ID, CompanyID, TaxJurisdictionID, NexusType, RegistrationNumber, RegisteredFrom, Status)
+             VALUES ('${randomUUID()}','${fixture.CoA.ID}','${fixture.Tax.JurisdictionIDs.get(key)}',
+                     'Economic','${run}-REG','2020-01-01','Active')`,
+        );
     }
 
     Assert(fixture.RevRecTypeIDs.size >= 3, 'revenue recognition types missing — push the orders app metadata');
@@ -551,7 +669,10 @@ async function createProduct(
         `INSERT INTO ${ORDERS_SCHEMA}.Product
             (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, SubscriptionTypeID, IsTaxable)
          VALUES ('${id}','${companyID}','${productTypeID}','${categoryID}','${run} ${label}','Active',
-                 '${revRecTypeID}',${subscriptionTypeID ? `'${subscriptionTypeID}'` : 'NULL'},0)`,
+                 '${revRecTypeID}',${subscriptionTypeID ? `'${subscriptionTypeID}'` : 'NULL'},1)`,
+        // IsTaxable = 1. It was hardcoded 0 when this fixture predated tax resolution, which made
+        // every product silently non-taxable — so the tax checks measured a zero the engine was
+        // producing CORRECTLY, for a reason that had nothing to do with what they were testing.
     );
     return id;
 }
@@ -605,6 +726,15 @@ export async function TeardownOrdersFixture(ctx: IntegrationCheckContext): Promi
         `DELETE FROM ${ORDERS_SCHEMA}.ProductCategory WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS_SCHEMA}.ProductType WHERE Name LIKE '${f.Run}%'`,
         `DELETE FROM ${ACCT_SCHEMA}.GLAccountLink WHERE RecordID IN (${companies})`,
+        // Tax geography (D73), inner-to-outer so the FKs hold.
+        `DELETE FROM ${ACCT_SCHEMA}.CompanyTaxNexus WHERE CompanyID IN (${companies})`,
+        `DELETE FROM ${ACCT_SCHEMA}.TaxRate WHERE TaxJurisdictionID IN
+           (SELECT ID FROM ${ACCT_SCHEMA}.TaxJurisdiction WHERE Code LIKE '${f.Run}-%')`,
+        `DELETE FROM ${ACCT_SCHEMA}.TaxJurisdiction WHERE Code LIKE '${f.Run}-%'`,
+        `DELETE FROM ${ACCT_SCHEMA}.TaxAuthority WHERE Code LIKE '${f.Run}-%'`,
+        `DELETE FROM ${ORDERS_SCHEMA}.CustomerTaxExemption
+          WHERE OrganizationID IN (SELECT ID FROM ${COMMON_SCHEMA}.Organization WHERE Name LIKE '${f.Run}%')
+             OR PersonID IN (SELECT ID FROM ${COMMON_SCHEMA}.Person WHERE LastName LIKE '${f.Run}%')`,
         // Charge-type links are keyed by CHARGE TYPE, not by company, so the company sweep above
         // does not reach them.
         `DELETE FROM ${ACCT_SCHEMA}.GLAccountLink

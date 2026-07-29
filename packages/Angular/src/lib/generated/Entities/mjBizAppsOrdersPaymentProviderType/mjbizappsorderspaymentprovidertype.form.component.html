@@ -41,6 +41,24 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Provider Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="providerConfiguration"
+        SectionName="Provider Configuration"
+        Icon="fa fa-sliders-h"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DriverClass"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -60,29 +78,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Integration Configuration Section -->
+    <!-- Provider Capabilities Section -->
     <mj-collapsible-panel
-        SectionKey="integrationConfiguration"
-        SectionName="Integration Configuration"
-        Icon="fa fa-plug"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="false"
-            FieldName="DriverClass"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Capabilities Section -->
-    <mj-collapsible-panel
-        SectionKey="capabilities"
-        SectionName="Capabilities"
-        Icon="fa fa-check-double"
+        SectionKey="providerCapabilities"
+        SectionName="Provider Capabilities"
+        Icon="fa fa-check-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

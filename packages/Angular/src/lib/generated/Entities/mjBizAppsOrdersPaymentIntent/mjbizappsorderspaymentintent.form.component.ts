@@ -17,8 +17,8 @@ export class mjBizAppsOrdersPaymentIntentFormComponent extends BaseFormComponent
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'providerInformation', sectionName: 'Provider Information', isExpanded: true },
-            { sectionKey: 'paymentStatus', sectionName: 'Payment Status', isExpanded: true },
-            { sectionKey: 'relatedEntities', sectionName: 'Related Entities', isExpanded: true },
+            { sectionKey: 'paymentLifecycle', sectionName: 'Payment Lifecycle', isExpanded: true },
+            { sectionKey: 'customerAndOrderDetails', sectionName: 'Customer and Order Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false }
         ]);

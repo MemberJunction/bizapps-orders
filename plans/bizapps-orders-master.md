@@ -236,6 +236,15 @@ The current decision set. Each is the standing ruling — superseded ancestors l
 | D62 | **`SubscriptionType.BenefitModel` separates who HOLDS a subscription from who BENEFITS, and that sets the DEDUPE SCOPE.** `SubscriberScope` alone conflated the two. `Holder` = the benefit follows WHOEVER holds it, person or org — what a `SubscriberScope='Either'` type needs. `Individual` = a NAMED person benefits, who may differ from the holder (a corporate seat: the org pays, an employee is the member). `Organization` = the org's members benefit collectively (a trade association). **Three values, not two:** collapsing `Holder` into `Individual` was tried and reverted — it forces every flexible type to demand a named person and breaks org purchases, which 22 integration checks caught immediately. This is not classification for its own sake — it decides what counts as a duplicate: `OrganizationMembers` keys on the ORG so a second purchase extends the company's one membership, while `NamedIndividual` keys on the (org, person) PAIR so ten seats for ten staff are ten subscriptions rather than ten collisions under `RejectDuplicate`. **Before this, one order could not buy seats for more than one person.** Ship-to resolves in THREE tiers per side — the line, then the ORDER's ship-to, then its customer — so nothing is required at the line: an order shipping to one recipient states them once on the header, and a line overrides only when it differs. | Amith 2026-07-26: "sometimes a sub accrues benefits to an org… some sub types can be org level and others indiv level and some might be mixed." |
 | D63 | **App-level settings use MJ's `ApplicationSettingEngine`; we add a typed façade, not a second engine.** `__mj.ApplicationSetting` (ApplicationID + Name + Value) is the sanctioned store and `@memberjunction/core-entities` already ships a cached `BaseEngine` over it — verified against our live Application row before building on it. `OrdersSettings` is a thin typed layer so callers read a real boolean with the default applied instead of parsing `"true"` and re-deciding the default at every call site. Being a BaseEngine, `AutoRefresh` propagates a settings change made through the entity API without a restart. | Amith 2026-07-26. I initially reported that MJ had no such engine — that was wrong, my grep excluded the directory it lives in. |
 | D64 | **A person's organization is STAMPED at order time from their dated affiliation, governed by a setting.** `Person` has no organization column: bizapps-common models affiliation as a dated `Relationship` (FromPersonID → ToOrganizationID, with StartDate/EndDate/Status), so "which org did they belong to" is genuinely point-in-time and changes when someone moves employer. Deriving it on READ would silently rewrite the history of an order that is immutable once booked, so it is resolved once and stored. The rule: zero qualifying affiliations leaves it blank — **that IS a personal order, no flag needed**; exactly one is used; more than one takes the most recent by `StartDate`, because `Relationship` has no uniqueness constraint and holding several at once (employee here, board member there) is normal rather than exceptional. Inference only ever ADDS — a stated organization is never second-guessed. Both the master switch (`AutoPopulateOrganizationFromPerson`, default on) and the qualifying types (`OrganizationAffiliationRelationshipTypes`, default `Employee`) are settings: being a `Vendor` to an organization must not make it your bill-to, and widening that is a data change rather than a release. | Amith 2026-07-26. `RelationshipType` is a lookup table in common, not a hardcoded enum — checked, so no change is needed there. |
+| D65 | **Bill-to and ship-to are PARTY pairs, and a subscriber can differ from both.** `OrderHeader` carries `BillToPersonID`/`BillToOrganizationID`/`BillToAddressID` and `ShipToPersonID`/`ShipToOrganizationID`/`ShipToAddressID`; `OrderLine` carries its own ship-to trio, defaulting from the header rather than being mandatory. The `Customer*` naming was dropped — a party is a person or an organization or both, and 'customer' hid which. `PaymentHeader`, `PaymentIntent` and `CustomerPaymentMethod` follow the same shape, the last with a CHECK that one of person/organization is present. | Amith 2026-07-26: "BillToPersonID/ShipToPersonID is better, more clear." Ship-to at line level is optional by design — naming a seat per line was rejected as too heavy. |
+| D66 | **Subscriptions accrue to a HOLDER, an INDIVIDUAL, or an ORGANIZATION** (`SubscriptionType.BenefitModel`, default `Holder`). A trade association where one company enrols and every employee is a member is the Organization case; a named seat is Individual; Holder is whoever the order names. Dedupe scope follows the model, so the same product bought twice for the same beneficiary extends rather than duplicates. | Amith 2026-07-26. Built as two values first; 22 checks failed, which is what proved the third was load-bearing rather than decorative. |
+| D67 | **Events are a product type with their own dates, and revenue defers to the event.** `EventProduct`/`EventOrderLine`; the line's `ServicePeriodStart`/`End` are stamped from the EVENT rather than typed per ticket, because a conference already knows when it is and a hand-typed date books revenue in the wrong period. An explicitly-set period always wins. | Amith 2026-07-26 — built inside orders rather than as a separate app. |
+| D68 | **`PaymentHeader.Amount` MUST equal the sum of its lines, and over-payment is legal.** The invariant is checked at the CAPTURE transition, not on every save: a `Pending` payment is a draft. Over-applying to an order is permitted and drives its balance NEGATIVE — that negative balance IS the customer credit, spendable on another order through the `AccountCredit` tender, which writes a zero-amount payment with two offsetting lines. This deletes 'unapplied cash' as a concept rather than modelling it. Lines are frozen after capture (51010/51011). | Amith 2026-07-26: "The issue is inconsistency, not the business allowing overpayment." `CreditMemoOrder` renamed `AccountCredit`. |
+| D69 | **Pricing resolves through the SAME walk as GL accounts** — product → its category → that category's ancestors → the company → a default resolver — with `BasePriceResolver` pluggable at any level. One row of `ProductPrice` IS one price rule: bands, seasons and time-of-day windows are several rows, and `Priority` disambiguates. **Ties are refused at WRITE time**, not resolved at read time. Direct `UnitPrice` entry always wins (D21). `Orders.PreviewPrice` runs the real pipeline, never a parallel one. | Amith 2026-07-27. Recurrence is delimited strings evaluated in TypeScript — never filtered in SQL, so a child table buys nothing. |
+| D70 | **`Promotion` is the offer; `PromotionCode` is a redeemable string pointing at it** (Stripe's split, so D22's launch provider maps one-to-one). Stacking is configured PER COMPANY — both `Sequential` (two 10% → 19%) and `Additive` (→ 20%) are supported, defaulting to Sequential because it discounts less. Non-stacking collisions resolve by **highest value**, and the loser is recorded as offered-not-applied. Order-level promotions MUST allocate to lines. Manual discounts require a `SalesAuthority`; over the cap they **escalate** through `SalesRule.ApprovalRequiredRoleID` rather than being refused, and the approval is stamped. | Amith 2026-07-27: absence of an authority is not permission; the escalation was half-built and shipped silently applying over-cap discounts until a review caught it. |
+| D71 | **Shipping, handling AND TAX are all CHARGES.** Modelling tax as a charge means multi-layer tax — state + county + city — is several charges rather than a special case, so ordering, allocation, override and GL treatment are written once. `ChargeType.Basis` decides what each computes on, which is how tax-on-shipping works and why it is configuration. Charges are computed, never hand-typed, but **overridable on the record** — an override stores who, when, why, and the value it replaced. **Tax layers never compound**: charges track a taxable base that non-tax charges enlarge and tax charges do not. | Amith 2026-07-26 ("tax is a charge") and 2026-07-29 ("we don't want to compound taxes"). Charges are per-line targetable, because taxability, nexus and exemption are all per line. |
+| D72 | **Nexus is about the SELLER; exemption is about the BUYER — and they live in different apps.** `CompanyTaxNexus` (accounting) says where OUR legal entity must collect; `CustomerTaxExemption` (orders) says whether THIS buyer must pay, scoped by jurisdiction and product tax category, for a person or an organization. Both must hold to charge. Accounting's `CustomerTaxProfile` was DROPPED: it was inert, was the only customer-shaped table in a schema made of companies and entries, and could not express a person, an exemption type, or a product scope. | Amith 2026-07-28: accounting is the general JE/ERP engine; customer concerns start at orders. Confirmed independently by the ledger test — rates are read by AR *and* AP, customer exemption only by AR. |
+| D73 | **Taxability inherits down the same chain as everything else**: product → category → its ancestors → product type. Nullable at product and category so 'ask my parent' is sayable; **NOT NULL at product type** so the walk always terminates with a real answer. Taxability and tax CATEGORY resolve independently through that chain. Rates resolve from the ship-to ADDRESS through accounting's hierarchical `TaxJurisdiction`, and a zero always records WHICH of the four reasons produced it — untaxable, no nexus, exempt, or no jurisdiction. | Amith 2026-07-29. Address→jurisdiction is a documented SEAM: postal/city matching is not rooftop-accurate, which is precisely where a commercial provider earns its money. |
 | D44 | **Cross-app references point UP the dependency graph only.** `Order.ContractID` is **REMOVED**: bizapps-contracts is downstream of orders, so a reference to it — hard OR soft — inverts the app graph and encodes a contracts concern in an orders table. When that app exists it will join to orders from its own schema. This is the same rule that removed accounting's `AccountingCompanyProfile.DefaultPaymentTermsTypeID`. `Order.ApprovalTaskID` stays soft only because **bizapps-tasks cannot currently be installed alongside our bizapps-common** — tasks' generated views select `Person.DisplayName`, which exists on common's enriched VIEW but not on the `Person` TABLE we have; it becomes a real FK the moment the two are version-aligned (see the versioning memo). | Amith 2026-07-25 (PR #10). |
 | D42 | **Initial payment on the order is a CONVENIENCE capture, and it is INTENT.** `OrderHeader.InitialPaymentTypeID` + `InitialPaymentAmount` + `InitialPaymentDetailID` record what the customer said they would pay at order entry; on confirm they auto-generate a `PaymentHeader` + `PaymentLine` applied to that order. They are written at order entry and **never updated once the payment exists** — the `PaymentHeader` is the record of what happened. Keeping them is what lets a quote carry payment intent before confirm and lets a failed initial payment preserve the request for retry. | Amith 2026-07-25. |
 
@@ -690,11 +699,13 @@ future (fields ship now, D21).
 > **Detailed design:** [`pricing-charges-and-promotions.md`](./pricing-charges-and-promotions.md) ·
 > **schema:** [`pricing-schema.md`](./pricing-schema.md)
 >
-> Supersedes D21's "tables built, engine future" framing. **Phases 1–3 are BUILT and green**
-> (2026-07-27): price resolution with a pluggable resolver walk mirroring `GLAccountResolver`,
-> promotions with stacking and authorized manual discounts, and charges — including TAX, which is
-> modelled as a charge rather than as a separate concept. Phase 4 is the tax DATA problem: rate
-> feed, `CompanyTaxNexus`, product-scoped exemptions.
+> Supersedes D21's "tables built, engine future" framing. **All four phases are BUILT and green**
+> (2026-07-29): price resolution with a pluggable resolver walk mirroring `GLAccountResolver`
+> (D69); promotions with stacking, authorized manual discounts and escalation (D70); charges,
+> including TAX modelled as a charge rather than a separate concept (D71); and tax resolution from
+> the ship-to address with nexus, exemptions and a taxability inheritance chain (D72/D73).
+>
+> **What remains is the tax DATA problem, not the mechanism**: where rates come from. See §11.
 
 - **Pricing per D21:** tables built; deterministic precedence with `UnitPrice` direct entry as the
   base; `ResolvePrice` engine on top; contract-override slot reserved at the top of the chain for
@@ -715,14 +726,45 @@ future (fields ship now, D21).
 
 ## 11. Tax
 
-Per D23: Option B durable shape, third-party engine calculates, our tables snapshot. Tax remains
-**deferred by complexity** — no stub — until the finance call (§20): pull Stripe Tax forward for
-LH4I launch, or launch explicitly tax-exempt/manual. Stripe Tax is the natural first provider (it
-attaches to the checkout we already use); Avalara-class when non-Stripe channels or
-exemption-certificate management matter (we sell to nonprofits — certs matter). Tax remittance:
-the selling company collects/remits (Robert; Jeremy verifies nexus posture — rides Q25's sitting).
-S1 already ships `LineTax`/`LineTotalGross`, so the tax build slots in without reworking totals or
-booking.
+**Built (D71/D72/D73).** Tax resolves from the ship-to address: which jurisdictions reach it
+(accounting's hierarchical `TaxJurisdiction`, matched on country/region/city/postal), whether this
+company has nexus (`CompanyTaxNexus`), whether the product is taxable (the D73 walk), and whether
+the buyer is exempt (`CustomerTaxExemption`, scoped by jurisdiction and tax category). Each
+jurisdiction layer becomes its own charge, so state + county + city is three rows that sum rather
+than one number that compounds.
+
+**The four ways to owe nothing are recorded, not just totalled.** Untaxable, no nexus, exempt, and
+no-jurisdiction produce the identical zero, so the reason is written as a zero-amount
+`OrderLinePriceComponent`. An auditor asking "why was no tax charged" gets an answer.
+
+**What is NOT built, and is the actual remaining work:**
+
+- **Where rates come from.** The engine reads accounting's `TaxRate`; nothing populates it at scale.
+  Real US geography is seeded in the integration fixture only — deliberately not in app metadata,
+  because shipping a US rate table with the app is a maintenance promise nobody made.
+- **A provider seam at the right altitude.** `BaseTaxJurisdictionResolver` answers "which of OUR
+  jurisdiction rows match", which no commercial vendor can implement. A higher
+  `BaseTaxDeterminationProvider` (lines in, computed tax out) is needed before any vendor
+  integration, with the current resolver demoted to an internal detail of the built-in provider.
+- **Rooftop accuracy.** Postal/city matching is not rooftop-accurate — a postal code can straddle a
+  boundary — and the states themselves legislate that ZIP+4 is ambiguous. This is precisely where a
+  provider earns its money.
+- **Certificate expiry by INACTIVITY.** `CertificateExpiresAt` is correct for the ~28 states with
+  fixed dates. 24 SST states plus six others define validity as "purchases continuing within any 12
+  months", which makes it a function of the order table rather than a stored date — and it
+  *un*-expires when a new order lands.
+- **Economic-nexus threshold monitoring.** `CompanyTaxNexus` records obligations that EXIST;
+  deciding when a new one arises needs three running accumulators per state (gross / retail /
+  taxable, because states differ on which), and no vendor exposes this by API.
+
+**Sourcing posture (research, 2026-07-28).** Outsource the DATA, insource the DECISION and the
+RECORD. The free Streamlined Sales Tax files cover 24 states and carry **uncapped statutory**
+hold-harmless relief; Avalara's accuracy guarantee is **capped at 12 months of fees** and void if
+the error traces to address quality or nexus settings. Amith 2026-07-28: Avalara is overkill for
+now. **Escalate to counsel before finalising payment architecture:** a platform that touches payment
+on behalf of third-party merchants can become marketplace facilitator, and therefore seller of
+record, in ~45 states.
+
 
 ---
 

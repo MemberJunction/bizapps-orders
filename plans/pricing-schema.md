@@ -1,9 +1,11 @@
 # Pricing, promotions and charges — proposed schema
 
-> **Status:** BUILT (2026-07-27), phases 1–3. Two columns were added during the build that this
+> **Status:** BUILT (2026-07-29), phases 1–4. Two columns were added during the build that this
 > document did not anticipate — `OrderLine.DiscountAmount` and `OrderLine.ChargeAmount` — because a
 > percentage cannot express an allocated share exactly and charges needed somewhere to land that was
 > not the tax column. Both are documented in the migration.
+>
+> **Phase 4 (tax) added more than this document anticipated** — see the appendix at the end.
 > **Design:** [`pricing-charges-and-promotions.md`](./pricing-charges-and-promotions.md)
 > **Convention:** phase markers show what lands when. Everything is `__mj_BizAppsOrders` unless noted.
 
@@ -515,3 +517,72 @@ needs — no schema change in accounting for new charge or promotion kinds.
    jurisdiction, not of an order) or orders. Phase 4, so not blocking.
 2. **Rate feed provider** — which service backs the sync posture, and who owns the credentials.
    Phase 4.
+
+---
+
+## Appendix — what phase 4 (tax) actually built
+
+This document proposed one column on `Product` and one on accounting's `CustomerTaxProfile`. The
+shape that landed is different in three ways, each for a reason worth recording.
+
+### `CustomerTaxProfile` was DROPPED, not extended
+
+It was inert — zero readers in either repo — and it was the only customer-shaped table in a schema
+otherwise made of companies, accounts and entries, reaching into bizapps-common for `Organization`
+to exist at all. Extending it would have deepened a dependency pointing the wrong way. Marcelo
+independently raised the same constraint from the accounting side (BA-D30: accounting must not
+reference an orders entity), which the orders-side model satisfies by construction.
+
+### `CustomerTaxExemption` (orders) — new
+
+```sql
+CREATE TABLE CustomerTaxExemption (
+    ID                    UNIQUEIDENTIFIER NOT NULL,
+    OrganizationID        UNIQUEIDENTIFIER NULL,   -- exactly one of these two,
+    PersonID              UNIQUEIDENTIFIER NULL,   -- enforced by CHECK
+    TaxJurisdictionID     UNIQUEIDENTIFIER NULL,   -- NULL = every jurisdiction
+    TaxCategory           NVARCHAR(50)     NULL,   -- NULL = every category
+    ExemptionType         NVARCHAR(30)     NOT NULL,  -- Resale|NonProfit|Government|Educational|Other
+    CertificateRef        NVARCHAR(200)    NULL,
+    CertificateIssuedAt   DATE             NULL,
+    CertificateExpiresAt  DATE             NULL,
+    StartedAt / EndedAt / Status / Comments
+);
+```
+
+**Three nullable scopes, each meaning "all"** — which is what makes "exempt on publications but not
+on merchandise" two facts rather than one impossible flag. `TaxCategory` is a STRING matching
+accounting's `TaxRate.TaxCategory`, deliberately not an FK to `Product`, so no accounting table ever
+references an orders entity.
+
+### `CompanyTaxNexus` (accounting) — new
+
+Two dates, kept apart on purpose. `RegisteredTo` is when the REGISTRATION ended; `ObligationEndsAt`
+is when the duty to COLLECT ends, which routinely outlasts it (California holds a seller through the
+nexus year plus the whole following calendar year). Collapsing them ends the obligation early.
+
+### The taxability chain (D73)
+
+| Table | Column | Nullable? | Why |
+|---|---|---|---|
+| `Product` | `IsTaxable` | **yes** | the actual value; null = ask upward |
+| `Product` | `TaxCategory` | yes | resolves independently of taxability |
+| `ProductCategory` | `DefaultIsTaxable` | **yes** | so the walk continues to the PARENT, then the root |
+| `ProductCategory` | `DefaultTaxCategory` | yes | same chain, independent question |
+| `ProductType` | `DefaultIsTaxable` | **NO** | the backstop — the walk must terminate with a real answer |
+| `ProductType` | `DefaultTaxCategory` | yes | |
+
+`Product.IsTaxable` was `NOT NULL DEFAULT 1` and had to become nullable: a non-null default cannot
+express "inherit", so every product restated a decision its category had already made — and restated
+decisions drift. The same reasoning makes the category level nullable and the type level not.
+
+### Two accounting-side fixes this forced
+
+`TaxRate.Rate` widened from `DECIMAL(7,4)` to `DECIMAL(9,6)` — four places cannot hold 9.375% — and
+`CK_TaxRate_Source` dropped, because enumerating rate providers in DDL makes every new feed a
+migration.
+
+**Still enumerated and still too narrow:** `CK_TaxRate_Category` allows only
+`Standard | Reduced | Zero | Exempt | Custom`. Real product taxability needs groceries, prescription
+drugs, digital goods, clothing and publications as distinct categories. Marcelo has offered to
+promote it to a first-class lookup; until then the fixture speaks the vocabulary that exists.

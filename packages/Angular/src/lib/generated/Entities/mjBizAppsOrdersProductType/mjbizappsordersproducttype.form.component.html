@@ -75,6 +75,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DefaultTaxCategory"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -106,10 +114,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- System Configuration Section -->
+    <!-- Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="systemConfiguration"
-        SectionName="System Configuration"
+        SectionKey="configuration"
+        SectionName="Configuration"
         Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">

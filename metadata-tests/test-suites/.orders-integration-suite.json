@@ -177,6 +177,17 @@
           "primaryKey": {
             "ID": "963A076A-CFA3-498D-BF0E-604B3464538E"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-15 - Tax",
+            "Sequence": 13,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "B667D440-DFA2-4BBB-B6E7-7A1E7C8E6246"
+          }
         }
       ]
     },

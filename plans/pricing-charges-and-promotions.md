@@ -1,6 +1,7 @@
 # Pricing, adjustments, charges and promotions — design
 
-> **Status:** Phases 1–3 BUILT and green (2026-07-27); phase 4 (tax data, nexus, exemptions) next.
+> **Status:** ALL FOUR PHASES BUILT and green (2026-07-29). What remains is the tax DATA problem —
+> where rates come from — not the mechanism. See the master plan §11.
 > **Parent plan:** [`bizapps-orders-master.md`](./bizapps-orders-master.md) §10, D21/D22/D23.
 > **Supersedes:** the "tables built, engine future" position in D21 — the tables are incomplete and
 > the engine is the point.
@@ -311,10 +312,17 @@ Each phase ships something usable rather than half of everything.
 | **1** ✅ | resolver walk + price rules + price lists + customer→list link + `PreviewPrice` | staff stop typing prices |
 | **2** ✅ | promotions + codes + qualification + stacking + GL treatment | campaigns |
 | **3** ✅ | `OrderCharge` + allocation + shipping + **tax as a charge** + override trail + GL | real order totals |
-| **4** | tax DATA — rate feed, `CompanyTaxNexus`, product-scoped exemptions, provider seam | launch-with-tax |
+| **4** ✅ | tax resolution from the ship-to address: `CompanyTaxNexus`, `CustomerTaxExemption`, the taxability inheritance chain | tax charged correctly |
+| **5** | the tax DATA problem: rate feed, a provider seam at the right altitude, rooftop accuracy, inactivity-based certificate expiry, nexus threshold monitoring | launch-with-tax at scale |
 
-**Phase 3 already computes and books tax**, because tax is a charge and charges were built. What
-phase 4 adds is where the RATES come from and who is exempt — the data problem, not the mechanism.
+**Phase 3 computed and booked tax** because tax is a charge and charges were built. **Phase 4 made
+it correct**: rates resolve from the ship-to address rather than from the caller, nexus gates
+whether we collect at all, exemptions gate whether this buyer pays, and taxability inherits down the
+product → category → ancestors → type chain.
+
+**Phase 5 is the DATA problem**, and it is genuinely separate: populating rates at scale, a provider
+seam a vendor can actually implement, rooftop accuracy, and the inactivity-based certificate expiry
+that ~30 states use. See the master plan §11 for the full list and the sourcing posture.
 
 ### What phases 1–3 found that review would not have
 
@@ -331,6 +339,24 @@ right one.**
   simply never been non-zero.
 - `GLAccountLink` had no company dimension, so a globally-shared record could only ever have one
   account across every company.
+
+### Phase 4 found five more
+
+- **`TaxRate.Rate` was `DECIMAL(7,4)`** and could not hold a real US rate: San Mateo's 9.375% stored
+  as 9.38%. The motivating comment in the resolver cited San Mateo against a schema that rounded it.
+- **The catch-all rate lookup was dead code** — it looked for a category the CHECK constraint makes
+  impossible, so an unmatched product got NO tax layer at all.
+- **Tax compounded on tax**: 92.61 where the answer is 91.25. US layers do not compound, and
+  tax-on-tax is unlawful in every jurisdiction.
+- **Per-line tax was spread across all lines**, so an exempt line received a share of a taxable
+  line's tax.
+- **`decideCharges` returned early when no charges were stated**, silently skipping tax on the
+  commonest real order — goods and an address with nothing hand-entered.
+
+And a sixth in the tests rather than the code: the fixture created every product with
+`IsTaxable = 0`, written before tax existed, so four checks passed because the engine correctly said
+"not taxable" for a reason unrelated to what they tested. That is why every zero-expecting tax check
+now asserts the REASON.
 
 Phase 1 is the one that pays immediately and carries the most design risk; it should land and be
 lived with before phase 2 starts.

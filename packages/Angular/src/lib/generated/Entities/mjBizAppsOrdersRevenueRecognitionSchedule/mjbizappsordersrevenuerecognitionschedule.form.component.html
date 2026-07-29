@@ -93,7 +93,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -121,31 +121,6 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Rev Rec Schedule Lines Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersRevRecScheduleLines"
-        SectionName="Rev Rec Schedule Lines"
-        Icon="fa fa-calendar-check"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersRevRecScheduleLines')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Rev Rec Schedule Lines','ScheduleID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Rev Rec Schedule Lines')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersRevRecScheduleLines')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersRevRecScheduleLines', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Order Lines Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderLines"
@@ -165,6 +140,31 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Rev Rec Schedule Lines Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersRevRecScheduleLines"
+        SectionName="Rev Rec Schedule Lines"
+        Icon="fa fa-calendar-check"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersRevRecScheduleLines')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Rev Rec Schedule Lines','ScheduleID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Rev Rec Schedule Lines')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersRevRecScheduleLines')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersRevRecScheduleLines', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>
