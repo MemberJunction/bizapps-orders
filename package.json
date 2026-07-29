@@ -24,7 +24,11 @@
     "postinstall": "node scripts/link-local-apps.mjs",
     "link:local": "node scripts/link-local-apps.mjs",
     "install:deps": "npm install",
-    "setup": "echo 'Please run: npm run mj:migrate && npm run mj:codegen && npm run build'"
+    "setup": "echo 'Please run: npm run mj:migrate && npm run mj:codegen && npm run build'",
+    "test:unit": "vitest run",
+    "test:integration": "node test-harnesses/integration.mjs",
+    "test:coverage-gate": "node scripts/assert-check-count.mjs",
+    "verify": "npm run test:unit && npm run build && npm run test:integration 2>&1 | tee /tmp/integration.log && node scripts/assert-check-count.mjs /tmp/integration.log"
   },
   "repository": {
     "type": "git",

@@ -17,7 +17,7 @@
  *   subscriptions        SB1–SB12  SubscriptionType rules → Subscription + terms (D45/D46)
  *   subscription-cancellation SC1–SC10  Orders.CancelSubscription: policy → reversal (design §5)
  *   subscription-renewal      SR1–SR11  Orders.SpawnRenewals: the scheduled continuation (D55)
- *   payments-rollups     PR1–PR9   rollup triggers, numbering, initial payment (D30/D39/D42)
+ *   payments-rollups     RU1–RU9   rollup triggers, numbering, initial payment (D30/D39/D42)
  *   payment-ledger       PL1–PL12  the CASH leg: capture/refund journal entries, AR reconciliation (D17/D18)
  *   line-subscriber      LS1–LS8   per-line ship-to and BenefitModel dedupe scope (D61/D62)
  *   account-credit       AC1–AC11  the allocation invariant, over-payment, credit as tender (D68)
