@@ -575,7 +575,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 row.Set('Amount', c.Amount);
                 row.Set('RunningTotal', c.RunningTotal);
                 if (c.SourceEntityName && c.SourceRecordID) {
-                    const ent = md.Entities.find((e) => e.Name === c.SourceEntityName);
+                    const ent = md.EntityByName(c.SourceEntityName);
                     if (ent) {
                         row.Set('SourceEntityID', ent.ID);
                         row.Set('SourceRecordID', c.SourceRecordID);

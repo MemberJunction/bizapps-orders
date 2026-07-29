@@ -1,0 +1,54 @@
+[
+  {
+    "fields": {
+      "Code": "OrderBooking",
+      "Name": "Order Booking",
+      "Description": "Written when an order line is confirmed (orders D10): one entry per line, debiting the receivable and crediting revenue or deferred revenue, with any discount to its contra account. Seeded by bizapps-orders because the EVENT is an orders concept - accounting seeds only the ledger-mechanics types it originates itself.",
+      "IsSystem": false,
+      "IsBatchSummary": false,
+      "IsActive": true
+    },
+    "primaryKey": {
+      "ID": "684C06D4-55DA-49D7-8453-E046FC82B895"
+    }
+  },
+  {
+    "fields": {
+      "Code": "RevenueRecognition",
+      "Name": "Revenue Recognition",
+      "Description": "A forward-dated release of deferred revenue (orders D14). Written AT BOOKING for every future period rather than by a scheduler, so the whole obligation is visible in the ledger the day the order is confirmed.",
+      "IsSystem": false,
+      "IsBatchSummary": false,
+      "IsActive": true
+    },
+    "primaryKey": {
+      "ID": "48D60BCC-044B-4CC2-9675-0D3B57BCDCBA"
+    }
+  },
+  {
+    "fields": {
+      "Code": "PaymentReceipt",
+      "Name": "Payment Receipt",
+      "Description": "Written when a payment allocation books the cash leg (orders D13): debits cash and clears the receivable of whichever company owns the line the money settles. On a multi-company order this is one entry per company plus the intercompany legs.",
+      "IsSystem": false,
+      "IsBatchSummary": false,
+      "IsActive": true
+    },
+    "primaryKey": {
+      "ID": "411DF6DC-3652-4151-836F-CDA2E46A5038"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Refund",
+      "Name": "Refund",
+      "Description": "The MIRROR of a capture (orders D53) - the same accounts with debit and credit swapped, at positive amounts. Never a negated original: accounting refuses a line with a negative debit, and a mirrored entry is also what an auditor expects to see.",
+      "IsSystem": false,
+      "IsBatchSummary": false,
+      "IsActive": true
+    },
+    "primaryKey": {
+      "ID": "9A0B78EA-830D-40C5-A957-ABEBD02D9785"
+    }
+  }
+]

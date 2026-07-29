@@ -49,7 +49,9 @@ export interface AccountingEngineSurface {
 
 /** MJ entity ID for a name, with an error that says which name failed rather than `undefined`. */
 export function EntityIDFor(name: string): string {
-    const entity = new Metadata().Entities.find((e) => e.Name === name);
+    // EntityByName, not Entities.find: it is case- and trim-insensitive and O(1), and it side-steps
+    // the global-provider footgun in code paths that were handed a provider (Marcelo, PR #15).
+    const entity = new Metadata().EntityByName(name);
     if (!entity) {
         throw new Error(`Entity '${name}' not found in metadata. Has CodeGen run for this schema?`);
     }
