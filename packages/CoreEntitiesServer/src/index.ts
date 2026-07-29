@@ -97,6 +97,12 @@ export {
 } from './PricingBehavior.js';
 export type { PriceRule, PriceTierRule, PriceContext, PricingModel, InapplicableReason, RulePick } from './PricingBehavior.js';
 
+// Reversals (D16) — the pure judgement and the lookups it needs. Same split as pricing.
+export { RemainingReturnable, ValidateReversal, InheritedTerms } from './ReversalBehavior.js';
+export type { ReversalOrigin, ReversalRequest } from './ReversalBehavior.js';
+export { LoadReversalContext } from './ReversalResolver.js';
+export type { ReversalContext } from './ReversalResolver.js';
+
 // Promotions (D70): the pure engine, the DB-backed resolution, and the qualifier plugin seam.
 export { ApplyPromotions, ScreenPromotion, ValuePromotion } from './PromotionBehavior.js';
 export type {

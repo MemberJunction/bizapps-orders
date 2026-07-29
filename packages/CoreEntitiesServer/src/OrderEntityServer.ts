@@ -48,7 +48,9 @@ import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePrice, type ResolvedPrice } from './PriceResolver.js';
-import { AllocateProRata } from './PricingBehavior.js';
+import { AllocateProRata, NetAfterDiscount } from './PricingBehavior.js';
+import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
+import { LoadReversalContext } from './ReversalResolver.js';
 import type { StackingMode } from './PromotionBehavior.js';
 import {
     RunCharges,
@@ -384,10 +386,23 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             // Events carry their own service period — the event happens when it happens.
             await this.applyEventServicePeriod(line);
 
+            // A REVERSAL is settled from its origin, not from the price table (D16). This must come
+            // before pricing: `ComputeAmount` refuses a negative quantity outright — "which volume
+            // band does -5 land in?" has no answer — so a reversal that reached the pricing engine
+            // would fail there, with a message about quantity rather than about the return.
+            const inheritedFromOrigin = await this.applyReversalOrigin(line);
+
             // Price after proration has settled the quantity — quantity bands and tiers are a
             // function of the quantity actually being bought, so pricing a pre-prorated quantity
             // would band on a number that never reaches the line.
-            await this.applyResolvedPrice(line);
+            //
+            // NOT for negative quantities. A negative line with no origin is refused by the line's
+            // own validation, which names `ReversesOrderLineID` and tells the reader what would make
+            // it legal — but pricing runs first and `ComputeAmount` throws about volume bands
+            // instead, replacing a message that helps with one that does not.
+            if (!inheritedFromOrigin && Number(line.Quantity ?? 0) >= 0) {
+                await this.applyResolvedPrice(line);
+            }
         }
 
         // Promotions see priced lines and stamp DiscountAmount while they are still in memory.
@@ -433,12 +448,17 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const user = this.ContextCurrentUser as UserInfo;
 
         // Nets AFTER promotions — decidePromotions has already stamped DiscountAmount.
-        const chargeable = this._lines.map((line, i) => {
-            const gross = Math.round(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) * 100) / 100;
-            const afterPct = Math.round(gross * (1 - Number(line.DiscountPct ?? 0)) * 100) / 100;
-            const net = Math.max(0, Math.round((afterPct - Number(line.DiscountAmount ?? 0)) * 100) / 100);
-            return { ID: String(i), Net: net };
-        });
+        // Shared with `OrderLineEntityServer.computeTotals` — the same rule, computed once. When
+        // these were two independent expressions they clamped a reversal line to zero in both
+        // places, so a return owed no tax refund and the ledger and the line disagreed.
+        const chargeable = this._lines.map((line, i) => ({
+            ID: String(i),
+            Net: NetAfterDiscount(
+                Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0),
+                Number(line.DiscountPct ?? 0),
+                Number(line.DiscountAmount ?? 0),
+            ),
+        }));
 
         // Tax charges the caller did not state are RESOLVED from the ship-to address (D73): which
         // jurisdictions reach it, whether this company has nexus in them, whether the product is
@@ -490,7 +510,11 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
         for (let i = 0; i < this._lines.length; i++) {
             const line = this._lines[i];
-            if ((chargeable[i]?.Net ?? 0) <= 0) continue;
+            // A line worth NOTHING is not taxed — but a NEGATIVE line is a reversal (D16), and it
+            // owes a tax refund of exactly the same shape. `<= 0` collapsed those two: a return
+            // came back with the goods refunded and the tax kept, which overcharges the customer
+            // by the tax and leaves a ledger that balances perfectly while doing it.
+            if ((chargeable[i]?.Net ?? 0) === 0) continue;
 
             const taxability = await this.resolveLineTaxability(line.ProductID);
             const resolved = await ResolveTax(
@@ -659,6 +683,91 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             provider,
             user,
         );
+    }
+
+    /**
+     * Settle a reversal line from the line it unwinds (D16). Returns true when this line WAS a
+     * reversal, so the caller knows to skip ordinary pricing.
+     *
+     * THREE THINGS ONLY THE ORIGIN KNOWS, and each of them produces a balanced journal entry when
+     * it goes wrong — which is why they are refusals here rather than checks somewhere downstream:
+     *
+     *   - **How much is left.** Returning 5 against a line that sold 2 refunds money never
+     *     collected. The entry balances; nothing later in the pipeline can tell.
+     *   - **What it cost.** Pricing a return against today's table refunds last year's purchase at
+     *     this year's rate. A stated `UnitPrice` still wins — see `applyResolvedPrice` — because a
+     *     stated price is a decision somebody made, and a negotiated return settlement is exactly
+     *     that.
+     *   - **Which product.** An ID copied from the wrong row credits another company's revenue.
+     *
+     * Runs on any line carrying `ReversesOrderLineID`, including a POSITIVE one: a line that points
+     * at an origin is making a claim about that origin, and the claim is checkable either way.
+     */
+    private async applyReversalOrigin(line: mjBizAppsOrdersOrderLineEntity): Promise<boolean> {
+        const reverses = (line as unknown as { ReversesOrderLineID?: string | null }).ReversesOrderLineID;
+        if (!reverses) {
+            // A negative line with no origin. `OrderLineEntityServer.ValidateAsync` says this too,
+            // and says it well — but it never gets the chance: pricing is skipped for a negative
+            // quantity, so `UnitPrice` stays null and the NOT NULL field check fires first with
+            // "Unit Price cannot be null", which sends the reader to entirely the wrong field.
+            // Refusing here keeps the message that names what would make the line legal.
+            if (Number(line.Quantity ?? 0) < 0) {
+                throw new Error(
+                    `Order line ${line.LineNumber}: a negative quantity is only valid on a reversal line. ` +
+                        `Set ReversesOrderLineID to the line being reversed, or use a positive quantity.`,
+                );
+            }
+            return false;
+        }
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        // Exclude THIS line from the already-reversed total. On a re-save it is already in the
+        // database, and counting it would make the line refuse itself.
+        const context = await LoadReversalContext(reverses, provider, user, line.ID ? [line.ID] : []);
+        if (!context) {
+            throw new Error(
+                `Order line ${line.LineNumber} reverses order line ${reverses}, which does not exist. ` +
+                    `A reversal pointing at nothing cannot be validated against anything — the quantity ` +
+                    `and price it claims to unwind have no source.`,
+            );
+        }
+
+        // In-memory siblings on THIS order count too. Two reversal lines against one origin, saved
+        // together, are each within the original while their sum is not — and neither is in the
+        // database yet for `LoadReversalContext` to have seen.
+        let siblingReversed = 0;
+        for (const other of this._lines) {
+            if (other === line) continue;
+            const otherReverses = (other as unknown as { ReversesOrderLineID?: string | null })
+                .ReversesOrderLineID;
+            if (otherReverses && uuidKey(otherReverses) === uuidKey(reverses)) {
+                siblingReversed += Math.abs(Number(other.Quantity ?? 0));
+            }
+        }
+
+        const refusal = ValidateReversal(
+            { ProductID: line.ProductID, Quantity: Number(line.Quantity ?? 0) },
+            context.Origin,
+            context.AlreadyReversed + siblingReversed,
+        );
+        if (refusal) {
+            throw new Error(`Order line ${line.LineNumber}: ${refusal}`);
+        }
+
+        // Inherit the origin's terms, unless the caller stated their own. Same rule as pricing: a
+        // stated value is a decision, and resolution only ever fills a blank.
+        const terms = InheritedTerms(context.Origin);
+        const priceField = line.GetFieldByName('UnitPrice');
+        if (!(priceField?.Dirty === true || (line.UnitPrice ?? 0) > 0)) {
+            line.UnitPrice = terms.UnitPrice;
+        }
+        const discountField = line.GetFieldByName('DiscountPct');
+        if (!(discountField?.Dirty === true || (line.DiscountPct ?? 0) > 0)) {
+            line.DiscountPct = terms.DiscountPct;
+        }
+        return true;
     }
 
     /**

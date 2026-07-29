@@ -161,7 +161,7 @@ async function reloadEngine(ctx: IntegrationCheckContext): Promise<void> {
  * class as the fixture's GL links), and the engine caches it in-process, so a per-check version
  * would leave a warm cache pointing at rolled-back rows — the trap PL4 documents.
  */
-async function CreateIntercompanyFixture(ctx: IntegrationCheckContext): Promise<void> {
+export async function CreateIntercompanyFixture(ctx: IntegrationCheckContext): Promise<void> {
   const f = Fx();
   const companies = [f.CoA, f.CoB, f.CoC];
 
@@ -201,7 +201,7 @@ async function CreateIntercompanyFixture(ctx: IntegrationCheckContext): Promise<
 }
 
 /** Remove the intercompany reference data this bundle committed. */
-async function TeardownIntercompanyFixture(ctx: IntegrationCheckContext): Promise<void> {
+export async function TeardownIntercompanyFixture(ctx: IntegrationCheckContext): Promise<void> {
   const f = Fx();
   const ids = [f.CoA.ID, f.CoB.ID, f.CoC.ID].map((c) => `'${c}'`).join(",");
   try {

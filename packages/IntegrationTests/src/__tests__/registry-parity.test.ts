@@ -35,6 +35,10 @@ import '../checks/pricing.checks.js';
 import '../checks/promotions.checks.js';
 import '../checks/charges.checks.js';
 import '../checks/tax.checks.js';
+import '../checks/composition.checks.js';
+import '../checks/returns.checks.js';
+import '../checks/arithmetic-edges.checks.js';
+import '../checks/concurrency.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -63,6 +67,10 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     promotions: 19,
     charges: 12,
     tax: 15,
+    composition: 10,
+    returns: 12,
+    'arithmetic-edges': 12,
+    concurrency: 6,
 };
 
 /**
@@ -139,9 +147,26 @@ describe('the bundle name agrees everywhere it is written down', () => {
     });
 
     it('every Test record is a member of the suite', () => {
+        // READ THE DIRECTORY, not a hand-written list. This was `['ORD-01' … 'ORD-08']`, frozen at
+        // the eight bundles that existed when it was written — and ORD-09, ORD-10 and ORD-16 were
+        // each added later with a Test record that never joined the suite. `mj test suite` ran, went
+        // green, and dispatched neither intercompany, events, nor composition.
+        //
+        // That is the same failure this whole file exists to prevent, one level up: a list somebody
+        // has to remember to extend is a list that eventually stops matching reality.
         const suite = read('metadata-tests/test-suites/.orders-integration-suite.json');
-        for (const name of ['ORD-01', 'ORD-02', 'ORD-03', 'ORD-04', 'ORD-05', 'ORD-06', 'ORD-07', 'ORD-08']) {
-            expect(suite, `${name} is in the suite`).toContain(name);
+        const testsDir = resolve(repoRoot, 'metadata-tests/tests');
+        const names = readdirSync(testsDir)
+            .filter((f) => f.endsWith('.json') && f !== '.mj-sync.json')
+            .map((f) => JSON.parse(read(`metadata-tests/tests/${f}`)).fields.Name as string);
+
+        expect(names.length, 'there are Test records to check').toBeGreaterThan(0);
+        for (const name of names) {
+            expect(
+                suite,
+                `'${name}' has a Test record but is not a member of the suite — 'mj test suite' ` +
+                    `would go green having never dispatched it`,
+            ).toContain(`Tests.Name=${name}`);
         }
     });
 

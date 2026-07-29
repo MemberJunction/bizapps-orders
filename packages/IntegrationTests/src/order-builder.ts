@@ -34,10 +34,21 @@ export interface LineSpec {
     ShipToAddressID?: string;
     /** Renew this exact subscription rather than letting the engine resolve one (D61). */
     RenewsSubscriptionID?: string;
+    /**
+     * The line this one UNWINDS (D16). Required for a negative quantity — `OrderLineEntityServer`
+     * refuses one without it, because a negative line with no origin is indistinguishable from a
+     * typo, and it books a real credit either way.
+     */
+    ReversesOrderLineID?: string;
 }
 
 export interface OrderSpec {
     CompanyID: string;
+    /**
+     * Defaults to 'Sale'. A return or cancellation carries the negative lines; reversal is what the
+     * negative LINE does, not what the order is called, so the type here is descriptive only.
+     */
+    OrderType?: string;
     Lines: LineSpec[];
     /** Defaults to today; set explicitly whenever a check asserts dates. */
     OrderDate?: Date;
@@ -74,7 +85,7 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
         user,
     );
     order.NewRecord();
-    order.OrderType = 'Sale';
+    order.OrderType = spec.OrderType ?? 'Sale';
     order.OrderDate = spec.OrderDate ?? new Date();
     order.Status = 'Draft';
     order.CompanyID = spec.CompanyID;
@@ -118,6 +129,7 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
         if (ls.ShipToPersonID) line.ShipToPersonID = ls.ShipToPersonID;
         if (ls.ShipToAddressID) line.ShipToAddressID = ls.ShipToAddressID;
         if (ls.RenewsSubscriptionID) line.RenewsSubscriptionID = ls.RenewsSubscriptionID;
+        if (ls.ReversesOrderLineID) line.ReversesOrderLineID = ls.ReversesOrderLineID;
         lines.push(line);
     }
 

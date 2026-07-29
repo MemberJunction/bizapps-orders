@@ -223,6 +223,29 @@ export function Money(v: number): number {
     return Math.round((v + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * What a line is worth after its discounts — the ONE definition, because there were two and they
+ * carried the same bug.
+ *
+ * `OrderLineEntityServer` computes this to store `LineTotalNet`, and `OrderEntityServer` computes it
+ * again to build the base that charges and tax apply to. Both clamped with `Math.max(0, …)`, and
+ * both were therefore wrong in the same way on a reversal line: the stored total said the customer
+ * got nothing back, and the tax base said a return owed no tax refund. Two call sites, one rule, so
+ * it lives here where it can be unit-tested and cannot drift.
+ *
+ * THE CLAMP IS ABOUT OVER-DISCOUNTING, NOT ABOUT SIGN. A discount bigger than the line it sits on is
+ * a configuration mistake, and letting it drive a SALE below zero would flip the line's sign in the
+ * journal entry and read as revenue. A reversal line (D16) is legitimately negative, so the clamp
+ * runs toward zero in whichever direction the line already points: a sale cannot be discounted below
+ * zero, and a credit cannot be discounted above it.
+ */
+export function NetAfterDiscount(gross: number, discountPct: number, discountAmount: number): number {
+    const g = Money(gross);
+    const afterPct = Money(g * (1 - (discountPct || 0)));
+    const discounted = Money(afterPct - (discountAmount || 0));
+    return g < 0 ? Money(Math.min(0, discounted)) : Money(Math.max(0, discounted));
+}
+
 /** Tiers sorted and bounded, so tier maths never depends on how they were stored. */
 function orderedTiers(rule: PriceRule): PriceTierRule[] {
     return [...(rule.Tiers ?? [])].sort(

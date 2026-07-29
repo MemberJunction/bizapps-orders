@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-16 - Composition",
+    "Description": "One realistic order carrying every stage at once (CX1-CX10). Every other bundle tests a single layer, which proves each stage in isolation and says nothing about the pipeline - and the pipeline has ordering constraints BETWEEN stages: discounts must be fully allocated before tax computes, or tax is charged on money the customer never owed; charges must allocate to lines before booking, or the journal entry misses them. Both of those were real defects found only when the stages were combined. These checks build the order a real customer places - two companies' products, a line promotion, an order promotion, shipping, layered tax, a partial payment - and assert the three things that must hold however the stages interact: every ledger entry balances per company, every allocation sums to its parent exactly, and the price components reconstruct the line total.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "The everything-order confirms; every journal entry balances with one set per company across CoA and CoB; gross equals net plus tax plus charges and the header agrees with its lines; order-level adjustment and charge allocations each sum to their parent to the penny; the 80 of discounts reduce 400 of goods to 320 and tax is computed on that rather than on list; the price components reconstruct each line's net; a half payment leaves PartiallyPaid with the correct balance; a full payment nets EACH company's own receivable to zero through the intercompany legs rather than through the collector's cash; repeating decimals throughout still reconcile with no negative allocation; and a refused charge rolls the whole order back leaving no header, lines, adjustments or charges behind."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "composition"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "EBC16D76-3167-42DE-8A4B-5227310003DB"
+  }
+}
