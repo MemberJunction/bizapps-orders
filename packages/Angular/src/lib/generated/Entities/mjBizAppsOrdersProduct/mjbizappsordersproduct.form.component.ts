@@ -16,22 +16,22 @@ export class mjBizAppsOrdersProductFormComponent extends BaseFormComponent {
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'productInformation', sectionName: 'Product Information', isExpanded: true },
+            { sectionKey: 'productDetails', sectionName: 'Product Details', isExpanded: true },
             { sectionKey: 'classification', sectionName: 'Classification', isExpanded: true },
-            { sectionKey: 'businessContext', sectionName: 'Business Context', isExpanded: true },
-            { sectionKey: 'lifecycleManagement', sectionName: 'Lifecycle Management', isExpanded: true },
-            { sectionKey: 'financials', sectionName: 'Financials', isExpanded: true },
+            { sectionKey: 'financialAndLifecycle', sectionName: 'Financial and Lifecycle', isExpanded: true },
+            { sectionKey: 'productEvolution', sectionName: 'Product Evolution', isExpanded: true },
+            { sectionKey: 'taxation', sectionName: 'Taxation', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductBundleItemsComponentProductID', sectionName: 'Product Bundle Items (Component Product ID)', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductBundleItemsBundleProductID', sectionName: 'Product Bundle Items (Bundle Product ID)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductPrices', sectionName: 'Product Prices', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductBundleItemsBundleProductID', sectionName: 'Product Bundle Items (Bundle Product)', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductBundleItemsComponentProductID', sectionName: 'Product Bundle Items (Component Product)', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLinesSourceBundleProductID', sectionName: 'Order Lines (Source Bundle Product)', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLinesProductID', sectionName: 'Order Lines (Product)', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPromotionTargets', sectionName: 'Promotion Targets', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductPerformanceObligations', sectionName: 'Product Performance Obligations', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductEntitlements', sectionName: 'Product Entitlements', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLinesProductID', sectionName: 'Order Lines (Product)', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLinesSourceBundleProductID', sectionName: 'Order Lines (Source Bundle Product)', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductPerformanceObligations', sectionName: 'Product Performance Obligations', isExpanded: false }
         ]);
     }
 }

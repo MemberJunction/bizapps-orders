@@ -29,24 +29,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="Quantity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Source Information Section -->
-    <mj-collapsible-panel
-        SectionKey="sourceInformation"
-        SectionName="Source Information"
-        Icon="fa fa-link"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="OrderLineID"
             Type="textbox"
             [EditMode]="EditMode"
@@ -62,6 +44,14 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Quantity"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -69,7 +59,7 @@
     <mj-collapsible-panel
         SectionKey="beneficiaryInformation"
         SectionName="Beneficiary Information"
-        Icon="fa fa-user"
+        Icon="fa fa-users"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -97,7 +87,7 @@
     <mj-collapsible-panel
         SectionKey="validityAndStatus"
         SectionName="Validity and Status"
-        Icon="fa fa-clock"
+        Icon="fa fa-calendar-check"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

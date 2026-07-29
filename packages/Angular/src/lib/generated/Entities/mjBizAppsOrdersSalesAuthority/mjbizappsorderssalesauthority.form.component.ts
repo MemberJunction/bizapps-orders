@@ -16,9 +16,9 @@ export class mjBizAppsOrdersSalesAuthorityFormComponent extends BaseFormComponen
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'assignment', sectionName: 'Assignment', isExpanded: true },
+            { sectionKey: 'salesRepresentative', sectionName: 'Sales Representative', isExpanded: true },
             { sectionKey: 'authorityLimits', sectionName: 'Authority Limits', isExpanded: true },
-            { sectionKey: 'scopePermissions', sectionName: 'Scope Permissions', isExpanded: true },
+            { sectionKey: 'operationalScope', sectionName: 'Operational Scope', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderAdjustments', sectionName: 'Order Adjustments', isExpanded: false }
         ]);

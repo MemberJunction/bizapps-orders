@@ -33,6 +33,7 @@ const ALL_BUNDLES = [
     'pricing',
     'promotions',
     'charges',
+    'tax',
     'events',
     'line-subscriber',
 ];
@@ -122,7 +123,18 @@ for (const request of requested) {
         // A Setup failure fails the bundle, not the run — the remaining bundles still get a chance.
         fail++;
         failures.push({ Id: `${bundle}.<setup>`, message: String(e?.message ?? e), stack: e?.stack });
-        console.log(`  ✖ bundle setup failed: ${String(e?.message ?? e).split('\n')[0]}`);
+        // Print the WHOLE thing. A setup failure kills every check in the bundle, and mssql puts
+        // the useful part ('Invalid column name X') in nested properties rather than the first line
+        // of the message — truncating it turns a two-minute fix into a bisect.
+        console.log(`  ✖ bundle setup failed: ${String(e?.message ?? e)}`);
+        for (const key of ['originalError', 'precedingErrors']) {
+            const nested = e?.[key];
+            if (!nested) continue;
+            for (const n of Array.isArray(nested) ? nested : [nested]) {
+                console.log(`      ↳ ${n?.message ?? n}`);
+                if (n?.originalError?.message) console.log(`        ↳ ${n.originalError.message}`);
+            }
+        }
     } finally {
         // Guaranteed even on a mid-Setup crash, exactly as the driver does it.
         if (lifecycle) await lifecycle.Teardown(ctx).catch((e) => console.warn(`  teardown warn: ${e?.message}`));

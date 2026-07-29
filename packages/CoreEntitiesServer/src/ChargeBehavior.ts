@@ -29,6 +29,13 @@ export type ChargeCategory = 'Shipping' | 'Handling' | 'Tax' | 'Surcharge' | 'Fe
 /** The subset of a `ChargeType` plus its requested amount or rate. */
 export interface ChargeRequest {
     ChargeTypeID: string;
+    /**
+     * When set, this charge belongs to ONE line and is not spread across the order.
+     *
+     * Tax needs this: a two-line order can have one exempt line and one taxable line, and pro-rata
+     * allocation would hand the exempt line a share of the other's tax.
+     */
+    TargetLineID?: string | null;
     Code: string;
     Category: ChargeCategory;
     Basis: ChargeBasis;
@@ -91,12 +98,20 @@ export function ComputeCharges(requests: ChargeRequest[], lines: ChargeableLine[
 
     // Running per-line totals: the line's net plus every charge allocated to it so far.
     const running = new Map<string, number>(lines.map((l) => [l.ID, l.Net]));
+    // The TAXABLE base tracked separately — net plus non-tax charges, never other tax.
+    //
+    // US sales tax layers do not compound: state, county and city all apply to the same base and
+    // are summed. Running them through `running` charged 1.875% county tax on a total that already
+    // included 7.25% state tax, producing 92.61 where the correct answer is 91.25 — tax on tax,
+    // which is not merely wrong but unlawful in every US jurisdiction.
+    const taxableBase = new Map<string, number>(lines.map((l) => [l.ID, l.Net]));
     const orderNet = Money(lines.reduce((s, l) => s + l.Net, 0));
 
     const ordered = [...requests].sort((a, b) => a.Sequence - b.Sequence || a.Code.localeCompare(b.Code));
 
     for (const req of ordered) {
-        const basisAmount = basisFor(req.Basis, lines, running, orderNet);
+        const isTax = req.Category === 'Tax';
+        const basisAmount = basisFor(req.Basis, lines, isTax ? taxableBase : running, orderNet, req.TargetLineID);
         const computed = amountFor(req, basisAmount);
 
         // An override REPLACES the amount but never erases what the rules said — `ComputedAmount`
@@ -104,17 +119,21 @@ export function ComputeCharges(requests: ChargeRequest[], lines: ChargeableLine[
         const overridden = req.OverrideAmount != null;
         const amount = Money(overridden ? Number(req.OverrideAmount) : computed);
 
-        // Weight by each line's CURRENT running total, not its original net: a charge computed on a
-        // basis that already includes earlier charges must be shared the same way they were, or the
-        // proportions drift apart as charges accumulate.
-        const weights = lines.map((l) => running.get(l.ID) ?? 0);
-        const parts = AllocateProRata(amount, weights);
+        // A TARGETED charge goes entirely to its line. Otherwise weight by each line's CURRENT
+        // running total, not its original net: a charge computed on a basis that already includes
+        // earlier charges must be shared the same way they were, or the proportions drift as
+        // charges accumulate.
+        const parts = req.TargetLineID
+            ? lines.map((l) => (l.ID === req.TargetLineID ? amount : 0))
+            : AllocateProRata(amount, lines.map((l) => running.get(l.ID) ?? 0));
 
         const allocations: ChargeAllocation[] = [];
         lines.forEach((l, i) => {
             if (parts[i] === 0) return;
             allocations.push({ LineID: l.ID, Amount: parts[i] });
             running.set(l.ID, Money((running.get(l.ID) ?? 0) + parts[i]));
+            // Only NON-tax charges enlarge the taxable base. Shipping can be taxed; tax cannot.
+            if (!isTax) taxableBase.set(l.ID, Money((taxableBase.get(l.ID) ?? 0) + parts[i]));
             perLine.set(l.ID, Money((perLine.get(l.ID) ?? 0) + parts[i]));
         });
 
@@ -141,15 +160,19 @@ function basisFor(
     lines: ChargeableLine[],
     running: Map<string, number>,
     orderNet: number,
+    targetLineID?: string | null,
 ): number {
+    // A targeted charge is computed on ITS line alone, not on the order.
+    const scope = targetLineID ? lines.filter((l) => l.ID === targetLineID) : lines;
     switch (basis) {
         case 'LineNet':
             // The discounted lines only — earlier charges are excluded on purpose. Shipping is
             // charged on what was bought, not on what has already been added to the bill.
-            return Money(lines.reduce((s, l) => s + l.Net, 0));
+            return Money(scope.reduce((s, l) => s + l.Net, 0));
         case 'LineNetPlusCharges':
-            // Lines PLUS everything charged so far. This is how tax reaches shipping.
-            return Money(lines.reduce((s, l) => s + (running.get(l.ID) ?? 0), 0));
+            // Lines PLUS everything charged so far. This is how tax reaches shipping — and, for a
+            // tax charge, `running` is the TAXABLE base, which excludes other tax.
+            return Money(scope.reduce((s, l) => s + (running.get(l.ID) ?? 0), 0));
         case 'OrderNet':
             return orderNet;
         case 'Flat':

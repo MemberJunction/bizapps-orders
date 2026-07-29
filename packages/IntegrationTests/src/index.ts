@@ -24,6 +24,7 @@
  *   pricing              PC1–PC16  price resolution, the resolver walk, and the dry run (D69)
  *   promotions           PR1–PR15  offers, codes, stacking, allocation, authorized manual discounts (D70)
  *   charges              CH1–CH12  shipping, handling and TAX as one mechanism (D71)
+ *   tax                  TX1–TX14  rate resolution by address, nexus, taxability and exemptions (D73)
  *
  * Every check is `RequiresMutation` — this suite exists to write to the database. They are safe to
  * run repeatedly because each one rolls its transaction back; see `fixture.ts` for the model.
@@ -60,6 +61,7 @@ export * from './checks/account-credit.checks.js';
 export * from './checks/pricing.checks.js';
 export * from './checks/promotions.checks.js';
 export * from './checks/charges.checks.js';
+export * from './checks/tax.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

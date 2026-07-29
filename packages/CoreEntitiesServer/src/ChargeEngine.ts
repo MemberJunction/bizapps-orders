@@ -43,6 +43,8 @@ export class ChargeError extends Error {
 export interface RequestedCharge {
     /** `ChargeType.Code` — 'Shipping', 'SalesTax', … */
     Code: string;
+    /** When set, the charge belongs to this line alone rather than being spread across the order. */
+    TargetLineID?: string | null;
     Amount?: number | null;
     Rate?: number | null;
     TaxJurisdictionID?: string | null;
@@ -109,6 +111,7 @@ export async function RunCharges(
         }
         return {
             ChargeTypeID: type.ID,
+            TargetLineID: r.TargetLineID ?? null,
             Code: type.Code,
             Category: type.Category,
             Basis: type.Basis,

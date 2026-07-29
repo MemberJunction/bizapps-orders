@@ -14,18 +14,28 @@
     <mj-collapsible-panel
         SectionKey="scheduleDetails"
         SectionName="Schedule Details"
-        Icon="fa fa-clock"
+        Icon="fa fa-list-ol"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="ScheduleID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Recognition Period Section -->
+    <mj-collapsible-panel
+        SectionKey="recognitionPeriod"
+        SectionName="Recognition Period"
+        Icon="fa fa-calendar-alt"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

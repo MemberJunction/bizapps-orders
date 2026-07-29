@@ -17,15 +17,13 @@ export class mjBizAppsOrdersSubscriptionTypeFormComponent extends BaseFormCompon
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'generalInformation', sectionName: 'General Information', isExpanded: true },
-            { sectionKey: 'configuration', sectionName: 'Configuration', isExpanded: true },
-            { sectionKey: 'lifecycleSettings', sectionName: 'Lifecycle Settings', isExpanded: true },
-            { sectionKey: 'financialSettings', sectionName: 'Financial Settings', isExpanded: true },
-            { sectionKey: 'renewalSettings', sectionName: 'Renewal Settings', isExpanded: true },
-            { sectionKey: 'cancellationSettings', sectionName: 'Cancellation Settings', isExpanded: true },
+            { sectionKey: 'subscriptionLifecycle', sectionName: 'Subscription Lifecycle', isExpanded: true },
+            { sectionKey: 'billingAndRecognition', sectionName: 'Billing and Recognition', isExpanded: true },
+            { sectionKey: 'renewalAndCancellation', sectionName: 'Renewal and Cancellation', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductTypes', sectionName: 'Product Types', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false }
         ]);
     }
 }

@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Charge Configuration Section -->
+    <!-- Charge Definition Section -->
     <mj-collapsible-panel
-        SectionKey="chargeConfiguration"
-        SectionName="Charge Configuration"
-        Icon="fa fa-info-circle"
+        SectionKey="chargeDefinition"
+        SectionName="Charge Definition"
+        Icon="fa fa-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -49,21 +49,13 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Computation Rules Section -->
+    <!-- Computation Logic Section -->
     <mj-collapsible-panel
-        SectionKey="computationRules"
-        SectionName="Computation Rules"
+        SectionKey="computationLogic"
+        SectionName="Computation Logic"
         Icon="fa fa-calculator"
         [Form]="this"
         [FormContext]="formContext">
@@ -87,6 +79,14 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="AllowsOverride"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
             Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"

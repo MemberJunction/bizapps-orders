@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="subscriptionDetails"
         SectionName="Subscription Details"
-        Icon="fa fa-id-card"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -46,10 +46,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Term Timeline Section -->
+    <!-- Timeline Section -->
     <mj-collapsible-panel
-        SectionKey="termTimeline"
-        SectionName="Term Timeline"
+        SectionKey="timeline"
+        SectionName="Timeline"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -69,14 +69,30 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CanceledAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CancellationEffectiveDate"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financial Details Section -->
+    <!-- Financials Section -->
     <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
-        Icon="fa fa-money-bill"
+        SectionKey="financials"
+        SectionName="Financials"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -115,34 +131,18 @@
 
     </mj-collapsible-panel>
 
-    <!-- Status and Cancellation Section -->
+    <!-- Status and Audit Section -->
     <mj-collapsible-panel
-        SectionKey="statusAndCancellation"
-        SectionName="Status and Cancellation"
+        SectionKey="statusAndAudit"
+        SectionName="Status and Audit"
         Icon="fa fa-flag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="Status"
             Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CanceledAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CancellationEffectiveDate"
-            Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

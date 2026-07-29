@@ -57,6 +57,7 @@ import {
     type RequestedCharge,
 } from './ChargeEngine.js';
 import type { ComputeChargesResult } from './ChargeBehavior.js';
+import { ResolveTax, ResolveTaxability, type ResolvedTaxability, type TaxAddress } from './TaxResolver.js';
 import {
     AuthorizeManualDiscount,
     RunPromotions,
@@ -90,6 +91,8 @@ interface SubscriptionMaterialization {
 
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
+// bizapps-common names its entities with DOTS, not the underscores the other apps use.
+const COMMON_ADDRESS_ENTITY = 'MJ.BizApps.Common: Addresses';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
@@ -159,6 +162,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     private _lines: mjBizAppsOrdersOrderLineEntity[] = [];
     /** Price decompositions produced during this save, written once the lines have IDs (D69). */
     private readonly _priceComponents = new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>();
+    /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */
+    private readonly _taxReasons = new Map<number, string>();
     private _promotionCodes: string[] = [];
     private _manualDiscounts: ManualDiscountRequest[] = [];
     private _charges: RequestedCharge[] = [];
@@ -395,6 +400,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             }
             persisted.push(line);
         }
+        await this.saveTaxReasons(persisted);
         this._lines = [];
 
         // The adjustment and charge rows need line IDs, so they follow the insert — but they only ADD
@@ -411,7 +417,11 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      * and merging them would mean unpicking the two again exactly when it matters most.
      */
     private async decideCharges(): Promise<ComputeChargesResult | null> {
-        if (!this._charges.length || !this._lines.length) return null;
+        // NOT gated on _charges being non-empty. Tax is RESOLVED from the ship-to address rather
+        // than stated by the caller, so the commonest real order — goods, an address, no
+        // hand-entered charges — has an empty _charges and still owes tax. Returning early here
+        // silently skipped tax on every such order, and the zeros looked correct.
+        if (!this._lines.length) return null;
 
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
@@ -424,7 +434,13 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             return { ID: String(i), Net: net };
         });
 
-        const result = await RunCharges(this._charges, chargeable, provider, user);
+        // Tax charges the caller did not state are RESOLVED from the ship-to address (D73): which
+        // jurisdictions reach it, whether this company has nexus in them, whether the product is
+        // taxable, and whether the buyer is exempt. A caller-supplied rate still wins — the same
+        // rule as a stated UnitPrice.
+        const resolvedTax = await this.resolveTaxCharges(chargeable, provider, user);
+        if (!this._charges.length && !resolvedTax.length) return null;
+        const result = await RunCharges([...this._charges, ...resolvedTax], chargeable, provider, user);
         const split = SplitChargesByLine(result);
         for (let i = 0; i < this._lines.length; i++) {
             const share = split.get(String(i));
@@ -435,6 +451,149 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             }
         }
         return result;
+    }
+
+    /**
+     * Turn the ship-to address into tax charges, one per jurisdiction layer (D73).
+     *
+     * Returns NOTHING — correctly and for four different reasons, which is the point:
+     *   - the caller already stated a tax charge, so resolution would double it
+     *   - no ship-to address, so there is nowhere to resolve to
+     *   - the product is not taxable (the walk: product → category → type)
+     *   - this company has no nexus, or the buyer is exempt
+     *
+     * The last three are recorded on the order's notes rather than swallowed. A zero tax line is
+     * the same number in all four cases and an auditor asking "why was no tax charged" needs the
+     * right answer, not the right total.
+     */
+    private async resolveTaxCharges(
+        chargeable: Array<{ ID: string; Net: number }>,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<RequestedCharge[]> {
+        // A stated tax charge wins, exactly as a stated UnitPrice does.
+        if (this._charges.some((c) => /tax/i.test(c.Code))) return [];
+
+        const addressID = this.ShipToAddressID;
+        if (!addressID) return [];
+
+        const address = await this.loadAddress(addressID);
+        if (!address) return [];
+
+        const out: RequestedCharge[] = [];
+
+        for (let i = 0; i < this._lines.length; i++) {
+            const line = this._lines[i];
+            if ((chargeable[i]?.Net ?? 0) <= 0) continue;
+
+            const taxability = await this.resolveLineTaxability(line.ProductID);
+            const resolved = await ResolveTax(
+                {
+                    Address: address,
+                    IsTaxable: taxability.IsTaxable,
+                    ProductTaxCategory: taxability.TaxCategory,
+                    CompanyID: this.CompanyID,
+                    OrganizationID: this.BillToOrganizationID ?? null,
+                    PersonID: this.BillToPersonID ?? null,
+                    AsOf: this.OrderDate ? new Date(this.OrderDate) : new Date(),
+                },
+                provider,
+                user,
+            );
+
+            if (resolved.ExemptReason) {
+                // Recorded as a ZERO-AMOUNT price component rather than on Notes. Notes cannot work
+                // here — the header is already saved by the time charges are decided, so an
+                // in-memory assignment never reaches the database. And the component trail is the
+                // right home anyway: it is already the per-line 'how did we get here' record, and a
+                // zero with a label is exactly 'no tax, because X'.
+                this._taxReasons.set(i, resolved.ExemptReason);
+                continue;
+            }
+            for (const layer of resolved.Layers) {
+                out.push({
+                    Code: 'SalesTax',
+                    // Targeted at THIS line: taxability, nexus and exemption are all per line, so a
+                    // two-line order can legitimately tax one and not the other.
+                    TargetLineID: String(i),
+                    Rate: layer.Rate,
+                    TaxJurisdictionID: layer.TaxJurisdictionID,
+                    TaxRateID: layer.TaxRateID,
+                });
+            }
+        }
+
+        return out;
+    }
+
+    /** The taxability walk for a product: product → its category → its type. */
+    private async resolveLineTaxability(productID: string): Promise<ResolvedTaxability> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const pRes = await rv.RunView<{
+            IsTaxable: boolean | null;
+            TaxCategory: string | null;
+            ProductCategoryID: string | null;
+            ProductTypeID: string | null;
+        }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Products',
+                ExtraFilter: `ID = '${productID}'`,
+                Fields: ['IsTaxable', 'TaxCategory', 'ProductCategoryID', 'ProductTypeID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        const p = pRes?.Results?.[0];
+        if (!p) return { IsTaxable: true, TaxCategory: null, DecidedAt: 'Default' };
+
+        let category: { IsTaxable: boolean | null; TaxCategory: string | null } | null = null;
+        if (p.ProductCategoryID) {
+            const cRes = await rv.RunView<{ IsTaxable: boolean | null; TaxCategory: string | null }>(
+                {
+                    EntityName: 'MJ_BizApps_Orders: Product Categories',
+                    ExtraFilter: `ID = '${p.ProductCategoryID}'`,
+                    Fields: ['IsTaxable', 'TaxCategory'],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                this.ContextCurrentUser,
+            );
+            category = cRes?.Results?.[0] ?? null;
+        }
+
+        let type: { DefaultIsTaxable: boolean; DefaultTaxCategory: string | null } | null = null;
+        if (p.ProductTypeID) {
+            const tRes = await rv.RunView<{ DefaultIsTaxable: boolean; DefaultTaxCategory: string | null }>(
+                {
+                    EntityName: 'MJ_BizApps_Orders: Product Types',
+                    ExtraFilter: `ID = '${p.ProductTypeID}'`,
+                    Fields: ['DefaultIsTaxable', 'DefaultTaxCategory'],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                this.ContextCurrentUser,
+            );
+            type = tRes?.Results?.[0] ?? null;
+        }
+
+        return ResolveTaxability(p, category, type);
+    }
+
+    /** The ship-to address, in the shape jurisdiction matching wants. */
+    private async loadAddress(addressID: string): Promise<TaxAddress | null> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<TaxAddress>(
+            {
+                EntityName: COMMON_ADDRESS_ENTITY,
+                ExtraFilter: `ID = '${addressID}'`,
+                Fields: ['Country', 'StateProvince', 'City', 'PostalCode'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        return res?.Results?.[0] ?? null;
     }
 
     /** Write the charge and allocation rows once the lines have real IDs. */
@@ -544,6 +703,43 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const row = res?.Results?.[0];
         // No row means defaults, and the default is to refuse.
         return row ? row.RefuseUnpricedLines !== false : true;
+    }
+
+    /**
+     * Record WHY a line owes no tax, as a zero-amount price component (D73).
+     *
+     * A zero tax line looks identical whether the product was untaxable, we had no nexus, or the
+     * buyer held a certificate — and those are different facts. An auditor asking "why was no tax
+     * charged on this line" needs the reason, not the total, and the component trail is where the
+     * rest of the line's reasoning already lives.
+     */
+    private async saveTaxReasons(persisted: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {
+        if (!this._taxReasons.size) return;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        for (const [index, reason] of this._taxReasons) {
+            const line = persisted[index];
+            if (!line?.ID) continue;
+            const row = await provider.GetEntityObject<BaseEntity>(
+                'MJ_BizApps_Orders: Order Line Price Components',
+                user,
+            );
+            row.NewRecord();
+            row.Set('OrderLineID', line.ID);
+            row.Set('Sequence', 900);
+            row.Set('ComponentType', 'Tax');
+            row.Set('Label', `no tax — ${reason}`);
+            row.Set('Amount', 0);
+            row.Set('RunningTotal', Number(line.LineTotalNet ?? 0));
+            if (!(await row.Save())) {
+                throw new Error(
+                    `Failed to record why line ${line.LineNumber} owes no tax: ` +
+                        `${row.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+        }
+        this._taxReasons.clear();
     }
 
     /**

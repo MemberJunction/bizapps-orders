@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Identification Section -->
+    <!-- Product Association Section -->
     <mj-collapsible-panel
-        SectionKey="productIdentification"
-        SectionName="Product Identification"
+        SectionKey="productAssociation"
+        SectionName="Product Association"
         Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
@@ -29,26 +29,18 @@
 
     </mj-collapsible-panel>
 
-    <!-- Performance Obligation Details Section -->
+    <!-- Obligation Details Section -->
     <mj-collapsible-panel
-        SectionKey="performanceObligationDetails"
-        SectionName="Performance Obligation Details"
-        Icon="fa fa-file-contract"
+        SectionKey="obligationDetails"
+        SectionName="Obligation Details"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="Name"
             Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="StandaloneSellingPrice"
-            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -64,12 +56,20 @@
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="RevenueRecognitionTypeID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="StandaloneSellingPrice"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
