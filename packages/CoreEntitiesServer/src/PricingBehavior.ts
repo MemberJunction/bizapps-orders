@@ -332,23 +332,47 @@ export function ComputeAmount(rule: PriceRule, quantity: number): number {
  */
 export function AllocateProRata(total: number, weights: number[]): number[] {
     if (!weights.length) return [];
+
+    // LARGEST-REMAINDER, not round-then-patch.
+    //
+    // The obvious implementation — round every share, then dump the drift on the biggest one —
+    // produces a NEGATIVE share whenever rounding overshoots. 7p across 13 equal lines rounds each
+    // to 1p, totals 13p against a 7p charge, and the largest line absorbs -6p to compensate. In
+    // production that is a line carrying a negative shipping charge, or a discount that quietly
+    // becomes a surcharge.
+    //
+    // So: floor every share to the penny, then hand out the leftover pennies one at a time to
+    // whichever shares were cut hardest. Every part is non-negative by construction, the total is
+    // exact, and the drift lands where it distorts least — which is what the naive version was
+    // trying to achieve and only managed when rounding happened to go down.
+    const sign = total < 0 ? -1 : 1;
+    const magnitude = Math.abs(total);
+    const pennies = Math.round(magnitude * 100);
+
     const sum = weights.reduce((a, b) => a + b, 0);
-    if (sum <= 0) {
-        // No basis to weight by: spread evenly rather than dropping the amount on the floor.
-        const each = Money(total / weights.length);
-        const parts = weights.map(() => each);
-        parts[0] = Money(total - each * (weights.length - 1));
-        return parts;
+    // No basis to weight by: spread evenly rather than dropping the amount on the floor.
+    const basis = sum > 0 ? weights : weights.map(() => 1);
+    const basisSum = sum > 0 ? sum : weights.length;
+
+    const exact = basis.map((w) => (w / basisSum) * pennies);
+    const floors = exact.map((e) => Math.floor(e));
+    let remaining = pennies - floors.reduce((a, b) => a + b, 0);
+
+    // Biggest fractional part first; ties break on the larger weight, then on position, so the
+    // result is deterministic for identical inputs.
+    const order = exact
+        .map((e, i) => ({ i, frac: e - Math.floor(e) }))
+        .sort((a, b) => b.frac - a.frac || basis[b.i] - basis[a.i] || a.i - b.i);
+
+    const parts = floors.slice();
+    for (let k = 0; k < order.length && remaining > 0; k++, remaining--) {
+        parts[order[k].i] += 1;
     }
-    const parts = weights.map((w) => Money((w / sum) * total));
-    const allocated = parts.reduce((a, b) => a + b, 0);
-    const drift = Money(total - allocated);
-    if (Math.abs(drift) > 0) {
-        let largest = 0;
-        weights.forEach((w, i) => {
-            if (w > weights[largest]) largest = i;
-        });
-        parts[largest] = Money(parts[largest] + drift);
-    }
-    return parts;
+    // More pennies than recipients only happens if the floors underflowed by a whole unit each,
+    // which cannot occur — but if it ever did, the last recipient carries the rest rather than the
+    // total silently coming up short.
+    if (remaining > 0) parts[order[order.length - 1].i] += remaining;
+
+    return parts.map((p) => Money((sign * p) / 100));
 }
+
