@@ -436,8 +436,10 @@ export const ReturnsChecks: NamedCheck[] = [
           !ret.Saved,
           "returning 5 against a line that sold 2 must be refused — the ledger cannot catch this on its own",
         );
+        // "At most 2 remains returnable" — the NUMBER, not just a complaint. A bare `/2/` would
+        // match almost any message, including "Order line 2: …", so it is matched in context.
         Assert(
-          /2/.test(ret.Message),
+          /At most 2 remains returnable/i.test(ret.Message),
           `the refusal must state how much remains returnable — got: ${ret.Message}`,
         );
       }),
@@ -487,6 +489,13 @@ export const ReturnsChecks: NamedCheck[] = [
         Assert(
           !ret.Saved,
           "a reversal must return the product it points at — otherwise the credit lands on the wrong company's revenue",
+        );
+        // ASSERT THE REASON, not just the refusal. This check passed before the guard existed at
+        // all: the line was rejected for having a negative quantity the pricing engine could not
+        // handle, which is a different failure that happens to produce the same `Saved: false`.
+        Assert(
+          /different product/i.test(ret.Message),
+          `the refusal must be about the PRODUCT, not about something incidental — got: ${ret.Message}`,
         );
       }),
   },

@@ -81,20 +81,30 @@ async function grantNexus(ctx: IntegrationCheckContext, keys: string[]): Promise
 const lines = (productID: string, count: number, quantity = 1, unitPrice?: number): LineSpec[] =>
   Array.from({ length: count }, () => ({ ProductID: productID, Quantity: quantity, UnitPrice: unitPrice }));
 
-/** Does every allocation of every order-level adjustment sum to its parent, to the penny? */
-const adjustmentParity = (ctx: IntegrationCheckContext, orderID: string) =>
-  TxQuery<{ ID: string; Amount: number; Allocated: number; Negatives: number }>(
+/**
+ * The SHARES an order-level promotion was split into.
+ *
+ * READ THIS BEFORE CHANGING THE QUERY. An order-level promotion is allocated DOWN TO LINES: each
+ * share becomes its own `OrderAdjustment` carrying an `OrderLineID`, plus one
+ * `OrderAdjustmentAllocation` of the same amount. So two obvious queries prove nothing —
+ * `WHERE OrderLineID IS NULL` matches no rows at all (this bundle and composition's CX4 both did
+ * that, and both passed a deliberately broken allocator), and "allocations sum to their adjustment"
+ * is true by construction because there is exactly one of each.
+ *
+ * What DOES exercise the allocator is the sum across every share of one promotion. And note that
+ * `PromotionEngine` skips a part that is `<= 0`, so a negative share is dropped rather than stored —
+ * which means a broken allocator shows up here as a SUM that no longer matches, not as a negative row.
+ */
+const promotionShares = (ctx: IntegrationCheckContext, orderID: string) =>
+  TxQuery<{ PromotionID: string; Shares: number; Total: number; Smallest: number }>(
     ctx,
-    `SELECT a.ID, a.Amount,
-            ISNULL((SELECT SUM(al.Amount) FROM ${ORDERS_SCHEMA}.OrderAdjustmentAllocation al
-                     WHERE al.OrderAdjustmentID = a.ID), 0) AS Allocated,
-            ISNULL((SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderAdjustmentAllocation al
-                     WHERE al.OrderAdjustmentID = a.ID AND SIGN(al.Amount) = -SIGN(a.Amount)), 0) AS Negatives
-       FROM ${ORDERS_SCHEMA}.OrderAdjustment a
-      WHERE a.OrderHeaderID = '${orderID}' AND a.OrderLineID IS NULL`,
+    `SELECT PromotionID, COUNT(*) AS Shares, SUM(Amount) AS Total, MIN(Amount) AS Smallest
+       FROM ${ORDERS_SCHEMA}.OrderAdjustment
+      WHERE OrderHeaderID = '${orderID}' AND PromotionID IS NOT NULL
+      GROUP BY PromotionID`,
   );
 
-/** The same question for charges. */
+/** Charges DO have one parent and many allocations, so this parity question is the real one. */
 const chargeParity = (ctx: IntegrationCheckContext, orderID: string) =>
   TxQuery<{ ID: string; Amount: number; Allocated: number; Negatives: number }>(
     ctx,
@@ -117,17 +127,42 @@ const totals = (ctx: IntegrationCheckContext, orderID: string) =>
        FROM ${ORDERS_SCHEMA}.OrderLine l WHERE l.OrderHeaderID='${orderID}'`,
   );
 
-/** Assert every allocation on this order reconciles exactly and no share flipped sign. */
-async function assertAllocationsReconcile(ctx: IntegrationCheckContext, orderID: string): Promise<void> {
-  for (const a of await adjustmentParity(ctx, orderID)) {
+/**
+ * Assert this order's money reconciles: promotion shares sum to what they should, charge
+ * allocations sum to their charge, and nothing went the wrong way.
+ *
+ * `expectDiscount` is REQUIRED where a discount is involved. Every assertion here is inside a loop,
+ * so an order that produced no rows satisfies all of them by having nothing to check — which is
+ * exactly how this helper once passed a broken allocator.
+ */
+async function assertAllocationsReconcile(
+  ctx: IntegrationCheckContext,
+  orderID: string,
+  expect: { Discount?: number; Charges?: number } = {},
+): Promise<void> {
+  const shares = await promotionShares(ctx, orderID);
+  const charges = await chargeParity(ctx, orderID);
+
+  if (expect.Discount != null) {
+    AssertEqual(shares.length, 1, "the promotion this check needs must have produced adjustments");
+    const only = shares[0];
     AssertEqual(
-      Number(a.Allocated),
-      Number(a.Amount),
-      `adjustment ${a.ID}: allocations must sum to the adjustment EXACTLY, not within a cent`,
+      Math.round(Number(only.Total) * 100) / 100,
+      expect.Discount,
+      "every share of the promotion sums to the discount it computed — a share lost to rounding is " +
+        "money the customer was promised and did not receive",
     );
-    AssertEqual(Number(a.Negatives), 0, `adjustment ${a.ID}: no share may have the opposite sign to its parent`);
+    Assert(
+      Number(only.Smallest) > 0,
+      `no share may be zero or negative (smallest was ${only.Smallest}) — round-then-patch makes ` +
+        `one line absorb the drift, which can invert it`,
+    );
   }
-  for (const c of await chargeParity(ctx, orderID)) {
+
+  if (expect.Charges != null) {
+    AssertEqual(charges.length, expect.Charges, "the charges this check needs must exist");
+  }
+  for (const c of charges) {
     AssertEqual(Number(c.Allocated), Number(c.Amount), `charge ${c.ID}: allocations must sum to the charge EXACTLY`);
     AssertEqual(Number(c.Negatives), 0, `charge ${c.ID}: no share may have the opposite sign to its parent`);
   }
@@ -153,7 +188,7 @@ export const ArithmeticEdgesChecks: NamedCheck[] = [
           PromotionCodes: [code],
         });
         Assert(order.Saved, `confirm failed: ${order.Message}`);
-        await assertAllocationsReconcile(ctx, order.Order.ID as string);
+        await assertAllocationsReconcile(ctx, order.Order.ID as string, { Discount: 0.07 });
       }),
   },
   {
@@ -173,7 +208,11 @@ export const ArithmeticEdgesChecks: NamedCheck[] = [
           PromotionCodes: [code],
         });
         Assert(order.Saved, `confirm failed: ${order.Message}`);
-        await assertAllocationsReconcile(ctx, order.Order.ID as string);
+        // 99.99, NOT 100. `Promotion.Value` is stored at 4dp, so "a third" is 0.3333 and a third of
+        // 300 is 99.99 — the penny is lost in the COLUMN, before any allocation happens. The check
+        // is that every share sums to what the promotion actually computed; expecting the ideal
+        // 100 here would be asserting against arithmetic the schema cannot represent.
+        await assertAllocationsReconcile(ctx, order.Order.ID as string, { Discount: 99.99 });
 
         const t = await totals(ctx, order.Order.ID as string);
         AssertEqual(Number(t.Header), Number(t.Gross), "the header agrees with the sum of its lines");
@@ -194,7 +233,7 @@ export const ArithmeticEdgesChecks: NamedCheck[] = [
           Charges: [{ Code: "Shipping", Amount: 0.01 }],
         });
         Assert(order.Saved, `confirm failed: ${order.Message}`);
-        await assertAllocationsReconcile(ctx, order.Order.ID as string);
+        await assertAllocationsReconcile(ctx, order.Order.ID as string, { Charges: 1 });
 
         // One penny, five lines. It cannot be split, so it must land WHOLE on one line — not be
         // rounded onto all five (5p from a 1p charge) or vanish from all five (0p).
@@ -226,7 +265,10 @@ export const ArithmeticEdgesChecks: NamedCheck[] = [
           Lines: lines(f.Products.WidgetA, 3),
         });
         Assert(order.Saved, `confirm failed: ${order.Message}`);
-        await assertAllocationsReconcile(ctx, order.Order.ID as string);
+        // NINE: three jurisdiction layers on each of three lines. Tax is resolved per line (each
+        // carries its own TargetLineID), so the layers multiply by the lines rather than spanning
+        // them — which is what keeps a line's tax attributable to that line's ship-to.
+        await assertAllocationsReconcile(ctx, order.Order.ID as string, { Charges: 9 });
 
         const t = await totals(ctx, order.Order.ID as string);
         Assert(Number(t.Tax) > 0, "NYC must actually tax this, or the check proves nothing");
@@ -260,7 +302,7 @@ export const ArithmeticEdgesChecks: NamedCheck[] = [
           PromotionCodes: [code],
         });
         Assert(order.Saved, `confirm failed: ${order.Message}`);
-        await assertAllocationsReconcile(ctx, order.Order.ID as string);
+        await assertAllocationsReconcile(ctx, order.Order.ID as string, { Discount: 0.1 });
       }),
   },
   {
@@ -334,7 +376,7 @@ export const ArithmeticEdgesChecks: NamedCheck[] = [
           Charges: [{ Code: "Shipping", Amount: 3.33 }],
         });
         Assert(order.Saved, `confirm failed: ${order.Message}`);
-        await assertAllocationsReconcile(ctx, order.Order.ID as string);
+        await assertAllocationsReconcile(ctx, order.Order.ID as string, { Discount: 7.77 });
 
         const t = await totals(ctx, order.Order.ID as string);
         AssertEqual(

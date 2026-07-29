@@ -1,27 +1,39 @@
 /**
- * concurrency — what happens when two people confirm an order at the same instant.
+ * concurrency — what happens when two sessions want a document number at the same instant.
  *
  * WHY THIS BUNDLE EXISTS. `OrderNumber` is an A/R document number, and D30 makes two promises about
  * it that nothing else in the suite tests: numbers are GAP-CONSCIOUS (a confirm that rolls back
- * releases its number rather than burning it) and they are UNIQUE under contention. Both promises
- * live in one small piece of SQL:
+ * releases its number rather than burning it) and no two orders share one. Every other check runs
+ * one at a time, so neither promise is exercised anywhere else.
  *
- *     UPDATE OrderSequence WITH (UPDLOCK, HOLDLOCK) SET NextSequenceNumber = NextSequenceNumber + 1
+ * These checks use a SECOND CONNECTION. `ctx.Pool` is a raw mssql pool, and a transaction taken from
+ * it is genuinely independent of the MJ provider's — different session, its own locks. That lets a
+ * check hold the counter row and watch a real confirm block on it.
  *
- * Take the hints off and nothing visibly changes. Every existing check still passes, because they
- * run one at a time. Two simultaneous confirms then read the same value, and the second one dies on
- * the unique index — or worse, if that index were ever dropped, two customers share an invoice
- * number. It is the definition of a bug you cannot find by testing harder in one thread.
+ * WHAT THESE CHECKS ACTUALLY PROVE, established by mutation testing rather than by assumption:
  *
- * SO THESE CHECKS USE A SECOND CONNECTION. `ctx.Pool` is a raw mssql pool, and a transaction taken
- * from it is genuinely independent of the MJ provider's — different session, its own locks. That
- * lets a check hold the counter row and watch a real confirm block on it, which is the actual
- * behaviour under contention rather than a simulation of it.
+ *   · A confirm competing for the counter SERIALIZES behind the holder and comes away with a
+ *     different, later number. That is CN1 and CN5.
+ *   · A failed confirm returns its number to the pool. That is CN3, and it is asserted directly by
+ *     reading the counter either side.
  *
- * WHAT THIS BUNDLE DOES NOT COVER, stated plainly: two *MJ confirms* running at literally the same
- * moment. The suite has one provider and MJ providers are effectively per-process singletons, so the
- * competing actor here is raw SQL performing exactly the same counter protocol. That tests the
- * locking, which is where the race lives; it does not test two full pipelines interleaving.
+ * WHAT THEY DO NOT PROVE, and this is worth stating because the obvious reading is wrong:
+ *
+ *   · Removing `WITH (UPDLOCK, HOLDLOCK)` from `nextSequence` does NOT fail these checks. The bare
+ *     `UPDATE` takes an exclusive row lock held to the end of the transaction anyway, so the hints
+ *     are belt-and-braces on a statement that is already atomic.
+ *   · Nor does rewriting it as a dirty read followed by a separate `UPDATE` — the classic race. It
+ *     still blocks, on the UPDATE rather than the SELECT, and still emerges with the next number.
+ *     The interleaving that breaks it (both sessions reading before either writes) cannot be forced
+ *     from here, because the competing session holds an exclusive lock the whole time.
+ *
+ * The property that makes the race impossible is that the number is taken in ONE atomic statement
+ * inside the caller's transaction. Since no runtime check here can distinguish that from a
+ * non-atomic version, `registry-parity.test.ts` asserts it against the source instead — see the
+ * "sequence counter" test there. A guard you cannot write at runtime is still worth writing.
+ *
+ * WHAT IS ALSO NOT COVERED: two *MJ confirms* running at literally the same moment. The suite has
+ * one provider, so the competing actor is raw SQL performing the same counter protocol.
  *
  * CONNECTS TO:
  *   CODE: OrderEntityServer.nextSequence, assignOrderNumber
@@ -123,7 +135,7 @@ const seqOf = (orderNumber: string) => Number(orderNumber.replace(/^ORD-/, ""));
 export const ConcurrencyChecks: NamedCheck[] = [
   {
     Id: "concurrency.CN1",
-    Name: "CN1: a confirm BLOCKS on a counter another session holds, rather than reading past it",
+    Name: "CN1: a confirm serializes behind a competing session and takes a LATER number",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -132,8 +144,10 @@ export const ConcurrencyChecks: NamedCheck[] = [
 
         await whileHoldingSequence(ctx, "OrderSequence", async (heldNumber, release) => {
           // Start the confirm but DO NOT await it. With the counter row locked by the other
-          // session, `nextSequence` must wait. If the UPDLOCK/HOLDLOCK hints were removed, it would
-          // read straight past and take the same number this session already has.
+          // session, the confirm must wait rather than complete. Note what this does and does not
+          // show: it proves the confirm cannot finish while another session holds the row, which is
+          // what stops two orders sharing a number. It does NOT distinguish an atomic counter from
+          // a dirty-read-then-update one — both block here. See the module header.
           let settled = false;
           const confirming = confirmOne(ctx).then(
             (n) => { settled = true; return n; },

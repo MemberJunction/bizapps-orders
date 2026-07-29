@@ -26,9 +26,18 @@
  *   charges              CH1–CH12  shipping, handling and TAX as one mechanism (D71)
  *   tax                  TX1–TX15  rate resolution by address, nexus, taxability and exemptions (D73)
  *   composition          CX1–CX10  one realistic order carrying EVERY stage at once
+ *   returns              RT1–RT12  money going BACK — the direction nothing was designed for (D16/D74)
+ *   arithmetic-edges     AE1–AE12  the unit suite's hostile numbers, through the real pipeline
+ *   concurrency          CN1–CN6   document numbering under contention, on a second connection (D30)
+ *   events               EV1–EV10  event products and one-time deferred revenue
+ *
+ * Note that `events` and `line-subscriber` are listed out of order above because that is the order
+ * they were written in; the runner's order is presentational — each bundle owns its own fixture.
  *
  * Every check is `RequiresMutation` — this suite exists to write to the database. They are safe to
  * run repeatedly because each one rolls its transaction back; see `fixture.ts` for the model.
+ *
+ * To look at real rows rather than rolled-back ones, see `docs/reviewing-the-data.md`.
  */
 // ─── Register the code under test ──────────────────────────────────────────────────────────────
 //

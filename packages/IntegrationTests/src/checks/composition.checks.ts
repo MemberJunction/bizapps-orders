@@ -199,24 +199,42 @@ export const CompositionChecks: NamedCheck[] = [
         const order = await kitchenSink(ctx);
         Assert(order.Saved, `confirm failed: ${order.Message}`);
 
-        // Both allocators, checked the same way. A parent whose children do not sum to it is how an
-        // order-level discount silently misstates one company's revenue.
-        const drift = await TxOne<{ AdjDrift: number; ChargeDrift: number }>(
+        // THIS QUERY USED TO FILTER ON `OrderLineID IS NULL`, WHICH MATCHES NOTHING. An order-level
+        // promotion is allocated DOWN TO LINES — every share becomes its own OrderAdjustment
+        // carrying an OrderLineID — so the check summed an empty set to zero and passed whatever
+        // the allocator did. It survived a deliberately broken allocator, which is how it was found.
+        //
+        // The invariant that does bite: every share of one promotion sums to the amount that
+        // promotion computed. `PromotionEngine` drops a share of <= 0 rather than storing it, so a
+        // broken allocator shows up as a SUM that no longer reconciles.
+        const shares = await TxQuery<{ PromotionID: string; Shares: number; Total: number; Smallest: number }>(
           ctx,
-          `SELECT
-             (SELECT ISNULL(SUM(ABS(a.Amount - ISNULL(x.Allocated,0))),0)
-                FROM ${ORDERS_SCHEMA}.OrderAdjustment a
-                OUTER APPLY (SELECT SUM(Amount) AS Allocated FROM ${ORDERS_SCHEMA}.OrderAdjustmentAllocation
-                              WHERE OrderAdjustmentID = a.ID) x
-               WHERE a.OrderHeaderID='${order.Order.ID}' AND a.OrderLineID IS NULL) AS AdjDrift,
-             (SELECT ISNULL(SUM(ABS(c.Amount - ISNULL(y.Allocated,0))),0)
-                FROM ${ORDERS_SCHEMA}.OrderCharge c
-                OUTER APPLY (SELECT SUM(Amount) AS Allocated FROM ${ORDERS_SCHEMA}.OrderChargeAllocation
-                              WHERE OrderChargeID = c.ID) y
-               WHERE c.OrderHeaderID='${order.Order.ID}') AS ChargeDrift`,
+          `SELECT PromotionID, COUNT(*) AS Shares, SUM(Amount) AS Total, MIN(Amount) AS Smallest
+             FROM ${ORDERS_SCHEMA}.OrderAdjustment
+            WHERE OrderHeaderID='${order.Order.ID}' AND PromotionID IS NOT NULL
+            GROUP BY PromotionID`,
         );
-        AssertEqual(Number(drift.AdjDrift), 0, "every order-level adjustment allocates to the penny");
-        AssertEqual(Number(drift.ChargeDrift), 0, "every charge allocates to the penny");
+        AssertEqual(shares.length, 2, "both the line promotion and the order promotion recorded shares");
+        const byTotal = shares.map((r) => Math.round(Number(r.Total) * 100) / 100).sort((a, b) => a - b);
+        // 10% of WidgetA's 300, and the flat 50 off the order.
+        AssertEqual(byTotal[0], 30, "the line promotion's shares sum to 10% of the line it targeted");
+        AssertEqual(byTotal[1], 50, "the order promotion's shares sum to the 50 it took off");
+        for (const r of shares) {
+          Assert(Number(r.Smallest) > 0, `no share may be zero or negative (got ${r.Smallest})`);
+        }
+
+        // Charges DO have one parent and many allocations, so parity is the right question there.
+        const charges = await TxQuery<{ ID: string; Amount: number; Allocated: number }>(
+          ctx,
+          `SELECT c.ID, c.Amount,
+                  ISNULL((SELECT SUM(cl.Amount) FROM ${ORDERS_SCHEMA}.OrderChargeAllocation cl
+                           WHERE cl.OrderChargeID = c.ID), 0) AS Allocated
+             FROM ${ORDERS_SCHEMA}.OrderCharge c WHERE c.OrderHeaderID='${order.Order.ID}'`,
+        );
+        Assert(charges.length > 0, "the shipping charge and the tax layers must be recorded");
+        for (const c of charges) {
+          AssertEqual(Number(c.Allocated), Number(c.Amount), `charge ${c.ID} allocates to the penny`);
+        }
       }),
   },
   {

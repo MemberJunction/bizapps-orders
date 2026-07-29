@@ -204,6 +204,51 @@ describe('the bundle name agrees everywhere it is written down', () => {
  *
  * So compare against the filesystem, which cannot be forgotten the way an import can.
  */
+/**
+ * The sequence counter, asserted against the SOURCE — because no runtime check can reach it.
+ *
+ * The `concurrency` bundle holds the counter row on a second connection and watches a confirm block
+ * on it. That proves serialization, and mutation testing showed it proves nothing more: strip
+ * `WITH (UPDLOCK, HOLDLOCK)` and it still passes (the bare UPDATE takes the same exclusive lock),
+ * and rewrite it as a dirty read plus a separate UPDATE — the classic lost-update race — and it
+ * still passes, because it blocks on the second statement instead of the first.
+ *
+ * The interleaving that actually breaks a non-atomic counter is both sessions reading before either
+ * writes, and that cannot be forced from a test that holds an exclusive lock throughout. So the
+ * property is pinned where it can be: the number must be taken in ONE statement that reads and
+ * writes together.
+ */
+describe('the document-number counter is taken atomically', () => {
+    const source = () => read('packages/CoreEntitiesServer/src/OrderEntityServer.ts');
+
+    it('uses a single UPDATE … OUTPUT rather than a SELECT followed by an UPDATE', () => {
+        const fn = source().slice(source().indexOf('private async nextSequence'));
+        const body = fn.slice(0, fn.indexOf('\n    }'));
+
+        expect(body, 'the counter is read and written by one UPDATE … OUTPUT').toMatch(
+            /UPDATE[\s\S]*OUTPUT\s+deleted\.NextSequenceNumber/,
+        );
+        expect(
+            /SELECT\s+@\w+\s*=/.test(body),
+            'reading the counter into a variable and updating it separately is the lost-update race: ' +
+                'two sessions read the same value and both take it',
+        ).toBe(false);
+        expect(
+            /READUNCOMMITTED|NOLOCK/i.test(body),
+            'a dirty read of the counter defeats the point of taking it under lock',
+        ).toBe(false);
+    });
+
+    it('takes the number inside the CALLER transaction, so a rollback releases it', () => {
+        // A counter incremented in its own transaction would survive a failed confirm and leave a
+        // permanent hole in the invoice sequence. `concurrency.CN3` asserts the behaviour; this
+        // asserts nobody has quietly introduced a separate transaction to "make it safer".
+        const fn = source().slice(source().indexOf('private async nextSequence'));
+        const body = fn.slice(0, fn.indexOf('\n    }'));
+        expect(/BeginTransaction|BEGIN\s+TRAN/i.test(body), 'no transaction of its own').toBe(false);
+    });
+});
+
 describe('no check file escapes this test', () => {
     it('imports every *.checks.ts in the checks directory', () => {
         const checksDir = resolve(dirname(fileURLToPath(import.meta.url)), '../checks');
