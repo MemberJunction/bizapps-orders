@@ -14,13 +14,31 @@
     <mj-collapsible-panel
         SectionKey="assignmentDetails"
         SectionName="Assignment Details"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-tasks"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
             FieldName="PriceListID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="OrganizationID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="PersonID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -53,38 +71,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Assignment Target Section -->
+    <!-- Timeline Section -->
     <mj-collapsible-panel
-        SectionKey="assignmentTarget"
-        SectionName="Assignment Target"
-        Icon="fa fa-user-tag"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="OrganizationID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PersonID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Validity Period Section -->
-    <mj-collapsible-panel
-        SectionKey="validityPeriod"
-        SectionName="Validity Period"
+        SectionKey="timeline"
+        SectionName="Timeline"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -104,6 +94,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Contextual Labels Section -->
+    <mj-collapsible-panel
+        SectionKey="contextualLabels"
+        SectionName="Contextual Labels"
+        Icon="fa fa-font"
+        [Form]="this"
+        [FormContext]="formContext">
 
     </mj-collapsible-panel>
 

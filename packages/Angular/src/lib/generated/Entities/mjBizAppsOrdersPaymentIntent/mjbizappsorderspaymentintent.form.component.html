@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Provider Details Section -->
+    <!-- Provider Information Section -->
     <mj-collapsible-panel
-        SectionKey="paymentProviderDetails"
-        SectionName="Payment Provider Details"
+        SectionKey="providerInformation"
+        SectionName="Provider Information"
         Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
@@ -37,11 +37,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Payment Status and Amount Section -->
+    <!-- Payment Lifecycle Section -->
     <mj-collapsible-panel
-        SectionKey="paymentStatusAndAmount"
-        SectionName="Payment Status and Amount"
-        Icon="fa fa-money-bill"
+        SectionKey="paymentLifecycle"
+        SectionName="Payment Lifecycle"
+        Icon="fa fa-sync"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -60,14 +60,30 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProviderEventID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="LastEventAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Related Records Section -->
+    <!-- Customer and Order Details Section -->
     <mj-collapsible-panel
-        SectionKey="relatedRecords"
-        SectionName="Related Records"
-        Icon="fa fa-link"
+        SectionKey="customerAndOrderDetails"
+        SectionName="Customer and Order Details"
+        Icon="fa fa-user-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -96,32 +112,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Webhook and Audit Section -->
-    <mj-collapsible-panel
-        SectionKey="webhookAndAudit"
-        SectionName="Webhook and Audit"
-        Icon="fa fa-history"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProviderEventID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="LastEventAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>

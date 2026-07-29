@@ -52,39 +52,20 @@
 
     </mj-collapsible-panel>
 
-    <!-- Operational Settings Section -->
+    <!-- Fulfillment and Tax Section -->
     <mj-collapsible-panel
-        SectionKey="operationalSettings"
-        SectionName="Operational Settings"
-        Icon="fa fa-cogs"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="false"
-            FieldName="RequiresFulfillment"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Taxation and Finance Section -->
-    <mj-collapsible-panel
-        SectionKey="taxationAndFinance"
-        SectionName="Taxation and Finance"
-        Icon="fa fa-dollar-sign"
+        SectionKey="fulfillmentAndTax"
+        SectionName="Fulfillment and Tax"
+        Icon="fa fa-truck"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="DefaultRevenueRecognitionTypeID"
-            Type="textbox"
+            FieldName="RequiresFulfillment"
+            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
-            LinkType="Record"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
@@ -102,6 +83,25 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Financial Defaults Section -->
+    <mj-collapsible-panel
+        SectionKey="financialDefaults"
+        SectionName="Financial Defaults"
+        Icon="fa fa-dollar-sign"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DefaultRevenueRecognitionTypeID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -114,11 +114,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- System Configuration Section -->
+    <!-- Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="systemConfiguration"
-        SectionName="System Configuration"
-        Icon="fa fa-wrench"
+        SectionKey="configuration"
+        SectionName="Configuration"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

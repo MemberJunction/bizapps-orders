@@ -91,50 +91,90 @@ interface JurisdictionRow {
 
 const norm = (v: string | null | undefined): string => (v ?? '').trim().toLowerCase();
 
+/** One level of the category tree, nearest first. */
+export interface TaxabilityCategoryLevel {
+    ID: string;
+    DefaultIsTaxable: boolean | null;
+    DefaultTaxCategory: string | null;
+}
+
 /** What the taxability walk resolved, and where the answer came from. */
 export interface ResolvedTaxability {
     IsTaxable: boolean;
     TaxCategory: string | null;
     /** Which level answered — for the audit trail and for explaining a zero. */
     DecidedAt: 'Product' | 'ProductCategory' | 'ProductType' | 'Default';
+    /**
+     * WHICH category answered, when one did. A three-deep tree that resolves at the root is a
+     * different configuration from one that resolves at the leaf, and 'ProductCategory' alone
+     * cannot tell them apart.
+     */
+    DecidedAtCategoryID?: string;
 }
 
 /**
  * Is this product taxable, and as what? (D73)
  *
- * Walks product → its category → its type, most specific wins, exactly as GL accounts resolve.
- * Each level may answer either question independently: a product can name its own tax category
- * while inheriting taxability from its category, which is the common shape — 'publications are
- * exempt here' is a statement about a category, not about each of two hundred products.
+ * Walks product → its category → that category's ANCESTORS, nearest first → its type. Most specific
+ * wins. This is the same walk `GLAccountResolver` performs for accounts, deliberately: a deployment
+ * that organises products into a category tree expects "exempt" set at the root to reach every leaf
+ * beneath it, and expects a leaf to be able to override its parent.
  *
- * The type is the backstop and its `DefaultIsTaxable` is NOT NULL, so the walk always terminates.
+ * THE TWO QUESTIONS RESOLVE INDEPENDENTLY. A product can name its own tax category while inheriting
+ * taxability from three levels up — which is the common real shape, because "what kind of thing is
+ * this" and "is it taxed here" are different facts that different people maintain.
+ *
+ * The type is the backstop and its `DefaultIsTaxable` is NOT NULL, so the walk always terminates
+ * with an answer rather than a null nobody knows how to read.
  */
 export function ResolveTaxability(
     product: { IsTaxable: boolean | null; TaxCategory: string | null },
-    category: { IsTaxable: boolean | null; TaxCategory: string | null } | null,
+    /** The category chain, NEAREST FIRST: the product's own category, then its parent, to the root. */
+    categoryChain: TaxabilityCategoryLevel[],
     type: { DefaultIsTaxable: boolean; DefaultTaxCategory: string | null } | null,
 ): ResolvedTaxability {
     let isTaxable: boolean | null = product.IsTaxable;
     let decidedAt: ResolvedTaxability['DecidedAt'] = 'Product';
+    let decidedAtCategoryID: string | undefined;
+
     if (isTaxable == null) {
-        isTaxable = category?.IsTaxable ?? null;
-        decidedAt = 'ProductCategory';
+        for (const level of categoryChain) {
+            if (level.DefaultIsTaxable == null) continue;
+            isTaxable = level.DefaultIsTaxable;
+            decidedAt = 'ProductCategory';
+            decidedAtCategoryID = level.ID;
+            break;
+        }
     }
-    if (isTaxable == null) {
-        isTaxable = type ? type.DefaultIsTaxable : null;
+    if (isTaxable == null && type) {
+        isTaxable = type.DefaultIsTaxable;
         decidedAt = 'ProductType';
     }
     if (isTaxable == null) {
-        // Nothing said. Taxable is the safe default: under-collecting is the expensive direction,
-        // because the seller owes the tax it failed to charge and cannot usually recover it.
+        // Nothing answered at any level. Taxable is the safe default: under-collecting is the
+        // expensive direction, because the seller owes the tax it failed to charge and usually
+        // cannot recover it from the customer afterwards.
         isTaxable = true;
         decidedAt = 'Default';
     }
 
-    const taxCategory =
-        product.TaxCategory ?? category?.TaxCategory ?? type?.DefaultTaxCategory ?? null;
+    // The category resolves through the SAME chain, independently of taxability.
+    let taxCategory: string | null = product.TaxCategory;
+    if (taxCategory == null) {
+        for (const level of categoryChain) {
+            if (level.DefaultTaxCategory == null) continue;
+            taxCategory = level.DefaultTaxCategory;
+            break;
+        }
+    }
+    if (taxCategory == null) taxCategory = type?.DefaultTaxCategory ?? null;
 
-    return { IsTaxable: isTaxable, TaxCategory: taxCategory, DecidedAt: decidedAt };
+    return {
+        IsTaxable: isTaxable,
+        TaxCategory: taxCategory,
+        DecidedAt: decidedAt,
+        ...(decidedAtCategoryID ? { DecidedAtCategoryID: decidedAtCategoryID } : {}),
+    };
 }
 
 /**

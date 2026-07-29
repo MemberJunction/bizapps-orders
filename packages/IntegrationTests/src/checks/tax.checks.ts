@@ -79,7 +79,7 @@ async function setTaxability(
   if (opts.categoryID) {
     await TxQuery(ctx,
       `UPDATE ${ORDERS_SCHEMA}.ProductCategory
-          SET IsTaxable = ${b(opts.categoryIsTaxable)}, TaxCategory = ${q(opts.categoryTaxCategory)}
+          SET DefaultIsTaxable = ${b(opts.categoryIsTaxable)}, DefaultTaxCategory = ${q(opts.categoryTaxCategory)}
         WHERE ID = '${opts.categoryID}'`);
   }
 }
@@ -449,6 +449,39 @@ export const TaxChecks: NamedCheck[] = [
         Assert(result.Saved, `an order with no ship-to must still book: ${result.Message}`);
         AssertEqual(Number((await taxOf(ctx, result.Order.ID as string)).Tax), 0, "nowhere to resolve to");
         AssertEqual(Number((await taxOf(ctx, result.Order.ID as string)).Gross), 1000, "the goods are billed regardless");
+      }),
+  },
+  {
+    Id: "tax.TX15",
+    Name: "TX15: taxability set on an ANCESTOR category reaches the product",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+
+        // The PRODUCT must be silent, or the walk correctly stops there and never climbs — the
+        // fixture creates products with IsTaxable = 1.
+        await setTaxability(ctx, { productID: f.Products.WidgetA, productIsTaxable: null });
+
+        // Build leaf -> parent above the product's own category, and put the only opinion at the
+        // TOP. Reading just the immediate category would miss it entirely.
+        const leaf = await TxOne<{ ProductCategoryID: string; CompanyID: string }>(
+          ctx,
+          `SELECT ProductCategoryID, CompanyID FROM ${ORDERS_SCHEMA}.Product WHERE ID='${f.Products.WidgetA}'`,
+        );
+        const rootID = randomUUID();
+        await TxQuery(ctx,
+          `INSERT INTO ${ORDERS_SCHEMA}.ProductCategory (ID, CompanyID, Name, IsActive, DefaultIsTaxable)
+           VALUES ('${rootID}','${leaf.CompanyID}','${f.Run} Exempt Root',1,0);
+           UPDATE ${ORDERS_SCHEMA}.ProductCategory
+              SET ParentProductCategoryID='${rootID}', DefaultIsTaxable=NULL
+            WHERE ID='${leaf.ProductCategoryID}'`);
+
+        const order = await confirmShippingTo(ctx, "Maryland", [{ ProductID: f.Products.WidgetA, Quantity: 10 }]);
+        Assert(order.Saved, `confirm failed: ${order.Message}`);
+        // TX1 charges 60 for this exact order when nothing exempts it.
+        AssertEqual(Number((await taxOf(ctx, order.Order.ID as string)).Tax), 0, "the ROOT category exempted it");
       }),
   },
 ];

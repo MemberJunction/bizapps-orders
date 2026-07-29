@@ -57,7 +57,13 @@ import {
     type RequestedCharge,
 } from './ChargeEngine.js';
 import type { ComputeChargesResult } from './ChargeBehavior.js';
-import { ResolveTax, ResolveTaxability, type ResolvedTaxability, type TaxAddress } from './TaxResolver.js';
+import {
+    ResolveTax,
+    ResolveTaxability,
+    type ResolvedTaxability,
+    type TaxabilityCategoryLevel,
+    type TaxAddress,
+} from './TaxResolver.js';
 import {
     AuthorizeManualDiscount,
     RunPromotions,
@@ -526,7 +532,14 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         return out;
     }
 
-    /** The taxability walk for a product: product → its category → its type. */
+    /**
+     * The taxability walk for a product: product → its category → that category's ANCESTORS → type.
+     *
+     * The ancestor climb is the same one `GLAccountResolver` does, and for the same reason: a
+     * deployment that organises products into a tree expects a setting on the root to reach every
+     * leaf beneath it. Reading only the immediate category would make an ancestor's setting
+     * unreachable, which defeats having a tree at all.
+     */
     private async resolveLineTaxability(productID: string): Promise<ResolvedTaxability> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const pRes = await rv.RunView<{
@@ -547,20 +560,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const p = pRes?.Results?.[0];
         if (!p) return { IsTaxable: true, TaxCategory: null, DecidedAt: 'Default' };
 
-        let category: { IsTaxable: boolean | null; TaxCategory: string | null } | null = null;
-        if (p.ProductCategoryID) {
-            const cRes = await rv.RunView<{ IsTaxable: boolean | null; TaxCategory: string | null }>(
-                {
-                    EntityName: 'MJ_BizApps_Orders: Product Categories',
-                    ExtraFilter: `ID = '${p.ProductCategoryID}'`,
-                    Fields: ['IsTaxable', 'TaxCategory'],
-                    ResultType: 'simple',
-                    BypassCache: true,
-                },
-                this.ContextCurrentUser,
-            );
-            category = cRes?.Results?.[0] ?? null;
-        }
+        const chain = await this.categoryTaxChain(p.ProductCategoryID);
 
         let type: { DefaultIsTaxable: boolean; DefaultTaxCategory: string | null } | null = null;
         if (p.ProductTypeID) {
@@ -577,7 +577,54 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             type = tRes?.Results?.[0] ?? null;
         }
 
-        return ResolveTaxability(p, category, type);
+        return ResolveTaxability(p, chain, type);
+    }
+
+    /**
+     * The category and every ancestor, nearest first.
+     *
+     * One read of the tree, then pointer-chasing — the same shape `GLAccountResolver` uses. The
+     * cycle guard is not paranoia: the DB CHECK blocks self-parenting but not a longer loop, and an
+     * unguarded climb would hang the confirm rather than fail it.
+     */
+    private async categoryTaxChain(startCategoryID: string | null): Promise<TaxabilityCategoryLevel[]> {
+        if (!startCategoryID) return [];
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{
+            ID: string;
+            ParentProductCategoryID: string | null;
+            DefaultIsTaxable: boolean | null;
+            DefaultTaxCategory: string | null;
+        }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Product Categories',
+                Fields: ['ID', 'ParentProductCategoryID', 'DefaultIsTaxable', 'DefaultTaxCategory'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        const byID = new Map(
+            (res?.Results ?? []).map((c) => [String(c.ID).toLowerCase(), c]),
+        );
+
+        const chain: TaxabilityCategoryLevel[] = [];
+        const seen = new Set<string>();
+        let current: string | null = startCategoryID;
+        while (current) {
+            const key = String(current).toLowerCase();
+            if (seen.has(key)) break;
+            seen.add(key);
+            const row = byID.get(key);
+            if (!row) break;
+            chain.push({
+                ID: row.ID,
+                DefaultIsTaxable: row.DefaultIsTaxable,
+                DefaultTaxCategory: row.DefaultTaxCategory,
+            });
+            current = row.ParentProductCategoryID;
+        }
+        return chain;
     }
 
     /** The ship-to address, in the shape jurisdiction matching wants. */
