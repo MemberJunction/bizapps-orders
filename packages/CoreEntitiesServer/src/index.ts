@@ -74,6 +74,78 @@ export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentL
 export { RefundPaymentOperation, LoadRefundPaymentOperation } from './RefundPaymentOperation.js';
 export type { RefundPaymentInput, RefundPaymentOutput } from './RefundPaymentOperation.js';
 export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './ApplyAccountCreditOperation.js';
+// Pricing (D69): the pure engine, the resolver walk + its plugin seam, the dry run, and the
+// write-time guard that stops an ambiguous rule set reaching an order.
+export { PreviewPriceOperation, LoadPreviewPriceOperation } from './PreviewPriceOperation.js';
+export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
+export { ProductPriceEntityServer } from './ProductPriceEntityServer.js';
+export {
+    BasePriceResolver,
+    DefaultPriceResolver,
+    LoadDefaultPriceResolver,
+    PriceResolutionError,
+    ResolvePrice,
+    ResolvePriceListForCustomer,
+} from './PriceResolver.js';
+export type { PriceResolutionContext, ResolvedPrice, PriceComponentDraft } from './PriceResolver.js';
+export {
+    AllocateProRata,
+    ComputeAmount,
+    IsRuleApplicable,
+    Money,
+    PickPriceRule,
+} from './PricingBehavior.js';
+export type { PriceRule, PriceTierRule, PriceContext, PricingModel, InapplicableReason, RulePick } from './PricingBehavior.js';
+
+// Promotions (D70): the pure engine, the DB-backed resolution, and the qualifier plugin seam.
+export { ApplyPromotions, ScreenPromotion, ValuePromotion } from './PromotionBehavior.js';
+export type {
+    PromotionRule,
+    PromotionContext,
+    PromotionOutcome,
+    RejectedPromotion,
+    ApplyPromotionsResult,
+    PromotionRejection,
+    PromotionValueKind,
+    StackingMode,
+} from './PromotionBehavior.js';
+export {
+    AuthorizeManualDiscount,
+    BasePromotionQualifier,
+    LoadPromotionEngine,
+    PromotionError,
+    RunPromotions,
+    WriteAdjustments,
+} from './PromotionEngine.js';
+// Charges (D71): the pure engine and the DB-backed resolution. Tax is a CHARGE, which is what
+// makes multi-layer tax several rows rather than a special case.
+export { ComputeCharges } from './ChargeBehavior.js';
+export type {
+    ChargeBasis,
+    ChargeCategory,
+    ChargeRequest,
+    ChargeAllocation,
+    ComputedCharge,
+    ChargeableLine,
+    ComputeChargesResult,
+} from './ChargeBehavior.js';
+export { ChargeError, RunCharges, SplitChargesByLine, WriteCharges } from './ChargeEngine.js';
+export type { RequestedCharge } from './ChargeEngine.js';
+
+// Tax resolution (D72): address -> jurisdictions -> rates, minus the buyer's exemptions. The
+// jurisdiction step is a SEAM — postal/city matching is enough for many deployments and is not
+// rooftop-accurate, which is where a commercial provider earns its money.
+export { BaseTaxJurisdictionResolver, DefaultTaxJurisdictionResolver, LoadTaxResolver, ResolveTax } from './TaxResolver.js';
+export type { TaxAddress, ResolvedTaxLayer, TaxResolutionResult } from './TaxResolver.js';
+
+export type {
+    ManualDiscountRequest,
+    PromotableLine,
+    PromotionApplication,
+    PromotionQualificationContext,
+    PromotionRunResult,
+    RunPromotionsInput,
+} from './PromotionEngine.js';
 export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyAccountCreditOperation.js';
 
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';

@@ -10,22 +10,32 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Obligation Details Section -->
+    <!-- Product Identification Section -->
     <mj-collapsible-panel
-        SectionKey="obligationDetails"
-        SectionName="Obligation Details"
-        Icon="fa fa-info-circle"
+        SectionKey="productIdentification"
+        SectionName="Product Identification"
+        Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="ProductID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Performance Obligation Details Section -->
+    <mj-collapsible-panel
+        SectionKey="performanceObligationDetails"
+        SectionName="Performance Obligation Details"
+        Icon="fa fa-file-contract"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -34,25 +44,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Financial Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="financialConfiguration"
-        SectionName="Financial Configuration"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="RevenueRecognitionTypeID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -60,6 +51,25 @@
             Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Revenue Recognition Section -->
+    <mj-collapsible-panel
+        SectionKey="revenueRecognition"
+        SectionName="Revenue Recognition"
+        Icon="fa fa-chart-line"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
+            FieldName="RevenueRecognitionTypeID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
         ></mj-form-field>
 
     </mj-collapsible-panel>

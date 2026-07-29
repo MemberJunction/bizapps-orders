@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Recognition Details Section -->
+    <!-- Recognition Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="recognitionDetails"
-        SectionName="Recognition Details"
-        Icon="fa fa-info-circle"
+        SectionKey="recognitionConfiguration"
+        SectionName="Recognition Configuration"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -29,10 +29,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Recognition Schedule Section -->
+    <!-- Recognition Timeline Section -->
     <mj-collapsible-panel
-        SectionKey="recognitionSchedule"
-        SectionName="Recognition Schedule"
+        SectionKey="recognitionTimeline"
+        SectionName="Recognition Timeline"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -52,21 +52,13 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsComplete"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financial Values Section -->
+    <!-- Financial Totals Section -->
     <mj-collapsible-panel
-        SectionKey="financialValues"
-        SectionName="Financial Values"
+        SectionKey="financialTotals"
+        SectionName="Financial Totals"
         Icon="fa fa-money-bill-wave"
         [Form]="this"
         [FormContext]="formContext">
@@ -86,6 +78,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsComplete"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -93,7 +93,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-cog"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -150,7 +150,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderLines"
         SectionName="Order Lines"
-        Icon="fa fa-list-ul"
+        Icon="fa fa-list-ol"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

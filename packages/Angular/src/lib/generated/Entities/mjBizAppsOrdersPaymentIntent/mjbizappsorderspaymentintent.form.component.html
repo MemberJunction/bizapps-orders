@@ -10,13 +10,22 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Details Section -->
+    <!-- Provider Information Section -->
     <mj-collapsible-panel
-        SectionKey="paymentDetails"
-        SectionName="Payment Details"
-        Icon="fa fa-money-bill"
+        SectionKey="providerInformation"
+        SectionName="Provider Information"
+        Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="PaymentProviderID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -25,6 +34,24 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProviderEventID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Payment Status Section -->
+    <mj-collapsible-panel
+        SectionKey="paymentStatus"
+        SectionName="Payment Status"
+        Icon="fa fa-check-circle"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -41,13 +68,21 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="LastEventAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Relationships Section -->
+    <!-- Related Entities Section -->
     <mj-collapsible-panel
-        SectionKey="relationships"
-        SectionName="Relationships"
+        SectionKey="relatedEntities"
+        SectionName="Related Entities"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
@@ -81,32 +116,6 @@
 
     </mj-collapsible-panel>
 
-    <!-- Event Tracking Section -->
-    <mj-collapsible-panel
-        SectionKey="eventTracking"
-        SectionName="Event Tracking"
-        Icon="fa fa-history"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProviderEventID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="LastEventAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
     <!-- System Metadata Section -->
     <mj-collapsible-panel
         SectionKey="systemMetadata"
@@ -114,15 +123,6 @@
         Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PaymentProviderID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -152,7 +152,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPaymentHeaders"
         SectionName="Payment Headers"
-        Icon="fa fa-money-check-alt"
+        Icon="fa fa-money-bill-wave"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

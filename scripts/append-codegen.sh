@@ -30,6 +30,27 @@ BANNER_END=$(grep -n "$MARKER" "$MIGRATION" | head -1 | cut -d: -f1)
 BANNER_END=$(awk -v s="$BANNER_END" 'NR>=s && /^-- =+$/ { print NR; exit }' "$MIGRATION")
 [[ -n "$BANNER_END" ]] || { echo "could not find the end of the banner block" >&2; exit 1; }
 
+# GUARD: CodeGen regenerates INCREMENTALLY. Run against a database whose entities are already
+# current and it emits only a delta — and appending that delta silently replaces the full generated
+# half with a fragment, producing a baseline that migrates to bare tables. This has happened once
+# (88k lines -> 8k). Compare against what is already below the banner and refuse a large shrink.
+EXISTING_GENERATED=$(( $(wc -l < "$MIGRATION") - BANNER_END ))
+INCOMING_GENERATED=$(cat "${GENERATED[@]}" | wc -l | tr -d ' ')
+if (( EXISTING_GENERATED > 1000 )) && (( INCOMING_GENERATED * 2 < EXISTING_GENERATED )); then
+    cat >&2 <<EOF
+REFUSING: the incoming CodeGen output ($INCOMING_GENERATED lines) is less than half of what is
+already below the banner ($EXISTING_GENERATED lines). That is what a partial/incremental CodeGen run
+looks like, and appending it would drop the rest of the generated half.
+
+If this is intentional, pass --force. Otherwise rebuild the database from zero and re-run CodeGen so
+it regenerates everything:
+
+    scripts/rebuild-db.sh && npm run mj:codegen && scripts/append-codegen.sh
+EOF
+    [[ "${2:-}" == "--force" ]] || exit 1
+    echo "  (--force given; proceeding anyway)" >&2
+fi
+
 TMP=$(mktemp)
 head -n "$BANNER_END" "$MIGRATION" > "$TMP"
 printf '\n\n' >> "$TMP"

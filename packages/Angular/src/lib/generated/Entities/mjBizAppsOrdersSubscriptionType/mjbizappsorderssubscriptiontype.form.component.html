@@ -44,22 +44,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="DriverClass"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="SubscriberScope"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="Sequence"
             Type="number"
             [EditMode]="EditMode"
@@ -76,13 +60,29 @@
 
     </mj-collapsible-panel>
 
-    <!-- Subscription Configuration Section -->
+    <!-- Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="subscriptionConfiguration"
-        SectionName="Subscription Configuration"
+        SectionKey="configuration"
+        SectionName="Configuration"
         Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DriverClass"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="SubscriberScope"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -91,6 +91,24 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ConcurrencyMode"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Lifecycle Settings Section -->
+    <mj-collapsible-panel
+        SectionKey="lifecycleSettings"
+        SectionName="Lifecycle Settings"
+        Icon="fa fa-history"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -139,6 +157,22 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ReactivationMode"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ReactivationWindowDays"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -146,7 +180,7 @@
     <mj-collapsible-panel
         SectionKey="financialSettings"
         SectionName="Financial Settings"
-        Icon="fa fa-dollar-sign"
+        Icon="fa fa-money-bill"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -184,37 +218,13 @@
 
     </mj-collapsible-panel>
 
-    <!-- Lifecycle Management Section -->
+    <!-- Renewal Settings Section -->
     <mj-collapsible-panel
-        SectionKey="lifecycleManagement"
-        SectionName="Lifecycle Management"
-        Icon="fa fa-sync-alt"
+        SectionKey="renewalSettings"
+        SectionName="Renewal Settings"
+        Icon="fa fa-sync"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ConcurrencyMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReactivationMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReactivationWindowDays"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -234,10 +244,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Cancellation Policy Section -->
+    <!-- Cancellation Settings Section -->
     <mj-collapsible-panel
-        SectionKey="cancellationPolicy"
-        SectionName="Cancellation Policy"
+        SectionKey="cancellationSettings"
+        SectionName="Cancellation Settings"
         Icon="fa fa-times-circle"
         [Form]="this"
         [FormContext]="formContext">

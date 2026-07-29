@@ -83,6 +83,8 @@ export class GLAccountResolver {
             recordId: string,
             role: string,
             asOf: Date,
+            /** When given, only links whose ACCOUNT belongs to this company are considered (D71). */
+            forCompanyID?: string,
         ) => { GLAccountID: string; CompanyID: string } | null,
     ) {}
 
@@ -136,6 +138,37 @@ export class GLAccountResolver {
             );
         }
 
+        return hit.GLAccountID;
+    }
+
+    /**
+     * Resolve a link for an ARBITRARY record, with no walk (D71).
+     *
+     * The product walk answers "what account does this product's revenue go to". Some things are not
+     * products and have no category tree — a charge type, for instance — so they are looked up
+     * directly. Returns null rather than throwing: the caller knows whether the absence is fatal.
+     *
+     * The company invariant still applies. An account belonging to another company is refused for
+     * exactly the reason D6 gives: accounting derives the entry's company FROM the account, so a
+     * mis-resolved one books to the wrong legal entity with nothing downstream to catch it.
+     */
+    public async ResolveForRecord(
+        role: GLRole,
+        entityID: string,
+        recordID: string,
+        expectedCompanyID: string,
+        asOf: Date,
+    ): Promise<string | null> {
+        const hit = this._resolveLink(entityID, recordID, role, asOf, expectedCompanyID);
+        if (!hit) return null;
+        if (hit.CompanyID !== expectedCompanyID) {
+            throw new GLAccountResolutionError(
+                role,
+                recordID,
+                `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ${hit.CompanyID}, ` +
+                    `but this books to company ${expectedCompanyID}. Cross-company account mapping is refused.`,
+            );
+        }
         return hit.GLAccountID;
     }
 

@@ -10,21 +10,29 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Sales Representative Section -->
+    <!-- Assignment Section -->
     <mj-collapsible-panel
-        SectionKey="salesRepresentative"
-        SectionName="Sales Representative"
-        Icon="fa fa-user"
+        SectionKey="assignment"
+        SectionName="Assignment"
+        Icon="fa fa-user-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="SalesRepUserID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
@@ -33,7 +41,7 @@
     <mj-collapsible-panel
         SectionKey="authorityLimits"
         SectionName="Authority Limits"
-        Icon="fa fa-balance-scale"
+        Icon="fa fa-money-bill-wave"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -52,11 +60,21 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Scope Permissions Section -->
+    <mj-collapsible-panel
+        SectionKey="scopePermissions"
+        SectionName="Scope Permissions"
+        Icon="fa fa-list-ul"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
             FieldName="AllowedPaymentTermsTypeIDs"
-            Type="textarea"
+            Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -64,25 +82,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="AllowedProductCategoryIDs"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Status and Metadata Section -->
-    <mj-collapsible-panel
-        SectionKey="statusAndMetadata"
-        SectionName="Status and Metadata"
-        Icon="fa fa-check-circle"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="false"
-            FieldName="IsActive"
-            Type="checkbox"
+            Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -116,6 +116,35 @@
     </mj-collapsible-panel>
 
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+    <!-- ========================================
+         RELATED ENTITY PANELS
+         ======================================== -->
+
+    <!-- Order Adjustments Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersOrderAdjustments"
+        SectionName="Order Adjustments"
+        Icon="fa fa-money-bill-wave"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderAdjustments')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Adjustments','AuthorizedBySalesAuthorityID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Adjustments')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderAdjustments')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderAdjustments', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
 
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 </mj-record-form-container>

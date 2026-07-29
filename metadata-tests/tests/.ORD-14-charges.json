@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-14 - Charges",
+    "Description": "Shipping, handling and TAX as one mechanism (CH1-CH12, D71). Modelling tax as a charge is the design's load-bearing move: multi-layer tax stops being a special case and becomes several charges with later sequence numbers, so ordering, allocation, the override trail and the GL treatment are written once rather than twice. Basis is the field that makes tax-on-shipping work and is jurisdiction-dependent, so CH3 and CH4 assert that the SAME order taxes to a different number depending on it. Every charge is allocated to lines because tax and GL are per line and on a multi-company order the split decides whose books carry it. A waived charge keeps what the rules computed, so 'waived' and 'free' stay distinguishable and discretion can be audited. CH10 covers a latent break: tax sat in the AR debit with NO credit for as long as booking has existed, having simply never been non-zero.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A 25 flat shipping charge lands on the line and reaches a gross of 525; an 8.6% rate produces 86 on LineTax and nothing in the non-tax bucket; the same order taxes 100 under LineNet and 110 under LineNetPlusCharges; charges apply in Sequence order even when requested backwards; a 100 shipping charge allocates 75/25 across a 300/100 order and sums to exactly 100 with one allocation row per line; tax computes on the discounted 800 rather than the 1000 list; a waived charge records Amount 0 alongside ComputedAmount 40 and its reason; an override without a reason is refused; the journal entry balances with AR at 1210, shipping credited 100 to its own account and tax 110 to its own; a charge whose type has no GL account refuses the confirm; and an unknown charge code is refused."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "charges"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "2F17CB05-D286-4D4B-B3AA-6F065B22D462"
+  }
+}

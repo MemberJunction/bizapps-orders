@@ -9,11 +9,17 @@
 import { Metadata } from '@memberjunction/core';
 import type { BaseEntity, UserInfo } from '@memberjunction/core';
 
-/** A line to put on the order. Only `ProductID`, `Quantity` and `UnitPrice` are ever required. */
+/**
+ * A line to put on the order. Only `ProductID` and `Quantity` are required.
+ *
+ * `UnitPrice` became OPTIONAL when the pricing engine landed (D69): omitting it is how a check asks
+ * the engine to resolve the price, and stating it is how a check asserts that direct entry still
+ * wins. Both are behaviours worth exercising, so neither can be the only option.
+ */
 export interface LineSpec {
     ProductID: string;
     Quantity: number;
-    UnitPrice: number;
+    UnitPrice?: number;
     /** 0–1. A discount with no linked contra account nets into the sales credit (D11). */
     DiscountPct?: number;
     /** Coverage window for deferred lines that have no subscription (events, plain deferred services). */
@@ -45,6 +51,12 @@ export interface OrderSpec {
     InitialPaymentTypeID?: string;
     InitialPaymentAmount?: number;
     InitialPaymentDetailID?: string;
+    /** Promotion codes the customer presented (D70). Resolved after the lines are priced. */
+    PromotionCodes?: string[];
+    /** Ad-hoc discounts, each gated by the applying user's SalesAuthority (D70). */
+    ManualDiscounts?: Array<{ OrderLineID?: string | null; Amount: number; Reason: string }>;
+    /** Charges to apply — shipping, handling, tax layers (D71). Computed after promotions. */
+    Charges?: Array<Record<string, unknown>>;
 }
 
 export interface BuiltOrder {
@@ -71,6 +83,16 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
     if (spec.InitialPaymentTypeID) order.InitialPaymentTypeID = spec.InitialPaymentTypeID;
     if (spec.InitialPaymentAmount != null) order.InitialPaymentAmount = spec.InitialPaymentAmount;
     if (spec.InitialPaymentDetailID) order.InitialPaymentDetailID = spec.InitialPaymentDetailID;
+    // Promotions ride the header the same way lines do — set here, resolved inside Save (D70).
+    if (spec.PromotionCodes) {
+        (order as unknown as { PromotionCodes: string[] }).PromotionCodes = spec.PromotionCodes;
+    }
+    if (spec.ManualDiscounts) {
+        (order as unknown as { ManualDiscounts: unknown[] }).ManualDiscounts = spec.ManualDiscounts;
+    }
+    if (spec.Charges) {
+        (order as unknown as { Charges: unknown[] }).Charges = spec.Charges;
+    }
 
     const lines: Array<BaseEntity & Record<string, unknown>> = [];
     let lineNumber = 1;
@@ -83,7 +105,9 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
         line.ProductID = ls.ProductID;
         line.LineNumber = lineNumber++;
         line.Quantity = ls.Quantity;
-        line.UnitPrice = ls.UnitPrice;
+        // Left UNSET when the caller omitted it, so the engine sees an untouched field. Assigning
+        // 0 would look like a deliberate free line and suppress resolution entirely.
+        if (ls.UnitPrice !== undefined) line.UnitPrice = ls.UnitPrice;
         line.DiscountPct = ls.DiscountPct ?? 0;
         if (ls.ServicePeriodStart) line.ServicePeriodStart = new Date(ls.ServicePeriodStart);
         if (ls.ServicePeriodEnd) line.ServicePeriodEnd = new Date(ls.ServicePeriodEnd);

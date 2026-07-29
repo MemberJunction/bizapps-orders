@@ -47,6 +47,24 @@ import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { ResolvePrice, type ResolvedPrice } from './PriceResolver.js';
+import { AllocateProRata } from './PricingBehavior.js';
+import type { StackingMode } from './PromotionBehavior.js';
+import {
+    RunCharges,
+    SplitChargesByLine,
+    WriteCharges,
+    type RequestedCharge,
+} from './ChargeEngine.js';
+import type { ComputeChargesResult } from './ChargeBehavior.js';
+import {
+    AuthorizeManualDiscount,
+    RunPromotions,
+    WriteAdjustments,
+    type ManualDiscountRequest,
+    type PromotableLine,
+    type PromotionRunResult,
+} from './PromotionEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import {
@@ -71,6 +89,7 @@ interface SubscriptionMaterialization {
 }
 
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
+const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
@@ -138,6 +157,52 @@ interface CreateJournalEntriesResult {
 @RegisterClass(BaseEntity, ORDER_ENTITY)
 export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     private _lines: mjBizAppsOrdersOrderLineEntity[] = [];
+    /** Price decompositions produced during this save, written once the lines have IDs (D69). */
+    private readonly _priceComponents = new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>();
+    private _promotionCodes: string[] = [];
+    private _manualDiscounts: ManualDiscountRequest[] = [];
+    private _charges: RequestedCharge[] = [];
+    /** Codes that resolved to nothing usable, so the caller can tell the customer WHY. */
+    private _unusableCodes: Array<{ Code: string; Reason: string }> = [];
+
+    /**
+     * Promotion codes the customer presented (D70). Set before `Save()`; resolved after the lines
+     * are priced, because a promotion's value depends on what it is discounting.
+     */
+    public get PromotionCodes(): string[] {
+        return this._promotionCodes;
+    }
+    public set PromotionCodes(value: string[]) {
+        this._promotionCodes = value ?? [];
+    }
+
+    /** Ad-hoc discounts with a stated reason, each gated by the applying user's SalesAuthority. */
+    public get ManualDiscounts(): ManualDiscountRequest[] {
+        return this._manualDiscounts;
+    }
+    public set ManualDiscounts(value: ManualDiscountRequest[]) {
+        this._manualDiscounts = value ?? [];
+    }
+
+    /**
+     * Charges to apply to this order (D71) — shipping, handling, tax layers. Computed AFTER
+     * promotions, because a charge's basis is the discounted line.
+     */
+    public get Charges(): RequestedCharge[] {
+        return this._charges;
+    }
+    public set Charges(value: RequestedCharge[]) {
+        this._charges = value ?? [];
+    }
+
+    /**
+     * Codes that did not apply, and why — 'no such code', 'not currently running', 'this customer
+     * does not qualify'. Silence is the wrong answer here: a customer who typed a code needs to be
+     * told it did nothing, and told what to do about it.
+     */
+    public get UnusablePromotionCodes(): Array<{ Code: string; Reason: string }> {
+        return this._unusableCodes;
+    }
 
     /**
      * Unsaved child lines to persist with this order (plan D12). Populate before `Save()` when
@@ -225,6 +290,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             const decisions = booking ? await this.decideSubscriptions() : new Map();
 
             await this.savePendingLines(options, decisions);
+            await this.savePriceComponents(options);
 
             if (booking) {
                 const lines = await this.loadLinesForBooking();
@@ -284,6 +350,12 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         options?: EntitySaveOptions,
         decisions?: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
     ): Promise<void> {
+        // EVERY in-memory decision happens first, then the rows go down. That ordering is forced
+        // rather than tidy: a Confirmed line is frozen by trigger 51003, and because the CRUD procs
+        // run under INSERT-EXEC, a trigger rollback raises 'Cannot use the ROLLBACK statement within
+        // an INSERT-EXEC statement' — an error naming neither the line nor the rule it broke. So
+        // anything that changes a line's money must be settled BEFORE the insert, not corrected
+        // after it.
         for (const line of this._lines) {
             line.OrderHeaderID = this.ID;
 
@@ -301,14 +373,370 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             // Events carry their own service period — the event happens when it happens.
             await this.applyEventServicePeriod(line);
 
+            // Price after proration has settled the quantity — quantity bands and tiers are a
+            // function of the quantity actually being bought, so pricing a pre-prorated quantity
+            // would band on a number that never reaches the line.
+            await this.applyResolvedPrice(line);
+        }
+
+        // Promotions see priced lines and stamp DiscountAmount while they are still in memory.
+        const pending = await this.decidePromotions();
+        // Charges follow promotions: their basis is the DISCOUNTED line, and tax computes on what
+        // the customer actually owes rather than on list price.
+        const charges = await this.decideCharges();
+
+        const persisted: mjBizAppsOrdersOrderLineEntity[] = [];
+        for (const line of this._lines) {
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
                     `Failed to save order line ${line.LineNumber}: ${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                 );
             }
+            persisted.push(line);
         }
         this._lines = [];
+
+        // The adjustment and charge rows need line IDs, so they follow the insert — but they only ADD
+        // rows and never touch the frozen line again.
+        if (pending) await this.writePromotionRecords(pending, persisted);
+        if (charges) await this.writeChargeRecords(charges, persisted);
+    }
+
+    /**
+     * Compute charges over the in-memory lines and stamp each line's share (D71).
+     *
+     * Tax lands on `LineTax` and everything else on `ChargeAmount`. Both feed `LineTotalGross`
+     * identically; they are stored apart because tax is reported and remitted separately everywhere,
+     * and merging them would mean unpicking the two again exactly when it matters most.
+     */
+    private async decideCharges(): Promise<ComputeChargesResult | null> {
+        if (!this._charges.length || !this._lines.length) return null;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        // Nets AFTER promotions — decidePromotions has already stamped DiscountAmount.
+        const chargeable = this._lines.map((line, i) => {
+            const gross = Math.round(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) * 100) / 100;
+            const afterPct = Math.round(gross * (1 - Number(line.DiscountPct ?? 0)) * 100) / 100;
+            const net = Math.max(0, Math.round((afterPct - Number(line.DiscountAmount ?? 0)) * 100) / 100);
+            return { ID: String(i), Net: net };
+        });
+
+        const result = await RunCharges(this._charges, chargeable, provider, user);
+        const split = SplitChargesByLine(result);
+        for (let i = 0; i < this._lines.length; i++) {
+            const share = split.get(String(i));
+            if (!share) continue;
+            if (share.Tax) this._lines[i].LineTax = share.Tax;
+            if (share.Other) {
+                (this._lines[i] as unknown as { ChargeAmount: number }).ChargeAmount = share.Other;
+            }
+        }
+        return result;
+    }
+
+    /** Write the charge and allocation rows once the lines have real IDs. */
+    private async writeChargeRecords(
+        result: ComputeChargesResult,
+        persisted: mjBizAppsOrdersOrderLineEntity[],
+    ): Promise<void> {
+        if (!result.Charges.length) return;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        await WriteCharges(
+            this.ID,
+            result,
+            (positional) => persisted[Number(positional)]?.ID ?? null,
+            user?.ID ?? null,
+            provider,
+            user,
+        );
+    }
+
+    /**
+     * Fill `UnitPrice` from the pricing engine when the caller did not state one (D69).
+     *
+     * DIRECT ENTRY STILL WINS, and that is deliberate rather than transitional (D21): a stated price
+     * is a decision somebody made, and an engine that overrode it would make the order say something
+     * other than what was agreed. Resolution fills a blank; it never argues.
+     *
+     * `ProductPriceID` records WHICH rule produced the number, so a disputed invoice can be traced
+     * back to the rule rather than to "the system". Without it the stamp is an assertion with no
+     * evidence behind it.
+     *
+     * Refusal is governed by `OrderCompanyPolicy.RefuseUnpricedLines` (default ON, per D12's
+     * precedent): a line nobody can price is refused rather than booked at zero, because an invoice
+     * for nothing looks exactly like a deliberate freebie.
+     */
+    private async applyResolvedPrice(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        // A stated price ends it. `UnitPrice` is NOT NULL with no sentinel, so "not stated" has to
+        // be read from the field's dirty state rather than from its value — 0 is a legitimate price
+        // for a free line and must not be mistaken for silence.
+        const field = line.GetFieldByName('UnitPrice');
+        const stated = field?.Dirty === true || (line.UnitPrice ?? 0) > 0;
+        if (stated) return;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        const product = await this.loadProductForPricing(line.ProductID);
+        const resolved = await ResolvePrice(
+            {
+                ProductID: line.ProductID,
+                ProductCategoryID: product?.ProductCategoryID ?? null,
+                CompanyID: product?.CompanyID ?? this.CompanyID,
+                Quantity: Number(line.Quantity ?? 0),
+                AsOf: this.OrderDate ? new Date(this.OrderDate) : new Date(),
+                OrganizationID: this.BillToOrganizationID ?? null,
+                PersonID: this.BillToPersonID ?? null,
+            },
+            provider,
+            user,
+        );
+
+        if (!resolved) {
+            if (await this.refusesUnpricedLines()) {
+                throw new Error(
+                    `Order line ${line.LineNumber} (${product?.Name ?? line.ProductID}) cannot be priced: no price ` +
+                        `rule was found for this product, and no UnitPrice was supplied. Add a price for the product ` +
+                        `or state one on the line.`,
+                );
+            }
+            return;
+        }
+
+        line.UnitPrice = resolved.UnitPrice;
+        line.ProductPriceID = resolved.ProductPriceID;
+        this._priceComponents.set(line, resolved);
+    }
+
+    /** Product facts pricing needs: its category (for the walk) and its company. */
+    private async loadProductForPricing(
+        productID: string,
+    ): Promise<{ ProductCategoryID: string | null; CompanyID: string; Name: string } | null> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ ProductCategoryID: string | null; CompanyID: string; Name: string }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Products',
+                ExtraFilter: `ID = '${productID}'`,
+                Fields: ['ProductCategoryID', 'CompanyID', 'Name'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        return res?.Results?.[0] ?? null;
+    }
+
+    /** Company policy, defaulting to REFUSE when no policy row exists. */
+    private async refusesUnpricedLines(): Promise<boolean> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ RefuseUnpricedLines: boolean }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Order Company Policies',
+                ExtraFilter: `ID = '${this.CompanyID}'`,
+                Fields: ['RefuseUnpricedLines'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        const row = res?.Results?.[0];
+        // No row means defaults, and the default is to refuse.
+        return row ? row.RefuseUnpricedLines !== false : true;
+    }
+
+    /**
+     * Write the price decomposition for lines that were priced by the engine (D69).
+     *
+     * Runs AFTER the lines are saved, because a component points at a line that must already exist.
+     * Pricing disputes are inevitable and "the system computed it" is not an answer to a customer or
+     * an auditor, so the reasoning is stored rather than recomputed later against rules that may by
+     * then have changed.
+     */
+    private async savePriceComponents(options?: EntitySaveOptions): Promise<void> {
+        if (!this._priceComponents.size) return;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const md = new Metadata();
+
+        for (const [line, resolved] of this._priceComponents) {
+            let seq = 0;
+            for (const c of resolved.Components) {
+                const row = await provider.GetEntityObject<BaseEntity>(
+                    'MJ_BizApps_Orders: Order Line Price Components',
+                    user,
+                );
+                row.NewRecord();
+                row.Set('OrderLineID', line.ID);
+                row.Set('Sequence', seq++);
+                row.Set('ComponentType', c.ComponentType);
+                row.Set('Label', c.Label);
+                row.Set('Amount', c.Amount);
+                row.Set('RunningTotal', c.RunningTotal);
+                if (c.SourceEntityName && c.SourceRecordID) {
+                    const ent = md.EntityByName(c.SourceEntityName);
+                    if (ent) {
+                        row.Set('SourceEntityID', ent.ID);
+                        row.Set('SourceRecordID', c.SourceRecordID);
+                    }
+                }
+                if (!(await row.Save(options))) {
+                    throw new Error(
+                        `Failed to record the price breakdown for line ${line.LineNumber}: ` +
+                            `${row.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    );
+                }
+            }
+        }
+        this._priceComponents.clear();
+    }
+
+    /**
+     * Decide promotions and manual discounts while the lines are still IN MEMORY (D70).
+     *
+     * Returns what should be recorded once the lines have IDs, and stamps each line's
+     * `DiscountAmount` on the way. The split exists because a Confirmed line is frozen by trigger
+     * 51003 and the CRUD procs run under INSERT-EXEC, where a trigger rollback surfaces as
+     * 'Cannot use the ROLLBACK statement within an INSERT-EXEC statement' — an error that names
+     * neither the line nor the rule. Deciding first and writing second sidesteps that entirely, and
+     * matches how subscriptions already work (decide, then materialize).
+     *
+     * `DiscountAmount` is the field that makes everything downstream work unchanged: `LineTotalNet`
+     * subtracts it, the journal entry mirrors the same arithmetic, and tax will compute on the
+     * discounted base — none of them needing to know that promotions exist.
+     */
+    private async decidePromotions(): Promise<PromotionRunResult | null> {
+        if (!this._promotionCodes.length && !this._manualDiscounts.length) return null;
+        if (!this._lines.length) return null;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        // Line nets from memory, mirroring OrderLineEntityServer's own arithmetic — the rows do not
+        // exist yet, so LineTotalNet has not been computed.
+        const lines: PromotableLine[] = [];
+        for (let i = 0; i < this._lines.length; i++) {
+            const line = this._lines[i];
+            const product = await this.loadProductForPricing(line.ProductID);
+            const gross = Math.round(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) * 100) / 100;
+            const net = Math.round(gross * (1 - Number(line.DiscountPct ?? 0)) * 100) / 100;
+            lines.push({
+                // Positional key: the real ID does not exist yet, and the writer maps it back by index.
+                ID: String(i),
+                ProductID: line.ProductID,
+                ProductCategoryID: product?.ProductCategoryID ?? null,
+                Quantity: Number(line.Quantity ?? 0),
+                Net: net,
+                Entity: line as unknown as BaseEntity,
+            });
+        }
+
+        const policy = await this.loadCompanyPolicy();
+        const run = await RunPromotions(
+            {
+                OrderHeaderID: this.ID,
+                CompanyID: this.CompanyID,
+                OrganizationID: this.BillToOrganizationID ?? null,
+                PersonID: this.BillToPersonID ?? null,
+                AsOf: this.OrderDate ? new Date(this.OrderDate) : new Date(),
+                Codes: this._promotionCodes,
+                Lines: lines,
+                StackingMode: policy.StackingMode,
+                AllowStacking: policy.AllowPromotionStacking,
+            },
+            provider,
+            user,
+        );
+        this._unusableCodes = run.Unusable;
+
+        // Manual discounts are authorized individually — the cap is per user, not per order.
+        for (const md of this._manualDiscounts) {
+            const target = md.OrderLineID ? lines.find((l) => l.ID === md.OrderLineID) : null;
+            const base = target ? target.Net : lines.reduce((sum, l) => sum + l.Net, 0);
+            const auth = await AuthorizeManualDiscount(md, base, user?.ID ?? null, provider, user);
+            if (auth.Refusal) throw new Error(`Manual discount refused: ${auth.Refusal}`);
+
+            if (target) {
+                run.Applications.push({
+                    PromotionID: null,
+                    PromotionCodeID: null,
+                    OrderLineID: target.ID,
+                    Amount: md.Amount,
+                    Label: 'manual discount',
+                    Reason: md.Reason,
+                    AuthorizedBySalesAuthorityID: auth.AuthorityID,
+                    ApprovedByUserID: auth.ApprovedByUserID ?? null,
+                });
+                run.PerLine.set(target.ID, Math.round(((run.PerLine.get(target.ID) ?? 0) + md.Amount) * 100) / 100);
+            } else {
+                // An order-level manual discount allocates exactly like an order-level promotion —
+                // it must reach the lines or tax and GL see the wrong base.
+                const parts = AllocateProRata(md.Amount, lines.map((l) => l.Net));
+                lines.forEach((l, i) => {
+                    if (parts[i] <= 0) return;
+                    run.Applications.push({
+                        PromotionID: null,
+                        PromotionCodeID: null,
+                        OrderLineID: l.ID,
+                        Amount: parts[i],
+                        Label: 'manual discount (order-level share)',
+                        Reason: md.Reason,
+                        AuthorizedBySalesAuthorityID: auth.AuthorityID,
+                        ApprovedByUserID: auth.ApprovedByUserID ?? null,
+                    });
+                    run.PerLine.set(l.ID, Math.round(((run.PerLine.get(l.ID) ?? 0) + parts[i]) * 100) / 100);
+                });
+            }
+        }
+
+        // Stamp the lines while they are still unsaved.
+        for (const l of lines) {
+            const total = run.PerLine.get(l.ID);
+            if (total) (l.Entity as unknown as { DiscountAmount: number }).DiscountAmount = total;
+        }
+        return run;
+    }
+
+    /**
+     * Write the adjustment and allocation rows once the lines have real IDs.
+     *
+     * These only ADD rows — the frozen line is never touched again, which is what keeps this clear
+     * of the immutability trigger.
+     */
+    private async writePromotionRecords(
+        run: PromotionRunResult,
+        persisted: mjBizAppsOrdersOrderLineEntity[],
+    ): Promise<void> {
+        if (!run.Applications.length) return;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        // Positional keys become real IDs.
+        const applications = run.Applications.map((a) => ({
+            ...a,
+            OrderLineID: a.OrderLineID != null ? (persisted[Number(a.OrderLineID)]?.ID ?? null) : null,
+        }));
+
+        await WriteAdjustments(this.ID, applications, new Map(), [], user?.ID ?? null, provider, user);
+    }
+
+    /** Stacking policy for this company, defaulting to no stacking and sequential maths. */
+    private async loadCompanyPolicy(): Promise<{ AllowPromotionStacking: boolean; StackingMode: StackingMode }> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ AllowPromotionStacking: boolean; StackingMode: string }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Order Company Policies',
+                ExtraFilter: `ID = '${this.CompanyID}'`,
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        const row = res?.Results?.[0];
+        return {
+            AllowPromotionStacking: row ? row.AllowPromotionStacking === true : false,
+            StackingMode: (row?.StackingMode as StackingMode) ?? 'Sequential',
+        };
     }
 
     /**
@@ -376,11 +804,16 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             await this.buildResolver(provider, user),
             this.entityIDFor(ORDER_LINE_ENTITY),
             this.entityIDFor(SUBSCRIPTION_TERM_ENTITY),
+            this.entityIDFor(CHARGE_TYPE_ENTITY),
             provider,
             user,
         );
 
         const drafts = await factory.BuildDrafts(this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine);
+        // An order can legitimately produce NO entries: every line fully comped, so nothing to
+        // debit or credit. Accounting refuses an empty draft set, quite correctly, so the call is
+        // skipped rather than the order being refused for having no ledger impact.
+        if (drafts.length === 0) return;
         const result = await this.submitDrafts(drafts, provider, user);
 
         if (!result.Success) {

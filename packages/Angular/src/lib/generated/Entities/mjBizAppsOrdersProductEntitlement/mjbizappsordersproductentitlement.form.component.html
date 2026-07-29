@@ -10,46 +10,30 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Entitlement Details Section -->
+    <!-- Product Association Section -->
     <mj-collapsible-panel
-        SectionKey="entitlementDetails"
-        SectionName="Entitlement Details"
-        Icon="fa fa-info-circle"
+        SectionKey="productAssociation"
+        SectionName="Product Association"
+        Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="ProductID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Code"
-            Type="code"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Name"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Configuration Section -->
+    <!-- Entitlement Definition Section -->
     <mj-collapsible-panel
-        SectionKey="configuration"
-        SectionName="Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="entitlementDefinition"
+        SectionName="Entitlement Definition"
+        Icon="fa fa-tags"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -63,6 +47,40 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="Code"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Name"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Resource Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="resourceConfiguration"
+        SectionName="Resource Configuration"
+        Icon="fa fa-sliders-h"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="Quantity"
             Type="number"
             [EditMode]="EditMode"
@@ -73,14 +91,6 @@
             [ShowLabel]="true"
             FieldName="UnitOfMeasure"
             Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

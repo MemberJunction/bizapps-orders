@@ -687,6 +687,15 @@ future (fields ship now, D21).
 
 ## 10. Pricing and coupons
 
+> **Detailed design:** [`pricing-charges-and-promotions.md`](./pricing-charges-and-promotions.md) ·
+> **schema:** [`pricing-schema.md`](./pricing-schema.md)
+>
+> Supersedes D21's "tables built, engine future" framing. **Phases 1–3 are BUILT and green**
+> (2026-07-27): price resolution with a pluggable resolver walk mirroring `GLAccountResolver`,
+> promotions with stacking and authorized manual discounts, and charges — including TAX, which is
+> modelled as a charge rather than as a separate concept. Phase 4 is the tax DATA problem: rate
+> feed, `CompanyTaxNexus`, product-scoped exemptions.
+
 - **Pricing per D21:** tables built; deterministic precedence with `UnitPrice` direct entry as the
   base; `ResolvePrice` engine on top; contract-override slot reserved at the top of the chain for
   future Contracts.

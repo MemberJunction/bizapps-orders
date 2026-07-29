@@ -16,9 +16,9 @@ export class mjBizAppsOrdersRevenueRecognitionScheduleFormComponent extends Base
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'recognitionDetails', sectionName: 'Recognition Details', isExpanded: true },
-            { sectionKey: 'recognitionSchedule', sectionName: 'Recognition Schedule', isExpanded: true },
-            { sectionKey: 'financialValues', sectionName: 'Financial Values', isExpanded: true },
+            { sectionKey: 'recognitionConfiguration', sectionName: 'Recognition Configuration', isExpanded: true },
+            { sectionKey: 'recognitionTimeline', sectionName: 'Recognition Timeline', isExpanded: true },
+            { sectionKey: 'financialTotals', sectionName: 'Financial Totals', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersRevRecScheduleLines', sectionName: 'Rev Rec Schedule Lines', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false }

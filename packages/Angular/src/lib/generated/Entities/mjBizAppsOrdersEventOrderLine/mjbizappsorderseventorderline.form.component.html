@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Attendee Details Section -->
+    <!-- Attendee Information Section -->
     <mj-collapsible-panel
-        SectionKey="attendeeDetails"
-        SectionName="Attendee Details"
-        Icon="fa fa-user-check"
+        SectionKey="attendeeInformation"
+        SectionName="Attendee Information"
+        Icon="fa fa-user"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -45,10 +45,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Order Line Details Section -->
+    <!-- Order Lines Section -->
     <mj-collapsible-panel
-        SectionKey="orderLineDetails"
-        SectionName="Order Line Details"
+        SectionKey="orderLines"
+        SectionName="Order Lines"
         Icon="fa fa-list-ul"
         Variant="inherited"
         InheritedFromEntity="MJ_BizApps_Orders: Order Lines"
@@ -105,6 +105,14 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="ProductPriceID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="DiscountPct"
             Type="number"
             [EditMode]="EditMode"
@@ -113,7 +121,23 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="DiscountAmount"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="LineTotalNet"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ChargeAmount"
             Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"

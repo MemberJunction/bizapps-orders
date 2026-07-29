@@ -19,23 +19,13 @@
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="BundleProductID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Component Details Section -->
-    <mj-collapsible-panel
-        SectionKey="componentDetails"
-        SectionName="Component Details"
-        Icon="fa fa-cubes"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -45,6 +35,16 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Pricing and Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="pricingAndConfiguration"
+        SectionName="Pricing and Configuration"
+        Icon="fa fa-sliders-h"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -53,16 +53,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Pricing and Display Section -->
-    <mj-collapsible-panel
-        SectionKey="pricingAndDisplay"
-        SectionName="Pricing and Display"
-        Icon="fa fa-tags"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
