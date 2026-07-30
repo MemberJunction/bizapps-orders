@@ -89,6 +89,20 @@ describe('NetAfterDiscount — the clamp is about over-discounting, not about si
         expect(Object.is(NetAfterDiscount(-0, 0, 0), 0) || NetAfterDiscount(-0, 0, 0) === 0).toBe(true);
     });
 
+    it('a discount rate at the COLUMN\'S scale gives the total the database will recompute', () => {
+        // `DiscountPct` is DECIMAL(7,4), so a third is stored as 0.3333 — and a third off 900 is
+        // 600.03 at that scale, not 600.00. The engine used to compute with full precision and store
+        // the rounded rate, so re-reading the row produced a DIFFERENT total. That surfaced only when
+        // the line was updated to stamp `JournalEntryID`, where the immutability trigger refused to
+        // let booked money change, and the confirm died with a message naming neither the discount
+        // nor the rounding. Every DiscountPct beyond four decimal places was un-bookable.
+        expect(NetAfterDiscount(900, 0.3333, 0)).toBe(600.03);
+        // The caller now rounds before calling, so these must agree — that is the whole fix.
+        const rounded = Math.round((1 / 3) * 1e4) / 1e4;
+        expect(rounded).toBe(0.3333);
+        expect(NetAfterDiscount(900, rounded, 0)).toBe(NetAfterDiscount(900, 0.3333, 0));
+    });
+
     it('rounds to the penny rather than accumulating float dust', () => {
         expect(NetAfterDiscount(100, 1 / 3, 0)).toBe(66.67);
         expect(NetAfterDiscount(-100, 1 / 3, 0)).toBe(-66.67);

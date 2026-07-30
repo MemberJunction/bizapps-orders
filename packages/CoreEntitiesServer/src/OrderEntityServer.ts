@@ -455,7 +455,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             ID: String(i),
             Net: NetAfterDiscount(
                 Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0),
-                Number(line.DiscountPct ?? 0),
+                // 4dp, matching `DiscountPct DECIMAL(7,4)`. The charge and tax base must agree with
+                // the line total to the penny, and the line rounds — so this has to round the same
+                // way or tax is computed on a base the line does not have.
+                Math.round(Number(line.DiscountPct ?? 0) * 1e4) / 1e4,
                 Number(line.DiscountAmount ?? 0),
             ),
         }));
