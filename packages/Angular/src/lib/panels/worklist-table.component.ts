@@ -16,8 +16,17 @@ export type MJOColumnKind =
     /** Monospace — document numbers and references. */
     | 'mono';
 
-/** One column of a worklist. */
-export interface MJOColumn<TRow = Record<string, unknown>> {
+/**
+ * A column definition.
+ *
+ * Generic for AUTHORING — a consumer writes `MJOColumn<MyRow>[]` and gets typed
+ * `Format`/`Secondary` callbacks. It defaults to `any` because Angular cannot
+ * propagate a component's generic through a template binding, so the component's
+ * own inputs must stay loose; keeping the parameter here is what preserves type
+ * safety at the only place it can actually be checked.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface MJOColumn<TRow = any> {
     /** Property on the row, and the column's identity for sorting. */
     Key: string;
     Label: string;
@@ -44,6 +53,14 @@ export interface MJOPreset {
     Count?: number | null;
     Icon?: string;
 }
+
+/**
+ * A worklist row. Loosely typed because Angular cannot propagate a component's
+ * generic through a template binding — the type safety that matters lives on
+ * {@link MJOColumn}, where the callbacks are actually authored.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type MJORow = any;
 
 /**
  * `mjo-worklist-table` — the dense, filterable list idiom.
@@ -219,12 +236,12 @@ export interface MJOPreset {
         `,
     ],
 })
-export class MJOWorklistTableComponent<TRow extends Record<string, unknown> = Record<string, unknown>> {
+export class MJOWorklistTableComponent {
     /** Column definitions, left to right. */
-    @Input() Columns: MJOColumn<TRow>[] = [];
+    @Input() Columns: MJOColumn[] = [];
 
     /** The rows to render. Filtering and sorting happen in the query, not here. */
-    @Input() Rows: TRow[] = [];
+    @Input() Rows: MJORow[] = [];
 
     /** Quick-filter chips. */
     @Input() Presets: MJOPreset[] = [];
@@ -261,26 +278,26 @@ export class MJOWorklistTableComponent<TRow extends Record<string, unknown> = Re
     @Output() PresetChanged = new EventEmitter<string>();
     @Output() SearchChanged = new EventEmitter<string>();
     @Output() SortChanged = new EventEmitter<string>();
-    @Output() RowClicked = new EventEmitter<TRow>();
+    @Output() RowClicked = new EventEmitter<MJORow>();
 
-    protected trackRow(index: number, row: TRow): unknown {
+    protected trackRow(index: number, row: MJORow): unknown {
         return row[this.RowKey] ?? index;
     }
 
-    protected isSelected(row: TRow): boolean {
+    protected isSelected(row: MJORow): boolean {
         return this.SelectedKey != null && String(row[this.RowKey]) === this.SelectedKey;
     }
 
-    protected onRowClick(row: TRow): void {
+    protected onRowClick(row: MJORow): void {
         if (this.RowClicked.observed) this.RowClicked.emit(row);
     }
 
-    protected hideClass(column: MJOColumn<TRow>): string {
+    protected hideClass(column: MJOColumn): string {
         return column.HideBelow ? `mjo-hide-${column.HideBelow}` : '';
     }
 
     /** A column's rendered value — its formatter if it has one, else the raw property. */
-    protected display(row: TRow, column: MJOColumn<TRow>): string {
+    protected display(row: MJORow, column: MJOColumn): string {
         if (column.Format) return column.Format(row);
         const value = row[column.Key];
         return value === null || value === undefined ? '—' : String(value);

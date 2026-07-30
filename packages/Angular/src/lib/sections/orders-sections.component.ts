@@ -43,6 +43,7 @@ import { MJOFulfillmentPageComponent } from '../pages/orders/fulfillment.page';
 import { MJOPaymentEntryPageComponent } from '../pages/payments/payment-entry.page';
 import { MJOPaymentsListPageComponent } from '../pages/payments/payments-list.page';
 import { MJOPaymentsDashboardPageComponent } from '../pages/payments/payments-dashboard.page';
+import { MJOOverduePageComponent } from '../pages/receivables/overdue.page';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -363,8 +364,13 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
     protected get sectionIcon(): string {
         return 'fa-solid fa-chart-column';
     }
-    protected resolvePage(_pageId: string): Type<unknown> | null {
-        return null;
+    protected resolvePage(pageId: string): Type<unknown> | null {
+        switch (pageId) {
+            case 'overdue':
+                return MJOOverduePageComponent;
+            default:
+                return null;
+        }
     }
 }
 
