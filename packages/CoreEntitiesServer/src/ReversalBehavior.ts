@@ -36,6 +36,8 @@ export interface ReversalOrigin {
     Quantity: number;
     UnitPrice: number;
     DiscountPct: number;
+    /** The origin's ALLOCATED discount — an order-level promotion's share of this line (D70). */
+    DiscountAmount?: number;
     /** For the refusal message — an ID alone tells the reader nothing about what they mispointed at. */
     OrderNumber?: string | null;
 }
@@ -108,9 +110,29 @@ export function ValidateReversal(
 /**
  * What the reversal line should cost: the origin's terms, not today's.
  *
- * Returned as the pair a caller stamps onto the line. Deliberately does NOT consider the current
- * price table — see the module header.
+ * `DiscountAmount` IS PART OF THE PRICE PAID, and leaving it out was a real defect. `DiscountPct` is
+ * a rate, so it carries to any quantity unchanged — but `DiscountAmount` is an ALLOCATED cash amount
+ * (an order-level promotion's share of this line, D70), so returning half the units must give back
+ * half of it. Without that, a line that sold 4 × 100 less a 50 promotion — 350 actually paid — refunds
+ * 400, and the 50 is given away. The journal entry balances perfectly while doing it.
+ *
+ * RT7 tested exactly this concern and passed, because it used `DiscountPct`. The two fields express
+ * the same idea and only one of them was carried through. Surfaced by Marcelo on PR #17.
+ *
+ * `reversalQuantity` is what the caller intends to send back, in either sign.
  */
-export function InheritedTerms(origin: ReversalOrigin): { UnitPrice: number; DiscountPct: number } {
-    return { UnitPrice: origin.UnitPrice, DiscountPct: origin.DiscountPct ?? 0 };
+export function InheritedTerms(
+    origin: ReversalOrigin,
+    reversalQuantity: number,
+): { UnitPrice: number; DiscountPct: number; DiscountAmount: number } {
+    const originQty = Math.abs(origin.Quantity);
+    const share = originQty > 0 ? Math.abs(reversalQuantity) / originQty : 0;
+    // Positive: the column is CHECK (DiscountAmount >= 0) and `NetAfterDiscount` reads it as a
+    // magnitude that moves the line toward zero.
+    const allocated = Math.abs(origin.DiscountAmount ?? 0) * share;
+    return {
+        UnitPrice: origin.UnitPrice,
+        DiscountPct: origin.DiscountPct ?? 0,
+        DiscountAmount: Math.round(allocated * 100) / 100,
+    };
 }

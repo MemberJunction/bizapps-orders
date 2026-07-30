@@ -57,7 +57,31 @@ describe('NetAfterDiscount — the clamp is about over-discounting, not about si
 
     it('a CREDIT cannot be discounted above zero', () => {
         // The mirror of the sale rule: an over-large discount must not flip a credit into a sale.
+        expect(NetAfterDiscount(-100, 0, 500)).toBe(0);
         expect(NetAfterDiscount(-100, 0, -500)).toBe(0);
+    });
+
+    it('a discount REDUCES a credit rather than enlarging it', () => {
+        // Marcelo, PR #17. `DiscountAmount` is a magnitude (the column is CHECK >= 0), and
+        // subtracting it unconditionally gave -150 here: a 50 discount making the refund BIGGER.
+        // A discount reduces what changes hands, in whichever direction it changes hands.
+        expect(NetAfterDiscount(-100, 0, 50)).toBe(-50);
+    });
+
+    it('reads the discount by MAGNITUDE, so its sign cannot flip the rule', () => {
+        expect(NetAfterDiscount(-100, 0, 50)).toBe(NetAfterDiscount(-100, 0, -50));
+        expect(NetAfterDiscount(100, 0, 50)).toBe(NetAfterDiscount(100, 0, -50));
+    });
+
+    it('a promoted sale and its full return net to ZERO', () => {
+        // The end-to-end shape of the defect: 4 x 100 less a 50 allocated promotion is 350 paid, so
+        // returning all four must give back 350. It gave back 400 and the 50 was simply lost against
+        // a perfectly balanced journal entry.
+        const sold = NetAfterDiscount(400, 0, 50);
+        const refunded = NetAfterDiscount(-400, 0, 50);
+        expect(sold).toBe(350);
+        expect(refunded).toBe(-350);
+        expect(sold + refunded).toBe(0);
     });
 
     it('zero is zero from either direction', () => {
@@ -151,19 +175,44 @@ describe('ValidateReversal — the origin is the only authority', () => {
 
 describe('InheritedTerms — a return refunds what was PAID', () => {
     it('takes the price the origin was sold at, not today\'s', () => {
-        expect(InheritedTerms(origin({ UnitPrice: 80 }))).toEqual({ UnitPrice: 80, DiscountPct: 0 });
-    });
-
-    it('carries the discount on the origin through', () => {
-        expect(InheritedTerms(origin({ UnitPrice: 100, DiscountPct: 0.25 }))).toEqual({
-            UnitPrice: 100,
-            DiscountPct: 0.25,
+        expect(InheritedTerms(origin({ UnitPrice: 80 }), -4)).toEqual({
+            UnitPrice: 80,
+            DiscountPct: 0,
+            DiscountAmount: 0,
         });
     });
 
+    it('carries the discount RATE on the origin through unchanged', () => {
+        // A percentage applies to any quantity, so it needs no scaling.
+        expect(InheritedTerms(origin({ UnitPrice: 100, DiscountPct: 0.25 }), -2).DiscountPct).toBe(0.25);
+    });
+
+    it('carries the ALLOCATED discount through PROPORTIONALLY', () => {
+        // The defect Marcelo's question led to. DiscountAmount is an allocated cash share of an
+        // order-level promotion, so returning half the units gives back half of it. Leaving it out
+        // entirely — which is what happened — refunds the undiscounted price.
+        const promoted = origin({ Quantity: 4, UnitPrice: 100, DiscountAmount: 50 });
+        expect(InheritedTerms(promoted, -4).DiscountAmount).toBe(50);
+        expect(InheritedTerms(promoted, -2).DiscountAmount).toBe(25);
+        expect(InheritedTerms(promoted, -1).DiscountAmount).toBe(12.5);
+    });
+
+    it('rounds the allocated share to the penny', () => {
+        const promoted = origin({ Quantity: 3, UnitPrice: 100, DiscountAmount: 10 });
+        expect(InheritedTerms(promoted, -1).DiscountAmount).toBe(3.33);
+    });
+
+    it('reads the reversal quantity by magnitude', () => {
+        const promoted = origin({ Quantity: 4, DiscountAmount: 50 });
+        expect(InheritedTerms(promoted, 2).DiscountAmount).toBe(InheritedTerms(promoted, -2).DiscountAmount);
+    });
+
     it('treats a null discount as none', () => {
-        expect(
-            InheritedTerms(origin({ DiscountPct: null as unknown as number })).DiscountPct,
-        ).toBe(0);
+        expect(InheritedTerms(origin({ DiscountPct: null as unknown as number }), -1).DiscountPct).toBe(0);
+        expect(InheritedTerms(origin({ DiscountAmount: undefined }), -1).DiscountAmount).toBe(0);
+    });
+
+    it('a zero-quantity origin allocates nothing rather than dividing by zero', () => {
+        expect(InheritedTerms(origin({ Quantity: 0, DiscountAmount: 50 }), -1).DiscountAmount).toBe(0);
     });
 });

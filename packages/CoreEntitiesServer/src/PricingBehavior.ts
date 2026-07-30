@@ -242,7 +242,19 @@ export function Money(v: number): number {
 export function NetAfterDiscount(gross: number, discountPct: number, discountAmount: number): number {
     const g = Money(gross);
     const afterPct = Money(g * (1 - (discountPct || 0)));
-    const discounted = Money(afterPct - (discountAmount || 0));
+
+    // A DISCOUNT ALWAYS MOVES THE LINE TOWARD ZERO. `DiscountAmount` is a MAGNITUDE — the column is
+    // `CHECK (DiscountAmount >= 0)` — so subtracting it unconditionally was right for a sale and
+    // backwards for a credit: a 50 discount on a −100 reversal line produced −150, ENLARGING the
+    // refund. A discount reduces what changes hands, and that is true in whichever direction it
+    // changes hands.
+    //
+    // Marcelo raised this on PR #17 as the reachable-or-not question. It is reachable twice over: an
+    // AmountOff promotion allocating onto a reversal line, and the origin's own allocated discount
+    // being inherited by a return (which is the more expensive one, because it is the ordinary path).
+    const magnitude = Math.abs(discountAmount || 0);
+    const discounted = g < 0 ? Money(afterPct + magnitude) : Money(afterPct - magnitude);
+
     return g < 0 ? Money(Math.min(0, discounted)) : Money(Math.max(0, discounted));
 }
 
