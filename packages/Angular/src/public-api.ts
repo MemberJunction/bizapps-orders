@@ -66,6 +66,8 @@ export * from './lib/pages/orders/orders-dashboard.page';
 export * from './lib/pages/orders/fulfillment.page';
 export * from './lib/pages/orders/order-document.page';
 export * from './lib/pages/payments/payment-entry.page';
+export * from './lib/pages/payments/payments-list.page';
+export * from './lib/pages/payments/payments-dashboard.page';
 
 /** The information architecture, as data — testable, and injectable for badges. */
 export {

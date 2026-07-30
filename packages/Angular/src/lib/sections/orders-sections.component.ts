@@ -41,6 +41,8 @@ import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
 import { MJOOrdersDashboardPageComponent } from '../pages/orders/orders-dashboard.page';
 import { MJOFulfillmentPageComponent } from '../pages/orders/fulfillment.page';
 import { MJOPaymentEntryPageComponent } from '../pages/payments/payment-entry.page';
+import { MJOPaymentsListPageComponent } from '../pages/payments/payments-list.page';
+import { MJOPaymentsDashboardPageComponent } from '../pages/payments/payments-dashboard.page';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -308,6 +310,10 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
         switch (pageId) {
             case 'entry':
                 return MJOPaymentEntryPageComponent;
+            case 'list':
+                return MJOPaymentsListPageComponent;
+            case 'dashboard':
+                return MJOPaymentsDashboardPageComponent;
             default:
                 return null;
         }
