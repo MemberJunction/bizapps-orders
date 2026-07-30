@@ -31,7 +31,7 @@
  *   USED BY: every bundle under ./checks
  */
 import { randomUUID } from 'node:crypto';
-import { Metadata, RunView } from '@memberjunction/core';
+import { BaseEntity, Metadata, RunView } from '@memberjunction/core';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
@@ -41,7 +41,13 @@ export const ACCT_SCHEMA = '__mj_BizAppsAccounting';
 export const COMMON_SCHEMA = '__mj_BizAppsCommon';
 
 /** Stamped on every fixture row so a stranded run is identifiable and sweepable by name. */
-export const FIXTURE_TAG = '(bizapps-orders integration test — safe to delete)';
+export const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
+const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
+const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
+const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
+const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
+
+const FIXTURE_TAG = '(bizapps-orders integration test — safe to delete)';
 
 /** The GL account shape each fixture company gets. Codes mirror accounting's starter chart. */
 const FIXTURE_ACCOUNTS = [
@@ -562,6 +568,16 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
     // The IsA extension rows. PK = the SAME UUID as the parent Product (BO-D37), which is what
     // makes `WHERE ID = <productID>` on Event Products the "is this product an event?" test.
     for (const ticket of [fixture.Products.EventTicket, fixture.Products.EventTicketB]) {
+        // THE ONE CATALOG ROW THAT STAYS RAW SQL, and not for convenience.
+        //
+        // An IsA child takes its PARENT's id as its own primary key (BO-D37) — that identity IS the
+        // relationship. `BaseEntity` cannot express that: `NewRecord()` then setting the PK makes the
+        // save take the update path, which matches no row, and it returns false with no message, no
+        // `CompleteMessage` and an empty `Errors` array. Verified directly against a real product, not
+        // inferred. Every other catalog row in this fixture goes through the object model.
+        //
+        // Worth fixing upstream — creating an extension row is a legitimate thing an application does,
+        // and today it can only be done with SQL.
         await PoolQuery(
             ctx,
             `INSERT INTO ${ORDERS_SCHEMA}.EventProduct
@@ -699,6 +715,52 @@ async function createPerson(ctx: IntegrationCheckContext, run: string): Promise<
     return id;
 }
 
+/**
+ * Create one row THROUGH THE OBJECT MODEL and return its id.
+ *
+ * WHY THE CATALOG IS BUILT THIS WAY AND NOT WITH `INSERT`.
+ *
+ * Creating a product IS part of the product. A fixture that inserts one by hand skips every
+ * validation, default and Save-override the application would run, so the suite proves that ORDERS
+ * work against a catalog that never went through our software — and any defect in the catalog path is
+ * invisible by construction. `ProductPriceEntityServer` is the sharpest case: it enforces the
+ * price-ambiguity guard (no two active rules sharing product, list, fee type and priority), and every
+ * raw-SQL price in this suite walked straight past it. That is why ambiguity kept surfacing at CONFIRM
+ * time, far from the rule that caused it, instead of loudly at creation.
+ *
+ * WHAT IS DELIBERATELY STILL SQL: rows this application does not own — `__mj.Company`, accounting's
+ * `GLAccount`/`GLAccountLink`/tax geography, common's `Organization`/`Person`/`Address`. Creating
+ * those through their own entity APIs would test THEIR software, not ours, and couple this fixture to
+ * their Save-overrides. The boundary is ownership, not convenience.
+ *
+ * Failures are loud and name the entity: a fixture that half-builds leaves every check in the bundle
+ * failing for a reason that has nothing to do with what it was testing.
+ */
+async function createViaEntity(
+    ctx: IntegrationCheckContext,
+    entityName: string,
+    fields: Record<string, unknown>,
+): Promise<string> {
+    const md = new Metadata();
+    const entity = await md.GetEntityObject<BaseEntity & Record<string, unknown>>(entityName, ctx.User);
+    entity.NewRecord();
+    for (const [key, value] of Object.entries(fields)) {
+        if (value !== undefined) entity.Set(key, value);
+    }
+    if (!(await entity.Save())) {
+        // `CompleteMessage` is often empty on a validation failure — the detail lives in `Errors`, one
+        // entry per offending field. Reporting only the message turns a precise "Field X is required"
+        // into "unknown error", which is how a fixture failure becomes a twenty-minute hunt.
+        const result = entity.LatestResult;
+        const detail =
+            (result?.Errors ?? [])
+                .map((e) => (typeof e === 'string' ? e : JSON.stringify(e)))
+                .join('; ') || result?.CompleteMessage || 'no reason given';
+        throw new Error(`Fixture could not create a '${entityName}' through the object model: ${detail}`);
+    }
+    return entity.Get('ID') as string;
+}
+
 async function createProductType(
     ctx: IntegrationCheckContext,
     run: string,
@@ -707,30 +769,26 @@ async function createProductType(
         ProductExtensionEntity?: string;
         OrderLineExtensionEntity?: string;
         DefaultRevenueRecognitionTypeID?: string;
-        /** Entitlement policy backstops (D76). Left to the column defaults when not stated. */
+        /** Entitlement policy backstops (D76). Left to the entity's own defaults when not stated. */
         DefaultEntitlementGrantTiming?: string;
         DefaultEntitlementQuantityMode?: string;
         DefaultEntitlementValidityMode?: string;
     } = {},
 ): Promise<string> {
-    const id = randomUUID();
-    const q = (v?: string) => (v ? `'${v.replace(/'/g, "''")}'` : 'NULL');
-    // The three policy columns are NOT NULL with defaults, so they are written explicitly only when
-    // the caller wants something other than 'OnConfirm' / 'PerUnit' / 'Perpetual'.
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.ProductType
-            (ID, Name, RequiresFulfillment, IsActive,
-             ProductExtensionEntity, OrderLineExtensionEntity, DefaultRevenueRecognitionTypeID,
-             DefaultEntitlementGrantTiming, DefaultEntitlementQuantityMode, DefaultEntitlementValidityMode)
-         VALUES ('${id}','${run} ${label}',0,1,
-                 ${q(opts.ProductExtensionEntity)}, ${q(opts.OrderLineExtensionEntity)},
-                 ${q(opts.DefaultRevenueRecognitionTypeID)},
-                 ${q(opts.DefaultEntitlementGrantTiming) === 'NULL' ? "'OnConfirm'" : q(opts.DefaultEntitlementGrantTiming)},
-                 ${q(opts.DefaultEntitlementQuantityMode) === 'NULL' ? "'PerUnit'" : q(opts.DefaultEntitlementQuantityMode)},
-                 ${q(opts.DefaultEntitlementValidityMode) === 'NULL' ? "'Perpetual'" : q(opts.DefaultEntitlementValidityMode)})`,
-    );
-    return id;
+    // The three policy columns are NOT NULL with database defaults. Passing `undefined` leaves them
+    // to the entity rather than writing a value, which is the point: the fixture should exercise the
+    // defaults a real caller gets, not paper over them.
+    return createViaEntity(ctx, PRODUCT_TYPE_ENTITY, {
+        Name: `${run} ${label}`,
+        RequiresFulfillment: false,
+        IsActive: true,
+        ProductExtensionEntity: opts.ProductExtensionEntity,
+        OrderLineExtensionEntity: opts.OrderLineExtensionEntity,
+        DefaultRevenueRecognitionTypeID: opts.DefaultRevenueRecognitionTypeID,
+        DefaultEntitlementGrantTiming: opts.DefaultEntitlementGrantTiming ?? 'OnConfirm',
+        DefaultEntitlementQuantityMode: opts.DefaultEntitlementQuantityMode ?? 'PerUnit',
+        DefaultEntitlementValidityMode: opts.DefaultEntitlementValidityMode ?? 'Perpetual',
+    });
 }
 
 /**
@@ -754,20 +812,19 @@ async function addEntitlement(
         AccessLagHours?: number | null;
     },
 ): Promise<string> {
-    const id = randomUUID();
-    const n = (v: number | null | undefined) => (v == null ? 'NULL' : String(v));
-    const q = (v: string | null | undefined) => (v == null ? 'NULL' : `'${v}'`);
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.ProductEntitlement
-            (ID, ProductID, EntitlementType, Code, Name, Quantity, UnitOfMeasure, IsActive,
-             ValidityMode, ValidityDurationDays, AccessLeadHours, AccessLagHours)
-         VALUES ('${id}','${productID}','${opts.EntitlementType ?? 'Feature'}','${opts.Code}',
-                 '${opts.Code}', ${n(opts.Quantity)}, ${q(opts.UnitOfMeasure)}, 1,
-                 ${q(opts.ValidityMode)}, ${n(opts.ValidityDurationDays)},
-                 ${n(opts.AccessLeadHours)}, ${n(opts.AccessLagHours)})`,
-    );
-    return id;
+    return createViaEntity(ctx, PRODUCT_ENTITLEMENT_ENTITY, {
+        ProductID: productID,
+        EntitlementType: opts.EntitlementType ?? 'Feature',
+        Code: opts.Code,
+        Name: opts.Code,
+        Quantity: opts.Quantity ?? null,
+        UnitOfMeasure: opts.UnitOfMeasure ?? null,
+        IsActive: true,
+        ValidityMode: opts.ValidityMode ?? null,
+        ValidityDurationDays: opts.ValidityDurationDays ?? null,
+        AccessLeadHours: opts.AccessLeadHours ?? null,
+        AccessLagHours: opts.AccessLagHours ?? null,
+    });
 }
 
 async function createCategory(
@@ -776,13 +833,11 @@ async function createCategory(
     companyID: string,
     label: string,
 ): Promise<string> {
-    const id = randomUUID();
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.ProductCategory (ID, CompanyID, Name, IsActive)
-         VALUES ('${id}','${companyID}','${run} ${label}',1)`,
-    );
-    return id;
+    return createViaEntity(ctx, PRODUCT_CATEGORY_ENTITY, {
+        CompanyID: companyID,
+        Name: `${run} ${label}`,
+        IsActive: true,
+    });
 }
 
 async function createProduct(
@@ -795,18 +850,15 @@ async function createProduct(
     revRecTypeID: string,
     subscriptionTypeID?: string,
 ): Promise<string> {
-    const id = randomUUID();
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.Product
-            (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, SubscriptionTypeID, IsTaxable)
-         VALUES ('${id}','${companyID}','${productTypeID}','${categoryID}','${run} ${label}','Active',
-                 '${revRecTypeID}',${subscriptionTypeID ? `'${subscriptionTypeID}'` : 'NULL'},1)`,
-        // IsTaxable = 1. It was hardcoded 0 when this fixture predated tax resolution, which made
-        // every product silently non-taxable — so the tax checks measured a zero the engine was
-        // producing CORRECTLY, for a reason that had nothing to do with what they were testing.
-    );
-    return id;
+    return createViaEntity(ctx, PRODUCT_ENTITY, {
+        CompanyID: companyID,
+        ProductTypeID: productTypeID,
+        ProductCategoryID: categoryID,
+        Name: `${run} ${label}`,
+        Status: 'Active',
+        RevenueRecognitionTypeID: revRecTypeID,
+        SubscriptionTypeID: subscriptionTypeID,
+    });
 }
 
 // ─── Teardown ──────────────────────────────────────────────────────────────────────────────────
