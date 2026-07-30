@@ -146,15 +146,20 @@ export interface OrderDraftValidationResult {
  * ──────────────────────────────────────────────────────────────────────────── */
 
 /**
- * Structural subset of `OrdersPreviewOrderOutput` that the draft stores. Kept
- * minimal and `unknown`-tolerant so a richer server response never breaks the
- * draft — the UI reads the full result, the draft only needs enough to answer
- * "what does this line cost" and "is my stored decomposition still current".
+ * The structural minimum of `OrdersPreviewOrderOutput` that the draft itself
+ * needs — enough to answer "is my stored decomposition still current" and "what
+ * is the total I could confirm against". The UI reads the full result; the draft
+ * deliberately knows less.
+ *
+ * NO INDEX SIGNATURE. An earlier version declared `[key: string]: unknown` to be
+ * permissive, which had the opposite effect: TypeScript then required the SOURCE
+ * to carry one too, so the concrete generated output type would not assign. Extra
+ * properties on a non-literal are already allowed; the minimal shape is the
+ * permissive one.
  */
 export interface OrderDraftPreview {
-    Lines?: Array<{ ClientKey?: string; LineNumber: number; [key: string]: unknown }>;
-    Totals?: { GrossTotal: number; NetTotal: number; [key: string]: unknown };
-    [key: string]: unknown;
+    Lines?: ReadonlyArray<{ ClientKey?: string; LineNumber: number }>;
+    Totals?: { GrossTotal: number; NetTotal: number };
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
