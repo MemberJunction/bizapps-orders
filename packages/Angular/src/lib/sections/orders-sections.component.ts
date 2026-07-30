@@ -42,6 +42,8 @@ import { MJOOrdersDashboardPageComponent } from '../pages/orders/orders-dashboar
 import { MJOFulfillmentPageComponent } from '../pages/orders/fulfillment.page';
 import { MJOPaymentEntryPageComponent } from '../pages/payments/payment-entry.page';
 import { MJOPaymentsListPageComponent } from '../pages/payments/payments-list.page';
+import { MJORefundPageComponent } from '../pages/payments/refund.page';
+import { MJOAccountCreditPageComponent } from '../pages/payments/account-credit.page';
 import { MJOPaymentsDashboardPageComponent } from '../pages/payments/payments-dashboard.page';
 import { MJOOverduePageComponent } from '../pages/receivables/overdue.page';
 import { MJOCustomerARPageComponent } from '../pages/receivables/customer-ar.page';
@@ -317,6 +319,10 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
                 return MJOPaymentsListPageComponent;
             case 'dashboard':
                 return MJOPaymentsDashboardPageComponent;
+            case 'refund':
+                return MJORefundPageComponent;
+            case 'credit':
+                return MJOAccountCreditPageComponent;
             default:
                 return null;
         }
