@@ -46,6 +46,10 @@ const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
+const PRODUCT_PRICE_ENTITY = 'MJ_BizApps_Orders: Product Prices';
+const PROMOTION_ENTITY = 'MJ_BizApps_Orders: Promotions';
+const PROMOTION_CODE_ENTITY = 'MJ_BizApps_Orders: Promotion Codes';
+const PROMOTION_TARGET_ENTITY = 'MJ_BizApps_Orders: Promotion Targets';
 
 const FIXTURE_TAG = '(bizapps-orders integration test — safe to delete)';
 
@@ -713,6 +717,115 @@ async function createPerson(ctx: IntegrationCheckContext, run: string): Promise<
         `INSERT INTO ${COMMON_SCHEMA}.Person (ID, FirstName, LastName) VALUES ('${id}','Integration','${run}')`,
     );
     return id;
+}
+
+/**
+ * Price a product THROUGH THE OBJECT MODEL, once.
+ *
+ * TWO THINGS THIS BUYS, and the first is the reason it exists at all.
+ *
+ * `ProductPriceEntityServer.ValidateAsync` enforces the AMBIGUITY GUARD: no two active rules may share
+ * a product, price list, fee type and priority, because the engine refuses to pick between them rather
+ * than take whichever the database returned first (D69). Thirteen raw-SQL prices across this suite
+ * walked straight past that guard, which is why ambiguity kept surfacing at CONFIRM time — far from the
+ * rule that caused it — instead of loudly here.
+ *
+ * And it is IDEMPOTENT by product, because a check that prices the same product twice creates exactly
+ * the collision the guard exists to catch. Guarding here beats making every caller remember.
+ */
+export async function CreateProductPrice(
+    ctx: IntegrationCheckContext,
+    productID: string,
+    amount: number,
+    opts: {
+        PricingModel?: string;
+        FeeType?: string;
+        Priority?: number;
+        PriceListID?: string | null;
+        MinQuantity?: number | null;
+        MaxQuantity?: number | null;
+        EffectiveFrom?: string;
+        EffectiveTo?: string | null;
+        PackageQuantity?: number | null;
+    } = {},
+): Promise<string | null> {
+    const existing = await TxQuery<{ ID: string }>(
+        ctx,
+        `SELECT ID FROM ${ORDERS_SCHEMA}.ProductPrice
+          WHERE ProductID='${productID}' AND Status='Active'
+            AND FeeType='${(opts.FeeType ?? 'Standard').replace(/'/g, "''")}'
+            AND Priority=${opts.Priority ?? 0}
+            AND ${opts.PriceListID ? `PriceListID='${opts.PriceListID}'` : 'PriceListID IS NULL'}`,
+    );
+    if (existing.length) return existing[0].ID;
+
+    return createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
+        ProductID: productID,
+        PricingModel: opts.PricingModel ?? 'PerUnit',
+        FeeType: opts.FeeType ?? 'Standard',
+        Amount: amount,
+        EffectiveFrom: opts.EffectiveFrom ?? '2020-01-01',
+        EffectiveTo: opts.EffectiveTo ?? null,
+        Priority: opts.Priority ?? 0,
+        Status: 'Active',
+        PriceListID: opts.PriceListID ?? null,
+        MinQuantity: opts.MinQuantity ?? null,
+        MaxQuantity: opts.MaxQuantity ?? null,
+        PackageQuantity: opts.PackageQuantity ?? null,
+    });
+}
+
+/**
+ * A promotion, its redeemable code and any product target — through the object model.
+ *
+ * `Promotion` is the offer and `PromotionCode` is the string a customer presents (D70); they are
+ * separate rows because one offer can have many codes. Returns the code, since that is what an order
+ * actually carries.
+ */
+export async function CreatePromotion(
+    ctx: IntegrationCheckContext,
+    opts: {
+        Kind?: string;
+        Value: number;
+        AppliesAt?: string;
+        TargetProductID?: string | null;
+        TargetProductCategoryID?: string | null;
+        Code?: string;
+        MinimumOrderAmount?: number | null;
+        StackingMode?: string | null;
+    },
+): Promise<string> {
+    const code = opts.Code ?? `IT-${randomUUID().slice(0, 6).toUpperCase()}`;
+    const type = await TxOne<{ ID: string }>(
+        ctx,
+        `SELECT ID FROM ${ORDERS_SCHEMA}.PromotionType WHERE Code='${opts.Kind ?? 'PercentOff'}'`,
+    );
+
+    const promotionID = await createViaEntity(ctx, PROMOTION_ENTITY, {
+        Code: code,
+        Name: code,
+        PromotionTypeID: type.ID,
+        Value: opts.Value,
+        AppliesAt: opts.AppliesAt ?? 'Either',
+        Status: 'Active',
+        MinimumOrderAmount: opts.MinimumOrderAmount ?? null,
+    });
+
+    await createViaEntity(ctx, PROMOTION_CODE_ENTITY, {
+        PromotionID: promotionID,
+        Code: code,
+        Status: 'Active',
+    });
+
+    if (opts.TargetProductID || opts.TargetProductCategoryID) {
+        await createViaEntity(ctx, PROMOTION_TARGET_ENTITY, {
+            PromotionID: promotionID,
+            ProductID: opts.TargetProductID ?? null,
+            ProductCategoryID: opts.TargetProductCategoryID ?? null,
+            IncludeDescendants: true,
+        });
+    }
+    return code;
 }
 
 /**

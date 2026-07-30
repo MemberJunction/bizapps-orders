@@ -35,6 +35,7 @@ import {
   type NamedCheck,
 } from "@memberjunction/testing-integration";
 import {
+  CreateProductPrice,
   ACCT_SCHEMA,
   CreateOrdersFixture,
   Fx,
@@ -50,11 +51,9 @@ import { ResolvePaymentProvider } from "@mj-biz-apps/orders-core-entities-server
 import { CreatePayment, CapturePayment } from "../payment-builder.js";
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
-  await TxQuery(ctx,
-    `IF NOT EXISTS (SELECT 1 FROM ${ORDERS_SCHEMA}.ProductPrice WHERE ProductID='${productID}' AND Status='Active')
-     INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
-       (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
-     VALUES ('${randomUUID()}','${productID}','PerUnit','Standard',${amount},'2020-01-01',0,'Active')`);
+  // Delegates to the shared builder so the price goes through `ProductPriceEntityServer` and its
+  // ambiguity guard, rather than around it. Idempotent per product — see CreateProductPrice.
+  await CreateProductPrice(ctx, productID, amount);
 }
 
 /** A configured provider account of the given type. `live` selects the real path over the stub. */

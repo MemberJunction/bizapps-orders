@@ -31,6 +31,8 @@ import {
   type NamedCheck,
 } from "@memberjunction/testing-integration";
 import {
+  CreateProductPrice,
+  CreatePromotion,
   ACCT_SCHEMA,
   CreateOrdersFixture,
   Fx,
@@ -49,31 +51,26 @@ import { CreatePayment } from "../payment-builder.js";
 import type { LooseEntity } from "../payment-builder.js";
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
-       (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
-     VALUES ('${randomUUID()}','${productID}','PerUnit','Standard',${amount},'2020-01-01',0,'Active')`);
+  // Delegates to the shared builder so the price goes through `ProductPriceEntityServer` and its
+  // ambiguity guard, rather than around it. Idempotent per product — see CreateProductPrice.
+  await CreateProductPrice(ctx, productID, amount);
 }
 
 async function addPromotion(
   ctx: IntegrationCheckContext,
   opts: { kind?: string; value: number; appliesAt?: string; targetProductID?: string | null },
 ): Promise<string> {
-  const code = `CX${randomUUID().slice(0, 6).toUpperCase()}`;
-  const id = randomUUID();
-  const t = await TxOne<{ ID: string }>(ctx,
-    `SELECT ID FROM ${ORDERS_SCHEMA}.PromotionType WHERE Code='${opts.kind ?? "PercentOff"}'`);
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.Promotion (ID, Code, Name, PromotionTypeID, Value, AppliesAt, Status)
-     VALUES ('${id}','${code}','${code}','${t.ID}',${opts.value},'${opts.appliesAt ?? "Either"}','Active');
-     INSERT INTO ${ORDERS_SCHEMA}.PromotionCode (ID, PromotionID, Code, Status)
-     VALUES ('${randomUUID()}','${id}','${code}','Active')`);
-  if (opts.targetProductID) {
-    await TxQuery(ctx,
-      `INSERT INTO ${ORDERS_SCHEMA}.PromotionTarget (ID, PromotionID, ProductID, IncludeDescendants)
-       VALUES ('${randomUUID()}','${id}','${opts.targetProductID}',1)`);
-  }
-  return code;
+  // Delegates to the shared builder so the Promotion, its PromotionCode and any target all
+  // go through their entity servers rather than around them.
+  return CreatePromotion(ctx, {
+    Kind: opts.kind,
+    Value: opts.value,
+    // This bundle's own default, preserved. The shared builder defaults to 'Either',
+    // and letting that win applied order-level promotions PER LINE — 13 lines turned a
+    // 0.07 discount into 0.91, which still reconciled internally and was still wrong.
+    AppliesAt: (opts as { appliesAt?: string }).appliesAt ?? "Either",
+    TargetProductID: (opts as { targetProductID?: string | null }).targetProductID ?? null,
+  });
 }
 
 /** Grant CoA nexus wherever the fixture did not, so tax is about the pipeline and not the gate. */

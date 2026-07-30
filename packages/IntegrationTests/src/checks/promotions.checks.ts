@@ -32,6 +32,7 @@ import {
   type NamedCheck,
 } from "@memberjunction/testing-integration";
 import {
+  CreateProductPrice,
   CreateOrdersFixture,
   Fx,
   InRolledBackTransaction,
@@ -97,10 +98,9 @@ async function addPromotion(
 }
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
-       (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
-     VALUES ('${randomUUID()}','${productID}','PerUnit','Standard',${amount},'2020-01-01',0,'Active')`);
+  // Delegates to the shared builder so the price goes through `ProductPriceEntityServer` and its
+  // ambiguity guard, rather than around it. Idempotent per product — see CreateProductPrice.
+  await CreateProductPrice(ctx, productID, amount);
 }
 
 /** Set this company's stacking policy. */
