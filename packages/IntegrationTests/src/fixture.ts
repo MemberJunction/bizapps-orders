@@ -114,6 +114,12 @@ export interface OrdersFixture {
     Customers: { OrganizationID: string; SecondOrganizationID: string; PersonID: string };
     /** Products by mnemonic — see {@link CreateOrdersFixture} for what each one is for. */
     Products: Record<string, string>;
+    /**
+     * `ProductEntitlement` template IDs by mnemonic (D27/D76). Chosen to cover all four validity
+     * modes and both quantity shapes, because the modes are where the interesting behaviour is:
+     * a perpetual download, a term-scoped seat count, an event window, and a fixed duration.
+     */
+    Entitlements: Record<string, string>;
 }
 
 // ─── Fixture handoff ───────────────────────────────────────────────────────────────────────────
@@ -311,6 +317,7 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
         Event: { StartsAt: new Date('2027-04-15T09:00:00Z'), EndsAt: new Date('2027-04-17T17:00:00Z') },
         Customers: { OrganizationID: '', SecondOrganizationID: '', PersonID: '' },
         Products: {},
+        Entitlements: {},
         // Populated below, once the jurisdictions and addresses exist.
         Tax: { JurisdictionIDs: new Map(), AddressIDs: new Map() },
     };
@@ -495,13 +502,19 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
     };
 
     fixture.ProductTypeIDs.Simple = await createProductType(ctx, run, 'Service');
-    fixture.ProductTypeIDs.Subscription = await createProductType(ctx, run, 'Subscription');
+    // A SUBSCRIPTION type's grants follow the TERM, not the order date (D76). Seeding this here rather
+    // than per product is what makes the walk's terminating answer the right one for the whole type.
+    fixture.ProductTypeIDs.Subscription = await createProductType(ctx, run, 'Subscription', {
+        DefaultEntitlementValidityMode: 'SubscriptionTerm',
+    });
     // The extension pointers are what make this type an EVENT type rather than a label: they name
     // the IsA children that carry event data (BO-D37).
     fixture.ProductTypeIDs.Event = await createProductType(ctx, run, 'Event', {
         ProductExtensionEntity: 'MJ_BizApps_Orders: Event Products',
         OrderLineExtensionEntity: 'MJ_BizApps_Orders: Event Order Lines',
         DefaultRevenueRecognitionTypeID: rr('AllBackEnd'),
+        // A ticket grants access for the length of the EVENT, whenever the ticket was bought.
+        DefaultEntitlementValidityMode: 'EventWindow',
     });
 
     const catA = await createCategory(ctx, run, fixture.CoA.ID, 'Cat A');
@@ -556,7 +569,65 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
              VALUES ('${ticket}','${fixture.Event.StartsAt.toISOString()}','${fixture.Event.EndsAt.toISOString()}',
                      '${run} Convention Center', 500, 1)`,
         );
+
     }
+
+    // ── ENTITLEMENT TEMPLATES (D27/D76) ───────────────────────────────────────
+    // One per validity mode, because the modes are where the behaviour lives. Note that WidgetA
+    // carries TWO templates with DIFFERENT windows — the case a policy resolved purely from the
+    // product could not express, and the reason ValidityMode sits on the template.
+    fixture.Entitlements = {
+        /** Uncountable, perpetual: the shape of a digital download or a lifetime feature flag. */
+        WidgetSupport: await addEntitlement(ctx, fixture.Products.WidgetA, {
+            Code: 'WIDGET-SUPPORT',
+            EntitlementType: 'Feature',
+            ValidityMode: 'Perpetual',
+        }),
+        /** Countable, and time-boxed independently of its sibling above. */
+        WidgetForum: await addEntitlement(ctx, fixture.Products.WidgetA, {
+            Code: 'WIDGET-FORUM',
+            EntitlementType: 'ResourceQuantity',
+            Quantity: 5,
+            UnitOfMeasure: 'Seat',
+            ValidityMode: 'FixedDuration',
+            ValidityDurationDays: 90,
+        }),
+        /** Follows the TERM, so a cancelled year revokes one grant and leaves the rest of history. */
+        SubSeats: await addEntitlement(ctx, fixture.Products.SubRolling, {
+            Code: 'SUB-SEATS',
+            EntitlementType: 'ResourceQuantity',
+            Quantity: 3,
+            UnitOfMeasure: 'Seat',
+            ValidityMode: 'SubscriptionTerm',
+        }),
+        /** Opens an hour early and closes a day late — the online-event case. */
+        TicketAccess: await addEntitlement(ctx, fixture.Products.EventTicket, {
+            Code: 'TICKET-ACCESS',
+            EntitlementType: 'AccessLevel',
+            ValidityMode: 'EventWindow',
+            AccessLeadHours: 1,
+            AccessLagHours: 24,
+        }),
+        /**
+         * On the PRORATING product, so a fractional line quantity reaches the quantity rule. That is
+         * where round-up actually matters: a half-year of a 4-seat product is 2.33 seats, and handing
+         * the customer two is a support ticket while handing them three is nothing.
+         */
+        ProratedSeats: await addEntitlement(ctx, fixture.Products.SubCalendar, {
+            Code: 'PRORATED-SEATS',
+            EntitlementType: 'ResourceQuantity',
+            Quantity: 4,
+            UnitOfMeasure: 'Seat',
+            ValidityMode: 'SubscriptionTerm',
+        }),
+        /** Deliberately SILENT on validity, so the product/category/type walk has to answer. */
+        DeferredAccess: await addEntitlement(ctx, fixture.Products.DeferredA, {
+            Code: 'DEFERRED-ACCESS',
+            EntitlementType: 'Feature',
+            ValidityMode: null,
+        }),
+    };
+
 
     // The GL links we just wrote are invisible to booking until the accounting engine reloads.
     // `AccountingEngineBase` is a BaseEngine: it caches accounts, roles and links in-process on
@@ -636,18 +707,65 @@ async function createProductType(
         ProductExtensionEntity?: string;
         OrderLineExtensionEntity?: string;
         DefaultRevenueRecognitionTypeID?: string;
+        /** Entitlement policy backstops (D76). Left to the column defaults when not stated. */
+        DefaultEntitlementGrantTiming?: string;
+        DefaultEntitlementQuantityMode?: string;
+        DefaultEntitlementValidityMode?: string;
     } = {},
 ): Promise<string> {
     const id = randomUUID();
     const q = (v?: string) => (v ? `'${v.replace(/'/g, "''")}'` : 'NULL');
+    // The three policy columns are NOT NULL with defaults, so they are written explicitly only when
+    // the caller wants something other than 'OnConfirm' / 'PerUnit' / 'Perpetual'.
     await PoolQuery(
         ctx,
         `INSERT INTO ${ORDERS_SCHEMA}.ProductType
             (ID, Name, RequiresFulfillment, IsActive,
-             ProductExtensionEntity, OrderLineExtensionEntity, DefaultRevenueRecognitionTypeID)
+             ProductExtensionEntity, OrderLineExtensionEntity, DefaultRevenueRecognitionTypeID,
+             DefaultEntitlementGrantTiming, DefaultEntitlementQuantityMode, DefaultEntitlementValidityMode)
          VALUES ('${id}','${run} ${label}',0,1,
                  ${q(opts.ProductExtensionEntity)}, ${q(opts.OrderLineExtensionEntity)},
-                 ${q(opts.DefaultRevenueRecognitionTypeID)})`,
+                 ${q(opts.DefaultRevenueRecognitionTypeID)},
+                 ${q(opts.DefaultEntitlementGrantTiming) === 'NULL' ? "'OnConfirm'" : q(opts.DefaultEntitlementGrantTiming)},
+                 ${q(opts.DefaultEntitlementQuantityMode) === 'NULL' ? "'PerUnit'" : q(opts.DefaultEntitlementQuantityMode)},
+                 ${q(opts.DefaultEntitlementValidityMode) === 'NULL' ? "'Perpetual'" : q(opts.DefaultEntitlementValidityMode)})`,
+    );
+    return id;
+}
+
+/**
+ * Attach an entitlement TEMPLATE to a product (D27/D76).
+ *
+ * Returns the template ID so a check can assert against the grants it produced. `ValidityMode` here
+ * overrides the product/category/type walk, which is the point of having it on the template: one
+ * product can grant a perpetual download and ninety days of forum access at the same time.
+ */
+async function addEntitlement(
+    ctx: IntegrationCheckContext,
+    productID: string,
+    opts: {
+        Code: string;
+        EntitlementType?: 'Feature' | 'AccessLevel' | 'ResourceQuantity' | 'Custom';
+        Quantity?: number | null;
+        UnitOfMeasure?: string;
+        ValidityMode?: string | null;
+        ValidityDurationDays?: number | null;
+        AccessLeadHours?: number | null;
+        AccessLagHours?: number | null;
+    },
+): Promise<string> {
+    const id = randomUUID();
+    const n = (v: number | null | undefined) => (v == null ? 'NULL' : String(v));
+    const q = (v: string | null | undefined) => (v == null ? 'NULL' : `'${v}'`);
+    await PoolQuery(
+        ctx,
+        `INSERT INTO ${ORDERS_SCHEMA}.ProductEntitlement
+            (ID, ProductID, EntitlementType, Code, Name, Quantity, UnitOfMeasure, IsActive,
+             ValidityMode, ValidityDurationDays, AccessLeadHours, AccessLagHours)
+         VALUES ('${id}','${productID}','${opts.EntitlementType ?? 'Feature'}','${opts.Code}',
+                 '${opts.Code}', ${n(opts.Quantity)}, ${q(opts.UnitOfMeasure)}, 1,
+                 ${q(opts.ValidityMode)}, ${n(opts.ValidityDurationDays)},
+                 ${n(opts.AccessLeadHours)}, ${n(opts.AccessLagHours)})`,
     );
     return id;
 }

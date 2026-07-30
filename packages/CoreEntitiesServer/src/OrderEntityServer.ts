@@ -51,6 +51,7 @@ import { ResolvePrice, type ResolvedPrice } from './PriceResolver.js';
 import { AllocateProRata, NetAfterDiscount } from './PricingBehavior.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
+import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import type { StackingMode } from './PromotionBehavior.js';
 import {
     RunCharges,
@@ -312,6 +313,21 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 const subs = await this.materializeSubscriptions(lines, decisions, options);
                 await this.bookLines(lines, options, subs);
                 await this.createInitialPayment(options);
+
+                // ENTITLEMENTS LAST, and INSIDE this transaction (D27/D76).
+                //
+                // Last because it needs everything above: persisted lines to point at, terms for a
+                // subscription-scoped validity window, and — for `OnPaidInFull` timing — the balance
+                // that `createInitialPayment` has just moved.
+                //
+                // Inside, because access and the receivable are the same decision. An order that
+                // booked revenue and failed to grant access has charged for nothing; one that granted
+                // access without booking has given something away. So a failure here rolls the confirm
+                // back rather than being logged and shrugged at.
+                await this.grantEntitlements(lines, subs, options);
+
+                // And the mirror: a returned line takes its access with it.
+                await this.revokeEntitlementsForReversals(lines, options);
             }
 
             await dbProvider.CommitTransaction();
@@ -686,6 +702,109 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             provider,
             user,
         );
+    }
+
+    /**
+     * Create the grants this order's lines confer (D27/D76).
+     *
+     * Delegates entirely to `EntitlementEngine`; what lives here is the mapping from the order's own
+     * entities to the structural shape the engine takes, plus the balance the timing rule needs.
+     *
+     * `Balance` is re-read from the header rather than trusted from memory: `createInitialPayment`
+     * has just run, and the rollup triggers (D41) moved `AmountPaid`/`Balance` on the ROW without
+     * telling this object. An `OnPaidInFull` grant reading a stale balance would sit Suspended on an
+     * order that is already paid.
+     */
+    private async grantEntitlements(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        subs: SubscriptionMaterialization,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        const fresh = await this.readBalanceFromRow();
+
+        await CreateEntitlementGrants(
+            {
+                ID: this.ID,
+                OrderDate: this.OrderDate ? new Date(this.OrderDate) : new Date(),
+                Balance: fresh.Balance,
+                TotalGross: fresh.TotalGross,
+                BillToPersonID: this.BillToPersonID ?? null,
+                BillToOrganizationID: this.BillToOrganizationID ?? null,
+            },
+            lines.map((l) => ({
+                ID: l.ID,
+                ProductID: l.ProductID,
+                Quantity: Number(l.Quantity ?? 0),
+                ShipToPersonID: l.ShipToPersonID ?? null,
+                ShipToOrganizationID: l.ShipToOrganizationID ?? null,
+            })),
+            subs.TermsByLine,
+            provider,
+            user,
+            options,
+        );
+    }
+
+    /** The header's rollup columns as the DATABASE now holds them, after the payment triggers ran. */
+    private async readBalanceFromRow(): Promise<{ Balance: number | null; TotalGross: number | null }> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<{ Balance: number | null; TotalGross: number | null }>(
+            {
+                EntityName: ORDER_ENTITY,
+                ExtraFilter: `ID = '${this.ID}'`,
+                Fields: ['Balance', 'TotalGross'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        const row = result?.Results?.[0];
+        return {
+            Balance: row?.Balance ?? this.Balance ?? null,
+            TotalGross: row?.TotalGross ?? this.TotalGross ?? null,
+        };
+    }
+
+    /**
+     * Take access away from what was sent back.
+     *
+     * A full return revokes; a partial return reduces the quantity proportionally. Uncountable grants
+     * — a Feature, an AccessLevel — survive a partial return, because the customer still holds some of
+     * the thing that conferred them.
+     *
+     * Runs on the REVERSAL order's lines, unwinding the grants that hang off each ORIGIN line. The
+     * origin's quantity is what the proportion is taken against, so it is read from the origin rather
+     * than inferred from the reversal.
+     */
+    private async revokeEntitlementsForReversals(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const reversals = lines.filter(
+            (l) => (l as unknown as { ReversesOrderLineID?: string | null }).ReversesOrderLineID,
+        );
+        if (!reversals.length) return;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        for (const line of reversals) {
+            const reverses = (line as unknown as { ReversesOrderLineID: string }).ReversesOrderLineID;
+            const context = await LoadReversalContext(reverses, provider, user, [line.ID]);
+            if (!context) continue; // applyReversalOrigin already refused anything unresolvable
+
+            await RevokeGrantsForReturn(
+                reverses,
+                context.Origin.Quantity,
+                Number(line.Quantity ?? 0),
+                `Returned on order ${this.OrderNumber ?? this.ID}`,
+                provider,
+                user,
+                options,
+            );
+        }
     }
 
     /**

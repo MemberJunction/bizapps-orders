@@ -31,6 +31,7 @@
  *   concurrency          CN1–CN6   document numbering under contention, on a second connection (D30)
  *   events               EV1–EV10  event products and one-time deferred revenue
  *   volume               VL1–VL13  populations, repeated purchases, and a SECOND MJ session
+ *   entitlements         EN1–EN15  what a purchase confers, and for how long (D27/D76)
  *
  * Note that `events` and `line-subscriber` are listed out of order above because that is the order
  * they were written in; the runner's order is presentational — each bundle owns its own fixture.
@@ -78,6 +79,7 @@ export * from './checks/returns.checks.js';
 export * from './checks/arithmetic-edges.checks.js';
 export * from './checks/concurrency.checks.js';
 export * from './checks/volume.checks.js';
+export * from './checks/entitlements.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

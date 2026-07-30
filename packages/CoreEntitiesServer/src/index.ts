@@ -8,6 +8,18 @@
 export { GLAccountResolver, GLAccountResolutionError, GL_ROLE } from './GLAccountResolver.js';
 export type { GLRole, ResolverEntityIDs } from './GLAccountResolver.js';
 
+export {
+    HydrateOrderDraft,
+    ORDER_HEADER_ENTITY,
+    ORDER_LINE_ENTITY,
+} from './OrderDraftHydrator.js';
+export type {
+    HydratableDraft,
+    HydratableHeader,
+    HydratableLine,
+    HydratedOrder,
+} from './OrderDraftHydrator.js';
+
 export { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 export type { JEDraft, JELineDraft, OrderLineDraft } from './OrderJournalEntryFactory.js';
 
@@ -102,6 +114,29 @@ export { RemainingReturnable, ValidateReversal, InheritedTerms } from './Reversa
 export type { ReversalOrigin, ReversalRequest } from './ReversalBehavior.js';
 export { LoadReversalContext } from './ReversalResolver.js';
 export type { ReversalContext } from './ReversalResolver.js';
+
+// Entitlements (D27/D76) — the pure policy resolution and the engine that applies it.
+export {
+    ResolveEntitlementPolicy,
+    ResolveGrantQuantity,
+    ResolveValidityWindow,
+    InitialGrantStatus,
+    ReduceGrantForReturn,
+} from './EntitlementBehavior.js';
+export type {
+    GrantTiming,
+    QuantityMode,
+    ValidityMode,
+    PolicyLevel,
+    EntitlementPolicySource,
+    PolicyCategoryLevel,
+    PolicyTypeDefaults,
+    ResolvedEntitlementPolicy,
+    ValidityContext,
+    ResolvedValidity,
+} from './EntitlementBehavior.js';
+export { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
 
 // Promotions (D70): the pure engine, the DB-backed resolution, and the qualifier plugin seam.
 export { ApplyPromotions, ScreenPromotion, ValuePromotion } from './PromotionBehavior.js';
