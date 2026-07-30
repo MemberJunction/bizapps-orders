@@ -194,6 +194,28 @@ export class MJOOrdersDataService {
         );
     }
 
+    /** Price rules, highest priority first — that is the order that resolves a tie. */
+    public async GetProductPrices(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.ProductPrice,
+            [],
+            'Priority DESC',
+            undefined,
+            user,
+        );
+    }
+
+    /** Promotions, newest window first. */
+    public async GetPromotions(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.Promotion,
+            [],
+            'StartDate DESC',
+            undefined,
+            user,
+        );
+    }
+
     /** Charge types, in the sequence they compute. */
     public async GetChargeTypes(user?: UserInfo) {
         return this.run<Record<string, unknown>>(

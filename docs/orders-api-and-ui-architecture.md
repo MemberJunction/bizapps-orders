@@ -255,14 +255,49 @@ written.
 
 ---
 
-## 7. What is not built yet
+## 7. State of the build
 
-| Piece | State |
+Every rail item in all four sections opens a real page. `rail-coverage.test.ts` is
+the drift guard that keeps that true — it reads the rail declarations and the
+resolver's `switch` and fails when they disagree, which is a bug nobody reports
+because a mis-keyed rail item looks exactly like work in progress.
+
+| Layer | State |
 |---|---|
-| `Orders.SaveOrder` / `PreviewOrder` / `ConfirmOrder` | **Built**, typecheck clean, untested against a DB |
-| `Orders.PreviewConfirm` / `GetOverdueWorklist` | Metadata + typed base emitted; body owed |
-| The five pre-existing operations | Working; their bodies predate the generated bases, so their I/O types are still declared server-side (duplication, not a defect — dispatch is by key) |
-| `OrderHeader.OriginChannel` | Schema wave owed. `HydrateOrderDraft` already sets it defensively if the column exists |
-| `BaseFormPanel` library | Owed — money strip, stepper, charge ladder, JE preview, recognition waterfall, allocation grid |
-| The 19 sub-pages | Owed. Sections currently render *"<page> is not built yet"* rather than a blank pane |
-| Integration checks for the operations | Owed, including the preview/confirm parity check above |
+| **Operations** — all ten | Bodies written, registered, typecheck clean. **Never executed against a database.** |
+| **Panel library** — 13 components | Money strip, ladder, stepper, chips, price badge, stated value, aging bar, JE preview, worklist table, stat tile, bar list, allocation grid, pre-flight |
+| **Pure logic** | `money-format`, `order-stages`, `allocation-math`, `section-nav` — no Angular runtime, 86 tests |
+| **Screens** — 18 | Orders 6 · Payments 5 · Receivables 3 · Catalog 4 |
+| **Services** | `MJOOrderEntryService` (debounced preview, out-of-order guard), `MJOOrdersDataService` (reads) |
+| **Mockups** | 20 screens, `verify.mjs` renders and drives them all |
+
+### The caveat that matters most
+
+**No operation has run against a database.** `SaveOrder`, `PreviewOrder`,
+`ConfirmOrder`, `PreviewConfirm` and `GetOverdueWorklist` are written, wired and
+type-clean, and have never executed. The preview-runs-the-real-save design is
+sound in principle and completely untested in practice. Integration checks over
+them are the next thing owed — above all the one that keeps the whole design
+honest:
+
+> **`Orders.PreviewConfirm` must predict what `Orders.ConfirmOrder` actually does.**
+
+### Also owed
+
+- **`OrderHeader.OriginChannel`** — the schema wave. `HydrateOrderDraft` already
+  sets it defensively when the column exists, and the orders list already filters
+  on it, so the column is the only missing piece.
+- **Screens that read but do not yet write.** The catalog screens (products,
+  pricing, promotions, charges) list and explain; editing goes through the
+  generated entity forms until a reason appears to build bespoke editors.
+- **The approvals inbox.** The pre-flight names the approver role a sales rule
+  will escalate to, and there is no surface anywhere for that approver — it is a
+  task in bizapps-tasks with no UI.
+- **Empty and first-run states**, beyond the per-screen empty text: a fresh
+  install with no catalog, a customer with no history.
+- **Accessibility audit.** Fast entry's keyboard model is designed and every
+  interactive element carries a label, but focus management in overlays has not
+  been reviewed end to end.
+- **Mobile.** Basic responsive behaviour is in every screen (stated breakpoints,
+  declared column-drop order); a full optimisation pass is a later phase by
+  agreement.

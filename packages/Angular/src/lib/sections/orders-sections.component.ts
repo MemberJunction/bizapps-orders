@@ -47,7 +47,10 @@ import { MJOAccountCreditPageComponent } from '../pages/payments/account-credit.
 import { MJOPaymentsDashboardPageComponent } from '../pages/payments/payments-dashboard.page';
 import { MJOOverduePageComponent } from '../pages/receivables/overdue.page';
 import { MJOCustomerARPageComponent } from '../pages/receivables/customer-ar.page';
+import { MJOSubscriptionsPageComponent } from '../pages/receivables/subscriptions.page';
 import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/catalog/products.page';
+import { MJOPricingPageComponent, MJOPromotionsPageComponent } from '../pages/catalog/pricing.page';
+import { MJOReturnPageComponent } from '../pages/orders/return.page';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -268,6 +271,8 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
                 return MJOOrdersDashboardPageComponent;
             case 'fulfillment':
                 return MJOFulfillmentPageComponent;
+            case 'returns':
+                return MJOReturnPageComponent;
             default:
                 return null;
         }
@@ -378,6 +383,8 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
                 return MJOOverduePageComponent;
             case 'aging':
                 return MJOCustomerARPageComponent;
+            case 'subscriptions':
+                return MJOSubscriptionsPageComponent;
             default:
                 return null;
         }
@@ -433,6 +440,10 @@ export class CatalogSectionResource extends MJOSectionBaseComponent {
                 return MJOProductsPageComponent;
             case 'charges':
                 return MJOChargesTaxPageComponent;
+            case 'pricing':
+                return MJOPricingPageComponent;
+            case 'promotions':
+                return MJOPromotionsPageComponent;
             default:
                 return null;
         }
