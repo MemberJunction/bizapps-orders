@@ -19,23 +19,13 @@
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="ProductID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Pricing Strategy Section -->
-    <mj-collapsible-panel
-        SectionKey="pricingStrategy"
-        SectionName="Pricing Strategy"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -45,6 +35,16 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Pricing Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="pricingConfiguration"
+        SectionName="Pricing Configuration"
+        Icon="fa fa-dollar-sign"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -88,10 +88,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Applicability Rules Section -->
+    <!-- Quantity and Validity Section -->
     <mj-collapsible-panel
-        SectionKey="applicabilityRules"
-        SectionName="Applicability Rules"
+        SectionKey="quantityAndValidity"
+        SectionName="Quantity and Validity"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -127,6 +127,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Scheduling Rules Section -->
+    <mj-collapsible-panel
+        SectionKey="schedulingRules"
+        SectionName="Scheduling Rules"
+        Icon="fa fa-clock"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -178,10 +188,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Rule Configuration Section -->
+    <!-- Operational Settings Section -->
     <mj-collapsible-panel
-        SectionKey="ruleConfiguration"
-        SectionName="Rule Configuration"
+        SectionKey="operationalSettings"
+        SectionName="Operational Settings"
         Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">

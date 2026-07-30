@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bill — ORD-1005 — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  .doc-shell { position: relative; }
+  .doc-toolbar {
+    display: flex; align-items: center; gap: var(--mj-space-2); flex-wrap: wrap;
+    max-width: 860px; margin: 0 auto var(--mj-space-4);
+  }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta">
+    <span class="mj-chip mj-chip--brand">Confirmed</span>
+    <span class="mj-chip">Unpaid</span>
+    <span class="mj-chip mj-chip--outline">Due in 22 days</span>
+  </div>
+
+  <div slot="actions">
+    <a class="mj-btn mj-btn--outline" href="list.html"><i class="fa-solid fa-arrow-left"></i> All orders</a>
+    <button class="mj-btn mj-btn--outline" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
+    <button class="mj-btn mj-btn--outline"><i class="fa-regular fa-file-pdf"></i> PDF</button>
+    <button class="mj-btn mj-btn--outline"><i class="fa-regular fa-envelope"></i> Email</button>
+    <a class="mj-btn mj-btn--primary" href="../payments/entry.html"><i class="fa-solid fa-hand-holding-dollar"></i> Take payment</a>
+  </div>
+
+  <div slot="body">
+    <div class="doc-toolbar no-print">
+      <div class="mj-segmented" data-on-select="docState">
+        <button class="is-active" data-value="unpaid">Unpaid</button>
+        <button data-value="paid">Paid</button>
+        <button data-value="credit">Credit memo</button>
+      </div>
+      <span class="small muted spacer">
+        Three states of the same document. Toggle to see how each renders.
+      </span>
+    </div>
+
+    <div class="mock-note" style="max-width:860px;margin:0 auto var(--mj-space-4)">
+      There is no Invoice record. The confirmed order <b>is</b> the receivable, and this is that order rendered —
+      so the number the customer quotes on the phone, the number in the ledger, and the number in the aging report
+      are the same number, with nothing to fall out of sync.
+    </div>
+
+    <div class="doc-shell">
+      <div class="mj-doc" id="doc"></div>
+    </div>
+
+    <div class="doc-toolbar no-print" style="margin-top:var(--mj-space-6)">
+      <div class="mock-note" style="margin:0">
+        Print styles are real, not an afterthought: the shell, rail, page header and every design note drop out, the
+        page goes white, and the document runs edge to edge. Try <kbd>⌘P</kbd>.
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+let STATE = 'unpaid';
+
+function docState(v) { STATE = v; render(); }
+
+function render() {
+  const credit = STATE === 'credit';
+  const o = DB.orderByNumber(credit ? 'ORD-1006' : 'ORD-1005');
+  const co = DB.companies[o.companyID];
+  const org = o.billToOrgID ? DB.orgs[o.billToOrgID] : null;
+  const person = o.billToPersonID ? DB.people[o.billToPersonID] : null;
+  const ship = DB.addresses[o.shipToAddressID];
+  const paid = STATE === 'paid';
+  const balance = paid ? 0 : o.balance;
+
+  const taxRows = o.orderCharges.filter(c => c.isTax);
+  const feeRows = o.orderCharges.filter(c => !c.isTax);
+
+  document.getElementById('doc').innerHTML = `
+    ${paid ? '<div class="mj-doc-stamp">Paid</div>' : ''}
+
+    <div class="mj-doc-head">
+      <div class="issuer">
+        <div class="co"><i class="fa-solid fa-cart-shopping"></i> ${co.name}</div>
+        <div class="addr">${co.address.join('<br>')}<br>
+          billing@bluecypress.io · +1 215 555 0140<br>
+          EIN 47-••••318</div>
+      </div>
+      <div class="docmeta">
+        <div class="kind">${credit ? 'Credit memo' : 'Invoice'}</div>
+        <div class="num">${o.number}</div>
+        <dl class="mj-doc-meta-grid">
+          <dt>${credit ? 'Issued' : 'Order date'}</dt><dd>${F.date(o.orderDate)}</dd>
+          ${o.dueDate ? `<dt>Due</dt><dd>${F.date(o.dueDate)}</dd>` : ''}
+          <dt>Terms</dt><dd>${org ? org.terms : 'Due on receipt'}</dd>
+          ${o.externalDocNumber ? `<dt>Your PO</dt><dd>${o.externalDocNumber}</dd>` : ''}
+          ${o.reversesOrder ? `<dt>Against</dt><dd>${o.reversesOrder}</dd>` : ''}
+        </dl>
+      </div>
+    </div>
+
+    <div class="mj-doc-parties">
+      <div>
+        <div class="lbl">Bill to</div>
+        <div class="who">
+          ${org ? `<div class="nm">${org.name}</div>` : ''}
+          ${person ? `<div>${org ? 'Attn: ' : '<span class="nm">'}${person.name}${org ? '' : '</span>'}</div>` : ''}
+          <div>${DB.addresses[o.billToAddressID].lines.join('<br>')}</div>
+        </div>
+      </div>
+      <div>
+        <div class="lbl">Ship to</div>
+        <div class="who">
+          ${person ? `<div class="nm">${person.name}</div>` : ''}
+          <div>${ship.lines.join('<br>')}</div>
+        </div>
+      </div>
+    </div>
+
+    ${credit ? `<div class="mj-banner mj-banner--info" style="margin-bottom:var(--mj-space-6)">
+      <i class="fa-solid fa-rotate-left"></i>
+      <div class="body"><strong>This credit memo reverses ${o.reversesOrder}.</strong> ${o.reversalReason}</div>
+    </div>` : ''}
+
+    <table class="mj-table">
+      <thead>
+        <tr>
+          <th style="width:34px">#</th>
+          <th>Description</th>
+          <th class="num" style="width:70px">Qty</th>
+          <th class="num" style="width:100px">Unit</th>
+          <th class="num" style="width:100px">Discount</th>
+          <th class="num" style="width:110px">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${o.lines.map(l => {
+          const p = DB.products[l.productID];
+          const sp = l.servicePeriod
+            ? `<div class="secondary">Service period ${F.date(l.servicePeriod[0])} – ${F.date(l.servicePeriod[1])}</div>` : '';
+          return `<tr>
+            <td class="muted">${l.n}</td>
+            <td><span class="primary">${p.name}</span>
+              <div class="secondary">${p.sku}</div>${sp}
+              ${l.reversesLine ? `<div class="secondary">Returned from ${l.reversesLine}</div>` : ''}</td>
+            <td class="num">${F.qty(l.qty)}</td>
+            <td class="num">${F.money(l.unitPrice)}</td>
+            <td class="num">${l.discAmt ? '−' + F.money(l.discAmt) : '—'}</td>
+            <td class="num strong">${F.money(l.net)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+
+    <div class="mj-doc-totals">
+      <div class="box">
+        <div class="mj-ladder">
+          <div class="mj-ladder-row"><span class="label">Subtotal</span>
+            <span class="amt">${F.money(o.lines.reduce((s, l) => s + (l.listAmount ?? l.net), 0))}</span></div>
+
+          ${(o.promotions || []).filter(p => p.status === 'applied').map(p => `
+            <div class="mj-ladder-row is-sub is-discount">
+              <span class="label">${p.name} <span class="muted">(${p.code})</span></span>
+              <span class="amt">−${F.money(p.applied)}</span></div>`).join('')}
+
+          ${feeRows.map(c => `<div class="mj-ladder-row">
+            <span class="label">${c.name}</span><span class="amt">${F.money(c.amount)}</span></div>`).join('')}
+
+          ${taxRows.length ? taxRows.map(c => `<div class="mj-ladder-row">
+              <span class="label">${c.name} <span class="muted">${F.rate(c.rate)}</span></span>
+              <span class="amt">${F.money(c.amount)}</span></div>`).join('')
+            : (o.tax ? `<div class="mj-ladder-row"><span class="label">Sales tax</span>
+                <span class="amt">${F.money(o.tax)}</span></div>` : '')}
+
+          <div class="mj-ladder-row is-total"><span class="label">${credit ? 'Credit total' : 'Total'}</span>
+            <span class="amt">${F.money(o.gross)}</span></div>
+
+          ${paid ? `<div class="mj-ladder-row is-sub is-discount">
+            <span class="label">Payment received ${F.dateShort('2026-07-30')}</span>
+            <span class="amt">−${F.money(o.gross)}</span></div>` : ''}
+        </div>
+
+        <div class="mj-doc-due">
+          <span class="l">${credit ? 'Credit due you' : paid ? 'Balance' : 'Amount due'}</span>
+          <span class="v ${balance < 0 || credit ? 'mj-money--credit' : ''}">${F.money(Math.abs(balance) || 0)}</span>
+        </div>
+        ${!paid && !credit ? `<div class="small muted" style="text-align:right;margin-top:6px">
+          Due ${F.date(o.dueDate)}</div>` : ''}
+      </div>
+    </div>
+
+    <div class="mj-doc-foot">
+      ${credit ? `
+        <strong>How this credit can be used.</strong> Apply it against another invoice, or request a refund to the
+        original payment method. It does not expire.`
+      : `
+        <strong>How to pay.</strong> Cheques payable to ${co.name}, referencing <b>${o.number}</b>, to the address
+        above. ACH: routing 031•••••4, account ••••7719. To pay by card, reply to this bill and we will send a
+        secure link.`}
+      <div style="margin-top:var(--mj-space-3)">
+        Questions about this ${credit ? 'credit' : 'invoice'}? Reply to billing@bluecypress.io and quote
+        <b>${o.number}</b>. ${org ? `Registered to ${org.name} under terms ${org.terms}.` : ''}
+      </div>
+      <div style="margin-top:var(--mj-space-3);display:flex;gap:var(--mj-space-6);flex-wrap:wrap">
+        <span>${o.number}</span>
+        <span>Page 1 of 1</span>
+        <span>Generated ${F.date(DB.today)}</span>
+      </div>
+    </div>`;
+}
+
+MJ.mount({
+  nav: 'orders', rail: 'list',
+  title: 'Bill',
+  icon: 'fa-regular fa-file-lines',
+  subtitle: 'The confirmed order, rendered — there is no separate invoice record',
+  bodyClass: '',
+  ready: render,
+});
+</script>
+</body>
+</html>

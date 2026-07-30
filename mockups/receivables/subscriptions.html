@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subscriptions &amp; renewals — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  .sb-row {
+    display: flex; align-items: center; gap: var(--mj-space-3);
+    padding: var(--mj-space-3); border-radius: var(--mj-radius-md);
+    cursor: pointer; border: 1px solid transparent;
+  }
+  .sb-row:hover { background: var(--mj-bg-surface-hover); }
+  .sb-row.is-active {
+    background: color-mix(in srgb, var(--mj-brand-primary) 8%, transparent);
+    border-color: color-mix(in srgb, var(--mj-brand-primary) 35%, transparent);
+  }
+  .sb-wf {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(74px, 1fr)); gap: 5px;
+  }
+  .sb-wf > div {
+    border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-sm);
+    padding: 5px 6px; text-align: center;
+  }
+  .sb-wf > div.is-done { background: var(--mj-status-success-bg); border-color: color-mix(in srgb, var(--mj-status-success) 35%, transparent); }
+  .sb-wf > div.is-next { border-color: var(--mj-brand-primary); }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta"><span class="mj-chip mj-chip--outline" id="sb-count">—</span></div>
+
+  <div slot="actions">
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-download"></i> Export</button>
+    <button class="mj-btn mj-btn--outline" data-open="#sb-spawn">
+      <i class="fa-solid fa-rotate"></i> Run renewal spawn</button>
+  </div>
+
+  <div slot="toolbar">
+    <div class="mj-segmented" data-on-select="sbTab">
+      <button class="is-active" data-value="subs">Subscriptions</button>
+      <button data-value="renewals">Renewals due</button>
+    </div>
+    <div class="mj-search"><i class="fa-solid fa-magnifying-glass"></i>
+      <input placeholder="Holder, beneficiary, or number…"></div>
+  </div>
+
+  <div slot="body">
+
+    <!-- ══ SUBSCRIPTIONS ══ -->
+    <div id="sb-pane-subs">
+      <div class="mock-note">
+        &ldquo;Current&rdquo; is not a field — it is the term whose window covers today. Renewals and extensions
+        <b>append a term</b> rather than moving a pointer, so nothing goes stale, and the difference between a
+        customer buying more coverage and the system renewing them under standing authority stays visible in the
+        history instead of collapsing into one event.
+      </div>
+
+      <div class="mj-split mj-split--narrow-left">
+        <aside class="left">
+          <div class="mj-card">
+            <div class="mj-card-head"><i class="fa-solid fa-rotate"></i><h3>All subscriptions</h3></div>
+            <div class="mj-card-pad" style="padding:var(--mj-space-2)"><div id="sb-list"></div></div>
+          </div>
+        </aside>
+
+        <div class="right" id="sb-detail"></div>
+      </div>
+    </div>
+
+    <!-- ══ RENEWALS ══ -->
+    <div id="sb-pane-renewals" class="hidden">
+      <div class="mock-note">
+        A renewal is a <b>scheduled continuation</b>, and auto-renew is the consent switch. When it is on, the
+        system places a confirmed order at lead time — invoicing ahead of the period, which is how subscription
+        billing works and which revenue handles correctly because the recognition entries are dated into the new
+        term's own window. When it is off, the subscription simply ends; reminding-and-asking is a communication
+        flow, not a booking one.
+      </div>
+
+      <div class="mj-table-wrap">
+        <table class="mj-table">
+          <thead><tr><th style="width:110px">Subscription</th><th>Holder / beneficiary</th>
+            <th>Product</th><th style="width:110px">Term ends</th><th style="width:100px">Lead</th>
+            <th style="width:110px">Spawn on</th><th class="num" style="width:110px">Amount</th>
+            <th style="width:120px">Auto-renew</th><th style="width:170px">State</th></tr></thead>
+          <tbody id="sb-renewals"></tbody>
+        </table>
+      </div>
+
+      <div class="grid-2" style="margin-top:var(--mj-space-4)">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-shield-halved"></i><h3>Why this cannot double-bill</h3></div>
+          <div class="mj-card-pad small stack-2">
+            <div class="row-t"><i class="fa-solid fa-check" style="color:var(--mj-status-success);margin-top:3px"></i>
+              <div><b>The selection removes its own results.</b> Only subscriptions whose <i>latest</i> term is
+                expiring are found — so once a renewal books and appends a term, the subscription drops out of the set.</div></div>
+            <div class="row-t"><i class="fa-solid fa-check" style="color:var(--mj-status-success);margin-top:3px"></i>
+              <div><b>An explicit second guard.</b> Independently, an order already renewing that subscription is
+                checked for — covering the case where a prior pass booked the order but its term write failed.</div></div>
+            <div class="row-t"><i class="fa-solid fa-circle-info" style="color:var(--mj-status-info);margin-top:3px"></i>
+              <div>Two independent guards, because an unattended job that double-spawns double-bills, and the
+                customer finds out before we do.</div></div>
+          </div>
+        </div>
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-code-branch"></i><h3>A renewal is not a second subscription</h3></div>
+          <div class="mj-card-pad small">
+            A type set to reject duplicates would otherwise refuse to renew itself every cycle, silently — because
+            &ldquo;may this subscriber hold a second concurrent subscription?&rdquo; is a different question from
+            &ldquo;may this one continue?&rdquo;. Renewals bypass the concurrency rule for exactly that reason.
+            <div class="mock-note" style="margin-bottom:0">Renewals go through the same save path as a customer
+              purchase — so extension, term creation, account resolution and the all-or-none guarantee are the same
+              code, not a parallel writer that drifts.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div slot="overlays">
+    <div class="mj-modal" id="sb-spawn">
+      <div class="mj-modal-head">
+        <i class="fa-solid fa-rotate" style="color:var(--mj-brand-primary)"></i>
+        <div><h2>Run the renewal spawn</h2><div class="small muted">Normally a scheduled job — this is the manual run</div></div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-modal-body">
+        <div class="mj-banner mj-banner--info"><i class="fa-solid fa-circle-info"></i>
+          <div class="body">Finds subscriptions whose latest term expires inside their own lead window, and places a
+          <b>Confirmed</b> renewal order for each one that has auto-renew on.</div></div>
+        <div class="sec-label" style="margin-top:var(--mj-space-4)">Would place now</div>
+        <table class="mj-table mj-table--compact">
+          <thead><tr><th>Subscription</th><th>Holder</th><th class="num">Amount</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">SUB-2019</td><td>Northwind Society</td><td class="num">$1,200.00</td>
+              <td class="small">Term ends Aug 31, 30-day lead reached</td></tr>
+          </tbody>
+        </table>
+        <div class="sec-label" style="margin-top:var(--mj-space-4)">Would skip</div>
+        <table class="mj-table mj-table--compact">
+          <tbody>
+            <tr><td class="mono">SUB-2050</td><td class="small">Already spawned ORD-0975 — the second guard catches it</td></tr>
+            <tr><td class="mono">SUB-2007</td><td class="small">Auto-renew is off — it simply ends</td></tr>
+            <tr><td class="mono">SUB-2044</td><td class="small">Lead window not reached until Apr 2027</td></tr>
+            <tr><td class="mono">SUB-2038</td><td class="small">Latest term runs to Jul 2027</td></tr>
+          </tbody>
+        </table>
+        <div class="mock-note is-api">Stubbed. Showing what a job <i>would</i> do before it does it is the same
+          discipline as the order pre-flight — an unattended process is exactly the one that should be previewable.</div>
+      </div>
+      <div class="mj-modal-foot"><span class="right">
+        <button class="mj-btn mj-btn--flat" data-close>Cancel</button>
+        <button class="mj-btn mj-btn--primary" data-close>Spawn 1 renewal</button></span></div>
+    </div>
+
+    <div class="mj-modal" id="sb-cancel">
+      <div class="mj-modal-head">
+        <i class="fa-solid fa-ban" style="color:var(--mj-status-error)"></i>
+        <div><h2>Cancel this subscription</h2><div class="small muted" id="sbc-sub">—</div></div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-modal-body" id="sbc-body"></div>
+      <div class="mj-modal-foot">
+        <span class="small muted"><i class="fa-solid fa-lock"></i> Reversal order, term stamp and event log — one transaction.</span>
+        <span class="right"><button class="mj-btn mj-btn--flat" data-close>Keep it</button>
+          <button class="mj-btn mj-btn--danger" data-close>Cancel subscription</button></span>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+const H = MJ.H;
+const r2 = n => Math.round(n * 100) / 100;
+let SEL = 'SUB-2038';
+
+const statusChip = s => {
+  const map = { Active: 'mj-chip--success', Grace: 'mj-chip--warning',
+                Cancelled: 'mj-chip--outline', Expired: 'mj-chip--outline' };
+  return `<span class="mj-chip ${map[s] || ''}">${s}</span>`;
+};
+
+function render() {
+  document.getElementById('sb-count').textContent =
+    `${DB.subscriptions.filter(s => s.status === 'Active').length} active of ${DB.subscriptions.length}`;
+
+  document.getElementById('sb-list').innerHTML = DB.subscriptions.map(s => `
+    <div class="sb-row ${s.number === SEL ? 'is-active' : ''}" onclick="SB.sel('${s.number}')">
+      <span style="flex:1;min-width:0">
+        <span class="mono small strong">${s.number}</span>
+        <span style="display:block;font-size:13px">${s.beneficiary}</span>
+        <span class="small muted" style="display:block">${s.holder}</span>
+      </span>
+      <span style="text-align:right">
+        ${statusChip(s.status)}
+        <span class="small muted" style="display:block;margin-top:3px">to ${F.dateShort(s.endDate)}</span>
+      </span>
+    </div>`).join('');
+
+  renderDetail();
+  renderRenewals();
+}
+
+function renderDetail() {
+  const s = DB.subscriptionByNumber(SEL);
+  const type = DB.subscriptionTypes.find(t => t.id === s.typeID);
+  const p = DB.products[s.productID];
+
+  /* term timeline — proportional bars across the whole span */
+  const all = s.terms;
+  const start = new Date(all[0].start).getTime();
+  const end = new Date(all.at(-1).end).getTime();
+  const span = Math.max(end - start, 1);
+  const pos = d => ((new Date(d).getTime() - start) / span) * 100;
+  const nowPct = Math.min(Math.max(pos(DB.today), 0), 100);
+
+  const recog = s.recognition;
+  const doneCount = Math.round(recog.recognized / recog.perPeriod);
+
+  document.getElementById('sb-detail').innerHTML = `
+    <div class="mj-card">
+      <div class="mj-card-pad">
+        <div class="row" style="gap:var(--mj-space-4);align-items:flex-start">
+          <div style="flex:1;min-width:0">
+            <div class="row"><span class="mono" style="font-size:17px;font-weight:var(--mj-font-bold)">${s.number}</span>
+              ${statusChip(s.status)}
+              ${s.autoRenew ? '<span class="mj-chip mj-chip--outline"><i class="fa-solid fa-rotate"></i> auto-renew on</span>'
+                : '<span class="mj-chip mj-chip--outline">auto-renew off</span>'}</div>
+            <div style="margin-top:6px">${p.name} · <span class="muted">${type.name}</span></div>
+          </div>
+          <div class="row" style="gap:var(--mj-space-2)">
+            <button class="mj-btn mj-btn--outline mj-btn--sm" data-open="#sb-cancel">
+              <i class="fa-solid fa-ban"></i> Cancel…</button>
+            <a class="mj-btn mj-btn--outline mj-btn--sm" href="../orders/fast-entry.html">
+              <i class="fa-solid fa-plus"></i> Extend</a>
+          </div>
+        </div>
+
+        <div class="grid-3" style="margin-top:var(--mj-space-4)">
+          <div>
+            <div class="sec-label" style="margin-bottom:3px">Holder — who owns it</div>
+            <div>${s.holder}</div>
+            <div class="small muted">${s.holderKind}</div>
+          </div>
+          <div>
+            <div class="sec-label" style="margin-bottom:3px">Beneficiary — who it is for</div>
+            <div>${s.beneficiary}</div>
+            <div class="small muted">benefit model: ${type.benefitModel}</div>
+          </div>
+          <div>
+            <div class="sec-label" style="margin-bottom:3px">Covered through</div>
+            <div>${F.date(s.endDate)}</div>
+            <div class="small muted">${type.term}-month terms · ${type.billing.toLowerCase()} billing</div>
+          </div>
+        </div>
+
+        <div class="mj-banner mj-banner--info" style="margin-top:var(--mj-space-4)">
+          <i class="fa-solid fa-user-group"></i>
+          <div class="body"><strong>Holder and beneficiary are separate on purpose, and it decides what counts as a
+          duplicate.</strong> This type keys duplicates on the <b>${type.benefitModel === 'Organization' ? 'organization' : '(organization, person) pair'}</b>,
+          so ${type.benefitModel === 'Organization'
+            ? 'a second purchase extends the one organisational membership rather than creating a second.'
+            : 'ten seats for ten staff are ten subscriptions rather than ten collisions.'}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="mj-card" style="margin-top:var(--mj-space-4)">
+      <div class="mj-card-head"><i class="fa-solid fa-timeline"></i><h3>Coverage terms</h3>
+        <span class="right"><span class="mj-chip mj-chip--outline">${all.length} term${all.length === 1 ? '' : 's'}, appended</span></span></div>
+      <div class="mj-card-pad">
+        <div class="mj-timeline">
+          <div class="mj-timeline-track">
+            ${all.map(t => {
+              const l = pos(t.start), w = pos(t.end) - l;
+              const cls = t.status === 'Complete' || t.status === 'Expired' ? 'is-past'
+                : t.status === 'Current' ? 'is-active' : 'is-future';
+              return `<div class="mj-timeline-term ${cls}" style="left:${l}%;width:${w}%"
+                title="Term ${t.n}: ${t.start} – ${t.end}, ${F.money(t.amount)}">Term ${t.n}</div>`;
+            }).join('')}
+            <div class="mj-timeline-now" style="left:${nowPct}%"></div>
+          </div>
+          <div class="mj-timeline-scale">
+            <span>${F.date(all[0].start)}</span><span>${F.date(all.at(-1).end)}</span>
+          </div>
+        </div>
+
+        <table class="mj-table mj-table--compact" style="margin-top:var(--mj-space-3)">
+          <thead><tr><th style="width:40px">#</th><th>Window</th><th style="width:130px">Bought by</th>
+            <th style="width:110px">Status</th><th class="num" style="width:110px">Amount</th></tr></thead>
+          <tbody>
+            ${all.map(t => `<tr>
+              <td class="muted">${t.n}</td>
+              <td>${F.date(t.start)} – ${F.date(t.end)}
+                ${t.prorated ? '<span class="mj-chip mj-chip--warning">prorated</span>' : ''}</td>
+              <td><a class="mono" href="../orders/document.html">${t.orderNumber}</a></td>
+              <td>${statusChip(t.status)}</td>
+              <td class="num">${F.money(t.amount)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+        <div class="small muted" style="margin-top:var(--mj-space-2)">
+          Recognition anchors to the <b>term</b> — the release is caused by time passing over that period. The
+          booking entry stays on the order line, because that was caused by the sale.
+        </div>
+      </div>
+    </div>
+
+    <div class="mj-card" style="margin-top:var(--mj-space-4)">
+      <div class="mj-card-head"><i class="fa-solid fa-chart-line"></i><h3>Revenue recognition</h3>
+        <span class="right"><span class="mj-chip mj-chip--outline">${doneCount} of ${recog.periods} released</span></span></div>
+      <div class="mj-card-pad">
+        <div class="sb-wf">
+          ${Array.from({ length: recog.periods }, (_, i) => {
+            const d = new Date(new Date(recog.start).getFullYear(), new Date(recog.start).getMonth() + i, 1);
+            const done = i < doneCount;
+            return `<div class="${done ? 'is-done' : i === doneCount ? 'is-next' : ''}">
+              <div class="tiny muted">${d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })}</div>
+              <div class="mj-num small strong">${F.money(recog.perPeriod)}</div></div>`;
+          }).join('')}
+        </div>
+        <div class="grid-3" style="margin-top:var(--mj-space-4)">
+          <div><div class="sec-label" style="margin-bottom:3px">Deferred still</div>
+            <div class="mj-num strong" style="font-size:16px">${F.money(r2(recog.total - recog.recognized))}</div></div>
+          <div><div class="sec-label" style="margin-bottom:3px">Released</div>
+            <div class="mj-num strong" style="font-size:16px">${F.money(recog.recognized)}</div></div>
+          <div><div class="sec-label" style="margin-bottom:3px">Per period</div>
+            <div class="mj-num strong" style="font-size:16px">${F.money(recog.perPeriod)}</div></div>
+        </div>
+        <div class="small muted" style="margin-top:var(--mj-space-3)">
+          These are <b>real forward-dated entries written at booking</b>, not a schedule a nightly job materialises.
+          Batches only sweep them when the date filter explicitly reaches forward, so they sit harmlessly until
+          their period arrives. A change nets against them; they are never edited.
+        </div>
+      </div>
+    </div>
+
+    <div class="mj-card" style="margin-top:var(--mj-space-4)">
+      <div class="mj-card-head"><i class="fa-solid fa-clock-rotate-left"></i><h3>History</h3></div>
+      <div class="mj-card-pad">
+        <table class="mj-table mj-table--compact"><tbody>
+          ${s.events.map(e => `<tr>
+            <td style="width:130px">${F.date(e.date)}</td>
+            <td style="width:190px"><span class="mj-chip ${
+              e.kind === 'Cancelled' ? 'mj-chip--error'
+              : e.kind === 'RenewalOrderSpawned' ? 'mj-chip--info'
+              : e.kind === 'Extended' ? 'mj-chip--violet' : 'mj-chip--outline'}">${e.kind}</span></td>
+            <td class="small">${e.detail}</td></tr>`).join('')}
+        </tbody></table>
+        <div class="mock-note">
+          <b>Extended</b> and <b>RenewalOrderSpawned</b> are deliberately different events. The first is the
+          customer buying more coverage; the second is the system renewing them under standing authority. Both
+          append a term, but collapsing them would make retention reporting read every auto-renewal as a fresh sale.
+        </div>
+      </div>
+    </div>`;
+
+  /* cancellation preview */
+  const monthsLeft = Math.max(0, Math.round((new Date(s.endDate) - new Date(DB.today)) / 2629800000));
+  const unused = r2(s.amountPerTerm * (monthsLeft / 12));
+  document.getElementById('sbc-sub').textContent = `${s.number} · ${s.beneficiary}`;
+  document.getElementById('sbc-body').innerHTML = `
+    <div class="grid-2">
+      <div class="mj-field"><label>Cancellation date</label>
+        <input class="mj-input" type="date" value="${DB.today}"></div>
+      <div class="mj-field"><label>Reason</label>
+        <select class="mj-select"><option>Member request</option><option>Non-payment</option>
+          <option>Duplicate</option><option>Left the organization</option></select></div>
+    </div>
+
+    <div class="sec-label" style="margin-top:var(--mj-space-3)">What the policy decides</div>
+    <div class="mj-stated"><span class="muted small" style="width:170px">Cancellation mode</span>
+      <span class="value">${type.cancelMode}</span><span class="from">from ${type.name}</span></div>
+    <div class="mj-stated"><span class="muted small" style="width:170px">Refund policy</span>
+      <span class="value">${type.refundMode}</span><span class="from">from ${type.name}</span></div>
+    <div class="mj-stated"><span class="muted small" style="width:170px">Grace</span>
+      <span class="value">${type.grace} days</span><span class="from">extends access only</span></div>
+
+    <div class="mj-banner mj-banner--info" style="margin-top:var(--mj-space-4)">
+      <i class="fa-solid fa-calculator"></i>
+      <div class="body"><strong>${type.refundMode === 'ProrateUnused'
+        ? `A reversal order for ${F.money(unused)} — roughly ${monthsLeft} unused months.`
+        : 'No refund under this type — coverage runs to the end of the paid term.'}</strong>
+        <div class="small" style="margin-top:4px">${type.refundMode === 'ProrateUnused'
+          ? `Mechanically this is a negative-quantity line of about ${(monthsLeft / 12).toFixed(2)} — correct
+             double-entry and terrible data entry, which is exactly why it is computed from a date and a policy
+             rather than typed.`
+          : 'The member keeps access to the end of the term; the revenue already recognised stays recognised.'}</div>
+      </div>
+    </div>
+
+    <div class="mj-banner mj-banner--warning" style="margin-top:var(--mj-space-3)">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      <div class="body"><strong>Grace extends access, never revenue.</strong> These are different dates. Storing one
+      in place of the other silently revokes a member's access early — which is the kind of bug a customer reports
+      before a report does.</div>
+    </div>
+
+    <div class="mock-note is-api">A preview flag returns this decision without writing anything, which is what
+      makes this screen possible. Confirming emits the reversal order, stamps the term, and logs the event in one
+      transaction. Stubbed.</div>`;
+}
+
+function renderRenewals() {
+  document.getElementById('sb-renewals').innerHTML = DB.renewals.map(r => {
+    const stateChip = {
+      'Spawned': 'mj-chip--success', 'Payment failed': 'mj-chip--error',
+      'Scheduled': 'mj-chip--outline', 'Will not renew': 'mj-chip--outline',
+    }[r.state] || '';
+    return `<tr>
+      <td><a class="mono primary" href="#" onclick="SB.sel('${r.subNumber}');sbTab('subs');return false">${r.subNumber}</a></td>
+      <td><div>${r.beneficiary}</div><div class="secondary">${r.holder}</div></td>
+      <td class="small">${r.product}</td>
+      <td>${F.date(r.termEnds)}</td>
+      <td class="small">${r.leadDays} days</td>
+      <td>${r.spawnOn ? F.date(r.spawnOn) : '<span class="muted">—</span>'}</td>
+      <td class="num">${F.money(r.amount)}</td>
+      <td>${r.autoRenew
+        ? '<span class="mj-chip mj-chip--success"><i class="fa-solid fa-check"></i> on</span>'
+        : '<span class="mj-chip mj-chip--outline">off</span>'}</td>
+      <td><span class="mj-chip ${stateChip}">${r.state}</span>
+        ${r.orderNumber ? `<div class="secondary"><a class="mono" href="../orders/document.html">${r.orderNumber}</a></div>` : ''}
+        ${r.graceEnds ? `<div class="secondary">grace to ${F.dateShort(r.graceEnds)}</div>` : ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+const SB = { sel(n) { SEL = n; render(); } };
+
+function sbTab(v) {
+  document.getElementById('sb-pane-subs').classList.toggle('hidden', v !== 'subs');
+  document.getElementById('sb-pane-renewals').classList.toggle('hidden', v !== 'renewals');
+  document.querySelectorAll('.mj-segmented button').forEach(b =>
+    b.classList.toggle('is-active', b.getAttribute('data-value') === v));
+}
+
+MJ.mount({
+  nav: 'receivables', rail: 'subs',
+  title: 'Subscriptions & renewals',
+  icon: 'fa-solid fa-rotate',
+  subtitle: 'Will it renew, and will it get paid',
+  ready: render,
+});
+</script>
+</body>
+</html>

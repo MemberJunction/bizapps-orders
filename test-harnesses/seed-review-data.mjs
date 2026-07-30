@@ -20,6 +20,12 @@
  *   7  a paid order                 PaymentHeader/PaymentLine and the rollups they drive
  *   8  an overpayment               a negative balance, then spent as account credit on (9)
  *
+ * …then a POPULATION of ~60 more, varied across every axis the engine has: product mix, quantity,
+ * discount level, ship-to jurisdiction, promotion, shipping charge, subscription, event, return and
+ * payment state. Eight labelled scenarios show what each feature does one at a time; the population
+ * is what you look at to see whether the invariants hold across a realistic ledger rather than a
+ * demo. They are the same question the `volume` bundle asks, except these rows stay.
+ *
  * Everything is tagged with a run marker (printed at the end) so it can be found and deleted.
  *
  * Usage:  node test-harnesses/seed-review-data.mjs                 (clears earlier runs first)
@@ -233,7 +239,113 @@ if (paymentType) {
     console.log('  ·· skipped the payment scenarios — no ordinary PaymentType is seeded');
 }
 
-console.log(`\nSeeded ${seeded.length} orders. Fixture marker: ${f.Run}`);
+// ── A VARIED POPULATION ────────────────────────────────────────────────────────────────────────
+// Deliberately NOT sixty copies of one order. Every axis the engine branches on gets varied, because
+// a hundred identical rows prove roughly what one row proves — and the interesting failures live in
+// the combinations (a promotion on a two-company order, tax on a discounted line, a return of a
+// subscription). The mix below is weighted toward plain sales, which is what real ledgers look like.
+const POPULATION = Number(process.env.SEED_POPULATION ?? 60);
+
+const jurisdictions = ['SantaClara', 'NYC', 'SanMateo', undefined];
+const bulkPromo = await promotion({ kind: 'PercentOff', value: 0.15, appliesAt: 'Line' });
+const bulkAmountOff = await promotion({ kind: 'AmountOff', value: 25, appliesAt: 'Order' });
+
+let created = 0;
+let failed = 0;
+const started = Date.now();
+process.stdout.write(`\nPopulating ${POPULATION} more varied orders `);
+
+for (let i = 0; i < POPULATION; i++) {
+    // Deterministic rather than random: a population you cannot reproduce is a population you cannot
+    // ask a question about twice. `i` drives every choice.
+    const shape = i % 10;
+    const addressKey = jurisdictions[i % jurisdictions.length];
+    const spec = {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: i % 3 === 0 ? f.Customers.SecondOrganizationID : f.Customers.OrganizationID,
+        BillToPersonID: i % 7 === 0 ? f.Customers.PersonID : undefined,
+        ShipToAddressID: addressKey ? f.Tax.AddressIDs.get(addressKey) : undefined,
+        Lines: [],
+    };
+
+    switch (shape) {
+        case 0: // two companies on one document
+            spec.Lines = [
+                { ProductID: f.Products.WidgetA, Quantity: (i % 4) + 1 },
+                { ProductID: f.Products.WidgetB, Quantity: (i % 3) + 1 },
+            ];
+            break;
+        case 1: // a discounted line
+            spec.Lines = [{ ProductID: f.Products.WidgetA, Quantity: (i % 5) + 1, DiscountPct: 0.1 }];
+            break;
+        case 2: // a line promotion
+            spec.Lines = [{ ProductID: f.Products.WidgetA, Quantity: (i % 3) + 2 }];
+            spec.PromotionCodes = [bulkPromo];
+            break;
+        case 3: // an order promotion plus shipping
+            spec.Lines = [{ ProductID: f.Products.WidgetA, Quantity: 2 }, { ProductID: f.Products.WidgetB, Quantity: 1 }];
+            spec.PromotionCodes = [bulkAmountOff];
+            spec.Charges = [{ Code: 'Shipping', Amount: 12.5 }];
+            break;
+        case 4: // a subscription
+            spec.Lines = [{ ProductID: f.Products.SubRolling, Quantity: 1 }];
+            break;
+        case 5: // an event ticket
+            spec.Lines = [{ ProductID: f.Products.EventTicket, Quantity: (i % 3) + 1 }];
+            break;
+        case 6: // paid on the spot
+            spec.Lines = [{ ProductID: f.Products.WidgetA, Quantity: 1 }];
+            if (paymentType) {
+                spec.InitialPaymentTypeID = paymentType;
+                spec.InitialPaymentAmount = 300;
+            }
+            break;
+        case 7: // a partial payment, so PartiallyPaid appears in the data
+            spec.Lines = [{ ProductID: f.Products.WidgetA, Quantity: 2 }];
+            if (paymentType) {
+                spec.InitialPaymentTypeID = paymentType;
+                spec.InitialPaymentAmount = 250;
+            }
+            break;
+        case 8: // an awkward quantity, so the rounding paths are represented
+            spec.Lines = [{ ProductID: f.Products.WidgetA, Quantity: 3, DiscountPct: 1 / 3 }];
+            break;
+        default: // the plain sale — the commonest thing, so the commonest row
+            spec.Lines = [{ ProductID: f.Products.WidgetA, Quantity: (i % 6) + 1 }];
+    }
+
+    try {
+        const order = await ConfirmOrder(user, spec);
+        if (!order.Saved) throw new Error(order.Message);
+        created++;
+
+        // Return a unit from roughly one in nine, so returns are a normal part of the ledger rather
+        // than a single showcase row.
+        if (i % 9 === 4 && Number(order.Lines[0].Quantity) > 1) {
+            const back = await ConfirmOrder(user, {
+                CompanyID: f.CoA.ID,
+                OrderType: 'Return',
+                BillToOrganizationID: spec.BillToOrganizationID,
+                ShipToAddressID: spec.ShipToAddressID,
+                Lines: [
+                    {
+                        ProductID: order.Lines[0].ProductID,
+                        Quantity: -1,
+                        ReversesOrderLineID: order.Lines[0].ID,
+                    },
+                ],
+            });
+            if (back.Saved) created++;
+        }
+        process.stdout.write(created % 10 === 0 ? '·' : '');
+    } catch (e) {
+        failed++;
+        if (failed <= 3) console.log(`\n  ·· order ${i} skipped: ${String(e.message).split('\n')[0].slice(0, 120)}`);
+    }
+}
+console.log(`\n${created} population orders committed in ${((Date.now() - started) / 1000).toFixed(1)}s${failed ? `, ${failed} skipped` : ''}.`);
+
+console.log(`\nSeeded ${seeded.length} labelled scenarios plus ${created} population orders. Fixture marker: ${f.Run}`);
 console.log(`\nStart here:\n`);
 console.log(`  SELECT h.OrderNumber, h.OrderType, h.Status, h.TotalGross, h.AmountPaid, h.Balance, h.PaymentStatus,`);
 console.log(`         (SELECT SUM(LineTotalNet) FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = h.ID) AS Net,`);

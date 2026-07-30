@@ -58,7 +58,13 @@ SELECT l.LineNumber, p.Name AS Product, c.Name AS OwningCompany,
   FROM __mj_BizAppsOrders.OrderLine l
   JOIN __mj_BizAppsOrders.Product p ON p.ID = l.ProductID
   JOIN __mj.Company c ON c.ID = l.CompanyID
- WHERE l.OrderHeaderID = (SELECT ID FROM __mj_BizAppsOrders.OrderHeader WHERE OrderNumber = 'ORD-000005')
+ -- Scenario 2, the two-company order. Selected by SHAPE rather than by number: order numbers
+ -- restart from 1 on every rebuild, so a hard-coded 'ORD-000005' goes stale the first time the
+ -- schema changes.
+ WHERE l.OrderHeaderID = (
+         SELECT TOP 1 h.ID FROM __mj_BizAppsOrders.OrderHeader h
+           JOIN __mj_BizAppsOrders.OrderLine l2 ON l2.OrderHeaderID = h.ID
+          GROUP BY h.ID HAVING COUNT(DISTINCT l2.CompanyID) > 1)
  ORDER BY l.LineNumber;
 ```
 
@@ -95,7 +101,10 @@ SELECT gl.Code, gl.Name, c.Name AS Company, jel.DebitAmount, jel.CreditAmount, j
   JOIN __mj_BizAppsAccounting.JournalEntryLine jel ON jel.JournalEntryID = je.ID
   JOIN __mj_BizAppsAccounting.GLAccount gl ON gl.ID = jel.GLAccountID
   JOIN __mj.Company c ON c.ID = gl.CompanyID
- WHERE ol.OrderHeaderID = (SELECT ID FROM __mj_BizAppsOrders.OrderHeader WHERE OrderNumber = 'ORD-000005')
+ WHERE ol.OrderHeaderID = (
+         SELECT TOP 1 h.ID FROM __mj_BizAppsOrders.OrderHeader h
+           JOIN __mj_BizAppsOrders.OrderLine l2 ON l2.OrderHeaderID = h.ID
+          GROUP BY h.ID HAVING COUNT(DISTINCT l2.CompanyID) > 1)
  ORDER BY c.Name, gl.Code;
 ```
 

@@ -16,6 +16,7 @@ export class mjBizAppsOrdersOrderCompanyPolicyFormComponent extends BaseFormComp
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'pricingPolicies', sectionName: 'Pricing Policies', isExpanded: true },
+            { sectionKey: 'pricingDefaults', sectionName: 'Pricing Defaults', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

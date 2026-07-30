@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Products &amp; categories — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  .ct-tree a {
+    display: flex; align-items: center; gap: var(--mj-space-2);
+    padding: 6px var(--mj-space-2); border-radius: var(--mj-radius-sm);
+    color: var(--mj-text-secondary); font-size: 13px;
+  }
+  .ct-tree a:hover { background: var(--mj-bg-surface-hover); text-decoration: none; color: var(--mj-text-primary); }
+  .ct-tree a.is-active {
+    background: color-mix(in srgb, var(--mj-brand-primary) 10%, transparent);
+    color: var(--mj-brand-primary); font-weight: var(--mj-font-semibold);
+  }
+  .ct-tree a .n { margin-left: auto; font-size: 11px; color: var(--mj-text-muted); font-variant-numeric: tabular-nums; }
+  .ct-tree .child { padding-left: var(--mj-space-5); }
+  .ct-collapse { display: flex; align-items: center; gap: 6px; font-size: 11.5px; }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta"><span class="mj-chip mj-chip--outline" id="ct-count">—</span></div>
+
+  <div slot="actions">
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-folder-plus"></i> New category</button>
+    <button class="mj-btn mj-btn--primary" data-open="#ct-prod"><i class="fa-solid fa-plus"></i> New product</button>
+  </div>
+
+  <div slot="toolbar">
+    <div class="mj-search"><i class="fa-solid fa-magnifying-glass"></i>
+      <input id="ct-q" placeholder="Product name or SKU…"></div>
+    <div class="row wrap" data-chips data-on-select="ctType" style="gap:6px">
+      <button class="mj-filter-chip is-active" data-value="all">All types</button>
+      <button class="mj-filter-chip" data-value="T_SUB">Membership</button>
+      <button class="mj-filter-chip" data-value="T_EVENT">Event</button>
+      <button class="mj-filter-chip" data-value="T_PHYS">Physical</button>
+      <button class="mj-filter-chip" data-value="T_SVC">Service</button>
+    </div>
+  </div>
+
+  <div slot="body">
+    <div class="mock-note">
+      The catalog is the <b>behavior root</b>. A product's type decides how its revenue recognizes, whether it is
+      taxable, whether it must ship, and whether it creates a subscription — so getting the catalog right is what
+      makes orders, booking, recognition and tax inherit correct behavior instead of being told it line by line.
+    </div>
+
+    <div class="mj-split mj-split--narrow-left">
+
+      <aside class="left">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-folder-tree"></i><h3>Categories</h3></div>
+          <div class="mj-card-pad" style="padding:var(--mj-space-2)">
+            <div class="ct-tree" id="ct-tree"></div>
+          </div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-layer-group"></i><h3>Product types</h3></div>
+          <div class="mj-card-pad" id="ct-types"></div>
+        </div>
+      </aside>
+
+      <div class="right">
+        <div class="mj-banner mj-banner--info" style="margin-bottom:var(--mj-space-4)">
+          <i class="fa-solid fa-building"></i>
+          <div class="body"><strong>Categories are per company, and identical names collapse in the display.</strong>
+            Three companies each selling publications have three <i>Publications</i> categories — there is no shared
+            registry object. Permissions decide it: company-scoped rows scope cleanly, a shared one does not.
+            <div class="ct-collapse" style="margin-top:6px">
+              <label><input type="checkbox" checked onchange="CT.collapse(this.checked)"> Collapse identical names</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="mj-table-wrap">
+          <table class="mj-table">
+            <thead><tr><th style="width:110px">SKU</th><th>Product</th><th style="width:130px">Type</th>
+              <th style="width:56px">Co.</th><th style="width:150px">Category</th>
+              <th class="num" style="width:110px">List price</th>
+              <th style="width:120px">Behavior</th><th style="width:96px">Status</th></tr></thead>
+            <tbody id="ct-rows" data-on-row="ctOpen" data-single-select></tbody>
+          </table>
+        </div>
+
+        <div class="grid-2" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card">
+            <div class="mj-card-head"><i class="fa-solid fa-sitemap"></i><h3>What a type decides</h3></div>
+            <div class="mj-card-pad">
+              <table class="mj-table mj-table--compact">
+                <thead><tr><th>Type</th><th>Recognition</th><th style="width:80px">Taxable</th>
+                  <th style="width:80px">Ships</th></tr></thead>
+                <tbody>${''}</tbody>
+              </table>
+              <div id="ct-matrix"></div>
+              <div class="small muted" style="margin-top:var(--mj-space-2)">
+                A product may override any of these; nullable at product and category so &ldquo;ask my parent&rdquo;
+                is sayable, and <b>not null at the type</b> so the walk always terminates with a real answer.
+              </div>
+            </div>
+          </div>
+
+          <div class="mj-card">
+            <div class="mj-card-head"><i class="fa-solid fa-puzzle-piece"></i><h3>Type extensions</h3></div>
+            <div class="mj-card-pad small">
+              Some types carry fields no other type needs. An <b>Event</b> product has dates and a venue; a
+              subscription product has a type that governs terms and cadence. Rather than adding columns every
+              product must carry, those live in a shared-key extension row that exists only for that type.
+              <div class="mj-stated" style="margin-top:var(--mj-space-3)">
+                <span class="muted small" style="width:130px">Event products</span>
+                <span class="value">2</span><span class="from">carry their own dates</span></div>
+              <div class="mj-stated"><span class="muted small" style="width:130px">Subscription products</span>
+                <span class="value">2</span><span class="from">carry a subscription type</span></div>
+              <div class="mock-note" style="margin-bottom:0">
+                An event's dates are why a ticket's service period is never hand-typed — a conference already knows
+                when it is, and a typo would book revenue in the wrong period with nothing downstream to disagree.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div slot="overlays">
+    <aside class="mj-slide-in" id="ct-detail">
+      <div class="mj-slide-in-head">
+        <div><h2 id="ctd-title">—</h2><div class="small muted" id="ctd-sub"></div></div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-slide-in-body" id="ctd-body"></div>
+      <div class="mj-slide-in-foot">
+        <button class="mj-btn mj-btn--primary mj-btn--sm" data-close>Save</button>
+        <button class="mj-btn mj-btn--flat mj-btn--sm" data-close>Cancel</button>
+        <a class="mj-btn mj-btn--outline mj-btn--sm spacer" href="pricing.html">Pricing ↗</a>
+      </div>
+    </aside>
+
+    <div class="mj-modal" id="ct-prod">
+      <div class="mj-modal-head">
+        <i class="fa-solid fa-plus" style="color:var(--mj-brand-primary)"></i>
+        <div><h2>New product</h2><div class="small muted">Type first — it decides most of the rest</div></div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-modal-body">
+        <div class="mj-field"><label>Product type</label>
+          <select class="mj-select" id="np-type">
+            ${''}
+          </select>
+          <div class="hint" id="np-hint"></div></div>
+        <div class="grid-2">
+          <div class="mj-field"><label>Name</label><input class="mj-input" placeholder="e.g. Regional Summit Ticket"></div>
+          <div class="mj-field"><label>SKU</label><input class="mj-input" placeholder="CONF-REG"></div>
+          <div class="mj-field"><label>Owning company</label>
+            <select class="mj-select"><option>Sidecar Learning, Inc.</option>
+              <option>Sidecar Events, LLC</option><option>Blue Cypress Media, LLC</option></select>
+            <div class="hint">Revenue accrues to this company — this is what anchors the line's ledger.</div></div>
+          <div class="mj-field"><label>Category</label>
+            <select class="mj-select"><option>Events › Conferences</option><option>Events › Workshops</option>
+              <option>Membership</option><option>Education</option><option>Publications</option></select></div>
+        </div>
+        <div id="np-extra"></div>
+        <div class="mock-note">The dialog is short because the type answers most of the questions. Prompting for
+          recognition, taxability and fulfillment on every product would be asking the user to restate what the
+          type already knows — and to get it wrong.</div>
+      </div>
+      <div class="mj-modal-foot"><span class="right">
+        <button class="mj-btn mj-btn--flat" data-close>Cancel</button>
+        <button class="mj-btn mj-btn--primary" data-close>Create product</button></span></div>
+    </div>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+const H = MJ.H;
+let CAT = null, TYPE = 'all', Q = '', COLLAPSE = true;
+
+function render() {
+  /* category tree — collapsed by identical name when asked */
+  const roots = DB.categories.filter(c => !c.parentID);
+  let items = [];
+  if (COLLAPSE) {
+    const byName = {};
+    roots.forEach(c => { (byName[c.name] = byName[c.name] || []).push(c); });
+    items = Object.entries(byName).map(([name, group]) => ({
+      name, ids: group.map(g => g.id), count: group.reduce((s, g) => s + g.count, 0),
+      companies: group.map(g => g.companyID),
+      children: DB.categories.filter(k => group.some(g => g.id === k.parentID)),
+    }));
+  } else {
+    items = roots.map(c => ({
+      name: `${c.name} · ${DB.companies[c.companyID].abbr}`, ids: [c.id], count: c.count,
+      companies: [c.companyID], children: DB.categories.filter(k => k.parentID === c.id),
+    }));
+  }
+
+  document.getElementById('ct-tree').innerHTML = `
+    <a class="${CAT === null ? 'is-active' : ''}" href="#" onclick="CT.cat(null);return false">
+      <i class="fa-solid fa-boxes-stacked"></i> All products <span class="n">${Object.keys(DB.products).length}</span></a>
+    ${items.map(it => `
+      <a class="${CAT === it.ids.join(',') ? 'is-active' : ''}" href="#"
+         onclick="CT.cat('${it.ids.join(',')}');return false"
+         title="${it.companies.map(c => DB.companies[c].name).join(' · ')}">
+        <i class="fa-solid fa-folder"></i> ${it.name}
+        ${it.ids.length > 1 ? `<span class="mj-chip mj-chip--outline tiny">${it.ids.length} cos</span>` : ''}
+        <span class="n">${it.count}</span></a>
+      ${it.children.map(ch => `
+        <a class="child ${CAT === ch.id ? 'is-active' : ''}" href="#" onclick="CT.cat('${ch.id}');return false">
+          <i class="fa-regular fa-folder"></i> ${ch.name} <span class="n">${ch.count}</span></a>`).join('')}
+    `).join('')}`;
+
+  /* type summary */
+  document.getElementById('ct-types').innerHTML = Object.values(DB.productTypes).map(t => {
+    const n = Object.values(DB.products).filter(p => p.typeID === t.id).length;
+    return `<div class="row" style="padding:5px 0;border-bottom:1px solid var(--mj-border-subtle)">
+      <i class="fa-solid ${t.icon} muted" style="width:18px;text-align:center"></i>
+      <span style="flex:1">${t.name}</span>
+      <span class="small muted mj-num">${n}</span></div>`;
+  }).join('');
+
+  document.getElementById('ct-matrix').innerHTML = `
+    <table class="mj-table mj-table--compact"><tbody>
+      ${Object.values(DB.productTypes).map(t => `<tr>
+        <td><i class="fa-solid ${t.icon} muted"></i> ${t.name}</td>
+        <td class="small">${t.revRec}</td>
+        <td>${t.taxable ? '<span class="mj-chip mj-chip--warning">yes</span>' : '<span class="mj-chip mj-chip--outline">no</span>'}</td>
+        <td>${t.fulfil ? '<span class="mj-chip mj-chip--info">yes</span>' : '<span class="mj-chip mj-chip--outline">no</span>'}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+
+  /* products */
+  const cats = CAT ? CAT.split(',') : null;
+  const rows = Object.values(DB.products).filter(p => {
+    if (TYPE !== 'all' && p.typeID !== TYPE) return false;
+    if (cats && !cats.includes(p.categoryID)) {
+      // include children of a selected root
+      const kids = DB.categories.filter(c => cats.includes(c.parentID)).map(c => c.id);
+      if (!kids.includes(p.categoryID)) return false;
+    }
+    if (Q && !(p.name + ' ' + p.sku).toLowerCase().includes(Q.toLowerCase())) return false;
+    return true;
+  });
+
+  document.getElementById('ct-count').textContent =
+    `${rows.length} of ${Object.keys(DB.products).length} products`;
+
+  document.getElementById('ct-rows').innerHTML = rows.map(p => {
+    const t = DB.productTypes[p.typeID];
+    const cat = DB.categories.find(c => c.id === p.categoryID);
+    const beh = [];
+    if (p.subscriptionType) beh.push('<span class="mj-chip mj-chip--violet">subscription</span>');
+    if (p.event) beh.push('<span class="mj-chip mj-chip--info">event dates</span>');
+    if (t.fulfil) beh.push('<span class="mj-chip mj-chip--outline">ships</span>');
+    if (p.bundle) beh.push('<span class="mj-chip mj-chip--outline">bundle</span>');
+    return `<tr class="is-clickable" data-row="${p.id}">
+      <td class="mono small">${p.sku}</td>
+      <td><span class="primary">${p.name}</span>
+        <div class="secondary">${p.taxCategory}</div></td>
+      <td><i class="fa-solid ${t.icon} muted"></i> ${t.name}</td>
+      <td>${H.company(p.companyID)}</td>
+      <td class="small">${cat ? cat.name : '—'}</td>
+      <td class="num strong">${F.money(p.price)}</td>
+      <td>${beh.join(' ') || '<span class="muted">—</span>'}</td>
+      <td>${p.status === 'Active' ? '<span class="mj-chip mj-chip--success">Active</span>'
+        : `<span class="mj-chip">${p.status}</span>`}</td>
+    </tr>`;
+  }).join('');
+}
+
+const CT = {
+  cat(id) { CAT = id; render(); },
+  collapse(on) { COLLAPSE = on; render(); },
+};
+function ctType(v) { TYPE = v; render(); }
+
+function ctOpen(id) {
+  const p = DB.products[id];
+  const t = DB.productTypes[p.typeID];
+  const cat = DB.categories.find(c => c.id === p.categoryID);
+
+  document.getElementById('ctd-title').textContent = p.name;
+  document.getElementById('ctd-sub').innerHTML =
+    `${p.sku} · ${t.name} · ${DB.companies[p.companyID].name}`;
+
+  const stated = (l, v, from) => `
+    <div class="mj-stated" style="border-bottom:1px solid var(--mj-border-subtle)">
+      <span class="muted small" style="width:150px;flex:none">${l}</span>
+      <span class="value" style="flex:1">${v}</span>
+      ${from ? `<span class="from">${from}</span>` : ''}</div>`;
+
+  document.getElementById('ctd-body').innerHTML = `
+    <div class="grid-2">
+      <div class="mj-field"><label>Name</label><input class="mj-input" value="${p.name}"></div>
+      <div class="mj-field"><label>SKU</label><input class="mj-input" value="${p.sku}"></div>
+      <div class="mj-field"><label>Status</label>
+        <select class="mj-select"><option ${p.status === 'Draft' ? 'selected' : ''}>Draft</option>
+          <option ${p.status === 'Active' ? 'selected' : ''}>Active</option>
+          <option>Discontinued</option><option>End of life</option></select>
+        <div class="hint">One state field, not two — an <i>IsActive</i> flag beside a status invites the
+          &ldquo;which one is authoritative&rdquo; bug.</div></div>
+      <div class="mj-field"><label>List price</label><input class="mj-input is-num" value="${p.price.toFixed(2)}">
+        <div class="hint"><a href="pricing.html">Price rules override this ↗</a></div></div>
+    </div>
+
+    <div class="sec-label" style="margin-top:var(--mj-space-4)">Inherited behavior</div>
+    ${stated('Revenue recognition', t.revRec, `product type ${t.name}`)}
+    ${stated('Taxable', t.taxable ? 'Yes' : 'No', `resolved from ${p.taxableFrom}`)}
+    ${stated('Tax category', p.taxCategory, `resolved from ${p.taxableFrom}`)}
+    ${stated('Requires fulfillment', t.fulfil ? 'Yes' : 'No', `product type ${t.name}`)}
+    ${stated('Owning company', DB.companies[p.companyID].name, 'revenue accrues here')}
+    ${stated('Category', cat ? cat.name : '—', cat ? DB.companies[cat.companyID].abbr + ' only' : '')}
+
+    ${p.subscriptionType ? `
+      <div class="sec-label" style="margin-top:var(--mj-space-4)">Subscription</div>
+      ${stated('Subscription type', p.subscriptionType, 'governs terms, cadence, dedupe')}
+      <div class="small muted">Having a subscription type is what makes this product recurring — there is no
+        separate &ldquo;is recurring&rdquo; flag to contradict it.</div>` : ''}
+
+    ${p.event ? `
+      <div class="sec-label" style="margin-top:var(--mj-space-4)">Event</div>
+      ${stated('Event', p.event.name, 'extension row')}
+      ${stated('Dates', `${F.date(p.event.startsAt)} – ${F.date(p.event.endsAt)}`, 'drives the line service period')}
+      ${stated('Venue', p.event.venue, '')}
+      <div class="mj-banner mj-banner--info" style="margin-top:var(--mj-space-3)">
+        <i class="fa-solid fa-calendar-day"></i>
+        <div class="body">Every ticket line for this product takes its service period from these dates, so
+        recognition lands on the event. A ticket to one day of a three-day conference can still state its own
+        period — an explicit value always wins.</div></div>` : ''}
+
+    ${p.bundle ? `
+      <div class="sec-label" style="margin-top:var(--mj-space-4)">Bundle contents</div>
+      ${p.bundle.map(b => `<div class="row" style="padding:5px 0;border-bottom:1px solid var(--mj-border-subtle)">
+        <i class="fa-solid fa-cube muted"></i> ${b}</div>`).join('')}
+      <div class="small muted" style="margin-top:var(--mj-space-2)">Each component keeps its own recognition and
+        taxability, which is why a bundle's tax category reads <i>Mixed</i> rather than picking one.</div>` : ''}
+
+    <div class="sec-label" style="margin-top:var(--mj-space-4)">GL routing</div>
+    <div class="mj-banner mj-banner--neutral">
+      <i class="fa-solid fa-link"></i>
+      <div class="body">No GL columns live here. Routing is <b>role-based</b> — the product links to accounts by
+      role, and resolution walks product → its category → that category's ancestors → the company default, then
+      <b>fails loudly</b> rather than falling back silently.
+      <div style="margin-top:6px"><a href="#">Manage account links in Accounting ↗</a></div></div>
+    </div>
+
+    <div class="mock-note">Almost everything on this panel is a <b>stated fact with its source</b> rather than an
+      input. Making them all editable fields would invite someone to override behavior at the product level that
+      the type is already answering correctly.</div>`;
+
+  MJ.open('#ct-detail');
+}
+
+MJ.mount({
+  nav: 'catalog', rail: 'products',
+  title: 'Products & categories',
+  icon: 'fa-solid fa-boxes-stacked',
+  subtitle: 'The behavior root — type decides recognition, tax, fulfillment and recurrence',
+  ready() {
+    render();
+    document.getElementById('ct-q').addEventListener('input', e => { Q = e.target.value; render(); });
+    /* fill the new-product dialog from the type table */
+    document.getElementById('np-type').innerHTML = Object.values(DB.productTypes)
+      .map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+    const sync = () => {
+      const t = DB.productTypes[document.getElementById('np-type').value];
+      document.getElementById('np-hint').innerHTML =
+        `Recognizes: <b>${t.revRec}</b> · ${t.taxable ? 'taxable' : 'untaxable'} ·
+         ${t.fulfil ? 'requires fulfillment' : 'nothing to ship'}`;
+      document.getElementById('np-extra').innerHTML =
+        t.id === 'T_EVENT' ? `<div class="sec-label">Event details — this type carries its own</div>
+          <div class="grid-2"><div class="mj-field"><label>Starts</label><input class="mj-input" type="date"></div>
+          <div class="mj-field"><label>Ends</label><input class="mj-input" type="date"></div></div>`
+        : t.id === 'T_SUB' ? `<div class="sec-label">Subscription</div>
+          <div class="mj-field"><label>Subscription type</label>
+            <select class="mj-select">${DB.subscriptionTypes.map(s => `<option>${s.name}</option>`).join('')}</select>
+            <div class="hint">Governs term length, cadence, concurrency, cancellation and grace.</div></div>`
+        : '';
+    };
+    document.getElementById('np-type').addEventListener('change', sync);
+    sync();
+  },
+});
+</script>
+</body>
+</html>

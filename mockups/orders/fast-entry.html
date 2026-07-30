@@ -1,0 +1,872 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fast entry — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  /* Screen-local layout only. Every color comes from tokens. */
+  .fe-wrap { display: flex; gap: var(--mj-space-6); align-items: flex-start; }
+  .fe-main { flex: 1 1 auto; max-width: 760px; min-width: 0; }
+  .fe-rail { flex: 0 0 340px; position: sticky; top: 0; }
+  @media (max-width: 1180px) {
+    .fe-wrap { flex-direction: column; }
+    .fe-main, .fe-rail { max-width: none; width: 100%; position: static; flex: 1 1 auto; }
+  }
+  .fe-step { margin-bottom: var(--mj-space-6); }
+  .fe-step-head { display: flex; align-items: center; gap: var(--mj-space-2); margin-bottom: var(--mj-space-3); }
+  .fe-step-n {
+    width: 20px; height: 20px; border-radius: var(--mj-radius-full); flex: none;
+    background: var(--mj-brand-primary); color: var(--mj-brand-on-primary);
+    font-size: 11px; font-weight: var(--mj-font-bold);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .fe-step.is-done .fe-step-n { background: var(--mj-status-success); }
+  .fe-step-t { font-size: 13px; font-weight: var(--mj-font-semibold); }
+  .fe-step-hint { font-size: 11.5px; color: var(--mj-text-muted); margin-left: auto; }
+
+  /* Customer card — what the order taker needs to know before quoting */
+  .fe-cust { display: flex; align-items: flex-start; gap: var(--mj-space-4); padding: var(--mj-space-4); }
+  .fe-cust .who { flex: 1; min-width: 0; }
+  .fe-cust .nm { font-size: 15px; font-weight: var(--mj-font-semibold); }
+  .fe-cust .money-facts { display: flex; gap: var(--mj-space-6); flex: none; text-align: right; }
+  .fe-cust .money-facts .l { font-size: 10px; font-weight: var(--mj-font-bold); letter-spacing: .06em;
+    text-transform: uppercase; color: var(--mj-text-muted); }
+  .fe-cust .money-facts .v { font-size: 15px; font-weight: var(--mj-font-semibold); font-variant-numeric: tabular-nums; }
+
+  .fe-tender { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: var(--mj-space-2); }
+  .fe-tender button {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    padding: var(--mj-space-3); border-radius: var(--mj-radius-md); cursor: pointer;
+    border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface);
+    font-family: inherit; text-align: left; color: var(--mj-text-primary);
+  }
+  .fe-tender button:hover { border-color: var(--mj-border-strong); background: var(--mj-bg-surface-hover); }
+  .fe-tender button.is-active {
+    border-color: var(--mj-brand-primary); background: color-mix(in srgb, var(--mj-brand-primary) 8%, transparent);
+  }
+  .fe-tender .t { font-size: 12.5px; font-weight: var(--mj-font-semibold); display: flex; align-items: center; gap: 6px; }
+  .fe-tender .s { font-size: 11px; color: var(--mj-text-muted); }
+  .fe-tender button.is-active .t { color: var(--mj-brand-primary); }
+
+  .fe-footer {
+    position: sticky; bottom: 0; margin: var(--mj-space-6) calc(-1 * var(--mj-space-6)) 0;
+    padding: var(--mj-space-3) var(--mj-space-6);
+    background: var(--mj-bg-surface); border-top: 1px solid var(--mj-border-default);
+    display: flex; align-items: center; gap: var(--mj-space-3); flex-wrap: wrap;
+  }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta">
+    <span class="mj-chip">Draft</span>
+    <span class="mj-chip mj-chip--outline"><i class="fa-solid fa-user"></i> Staff entry</span>
+  </div>
+
+  <div slot="actions">
+    <a class="mj-btn mj-btn--outline" href="editor.html"><i class="fa-solid fa-pen-ruler"></i> Open in full editor</a>
+    <button class="mj-btn mj-btn--primary" data-open="#preflight"><i class="fa-solid fa-check"></i> Confirm order</button>
+  </div>
+
+  <div slot="body">
+    <div class="fe-wrap">
+
+      <!-- ══════════════════ MAIN COLUMN ══════════════════ -->
+      <div class="fe-main">
+
+        <div class="mock-note">
+          The fast lane covers the common order — one customer, a few products, one tender — in a single
+          column with no tabs. Everything the engine computes appears as you type (right rail); nothing is
+          discovered at Confirm. Escalating to the full editor keeps this draft intact.
+        </div>
+
+        <!-- ── 1 · WHO ─────────────────────────────────────── -->
+        <section class="fe-step is-done" id="step-who">
+          <div class="fe-step-head">
+            <span class="fe-step-n"><i class="fa-solid fa-check"></i></span>
+            <span class="fe-step-t">Who is this for?</span>
+            <span class="fe-step-hint">Bill-to party</span>
+          </div>
+
+          <div class="mj-card">
+            <div class="fe-cust">
+              <span class="mj-avatar" style="width:38px;height:38px;font-size:13px">JC</span>
+              <div class="who">
+                <div class="nm">Jane Chen</div>
+                <div class="small muted">Director of Education · jane.chen@meridian.org</div>
+                <div class="row wrap" style="margin-top:var(--mj-space-2);gap:6px">
+                  <span class="mj-chip mj-chip--outline"><i class="fa-solid fa-building"></i> Meridian Association</span>
+                  <span class="mj-chip mj-chip--outline">Net 30</span>
+                  <span class="mj-consequence">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    Organization inferred from her <b>Employee</b> affiliation since Mar 2019
+                    <button class="mj-why" data-why="#why-org"><i class="fa-solid fa-circle-question"></i></button>
+                  </span>
+                </div>
+                <div class="mj-why-body hidden" id="why-org">
+                  A person has no organization column. Affiliation is a dated relationship, so
+                  &ldquo;which org did they belong to&rdquo; is point-in-time and is <b>stamped at order time</b>,
+                  never derived on read — otherwise a booked order's history would silently rewrite itself
+                  when someone changes employer.
+                  <ul>
+                    <li>Qualifying relationship types: <code>Employee</code> (a setting, not a constant)</li>
+                    <li>One qualifying affiliation found → used</li>
+                    <li>A stated organization always wins; inference only ever adds</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="money-facts">
+                <div>
+                  <div class="l">Open balance</div>
+                  <div class="v">$7,076.77</div>
+                  <a class="small" href="../receivables/aging.html">1 overdue ↗</a>
+                </div>
+                <div>
+                  <div class="l">Credit</div>
+                  <div class="v mj-money--muted">—</div>
+                  <div class="small muted">none</div>
+                </div>
+              </div>
+              <button class="mj-iconbtn" title="Change customer"><i class="fa-solid fa-pen"></i></button>
+            </div>
+          </div>
+          <div class="mock-note">
+            Deliberate: the customer's <b>money situation appears before anything is quoted</b>. A 44-day-overdue
+            invoice is something the order taker should know while the customer is still on the phone — not after
+            the order books.
+          </div>
+        </section>
+
+        <!-- ── 2 · WHAT ────────────────────────────────────── -->
+        <section class="fe-step" id="step-what">
+          <div class="fe-step-head">
+            <span class="fe-step-n">2</span>
+            <span class="fe-step-t">What are they buying?</span>
+            <span class="fe-step-hint"><kbd>↵</kbd> to add · <kbd>↵</kbd> on an empty field to move on</span>
+          </div>
+
+          <div id="fe-lines"></div>
+
+          <div class="mj-typeahead" style="margin-top:var(--mj-space-3)">
+            <div class="mj-search" style="min-width:0">
+              <i class="fa-solid fa-plus"></i>
+              <input id="fe-prod" type="text" placeholder="Add product — type a name or SKU…" autocomplete="off">
+              <kbd>/</kbd>
+            </div>
+            <div class="mj-typeahead-list" id="fe-prod-list"></div>
+          </div>
+        </section>
+
+        <!-- ── 3 · ADJUSTMENTS ─────────────────────────────── -->
+        <section class="fe-step" id="step-adj">
+          <div class="fe-step-head">
+            <span class="fe-step-n">3</span>
+            <span class="fe-step-t">Codes &amp; dates</span>
+            <span class="fe-step-hint">Optional</span>
+          </div>
+
+          <div class="mj-card mj-card-pad">
+            <div class="grid-2">
+              <div>
+                <label class="mj-field">
+                  <label>Promotion code</label>
+                  <div class="row">
+                    <input class="mj-input" id="fe-code" placeholder="e.g. MEMBER40" autocomplete="off">
+                    <button class="mj-btn mj-btn--outline" onclick="FE.addCode()">Apply</button>
+                  </div>
+                </label>
+                <div id="fe-codes" class="row wrap" style="gap:6px"></div>
+              </div>
+              <div>
+                <label class="mj-field">
+                  <label>Order date</label>
+                  <input class="mj-input" type="date" value="2026-07-29">
+                  <div class="hint">Backdating is allowed and unguarded — the entry bears this date.</div>
+                </label>
+              </div>
+            </div>
+            <div class="mj-stated" style="border-top:1px solid var(--mj-border-subtle);margin-top:var(--mj-space-2);padding-top:var(--mj-space-3)">
+              <span class="muted small" style="width:120px">Ship to</span>
+              <span class="value">1180 Wilshire Blvd, Apt 12B, Los Angeles, CA 90017</span>
+              <span class="from">from Jane Chen's default address</span>
+              <button class="mj-btn mj-btn--flat mj-btn--sm spacer">Change</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── 4 · TENDER ──────────────────────────────────── -->
+        <section class="fe-step" id="step-pay">
+          <div class="fe-step-head">
+            <span class="fe-step-n">4</span>
+            <span class="fe-step-t">How are they paying?</span>
+            <span class="fe-step-hint">Records intent — the payment is created on confirm</span>
+          </div>
+
+          <div class="fe-tender" id="fe-tender">
+            <button class="is-active" data-tender="terms">
+              <span class="t"><i class="fa-solid fa-file-invoice"></i> Invoice</span>
+              <span class="s">Net 30 · due Aug 28</span>
+            </button>
+            <button data-tender="onfile">
+              <span class="t"><i class="fa-brands fa-cc-visa"></i> Card on file</span>
+              <span class="s">Visa ···· 4118 · exp 08/29</span>
+            </button>
+            <button data-tender="newcard">
+              <span class="t"><i class="fa-solid fa-credit-card"></i> New card</span>
+              <span class="s">Hosted tokenization</span>
+            </button>
+            <button data-tender="check">
+              <span class="t"><i class="fa-solid fa-money-check"></i> Check</span>
+              <span class="s">Reference required</span>
+            </button>
+            <button data-tender="credit" disabled title="This customer has no available credit">
+              <span class="t"><i class="fa-solid fa-piggy-bank"></i> Account credit</span>
+              <span class="s">$0.00 available</span>
+            </button>
+          </div>
+
+          <div class="mock-note is-api">
+            The choice writes the order's initial-payment <b>intent</b> (type + amount + instrument snapshot).
+            <code>Orders.ConfirmOrder</code> turns it into a real PaymentHeader + PaymentLine inside the same
+            transaction as the booking, so a failed card never leaves a confirmed-but-unpaid order behind.
+          </div>
+        </section>
+      </div>
+
+      <!-- ══════════════════ DECOMPOSITION RAIL ══════════════════ -->
+      <aside class="fe-rail">
+        <div class="mj-card">
+          <div class="mj-card-head">
+            <i class="fa-solid fa-calculator"></i>
+            <h3>What this order comes to</h3>
+            <span class="right"><span class="mj-chip mj-chip--outline" id="fe-live">live</span></span>
+          </div>
+          <div class="mj-card-pad">
+            <div class="mj-ladder" id="fe-ladder"></div>
+          </div>
+          <div style="border-top:1px solid var(--mj-border-default);padding:var(--mj-space-3) var(--mj-space-4)">
+            <div class="row" style="justify-content:space-between">
+              <span class="small muted">Due now</span>
+              <span class="mj-num strong" id="fe-duenow">—</span>
+            </div>
+            <div class="row" style="justify-content:space-between;margin-top:4px">
+              <span class="small muted">Due <span id="fe-duedate">Aug 28, 2026</span></span>
+              <span class="mj-num" id="fe-duelater">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mock-note">
+          Every row here is engine output, refreshed as you type — the same pipeline that will run on save,
+          never a parallel copy of the arithmetic. Expand any row to see the rule that produced it.
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head">
+            <i class="fa-solid fa-scale-balanced"></i><h3>Will book to</h3>
+          </div>
+          <div class="mj-card-pad small" id="fe-books"></div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- ── keyboard strip ── -->
+    <div class="fe-footer">
+      <button class="mj-btn mj-btn--outline"><i class="fa-regular fa-floppy-disk"></i> Save draft</button>
+      <button class="mj-btn mj-btn--primary" data-open="#preflight"><i class="fa-solid fa-check"></i> Confirm order</button>
+      <div class="mj-keys spacer">
+        <span><kbd>/</kbd> add product</span>
+        <span><kbd>↵</kbd> commit</span>
+        <span><kbd>⌥</kbd><kbd>↑↓</kbd> move line</span>
+        <span><kbd>⌘</kbd><kbd>S</kbd> save draft</span>
+        <span><kbd>⌘</kbd><kbd>↵</kbd> confirm</span>
+        <span><kbd>Esc</kbd> close</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ CONFIRM PRE-FLIGHT ══════════════════ -->
+  <div slot="overlays">
+    <div class="mj-modal mj-modal--wide" id="preflight">
+      <div class="mj-modal-head">
+        <i class="fa-solid fa-clipboard-check" style="color:var(--mj-brand-primary)"></i>
+        <div>
+          <h2>Before this books</h2>
+          <div class="small muted">Confirming is the irreversible step — after it, corrections are reversing orders.</div>
+        </div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-modal-body" id="pf-body"></div>
+      <div class="mj-modal-foot">
+        <span class="small muted"><i class="fa-solid fa-lock"></i> All of it commits together, or none of it does.</span>
+        <span class="right">
+          <button class="mj-btn mj-btn--flat" data-close>Back to editing</button>
+          <button class="mj-btn mj-btn--primary" id="pf-go"><i class="fa-solid fa-check"></i> Confirm &amp; book</button>
+        </span>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+/* ============================================================================
+   FE — fast entry.
+   The calculation below mirrors the engine's real order of operations so the
+   rail is honest: line promos, then order promos allocated to lines, then
+   non-tax charges enlarge the taxable base, then every tax layer computes on
+   THAT SAME base (layers never compound).
+
+   In the build this is one call to Orders.PreviewOrder, not client arithmetic.
+   ============================================================================ */
+const FE = (() => {
+
+  const state = {
+    lines: [
+      { productID: 'PR1', qty: 1, unitPrice: 1200.00 },
+      { productID: 'PR5', qty: 5, unitPrice: 80.00 },
+    ],
+    codes: ['SPRING10'],
+    tender: 'terms',
+    shipRegion: 'CA',
+  };
+
+  /* ── the engine, in miniature ──────────────────────────────────────────── */
+  function compute() {
+    const r2 = n => Math.round(n * 100) / 100;
+
+    const lines = state.lines.map((l, i) => {
+      const p = DB.products[l.productID];
+      const t = DB.productTypes[p.typeID];
+      return {
+        i, ...l, product: p, type: t,
+        list: r2(l.qty * l.unitPrice),
+        linePromos: [], orderPromoShare: 0,
+        taxable: t.taxable, fulfil: t.fulfil,
+      };
+    });
+
+    // 1 — line-scoped promotions
+    const applied = [], offered = [];
+    state.codes.forEach(code => {
+      const pm = DB.promotions.find(x => x.code === code);
+      if (!pm) return;
+      if (pm.scope !== 'Line') return;
+      const hits = lines.filter(l => matches(pm, l));
+      if (!hits.length) {
+        offered.push({ ...pm, why: `No line matches ${pm.target}` });
+        return;
+      }
+      hits.forEach(l => {
+        const amt = pm.kind === 'Percent' ? r2(l.list * pm.value) : r2(Math.min(pm.value, l.list));
+        l.linePromos.push({ code: pm.code, name: pm.name, amount: amt, basis: l.list, value: pm.value, kind: pm.kind });
+      });
+      applied.push({ ...pm, amount: r2(hits.reduce((s, l) => s + l.linePromos.at(-1).amount, 0)),
+                     basis: r2(hits.reduce((s, l) => s + l.list, 0)) });
+    });
+
+    const afterLine = r2(lines.reduce((s, l) => s + l.list - sum(l.linePromos), 0));
+
+    // 2 — order-scoped promotions, sequential on the post-line-promo subtotal,
+    //     then ALLOCATED to lines (an order-level discount must reach the lines
+    //     because tax and GL operate on line amounts).
+    state.codes.forEach(code => {
+      const pm = DB.promotions.find(x => x.code === code);
+      if (!pm || pm.scope !== 'Order') return;
+      if (afterLine < 250) { offered.push({ ...pm, why: 'Order subtotal is under $250.00' }); return; }
+      const amt = pm.kind === 'Percent' ? r2(afterLine * pm.value) : r2(Math.min(pm.value, afterLine));
+      let left = amt;
+      lines.forEach((l, idx) => {
+        const own = r2(l.list - sum(l.linePromos));
+        const share = idx === lines.length - 1 ? left : r2(amt * (own / afterLine));
+        l.orderPromoShare = r2(l.orderPromoShare + share);
+        left = r2(left - share);
+      });
+      applied.push({ ...pm, amount: amt, basis: afterLine });
+    });
+
+    lines.forEach(l => { l.net = r2(l.list - sum(l.linePromos) - l.orderPromoShare); });
+
+    const net = r2(lines.reduce((s, l) => s + l.net, 0));
+    const promoTotal = r2(lines.reduce((s, l) => s + sum(l.linePromos) + l.orderPromoShare, 0));
+    const listTotal = r2(lines.reduce((s, l) => s + l.list, 0));
+
+    // 3 — non-tax charges. Shipping applies once when anything must ship.
+    const charges = [];
+    if (lines.some(l => l.fulfil)) {
+      charges.push({ name: 'Shipping', typeID: 'CH1', basis: 'Flat per order', amount: 25.00, isTax: false });
+    }
+    const nonTaxCharges = r2(charges.reduce((s, c) => s + c.amount, 0));
+
+    // 4 — the taxable base: taxable line nets PLUS non-tax charges.
+    const taxableGoods = r2(lines.filter(l => l.taxable).reduce((s, l) => s + l.net, 0));
+    const taxBase = r2(taxableGoods + (taxableGoods > 0 ? nonTaxCharges : 0));
+
+    // 5 — every layer on the SAME base. This is what "tax does not compound" means.
+    const layers = [];
+    if (state.shipRegion === 'CA' && taxBase > 0) {
+      DB.chargeTypes.filter(c => c.isTax && c.active).forEach(c => {
+        layers.push({ name: c.name, jurisdiction: c.jurisdiction, rate: c.rate,
+                      base: taxBase, amount: r2(taxBase * c.rate) });
+      });
+    }
+    const tax = r2(layers.reduce((s, l) => s + l.amount, 0));
+    const gross = r2(net + nonTaxCharges + tax);
+
+    return { lines, applied, offered, listTotal, promoTotal, net, charges, nonTaxCharges,
+             taxableGoods, taxBase, layers, tax, gross };
+
+    function sum(a) { return a.reduce((s, x) => s + x.amount, 0); }
+    function matches(pm, l) {
+      if (pm.target.startsWith('Category:')) {
+        const cat = DB.categories.find(c => c.id === l.product.categoryID);
+        return cat && pm.target.includes(cat.name);
+      }
+      if (pm.target.startsWith('Product:')) return pm.target.includes(l.product.name);
+      return true;
+    }
+  }
+
+  /* ── render: line cards ───────────────────────────────────────────────── */
+  function renderLines(c) {
+    const host = document.getElementById('fe-lines');
+    if (!c.lines.length) {
+      host.innerHTML = `<div class="mj-empty" style="padding:var(--mj-space-8)">
+        <i class="fa-solid fa-cart-plus"></i><div class="t">Nothing on this order yet</div>
+        <div class="small">Search the catalog below to add the first line.</div></div>`;
+      return;
+    }
+    host.innerHTML = c.lines.map(l => {
+      const promo = l.linePromos.map(p =>
+        `<span class="mj-consequence"><i class="fa-solid fa-percent"></i> ${p.code} · −${F.money(p.amount)}</span>`).join('');
+      const orderShare = l.orderPromoShare > 0
+        ? `<span class="mj-consequence"><i class="fa-solid fa-arrows-split-up-and-left"></i> order promo allocated · −${F.money(l.orderPromoShare)}</span>` : '';
+
+      const conseq = [];
+      if (l.product.subscriptionType) {
+        conseq.push(`<span class="mj-consequence is-sub"><i class="fa-solid fa-rotate"></i>
+          Extends Jane Chen's membership through <b>Jul 31, 2028</b></span>`);
+      }
+      if (l.product.event) {
+        conseq.push(`<span class="mj-consequence is-event"><i class="fa-solid fa-calendar-day"></i>
+          Recognizes ${F.date(l.product.event.startsAt)} — from the event, not typed</span>`);
+      }
+      if (l.type.revRec.startsWith('Ratable')) {
+        conseq.push(`<span class="mj-consequence is-defer"><i class="fa-solid fa-hourglass-half"></i>
+          Deferred · 12 monthly entries of ${F.money(l.net / 12)}</span>`);
+      }
+      if (l.fulfil) {
+        conseq.push(`<span class="mj-consequence"><i class="fa-solid fa-dolly"></i> Ships — holds the order until fulfilled</span>`);
+      }
+      if (!l.taxable) {
+        conseq.push(`<span class="mj-consequence"><i class="fa-solid fa-ban"></i> Untaxable · ${l.product.taxCategory} <span class="muted">(from ${l.product.taxableFrom})</span></span>`);
+      }
+      conseq.push(`<span class="mj-consequence"><i class="fa-solid fa-building"></i> Revenue to ${DB.companies[l.product.companyID].short}</span>`);
+
+      return `
+      <div class="mj-linecard">
+        <div class="mj-linecard-top">
+          <div class="id">
+            <div class="nm">${l.product.name}</div>
+            <div class="mt">${l.product.sku} · ${l.type.name}</div>
+          </div>
+          <div class="qty">
+            <div class="mj-stepper-num">
+              <button onclick="FE.bump(${l.i},-1)" title="Less">−</button>
+              <input value="${F.qty(l.qty)}" onchange="FE.setQty(${l.i}, this.value)">
+              <button onclick="FE.bump(${l.i},1)" title="More">+</button>
+            </div>
+          </div>
+          <div class="price">
+            <div class="mj-num">${F.money(l.unitPrice)}</div>
+            <button class="mj-why" data-why="#why-price-${l.i}" style="font-size:10.5px">
+              <i class="fa-solid fa-tag"></i> ${l.priceSourceLabel || 'Standard'} ▾
+            </button>
+          </div>
+          <div class="tot mj-num">${F.money(l.net)}</div>
+          <button class="mj-iconbtn" onclick="FE.remove(${l.i})" title="Remove line"><i class="fa-regular fa-trash-can"></i></button>
+        </div>
+
+        <div class="mj-why-body hidden" id="why-price-${l.i}">
+          <b>${F.money(l.unitPrice)}</b> resolved by walking the same hierarchy GL accounts use:
+          <ol>
+            <li><b>Product</b> — ${l.product.name} → price list <code>Standard</code>, rule
+                <code>${DB.productPrices.find(p => p.productID === l.productID)?.model || 'Flat'}</code> ✓ matched</li>
+            <li>Its category (${DB.categories.find(c => c.id === l.product.categoryID)?.name}) — not reached</li>
+            <li>Category ancestors — not reached</li>
+            <li>Company default — not reached</li>
+          </ol>
+          Typing over this box wins outright and the badge flips to <i>overridden</i>. Ties between rules
+          of equal priority are refused when the price is <i>saved</i>, never silently picked here.
+        </div>
+
+        <div class="mj-linecard-conseq">${promo}${orderShare}${conseq.join('')}</div>
+      </div>`;
+    }).join('');
+  }
+
+  /* ── render: decomposition ladder ─────────────────────────────────────── */
+  function renderLadder(c) {
+    const rows = [];
+
+    rows.push(row('Subtotal', c.listTotal, {
+      why: `${c.lines.length} line${c.lines.length === 1 ? '' : 's'} at resolved prices, before any discount.`,
+    }));
+
+    c.applied.forEach(p => {
+      rows.push(row(`${p.code} <span class="muted">· ${p.scope.toLowerCase()}</span>`, -p.amount, {
+        cls: 'is-sub is-discount',
+        why: `<b>${p.name}</b> — ${p.kind === 'Percent' ? F.pct(p.value) + ' of ' + F.money(p.basis) : F.money(p.value) + ' fixed'}
+              ${p.scope === 'Order' ? '<br>Order-level, so it is <b>allocated onto the lines</b> — tax and GL both operate on line amounts.' : ''}`,
+      }));
+    });
+
+    c.offered.forEach(p => {
+      rows.push(`<div class="mj-ladder-row is-sub">
+        <span class="label"><i class="fa-solid fa-circle-minus" style="color:var(--mj-text-disabled)"></i>
+          ${p.code} <span class="muted">offered, not applied</span>
+          ${MJ.H.why('why-off-' + p.code, p.why)}</span>
+        <span class="amt muted">—</span></div>`);
+    });
+
+    if (c.promoTotal > 0) {
+      rows.push(row('<b>Net after discounts</b>', c.net, { cls: 'is-strongish' }));
+    }
+
+    c.charges.forEach(ch => {
+      rows.push(row(ch.name, ch.amount, {
+        why: `Charge type <b>${ch.name}</b>, basis <code>${ch.basis}</code>. Computed, never hand-typed —
+              but overridable on the record, which stores who, when, why, and the value it replaced.`,
+      }));
+    });
+
+    if (c.layers.length) {
+      rows.push(`<div class="mj-ladder-row"><span class="label">Tax
+        ${MJ.H.why('why-tax', `Three jurisdiction layers, each computing on the <b>same</b> base of
+          ${F.money(c.taxBase)} — taxable goods ${F.money(c.taxableGoods)} plus non-tax charges
+          ${F.money(c.nonTaxCharges)}.<br><br>
+          <b>Tax layers never compound.</b> A non-tax charge enlarges the taxable base; a tax charge does not.
+          That is why all three rows below share one base instead of stacking on each other.`)}</span>
+        <span class="amt">${F.money(c.tax)}</span></div>`);
+      c.layers.forEach(l => {
+        rows.push(`<div class="mj-ladder-row is-sub">
+          <span class="label">${l.name} <span class="muted">${F.rate(l.rate)} on ${F.money(l.base)}</span></span>
+          <span class="amt">${F.money(l.amount)}</span></div>`);
+      });
+    } else {
+      rows.push(`<div class="mj-ladder-row"><span class="label">Tax
+        ${MJ.H.why('why-notax', `A zero always records <b>which</b> of four reasons produced it: untaxable,
+          no nexus, exempt, or no jurisdiction. Here: every line's tax category is non-taxable.`)}</span>
+        <span class="amt muted">$0.00</span></div>`);
+    }
+
+    rows.push(`<div class="mj-ladder-row is-total"><span class="label">Total</span>
+      <span class="amt">${F.money(c.gross)}</span></div>`);
+
+    document.getElementById('fe-ladder').innerHTML = rows.join('') + `
+      <div class="mj-ladder-note"><i class="fa-solid fa-circle-info"></i>
+        <span>Subtotal ${F.money(c.listTotal)} − discounts ${F.money(c.promoTotal)}
+        + charges ${F.money(c.nonTaxCharges)} + tax ${F.money(c.tax)} = <b>${F.money(c.gross)}</b></span></div>`;
+
+    function row(label, amt, o = {}) {
+      return `<div class="mj-ladder-row ${o.cls || ''}">
+        <span class="label">${label}${o.why ? MJ.H.why('why-' + Math.random().toString(36).slice(2, 8), o.why) : ''}</span>
+        <span class="amt">${F.money(amt)}</span></div>`;
+    }
+  }
+
+  /* ── render: due now / due later + booking preview ────────────────────── */
+  function renderTails(c) {
+    const now = state.tender === 'terms' ? 0 : c.gross;
+    document.getElementById('fe-duenow').textContent = F.money(now);
+    document.getElementById('fe-duelater').textContent = F.money(c.gross - now);
+    document.getElementById('fe-duenow').className = 'mj-num strong' + (now > 0 ? '' : ' mj-money--muted');
+
+    const byCo = {};
+    c.lines.forEach(l => {
+      const id = l.product.companyID;
+      byCo[id] = byCo[id] || { net: 0, tax: 0, charges: 0 };
+      byCo[id].net += l.net;
+      byCo[id].tax += c.layers.length && l.taxable ? c.tax : 0;
+    });
+    // shipping sits with the company that owns the shipped line
+    const shipCo = c.lines.find(l => l.fulfil)?.product.companyID;
+    if (shipCo && byCo[shipCo]) byCo[shipCo].charges += c.nonTaxCharges;
+
+    document.getElementById('fe-books').innerHTML = Object.entries(byCo).map(([id, v]) => {
+      const co = DB.companies[id];
+      const total = Math.round((v.net + v.tax + v.charges) * 100) / 100;
+      return `<div style="padding:6px 0;border-bottom:1px solid var(--mj-border-subtle)">
+        <div class="row"><b>${co.short}</b><span class="spacer mj-num strong">${F.money(total)}</span></div>
+        <div class="muted tiny">1 entry · Dr A/R ${F.money(total)} · Cr ${DB.glRoles[id].Sales.split(' · ')[1]}${v.tax ? ' + tax payable' : ''}</div>
+      </div>`;
+    }).join('') + `<div class="muted tiny" style="padding-top:var(--mj-space-2)">
+      One entry <b>per line</b>, each single-company and balanced. The order's &ldquo;journal entry&rdquo; is a view over them.</div>`;
+  }
+
+  /* ── pre-flight body, built from the same computation ─────────────────── */
+  function renderPreflight(c) {
+    const subs = c.lines.filter(l => l.product.subscriptionType);
+    const events = c.lines.filter(l => l.product.event);
+    const ships = c.lines.filter(l => l.fulfil);
+
+    const jes = [];
+    c.lines.forEach(l => {
+      const id = l.product.companyID, g = DB.glRoles[id];
+      const deferred = l.type.revRec.startsWith('Ratable') || l.product.event;
+      const lineTax = (c.layers.length && l.taxable) ? c.tax : 0;
+      const lineCharge = l.fulfil ? c.nonTaxCharges : 0;
+      const promoOff = l.list - l.net;
+      const dr = l.net + lineTax + lineCharge;
+      const rows = [`<tr><td>Dr</td><td>${g.AR}</td><td class="num">${F.money(dr)}</td></tr>`];
+      if (promoOff > 0) rows.push(`<tr><td>Dr</td><td>${g.Discounts}</td><td class="num">${F.money(promoOff)}</td></tr>`);
+      rows.push(`<tr><td>Cr</td><td>${deferred ? g.Deferred : g.Sales}</td><td class="num">${F.money(l.list)}</td></tr>`);
+      if (lineCharge) rows.push(`<tr><td>Cr</td><td>4035 · Shipping Income</td><td class="num">${F.money(lineCharge)}</td></tr>`);
+      if (lineTax) rows.push(`<tr><td>Cr</td><td>2250 · Sales Tax Payable</td><td class="num">${F.money(lineTax)}</td></tr>`);
+      jes.push({ company: DB.companies[id].short, line: l.i + 1, product: l.product.name, rows: rows.join('') });
+    });
+
+    document.getElementById('pf-body').innerHTML = `
+      <div class="mj-banner mj-banner--success" style="margin-bottom:var(--mj-space-4)">
+        <i class="fa-solid fa-circle-check"></i>
+        <div class="body"><strong>Nothing is blocking this confirm.</strong>
+        Every line resolved an account for each role it needs, and no sales rule was tripped.</div>
+      </div>
+
+      <details class="mj-panel" open>
+        <summary><i class="fa-solid fa-scale-balanced"></i> Journal entries
+          <span class="right"><span class="mj-chip mj-chip--success">${jes.length} entries · ${new Set(jes.map(j => j.company)).size} companies · balanced</span></span>
+        </summary>
+        <div class="mj-panel-body">
+          ${jes.map(j => `
+            <div class="sec-label" style="margin-top:var(--mj-space-3)">${j.company} — line ${j.line} · ${j.product}</div>
+            <table class="mj-table mj-table--compact">
+              <tbody>${j.rows}</tbody>
+            </table>`).join('')}
+          <div class="mj-ladder-note"><i class="fa-solid fa-circle-info"></i>
+            <span>One entry per order line, always — even for two lines of the same company. Each stands alone as a
+            complete single-company story, and they land <b>Pending</b> for accounting to batch.</span></div>
+        </div>
+      </details>
+
+      ${subs.length ? `
+      <details class="mj-panel" open>
+        <summary><i class="fa-solid fa-rotate"></i> Subscriptions
+          <span class="right"><span class="mj-chip mj-chip--violet">${subs.length} extended</span></span>
+        </summary>
+        <div class="mj-panel-body">
+          ${subs.map(l => `
+            <div class="row-t" style="gap:var(--mj-space-3)">
+              <i class="fa-solid fa-arrow-right-long muted" style="margin-top:4px"></i>
+              <div>
+                <b>Extends SUB-2038</b> — Meridian Association holds it, <b>Jane Chen</b> benefits.
+                <div class="small muted">Coverage moves from Jul 31, 2027 to <b>Jul 31, 2028</b> by appending a
+                term, not by editing the old one. Because this extends rather than duplicates, the
+                RejectDuplicate rule on this type is not tripped.</div>
+                <div class="small muted" style="margin-top:4px">Revenue defers and releases over the new term:
+                12 forward-dated entries of ${F.money(l.net / 12)}.</div>
+              </div>
+            </div>`).join('')}
+        </div>
+      </details>` : ''}
+
+      ${events.length ? `
+      <details class="mj-panel">
+        <summary><i class="fa-solid fa-calendar-day"></i> Event lines
+          <span class="right"><span class="mj-chip mj-chip--info">${events.length}</span></span></summary>
+        <div class="mj-panel-body small">
+          ${events.map(l => `<div>${l.product.name} — recognizes 100% on <b>${F.date(l.product.event.startsAt)}</b>,
+            stamped from the event's own dates.</div>`).join('')}
+        </div>
+      </details>` : ''}
+
+      <details class="mj-panel">
+        <summary><i class="fa-solid fa-id-badge"></i> Entitlement grants
+          <span class="right"><span class="mj-chip">1 grant</span></span></summary>
+        <div class="mj-panel-body small">
+          <b>Member Portal Access</b> → beneficiary <b>Jane Chen</b>, active for the subscription term.
+          Downstream apps poll for grants; nothing is pushed.
+        </div>
+      </details>
+
+      ${ships.length ? `
+      <details class="mj-panel">
+        <summary><i class="fa-solid fa-dolly"></i> Fulfillment
+          <span class="right"><span class="mj-chip mj-chip--warning">holds at Posted</span></span></summary>
+        <div class="mj-panel-body small">
+          ${ships.map(l => `${F.qty(l.qty)} × ${l.product.name} must ship, so the order stops at
+            <b>Posted</b> and enters the fulfillment queue. No entry fires when it ships — fulfillment is
+            logistics, not revenue.`).join('')}
+        </div>
+      </details>` : ''}
+
+      <details class="mj-panel">
+        <summary><i class="fa-solid fa-user-check"></i> Approvals
+          <span class="right"><span class="mj-chip mj-chip--outline">none required</span></span></summary>
+        <div class="mj-panel-body small muted">
+          No sales rule matched. Had a discount exceeded the rep's authority, this would name the approver role
+          and the confirm would raise an approval task instead of proceeding.
+        </div>
+      </details>
+
+      <div class="mock-note is-api">
+        Built by <code>Orders.PreviewConfirm</code> — a dry run that resolves accounts, runs the subscription
+        decision and evaluates sales rules <b>without writing</b>. <code>Orders.ConfirmOrder</code> then does
+        the real thing in one transaction. Both are stubbed here.
+      </div>`;
+  }
+
+  /* ── product type-ahead ───────────────────────────────────────────────── */
+  function initTypeahead() {
+    const input = document.getElementById('fe-prod');
+    const list = document.getElementById('fe-prod-list');
+    let cursor = 0;
+
+    const results = () => {
+      const q = input.value.trim().toLowerCase();
+      return Object.values(DB.products)
+        .filter(p => p.status === 'Active')
+        .filter(p => !q || p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q))
+        .slice(0, 7);
+    };
+
+    function draw() {
+      const rs = results();
+      cursor = Math.min(cursor, rs.length - 1);
+      list.innerHTML = rs.length ? rs.map((p, i) => {
+        const t = DB.productTypes[p.typeID];
+        return `<div class="mj-typeahead-item ${i === cursor ? 'is-cursor' : ''}" data-pick="${p.id}">
+          <i class="fa-solid ${t.icon} muted" style="width:16px;text-align:center"></i>
+          <div style="min-width:0">
+            <div class="name">${p.name}</div>
+            <div class="sub">${p.sku} · ${t.name} · ${DB.companies[p.companyID].short}</div>
+          </div>
+          <div class="end">
+            <div class="mj-num strong">${F.money(p.price)}</div>
+            <div class="sub">${t.taxable ? 'taxable' : 'untaxable'}</div>
+          </div>
+        </div>`;
+      }).join('') : `<div class="mj-typeahead-item"><span class="muted small">No product matches that.</span></div>`;
+      list.classList.add('is-open');
+    }
+
+    input.addEventListener('focus', draw);
+    input.addEventListener('input', () => { cursor = 0; draw(); });
+    input.addEventListener('blur', () => setTimeout(() => list.classList.remove('is-open'), 140));
+    input.addEventListener('keydown', e => {
+      const rs = results();
+      if (e.key === 'ArrowDown') { cursor = Math.min(cursor + 1, rs.length - 1); draw(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { cursor = Math.max(cursor - 1, 0); draw(); e.preventDefault(); }
+      else if (e.key === 'Enter') {
+        if (!input.value.trim() && !rs.length) return;
+        if (rs[cursor]) { add(rs[cursor].id); input.value = ''; cursor = 0; draw(); }
+        e.preventDefault();
+      } else if (e.key === 'Escape') { list.classList.remove('is-open'); input.blur(); }
+    });
+    list.addEventListener('mousedown', e => {
+      const item = e.target.closest('[data-pick]');
+      if (item) { add(item.getAttribute('data-pick')); input.value = ''; input.focus(); }
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === '/' && document.activeElement.tagName !== 'INPUT') { e.preventDefault(); input.focus(); }
+    });
+  }
+
+  /* ── mutations ────────────────────────────────────────────────────────── */
+  function add(productID) {
+    const p = DB.products[productID];
+    state.lines.push({ productID, qty: 1, unitPrice: p.price });
+    render();
+  }
+  function remove(i) { state.lines.splice(i, 1); render(); }
+  function bump(i, d) {
+    state.lines[i].qty = Math.max(1, state.lines[i].qty + d);
+    render();
+  }
+  function setQty(i, v) {
+    const n = parseFloat(v);
+    state.lines[i].qty = isNaN(n) || n <= 0 ? 1 : n;
+    render();
+  }
+  function addCode() {
+    const el = document.getElementById('fe-code');
+    const code = el.value.trim().toUpperCase();
+    if (!code) return;
+    if (!state.codes.includes(code)) state.codes.push(code);
+    el.value = '';
+    render();
+  }
+  function dropCode(code) {
+    state.codes = state.codes.filter(c => c !== code);
+    render();
+  }
+  function renderCodes() {
+    document.getElementById('fe-codes').innerHTML = state.codes.map(c => {
+      const known = DB.promotions.find(p => p.code === c);
+      return `<span class="mj-chip ${known ? 'mj-chip--success' : 'mj-chip--error'}">
+        <i class="fa-solid ${known ? 'fa-check' : 'fa-triangle-exclamation'}"></i> ${c}
+        <button class="mj-why" onclick="FE.dropCode('${c}')" title="Remove"><i class="fa-solid fa-xmark"></i></button>
+      </span>`;
+    }).join('');
+  }
+
+  /* ── flash the rail so a recomputation is visible ─────────────────────── */
+  function flash() {
+    const el = document.getElementById('fe-live');
+    el.classList.add('mj-chip--brand');
+    el.textContent = 'recomputed';
+    setTimeout(() => { el.classList.remove('mj-chip--brand'); el.textContent = 'live'; }, 900);
+  }
+
+  function render() {
+    const c = compute();
+    renderLines(c);
+    renderCodes();
+    renderLadder(c);
+    renderTails(c);
+    renderPreflight(c);
+    flash();
+    document.getElementById('step-what').classList.toggle('is-done', c.lines.length > 0);
+    document.querySelector('#step-what .fe-step-n').innerHTML =
+      c.lines.length ? '<i class="fa-solid fa-check"></i>' : '2';
+  }
+
+  function initTender() {
+    document.getElementById('fe-tender').addEventListener('click', e => {
+      const b = e.target.closest('button[data-tender]');
+      if (!b || b.disabled) return;
+      document.querySelectorAll('#fe-tender button').forEach(x => x.classList.remove('is-active'));
+      b.classList.add('is-active');
+      state.tender = b.getAttribute('data-tender');
+      render();
+    });
+  }
+
+  return { render, add, remove, bump, setQty, addCode, dropCode, initTypeahead, initTender };
+})();
+
+MJ.mount({
+  nav: 'orders', rail: 'fast',
+  title: 'Fast entry',
+  icon: 'fa-solid fa-bolt',
+  subtitle: 'The 80% order — one column, keyboard-first, everything computed as you type',
+  ready() {
+    FE.render();
+    FE.initTypeahead();
+    FE.initTender();
+    document.addEventListener('keydown', e => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); MJ.open('#preflight'); }
+    });
+  },
+});
+</script>
+</body>
+</html>

@@ -455,7 +455,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             ID: String(i),
             Net: NetAfterDiscount(
                 Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0),
-                Number(line.DiscountPct ?? 0),
+                // 4dp, matching `DiscountPct DECIMAL(7,4)`. The charge and tax base must agree with
+                // the line total to the penny, and the line rounds — so this has to round the same
+                // way or tax is computed on a base the line does not have.
+                Math.round(Number(line.DiscountPct ?? 0) * 1e4) / 1e4,
                 Number(line.DiscountAmount ?? 0),
             ),
         }));
@@ -758,7 +761,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
         // Inherit the origin's terms, unless the caller stated their own. Same rule as pricing: a
         // stated value is a decision, and resolution only ever fills a blank.
-        const terms = InheritedTerms(context.Origin);
+        const terms = InheritedTerms(context.Origin, Number(line.Quantity ?? 0));
         const priceField = line.GetFieldByName('UnitPrice');
         if (!(priceField?.Dirty === true || (line.UnitPrice ?? 0) > 0)) {
             line.UnitPrice = terms.UnitPrice;
@@ -766,6 +769,14 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const discountField = line.GetFieldByName('DiscountPct');
         if (!(discountField?.Dirty === true || (line.DiscountPct ?? 0) > 0)) {
             line.DiscountPct = terms.DiscountPct;
+        }
+        // THE ALLOCATED DISCOUNT, PROPORTIONALLY. Without this a line that sold 4 x 100 less a 50
+        // order-level promotion — 350 actually paid — refunds 400, and the difference is simply given
+        // away against a perfectly balanced journal entry. `DiscountPct` was carried through from the
+        // start and this was not, which is why RT7 passed while the defect was live.
+        const amountField = line.GetFieldByName('DiscountAmount');
+        if (!(amountField?.Dirty === true || (line.DiscountAmount ?? 0) > 0)) {
+            line.DiscountAmount = terms.DiscountAmount;
         }
         return true;
     }

@@ -101,12 +101,31 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
     }
 
     private computeTotals(): void {
+        // ROUND THE DISCOUNT TO ITS COLUMN'S SCALE FIRST, and store the rounded value.
+        //
+        // `DiscountPct` is `DECIMAL(7,4)`. Computing with an unrounded rate and storing a rounded one
+        // makes the application and the database disagree about the same line: a third off 900 is
+        // 600.00 by full precision and 600.03 by the stored 0.3333.
+        //
+        // That disagreement does not surface until the line is UPDATED — which happens when
+        // `JournalEntryID` is stamped after booking. `computeTotals` runs again, now reading 0.3333
+        // back from the row, produces 600.03, and the immutability trigger correctly refuses to let
+        // booked money change. The confirm then fails with 'Failed to stamp JournalEntryID', which
+        // names neither the discount nor the rounding, and any DiscountPct with more than four
+        // decimal places is simply un-bookable.
+        //
+        // `savePendingLines` already does exactly this for `Quantity` and for exactly this reason;
+        // the discount never got the same treatment. Assigning the rounded value here means the two
+        // can never diverge again, whichever path set it.
+        const pct = Math.round((this.DiscountPct ?? 0) * 1e4) / 1e4;
+        if (pct !== (this.DiscountPct ?? 0)) this.DiscountPct = pct;
+
         // `NetAfterDiscount` is shared with the charge/tax base in OrderEntityServer. It used to be
         // computed independently in both places, and both clamped a reversal line to zero — see
         // PricingBehavior for what that cost.
         const net = NetAfterDiscount(
             this.Quantity * this.UnitPrice,
-            this.DiscountPct ?? 0,
+            pct,
             this.DiscountAmount ?? 0,
         );
         this.LineTotalNet = net;

@@ -40,6 +40,9 @@ const ALL_BUNDLES = [
     'concurrency',
     'events',
     'line-subscriber',
+    // Last on purpose: it is the slowest bundle by an order of magnitude (hundreds of confirms), so
+    // a failure anywhere else surfaces before the run settles in to build populations.
+    'volume',
 ];
 
 const args = process.argv.slice(2);

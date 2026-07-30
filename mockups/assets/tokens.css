@@ -1,0 +1,200 @@
+/* ============================================================================
+   MJ design tokens — synced subset
+   Source: MJ/packages/Angular/Generic/shared/src/lib/_tokens.scss
+   Synced: 2026-07-29 (see PROVENANCE.md)
+
+   Do not invent colors in app.css or in any screen. Every value used by the
+   mockups resolves through a token here, exactly as the Angular build will.
+   ============================================================================ */
+
+:root {
+  color-scheme: light;
+
+  /* ── Brand ────────────────────────────────────────────────────────────── */
+  --mj-color-brand-50:  #e6f3f9;
+  --mj-color-brand-100: #b3dbed;
+  --mj-color-brand-200: #80c3e1;
+  --mj-color-brand-300: #4dabd5;
+  --mj-color-brand-350: #3395c8;
+  --mj-color-brand-400: #2699cc;
+  --mj-color-brand-450: #1a88bf;
+  --mj-color-brand-500: #0076b6;   /* MJ Primary Blue */
+  --mj-color-brand-600: #006aa3;
+  --mj-color-brand-700: #005a8a;
+  --mj-color-brand-800: #004a71;
+  --mj-color-brand-900: #092340;   /* MJ Navy */
+
+  --mj-color-accent-300: #aae7fd;
+  --mj-color-accent-400: #5cc0ed;
+  --mj-color-accent-500: #38a9d9;
+
+  /* ── Neutrals ─────────────────────────────────────────────────────────── */
+  --mj-color-neutral-0:   #ffffff;
+  --mj-color-neutral-50:  #f8fafc;
+  --mj-color-neutral-100: #f1f5f9;
+  --mj-color-neutral-200: #e2e8f0;
+  --mj-color-neutral-300: #cbd5e1;
+  --mj-color-neutral-400: #94a3b8;
+  --mj-color-neutral-500: #64748b;
+  --mj-color-neutral-600: #475569;
+  --mj-color-neutral-700: #334155;
+  --mj-color-neutral-800: #1e293b;
+  --mj-color-neutral-900: #0f172a;
+  --mj-color-neutral-950: #020617;
+
+  /* ── Status ───────────────────────────────────────────────────────────── */
+  --mj-color-success-50:  #f0fdf4;
+  --mj-color-success-100: #dcfce7;
+  --mj-color-success-500: #22c55e;
+  --mj-color-success-600: #16a34a;
+  --mj-color-success-700: #15803d;
+  --mj-color-warning-50:  #fffbeb;
+  --mj-color-warning-100: #fef3c7;
+  --mj-color-warning-500: #f59e0b;
+  --mj-color-warning-600: #d97706;
+  --mj-color-warning-700: #b45309;
+  --mj-color-error-50:    #fef2f2;
+  --mj-color-error-100:   #fee2e2;
+  --mj-color-error-500:   #ef4444;
+  --mj-color-error-600:   #dc2626;
+  --mj-color-error-700:   #b91c1c;
+  --mj-color-info-50:     #eff6ff;
+  --mj-color-info-100:    #dbeafe;
+  --mj-color-info-500:    #3b82f6;
+  --mj-color-info-700:    #1d4ed8;
+  --mj-color-violet-100:  #ede9fe;
+  --mj-color-violet-500:  #8b5cf6;
+  --mj-color-violet-700:  #6d28d9;
+
+  /* ── Semantic: surfaces ───────────────────────────────────────────────── */
+  --mj-bg-page:            var(--mj-color-neutral-50);
+  --mj-bg-surface:         var(--mj-color-neutral-0);
+  --mj-bg-surface-card:    var(--mj-color-neutral-50);
+  --mj-bg-surface-sunken:  var(--mj-color-neutral-100);
+  --mj-bg-surface-hover:   var(--mj-color-neutral-100);
+  --mj-bg-surface-active:  var(--mj-color-neutral-200);
+  --mj-bg-overlay:         rgba(15, 23, 42, 0.5);
+
+  /* ── Semantic: text ───────────────────────────────────────────────────── */
+  --mj-text-primary:   var(--mj-color-neutral-800);
+  --mj-text-secondary: var(--mj-color-neutral-600);
+  --mj-text-muted:     var(--mj-color-neutral-500);
+  --mj-text-disabled:  var(--mj-color-neutral-400);
+  --mj-text-inverse:   var(--mj-color-neutral-0);
+  --mj-text-link:      var(--mj-color-brand-500);
+
+  /* ── Semantic: borders ────────────────────────────────────────────────── */
+  --mj-border-default: var(--mj-color-neutral-200);
+  --mj-border-subtle:  var(--mj-color-neutral-100);
+  --mj-border-strong:  var(--mj-color-neutral-300);
+  --mj-border-focus:   var(--mj-color-brand-500);
+
+  /* ── Semantic: brand roles ────────────────────────────────────────────── */
+  --mj-brand-primary:        var(--mj-color-brand-500);
+  --mj-brand-primary-hover:  var(--mj-color-brand-600);
+  --mj-brand-primary-active: var(--mj-color-brand-700);
+  --mj-brand-on-primary:     var(--mj-color-neutral-0);
+  --mj-brand-accent:         var(--mj-color-accent-400);
+
+  /* ── Semantic: status roles ───────────────────────────────────────────── */
+  --mj-status-success:        var(--mj-color-success-500);
+  --mj-status-success-bg:     var(--mj-color-success-50);
+  --mj-status-success-text:   var(--mj-color-success-700);
+  --mj-status-warning:        var(--mj-color-warning-500);
+  --mj-status-warning-bg:     var(--mj-color-warning-50);
+  --mj-status-warning-text:   var(--mj-color-warning-700);
+  --mj-status-error:          var(--mj-color-error-500);
+  --mj-status-error-bg:       var(--mj-color-error-50);
+  --mj-status-error-text:     var(--mj-color-error-700);
+  --mj-status-info:           var(--mj-color-info-500);
+  --mj-status-info-bg:        var(--mj-color-info-50);
+  --mj-status-info-text:      var(--mj-color-info-700);
+  --mj-status-neutral-bg:     var(--mj-color-neutral-100);
+  --mj-status-neutral-text:   var(--mj-color-neutral-600);
+  --mj-status-violet-bg:      var(--mj-color-violet-100);
+  --mj-status-violet-text:    var(--mj-color-violet-700);
+
+  /* ── Type ─────────────────────────────────────────────────────────────── */
+  --mj-font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                    'Helvetica Neue', Arial, sans-serif;
+  --mj-font-family-mono: 'JetBrains Mono', 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+  --mj-font-normal: 400;
+  --mj-font-medium: 500;
+  --mj-font-semibold: 600;
+  --mj-font-bold: 700;
+
+  /* ── Space ────────────────────────────────────────────────────────────── */
+  --mj-space-1: 0.25rem;  --mj-space-2: 0.5rem;   --mj-space-3: 0.75rem;
+  --mj-space-4: 1rem;     --mj-space-5: 1.25rem;  --mj-space-6: 1.5rem;
+  --mj-space-8: 2rem;     --mj-space-10: 2.5rem;  --mj-space-12: 3rem;
+
+  /* ── Radius ───────────────────────────────────────────────────────────── */
+  --mj-radius-sm: 4px;
+  --mj-radius-md: 8px;
+  --mj-radius-lg: 12px;
+  --mj-radius-full: 9999px;
+
+  /* ── Shadow (overlays only) ───────────────────────────────────────────── */
+  --mj-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --mj-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --mj-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  --mj-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+
+  /* ── Z ────────────────────────────────────────────────────────────────── */
+  --mj-z-sticky: 200;
+  --mj-z-modal-backdrop: 400;
+  --mj-z-modal: 500;
+  --mj-z-popover: 600;
+  --mj-z-tooltip: 700;
+}
+
+/* ============================================================================
+   Dark theme — mirrors MJ's [data-theme="dark"] block
+   ============================================================================ */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --mj-bg-page:           var(--mj-color-neutral-900);
+  --mj-bg-surface:        var(--mj-color-neutral-800);
+  --mj-bg-surface-card:   color-mix(in srgb-linear, var(--mj-color-neutral-800) 68%, var(--mj-color-neutral-700));
+  --mj-bg-surface-sunken: var(--mj-color-neutral-950);
+  --mj-bg-surface-hover:  var(--mj-color-neutral-700);
+  --mj-bg-surface-active: var(--mj-color-neutral-600);
+  --mj-bg-overlay:        rgba(0, 0, 0, 0.7);
+
+  --mj-text-primary:   var(--mj-color-neutral-100);
+  --mj-text-secondary: var(--mj-color-neutral-300);
+  --mj-text-muted:     var(--mj-color-neutral-400);
+  --mj-text-disabled:  var(--mj-color-neutral-600);
+  --mj-text-inverse:   var(--mj-color-neutral-900);
+  --mj-text-link:      var(--mj-color-brand-300);
+
+  --mj-border-default: var(--mj-color-neutral-700);
+  --mj-border-subtle:  var(--mj-color-neutral-800);
+  --mj-border-strong:  var(--mj-color-neutral-600);
+  --mj-border-focus:   var(--mj-color-brand-400);
+
+  --mj-brand-primary:        var(--mj-color-brand-400);
+  --mj-brand-primary-hover:  var(--mj-color-brand-300);
+  --mj-brand-primary-active: var(--mj-color-brand-200);
+  --mj-brand-on-primary:     var(--mj-color-neutral-900);
+  --mj-brand-accent:         var(--mj-color-accent-300);
+
+  --mj-status-success-bg:   rgba(34, 197, 94, 0.15);
+  --mj-status-success-text: var(--mj-color-success-100);
+  --mj-status-warning-bg:   rgba(245, 158, 11, 0.15);
+  --mj-status-warning-text: var(--mj-color-warning-100);
+  --mj-status-error-bg:     rgba(239, 68, 68, 0.15);
+  --mj-status-error-text:   var(--mj-color-error-100);
+  --mj-status-info-bg:      rgba(59, 130, 246, 0.15);
+  --mj-status-info-text:    var(--mj-color-info-100);
+  --mj-status-neutral-bg:   rgba(148, 163, 184, 0.16);
+  --mj-status-neutral-text: var(--mj-color-neutral-300);
+  --mj-status-violet-bg:    rgba(139, 92, 246, 0.18);
+  --mj-status-violet-text:  #ddd6fe;
+
+  --mj-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --mj-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
+  --mj-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.4);
+  --mj-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+}

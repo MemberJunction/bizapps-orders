@@ -343,6 +343,20 @@ export const CompositionChecks: NamedCheck[] = [
 
         // The whole point of the intercompany design: CoA collected everything, but each company's
         // OWN receivable must clear — CoB's through Due From, not through CoA's cash.
+        //
+        // EVERY COLUMN IN THE SUBQUERIES BELOW IS QUALIFIED, and that is load-bearing. This read
+        // `SELECT JournalEntryID FROM PaymentLine`, and PaymentLine HAS NO SUCH COLUMN — so SQL
+        // Server bound the unqualified name to the OUTER query's `jel.JournalEntryID` instead of
+        // failing. The subquery then returned the outer row's own value for every PaymentLine row,
+        // the IN was always true, and this check summed accounts receivable across the ENTIRE
+        // DATABASE rather than this one order.
+        //
+        // It passed for weeks. It could only ever pass, because the suite always ran against a
+        // database holding nothing but its own rolled-back fixtures. Committing eight orders on
+        // purpose is what exposed it: the stranded 2,929.97 it suddenly reported was the seeded
+        // ledger's real receivable, correctly summed and entirely irrelevant.
+        //
+        // A payment's entry lives on `PaymentHeader.JournalEntryID`, not on its lines.
         const ar = await TxQuery<{ CompanyID: string; Net: number }>(
           ctx,
           `SELECT gl.CompanyID, SUM(jel.DebitAmount) - SUM(jel.CreditAmount) AS Net
@@ -350,8 +364,11 @@ export const CompositionChecks: NamedCheck[] = [
              JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
             WHERE gl.Code = '11201'
               AND jel.JournalEntryID IN (
-                    SELECT JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${order.Order.ID}'
-                    UNION SELECT JournalEntryID FROM ${ORDERS_SCHEMA}.PaymentLine WHERE PaymentHeaderID='${paid.Payment.ID}')
+                    SELECT ol.JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine ol
+                     WHERE ol.OrderHeaderID='${order.Order.ID}'
+                    UNION
+                    SELECT ph.JournalEntryID FROM ${ORDERS_SCHEMA}.PaymentHeader ph
+                     WHERE ph.ID='${paid.Payment.ID}')
             GROUP BY gl.CompanyID`,
         );
         for (const row of ar) {

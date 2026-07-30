@@ -11,7 +11,7 @@ mj.config.cjs → testing.checkModules → this package → IntegrationCheckRegi
 
 ```bash
 # fast inner loop: one bundle, or one check. Stack traces with IT_VERBOSE=1.
-node test-harnesses/integration.mjs                    # all 19 bundles, 217 checks
+node test-harnesses/integration.mjs                    # all 20 bundles, 230 checks
 node test-harnesses/integration.mjs subscriptions
 node test-harnesses/integration.mjs subscriptions.SB5
 
@@ -98,6 +98,15 @@ included, so rollback-based isolation is impossible for that check.
 | `subscription-cancellation` | SC1–SC10 |
 | `subscription-renewal` | SR1–SR11 |
 | `payments-rollups` | PR1–PR9 |
+| `volume` | VL1–VL13 |
+
+The complete list, with what each bundle is for, is the header comment of `src/index.ts` — it is next
+to the exports that register them, so it cannot drift as far as a table over here can.
+
+`volume` is the slow one: it confirms several hundred orders across its thirteen checks and runs last
+for that reason. It is also the only bundle that creates a SECOND `SQLServerDataProvider`, which is
+how a real `ConfirmOrder` gets an independent session; its header explains what that does and does
+not make provable.
 
 ## Drift guards
 

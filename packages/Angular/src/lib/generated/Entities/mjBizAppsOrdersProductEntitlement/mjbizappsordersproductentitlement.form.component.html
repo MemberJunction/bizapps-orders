@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="productAssociation"
         SectionName="Product Association"
-        Icon="fa fa-box"
+        Icon="fa fa-tags"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -29,11 +29,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Entitlement Configuration Section -->
+    <!-- Entitlement Definition Section -->
     <mj-collapsible-panel
-        SectionKey="entitlementConfiguration"
-        SectionName="Entitlement Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="entitlementDefinition"
+        SectionName="Entitlement Definition"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -71,11 +71,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Resource Limits Section -->
+    <!-- Resource Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="resourceLimits"
-        SectionName="Resource Limits"
-        Icon="fa fa-tachometer-alt"
+        SectionKey="resourceConfiguration"
+        SectionName="Resource Configuration"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -91,6 +91,48 @@
             [ShowLabel]="true"
             FieldName="UnitOfMeasure"
             Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Validity and Access Section -->
+    <mj-collapsible-panel
+        SectionKey="validityAndAccess"
+        SectionName="Validity and Access"
+        Icon="fa fa-clock"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ValidityMode"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ValidityDurationDays"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="AccessLeadHours"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="AccessLagHours"
+            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -133,7 +175,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersEntitlementGrants"
         SectionName="Entitlement Grants"
-        Icon="fa fa-shield-alt"
+        Icon="fa fa-gift"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

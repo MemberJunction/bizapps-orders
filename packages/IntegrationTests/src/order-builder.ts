@@ -7,7 +7,7 @@
  * directly would test the schema and nothing else.
  */
 import { Metadata } from '@memberjunction/core';
-import type { BaseEntity, UserInfo } from '@memberjunction/core';
+import type { BaseEntity, IMetadataProvider, UserInfo } from '@memberjunction/core';
 
 /**
  * A line to put on the order. Only `ProductID` and `Quantity` are required.
@@ -77,9 +77,22 @@ export interface BuiltOrder {
     Lines: Array<BaseEntity & Record<string, unknown>>;
 }
 
-/** Build a DRAFT order in memory. Nothing is saved until the caller sets Status and calls Save(). */
-export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<BuiltOrder> {
-    const md = new Metadata();
+/**
+ * Build a DRAFT order in memory. Nothing is saved until the caller sets Status and calls Save().
+ *
+ * `provider` exists for the `volume` bundle only. `Metadata` delegates to the ONE global provider,
+ * so every order every other bundle builds shares a single connection and two `Save()` calls can
+ * never overlap. Passing a provider explicitly binds the entity objects to it — `BaseEntity`
+ * resolves `ProviderToUse` from the provider that constructed it — which is what makes a genuinely
+ * concurrent second session possible. Omitting it keeps the global behaviour every other bundle
+ * relies on.
+ */
+export async function BuildOrder(
+    user: UserInfo,
+    spec: OrderSpec,
+    provider?: IMetadataProvider,
+): Promise<BuiltOrder> {
+    const md = provider ?? new Metadata();
     const order = await md.GetEntityObject<BaseEntity & Record<string, unknown>>(
         'MJ_BizApps_Orders: Order Headers',
         user,
@@ -146,8 +159,9 @@ export async function BuildOrder(user: UserInfo, spec: OrderSpec): Promise<Built
 export async function ConfirmOrder(
     user: UserInfo,
     spec: OrderSpec,
+    provider?: IMetadataProvider,
 ): Promise<BuiltOrder & { Saved: boolean; Message: string }> {
-    const built = await BuildOrder(user, spec);
+    const built = await BuildOrder(user, spec, provider);
     built.Order.Status = 'Confirmed';
     const saved = await built.Order.Save();
     return {

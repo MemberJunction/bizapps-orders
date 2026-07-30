@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Relationships Section -->
+    <!-- Payment Allocation Section -->
     <mj-collapsible-panel
-        SectionKey="relationships"
-        SectionName="Relationships"
+        SectionKey="paymentAllocation"
+        SectionName="Payment Allocation"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
@@ -47,10 +47,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Payment Allocation Section -->
+    <!-- Financial Details Section -->
     <mj-collapsible-panel
-        SectionKey="paymentAllocation"
-        SectionName="Payment Allocation"
+        SectionKey="financialDetails"
+        SectionName="Financial Details"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -65,7 +65,7 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="AllocatedAt"
+            FieldName="BookedAt"
             Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -83,19 +83,19 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="AllocatedAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="AllocatedByUserID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="BookedAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
