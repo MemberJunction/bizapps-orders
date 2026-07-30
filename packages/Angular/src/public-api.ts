@@ -51,6 +51,8 @@ export * from './lib/panels';
 export * from './lib/panels/confirm-preflight.component';
 export * from './lib/panels/worklist-table.component';
 export * from './lib/panels/stat-tile.component';
+export * from './lib/panels/allocation-grid.component';
+export * from './lib/panels/allocation-math';
 
 /** The seam between a draft and the engine. */
 export * from './lib/services/order-entry.service';
@@ -63,6 +65,7 @@ export * from './lib/pages/orders/orders-list.page';
 export * from './lib/pages/orders/orders-dashboard.page';
 export * from './lib/pages/orders/fulfillment.page';
 export * from './lib/pages/orders/order-document.page';
+export * from './lib/pages/payments/payment-entry.page';
 
 /** The information architecture, as data — testable, and injectable for badges. */
 export {

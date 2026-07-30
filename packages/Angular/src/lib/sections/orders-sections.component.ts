@@ -40,6 +40,7 @@ import { MJOOrderEditorPageComponent } from '../pages/orders/order-editor.page';
 import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
 import { MJOOrdersDashboardPageComponent } from '../pages/orders/orders-dashboard.page';
 import { MJOFulfillmentPageComponent } from '../pages/orders/fulfillment.page';
+import { MJOPaymentEntryPageComponent } from '../pages/payments/payment-entry.page';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -303,8 +304,13 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
     protected get sectionIcon(): string {
         return 'fa-solid fa-money-check-dollar';
     }
-    protected resolvePage(_pageId: string): Type<unknown> | null {
-        return null;
+    protected resolvePage(pageId: string): Type<unknown> | null {
+        switch (pageId) {
+            case 'entry':
+                return MJOPaymentEntryPageComponent;
+            default:
+                return null;
+        }
     }
 }
 
