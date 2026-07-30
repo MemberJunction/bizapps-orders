@@ -158,9 +158,13 @@ export const OrderBookingChecks: NamedCheck[] = [
                     `SELECT jel.JournalEntryID,
                             SUM(jel.DebitAmount) AS D, SUM(jel.CreditAmount) AS C
                      FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+                     -- QUALIFIED deliberately. OrderLine does have JournalEntryID so this one was
+                     -- correct, but an unqualified name in a subquery silently binds to the OUTER
+                     -- query when the inner table lacks the column, and the IN then matches
+                     -- everything. That exact mistake made composition's CX8 sum the whole database.
                      WHERE jel.JournalEntryID IN (
-                         SELECT JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine
-                         WHERE OrderHeaderID = '${Order.ID}' AND JournalEntryID IS NOT NULL)
+                         SELECT ol.JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine ol
+                         WHERE ol.OrderHeaderID = '${Order.ID}' AND ol.JournalEntryID IS NOT NULL)
                      GROUP BY jel.JournalEntryID`,
                 );
                 AssertEqual(balances.length, 3, 'entries with lines');
