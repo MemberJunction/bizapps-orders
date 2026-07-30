@@ -95,11 +95,6 @@
           <div class="mj-card">
             <div class="mj-card-head"><i class="fa-solid fa-sitemap"></i><h3>What a type decides</h3></div>
             <div class="mj-card-pad">
-              <table class="mj-table mj-table--compact">
-                <thead><tr><th>Type</th><th>Recognition</th><th style="width:80px">Taxable</th>
-                  <th style="width:80px">Ships</th></tr></thead>
-                <tbody>${''}</tbody>
-              </table>
               <div id="ct-matrix"></div>
               <div class="small muted" style="margin-top:var(--mj-space-2)">
                 A product may override any of these; nullable at product and category so &ldquo;ask my parent&rdquo;
@@ -152,9 +147,7 @@
       </div>
       <div class="mj-modal-body">
         <div class="mj-field"><label>Product type</label>
-          <select class="mj-select" id="np-type">
-            ${''}
-          </select>
+          <select class="mj-select" id="np-type"></select>
           <div class="hint" id="np-hint"></div></div>
         <div class="grid-2">
           <div class="mj-field"><label>Name</label><input class="mj-input" placeholder="e.g. Regional Summit Ticket"></div>
@@ -229,7 +222,10 @@ function render() {
   }).join('');
 
   document.getElementById('ct-matrix').innerHTML = `
-    <table class="mj-table mj-table--compact"><tbody>
+    <table class="mj-table mj-table--compact">
+      <thead><tr><th>Type</th><th>Recognition</th><th style="width:76px">Taxable</th>
+        <th style="width:70px">Ships</th></tr></thead>
+      <tbody>
       ${Object.values(DB.productTypes).map(t => `<tr>
         <td><i class="fa-solid ${t.icon} muted"></i> ${t.name}</td>
         <td class="small">${t.revRec}</td>

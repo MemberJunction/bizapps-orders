@@ -68,16 +68,28 @@ const MJ = (() => {
 
   let BASE = '../';
 
+  /**
+   * Storage that cannot take the page down.
+   * These files are opened straight from the filesystem, and `localStorage` on a
+   * `file://` origin THROWS in several real configurations (opaque origins,
+   * blocked site data, private windows). An unguarded read at mount time would
+   * blank the whole screen for whoever opened it, which is the one failure a
+   * mockup must not have. Preference persistence is a nicety; rendering is not.
+   */
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch { /* preferences just don't persist */ } },
+  };
+
   /* ── Theme ────────────────────────────────────────────────────────────── */
   function initTheme() {
-    const saved = localStorage.getItem('mj-mock-theme');
-    if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
-    if (localStorage.getItem('mj-mock-notes') === 'off') document.body.classList.add('hide-notes');
+    if (store.get('mj-mock-theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+    if (store.get('mj-mock-notes') === 'off') document.body.classList.add('hide-notes');
   }
   function toggleTheme() {
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-    if (dark) { document.documentElement.removeAttribute('data-theme'); localStorage.setItem('mj-mock-theme', 'light'); }
-    else { document.documentElement.setAttribute('data-theme', 'dark'); localStorage.setItem('mj-mock-theme', 'dark'); }
+    if (dark) { document.documentElement.removeAttribute('data-theme'); store.set('mj-mock-theme', 'light'); }
+    else { document.documentElement.setAttribute('data-theme', 'dark'); store.set('mj-mock-theme', 'dark'); }
     syncThemeIcon();
   }
   function syncThemeIcon() {
@@ -88,7 +100,7 @@ const MJ = (() => {
   function toggleNotes() {
     document.body.classList.toggle('hide-notes');
     const off = document.body.classList.contains('hide-notes');
-    localStorage.setItem('mj-mock-notes', off ? 'off' : 'on');
+    store.set('mj-mock-notes', off ? 'off' : 'on');
     const b = document.querySelector('#mj-notes-btn');
     if (b) b.classList.toggle('is-active', !off);
   }
@@ -168,10 +180,18 @@ const MJ = (() => {
 
     document.body.insertAdjacentHTML('afterbegin', frameHTML(opts));
 
-    // Distribute the template's slots into the frame's slot targets.
+    // Index the template's top-level slot elements. Direct-children lookup
+    // rather than a `:scope >` selector, which is ambiguous on a fragment.
+    const sources = {};
+    Array.from(frag.children).forEach(el => {
+      const name = el.getAttribute && el.getAttribute('slot');
+      if (name) sources[name] = el;
+    });
+
+    // Distribute into the frame's slot targets.
     ['meta', 'actions', 'toolbar', 'body'].forEach(name => {
       const target = document.querySelector(`.mj-app [slot="${name}"]`);
-      const source = frag.querySelector(`:scope > [slot="${name}"]`);
+      const source = sources[name];
       if (!target) return;
       if (!source) { if (name !== 'body') target.remove(); return; }
       while (source.firstChild) target.appendChild(source.firstChild);
@@ -179,7 +199,7 @@ const MJ = (() => {
     });
 
     // Overlays live outside the layout so they can be fixed-positioned.
-    const overlays = frag.querySelector(':scope > [slot="overlays"]');
+    const overlays = sources.overlays;
     if (overlays) { while (overlays.firstChild) document.body.appendChild(overlays.firstChild); }
 
     if (tpl) tpl.remove();

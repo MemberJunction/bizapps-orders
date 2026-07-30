@@ -7,7 +7,10 @@
     "revenue-recognition-types",
     "subscription-types",
     "payment-provider-types",
-    "payment-types"
+    "payment-types",
+    "remote-operation-categories",
+    "remote-operations",
+    "applications"
   ],
   "sqlLogging": {
     "enabled": true,

@@ -67,7 +67,9 @@
 
 <template id="page">
 
-  <div slot="meta" id="ed-meta"></div>
+  <!-- The slot wrapper itself is consumed during mount, so the target for later
+       rendering has to be an element INSIDE it, not the wrapper. -->
+  <div slot="meta"><span id="ed-meta" class="row" style="gap:var(--mj-space-2)"></span></div>
 
   <div slot="actions">
     <button class="mj-btn mj-btn--outline" data-open="#doc-preview"><i class="fa-regular fa-file-lines"></i> Preview bill</button>

@@ -1,0 +1,340 @@
+/* ============================================================================
+   BizApps Orders — component kit
+   ============================================================================
+   THE CANONICAL SOURCE for this app's own component CSS. Both consumers read
+   THIS FILE, so the mockups and the shipped UI cannot drift:
+
+     · packages/Angular/src/lib/styles/orders-kit.css   ← you are here
+     · mockups/assets/app.css                            @imports it
+
+   Only classes MJ does NOT ship live here. Page chrome, buttons, inputs, chips,
+   collapsible panels, overlays and tab navigation all come from
+   @memberjunction/ng-ui-components and @memberjunction/ng-base-forms at runtime;
+   the mockups shim those separately because they have no Angular to provide them.
+
+   Every value resolves through MJ's semantic tokens. No literal colours, with one
+   documented exception: the deepest aging step, whose ramp was chosen by running
+   the palette validator (see mockups/PROVENANCE.md).
+
+   NAMING. These share MJ's `mj-` prefix deliberately, so a reader cannot tell
+   whether `mj-money-strip` came from the framework or from us — which is the
+   point when the goal is one visual system. The cost is a possible future
+   collision if MJ ships a class of the same name; that would be a mechanical
+   rename caught by a build, and it has not happened yet.
+   ============================================================================ */
+
+/* ============================================================================
+   7. MONEY  (U7)
+   ============================================================================ */
+
+.mj-num, .mj-money {
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+  text-align: right; white-space: nowrap;
+}
+.mj-money--hero { font-size: 22px; font-weight: var(--mj-font-bold); letter-spacing: -0.01em; }
+.mj-money--lg   { font-size: 16px; font-weight: var(--mj-font-semibold); }
+.mj-money--neg  { color: var(--mj-status-error-text); }
+.mj-money--credit { color: var(--mj-status-success-text); }
+.mj-money--muted { color: var(--mj-text-muted); }
+
+/* The money strip — TotalGross / AmountPaid / Balance / status */
+.mj-money-strip {
+  display: grid; grid-template-columns: repeat(3, 1fr) auto;
+  border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-md);
+  background: var(--mj-bg-surface); overflow: hidden;
+}
+.mj-money-strip > div {
+  padding: var(--mj-space-3) var(--mj-space-4);
+  border-right: 1px solid var(--mj-border-default);
+}
+.mj-money-strip > div:last-child {
+  border-right: none; display: flex; align-items: center; gap: var(--mj-space-2);
+}
+.mj-money-strip .l {
+  font-size: 10px; font-weight: var(--mj-font-bold); letter-spacing: .07em;
+  text-transform: uppercase; color: var(--mj-text-muted); display: block; margin-bottom: 2px;
+}
+.mj-money-strip .v { font-size: 17px; font-weight: var(--mj-font-bold); font-variant-numeric: tabular-nums; }
+
+/* Decomposition ladder — net → promos → charges → tax → gross */
+.mj-ladder { font-size: 13px; }
+.mj-ladder-row {
+  display: flex; align-items: baseline; gap: var(--mj-space-2);
+  padding: 6px 0; border-bottom: 1px dashed var(--mj-border-subtle);
+}
+.mj-ladder-row > .label { color: var(--mj-text-secondary); display: flex; align-items: center; gap: 6px; }
+.mj-ladder-row > .amt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: var(--mj-font-medium); }
+.mj-ladder-row.is-sub    { padding-left: var(--mj-space-4); font-size: 12px; color: var(--mj-text-muted); }
+.mj-ladder-row.is-sub > .amt { font-weight: var(--mj-font-normal); }
+.mj-ladder-row.is-discount > .amt { color: var(--mj-status-success-text); }
+.mj-ladder-row.is-total {
+  border-bottom: none; border-top: 2px solid var(--mj-border-strong);
+  margin-top: var(--mj-space-2); padding-top: var(--mj-space-3);
+}
+.mj-ladder-row.is-total > .label { font-weight: var(--mj-font-semibold); color: var(--mj-text-primary); }
+.mj-ladder-row.is-total > .amt { font-size: 18px; font-weight: var(--mj-font-bold); }
+.mj-ladder-note {
+  font-size: 11.5px; color: var(--mj-text-muted); padding: var(--mj-space-2) 0 0;
+  display: flex; gap: 6px; align-items: flex-start;
+}
+.mj-ladder-note i { margin-top: 2px; color: var(--mj-status-info); }
+
+/* The "why" disclosure — U2. A bare number is never acceptable. */
+.mj-why {
+  border: none; background: none; cursor: pointer; padding: 0 2px;
+  color: var(--mj-text-disabled); font-size: 10.5px;
+}
+.mj-why:hover { color: var(--mj-brand-primary); }
+.mj-why-body {
+  font-size: 11.5px; color: var(--mj-text-secondary);
+  background: var(--mj-bg-surface-sunken); border-left: 2px solid var(--mj-brand-primary);
+  border-radius: 0 var(--mj-radius-sm) var(--mj-radius-sm) 0;
+  padding: var(--mj-space-2) var(--mj-space-3); margin: var(--mj-space-2) 0;
+}
+.mj-why-body ol, .mj-why-body ul { margin: 4px 0 0; padding-left: var(--mj-space-4); }
+.mj-why-body li { margin: 2px 0; }
+.mj-why-body code {
+  font-family: var(--mj-font-family-mono); font-size: 10.5px;
+  background: var(--mj-bg-surface); padding: 1px 4px; border-radius: 3px;
+}
+
+/* ============================================================================
+   9. STATUS STEPPER  (D9 — order fixed, forward skip legal)
+   ============================================================================ */
+
+.mj-stepper { display: flex; align-items: center; gap: var(--mj-space-1); flex-wrap: wrap; }
+.mj-stepper .step {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: var(--mj-radius-full);
+  border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface);
+  font-size: 11.5px; font-weight: var(--mj-font-semibold); color: var(--mj-text-muted);
+  cursor: pointer;
+}
+.mj-stepper .step i { font-size: 9px; }
+.mj-stepper .step.is-done {
+  background: var(--mj-status-success-bg); border-color: color-mix(in srgb, var(--mj-status-success) 40%, transparent);
+  color: var(--mj-status-success-text);
+}
+.mj-stepper .step.is-current {
+  background: color-mix(in srgb, var(--mj-brand-primary) 12%, transparent);
+  border-color: var(--mj-brand-primary); color: var(--mj-brand-primary);
+}
+.mj-stepper .step.is-blocked { opacity: .45; cursor: not-allowed; }
+.mj-stepper .sep { color: var(--mj-text-disabled); font-size: 9px; }
+
+/* ============================================================================
+   13. STAT TILES  (cheap counts only — U11)
+   ============================================================================ */
+
+.mj-stat-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--mj-space-4);
+}
+.mj-stat {
+  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-md); padding: var(--mj-space-4);
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.mj-stat .l {
+  font-size: 11px; font-weight: var(--mj-font-semibold); letter-spacing: .04em;
+  text-transform: uppercase; color: var(--mj-text-muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.mj-stat .v {
+  font-size: 25px; font-weight: var(--mj-font-bold); font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em; line-height: 1.15;
+}
+.mj-stat .d { font-size: 11.5px; color: var(--mj-text-muted); }
+.mj-stat.is-alert .v { color: var(--mj-status-error-text); }
+.mj-stat .spark { margin-top: var(--mj-space-2); height: 30px; }
+.mj-stat .spark svg { width: 100%; height: 30px; display: block; overflow: visible; }
+
+/* ============================================================================
+   14. AGING BAR
+   ============================================================================ */
+
+.mj-aging { display: flex; flex-direction: column; gap: 6px; }
+.mj-aging-bar {
+  display: flex; height: 26px; border-radius: var(--mj-radius-sm);
+  overflow: hidden; background: var(--mj-bg-surface-sunken);
+}
+.mj-aging-bar > span {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10.5px; font-weight: var(--mj-font-semibold); color: #fff;
+  min-width: 0; overflow: hidden; white-space: nowrap;
+}
+/* Aging severity ramp — VALIDATED, do not eyeball-substitute.
+   #64748b, #f59e0b, #ef4444, #991b1b passes CVD separation (worst adjacent
+   ΔE 13.9 deutan) and the normal-vision floor (ΔE 19.8) on BOTH the light and
+   dark surfaces. The earlier set used warning-700 next to error-600, which sat
+   at ΔE 2.8 deutan — the 60-day and 90-day buckets were indistinguishable.
+   The neutral first step is deliberate: "not late" is not a severity.
+   Every segment carries a visible amount and a legend, which is what discharges
+   the low-contrast warning on the amber step. See PROVENANCE.md. */
+.mj-aging-bar .b-cur  { background: var(--mj-color-neutral-500); }
+.mj-aging-bar .b-30   { background: var(--mj-color-warning-500); }
+.mj-aging-bar .b-60   { background: var(--mj-color-error-500); }
+.mj-aging-bar .b-90   { background: #991b1b; }
+[data-theme="dark"] .mj-aging-bar .b-cur { background: var(--mj-color-neutral-500); }
+.mj-aging-bar > span.is-empty { display: none; }
+.mj-aging-legend { display: flex; gap: var(--mj-space-4); font-size: 11.5px; flex-wrap: wrap; }
+.mj-aging-legend > span { display: flex; align-items: center; gap: 6px; color: var(--mj-text-secondary); }
+.mj-aging-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+/* ============================================================================
+   15. TIMELINE  (subscription terms)
+   ============================================================================ */
+
+.mj-timeline { position: relative; padding: var(--mj-space-4) 0 var(--mj-space-2); }
+.mj-timeline-track {
+  position: relative; height: 34px;
+  background: var(--mj-bg-surface-sunken); border-radius: var(--mj-radius-sm);
+}
+.mj-timeline-term {
+  position: absolute; top: 4px; bottom: 4px; border-radius: var(--mj-radius-sm);
+  display: flex; align-items: center; padding: 0 var(--mj-space-2);
+  font-size: 11px; font-weight: var(--mj-font-semibold); color: #fff;
+  overflow: hidden; white-space: nowrap;
+}
+.mj-timeline-term.is-past   { background: var(--mj-color-neutral-400); }
+.mj-timeline-term.is-active { background: var(--mj-brand-primary); }
+.mj-timeline-term.is-future { background: color-mix(in srgb, var(--mj-brand-primary) 45%, var(--mj-bg-surface)); color: var(--mj-text-primary); }
+.mj-timeline-now {
+  position: absolute; top: -6px; bottom: -6px; width: 2px;
+  background: var(--mj-status-error);
+}
+.mj-timeline-now::after {
+  content: "today"; position: absolute; top: -16px; left: -14px;
+  font-size: 9.5px; font-weight: var(--mj-font-bold); color: var(--mj-status-error-text);
+}
+.mj-timeline-scale {
+  display: flex; justify-content: space-between; font-size: 10.5px;
+  color: var(--mj-text-muted); margin-top: 6px;
+}
+
+/* ============================================================================
+   17. KEYBOARD HINT STRIP  (U20 — shortcuts are visible, not hidden)
+   ============================================================================ */
+
+.mj-keys {
+  display: flex; align-items: center; gap: var(--mj-space-4); flex-wrap: wrap;
+  font-size: 11.5px; color: var(--mj-text-muted);
+}
+.mj-keys > span { display: inline-flex; align-items: center; gap: 5px; }
+kbd {
+  font-family: var(--mj-font-family); font-size: 10.5px; font-weight: var(--mj-font-semibold);
+  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-strong);
+  border-bottom-width: 2px; border-radius: var(--mj-radius-sm);
+  padding: 1px 5px; color: var(--mj-text-secondary); line-height: 1.5;
+}
+
+/* ============================================================================
+   19. TYPE-AHEAD  (fast entry)
+   ============================================================================ */
+
+.mj-typeahead { position: relative; }
+.mj-typeahead-list {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  z-index: var(--mj-z-popover); max-height: 320px; overflow: auto;
+  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-md); box-shadow: var(--mj-shadow-lg);
+  display: none;
+}
+.mj-typeahead-list.is-open { display: block; }
+.mj-typeahead-item {
+  display: flex; align-items: center; gap: var(--mj-space-3);
+  padding: var(--mj-space-2) var(--mj-space-3); cursor: pointer;
+  border-bottom: 1px solid var(--mj-border-subtle);
+}
+.mj-typeahead-item:last-child { border-bottom: none; }
+.mj-typeahead-item:hover, .mj-typeahead-item.is-cursor { background: var(--mj-bg-surface-hover); }
+.mj-typeahead-item .name { font-size: 13px; font-weight: var(--mj-font-medium); }
+.mj-typeahead-item .sub  { font-size: 11.5px; color: var(--mj-text-muted); }
+.mj-typeahead-item .end  { margin-left: auto; text-align: right; }
+.mj-typeahead-group {
+  padding: 5px var(--mj-space-3); font-size: 10px; font-weight: var(--mj-font-bold);
+  letter-spacing: .07em; text-transform: uppercase; color: var(--mj-text-muted);
+  background: var(--mj-bg-surface-card); border-bottom: 1px solid var(--mj-border-subtle);
+}
+
+/* ============================================================================
+   20. LINE ROW CARD  (fast entry)
+   ============================================================================ */
+
+.mj-linecard {
+  border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-md);
+  background: var(--mj-bg-surface); padding: var(--mj-space-3);
+}
+.mj-linecard + .mj-linecard { margin-top: var(--mj-space-2); }
+.mj-linecard-top { display: flex; align-items: flex-start; gap: var(--mj-space-3); }
+.mj-linecard-top .id { flex: 1; min-width: 0; }
+.mj-linecard-top .nm { font-size: 13.5px; font-weight: var(--mj-font-semibold); }
+.mj-linecard-top .mt { font-size: 11.5px; color: var(--mj-text-muted); margin-top: 1px; }
+.mj-linecard-top .qty { flex: none; }
+.mj-linecard-top .price { flex: none; width: 118px; text-align: right; }
+.mj-linecard-top .tot { flex: none; width: 104px; text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--mj-font-semibold); font-size: 14px; }
+.mj-linecard-conseq { display: flex; gap: 6px; flex-wrap: wrap; margin-top: var(--mj-space-2); }
+
+/* ============================================================================
+   21. DOCUMENT (the bill)  — U6
+   ============================================================================ */
+
+.mj-doc {
+  background: var(--mj-bg-surface); color: var(--mj-text-primary);
+  max-width: 860px; margin: 0 auto; padding: 56px 60px;
+  border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-md);
+}
+.mj-doc-head { display: flex; align-items: flex-start; gap: var(--mj-space-6); margin-bottom: var(--mj-space-10); }
+.mj-doc-head .issuer { flex: 1; }
+.mj-doc-head .issuer .co { font-size: 17px; font-weight: var(--mj-font-bold); display: flex; align-items: center; gap: 8px; }
+.mj-doc-head .issuer .co i { color: var(--mj-brand-primary); }
+.mj-doc-head .issuer .addr { font-size: 12px; color: var(--mj-text-muted); margin-top: 6px; line-height: 1.6; }
+.mj-doc-head .docmeta { text-align: right; flex: none; }
+.mj-doc-head .docmeta .kind {
+  font-size: 11px; font-weight: var(--mj-font-bold); letter-spacing: .12em;
+  text-transform: uppercase; color: var(--mj-text-muted);
+}
+.mj-doc-head .docmeta .num { font-size: 22px; font-weight: var(--mj-font-bold); letter-spacing: -0.01em; }
+.mj-doc-meta-grid {
+  display: grid; grid-template-columns: auto auto; gap: 3px var(--mj-space-4);
+  font-size: 12px; margin-top: var(--mj-space-3); text-align: right;
+}
+.mj-doc-meta-grid dt { color: var(--mj-text-muted); }
+.mj-doc-meta-grid dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: var(--mj-font-medium); }
+.mj-doc-parties { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mj-space-8); margin-bottom: var(--mj-space-8); }
+.mj-doc-parties .lbl {
+  font-size: 10px; font-weight: var(--mj-font-bold); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--mj-text-muted); margin-bottom: 6px;
+}
+.mj-doc-parties .who { font-size: 13px; line-height: 1.7; }
+.mj-doc-parties .who .nm { font-weight: var(--mj-font-semibold); }
+.mj-doc table.mj-table thead th { background: transparent; border-bottom: 2px solid var(--mj-text-primary); }
+.mj-doc-totals { display: flex; justify-content: flex-end; margin-top: var(--mj-space-5); }
+.mj-doc-totals .box { width: min(340px, 100%); }
+.mj-doc-due {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-top: var(--mj-space-3); padding-top: var(--mj-space-3);
+  border-top: 2px solid var(--mj-text-primary);
+}
+.mj-doc-due .l { font-size: 13px; font-weight: var(--mj-font-bold); text-transform: uppercase; letter-spacing: .06em; }
+.mj-doc-due .v { font-size: 24px; font-weight: var(--mj-font-bold); font-variant-numeric: tabular-nums; }
+.mj-doc-foot {
+  margin-top: var(--mj-space-10); padding-top: var(--mj-space-5);
+  border-top: 1px solid var(--mj-border-default);
+  font-size: 11.5px; color: var(--mj-text-muted); line-height: 1.7;
+}
+.mj-doc-stamp {
+  position: absolute; top: 90px; right: 80px; transform: rotate(-14deg);
+  border: 3px solid var(--mj-status-success); color: var(--mj-status-success-text);
+  border-radius: var(--mj-radius-md); padding: 6px 18px;
+  font-size: 22px; font-weight: var(--mj-font-bold); letter-spacing: .1em;
+  text-transform: uppercase; opacity: .85; pointer-events: none;
+}
+
+@media print {
+  .mj-topnav, .mj-rail, .mj-page-header, .mj-keys, .no-print { display: none !important; }
+  .mj-app, .mj-page-layout, .mj-page-body { height: auto; overflow: visible; display: block; }
+  .mj-page-body { padding: 0; }
+  .mj-doc { border: none; max-width: none; padding: 0; }
+  body { background: #fff; }
+}

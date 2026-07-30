@@ -65,6 +65,27 @@ module.exports = {
     { type: 'GraphQLServer', directory: './packages/Server/src/generated' },
     { type: 'ActionSubclasses', directory: './packages/Actions/src/generated' },
     { type: 'EntitySubclasses', directory: './packages/Entities/src/generated' },
+    /**
+     * Remote Operation typed bases — the API surface, emitted from the
+     * `MJ: Remote Operations` rows in metadata/remote-operations/.
+     *
+     * WHY THE ENTITIES PACKAGE. This is the app's only browser-safe shared
+     * package (its sole dependency is `zod`), and both the Angular package and
+     * every server package already depend on it. The generated bases are the
+     * CONTRACT — a browser imports them and calls `.Execute()` without pulling
+     * the server engine, which is the entire reason engine methods are exposed
+     * as operations rather than as bespoke resolvers.
+     *
+     * KNOWN NOISE. Remote operations carry no schema, so CodeGen has no
+     * core/non-core partition for them the way it does for entities (which key on
+     * SchemaName). Every configured target therefore receives the FULL operation
+     * set, so this file also picks up MJ's own core operations. That is harmless
+     * here: all of them are GenerationType=Manual, which emits an unregistered
+     * type shell — dead exported interfaces, no `@RegisterClass`, no runtime
+     * effect, no duplicate ClassFactory registration. Upstream names a per-op
+     * core/non-core marker as the open decision that would remove the noise.
+     */
+    { type: 'RemoteOperations', directory: './packages/Entities/src/generated' },
     { type: 'DBSchemaJSON', directory: './Schema Files' },
   ],
 
