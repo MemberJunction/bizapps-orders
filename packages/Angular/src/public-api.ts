@@ -61,6 +61,8 @@ export * from './lib/pages/orders/fast-entry.page';
 export * from './lib/pages/orders/order-editor.page';
 export * from './lib/pages/orders/orders-list.page';
 export * from './lib/pages/orders/orders-dashboard.page';
+export * from './lib/pages/orders/fulfillment.page';
+export * from './lib/pages/orders/order-document.page';
 
 /** The information architecture, as data — testable, and injectable for badges. */
 export {

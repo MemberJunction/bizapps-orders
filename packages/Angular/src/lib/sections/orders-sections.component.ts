@@ -39,6 +39,7 @@ import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
 import { MJOOrderEditorPageComponent } from '../pages/orders/order-editor.page';
 import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
 import { MJOOrdersDashboardPageComponent } from '../pages/orders/orders-dashboard.page';
+import { MJOFulfillmentPageComponent } from '../pages/orders/fulfillment.page';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -257,6 +258,8 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
                 return MJOOrdersListPageComponent;
             case 'dashboard':
                 return MJOOrdersDashboardPageComponent;
+            case 'fulfillment':
+                return MJOFulfillmentPageComponent;
             default:
                 return null;
         }
