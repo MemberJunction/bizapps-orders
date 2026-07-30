@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Schedule Details Section -->
+    <!-- Schedule Information Section -->
     <mj-collapsible-panel
-        SectionKey="scheduleDetails"
-        SectionName="Schedule Details"
-        Icon="fa fa-list-ul"
+        SectionKey="scheduleInformation"
+        SectionName="Schedule Information"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -29,10 +29,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Recognition Period Section -->
+    <!-- Recognition Timeline Section -->
     <mj-collapsible-panel
-        SectionKey="recognitionPeriod"
-        SectionName="Recognition Period"
+        SectionKey="recognitionTimeline"
+        SectionName="Recognition Timeline"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -59,7 +59,7 @@
     <mj-collapsible-panel
         SectionKey="financialDetails"
         SectionName="Financial Details"
-        Icon="fa fa-dollar-sign"
+        Icon="fa fa-money-bill"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

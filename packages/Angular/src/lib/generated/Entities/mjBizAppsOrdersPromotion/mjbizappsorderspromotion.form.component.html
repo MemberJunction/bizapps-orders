@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- General Information Section -->
+    <!-- Promotion Details Section -->
     <mj-collapsible-panel
-        SectionKey="generalInformation"
-        SectionName="General Information"
+        SectionKey="promotionDetails"
+        SectionName="Promotion Details"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -50,6 +50,16 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Assignment Section -->
+    <mj-collapsible-panel
+        SectionKey="assignment"
+        SectionName="Assignment"
+        Icon="fa fa-user-tag"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -70,11 +80,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Pricing and Rules Section -->
+    <!-- Rules and Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="pricingAndRules"
-        SectionName="Pricing and Rules"
-        Icon="fa fa-dollar-sign"
+        SectionKey="rulesAndConfiguration"
+        SectionName="Rules and Configuration"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -112,32 +122,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="MinimumOrderAmount"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="MinimumQuantity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Usage Limits Section -->
-    <mj-collapsible-panel
-        SectionKey="usageLimits"
-        SectionName="Usage Limits"
-        Icon="fa fa-chart-pie"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="MaxRedemptions"
             Type="number"
             [EditMode]="EditMode"
@@ -151,13 +135,37 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MinimumOrderAmount"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MinimumQuantity"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="QualifierKey"
+            Type="code"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Schedule and Eligibility Section -->
+    <!-- Schedule and Recurrence Section -->
     <mj-collapsible-panel
-        SectionKey="scheduleAndEligibility"
-        SectionName="Schedule and Eligibility"
+        SectionKey="scheduleAndRecurrence"
+        SectionName="Schedule and Recurrence"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -206,14 +214,6 @@
             [ShowLabel]="true"
             FieldName="TimeOfDayEnd"
             Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="QualifierKey"
-            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -281,7 +281,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderAdjustments"
         SectionName="Order Adjustments"
-        Icon="fa fa-hand-holding-usd"
+        Icon="fa fa-tags"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
@@ -306,7 +306,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPromotionCodes"
         SectionName="Promotion Codes"
-        Icon="fa fa-ticket-alt"
+        Icon="fa fa-tags"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

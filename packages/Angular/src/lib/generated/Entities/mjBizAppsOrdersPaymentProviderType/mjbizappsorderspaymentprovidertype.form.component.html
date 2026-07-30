@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Provider Details Section -->
+    <!-- Provider Identification Section -->
     <mj-collapsible-panel
-        SectionKey="providerDetails"
-        SectionName="Provider Details"
+        SectionKey="providerIdentification"
+        SectionName="Provider Identification"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -44,11 +44,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Provider Configuration Section -->
+    <!-- Technical Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="providerConfiguration"
-        SectionName="Provider Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="technicalConfiguration"
+        SectionName="Technical Configuration"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -78,11 +78,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Provider Capabilities Section -->
+    <!-- Capabilities Section -->
     <mj-collapsible-panel
-        SectionKey="providerCapabilities"
-        SectionName="Provider Capabilities"
-        Icon="fa fa-check-circle"
+        SectionKey="capabilities"
+        SectionName="Capabilities"
+        Icon="fa fa-check-double"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -116,7 +116,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-cog"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

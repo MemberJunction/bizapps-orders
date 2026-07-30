@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Refund a payment — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta"><span class="mj-chip mj-chip--violet">Reversal</span><span class="mj-chip">Draft</span></div>
+
+  <div slot="actions">
+    <button class="mj-btn mj-btn--primary" data-open="#rf-confirm"><i class="fa-solid fa-check"></i> Issue refund</button>
+  </div>
+
+  <div slot="body">
+    <div class="mock-note">
+      A refund is a <b>new payment</b>, never an edit of the original. The capture happened, it has an entry, and
+      rewriting it would destroy the audit trail of money that actually moved. The reversal mirrors it: same
+      accounts, sides swapped, and the cash un-applies <i>proportionally</i> to how the original was spread.
+    </div>
+
+    <div class="mj-split">
+      <div class="left">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-receipt"></i><h3>Refunding against</h3></div>
+          <div class="mj-card-pad" id="rf-origin"></div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-money-bill-transfer"></i><h3>How much</h3></div>
+          <div class="mj-card-pad">
+            <div class="mj-segmented" data-on-select="rfMode" style="margin-bottom:var(--mj-space-3)">
+              <button class="is-active" data-value="full">Full</button>
+              <button data-value="partial">Partial</button>
+            </div>
+            <div class="mj-field"><label>Refund amount</label>
+              <input class="mj-input is-num" id="rf-amt" value="5000.00">
+              <div class="hint" id="rf-cap"></div></div>
+            <div class="mj-field"><label>Reason</label>
+              <select class="mj-select">
+                <option selected>Sponsorship cancelled</option><option>Duplicate payment</option>
+                <option>Service not delivered</option><option>Goodwill</option>
+                <option>Chargeback pre-empted</option></select></div>
+            <div class="mj-field"><label>Refund to</label>
+              <div class="mj-stated" style="padding-top:0">
+                <span class="value"><i class="fa-brands fa-cc-visa"></i> Visa ···· 4242</span>
+                <span class="from">the original instrument</span></div>
+              <div class="hint">The reversal takes its own immutable snapshot rather than pointing at the
+                original's — same discipline as every other instrument copy.</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-arrows-split-up-and-left"></i>
+            <h3>How it un-applies</h3>
+            <span class="right small muted">proportional to the original allocation</span></div>
+          <table class="mj-table mj-table--compact">
+            <thead><tr><th style="width:110px">Order</th><th>Memo</th>
+              <th class="num" style="width:110px">Originally</th>
+              <th class="num" style="width:70px">Share</th>
+              <th class="num" style="width:120px">Un-applies</th>
+              <th class="num" style="width:120px">New balance</th></tr></thead>
+            <tbody id="rf-rows"></tbody>
+            <tfoot id="rf-foot"></tfoot>
+          </table>
+          <div class="mj-card-pad" style="border-top:1px solid var(--mj-border-default)">
+            <div class="small muted">
+              A payment split across three orders refunds across the same three, in the same ratio. Choosing
+              which order to claw back from would be a decision the original payment already made.
+            </div>
+          </div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-scale-balanced"></i><h3>Mirrored entry</h3></div>
+          <div class="mj-card-pad" id="rf-je"></div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-shield-halved"></i><h3>Guards</h3></div>
+          <div class="mj-card-pad small" id="rf-guards"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div slot="overlays">
+    <div class="mj-modal" id="rf-confirm">
+      <div class="mj-modal-head">
+        <i class="fa-solid fa-arrow-rotate-left" style="color:var(--mj-brand-primary)"></i>
+        <div><h2>Issue this refund?</h2><div class="small muted" id="rf-cf-sub"></div></div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-modal-body" id="rf-cf"></div>
+      <div class="mj-modal-foot">
+        <span class="small muted"><i class="fa-solid fa-lock"></i> The reversal payment and its entry commit together.</span>
+        <span class="right"><button class="mj-btn mj-btn--flat" data-close>Back</button>
+          <button class="mj-btn mj-btn--primary" data-close>Issue refund</button></span>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+const H = MJ.H;
+const r2 = n => Math.round(n * 100) / 100;
+const ORIG = DB.paymentByNumber('PAY-3001');
+const state = { amount: ORIG.amount, mode: 'full' };
+
+function refundedSoFar() { return ORIG.refunded || 0; }
+function refundable() { return r2(ORIG.amount - refundedSoFar()); }
+
+function render() {
+  const cap = refundable();
+  state.amount = Math.min(state.amount, cap);
+
+  document.getElementById('rf-origin').innerHTML = `
+    <div class="row" style="margin-bottom:var(--mj-space-3)">
+      <span class="mono strong" style="font-size:15px">${ORIG.number}</span>
+      <span class="mj-chip mj-chip--success">Captured</span>
+      <span class="spacer"><button class="mj-btn mj-btn--outline mj-btn--sm">Change</button></span>
+    </div>
+    <div class="mj-stated"><span class="muted small" style="width:130px">From</span>
+      <span class="value">${DB.orgs[ORIG.partyOrgID].name}</span></div>
+    <div class="mj-stated"><span class="muted small" style="width:130px">Captured</span>
+      <span class="value">${F.date(ORIG.date)}</span></div>
+    <div class="mj-stated"><span class="muted small" style="width:130px">Gross</span>
+      <span class="value mj-num">${F.money(ORIG.amount)}</span></div>
+    <div class="mj-stated"><span class="muted small" style="width:130px">Processing fee</span>
+      <span class="value mj-num">${F.money(ORIG.fee)}</span><span class="from">not reversed</span></div>
+    <div class="mj-stated"><span class="muted small" style="width:130px">Already refunded</span>
+      <span class="value mj-num">${refundedSoFar() ? F.money(refundedSoFar()) : '— none'}</span></div>
+    <div class="mj-stated"><span class="muted small" style="width:130px">Refundable</span>
+      <span class="value mj-num strong">${F.money(cap)}</span></div>
+    <div class="small muted" style="margin-top:var(--mj-space-2)">
+      The processor kept its ${F.money(ORIG.fee)} cut, so the refund does not give it back. Reversing it would
+      claim money from the processor that we never get.
+    </div>`;
+
+  document.getElementById('rf-cap').textContent =
+    `Never more than ${F.money(cap)} remains refundable. Partial refunds accumulate against this cap.`;
+  document.getElementById('rf-amt').value = state.amount.toFixed(2);
+
+  const ratio = state.amount / ORIG.amount;
+  const rows = ORIG.allocations.map(a => {
+    const o = DB.orderByNumber(a.order);
+    const share = a.amount / ORIG.amount;
+    const un = r2(state.amount * share);
+    return { ...a, order: a.order, o, share, un, newBal: r2((o ? o.balance : 0) + un) };
+  });
+
+  document.getElementById('rf-rows').innerHTML = rows.map(r => `
+    <tr><td><a class="mono" href="../orders/document.html">${r.order}</a></td>
+      <td class="small">${r.o ? r.o.description : ''}</td>
+      <td class="num">${F.money(r.amount)}</td>
+      <td class="num muted">${(r.share * 100).toFixed(1)}%</td>
+      <td class="num strong mj-money--neg">−${F.money(r.un)}</td>
+      <td class="num">${F.money(r.newBal)}
+        ${r.newBal > 0 ? '<div class="secondary">becomes due again</div>' : ''}</td></tr>`).join('');
+
+  document.getElementById('rf-foot').innerHTML = `<tr class="is-total">
+    <td colspan="4">Refund total</td>
+    <td class="num mj-money--neg">−${F.money(state.amount)}</td><td></td></tr>`;
+
+  const g = DB.glRoles[ORIG.receivingCompanyID];
+  document.getElementById('rf-je').innerHTML = `
+    <div class="small muted" style="margin-bottom:var(--mj-space-2)">
+      ${DB.companies[ORIG.receivingCompanyID].name}</div>
+    <table class="mj-table mj-table--compact"><tbody>
+      <tr><td style="width:34px" class="muted strong">Dr</td><td>${g.AR}</td>
+        <td class="num">${F.money(state.amount)}</td></tr>
+      <tr><td class="muted strong">Cr</td><td>${g.Cash}</td>
+        <td class="num">${F.money(state.amount)}</td></tr>
+    </tbody></table>
+    <div class="mj-banner mj-banner--success" style="margin-top:var(--mj-space-2)">
+      <i class="fa-solid fa-check"></i>
+      <div class="body">The capture's entry, exactly inverted. A/R goes back up because the customer owes it
+      again; cash goes down because it left the bank. No fee leg — that cost is already incurred.</div></div>`;
+
+  document.getElementById('rf-guards').innerHTML = `
+    <div class="stack-2">
+      ${guard(ORIG.status === 'Captured', 'Original must be captured',
+        `${ORIG.number} is Captured. A pending payment is cancelled, not refunded.`)}
+      ${guard(state.amount <= cap, 'Never more than remains',
+        `${F.money(state.amount)} of ${F.money(cap)} refundable. Partial refunds accumulate against the cap.`)}
+      ${guard(refundedSoFar() === 0 || state.amount <= cap, 'Never twice',
+        'No prior refund exists against this payment.')}
+      ${guard(state.amount > 0, 'Amount must be positive',
+        'The magnitude is stored positive with negative allocation lines — that sign convention is what the mirror reads.')}
+    </div>`;
+
+  renderConfirm(rows);
+
+  function guard(ok, title, detail) {
+    return `<div class="row-t">
+      <i class="fa-solid ${ok ? 'fa-check' : 'fa-xmark'}"
+         style="color:var(--mj-status-${ok ? 'success' : 'error'});margin-top:3px"></i>
+      <div><b>${title}</b><div class="muted">${detail}</div></div></div>`;
+  }
+}
+
+function renderConfirm(rows) {
+  document.getElementById('rf-cf-sub').textContent =
+    `${F.money(state.amount)} back to ${DB.orgs[ORIG.partyOrgID].name}`;
+  document.getElementById('rf-cf').innerHTML = `
+    <div class="mj-banner mj-banner--warning">
+      <i class="fa-solid fa-triangle-exclamation"></i>
+      <div class="body"><strong>${F.money(state.amount)} will leave the bank.</strong> This creates a new
+      reversal payment against ${ORIG.number} — it does not alter the original.</div>
+    </div>
+    <details class="mj-panel" open style="margin-top:var(--mj-space-4)">
+      <summary><i class="fa-solid fa-arrows-split-up-and-left"></i> Orders that become due again
+        <span class="right"><span class="mj-chip mj-chip--outline">${rows.length}</span></span></summary>
+      <div class="mj-panel-body">
+        <table class="mj-table mj-table--compact"><tbody>
+          ${rows.map(r => `<tr><td class="mono">${r.order}</td>
+            <td class="num mj-money--neg">−${F.money(r.un)}</td>
+            <td class="num">balance ${F.money(r.newBal)}</td></tr>`).join('')}
+        </tbody></table>
+      </div>
+    </details>
+    <details class="mj-panel" open>
+      <summary><i class="fa-solid fa-scale-balanced"></i> Journal entry
+        <span class="right"><span class="mj-chip mj-chip--success">1 entry · mirrored · balanced</span></span></summary>
+      <div class="mj-panel-body small">Dr Accounts Receivable ${F.money(state.amount)} /
+        Cr Operating Cash ${F.money(state.amount)} — landing Pending.</div>
+    </details>
+    <div class="mock-note is-api">One atomic server operation: the reversal payment, its negative allocation lines
+      and the reversing entry commit together or not at all. Transaction groups do not cross the API boundary,
+      which is exactly why this is an operation rather than a sequence of saves.</div>`;
+}
+
+function rfMode(v) {
+  state.mode = v;
+  if (v === 'full') state.amount = refundable();
+  render();
+}
+
+MJ.mount({
+  nav: 'payments', rail: 'refund',
+  title: 'Refund a payment',
+  icon: 'fa-solid fa-arrow-rotate-left',
+  subtitle: 'A new payment that mirrors the capture — never an edit of it',
+  ready() {
+    render();
+    document.getElementById('rf-amt').addEventListener('change', e => {
+      const n = parseFloat(String(e.target.value).replace(/[^0-9.]/g, ''));
+      state.amount = isNaN(n) ? 0 : Math.min(r2(n), refundable());
+      render();
+    });
+  },
+});
+</script>
+</body>
+</html>

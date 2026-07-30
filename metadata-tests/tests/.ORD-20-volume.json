@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-20 - Volume and Concurrency",
+    "Description": "Does it still hold at the eightieth order (VL1-VL13)? Every other bundle confirms one or two orders and asserts the result in detail, which is right for proving a rule and blind to the defects that only appear with repetition: a numbering scheme that is contiguous for two orders and skips at the eightieth, an engine that caches per PROCESS what should have been per ORDER, a rollup that drifts once thirty orders each take two payments, a failure that is contained alone and takes its neighbours with it when it is the twentieth of forty, and subscription term 12 - proven nowhere, because 'term N starts the day after term N-1 ends' is a recurrence rather than a single fact. So these checks build POPULATIONS of deliberately varied shape (products, quantities, two companies, ship-to addresses, promotions, charges, subscriptions) and VL1 asserts the variation happened rather than trusting the generator, because a hundred copies of one order proves one path a hundred times. Volume needs no committing: every check rolls back, which is also what makes eighty distinct numbers observable at once. This bundle additionally establishes that a SECOND SQLServerDataProvider can coexist with the installed one - built from the running provider's own constructor and ConfigData, sharing the pool but taking its own connection, with Metadata.Provider left pointing at the first - so a real ConfirmOrder runs end to end on a genuinely independent MJ session. What that still cannot produce is N simultaneous successful confirms with N distinct numbers: the number is taken by UPDATE ... OUTPUT inside the caller's transaction (that is what stops a failed confirm burning an A/R document number), so the counter row stays exclusively locked until that transaction ends, and any test holding N transactions open while awaiting N confirms deadlocks by construction. Timing is LOGGED and never asserted - wall clock on a shared development server is not a property, and an assertion on it is a scheduled flake.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Eighty varied orders in one transaction take eighty strictly increasing, gap-free, well-formed numbers and advance the counter by exactly eighty; across the population every header equals the sum of its own lines with gross = net + tax + charges and Balance = TotalGross - AmountPaid; every journal entry balances to the penny, no confirmed line is left unbooked, and the two-company orders book into BOTH companies' accounts; every charge's allocations sum to the charge and every promoted order's shares sum to the discount its lines carry, with no zero or negative share; one poisoned order in the middle of a batch of forty fails for the GL-account reason, leaves no header, line, charge or entry behind, burns no number (the surviving numbers stay one contiguous run and the counter advances thirty-nine times), and leaves the other thirty-nine untouched; twelve repeat purchases of an ExtendExisting subscription find and extend ONE subscription with twelve contiguous non-overlapping full-price terms numbered 1..12; ten attempts at a RejectDuplicate subscription leave exactly one subscription and one term, with nine refusals that each name the concurrency rule and no order left behind; thirty orders settled by sixty penny-awkward payments roll up so that every order's AmountPaid equals the sum of its payment lines exactly, Balance is the remainder, and none is left PartiallyPaid; a real second MJ confirm on an independent session blocks behind an uncommitted first one and takes the SAME number once it rolls back, and does so across companies too, proving the sequence is global rather than per company while the blocked confirm's own ledger still balances; three sessions pricing concurrently get identical correct answers, including when two of them want different price lists at the same instant; re-saving twenty-five already-confirmed orders persists the edit and re-books none of them; and one sixty-line order books sixty balanced entries with a single promotion correctly split across all sixty lines."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "volume"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "F3C1D26A-4E0B-4B77-9C1E-2A5D8B0F71C4"
+  },
+  "sync": {
+    "lastModified": "2026-07-29T23:37:44.808Z",
+    "checksum": "fee2c88c5a23b7c1bef650f11ee9054aad70f450d6eaea2c7d9480bd3d3bbcfc"
+  }
+}

@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customer A/R — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  .ar-cust {
+    display: flex; align-items: center; gap: var(--mj-space-3);
+    padding: var(--mj-space-3); border-radius: var(--mj-radius-md); cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .ar-cust:hover { background: var(--mj-bg-surface-hover); }
+  .ar-cust.is-active {
+    background: color-mix(in srgb, var(--mj-brand-primary) 8%, transparent);
+    border-color: color-mix(in srgb, var(--mj-brand-primary) 35%, transparent);
+  }
+  .ar-cust .nm { font-size: 13px; font-weight: var(--mj-font-medium); }
+  .ar-cust .amt { margin-left: auto; text-align: right; }
+  .ar-mini { display: flex; height: 4px; border-radius: 2px; overflow: hidden; margin-top: 5px; }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta"><span class="mj-chip mj-chip--outline" id="ar-total">—</span></div>
+
+  <div slot="actions">
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-download"></i> Aging report</button>
+    <a class="mj-btn mj-btn--outline" href="overdue.html"><i class="fa-solid fa-hourglass-half"></i> Overdue worklist</a>
+    <a class="mj-btn mj-btn--primary" href="../payments/entry.html"><i class="fa-solid fa-hand-holding-dollar"></i> Take a payment</a>
+  </div>
+
+  <div slot="body">
+    <div class="mock-note">
+      One customer, their whole money picture, in one place — aging, open items, credits they are holding, and what
+      they have paid. The accounting team's job is not to look up an invoice; it is to know where a relationship
+      stands before they pick up the phone.
+    </div>
+
+    <div class="mj-split mj-split--narrow-left">
+
+      <!-- customer list -->
+      <aside class="left">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-user-tag"></i><h3>Customers with a balance</h3></div>
+          <div class="mj-card-pad" style="padding:var(--mj-space-2)">
+            <div class="mj-search" style="margin:0 var(--mj-space-1) var(--mj-space-2);min-width:0">
+              <i class="fa-solid fa-magnifying-glass"></i><input placeholder="Find a customer…"></div>
+            <div id="ar-list"></div>
+          </div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-chart-column"></i><h3>Total A/R by age</h3></div>
+          <div class="mj-card-pad">
+            <div id="ar-portfolio"></div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- detail -->
+      <div class="right">
+        <div class="mj-card">
+          <div class="mj-card-pad" id="ar-head"></div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-file-invoice-dollar"></i><h3>Open items</h3>
+            <span class="right small muted">oldest first</span></div>
+          <table class="mj-table mj-table--compact">
+            <thead><tr><th style="width:110px">Order</th><th>Memo</th><th style="width:56px">Co.</th>
+              <th style="width:96px">Due</th><th class="num" style="width:110px">Total</th>
+              <th class="num" style="width:110px">Paid</th>
+              <th class="num" style="width:112px">Balance</th><th style="width:78px">Age</th></tr></thead>
+            <tbody id="ar-open"></tbody>
+            <tfoot id="ar-open-foot"></tfoot>
+          </table>
+        </div>
+
+        <div class="grid-2" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card">
+            <div class="mj-card-head"><i class="fa-solid fa-piggy-bank"></i><h3>Credits they hold</h3></div>
+            <div class="mj-card-pad" id="ar-credits"></div>
+          </div>
+          <div class="mj-card">
+            <div class="mj-card-head"><i class="fa-solid fa-clock-rotate-left"></i><h3>Payment history</h3></div>
+            <div class="mj-card-pad" id="ar-history"></div>
+          </div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-rotate"></i><h3>Subscriptions</h3>
+            <span class="right"><a class="small" href="subscriptions.html">All subscriptions →</a></span></div>
+          <div class="mj-card-pad" id="ar-subs"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+const H = MJ.H;
+const r2 = n => Math.round(n * 100) / 100;
+let SEL = 'O1';
+
+function bucketOf(o) {
+  const late = o.dueDate ? F.days(o.dueDate) : 0;
+  if (late <= 0) return { key: 'cur', label: 'Current', cls: '' };
+  if (late <= 30) return { key: 'd30', label: `${late}d`, cls: 'mj-chip--warning' };
+  if (late <= 60) return { key: 'd60', label: `${late}d`, cls: 'mj-chip--warning' };
+  return { key: 'd90', label: `${late}d`, cls: 'mj-chip--error' };
+}
+
+function render() {
+  const withBal = DB.customers.filter(c => c.open > 0 || c.credit > 0)
+    .slice().sort((a, b) => b.open - a.open);
+  const total = r2(withBal.reduce((s, c) => s + c.open, 0));
+  document.getElementById('ar-total').textContent = `${F.money(total)} open across ${withBal.length} customers`;
+
+  /* left list */
+  document.getElementById('ar-list').innerHTML = withBal.map(c => {
+    const b = c.buckets, t = c.open || 1;
+    const seg = (v, col) => v > 0 ? `<span style="width:${(v / t) * 100}%;background:${col}"></span>` : '';
+    return `<div class="ar-cust ${c.id === SEL ? 'is-active' : ''}" onclick="AR.sel('${c.id}')">
+      <span class="mj-avatar" style="width:30px;height:30px;font-size:11px">${F.initials(c.name)}</span>
+      <span style="flex:1;min-width:0">
+        <span class="nm">${c.name}</span>
+        <span class="small muted" style="display:block">${c.kind === 'Person' ? 'Individual' : c.terms}</span>
+        <span class="ar-mini">
+          ${seg(b.cur, 'var(--mj-color-neutral-500)')}${seg(b.d30, 'var(--mj-color-warning-500)')}
+          ${seg(b.d60, 'var(--mj-color-error-500)')}${seg(b.d90, '#991b1b')}
+        </span>
+      </span>
+      <span class="amt">
+        <b class="mj-num" style="font-size:13px">${F.money(c.open)}</b>
+        ${c.credit ? `<span class="small mj-money--credit" style="display:block">+${F.money(c.credit)} cr</span>` : ''}
+      </span>
+    </div>`;
+  }).join('');
+
+  /* portfolio aging */
+  const port = { cur: 0, d30: 0, d60: 0, d90: 0 };
+  withBal.forEach(c => Object.keys(port).forEach(k => port[k] += c.buckets[k]));
+  Object.keys(port).forEach(k => port[k] = r2(port[k]));
+  document.getElementById('ar-portfolio').innerHTML = H.agingBar(port) + `
+    <div class="small muted" style="margin-top:var(--mj-space-3)">
+      Severity is the only thing colour encodes on this screen, and the ramp was validated rather than eyeballed —
+      the amber and red steps measure far enough apart to survive colour-vision deficiency. Amounts are printed on
+      every segment regardless, so the bar is never the only way to read the number.
+    </div>`;
+
+  /* detail */
+  const c = DB.customerByID(SEL);
+  const open = DB.openOrdersFor(SEL);
+  const credits = DB.creditsFor(SEL);
+  const org = DB.orgs[SEL], person = DB.people[SEL];
+
+  document.getElementById('ar-head').innerHTML = `
+    <div class="row" style="gap:var(--mj-space-4);align-items:flex-start">
+      <span class="mj-avatar" style="width:44px;height:44px;font-size:15px">${F.initials(c.name)}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:17px;font-weight:var(--mj-font-semibold)">${c.name}</div>
+        <div class="small muted">
+          ${c.kind} · customer since ${F.date(c.since)} · ${c.terms}
+          ${c.contact ? ` · contact ${c.contact}` : ''}
+        </div>
+        <div class="row wrap" style="gap:6px;margin-top:var(--mj-space-2)">
+          ${c.wallet ? `<span class="mj-chip mj-chip--outline"><i class="fa-solid fa-credit-card"></i>
+            ${c.wallet} saved method${c.wallet === 1 ? '' : 's'}</span>` : ''}
+          <span class="mj-chip mj-chip--outline">${F.money0(c.ytd)} lifetime</span>
+          ${c.buckets.d90 > 0 ? '<span class="mj-chip mj-chip--error">61+ days past due</span>' : ''}
+          ${(org && org.address) ? `<span class="mj-chip mj-chip--outline">${org.address[1]}</span>` : ''}
+        </div>
+      </div>
+      <div class="row" style="gap:var(--mj-space-2)">
+        <a class="mj-btn mj-btn--primary mj-btn--sm" href="../payments/entry.html">
+          <i class="fa-solid fa-hand-holding-dollar"></i> Take payment</a>
+        ${c.credit ? `<a class="mj-btn mj-btn--outline mj-btn--sm" href="../payments/credit.html">
+          <i class="fa-solid fa-piggy-bank"></i> Apply credit</a>` : ''}
+        <button class="mj-btn mj-btn--outline mj-btn--sm"><i class="fa-regular fa-envelope"></i> Statement</button>
+        <a class="mj-btn mj-btn--outline mj-btn--sm" href="../orders/fast-entry.html">
+          <i class="fa-solid fa-plus"></i> New order</a>
+      </div>
+    </div>
+
+    <div class="mj-money-strip" style="margin-top:var(--mj-space-4)">
+      <div><span class="l">Open balance</span><span class="v">${F.money(c.open)}</span></div>
+      <div><span class="l">Credit held</span>
+        <span class="v ${c.credit ? 'mj-money--credit' : 'mj-money--muted'}">${c.credit ? F.money(c.credit) : '—'}</span></div>
+      <div><span class="l">Net owed</span><span class="v">${F.money(r2(c.open - c.credit))}</span></div>
+      <div>${c.buckets.d90 > 0 ? '<span class="mj-chip mj-chip--error">Collection risk</span>'
+        : c.buckets.d30 + c.buckets.d60 > 0 ? '<span class="mj-chip mj-chip--warning">Past due</span>'
+        : '<span class="mj-chip mj-chip--success">Current</span>'}</div>
+    </div>
+
+    <div style="margin-top:var(--mj-space-4)">${H.agingBar(c.buckets)}</div>
+
+    ${c.credit ? `<div class="mj-banner mj-banner--success" style="margin-top:var(--mj-space-4)">
+      <i class="fa-solid fa-piggy-bank"></i>
+      <div class="body"><strong>${F.money(c.credit)} of credit is sitting unused</strong> while
+      ${F.money(c.open)} is owed. Applying it first is almost always the right move — and it is one click, because
+      the credit is just another order balance.</div></div>` : ''}`;
+
+  document.getElementById('ar-open').innerHTML = open.length ? open.map(o => {
+    const b = bucketOf(o);
+    return `<tr>
+      <td><a class="mono primary" href="../orders/document.html">${o.number}</a></td>
+      <td><div class="small">${o.description || ''}</div>${H.origin(o.origin, o.originRef)}</td>
+      <td>${H.company(o.companyID)}</td>
+      <td>${o.dueDate ? F.dateShort(o.dueDate) : '—'}</td>
+      <td class="num">${F.money(o.gross)}</td>
+      <td class="num ${o.paid ? '' : 'muted'}">${o.paid ? F.money(o.paid) : '—'}</td>
+      <td class="num strong">${F.money(o.balance)}</td>
+      <td><span class="mj-chip ${b.cls}">${b.label}</span></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="8"><div class="mj-empty" style="padding:var(--mj-space-6)">
+      <i class="fa-solid fa-check"></i><div class="t">Nothing outstanding</div></div></td></tr>`;
+
+  document.getElementById('ar-open-foot').innerHTML = open.length ? `<tr class="is-total">
+    <td colspan="6">Open balance</td><td class="num">${F.money(c.open)}</td><td></td></tr>` : '';
+
+  document.getElementById('ar-credits').innerHTML = credits.length ? credits.map(o => `
+    <div class="row-t" style="padding:var(--mj-space-2) 0;border-bottom:1px solid var(--mj-border-subtle)">
+      <i class="fa-solid fa-piggy-bank" style="color:var(--mj-status-success);margin-top:3px"></i>
+      <div style="flex:1">
+        <div><a class="mono" href="../orders/document.html">${o.number}</a>
+          <span class="small muted">${o.type === 'Return' ? 'return' : 'over-payment'}</span></div>
+        <div class="small muted">${F.date(o.orderDate)} — ${o.description || ''}</div>
+      </div>
+      <b class="mj-num mj-money--credit">${F.money(Math.abs(o.balance))}</b>
+    </div>`).join('') + `<a class="mj-btn mj-btn--outline mj-btn--sm" href="../payments/credit.html"
+      style="margin-top:var(--mj-space-3)"><i class="fa-solid fa-arrow-right"></i> Apply to an open order</a>`
+    : `<div class="small muted">No credits. A credit here would be an order with a negative balance — from an
+       over-payment or a return — not a separate instrument.</div>`;
+
+  const hist = DB.payments.filter(p => (p.partyOrgID || p.partyPersonID) === SEL);
+  document.getElementById('ar-history').innerHTML = hist.length ? `
+    <table class="mj-table mj-table--compact"><tbody>
+      ${hist.slice().sort((a, b) => b.date.localeCompare(a.date)).map(p => `<tr>
+        <td><a class="mono" href="../payments/list.html">${p.number}</a>
+          <div class="secondary">${F.dateShort(p.date)} · ${p.typeCode}</div></td>
+        <td class="num strong ${p.typeCode === 'Refund' ? 'mj-money--neg' : ''}">
+          ${p.typeCode === 'Refund' ? '−' : ''}${F.money(p.amount)}</td></tr>`).join('')}
+    </tbody></table>` : '<div class="small muted">No payments recorded.</div>';
+
+  const subs = DB.subscriptions.filter(s => s.holder === c.name);
+  document.getElementById('ar-subs').innerHTML = subs.length ? `
+    <table class="mj-table mj-table--compact">
+      <thead><tr><th style="width:110px">Subscription</th><th>Beneficiary</th><th style="width:110px">Status</th>
+        <th style="width:120px">Covered to</th><th class="num" style="width:110px">Per term</th></tr></thead>
+      <tbody>${subs.map(s => `<tr>
+        <td><a class="mono" href="subscriptions.html">${s.number}</a></td>
+        <td>${s.beneficiary}</td>
+        <td><span class="mj-chip ${s.status === 'Active' ? 'mj-chip--success'
+          : s.status === 'Grace' ? 'mj-chip--warning' : 'mj-chip--outline'}">${s.status}</span></td>
+        <td>${F.date(s.endDate)}</td>
+        <td class="num">${F.money(s.amountPerTerm)}</td></tr>`).join('')}
+      </tbody></table>` : '<div class="small muted">No subscriptions.</div>';
+}
+
+const AR = { sel(id) { SEL = id; render(); } };
+
+MJ.mount({
+  nav: 'receivables', rail: 'aging',
+  title: 'Customer A/R',
+  icon: 'fa-solid fa-user-tag',
+  subtitle: 'Where each relationship stands before you pick up the phone',
+  ready: render,
+});
+</script>
+</body>
+</html>

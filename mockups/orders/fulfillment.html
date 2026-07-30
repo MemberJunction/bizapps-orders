@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fulfillment queue — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  .fq-bulk {
+    display: flex; align-items: center; gap: var(--mj-space-3);
+    padding: var(--mj-space-2) var(--mj-space-4); margin-bottom: var(--mj-space-3);
+    background: color-mix(in srgb, var(--mj-brand-primary) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--mj-brand-primary) 30%, transparent);
+    border-radius: var(--mj-radius-md); font-size: 12.5px;
+  }
+  .fq-addr { font-size: 11.5px; color: var(--mj-text-muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta">
+    <span class="mj-chip mj-chip--warning">3 pending</span>
+    <span class="mj-chip mj-chip--error">1 past requested date</span>
+  </div>
+
+  <div slot="actions">
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-print"></i> Pick list</button>
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-arrow-rotate-right"></i></button>
+    <button class="mj-btn mj-btn--primary" id="fq-mark" disabled><i class="fa-solid fa-check"></i> Mark fulfilled</button>
+  </div>
+
+  <div slot="toolbar">
+    <div class="mj-search"><i class="fa-solid fa-magnifying-glass"></i>
+      <input placeholder="Order, product, or recipient…"></div>
+    <div class="row wrap" data-chips data-on-select="fqPreset" style="gap:6px">
+      <button class="mj-filter-chip is-active" data-value="pending">Pending <span class="count">3</span></button>
+      <button class="mj-filter-chip" data-value="late"><i class="fa-solid fa-triangle-exclamation"></i> Late <span class="count">1</span></button>
+      <button class="mj-filter-chip" data-value="done">Fulfilled <span class="count">1</span></button>
+      <button class="mj-filter-chip" data-value="all">All <span class="count">4</span></button>
+    </div>
+  </div>
+
+  <div slot="body">
+    <div class="mock-note">
+      Fulfillment and revenue are <b>disconnected</b>. Shipping something fires no journal entry — it is a logistics
+      fact. What fulfillment does control is the order's stage: an order with nothing to ship auto-advances from
+      Posted straight to Fulfilled, and one with a physical line waits here instead.
+    </div>
+
+    <div class="fq-bulk hidden" id="fq-bulk">
+      <i class="fa-solid fa-check-double"></i>
+      <span><b id="fq-n">0</b> selected</span>
+      <span class="spacer">
+        <button class="mj-btn mj-btn--primary mj-btn--sm"><i class="fa-solid fa-check"></i> Mark fulfilled</button>
+        <button class="mj-btn mj-btn--outline mj-btn--sm"><i class="fa-solid fa-print"></i> Pick list</button>
+        <button class="mj-btn mj-btn--flat mj-btn--sm" onclick="FQ.clear()">Clear</button>
+      </span>
+    </div>
+
+    <div class="mj-table-wrap">
+      <table class="mj-table">
+        <thead>
+          <tr>
+            <th style="width:34px"><input type="checkbox" onchange="FQ.all(this.checked)"></th>
+            <th style="width:112px">Order</th>
+            <th>Item</th>
+            <th class="num" style="width:60px">Qty</th>
+            <th>Ship to</th>
+            <th style="width:56px">Co.</th>
+            <th style="width:110px">Requested</th>
+            <th style="width:100px">Posted</th>
+            <th style="width:110px">Status</th>
+          </tr>
+        </thead>
+        <tbody id="fq-rows"></tbody>
+      </table>
+    </div>
+
+    <div class="grid-2" style="margin-top:var(--mj-space-4)">
+      <div class="mj-card">
+        <div class="mj-card-head"><i class="fa-solid fa-circle-info"></i><h3>What marking fulfilled does</h3></div>
+        <div class="mj-card-pad small stack-2">
+          <div class="row-t"><i class="fa-solid fa-check" style="color:var(--mj-status-success);margin-top:3px"></i>
+            <div>Flips the <b>line's</b> fulfillment status to Fulfilled.</div></div>
+          <div class="row-t"><i class="fa-solid fa-check" style="color:var(--mj-status-success);margin-top:3px"></i>
+            <div>When every fulfillment-requiring line on the order is done, the <b>order</b> advances to Fulfilled.</div></div>
+          <div class="row-t"><i class="fa-solid fa-xmark" style="color:var(--mj-text-muted);margin-top:3px"></i>
+            <div class="muted">Writes <b>no</b> journal entry. Revenue was settled by the product's recognition
+              shape at booking; when the box leaves the building is a different question.</div></div>
+        </div>
+      </div>
+
+      <div class="mj-card">
+        <div class="mj-card-head"><i class="fa-solid fa-boxes-packing"></i><h3>Orders held only by fulfillment</h3></div>
+        <div class="mj-card-pad">
+          <table class="mj-table mj-table--compact">
+            <thead><tr><th>Order</th><th>Waiting on</th><th class="num">Days at Posted</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">ORD-0961</td><td>10 × Printed Handbook</td>
+                <td class="num" style="color:var(--mj-status-error-text)">120</td></tr>
+              <tr><td class="mono">ORD-1005</td><td>5 × Printed Handbook</td><td class="num">8</td></tr>
+              <tr><td class="mono">ORD-1017</td><td>24 × Field Guide</td><td class="num">1</td></tr>
+            </tbody>
+          </table>
+          <div class="small muted" style="margin-top:var(--mj-space-2)">
+            These are fully paid-or-invoiced and correctly booked. Nothing financial is waiting — only the goods.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+let PRESET = 'pending';
+const sel = new Set();
+
+const MATCH = {
+  pending: r => r.status === 'Pending',
+  late:    r => r.status === 'Pending' && r.late,
+  done:    r => r.status === 'Fulfilled',
+  all:     () => true,
+};
+
+function render() {
+  const rows = DB.fulfillment.filter(MATCH[PRESET]);
+  document.getElementById('fq-rows').innerHTML = rows.map((r, i) => {
+    const key = r.order + ':' + r.line;
+    const overdue = r.status === 'Pending' && F.days(r.requested) > 0;
+    return `<tr>
+      <td><input type="checkbox" ${sel.has(key) ? 'checked' : ''} ${r.status !== 'Pending' ? 'disabled' : ''}
+                 onchange="FQ.pick('${key}', this.checked)"></td>
+      <td><span class="mono primary">${r.order}</span><div class="secondary">line ${r.line}</div></td>
+      <td><span class="primary">${r.product}</span><div class="secondary">${r.customer}</div></td>
+      <td class="num strong">${r.qty}</td>
+      <td class="fq-addr">${r.shipTo.join('<br>')}</td>
+      <td>${MJ.H.company(r.company)}</td>
+      <td>${F.dateShort(r.requested)}
+        ${overdue ? `<div class="secondary" style="color:var(--mj-status-error-text)">${F.days(r.requested)}d past</div>` : ''}</td>
+      <td class="secondary">${F.dateShort(r.posted)}</td>
+      <td>${r.status === 'Fulfilled'
+        ? `<span class="mj-chip mj-chip--success">Fulfilled</span><div class="secondary">${F.dateShort(r.fulfilledOn)}</div>`
+        : overdue ? '<span class="mj-chip mj-chip--error">Late</span>'
+                  : '<span class="mj-chip mj-chip--warning">Pending</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const n = sel.size;
+  document.getElementById('fq-n').textContent = n;
+  document.getElementById('fq-bulk').classList.toggle('hidden', n === 0);
+  document.getElementById('fq-mark').disabled = n === 0;
+}
+
+const FQ = {
+  pick(key, on) { on ? sel.add(key) : sel.delete(key); render(); },
+  all(on) {
+    sel.clear();
+    if (on) DB.fulfillment.filter(MATCH[PRESET]).filter(r => r.status === 'Pending')
+      .forEach(r => sel.add(r.order + ':' + r.line));
+    render();
+  },
+  clear() { sel.clear(); render(); },
+};
+
+function fqPreset(v) { PRESET = v; sel.clear(); render(); }
+
+MJ.mount({
+  nav: 'orders', rail: 'fulfillment',
+  title: 'Fulfillment queue',
+  icon: 'fa-solid fa-dolly',
+  subtitle: 'Physical lines waiting to ship — logistics, not revenue',
+  ready: render,
+});
+</script>
+</body>
+</html>
