@@ -1,0 +1,378 @@
+<!--
+  Fast entry — the 80% order in one column.
+
+  Markup is ported from the approved mockup (mockups/orders/fast-entry.html) and
+  uses the SAME class names, which resolve through orders-kit.css. That is what
+  keeps the shipped screen and the signed-off design identical rather than
+  similar.
+-->
+<div class="fe-wrap">
+
+  <!-- ═══════════════ MAIN COLUMN ═══════════════ -->
+  <div class="fe-main">
+
+    <!-- ── 1 · WHO ─────────────────────────────── -->
+    <section class="fe-step" [class.is-done]="!!Customer">
+      <div class="fe-step-head">
+        <span class="fe-step-n">
+          @if (Customer) { <i class="fa-solid fa-check" aria-hidden="true"></i> } @else { 1 }
+        </span>
+        <span class="fe-step-t">Who is this for?</span>
+        <span class="fe-step-hint">Bill-to party</span>
+      </div>
+
+      @if (Customer) {
+        <div class="mj-card">
+          <div class="fe-cust">
+            <span class="mj-avatar fe-cust__avatar">{{ CustomerInitials }}</span>
+
+            <div class="who">
+              <div class="nm">{{ Customer.DisplayName }}</div>
+              @if (Customer.Email) {
+                <div class="small muted">{{ Customer.Email }}</div>
+              }
+
+              <div class="row wrap fe-cust__chips">
+                @if (Customer.OrganizationName) {
+                  <span class="mj-chip mj-chip--outline">
+                    <i class="fa-solid fa-building" aria-hidden="true"></i> {{ Customer.OrganizationName }}
+                  </span>
+                }
+                @if (Customer.Terms) {
+                  <span class="mj-chip mj-chip--outline">{{ Customer.Terms }}</span>
+                }
+                @if (Customer.OrganizationProvenance) {
+                  <!-- Provenance, not a form field: the organization was inferred
+                       from a dated affiliation and STAMPED, never re-derived. -->
+                  <mjo-consequence-chip Kind="note" [Tooltip]="Customer.OrganizationProvenance">
+                    {{ Customer.OrganizationProvenance }}
+                  </mjo-consequence-chip>
+                }
+              </div>
+            </div>
+
+            <!-- Deliberate: the customer's money situation appears BEFORE anything
+                 is quoted. An overdue invoice is something to know while they are
+                 still on the phone, not after the order books. -->
+            <div class="money-facts">
+              <div>
+                <div class="l">Open balance</div>
+                <div class="v">{{ Customer.OpenBalance | mjoMoney }}</div>
+                @if (Customer.OverdueCount > 0) {
+                  <a class="small" href="#" (click)="$event.preventDefault()">
+                    {{ Customer.OverdueCount }} overdue
+                  </a>
+                }
+              </div>
+              <div>
+                <div class="l">Credit</div>
+                <div class="v" [class.mj-money--credit]="Customer.AvailableCredit > 0">
+                  {{ Customer.AvailableCredit | mjoMoney: { Zero: '—' } }}
+                </div>
+                @if (Customer.AvailableCredit > 0) {
+                  <div class="small muted">spendable</div>
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      } @else {
+        <div class="mj-card mj-card-pad">
+          <div class="mj-search">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input placeholder="Find a person or organization…" aria-label="Find a customer">
+          </div>
+        </div>
+      }
+    </section>
+
+    <!-- ── 2 · WHAT ────────────────────────────── -->
+    <section class="fe-step" [class.is-done]="Lines.length > 0">
+      <div class="fe-step-head">
+        <span class="fe-step-n">
+          @if (Lines.length) { <i class="fa-solid fa-check" aria-hidden="true"></i> } @else { 2 }
+        </span>
+        <span class="fe-step-t">What are they buying?</span>
+        <span class="fe-step-hint"><kbd>↵</kbd> to add</span>
+      </div>
+
+      @for (line of Lines; track line.ClientKey) {
+        <div class="mj-linecard">
+          <div class="mj-linecard-top">
+            <div class="id">
+              <div class="nm">{{ ProductFor(line)?.Name ?? 'Product' }}</div>
+              <div class="mt">
+                {{ ProductFor(line)?.SKU }} · {{ ProductFor(line)?.TypeName }}
+              </div>
+            </div>
+
+            <div class="qty">
+              <div class="mj-stepper-num">
+                <button type="button" (click)="Bump(line, -1)" aria-label="Decrease quantity">−</button>
+                <input
+                  [value]="line.Quantity"
+                  (change)="SetQuantity(line, $any($event.target).value)"
+                  aria-label="Quantity">
+                <button type="button" (click)="Bump(line, 1)" aria-label="Increase quantity">+</button>
+              </div>
+            </div>
+
+            <div class="price">
+              <div class="mj-num">{{ PricedLine(line)?.UnitPrice | mjoMoney }}</div>
+              <mjo-price-source-badge
+                [Source]="PricedLine(line)?.PriceSource ?? null"
+                [Overridden]="line.UnitPriceWasStated" />
+            </div>
+
+            <div class="tot mj-num">{{ PricedLine(line)?.LineTotalNet | mjoMoney }}</div>
+
+            <button type="button" class="mj-iconbtn" (click)="Remove(line)" [attr.aria-label]="'Remove ' + (ProductFor(line)?.Name ?? 'line')">
+              <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <!-- Consequences: what this line WILL do, shown during entry rather
+               than discovered at confirm. -->
+          <div class="mj-linecard-conseq">
+            @if (PricedLine(line); as priced) {
+              @if (priced.ServicePeriodStart && priced.ServicePeriodSource) {
+                <mjo-consequence-chip Kind="event">
+                  Period from {{ priced.ServicePeriodSource }}
+                </mjo-consequence-chip>
+              }
+              @if (priced.RevenueRecognitionType) {
+                <mjo-consequence-chip Kind="deferred">{{ priced.RevenueRecognitionType }}</mjo-consequence-chip>
+              }
+              @if (priced.RequiresFulfillment) {
+                <mjo-consequence-chip Kind="fulfillment">Ships — holds the order at Posted</mjo-consequence-chip>
+              }
+              @if (priced.TaxZeroReason) {
+                <mjo-consequence-chip Kind="untaxable">{{ priced.TaxZeroReason }}</mjo-consequence-chip>
+              }
+              <mjo-consequence-chip Kind="company">Revenue to {{ priced.CompanyName }}</mjo-consequence-chip>
+            }
+          </div>
+        </div>
+      } @empty {
+        <div class="mj-empty fe-empty">
+          <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+          <div class="t">Nothing on this order yet</div>
+          <div class="small">Search the catalog below to add the first line.</div>
+        </div>
+      }
+
+      <div class="mj-typeahead fe-picker">
+        <div class="mj-search">
+          <i class="fa-solid fa-plus" aria-hidden="true"></i>
+          <input
+            id="mjo-product-search"
+            [(ngModel)]="ProductQuery"
+            (focus)="OpenPicker()"
+            (blur)="ClosePickerSoon()"
+            (keydown)="OnPickerKey($event)"
+            placeholder="Add product — type a name or SKU…"
+            autocomplete="off"
+            role="combobox"
+            aria-label="Add a product"
+            [attr.aria-expanded]="PickerOpen">
+          <kbd>/</kbd>
+        </div>
+
+        @if (PickerOpen) {
+          <div class="mj-typeahead-list is-open" role="listbox">
+            @for (product of PickerResults; track product.ID; let i = $index) {
+              <div
+                class="mj-typeahead-item"
+                [class.is-cursor]="i === PickerCursor"
+                role="option"
+                [attr.aria-selected]="i === PickerCursor"
+                (mousedown)="AddProduct(product)">
+                <div class="fe-picker__body">
+                  <div class="name">{{ product.Name }}</div>
+                  <div class="sub">{{ product.SKU }} · {{ product.TypeName }} · {{ product.CompanyName }}</div>
+                </div>
+                <div class="end">
+                  <div class="mj-num strong">{{ product.ListPrice | mjoMoney }}</div>
+                  <div class="sub">{{ product.Taxable ? 'taxable' : 'untaxable' }}</div>
+                </div>
+              </div>
+            } @empty {
+              <div class="mj-typeahead-item">
+                <span class="muted small">No product matches that.</span>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </section>
+
+    <!-- ── 3 · CODES ───────────────────────────── -->
+    <section class="fe-step">
+      <div class="fe-step-head">
+        <span class="fe-step-n">3</span>
+        <span class="fe-step-t">Codes</span>
+        <span class="fe-step-hint">Optional</span>
+      </div>
+
+      <div class="mj-card mj-card-pad">
+        <div class="row fe-code-row">
+          <input
+            class="mj-input"
+            [(ngModel)]="CodeEntry"
+            (keydown.enter)="AddCode()"
+            placeholder="e.g. MEMBER40"
+            aria-label="Promotion code">
+          <button type="button" class="mj-btn mj-btn--outline" (click)="AddCode()">Apply</button>
+        </div>
+
+        <div class="row wrap fe-codes">
+          @for (code of Draft.PromotionCodes; track code) {
+            <span
+              class="mj-chip"
+              [class.mj-chip--success]="CodeState(code) === 'applied'"
+              [class.mj-chip--error]="CodeState(code) === 'rejected'"
+              [title]="CodeReason(code) ?? ''">
+              <i
+                class="fa-solid"
+                [class.fa-check]="CodeState(code) === 'applied'"
+                [class.fa-triangle-exclamation]="CodeState(code) === 'rejected'"
+                [class.fa-hourglass-half]="CodeState(code) === 'pending'"
+                aria-hidden="true"></i>
+              {{ code }}
+              <button type="button" class="mj-why" (click)="DropCode(code)" [attr.aria-label]="'Remove ' + code">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+              </button>
+            </span>
+          }
+        </div>
+
+        <!-- Recording a code that did NOTHING is the only way to answer
+             "why didn't my code work?" without re-running the engine by hand. -->
+        @for (code of Draft.PromotionCodes; track code) {
+          @if (CodeState(code) === 'rejected' && CodeReason(code)) {
+            <div class="small muted fe-code-reason">{{ code }}: {{ CodeReason(code) }}</div>
+          }
+        }
+      </div>
+    </section>
+
+    <!-- ── 4 · TENDER ──────────────────────────── -->
+    <section class="fe-step">
+      <div class="fe-step-head">
+        <span class="fe-step-n">4</span>
+        <span class="fe-step-t">How are they paying?</span>
+        <span class="fe-step-hint">Records intent — the payment is created on confirm</span>
+      </div>
+
+      <div class="fe-tender" role="radiogroup" aria-label="Tender">
+        @for (option of TenderOptions; track option.Key) {
+          <button
+            type="button"
+            role="radio"
+            [attr.aria-checked]="Tender === option.Key"
+            [class.is-active]="Tender === option.Key"
+            [disabled]="option.Key === 'credit' && (Customer?.AvailableCredit ?? 0) <= 0"
+            (click)="SelectTender(option.Key)">
+            <span class="t"><i [class]="option.Icon" aria-hidden="true"></i> {{ option.Label }}</span>
+            <span class="s">{{ option.Key === 'credit' ? (Customer?.AvailableCredit | mjoMoney) + ' available' : option.Hint }}</span>
+          </button>
+        }
+      </div>
+    </section>
+  </div>
+
+  <!-- ═══════════════ DECOMPOSITION RAIL ═══════════════ -->
+  <aside class="fe-rail">
+    <div class="mj-card">
+      <div class="mj-card-head">
+        <i class="fa-solid fa-calculator" aria-hidden="true"></i>
+        <h3>What this order comes to</h3>
+        <span class="right">
+          <span class="mj-chip" [class.mj-chip--brand]="Preview.Loading">
+            {{ Preview.Loading ? 'recomputing' : 'live' }}
+          </span>
+        </span>
+      </div>
+
+      <div class="mj-card-pad">
+        @if (Preview.Error) {
+          <div class="mj-banner mj-banner--error">
+            <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+            <div class="body">
+              <strong>Couldn't price this draft.</strong>
+              <div class="small">{{ Preview.Error }}</div>
+            </div>
+          </div>
+        } @else {
+          <mjo-decomposition-ladder
+            [Rows]="LadderRows"
+            [Stale]="Preview.Loading || Draft.IsPreviewStale"
+            [Footnote]="LadderFootnote" />
+        }
+      </div>
+
+      <div class="fe-due">
+        <div class="row fe-due__row">
+          <span class="small muted">Due now</span>
+          <span class="mj-num strong" [class.mj-money--muted]="DueNow === 0">{{ DueNow | mjoMoney }}</span>
+        </div>
+        <div class="row fe-due__row">
+          <span class="small muted">Due on terms</span>
+          <span class="mj-num">{{ DueLater | mjoMoney }}</span>
+        </div>
+      </div>
+    </div>
+
+    @if (BookingSummary.length) {
+      <div class="mj-card fe-books">
+        <div class="mj-card-head">
+          <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+          <h3>Will book to</h3>
+        </div>
+        <div class="mj-card-pad small">
+          @for (company of BookingSummary; track company.CompanyID) {
+            <div class="fe-books__row">
+              <div class="row">
+                <b>{{ company.CompanyName }}</b>
+                <span class="spacer mj-num strong">{{ company.Gross | mjoMoney }}</span>
+              </div>
+              <div class="muted tiny">
+                net {{ company.Net | mjoMoney }}
+                @if (company.Charges) { · charges {{ company.Charges | mjoMoney }} }
+                @if (company.Tax) { · tax {{ company.Tax | mjoMoney }} }
+              </div>
+            </div>
+          }
+          <div class="muted tiny fe-books__note">
+            One entry <b>per line</b>, each single-company and balanced. The order's journal entry is a
+            view over them.
+          </div>
+        </div>
+      </div>
+    }
+  </aside>
+</div>
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+<div class="fe-footer">
+  <button type="button" class="mj-btn mj-btn--outline" (click)="SaveDraft()">
+    <i class="fa-regular fa-floppy-disk" aria-hidden="true"></i> Save draft
+  </button>
+  <button type="button" class="mj-btn mj-btn--flat" (click)="Escalate()">
+    <i class="fa-solid fa-pen-ruler" aria-hidden="true"></i> Open in full editor
+  </button>
+  <button
+    type="button"
+    class="mj-btn mj-btn--primary"
+    [disabled]="!CanConfirm"
+    (click)="RequestConfirm()">
+    <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm order
+  </button>
+
+  <div class="mj-keys spacer">
+    <span><kbd>/</kbd> add product</span>
+    <span><kbd>↵</kbd> commit</span>
+    <span><kbd>⌘</kbd><kbd>S</kbd> save</span>
+    <span><kbd>⌘</kbd><kbd>↵</kbd> confirm</span>
+  </div>
+</div>
