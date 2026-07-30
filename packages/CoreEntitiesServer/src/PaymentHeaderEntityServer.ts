@@ -66,6 +66,8 @@ import {
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
+import { SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
@@ -142,6 +144,18 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
             await this.savePendingLines(options);
 
             if (capturing) {
+                // SETTLE WITH THE GATEWAY BEFORE ANYTHING IS BOOKED (D19).
+                //
+                // Order matters more than it looks. If the ledger were written first and the gateway
+                // then declined, the rollback would undo our entries — but a gateway that CAPTURED and
+                // then failed to answer has taken the customer's money while we recorded nothing. So
+                // the call happens first and its answer decides whether there is anything to book.
+                //
+                // The gateway is also the authority on the AMOUNT and the FEE. A partial capture, or a
+                // fee different from the one assumed, is what actually moved — booking our own numbers
+                // over the gateway's would leave the ledger disagreeing with the bank.
+                await this.settleWithProvider();
+
                 await this.assertAllocationInvariant();
                 // Only reach the fee builder when there IS a fee. Since the cash leg moved to the
                 // allocation (D13), this is the header's ONLY entry — so a payment without a fee has
@@ -258,6 +272,123 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
                 `order with a credit balance, which can be spent on another order later. Adjust the ` +
                 `allocations, or record the payment for what actually moved.`,
         );
+    }
+
+    /**
+     * Ask the gateway to actually take the money, and record what it says happened.
+     *
+     * NO PROVIDER, NO CALL. `PaymentProviderID` is nullable, and a payment without one is a payment
+     * nobody is asking a gateway about — a back-office correction, an account-credit transfer (D68), a
+     * historical import. Those capture exactly as they did before this method existed, which is why it
+     * returns early rather than refusing: requiring a provider would break every one of them.
+     *
+     * ALREADY SETTLED IS NOT RE-SETTLED. A payment carrying a `ProviderChargeID` has been through the
+     * gateway once. Re-saving it for any reason must not charge the customer again, so the presence of
+     * that reference is the idempotency key — the same shape as `JournalEntryID` for booking.
+     *
+     * THE GATEWAY'S NUMBERS WIN. `Amount` and `ProcessingFeeAmount` are overwritten from the capture
+     * result, because what moved is what moved. `SplitCapturedAmount` then checks the three reconcile
+     * before the fee leg is built, so a nonsensical fee is refused here rather than producing an entry
+     * that will not balance three calls later.
+     */
+    private async settleWithProvider(): Promise<void> {
+        const providerID = (this as unknown as { PaymentProviderID?: string | null }).PaymentProviderID;
+        if (!providerID) return;
+
+        const alreadySettled = (this as unknown as { ProviderChargeID?: string | null }).ProviderChargeID;
+        if (alreadySettled) return;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        // THE GATEWAY'S INTENT STRING LIVES ON `PaymentIntent`, NOT HERE. `PaymentHeader.PaymentIntentID`
+        // is a foreign key to our row; `PaymentIntent.ProviderIntentID` is what Stripe calls it. Reading
+        // a `ProviderIntentID` off the header would compile — every column access here is a cast, since
+        // the generated base does not declare them — and be `undefined` at run time, refusing every
+        // provider-backed capture with a message about a missing intent.
+        const intent = await this.loadProviderIntent();
+        if (!intent) {
+            throw new Error(
+                `Payment ${this.PaymentNumber} names a payment provider but no provider intent, so there ` +
+                    `is nothing for the gateway to capture. Open an intent first, or clear ` +
+                    `PaymentProviderID for a payment that is being recorded rather than collected.`,
+            );
+        }
+
+        const driver = await ResolvePaymentProvider(providerID, provider, user);
+
+        const capture = await driver.Capture({
+            ProviderIntentID: intent,
+            Amount: this.Amount ?? 0,
+            CurrencyCode: await this.functionalCurrency(),
+        });
+
+        if (!capture.Success) {
+            // A REFUSAL, not a fault — the card was declined, the intent was in the wrong state. It
+            // still fails the save, because a payment that did not capture must not be Captured; but it
+            // fails with the gateway's own words, which is what the person retrying needs.
+            throw new Error(
+                `The gateway refused to capture payment ${this.PaymentNumber}: ` +
+                    `${capture.Reason ?? 'no reason given'}`,
+            );
+        }
+
+        // UNDEFINED means the driver could not determine a fee, which is NOT the same as no fee (see
+        // BasePaymentProvider). Keeping whatever was already on the row is the honest response: we do
+        // not know, so we do not overwrite what somebody may have entered.
+        const gross = capture.Amount ?? this.Amount ?? 0;
+        if (capture.FeeAmount != null) {
+            const split = SplitCapturedAmount(gross, capture.FeeAmount);
+            this.Amount = split.Gross;
+            this.ProcessingFeeAmount = split.Fee;
+            this.NetAmount = split.Net;
+        } else {
+            this.Amount = Math.round(gross * 100) / 100;
+        }
+
+        if (capture.ProviderChargeID) {
+            (this as unknown as { ProviderChargeID: string }).ProviderChargeID = capture.ProviderChargeID;
+        }
+    }
+
+    /** The gateway's own intent string, from the `PaymentIntent` row this payment points at. */
+    private async loadProviderIntent(): Promise<string | null> {
+        const intentID = (this as unknown as { PaymentIntentID?: string | null }).PaymentIntentID;
+        if (!intentID) return null;
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<{ ID: string; ProviderIntentID: string }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Payment Intents',
+                ExtraFilter: `ID = '${intentID}'`,
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        return result?.Results?.[0]?.ProviderIntentID ?? null;
+    }
+
+    /**
+     * The currency to transact in.
+     *
+     * THERE IS NO CURRENCY COLUMN ON A PAYMENT, deliberately (MOD-4): these tables are single-currency,
+     * and the currency is a property of the COMPANY collecting the money. Reading it from the receiving
+     * company's accounting profile keeps that true rather than quietly introducing a second opinion.
+     *
+     * Defaults to USD only when the profile cannot be read, because a gateway call needs *some* code and
+     * refusing the capture over a missing profile row would be a worse failure than the wrong exponent —
+     * which, for USD against any other two-decimal currency, is not even wrong.
+     */
+    private async functionalCurrency(): Promise<string> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<{ ID: string; FunctionalCurrencyCode: string | null }>(
+            {
+                EntityName: 'MJ_BizApps_Accounting: Accounting Company Profiles',
+                ExtraFilter: `ID = '${this.ReceivingCompanyID}'`,
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        return result?.Results?.[0]?.FunctionalCurrencyCode ?? 'USD';
     }
 
     private async bookProcessingFee(options?: EntitySaveOptions): Promise<void> {

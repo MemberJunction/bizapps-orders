@@ -41,6 +41,7 @@ import '../checks/arithmetic-edges.checks.js';
 import '../checks/concurrency.checks.js';
 import '../checks/volume.checks.js';
 import '../checks/entitlements.checks.js';
+import '../checks/payment-providers.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -75,6 +76,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     concurrency: 6,
     volume: 13,
     entitlements: 15,
+    'payment-providers': 12,
 };
 
 /**
