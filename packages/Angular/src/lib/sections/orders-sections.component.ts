@@ -37,6 +37,7 @@ import type { ResourceData } from '@memberjunction/core-entities';
 import { MJOSectionShellComponent } from './section-shell.component';
 import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
 import { MJOOrderEditorPageComponent } from '../pages/orders/order-editor.page';
+import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -251,6 +252,8 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
                 return MJOFastEntryPageComponent;
             case 'editor':
                 return MJOOrderEditorPageComponent;
+            case 'list':
+                return MJOOrdersListPageComponent;
             default:
                 return null;
         }
