@@ -35,6 +35,10 @@ import '../checks/pricing.checks.js';
 import '../checks/promotions.checks.js';
 import '../checks/charges.checks.js';
 import '../checks/tax.checks.js';
+import '../checks/composition.checks.js';
+import '../checks/returns.checks.js';
+import '../checks/arithmetic-edges.checks.js';
+import '../checks/concurrency.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -63,6 +67,10 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     promotions: 19,
     charges: 12,
     tax: 15,
+    composition: 10,
+    returns: 12,
+    'arithmetic-edges': 12,
+    concurrency: 6,
 };
 
 /**
@@ -139,9 +147,26 @@ describe('the bundle name agrees everywhere it is written down', () => {
     });
 
     it('every Test record is a member of the suite', () => {
+        // READ THE DIRECTORY, not a hand-written list. This was `['ORD-01' … 'ORD-08']`, frozen at
+        // the eight bundles that existed when it was written — and ORD-09, ORD-10 and ORD-16 were
+        // each added later with a Test record that never joined the suite. `mj test suite` ran, went
+        // green, and dispatched neither intercompany, events, nor composition.
+        //
+        // That is the same failure this whole file exists to prevent, one level up: a list somebody
+        // has to remember to extend is a list that eventually stops matching reality.
         const suite = read('metadata-tests/test-suites/.orders-integration-suite.json');
-        for (const name of ['ORD-01', 'ORD-02', 'ORD-03', 'ORD-04', 'ORD-05', 'ORD-06', 'ORD-07', 'ORD-08']) {
-            expect(suite, `${name} is in the suite`).toContain(name);
+        const testsDir = resolve(repoRoot, 'metadata-tests/tests');
+        const names = readdirSync(testsDir)
+            .filter((f) => f.endsWith('.json') && f !== '.mj-sync.json')
+            .map((f) => JSON.parse(read(`metadata-tests/tests/${f}`)).fields.Name as string);
+
+        expect(names.length, 'there are Test records to check').toBeGreaterThan(0);
+        for (const name of names) {
+            expect(
+                suite,
+                `'${name}' has a Test record but is not a member of the suite — 'mj test suite' ` +
+                    `would go green having never dispatched it`,
+            ).toContain(`Tests.Name=${name}`);
         }
     });
 
@@ -179,6 +204,51 @@ describe('the bundle name agrees everywhere it is written down', () => {
  *
  * So compare against the filesystem, which cannot be forgotten the way an import can.
  */
+/**
+ * The sequence counter, asserted against the SOURCE — because no runtime check can reach it.
+ *
+ * The `concurrency` bundle holds the counter row on a second connection and watches a confirm block
+ * on it. That proves serialization, and mutation testing showed it proves nothing more: strip
+ * `WITH (UPDLOCK, HOLDLOCK)` and it still passes (the bare UPDATE takes the same exclusive lock),
+ * and rewrite it as a dirty read plus a separate UPDATE — the classic lost-update race — and it
+ * still passes, because it blocks on the second statement instead of the first.
+ *
+ * The interleaving that actually breaks a non-atomic counter is both sessions reading before either
+ * writes, and that cannot be forced from a test that holds an exclusive lock throughout. So the
+ * property is pinned where it can be: the number must be taken in ONE statement that reads and
+ * writes together.
+ */
+describe('the document-number counter is taken atomically', () => {
+    const source = () => read('packages/CoreEntitiesServer/src/OrderEntityServer.ts');
+
+    it('uses a single UPDATE … OUTPUT rather than a SELECT followed by an UPDATE', () => {
+        const fn = source().slice(source().indexOf('private async nextSequence'));
+        const body = fn.slice(0, fn.indexOf('\n    }'));
+
+        expect(body, 'the counter is read and written by one UPDATE … OUTPUT').toMatch(
+            /UPDATE[\s\S]*OUTPUT\s+deleted\.NextSequenceNumber/,
+        );
+        expect(
+            /SELECT\s+@\w+\s*=/.test(body),
+            'reading the counter into a variable and updating it separately is the lost-update race: ' +
+                'two sessions read the same value and both take it',
+        ).toBe(false);
+        expect(
+            /READUNCOMMITTED|NOLOCK/i.test(body),
+            'a dirty read of the counter defeats the point of taking it under lock',
+        ).toBe(false);
+    });
+
+    it('takes the number inside the CALLER transaction, so a rollback releases it', () => {
+        // A counter incremented in its own transaction would survive a failed confirm and leave a
+        // permanent hole in the invoice sequence. `concurrency.CN3` asserts the behaviour; this
+        // asserts nobody has quietly introduced a separate transaction to "make it safer".
+        const fn = source().slice(source().indexOf('private async nextSequence'));
+        const body = fn.slice(0, fn.indexOf('\n    }'));
+        expect(/BeginTransaction|BEGIN\s+TRAN/i.test(body), 'no transaction of its own').toBe(false);
+    });
+});
+
 describe('no check file escapes this test', () => {
     it('imports every *.checks.ts in the checks directory', () => {
         const checksDir = resolve(dirname(fileURLToPath(import.meta.url)), '../checks');

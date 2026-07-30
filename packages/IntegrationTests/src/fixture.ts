@@ -350,6 +350,20 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
     );
     const chargeTypeEntityID = chargeTypeEntityRows[0]?.ID;
     if (chargeTypeEntityID) {
+        // CLEAR ANY PRE-EXISTING ONES FIRST. Every other link this fixture writes is scoped to a
+        // company it just created, so it cannot collide with anything. These are the exception: they
+        // are keyed by CHARGE TYPE, which is application metadata shared by every run. A leftover set
+        // — from an interrupted run, or from `seed-review-data.mjs`, which commits deliberately —
+        // leaves TWO active links per charge type, and resolution can then post this run's shipping
+        // and tax to another run's accounts.
+        //
+        // That is not theoretical: it is what made composition's CX8 report a stranded receivable of
+        // 2,902.59 belonging to a company the test had never heard of. Deleting first also makes
+        // setup idempotent, which it was not.
+        await PoolQuery(
+            ctx,
+            `DELETE FROM ${ACCT_SCHEMA}.GLAccountLink WHERE EntityID = '${chargeTypeEntityID}'`,
+        );
         const salesRoleID = roleID.get('Sales');
         for (const co of [fixture.CoA, fixture.CoB]) {
             for (const [code, key] of [
@@ -694,11 +708,89 @@ export async function TeardownOrdersFixture(ctx: IntegrationCheckContext): Promi
         return;
     }
 
-    const companies = [f.CoA.ID, f.CoB.ID, f.CoC.ID].map((c) => `'${c}'`).join(',');
+    for (const statement of teardownStatements([f.CoA.ID, f.CoB.ID, f.CoC.ID], f.Run)) {
+        try {
+            await PoolQuery(ctx, statement);
+        } catch (e) {
+            console.warn(`      teardown warn: ${String((e as Error).message).split('\n')[0]}`);
+        }
+    }
+    currentFixture = undefined;
+}
+
+/**
+ * Remove EVERY fixture run's data, not just the current one.
+ *
+ * `TeardownOrdersFixture` is scoped to the companies of the run that is finishing, which is right
+ * for a test run and wrong for housekeeping: each run mints new companies, so an interrupted run —
+ * or the review-data seeder, which commits on purpose — leaves rows nothing later will reach.
+ *
+ * Finds every company the fixture has ever created (they are all named `IT-ORD-…`) and sweeps them.
+ * Safe to run against a development database and nowhere else; it deletes orders.
+ */
+export async function PurgeAllFixtureData(ctx: IntegrationCheckContext): Promise<number> {
+    const runs = await PoolQuery<{ ID: string; Name: string }>(
+        ctx,
+        `SELECT ID, Name FROM __mj.Company WHERE Name LIKE 'IT-ORD-%'`,
+    );
+    if (!runs.length) return 0;
+
+    // One sweep over ALL of them: the runs share products and tax geography only by coincidence of
+    // naming, but orders can reference any of it, so deleting run by run would hit FK failures in
+    // whichever order it happened to pick.
+    const ids = runs.map((r) => r.ID);
+    const marks = [...new Set(runs.map((r) => r.Name.split(' ')[0]))];
+
+    for (const mark of marks) {
+        for (const statement of teardownStatements(ids, mark)) {
+            try {
+                await PoolQuery(ctx, statement);
+            } catch (e) {
+                // The WHOLE error. mssql puts the useful part ('The DELETE statement conflicted
+                // with the REFERENCE constraint …') in `originalError`, and the first line of the
+                // outer message is the useless 'Error executing SQL'.
+                const err = e as Error & { originalError?: Error };
+                const detail = err.originalError?.message ?? err.message;
+                console.warn(`      purge warn: ${String(detail).split('\n')[0]}`);
+                console.warn(`        ↳ ${statement.replace(/\s+/g, ' ').slice(0, 140)}`);
+            }
+        }
+    }
+    currentFixture = undefined;
+    return runs.length;
+}
+
+/** The delete order, shared by the per-run teardown and the whole-database purge. */
+function teardownStatements(companyIDs: string[], run: string): string[] {
+    const companies = companyIDs.map((c) => `'${c}'`).join(',');
     const orderScope = `SELECT ID FROM ${ORDERS_SCHEMA}.OrderHeader WHERE CompanyID IN (${companies})`;
 
-    const statements = [
-        // safety net — nothing to do when every mutating check rolled back
+    return [
+        // ── THE IMMUTABILITY TRIGGERS COME OFF FIRST ────────────────────────────────────────────
+        // A confirmed line's JournalEntryID cannot be cleared and a captured PaymentLine cannot be
+        // deleted — correctly, because in the application a correction is a reversal, never an
+        // edit. Housekeeping is the one caller that is genuinely removing history rather than
+        // rewriting it, so it disables them and puts them back.
+        //
+        // This was invisible until the review-data seeder committed orders: every check rolls back,
+        // so teardown had only ever been asked to delete rows that were not there, and it "worked"
+        // by having nothing to do.
+        `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
+        `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
+        `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
+        `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
+
+        // Money DETAIL that hangs off the lines — price components, adjustments and charges with
+        // their allocations. These are what a line is made of, so they go before it.
+        `DELETE FROM ${ORDERS_SCHEMA}.OrderLinePriceComponent WHERE OrderLineID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID IN (${orderScope}))`,
+        `DELETE FROM ${ORDERS_SCHEMA}.OrderAdjustmentAllocation WHERE OrderAdjustmentID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID IN (${orderScope}))`,
+        `DELETE FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID IN (${orderScope})`,
+        `DELETE FROM ${ORDERS_SCHEMA}.OrderChargeAllocation WHERE OrderChargeID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.OrderCharge WHERE OrderHeaderID IN (${orderScope}))`,
+        `DELETE FROM ${ORDERS_SCHEMA}.OrderCharge WHERE OrderHeaderID IN (${orderScope})`,
+
         `UPDATE ${ORDERS_SCHEMA}.OrderLine SET JournalEntryID=NULL WHERE OrderHeaderID IN (${orderScope})`,
         `DELETE jel FROM ${ACCT_SCHEMA}.JournalEntryLine jel
             JOIN ${ACCT_SCHEMA}.JournalEntry je ON je.ID=jel.JournalEntryID WHERE je.CompanyID IN (${companies})`,
@@ -719,40 +811,66 @@ export async function TeardownOrdersFixture(ctx: IntegrationCheckContext): Promi
             (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID IN (${orderScope}))`,
         `DELETE FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID IN (${orderScope})`,
         `DELETE FROM ${ORDERS_SCHEMA}.OrderHeader WHERE CompanyID IN (${companies})`,
-        // the catalog itself — the only rows that normally exist
+        // ── the catalog ─────────────────────────────────────────────────────────────────────────
+        // Everything that hangs off a Product goes first. This list is not guesswork: it is every
+        // FK pointing at Product / ProductPrice / ProductCategory, read out of sys.foreign_keys.
+        // The self-references (Product.SuccessorProductID, ProductCategory.Parent…) are cleared
+        // rather than deleted, because a row cannot be deleted before itself.
+        `DELETE FROM ${ORDERS_SCHEMA}.PriceTier WHERE ProductPriceID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.ProductPrice WHERE ProductID IN
+              (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies})))`,
+        `DELETE FROM ${ORDERS_SCHEMA}.ProductPrice WHERE ProductID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))`,
+        `DELETE FROM ${ORDERS_SCHEMA}.PromotionTarget WHERE ProductID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))
+              OR ProductCategoryID IN (SELECT ID FROM ${ORDERS_SCHEMA}.ProductCategory WHERE CompanyID IN (${companies}))`,
+        `DELETE FROM ${ORDERS_SCHEMA}.ProductBundleItem WHERE BundleProductID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))
+              OR ComponentProductID IN (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))`,
+        `DELETE FROM ${ORDERS_SCHEMA}.ProductEntitlement WHERE ProductID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))`,
+        `DELETE FROM ${ORDERS_SCHEMA}.ProductPerformanceObligation WHERE ProductID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))`,
+        `UPDATE ${ORDERS_SCHEMA}.Product SET SuccessorProductID = NULL WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS_SCHEMA}.EventProduct WHERE ID IN
             (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))`,
         `DELETE FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies})`,
+        `UPDATE ${ORDERS_SCHEMA}.ProductCategory SET ParentProductCategoryID = NULL WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS_SCHEMA}.ProductCategory WHERE CompanyID IN (${companies})`,
-        `DELETE FROM ${ORDERS_SCHEMA}.ProductType WHERE Name LIKE '${f.Run}%'`,
+        `DELETE FROM ${ORDERS_SCHEMA}.ProductType WHERE Name LIKE '${run}%'`,
         `DELETE FROM ${ACCT_SCHEMA}.GLAccountLink WHERE RecordID IN (${companies})`,
         // Tax geography (D73), inner-to-outer so the FKs hold.
         `DELETE FROM ${ACCT_SCHEMA}.CompanyTaxNexus WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ACCT_SCHEMA}.TaxRate WHERE TaxJurisdictionID IN
-           (SELECT ID FROM ${ACCT_SCHEMA}.TaxJurisdiction WHERE Code LIKE '${f.Run}-%')`,
-        `DELETE FROM ${ACCT_SCHEMA}.TaxJurisdiction WHERE Code LIKE '${f.Run}-%'`,
-        `DELETE FROM ${ACCT_SCHEMA}.TaxAuthority WHERE Code LIKE '${f.Run}-%'`,
+           (SELECT ID FROM ${ACCT_SCHEMA}.TaxJurisdiction WHERE Code LIKE '${run}-%')`,
+        `DELETE FROM ${ACCT_SCHEMA}.TaxJurisdiction WHERE Code LIKE '${run}-%'`,
+        `DELETE FROM ${ACCT_SCHEMA}.TaxAuthority WHERE Code LIKE '${run}-%'`,
         `DELETE FROM ${ORDERS_SCHEMA}.CustomerTaxExemption
-          WHERE OrganizationID IN (SELECT ID FROM ${COMMON_SCHEMA}.Organization WHERE Name LIKE '${f.Run}%')
-             OR PersonID IN (SELECT ID FROM ${COMMON_SCHEMA}.Person WHERE LastName LIKE '${f.Run}%')`,
+          WHERE OrganizationID IN (SELECT ID FROM ${COMMON_SCHEMA}.Organization WHERE Name LIKE '${run}%')
+             OR PersonID IN (SELECT ID FROM ${COMMON_SCHEMA}.Person WHERE LastName LIKE '${run}%')`,
         // Charge-type links are keyed by CHARGE TYPE, not by company, so the company sweep above
         // does not reach them.
         `DELETE FROM ${ACCT_SCHEMA}.GLAccountLink
           WHERE RecordID IN (SELECT CAST(ID AS NVARCHAR(400)) FROM ${ORDERS_SCHEMA}.ChargeType)`,
         `DELETE FROM ${ACCT_SCHEMA}.JournalEntrySequence WHERE CompanyID IN (${companies})`,
+        `DELETE FROM ${ACCT_SCHEMA}.IntercompanyAccountMatch
+          WHERE SourceCompanyID IN (${companies}) OR TargetCompanyID IN (${companies})
+             OR DueToGLAccountID IN (SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID IN (${companies}))
+             OR DueFromGLAccountID IN (SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID IN (${companies}))`,
+        `UPDATE ${ACCT_SCHEMA}.GLAccount SET ParentGLAccountID = NULL WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ACCT_SCHEMA}.AccountingCompanyProfile WHERE ID IN (${companies})`,
         `DELETE FROM __mj.Company WHERE ID IN (${companies})`,
-        `DELETE FROM ${COMMON_SCHEMA}.Organization WHERE Name LIKE '${f.Run}%'`,
-        `DELETE FROM ${COMMON_SCHEMA}.Person WHERE LastName = '${f.Run}'`,
+        `DELETE FROM ${COMMON_SCHEMA}.Organization WHERE Name LIKE '${run}%'`,
+        `DELETE FROM ${COMMON_SCHEMA}.Person WHERE LastName = '${run}'`,
+
+        // Back on, unconditionally. Leaving them off would let the NEXT run edit booked history
+        // silently, and every check that proves a correction is refused would pass having proved
+        // the opposite.
+        `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
+        `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
+        `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
+        `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
     ];
 
-    for (const statement of statements) {
-        try {
-            await PoolQuery(ctx, statement);
-        } catch (e) {
-            console.warn(`      teardown warn: ${String((e as Error).message).split('\n')[0]}`);
-        }
-    }
-    currentFixture = undefined;
 }

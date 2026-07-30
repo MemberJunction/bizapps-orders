@@ -11,7 +11,7 @@ mj.config.cjs → testing.checkModules → this package → IntegrationCheckRegi
 
 ```bash
 # fast inner loop: one bundle, or one check. Stack traces with IT_VERBOSE=1.
-node test-harnesses/integration.mjs                    # all 4 bundles
+node test-harnesses/integration.mjs                    # all 19 bundles, 217 checks
 node test-harnesses/integration.mjs subscriptions
 node test-harnesses/integration.mjs subscriptions.SB5
 
@@ -30,15 +30,30 @@ published testing packages and cannot resolve this private one, so the bundles n
 
 ## Isolation
 
-The fixture (companies, GL accounts + links, product catalog) is created once per bundle and
-committed — inert reference data. Every check then runs inside a provider transaction that **always
-rolls back**, so orders, journal entries, payments and subscription terms never reach disk. Teardown
-is a plain FK-ordered sweep of the catalog: no `DISABLE TRIGGER`, no fight with the immutability
-triggers, and a mid-run crash leaves nothing but catalog rows.
+The fixture (companies, GL accounts + links, product catalog, tax geography) is created once per
+bundle and committed — inert reference data. Every check then runs inside a provider transaction that
+**always rolls back**, so orders, journal entries, payments and subscription terms never reach disk.
 
 This works because the booking path's own transaction and accounting's `CreateJournalEntries`
 savepoints nest correctly three deep — verified by a spike before any check was written
 (`plans/integration-testing-plan.md` §0).
+
+Teardown is an FK-ordered sweep, and it **does** disable the immutability triggers while it runs. It
+has to: a booked `OrderLine.JournalEntryID` cannot be cleared and a captured `PaymentLine` cannot be
+deleted, because in the application a correction is a reversal and never an edit. Housekeeping is the
+one caller genuinely removing history rather than rewriting it. The triggers go back on in the same
+statement list.
+
+That was not always true, and the reason it went unnoticed is worth keeping in mind when reading
+anything here: because every check rolls back, teardown had only ever been asked to delete rows that
+were not there. It "worked" by having nothing to do, and was missing five child tables as well. Both
+only surfaced once `seed-review-data.mjs` started committing orders on purpose — see
+`docs/reviewing-the-data.md`.
+
+**One thing the fixture is not scoped by company:** the charge-type `GLAccountLink` rows, which are
+keyed by charge type (application metadata shared by every run). Setup deletes any pre-existing set
+before writing its own, because two active links per type let one run's shipping and tax post to
+another run's accounts.
 
 ## Writing a check
 

@@ -17,17 +17,27 @@
  *   subscriptions        SB1–SB12  SubscriptionType rules → Subscription + terms (D45/D46)
  *   subscription-cancellation SC1–SC10  Orders.CancelSubscription: policy → reversal (design §5)
  *   subscription-renewal      SR1–SR11  Orders.SpawnRenewals: the scheduled continuation (D55)
- *   payments-rollups     PR1–PR9   rollup triggers, numbering, initial payment (D30/D39/D42)
+ *   payments-rollups     RU1–RU9   rollup triggers, numbering, initial payment (D30/D39/D42)
  *   payment-ledger       PL1–PL12  the CASH leg: capture/refund journal entries, AR reconciliation (D17/D18)
  *   line-subscriber      LS1–LS8   per-line ship-to and BenefitModel dedupe scope (D61/D62)
  *   account-credit       AC1–AC11  the allocation invariant, over-payment, credit as tender (D68)
  *   pricing              PC1–PC16  price resolution, the resolver walk, and the dry run (D69)
  *   promotions           PR1–PR15  offers, codes, stacking, allocation, authorized manual discounts (D70)
  *   charges              CH1–CH12  shipping, handling and TAX as one mechanism (D71)
- *   tax                  TX1–TX14  rate resolution by address, nexus, taxability and exemptions (D73)
+ *   tax                  TX1–TX15  rate resolution by address, nexus, taxability and exemptions (D73)
+ *   composition          CX1–CX10  one realistic order carrying EVERY stage at once
+ *   returns              RT1–RT12  money going BACK — the direction nothing was designed for (D16/D74)
+ *   arithmetic-edges     AE1–AE12  the unit suite's hostile numbers, through the real pipeline
+ *   concurrency          CN1–CN6   document numbering under contention, on a second connection (D30)
+ *   events               EV1–EV10  event products and one-time deferred revenue
+ *
+ * Note that `events` and `line-subscriber` are listed out of order above because that is the order
+ * they were written in; the runner's order is presentational — each bundle owns its own fixture.
  *
  * Every check is `RequiresMutation` — this suite exists to write to the database. They are safe to
  * run repeatedly because each one rolls its transaction back; see `fixture.ts` for the model.
+ *
+ * To look at real rows rather than rolled-back ones, see `docs/reviewing-the-data.md`.
  */
 // ─── Register the code under test ──────────────────────────────────────────────────────────────
 //
@@ -62,6 +72,10 @@ export * from './checks/pricing.checks.js';
 export * from './checks/promotions.checks.js';
 export * from './checks/charges.checks.js';
 export * from './checks/tax.checks.js';
+export * from './checks/composition.checks.js';
+export * from './checks/returns.checks.js';
+export * from './checks/arithmetic-edges.checks.js';
+export * from './checks/concurrency.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

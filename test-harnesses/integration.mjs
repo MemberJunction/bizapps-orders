@@ -34,6 +34,10 @@ const ALL_BUNDLES = [
     'promotions',
     'charges',
     'tax',
+    'composition',
+    'returns',
+    'arithmetic-edges',
+    'concurrency',
     'events',
     'line-subscriber',
 ];

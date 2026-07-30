@@ -1,5 +1,5 @@
 /**
- * payments-rollups.checks.ts — the `payments-rollups` bundle (PR1–PR9).
+ * payments-rollups.checks.ts — the `payments-rollups` bundle (RU1–RU9).
  *
  * The money-in half of the app: what an order is worth, what has been paid against it, and the
  * guarantees around the payment instrument. Rollups are DB TRIGGERS rather than application code
@@ -7,15 +7,15 @@
  * them. Graduated from `test-harnesses/booking-live.mjs` tests 3 and 5.
  *
  * WHAT IT PROVES
- *   PR1  OrderHeader totals roll up from its lines
- *   PR2  an unpaid order reads Balance = TotalGross, PaymentStatus = 'Unpaid'
- *   PR3  a partial payment rolls into AmountPaid / Balance / 'PartiallyPaid'
- *   PR4  full payment closes it out to Balance 0 / 'Paid'
- *   PR5  a captured PaymentDetail's instrument fields are IMMUTABLE
- *   PR6  OrderNumber is auto-assigned as ORD-{6 digits} and is unique
- *   PR7  the D42 initial-payment intent becomes a real, fully applied payment at confirm
- *   PR8  …with an auto-assigned PAY-{6 digits} number
- *   PR9  …and the payment gets its OWN COPY of the instrument, never the order's row (D39)
+ *   RU1  OrderHeader totals roll up from its lines
+ *   RU2  an unpaid order reads Balance = TotalGross, PaymentStatus = 'Unpaid'
+ *   RU3  a partial payment rolls into AmountPaid / Balance / 'PartiallyPaid'
+ *   RU4  full payment closes it out to Balance 0 / 'Paid'
+ *   RU5  a captured PaymentDetail's instrument fields are IMMUTABLE
+ *   RU6  OrderNumber is auto-assigned as ORD-{6 digits} and is unique
+ *   RU7  the D42 initial-payment intent becomes a real, fully applied payment at confirm
+ *   RU8  …with an auto-assigned PAY-{6 digits} number
+ *   RU9  …and the payment gets its OWN COPY of the instrument, never the order's row (D39)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -93,8 +93,8 @@ async function payOrder(ctx: IntegrationCheckContext, orderID: string, amount: n
 
 export const PaymentsRollupsChecks: NamedCheck[] = [
     {
-        Id: 'payments-rollups.PR1',
-        Name: 'PR1: order totals roll up from the lines',
+        Id: 'payments-rollups.RU1',
+        Name: 'RU1: order totals roll up from the lines',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -104,8 +104,8 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'payments-rollups.PR2',
-        Name: "PR2: an unpaid order reads Balance = TotalGross and 'Unpaid'",
+        Id: 'payments-rollups.RU2',
+        Name: "RU2: an unpaid order reads Balance = TotalGross and 'Unpaid'",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -117,8 +117,8 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'payments-rollups.PR3',
-        Name: 'PR3: a partial payment rolls into AmountPaid, Balance and PartiallyPaid',
+        Id: 'payments-rollups.RU3',
+        Name: 'RU3: a partial payment rolls into AmountPaid, Balance and PartiallyPaid',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -132,8 +132,8 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'payments-rollups.PR4',
-        Name: "PR4: paying the remainder closes the order to Balance 0 and 'Paid'",
+        Id: 'payments-rollups.RU4',
+        Name: "RU4: paying the remainder closes the order to Balance 0 and 'Paid'",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -148,8 +148,8 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'payments-rollups.PR5',
-        Name: 'PR5: a captured payment instrument is immutable',
+        Id: 'payments-rollups.RU5',
+        Name: 'RU5: a captured payment instrument is immutable',
         RequiresMutation: true,
         Fn: async (ctx) => {
             const f = Fx();
@@ -198,8 +198,8 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
         },
     },
     {
-        Id: 'payments-rollups.PR6',
-        Name: 'PR6: OrderNumber is auto-assigned and unique per order',
+        Id: 'payments-rollups.RU6',
+        Name: 'RU6: OrderNumber is auto-assigned and unique per order',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -218,8 +218,8 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'payments-rollups.PR7',
-        Name: 'PR7: the initial-payment intent becomes a real, fully applied payment at confirm',
+        Id: 'payments-rollups.RU7',
+        Name: 'RU7: the initial-payment intent becomes a real, fully applied payment at confirm',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -257,8 +257,8 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'payments-rollups.PR8',
-        Name: 'PR8: the auto-generated payment gets an auto-assigned PaymentNumber',
+        Id: 'payments-rollups.RU8',
+        Name: 'RU8: the auto-generated payment gets an auto-assigned PaymentNumber',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -286,8 +286,8 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'payments-rollups.PR9',
-        Name: 'PR9: the payment gets its own copy of the instrument, not the order’s row',
+        Id: 'payments-rollups.RU9',
+        Name: 'RU9: the payment gets its own copy of the instrument, not the order’s row',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -318,7 +318,7 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
                 );
                 Assert(payment.PaymentDetailID != null, 'the payment has no instrument at all');
                 // Sharing the row would let the order's intent and the settled payment drift as one
-                // record — and PR5's immutability guard would then lock the ORDER's editable intent.
+                // record — and RU5's immutability guard would then lock the ORDER's editable intent.
                 Assert(
                     !SameID(payment.PaymentDetailID, intentDetailID),
                     `the payment must NOT share the order's intent row (both are ${intentDetailID})`,

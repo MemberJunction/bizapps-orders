@@ -1,0 +1,67 @@
+name: CI
+
+# UNIT TESTS ONLY, DELIBERATELY.
+#
+# The 217 integration checks need a SQL Server, checkouts of two sibling private repos, an MJ core
+# migration and a metadata push. That is a local development environment, not a CI runner, and it is
+# not worth pretending otherwise: the first version of this file tried, described itself as working,
+# and failed on its third step having proved nothing (`actions/checkout` rejects a `path:` outside
+# the workspace, and `github.token` cannot read a private sibling repo anyway).
+#
+# So the division of labour is explicit:
+#
+#   HERE          the pure engines — 250 tests, no environment, three seconds. This is where the
+#                 money arithmetic lives, so it is not a small gate. Volume vs Tiered banding,
+#                 stacking, charge basis, the taxability walk, allocation, reversal rules, and the
+#                 registry-parity guards that catch a bundle silently dropping out of the suite.
+#
+#   BEFORE MERGE  the integration suite, run locally against a real database:
+#
+#                     RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs
+#                     node scripts/assert-check-count.mjs /tmp/integration.log
+#
+#                 `RUN_MUTATION_TESTS=1` is NOT optional. Every check in that suite is
+#                 `RequiresMutation`, and MJ's driver contains `if (check.RequiresMutation &&
+#                 !mutationEnabled) continue;` — so a run without it executes NOTHING and reports
+#                 success. The count assertion exists because a green tally is not evidence on its
+#                 own; it fails if fewer checks ran than the registry declares.
+#
+# The integration suite has found more than twenty real defects, several of which balanced, totalled
+# and looked entirely correct. It is the more valuable of the two gates. It is just not one a hosted
+# runner can honestly provide, and a red X that everybody learns to ignore is worse than a documented
+# manual step.
+
+on:
+  pull_request:
+  push:
+    branches: [next]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      # Includes `registry-parity.test.ts`, which is the anti-vacuity floor: it asserts exact
+      # per-bundle check counts against the filesystem and cross-checks the four places a bundle
+      # name has to agree. Adding a bundle without a Test record, or a Test record that never joins
+      # the suite, both leave the integration suite passing with strictly less in it — and both have
+      # actually happened.
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: State plainly what this gate does not cover
+        if: always()
+        run: |
+          echo "::notice title=Integration checks are not run here::The 217 database checks need a local environment. Run 'RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs' before merging — see .github/workflows/ci.yml for why."

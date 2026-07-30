@@ -15,8 +15,11 @@
  *
  *      DiscountPct and DiscountAmount are both applied, in that order, because they mean different
  *      things: a percentage is a negotiated concession on the line, an amount is an allocated share
- *      of a promotion (D70). The net is floored at zero — a discount larger than the line is a
- *      configuration mistake, and a NEGATIVE line would silently become revenue when booked.
+ *      of a promotion (D70). The net is clamped TOWARD ZERO, in whichever direction the line runs —
+ *      a discount larger than the line is a configuration mistake and must not turn a sale into a
+ *      credit, but a reversal line (D16) is legitimately negative and must not be flattened to zero.
+ *      The rule lives in `PricingBehavior.NetAfterDiscount`, shared with the charge/tax base, because
+ *      it was written twice and both copies had the same bug.
  *      The journal entry is built from the same arithmetic, so a client-supplied total can never
  *      disagree with what was booked.
  *
@@ -38,6 +41,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { NetAfterDiscount } from './PricingBehavior.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
@@ -97,11 +101,14 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
     }
 
     private computeTotals(): void {
-        const gross = money(this.Quantity * this.UnitPrice);
-        const afterPct = money(gross * (1 - (this.DiscountPct ?? 0)));
-        // Floored at zero: over-discounting is a configuration mistake, and a negative line would
-        // flip sign in the journal entry and read as revenue.
-        const net = money(Math.max(0, afterPct - (this.DiscountAmount ?? 0)));
+        // `NetAfterDiscount` is shared with the charge/tax base in OrderEntityServer. It used to be
+        // computed independently in both places, and both clamped a reversal line to zero — see
+        // PricingBehavior for what that cost.
+        const net = NetAfterDiscount(
+            this.Quantity * this.UnitPrice,
+            this.DiscountPct ?? 0,
+            this.DiscountAmount ?? 0,
+        );
         this.LineTotalNet = net;
         this.LineTotalGross = money(net + (this.LineTax ?? 0) + (this.ChargeAmount ?? 0));
     }

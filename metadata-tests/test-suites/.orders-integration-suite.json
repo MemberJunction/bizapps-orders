@@ -133,8 +133,30 @@
         {
           "fields": {
             "SuiteID": "@parent:ID",
-            "TestID": "@lookup:MJ: Tests.Name=ORD-11 - Account Credit",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-09 - Intercompany Balancing",
             "Sequence": 9,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "1CCA4900-EB07-4739-A164-BA2EE68B5031"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-10 - Events and One-Time Deferred Revenue",
+            "Sequence": 10,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "9BD5AF43-813C-44E6-AE01-BEF50E16113B"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-11 - Account Credit",
+            "Sequence": 11,
             "Status": "Active"
           },
           "primaryKey": {
@@ -149,7 +171,7 @@
           "fields": {
             "SuiteID": "@parent:ID",
             "TestID": "@lookup:MJ: Tests.Name=ORD-12 - Pricing",
-            "Sequence": 10,
+            "Sequence": 12,
             "Status": "Active"
           },
           "primaryKey": {
@@ -160,7 +182,7 @@
           "fields": {
             "SuiteID": "@parent:ID",
             "TestID": "@lookup:MJ: Tests.Name=ORD-13 - Promotions",
-            "Sequence": 11,
+            "Sequence": 13,
             "Status": "Active"
           },
           "primaryKey": {
@@ -171,7 +193,7 @@
           "fields": {
             "SuiteID": "@parent:ID",
             "TestID": "@lookup:MJ: Tests.Name=ORD-14 - Charges",
-            "Sequence": 12,
+            "Sequence": 14,
             "Status": "Active"
           },
           "primaryKey": {
@@ -182,11 +204,55 @@
           "fields": {
             "SuiteID": "@parent:ID",
             "TestID": "@lookup:MJ: Tests.Name=ORD-15 - Tax",
-            "Sequence": 13,
+            "Sequence": 15,
             "Status": "Active"
           },
           "primaryKey": {
             "ID": "B667D440-DFA2-4BBB-B6E7-7A1E7C8E6246"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-16 - Composition",
+            "Sequence": 16,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "00D6340F-ECF4-4627-8A40-68AA60F517E6"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-17 - Returns",
+            "Sequence": 17,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "9943DBC7-1908-4588-923F-6BD9E121CAE1"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-18 - Arithmetic Edges",
+            "Sequence": 18,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "5A5600DD-67CB-40D6-9072-B6B2814ABBF7"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-19 - Concurrency",
+            "Sequence": 19,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "B41C9C72-1C9A-47C3-AED7-A3EB41ABE493"
           }
         }
       ]
