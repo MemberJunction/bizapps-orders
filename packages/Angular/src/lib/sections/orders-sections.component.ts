@@ -44,6 +44,8 @@ import { MJOPaymentEntryPageComponent } from '../pages/payments/payment-entry.pa
 import { MJOPaymentsListPageComponent } from '../pages/payments/payments-list.page';
 import { MJOPaymentsDashboardPageComponent } from '../pages/payments/payments-dashboard.page';
 import { MJOOverduePageComponent } from '../pages/receivables/overdue.page';
+import { MJOCustomerARPageComponent } from '../pages/receivables/customer-ar.page';
+import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/catalog/products.page';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -368,6 +370,8 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
         switch (pageId) {
             case 'overdue':
                 return MJOOverduePageComponent;
+            case 'aging':
+                return MJOCustomerARPageComponent;
             default:
                 return null;
         }
@@ -417,7 +421,14 @@ export class CatalogSectionResource extends MJOSectionBaseComponent {
     protected get sectionIcon(): string {
         return 'fa-solid fa-box-open';
     }
-    protected resolvePage(_pageId: string): Type<unknown> | null {
-        return null;
+    protected resolvePage(pageId: string): Type<unknown> | null {
+        switch (pageId) {
+            case 'products':
+                return MJOProductsPageComponent;
+            case 'charges':
+                return MJOChargesTaxPageComponent;
+            default:
+                return null;
+        }
     }
 }

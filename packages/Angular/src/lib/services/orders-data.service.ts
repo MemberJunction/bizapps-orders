@@ -194,6 +194,19 @@ export class MJOOrdersDataService {
         );
     }
 
+    /** Charge types, in the sequence they compute. */
+    public async GetChargeTypes(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.ChargeType,
+            [],
+            // Sequence, not name: the ORDER is the behaviour — non-tax charges run
+            // first and enlarge the taxable base, tax charges run after.
+            'Sequence',
+            undefined,
+            user,
+        );
+    }
+
     /** Lines belonging to one order. */
     public async GetOrderLines(orderHeaderID: string, user?: UserInfo) {
         return this.run<Record<string, unknown>>(
