@@ -9,6 +9,15 @@ export { GLAccountResolver, GLAccountResolutionError, GL_ROLE } from './GLAccoun
 export type { GLRole, ResolverEntityIDs } from './GLAccountResolver.js';
 
 export {
+    SaveOrderOperation,
+    LoadSaveOrderOperation,
+    PreviewOrderOperation,
+    LoadPreviewOrderOperation,
+    ConfirmOrderOperation,
+    LoadConfirmOrderOperation,
+} from './SaveOrderOperation.js';
+
+export {
     HydrateOrderDraft,
     ORDER_HEADER_ENTITY,
     ORDER_LINE_ENTITY,
@@ -137,6 +146,64 @@ export type {
 } from './EntitlementBehavior.js';
 export { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
+
+// Payment providers (D19/D37) — the pure edge arithmetic, the driver seam, and the drivers.
+export {
+    CurrencyExponent,
+    ToMinorUnits,
+    FromMinorUnits,
+    VerifyWebhookSignature,
+    HmacSha256Hex,
+    SignaturesMatch,
+    MapStripeIntentStatus,
+    DecideWebhookAction,
+    SplitCapturedAmount,
+} from './PaymentProviderBehavior.js';
+export type {
+    IntentStatus,
+    SignatureVerification,
+    WebhookAction,
+    WebhookDecision,
+} from './PaymentProviderBehavior.js';
+
+export { BasePaymentProvider, LoadBasePaymentProvider } from './BasePaymentProvider.js';
+export type {
+    PaymentProviderConfig,
+    PaymentCredentials,
+    CreateIntentRequest,
+    CreateIntentResult,
+    CaptureRequest,
+    CaptureResult,
+    RefundRequest,
+    RefundResult,
+    WebhookEvent,
+} from './BasePaymentProvider.js';
+
+export { StripePaymentProvider, LoadStripePaymentProvider, ToFormBody } from './StripePaymentProvider.js';
+export { ManualPaymentProvider, LoadManualPaymentProvider } from './ManualPaymentProvider.js';
+export {
+    StoredValuePaymentProvider,
+    LoadStoredValuePaymentProvider,
+} from './StoredValuePaymentProvider.js';
+export type { StoredValueTarget } from './StoredValuePaymentProvider.js';
+
+export {
+    BaseSecretResolver,
+    EnvironmentSecretResolver,
+    LoadEnvironmentSecretResolver,
+    PaymentProviderNotConfiguredError,
+    ResolvePaymentProvider,
+    LoadPaymentProviderConfig,
+    BuildPaymentProvider,
+} from './PaymentProviderResolver.js';
+
+export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
+export type {
+    WebhookRequest,
+    WebhookResponse,
+    WebhookHttpRequest,
+    WebhookHttpResponse,
+} from './PaymentWebhookHandler.js';
 
 // Promotions (D70): the pure engine, the DB-backed resolution, and the qualifier plugin seam.
 export { ApplyPromotions, ScreenPromotion, ValuePromotion } from './PromotionBehavior.js';

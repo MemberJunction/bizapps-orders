@@ -15,6 +15,8 @@ import '@mj-biz-apps/orders-actions';
 import '@mj-biz-apps/orders-core-entities-server';
 import {
     LoadCancelSubscriptionOperation,
+    LoadEnvironmentSecretResolver,
+    LoadManualPaymentProvider,
     LoadOrderEntityServer,
     LoadOrderLineEntityServer,
     LoadPaymentHeaderEntityServer,
@@ -22,11 +24,16 @@ import {
     LoadRefundPaymentOperation,
     LoadApplyAccountCreditOperation,
     LoadPreviewPriceOperation,
+    LoadSaveOrderOperation,
+    LoadPreviewOrderOperation,
+    LoadConfirmOrderOperation,
     LoadDefaultPriceResolver,
     LoadPromotionEngine,
     LoadTaxResolver,
     LoadRevenueRecognitionDrivers,
     LoadSpawnRenewalsOperation,
+    LoadStoredValuePaymentProvider,
+    LoadStripePaymentProvider,
     LoadSubscriptionBehavior,
 } from '@mj-biz-apps/orders-core-entities-server';
 
@@ -69,6 +76,9 @@ export function LoadBizAppsOrdersServer(): void {
     LoadRefundPaymentOperation();     // the 'Orders.RefundPayment' remote operation (D17)
     LoadApplyAccountCreditOperation(); // the 'Orders.ApplyAccountCredit' remote operation (D68)
     LoadPreviewPriceOperation();       // the 'Orders.PreviewPrice' dry run (D69)
+    LoadSaveOrderOperation();          // 'Orders.SaveOrder' — the only way a browser can compose an order
+    LoadPreviewOrderOperation();       // 'Orders.PreviewOrder' — the real save, rolled back
+    LoadConfirmOrderOperation();       // 'Orders.ConfirmOrder' — the irreversible step (D8)
     LoadDefaultPriceResolver();        // the data-driven price resolver the walk falls back to (D69)
     LoadPromotionEngine();             // the promotion qualifier plugin seam (D70)
     LoadTaxResolver();                 // the address -> jurisdiction seam (D72)
