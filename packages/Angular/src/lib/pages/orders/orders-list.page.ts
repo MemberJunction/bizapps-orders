@@ -1,7 +1,7 @@
 import { Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
-import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
+import { MJO_ORIGIN_CHANNEL_AVAILABLE, MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
 import { FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
 
 /**
@@ -83,7 +83,12 @@ export class MJOOrdersListPageComponent implements OnInit {
         { Key: 'notposted', Label: 'Confirmed, not posted' },
         { Key: 'drafts', Label: 'Drafts' },
         { Key: 'credits', Label: 'Credits', Icon: 'fa-solid fa-piggy-bank' },
-        { Key: 'lxp', Label: 'From LXP', Icon: 'fa-solid fa-graduation-cap' },
+        // Offered only once the column backing it exists — see
+        // MJO_ORIGIN_CHANNEL_AVAILABLE. A visible filter that throws is worse
+        // than an absent one.
+        ...(MJO_ORIGIN_CHANNEL_AVAILABLE
+            ? ([{ Key: 'lxp', Label: 'From LXP', Icon: 'fa-solid fa-graduation-cap' }] as MJOPreset[])
+            : []),
     ];
 
     public readonly Columns: MJOColumn<MJOOrderRow>[] = [
@@ -108,15 +113,23 @@ export class MJOOrdersListPageComponent implements OnInit {
             Format: (r) => (r.BillToOrganization ?? r.BillToPerson ?? '—') as string,
             Secondary: (r) => (r.Description as string) ?? null,
         },
-        {
-            Key: 'OriginChannel',
-            Label: 'Origin',
-            Kind: 'chip',
-            Width: '96px',
-            HideBelow: 1000,
-            Format: (r) => (r.OriginChannel as string) ?? 'Staff',
-            ChipClass: (r) => (r.OriginChannel === 'LXP' ? 'mj-chip--violet' : 'mj-chip--outline'),
-        },
+        // The Origin column reads the same not-yet-existent field. Left out
+        // entirely rather than shown as a column of identical 'Staff' chips,
+        // which would assert something the data cannot support.
+        ...(MJO_ORIGIN_CHANNEL_AVAILABLE
+            ? ([
+                  {
+                      Key: 'OriginChannel',
+                      Label: 'Origin',
+                      Kind: 'chip' as const,
+                      Width: '96px',
+                      HideBelow: 1000,
+                      Format: (r: MJOOrderRow) => (r.OriginChannel as string) ?? 'Staff',
+                      ChipClass: (r: MJOOrderRow) =>
+                          r.OriginChannel === 'LXP' ? 'mj-chip--violet' : 'mj-chip--outline',
+                  },
+              ] as MJOColumn<MJOOrderRow>[])
+            : []),
         {
             Key: 'Company',
             Label: 'Co.',

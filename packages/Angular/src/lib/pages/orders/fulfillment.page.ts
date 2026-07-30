@@ -156,10 +156,14 @@ export class MJOFulfillmentPageComponent implements OnInit {
         const orders = await this.data.GetOrders({ Preset: 'all' });
         const posted = orders.filter((o) => ['Posted', 'Fulfilled'].includes(o.Status));
 
+        // One query for every posted order's lines rather than one per order —
+        // the board shows the whole backlog, so the per-order version turned a
+        // single screen into hundreds of round trips.
+        const linesByOrder = await this.data.GetOrderLinesForOrders(posted.map((o) => o.ID));
+
         const rows: MJOFulfillmentRow[] = [];
         for (const order of posted) {
-            const lines = await this.data.GetOrderLines(order.ID);
-            for (const line of lines) {
+            for (const line of linesByOrder.get(order.ID) ?? []) {
                 const status = line['FulfillmentStatus'] as string | null;
                 if (!status) continue;
                 rows.push({

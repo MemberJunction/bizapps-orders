@@ -47,6 +47,8 @@ import {
 } from '@mj-biz-apps/orders-entities';
 
 import { HydrateOrderDraft, type HydratableDraft, type HydratedOrder } from './OrderDraftHydrator.js';
+import { ComputeLinesAndTotals } from './order-totals.js';
+import { RequireOptionalUUID } from './sql-guards.js';
 
 /** Round to cents the way the rest of the engine does. */
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
@@ -75,105 +77,15 @@ async function projectResult(
     Promotions: PromotionResult[];
 }> {
     const order = hydrated.Order as unknown as BaseEntity;
-    const lines: OrderLineResult[] = [];
 
-    let listSubtotal = 0;
-    let discountTotal = 0;
-    let taxableGoods = 0;
-    let untaxableGoods = 0;
-
-    const byCompany = new Map<string, { Net: number; Charges: number; Tax: number }>();
-
-    for (let i = 0; i < hydrated.Lines.length; i++) {
-        const line = hydrated.Lines[i] as unknown as BaseEntity;
-        const net = money(field(line, 'LineTotalNet', 0));
-        const tax = money(field(line, 'LineTax', 0));
-        const charge = money(field(line, 'ChargeAmount', 0));
-        const gross = money(field(line, 'LineTotalGross', net + tax + charge));
-        const qty = Number(field(line, 'Quantity', 0));
-        const unit = money(field(line, 'UnitPrice', 0));
-        const discountAmount = money(field(line, 'DiscountAmount', 0));
-        const discountPct = Number(field(line, 'DiscountPct', 0));
-        const listAmount = money(qty * unit);
-        const companyID = field(line, 'CompanyID', '');
-        const taxable = tax !== 0;
-
-        listSubtotal += listAmount;
-        discountTotal += discountAmount;
-        if (taxable) taxableGoods += net;
-        else untaxableGoods += net;
-
-        const bucket = byCompany.get(companyID) ?? { Net: 0, Charges: 0, Tax: 0 };
-        bucket.Net += net;
-        bucket.Charges += charge;
-        bucket.Tax += tax;
-        byCompany.set(companyID, bucket);
-
-        lines.push({
-            ClientKey: hydrated.LineKeys[i],
-            LineNumber: Number(field(line, 'LineNumber', i + 1)),
-            ProductID: field(line, 'ProductID', ''),
-            ProductName: field(line, 'Product', ''),
-            CompanyID: companyID,
-            CompanyName: field(line, 'Company', ''),
-            Quantity: qty,
-            UnitPrice: unit,
-            ProductPriceID: field<string | null>(line, 'ProductPriceID', null),
-            // The client stated it iff it sent one; the hydrator only assigns when it did.
-            UnitPriceWasStated: false,
-            PriceSource: null,
-            DiscountPct: discountPct,
-            DiscountAmount: discountAmount,
-            ListAmount: listAmount,
-            LineTotalNet: net,
-            ChargeAmount: charge,
-            LineTax: tax,
-            LineTotalGross: gross,
-            Taxable: taxable,
-            TaxLayers: [] as TaxLayerResult[],
-            ServicePeriodStart: isoOrNull(field<unknown>(line, 'ServicePeriodStart', null)),
-            ServicePeriodEnd: isoOrNull(field<unknown>(line, 'ServicePeriodEnd', null)),
-            RequiresFulfillment: field<string | null>(line, 'FulfillmentStatus', null) !== null,
-            Components: [],
-        });
-    }
-
-    const chargeTotal = money(lines.reduce((s, l) => s + l.ChargeAmount, 0));
-    const taxTotal = money(lines.reduce((s, l) => s + l.LineTax, 0));
-    const netTotal = money(lines.reduce((s, l) => s + l.LineTotalNet, 0));
-
-    const companyNames = new Map<string, string>();
-    for (const l of lines) companyNames.set(l.CompanyID, l.CompanyName);
-
-    const totals: OrderTotalsResult = {
-        ListSubtotal: money(listSubtotal),
-        DiscountTotal: money(discountTotal),
-        NetTotal: netTotal,
-        ChargeTotal: chargeTotal,
-        TaxTotal: taxTotal,
-        // Read the header's rollup rather than summing again: it is trigger-maintained
-        // and is the number every other surface will show.
-        GrossTotal: money(field(order, 'TotalGross', netTotal + chargeTotal + taxTotal)),
-        TaxableBase: {
-            TaxableGoods: money(taxableGoods),
-            UntaxableGoods: money(untaxableGoods),
-            NonTaxCharges: chargeTotal,
-            Base: money(taxableGoods + chargeTotal),
-        },
-        ByCompany: [...byCompany.entries()].map(([id, b]) => ({
-            CompanyID: id,
-            CompanyName: companyNames.get(id) ?? '',
-            Net: money(b.Net),
-            Charges: money(b.Charges),
-            Tax: money(b.Tax),
-            Gross: money(b.Net + b.Charges + b.Tax),
-        })),
-    };
+    // The decomposition lives in order-totals.ts because PreviewConfirm shows the
+    // same numbers on the pre-flight. Two copies drifted once already.
+    const { Lines, Totals } = ComputeLinesAndTotals(hydrated);
 
     const charges = await loadCharges(field(order, 'ID', ''), provider, user);
     const promotions = readPromotions(hydrated);
 
-    return { Lines: lines, Totals: totals, Charges: charges, Promotions: promotions };
+    return { Lines, Totals, Charges: charges, Promotions: promotions };
 }
 
 function isoOrNull(value: unknown): string | null {
@@ -468,6 +380,10 @@ export class ConfirmOrderOperation extends OrdersConfirmOrderOperationBase {
                 ],
             };
         }
+
+        // Caller-supplied ids reach SQL filter text downstream. Validated here,
+        // at the boundary, so every frame below this one can trust them.
+        RequireOptionalUUID(input?.OrderHeaderID, 'OrderHeaderID');
 
         // A draft to confirm, or an existing order to load and confirm. Either way
         // it goes through the SAME hydration path, so there is one mapping to be

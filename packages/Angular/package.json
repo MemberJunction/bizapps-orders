@@ -12,8 +12,9 @@
     "/dist"
   ],
   "scripts": {
-    "build": "ngc",
-    "test": "echo \"No tests configured yet\""
+    "build": "ngc && npm run build:styles",
+    "test": "echo \"No tests configured yet\"",
+    "build:styles": "node -e \"require('node:fs').mkdirSync('dist/lib/styles',{recursive:true});require('node:fs').copyFileSync('src/lib/styles/orders-kit.css','dist/lib/styles/orders-kit.css')\""
   },
   "author": "MemberJunction.com",
   "license": "ISC",
@@ -46,5 +47,12 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/MemberJunction/bizapps-orders"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/public-api.d.ts",
+      "default": "./dist/public-api.js"
+    },
+    "./styles/orders-kit.css": "./dist/lib/styles/orders-kit.css"
   }
 }

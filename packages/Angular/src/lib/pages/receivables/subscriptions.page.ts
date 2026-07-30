@@ -2,7 +2,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
-import { MJOMoneyPipe, FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
+import { MJOMoneyPipe, FormatDate, DaysSince } from '../../panels/money-format';
 import { MJOOrdersDataService, MJO_ENTITIES } from '../../services/orders-data.service';
 import { RunView, Metadata } from '@memberjunction/core';
 
@@ -320,9 +320,6 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         return FormatDate(value);
     }
 
-    protected money(value: number): string {
-        return FormatMoney(value);
-    }
 
     private applyPreset(): void {
         const today = new Date().toISOString().slice(0, 10);

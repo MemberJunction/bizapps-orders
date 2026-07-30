@@ -323,8 +323,17 @@ kbd {
   border-top: 1px solid var(--mj-border-default);
   font-size: 11.5px; color: var(--mj-text-muted); line-height: 1.7;
 }
+/*
+ * The paid/void stamp.
+ *
+ * ANCHORED TO THE BOTTOM, not the top. Top-right is where the invoice number and
+ * the date block already live, and the head's height varies with how many meta
+ * rows a document has — so no fixed `top` clears it in every render. It sat on
+ * top of the order number until a browser screenshot caught it. The footer band
+ * is a single line of small print on the left, leaving the right reliably empty.
+ */
 .mj-doc-stamp {
-  position: absolute; top: 90px; right: 80px; transform: rotate(-14deg);
+  position: absolute; bottom: 96px; right: 64px; transform: rotate(-14deg);
   border: 3px solid var(--mj-status-success); color: var(--mj-status-success-text);
   border-radius: var(--mj-radius-md); padding: 6px 18px;
   font-size: 22px; font-weight: var(--mj-font-bold); letter-spacing: .1em;

@@ -7,7 +7,7 @@ import {
     type MJOAllocationMap,
 } from '../../panels/allocation-grid.component';
 import { AllocateOldestFirst, UnallocatedRemainder } from '../../panels/allocation-math';
-import { MJOMoneyPipe, FormatMoney, DaysSince } from '../../panels/money-format';
+import { MJOMoneyPipe, DaysSince } from '../../panels/money-format';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
 
@@ -305,7 +305,4 @@ export class MJOPaymentEntryPageComponent implements OnInit {
         }
     }
 
-    protected money(value: number): string {
-        return FormatMoney(value);
-    }
 }

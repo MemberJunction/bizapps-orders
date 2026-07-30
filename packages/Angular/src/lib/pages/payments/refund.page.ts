@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { OrdersRefundPaymentOperation } from '@mj-biz-apps/orders-entities';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
-import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
+import { MJOMoneyPipe } from '../../panels/money-format';
 
 /** One order the original payment settled, and what a refund does to it. */
 interface MJOUnapplication {
@@ -285,7 +285,4 @@ export class MJORefundPageComponent implements OnInit {
         }
     }
 
-    protected money(value: number): string {
-        return FormatMoney(value);
-    }
 }

@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, OnInit, Output, inject } from '@angular
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
-import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
+import { MJOMoneyPipe } from '../../panels/money-format';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
 
 /** A line being returned, with the cap the origin imposes. */
@@ -301,7 +301,4 @@ export class MJOReturnPageComponent implements OnInit {
         return this.Lines.some((l) => l.Returning > 0);
     }
 
-    protected money(value: number): string {
-        return FormatMoney(value);
-    }
 }

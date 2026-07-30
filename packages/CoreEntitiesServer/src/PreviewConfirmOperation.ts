@@ -39,7 +39,12 @@ import {
     type BlockerResult,
 } from '@mj-biz-apps/orders-entities';
 
+import { ComputeLinesAndTotals } from './order-totals.js';
 import { HydrateOrderDraft, type HydratableDraft } from './OrderDraftHydrator.js';
+import { RequireOptionalUUID } from './sql-guards.js';
+
+/** The terms table — one row per period of coverage. */
+const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
@@ -76,6 +81,10 @@ export class PreviewConfirmOperation extends OrdersPreviewConfirmOperationBase {
                 },
             ]);
         }
+
+        // Caller-supplied ids reach SQL filter text downstream. Validated here,
+        // at the boundary, so every frame below this one can trust them.
+        RequireOptionalUUID(input?.OrderHeaderID, 'OrderHeaderID');
 
         const db = provider as unknown as DatabaseProviderBase;
         await db.BeginTransaction();
@@ -122,21 +131,18 @@ export class PreviewConfirmOperation extends OrdersPreviewConfirmOperationBase {
                     Quantity: Number(field(line, 'Quantity', 0)),
                 }));
 
-            const gross = money(field(order, 'TotalGross', 0));
+            // The REAL decomposition, from the same function the entry rail uses.
+            // This ran inside the rolled-back confirm transaction, so the lines
+            // carry engine-computed amounts and these are the figures the actual
+            // confirm will produce. Placeholder zeros lived here once, which made
+            // the pre-flight understate tax and discount as $0 on the one screen
+            // whose entire job is telling someone what they are about to commit.
+            const { Totals } = ComputeLinesAndTotals(hydrated);
 
             return {
                 Success: true,
                 CanConfirm: true,
-                Totals: {
-                    ListSubtotal: gross,
-                    DiscountTotal: 0,
-                    NetTotal: gross,
-                    ChargeTotal: 0,
-                    TaxTotal: 0,
-                    GrossTotal: gross,
-                    TaxableBase: { TaxableGoods: 0, UntaxableGoods: 0, NonTaxCharges: 0, Base: 0 },
-                    ByCompany: [],
-                },
+                Totals,
                 JournalEntries: entries,
                 EntryCount: entries.length,
                 CompanyCount: companies.size,
@@ -247,11 +253,24 @@ export class PreviewConfirmOperation extends OrdersPreviewConfirmOperationBase {
             const subscription = result.Results?.[0];
             if (!subscription) continue;
 
+            // Create vs Extend is decided by how many terms the subscription has
+            // after this confirm: exactly one means this order brought it into
+            // existence, more means it added coverage to something already running.
+            // The distinction drives retention reporting — counting an extension as
+            // a new subscription inflates acquisition and hides churn — so it is
+            // read rather than assumed.
+            const terms = await rv.RunView<Record<string, unknown>>(
+                {
+                    EntityName: SUBSCRIPTION_TERM_ENTITY,
+                    ExtraFilter: `SubscriptionID = '${subscriptionID}'`,
+                    ResultType: 'simple',
+                },
+                user,
+            );
+            const termCount = terms.Results?.length ?? 0;
+
             decisions.push({
-                // A subscription that already had terms was EXTENDED; one created by
-                // this confirm has exactly one. That distinction matters for
-                // retention reporting, so it is read rather than assumed.
-                Action: 'Extend',
+                Action: termCount <= 1 ? 'Create' : 'Extend',
                 SubscriptionID: subscriptionID,
                 SubscriptionNumber: String(subscription['SubscriptionNumber'] ?? ''),
                 CoverageThrough: subscription['EndDate'] ? String(subscription['EndDate']).slice(0, 10) : null,

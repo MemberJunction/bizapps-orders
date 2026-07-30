@@ -32,6 +32,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { PriceResolutionError, ResolvePrice, ResolvePriceListForCustomer } from './PriceResolver.js';
+import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 
 export interface PreviewPriceInput {
     ProductID: string;
@@ -83,6 +84,13 @@ export class PreviewPriceOperation extends BaseRemotableOperation<PreviewPriceIn
         if (!input?.ProductID) {
             return { Success: false, Message: 'ProductID is required.' };
         }
+        // Caller-supplied ids reach SQL filter text downstream. Validated here,
+        // at the boundary, so every frame below this one can trust them.
+        RequireUUID(input.ProductID, 'ProductID');
+        RequireOptionalUUID(input.PriceListID, 'PriceListID');
+        RequireOptionalUUID(input.OrganizationID, 'OrganizationID');
+        RequireOptionalUUID(input.PersonID, 'PersonID');
+
         const quantity = input.Quantity == null ? 1 : Number(input.Quantity);
         if (!(quantity > 0)) {
             return { Success: false, Message: `Quantity must be greater than zero (received ${input.Quantity}).` };

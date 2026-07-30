@@ -106,6 +106,17 @@ export interface HydratedOrder {
     Lines: Array<BaseEntity & Record<string, unknown>>;
     /** Parallel to `Lines`: the client key for each, or undefined if none was sent. */
     LineKeys: Array<string | undefined>;
+    /**
+     * Parallel to `Lines`: whether the CALLER stated the unit price, rather than
+     * letting the pricing walk resolve one.
+     *
+     * Recorded here because this is the only place the answer is knowable. Once
+     * the price is assigned to the entity, a stated $40 and a resolved $40 are
+     * indistinguishable — and the difference is exactly what the price-source chip
+     * on the order line reports. Deriving it later is not possible; discarding it
+     * makes the UI claim every price came from a rule.
+     */
+    LineUnitPriceWasStated: boolean[];
 }
 
 /** Fields a caller may never set — the engine or a trigger owns each one. */
@@ -166,6 +177,7 @@ export async function HydrateOrderDraft(
 
     const lines: Array<BaseEntity & Record<string, unknown>> = [];
     const lineKeys: Array<string | undefined> = [];
+    const lineUnitPriceWasStated: boolean[] = [];
     let lineNumber = 1;
 
     for (const spec of draft.Lines ?? []) {
@@ -181,7 +193,9 @@ export async function HydrateOrderDraft(
         // UNTOUCHED so the engine sees a field nobody set and resolves a price.
         // Assigning 0 would look like a deliberate free line and suppress
         // resolution entirely — a silently free order.
-        if (spec.UnitPrice !== undefined && spec.UnitPrice !== null) {
+        const unitPriceWasStated = spec.UnitPrice !== undefined && spec.UnitPrice !== null;
+        lineUnitPriceWasStated.push(unitPriceWasStated);
+        if (unitPriceWasStated) {
             line.UnitPrice = spec.UnitPrice;
         }
 
@@ -206,7 +220,12 @@ export async function HydrateOrderDraft(
     order.ManualDiscounts = mapManualDiscounts(draft, lineKeys);
     order.Charges = [...(draft.Charges ?? [])];
 
-    return { Order: order, Lines: lines, LineKeys: lineKeys };
+    return {
+        Order: order,
+        Lines: lines,
+        LineKeys: lineKeys,
+        LineUnitPriceWasStated: lineUnitPriceWasStated,
+    };
 }
 
 /** Copy the stated header fields, refusing the ones the engine owns. */

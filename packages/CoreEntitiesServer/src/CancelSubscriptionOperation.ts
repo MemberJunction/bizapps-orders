@@ -45,6 +45,7 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import { RequireUUID } from './sql-guards.js';
 import {
     SubscriptionBehavior,
     type CancellationDecision,
@@ -125,6 +126,10 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<CancelSubscriptionOutput> {
+        // Caller-supplied ids reach SQL filter text downstream. Validated here,
+        // at the boundary, so every frame below this one can trust them.
+        RequireUUID(input.SubscriptionID, 'SubscriptionID');
+
         const requestDate = input.RequestDate ? new Date(input.RequestDate) : new Date();
 
         const subscription = await this.loadSubscription(provider, user, input.SubscriptionID);

@@ -2,6 +2,25 @@ import { Injectable } from '@angular/core';
 import { Metadata, RunView, type UserInfo } from '@memberjunction/core';
 
 /** MJ entity names, in one place so a rename is one edit. */
+/**
+ * Whether `OrderHeader.OriginChannel` exists yet.
+ *
+ * IT DOES NOT. The column is a planned schema wave — the value that records
+ * whether an order was keyed by staff or arrived from LXP through the engine.
+ * Every affordance that reads it is written and gated behind this ONE flag, so
+ * turning the feature on is a single edit here rather than a hunt through pages.
+ *
+ * WHY A FLAG RATHER THAN DELETED CODE. A filter on a column that does not exist
+ * does not degrade — SQL Server rejects the whole statement, so the orders list
+ * would fail to load entirely rather than just missing a facet. Gating keeps the
+ * intent visible and the list working; deleting would lose the design, and
+ * shipping it as-is would break the most-used screen in the app.
+ */
+export const MJO_ORIGIN_CHANNEL_AVAILABLE = false;
+
+/** Ids reach filter strings as SQL text, so they are shape-checked first. */
+const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 export const MJO_ENTITIES = {
     OrderHeader: 'MJ_BizApps_Orders: Orders',
     OrderLine: 'MJ_BizApps_Orders: Order Lines',
@@ -120,6 +139,13 @@ export class MJOOrdersDataService {
                 filters.push(`Balance < 0`);
                 break;
             case 'lxp':
+                // Guarded rather than silently widened: a preset that quietly
+                // returns every order would misreport LXP volume as total volume.
+                if (!MJO_ORIGIN_CHANNEL_AVAILABLE) {
+                    throw new Error(
+                        'The "From LXP" filter needs OrderHeader.OriginChannel, which is not in the schema yet.',
+                    );
+                }
                 filters.push(`OriginChannel = 'LXP'`);
                 break;
             default:
@@ -238,6 +264,48 @@ export class MJOOrdersDataService {
             undefined,
             user,
         );
+    }
+
+    /**
+     * Lines for MANY orders in one query, grouped by order id.
+     *
+     * WHY THIS EXISTS ALONGSIDE `GetOrderLines`. The fulfillment board needs the
+     * lines of every posted order, and asking per order is one round trip per
+     * order — fine against a seeded fixture, visibly slow the moment a company has
+     * a few hundred posted orders. The single-order method stays because the
+     * editor genuinely wants one order's lines.
+     *
+     * Ids are validated before interpolation: they are composed into an `IN` list,
+     * which is SQL text.
+     *
+     * @param orderHeaderIDs Order ids to fetch lines for. An empty array does no work.
+     * @returns A map of order id → its lines, ordered by line number.
+     */
+    public async GetOrderLinesForOrders(
+        orderHeaderIDs: string[],
+        user?: UserInfo,
+    ): Promise<Map<string, Array<Record<string, unknown>>>> {
+        const grouped = new Map<string, Array<Record<string, unknown>>>();
+        const ids = [...new Set(orderHeaderIDs)].filter((id) => UUID_PATTERN.test(id));
+        if (!ids.length) return grouped;
+
+        const rows = await this.run<Record<string, unknown>>(
+            MJO_ENTITIES.OrderLine,
+            [`OrderHeaderID IN (${ids.map((id) => `'${id}'`).join(',')})`],
+            'LineNumber',
+            // One cap for the whole board rather than per order, so a single
+            // enormous order cannot silently crowd out every other one.
+            5000,
+            user,
+        );
+
+        for (const row of rows) {
+            const key = String(row['OrderHeaderID'] ?? '');
+            const list = grouped.get(key);
+            if (list) list.push(row);
+            else grouped.set(key, [row]);
+        }
+        return grouped;
     }
 
     /**

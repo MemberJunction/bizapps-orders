@@ -21,3 +21,4 @@ SQL Scripts/generated/
 # mj sync push logs — generated on every push, one file each. Not source.
 metadata/sql_logging/
 metadata-tests/sql_logging/
+.ux-harness/

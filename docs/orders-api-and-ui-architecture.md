@@ -282,11 +282,34 @@ honest:
 
 > **`Orders.PreviewConfirm` must predict what `Orders.ConfirmOrder` actually does.**
 
+### Running it in MJ Explorer
+
+The four sections register through `CLASS_REGISTRATIONS`, which `app.module.ts`
+already merges into Explorer's class list, and the `Application` row with its four
+`DefaultNavItems` is in metadata. Two things had to be wired for it to actually
+work:
+
+- **The component kit has to ship.** `ngc` compiles TypeScript; a standalone
+  `orders-kit.css` referenced by no `styleUrls` is invisible to it. The package's
+  `build` now copies it into `dist`, and `styles.scss` in Explorer loads it. Note
+  it is loaded there rather than in `angular.json`'s `styles` array, because
+  entries there resolve from the workspace root (`apps/MJExplorer`) and the
+  package is hoisted to the repo root — sass's node importer walks up and finds
+  it, which is how the neighbouring `ng-explorer-app` import already works.
+- **The package must be BUILT, not linked.** `.mj-links.json` deliberately does
+  not symlink client packages: a second copy of `@angular/*` breaks DI in ways
+  that surface as unrelated runtime errors.
+
 ### Also owed
 
 - **`OrderHeader.OriginChannel`** — the schema wave. `HydrateOrderDraft` already
-  sets it defensively when the column exists, and the orders list already filters
-  on it, so the column is the only missing piece.
+  sets it defensively when the column exists, and the orders list has the filter
+  and the Origin column written. Both are gated behind
+  `MJO_ORIGIN_CHANNEL_AVAILABLE` in `orders-data.service.ts`: a filter on a column
+  that does not exist does not degrade, it makes SQL Server reject the whole
+  statement, so an ungated preset would have broken the orders list entirely
+  rather than just missing a facet. Adding the column means flipping that one
+  constant to `true`.
 - **Screens that read but do not yet write.** The catalog screens (products,
   pricing, promotions, charges) list and explain; editing goes through the
   generated entity forms until a reason appears to build bespoke editors.

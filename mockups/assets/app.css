@@ -13,6 +13,17 @@
    Everything below resolves through tokens.css. No literal colors.
    ============================================================================ */
 
+/* ── The app's own component kit — ONE source, shared with the Angular build.
+
+   THIS MUST BE THE FIRST RULE IN THE FILE. CSS only honours `@import` before any
+   other rule; anywhere later the browser silently drops it — no console error, no
+   failed request, just missing styles. It sat mid-file until a browser screenshot
+   caught the order document rendering unstyled. jsdom cannot catch this: it
+   neither follows @import nor computes layout.
+
+   Everything after this import is a shim for chrome MJ supplies at runtime. ── */
+@import url('../../packages/Angular/src/lib/styles/orders-kit.css');
+
 *, *::before, *::after { box-sizing: border-box; }
 
 html, body { height: 100%; }
@@ -31,10 +42,6 @@ a { color: var(--mj-text-link); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 h1, h2, h3, h4 { margin: 0; font-weight: var(--mj-font-semibold); }
-
-/* ── The app's own component kit — ONE source, shared with the Angular build.
-   Everything below this import is a shim for chrome MJ supplies at runtime. ── */
-@import url('../../packages/Angular/src/lib/styles/orders-kit.css');
 
 /* ============================================================================
    1. SHELL — top nav + left rail

@@ -10,6 +10,22 @@
 
  @use "@memberjunction/ng-explorer-app/dist/styles.scss" as *;
 
+/**
+ * The BizApps Orders component kit.
+ *
+ * Loaded here rather than in angular.json's styles array because style entries
+ * there resolve from the workspace root (apps/MJExplorer), and this package is
+ * hoisted to the repo root — so a `node_modules/...` path would not resolve.
+ *
+ * The path is the package's declared `exports` subpath, NOT a reach into dist.
+ * Angular's sass plugin honours the exports map, so a dist path fails to resolve
+ * even though a bare `sass --load-path` run accepts it.
+ *
+ * The kit only defines classes MJ does not ship; everything else the Orders
+ * screens use comes from ng-ui-components at runtime.
+ */
+@use "@mj-biz-apps/orders-ng/styles/orders-kit.css";
+
 /* Application-specific layout adjustments */
 html,
 body,

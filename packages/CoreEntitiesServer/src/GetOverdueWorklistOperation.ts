@@ -30,6 +30,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 
 import { ORDER_HEADER_ENTITY } from './OrderDraftHydrator.js';
+import { RequireDate, RequireUUID } from './sql-guards.js';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
@@ -76,7 +77,7 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<OrdersGetOverdueWorklistOutput> {
-        const asOf = (input?.AsOfDate ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
+        const asOf = RequireDate(input?.AsOfDate ?? new Date().toISOString().slice(0, 10), 'AsOfDate');
         const maxCount = input?.MaxCount ?? 500;
 
         const filters: string[] = [
@@ -88,12 +89,15 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
         ];
 
         if (input?.CompanyIDs?.length) {
-            const list = input.CompanyIDs.map((id) => `'${id}'`).join(',');
+            const list = input.CompanyIDs.map((id) => `'${RequireUUID(id, 'CompanyIDs')}'`).join(',');
             filters.push(`CompanyID IN (${list})`);
         }
-        if (input?.BillToOrganizationID) filters.push(`BillToOrganizationID = '${input.BillToOrganizationID}'`);
-        if (input?.BillToPersonID) filters.push(`BillToPersonID = '${input.BillToPersonID}'`);
-        if (input?.SalesRepUserID) filters.push(`SalesRepUserID = '${input.SalesRepUserID}'`);
+        if (input?.BillToOrganizationID)
+            filters.push(`BillToOrganizationID = '${RequireUUID(input.BillToOrganizationID, 'BillToOrganizationID')}'`);
+        if (input?.BillToPersonID)
+            filters.push(`BillToPersonID = '${RequireUUID(input.BillToPersonID, 'BillToPersonID')}'`);
+        if (input?.SalesRepUserID)
+            filters.push(`SalesRepUserID = '${RequireUUID(input.SalesRepUserID, 'SalesRepUserID')}'`);
         if (input?.MinBalance != null) filters.push(`Balance >= ${Number(input.MinBalance)}`);
 
         const rv = RunView.FromMetadataProvider(provider);
@@ -191,7 +195,7 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
         ] as string[];
         if (!keys.length) return credits;
 
-        const list = keys.map((k) => `'${k}'`).join(',');
+        const list = keys.map((k) => `'${RequireUUID(k, 'customer id')}'`).join(',');
         const rv = RunView.FromMetadataProvider(provider);
         const result = await rv.RunView<OrderShape>(
             {
