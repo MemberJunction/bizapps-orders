@@ -131,6 +131,19 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
+            // SETTLE WITH THE GATEWAY BEFORE THE ROW IS WRITTEN (D19).
+            //
+            // Two reasons, and the second is the one that bit. If the ledger were written first and the
+            // gateway then declined, the rollback would undo our entries — but a gateway that CAPTURED
+            // and then failed to answer has taken the customer's money while we recorded nothing.
+            //
+            // And the gateway is the authority on the AMOUNT and the FEE: a partial capture, or a fee
+            // different from the one assumed, is what actually moved. Those land on THIS object, so
+            // they have to be set before `super.Save()` persists it. Calling this afterwards computed
+            // the right fee and threw it away — the row kept its zero, and the only reason anyone
+            // noticed was that PV4 asserted the fee rather than just the status.
+            if (capturing) await this.settleWithProvider();
+
             if (!(await super.Save(options))) {
                 throw new Error(
                     `Failed to save payment ${this.PaymentNumber}: ` +
@@ -144,18 +157,6 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
             await this.savePendingLines(options);
 
             if (capturing) {
-                // SETTLE WITH THE GATEWAY BEFORE ANYTHING IS BOOKED (D19).
-                //
-                // Order matters more than it looks. If the ledger were written first and the gateway
-                // then declined, the rollback would undo our entries — but a gateway that CAPTURED and
-                // then failed to answer has taken the customer's money while we recorded nothing. So
-                // the call happens first and its answer decides whether there is anything to book.
-                //
-                // The gateway is also the authority on the AMOUNT and the FEE. A partial capture, or a
-                // fee different from the one assumed, is what actually moved — booking our own numbers
-                // over the gateway's would leave the ledger disagreeing with the bank.
-                await this.settleWithProvider();
-
                 await this.assertAllocationInvariant();
                 // Only reach the fee builder when there IS a fee. Since the cash leg moved to the
                 // allocation (D13), this is the header's ONLY entry — so a payment without a fee has

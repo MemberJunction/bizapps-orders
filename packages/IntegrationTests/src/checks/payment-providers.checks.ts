@@ -46,8 +46,8 @@ import {
 } from "../fixture.js";
 import { ConfirmOrder } from "../order-builder.js";
 // STATIC, per the repo rule — no dynamic import()/require() anywhere.
-import { Metadata, type BaseEntity } from "@memberjunction/core";
 import { ResolvePaymentProvider } from "@mj-biz-apps/orders-core-entities-server";
+import { CreatePayment, CapturePayment } from "../payment-builder.js";
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
   await TxQuery(ctx,
@@ -122,43 +122,44 @@ async function sellSomething(ctx: IntegrationCheckContext, amount = 300) {
   return order;
 }
 
-/** Capture a payment through the provider path, returning the saved header row. */
-async function capture(
+/**
+ * Create a payment WITH its allocation and capture it, in ONE save — the real path.
+ *
+ * Two lessons are baked into this shape, both learned the hard way here.
+ *
+ * FIRST: it goes through the object model. It used to insert both rows with raw SQL, and PV12 caught
+ * what that cost — `PaymentLineEntityServer` never ran, so the allocation's cash leg was never booked.
+ * Creating the thing under test by hand means the code under test does not run.
+ *
+ * SECOND: it captures in the SAME save rather than creating `Pending` and capturing after. The
+ * allocation books during `savePendingLines`, which reads the header's TRANSIENT `Lines` collection —
+ * and a header loaded fresh from the database has an empty one. So a two-step create-then-capture
+ * saves the lines while the payment is still Pending, books nothing, and leaves a captured payment
+ * with no cash leg. That is the shape `CreatePayment` means by "Captured — the status that books".
+ */
+async function capturePayment(
   ctx: IntegrationCheckContext,
   opts: { providerID?: string | null; paymentIntentID?: string | null; orderID: string; amount: number },
-) {
+): Promise<{ ID: string | null; Saved: boolean; Message: string }> {
   const f = Fx();
   const typeID = [...f.PaymentTypeIDs.entries()].find(([c]) => c !== "AccountCredit")?.[1];
   Assert(typeID != null, "an ordinary payment type is seeded");
 
-  const paymentID = randomUUID();
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.PaymentHeader
-       (ID, PaymentNumber, ReceivingCompanyID, BillToOrganizationID, PaymentDate, PaymentTypeID,
-        Amount, PaymentProviderID, PaymentIntentID, Status)
-     VALUES ('${paymentID}','PP-${paymentID.slice(0, 8).toUpperCase()}','${f.CoA.ID}',
-             '${f.Customers.OrganizationID}', GETUTCDATE(), '${typeID}', ${opts.amount},
-             ${opts.providerID ? `'${opts.providerID}'` : "NULL"},
-             ${opts.paymentIntentID ? `'${opts.paymentIntentID}'` : "NULL"}, 'Pending')`);
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.PaymentLine (ID, PaymentHeaderID, OrderHeaderID, Amount, AllocatedAt)
-     VALUES ('${randomUUID()}','${paymentID}','${opts.orderID}',${opts.amount}, GETUTCDATE())`);
-  return paymentID;
-}
-
-/** Drive the header to Captured through the entity, which is what invokes the driver. */
-async function captureThroughEntity(ctx: IntegrationCheckContext, paymentID: string) {
-  const md = new Metadata();
-  const header = await md.GetEntityObject<BaseEntity & Record<string, unknown>>(
-    "MJ_BizApps_Orders: Payment Headers",
-    ctx.User,
-  );
-  // Single-key Load is emitted on the generated subclass rather than declared on BaseEntity, so it
-  // needs a structural cast — the same pattern payment-builder.ts uses.
-  await (header as unknown as { Load(id: string): Promise<boolean> }).Load(paymentID);
-  header.Status = "Captured";
-  const saved = await header.Save();
-  return { Saved: saved, Message: (header.LatestResult?.CompleteMessage as string) ?? "" };
+  const created = await CreatePayment(ctx.User, {
+    PaymentNumber: `PP-${randomUUID().slice(0, 8).toUpperCase()}`,
+    ReceivingCompanyID: f.CoA.ID,
+    PaymentTypeID: typeID!,
+    Amount: opts.amount,
+    BillToOrganizationID: f.Customers.OrganizationID,
+    PaymentProviderID: opts.providerID ?? null,
+    PaymentIntentID: opts.paymentIntentID ?? null,
+    Allocations: [{ OrderHeaderID: opts.orderID, Amount: opts.amount }],
+  });
+  return {
+    ID: (created.Payment.ID as string) ?? null,
+    Saved: created.Saved,
+    Message: created.Message,
+  };
 }
 
 const headerRow = (ctx: IntegrationCheckContext, paymentID: string) =>
@@ -249,14 +250,13 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         const order = await sellSomething(ctx, 300);
         const providerID = await makeProvider(ctx, "Stripe");
         const intent = await makeIntent(ctx, providerID, 300, order.Order.ID as string);
-        const paymentID = await capture(ctx, {
+        const result = await capturePayment(ctx, {
           providerID,
           paymentIntentID: intent.ID,
           orderID: order.Order.ID as string,
           amount: 300,
         });
-
-        const result = await captureThroughEntity(ctx, paymentID);
+        const paymentID = result.ID!;
         Assert(result.Saved, `the capture must succeed through the stub: ${result.Message}`);
 
         const row = await headerRow(ctx, paymentID);
@@ -280,14 +280,14 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         const order = await sellSomething(ctx, 33.33);
         const providerID = await makeProvider(ctx, "Stripe");
         const intent = await makeIntent(ctx, providerID, 33.33, order.Order.ID as string);
-        const paymentID = await capture(ctx, {
+        const paid = await capturePayment(ctx, {
           providerID,
           paymentIntentID: intent.ID,
           orderID: order.Order.ID as string,
           amount: 33.33,
         });
-
-        Assert((await captureThroughEntity(ctx, paymentID)).Saved, "the awkward-amount capture succeeds");
+        Assert(paid.Saved, "the awkward-amount capture succeeds");
+        const paymentID = paid.ID!;
         const row = await headerRow(ctx, paymentID);
         AssertEqual(
           Math.round((Number(row.Net) + Number(row.Fee)) * 100) / 100,
@@ -306,14 +306,13 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         // account-credit transfers and historical imports all have none. Requiring a provider would
         // break every one of them, so the driver path must be entirely skipped rather than refused.
         const order = await sellSomething(ctx, 300);
-        const paymentID = await capture(ctx, {
+        const result = await capturePayment(ctx, {
           providerID: null,
           paymentIntentID: null,
           orderID: order.Order.ID as string,
           amount: 300,
         });
-
-        const result = await captureThroughEntity(ctx, paymentID);
+        const paymentID = result.ID!;
         Assert(result.Saved, `a provider-less capture must still work: ${result.Message}`);
         const row = await headerRow(ctx, paymentID);
         AssertEqual(row.Status, "Captured", "it captured");
@@ -330,14 +329,13 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         const order = await sellSomething(ctx, 300);
         const providerID = await makeProvider(ctx, "Stripe");
         // A provider named but no intent opened — there is nothing for the gateway to capture.
-        const paymentID = await capture(ctx, {
+        const result = await capturePayment(ctx, {
           providerID,
           paymentIntentID: null,
           orderID: order.Order.ID as string,
           amount: 300,
         });
-
-        const result = await captureThroughEntity(ctx, paymentID);
+        const paymentID = result.ID!;
         Assert(!result.Saved, "a provider-backed capture with no intent must be refused");
         Assert(
           /intent/i.test(result.Message),
@@ -359,14 +357,14 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         const order = await sellSomething(ctx, 300);
         const providerID = await makeProvider(ctx, "Stripe");
         const intent = await makeIntent(ctx, providerID, 300, order.Order.ID as string);
-        const paymentID = await capture(ctx, {
+        const paid = await capturePayment(ctx, {
           providerID,
           paymentIntentID: intent.ID,
           orderID: order.Order.ID as string,
           amount: 300,
         });
-
-        Assert((await captureThroughEntity(ctx, paymentID)).Saved, "the capture succeeded");
+        Assert(paid.Saved, "the capture succeeded");
+        const paymentID = paid.ID!;
         const row = await headerRow(ctx, paymentID);
         // The stub derives its charge id from the intent string's tail, so a charge reference that
         // reflects the intent proves the indirection was followed rather than skipped.
@@ -386,19 +384,19 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         const order = await sellSomething(ctx, 300);
         const providerID = await makeProvider(ctx, "Stripe");
         const intent = await makeIntent(ctx, providerID, 300, order.Order.ID as string);
-        const paymentID = await capture(ctx, {
+        const paid = await capturePayment(ctx, {
           providerID,
           paymentIntentID: intent.ID,
           orderID: order.Order.ID as string,
           amount: 300,
         });
-
-        Assert((await captureThroughEntity(ctx, paymentID)).Saved, "the first capture succeeds");
+        Assert(paid.Saved, "the first capture succeeds");
+        const paymentID = paid.ID!;
         const first = await headerRow(ctx, paymentID);
 
         // A second save for any reason — a note edited, a reference backfilled. `ProviderChargeID` is
         // the idempotency key, exactly as `JournalEntryID` is for booking.
-        const again = await captureThroughEntity(ctx, paymentID);
+        const again = await CapturePayment(ctx.User, paymentID);
         Assert(again.Saved, `the re-save must succeed: ${again.Message}`);
 
         const second = await headerRow(ctx, paymentID);
@@ -419,14 +417,14 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         const order = await sellSomething(ctx, 300);
         const providerID = await makeProvider(ctx, "Manual");
         const intent = await makeIntent(ctx, providerID, 300, order.Order.ID as string);
-        const paymentID = await capture(ctx, {
+        const paid = await capturePayment(ctx, {
           providerID,
           paymentIntentID: intent.ID,
           orderID: order.Order.ID as string,
           amount: 300,
         });
-
-        Assert((await captureThroughEntity(ctx, paymentID)).Saved, "a manual capture succeeds");
+        Assert(paid.Saved, "a manual capture succeeds");
+        const paymentID = paid.ID!;
         const row = await headerRow(ctx, paymentID);
         AssertEqual(row.Status, "Captured", "it captured");
         AssertEqual(Number(row.Fee), 0, "with no fee at all");
@@ -445,13 +443,14 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         const order = await sellSomething(ctx, 300);
         const providerID = await makeProvider(ctx, "Stripe");
         const intent = await makeIntent(ctx, providerID, 300, order.Order.ID as string);
-        const paymentID = await capture(ctx, {
+        const paid = await capturePayment(ctx, {
           providerID,
           paymentIntentID: intent.ID,
           orderID: order.Order.ID as string,
           amount: 300,
         });
-        Assert((await captureThroughEntity(ctx, paymentID)).Saved, "the capture succeeded");
+        Assert(paid.Saved, "the capture succeeded");
+        const paymentID = paid.ID!;
 
         const header = await TxOne<{ Paid: number; Balance: number; Status: string }>(ctx,
           `SELECT AmountPaid AS Paid, Balance, PaymentStatus AS Status
@@ -463,40 +462,55 @@ export const PaymentProvidersChecks: NamedCheck[] = [
   },
   {
     Id: "payment-providers.PV12",
-    Name: "PV12: the capture's journal entry balances, per company",
+    Name: "PV12: the capture's journal entries balance, per company",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const order = await sellSomething(ctx, 300);
         const providerID = await makeProvider(ctx, "Stripe");
         const intent = await makeIntent(ctx, providerID, 300, order.Order.ID as string);
-        const paymentID = await capture(ctx, {
+        const paid = await capturePayment(ctx, {
           providerID,
           paymentIntentID: intent.ID,
           orderID: order.Order.ID as string,
           amount: 300,
         });
-        Assert((await captureThroughEntity(ctx, paymentID)).Saved, "the capture succeeded");
+        Assert(paid.Saved, "the capture succeeded");
+        const paymentID = paid.ID!;
 
-        // Scoped through the PAYMENT's own entry and its lines' entries — qualified deliberately, since
-        // an unqualified column inside an IN(SELECT …) binds to the outer query and matches everything.
-        // That exact mistake made composition's CX8 sum the whole database.
+        // WHERE A PAYMENT'S ENTRIES ACTUALLY LIVE, which is not where I first assumed.
+        //
+        // The HEADER carries a JournalEntryID only for the processing-fee entry, and only when a
+        // 'Processing Fee' GL account is linked — which accounting does not currently seed, so on a
+        // stock database it is null. The cash and receivable legs belong to the ALLOCATION, and
+        // `PaymentLine` has no JournalEntryID column at all: accounting records the link from its own
+        // side, via JournalEntry.LinkedEntityID/LinkedRecordID pointing at the payment line.
+        //
+        // Scoping to the header alone therefore found nothing and asserted nothing. Both sources are
+        // read here, and every column is qualified — an unqualified name inside IN (SELECT …) binds to
+        // the OUTER query when the inner table lacks it, which is what made composition's CX8 sum the
+        // entire database.
         const l = await TxOne<{ Entries: number; Unbalanced: number }>(ctx,
           `WITH e AS (
               SELECT je.ID, SUM(jel.DebitAmount) AS D, SUM(jel.CreditAmount) AS C
                 FROM ${ACCT_SCHEMA}.JournalEntry je
                 JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
-               -- ONLY the header. PaymentLine has no JournalEntryID column, and an unqualified name
-               -- in a subquery binds to the OUTER query when the inner table lacks it, making the IN
-               -- always true. That was composition CX8's defect.
                WHERE je.ID IN (
                      SELECT ph.JournalEntryID FROM ${ORDERS_SCHEMA}.PaymentHeader ph
                       WHERE ph.ID = '${paymentID}' AND ph.JournalEntryID IS NOT NULL)
+                  OR je.LinkedRecordID IN (
+                     SELECT CAST(pl.ID AS NVARCHAR(400)) FROM ${ORDERS_SCHEMA}.PaymentLine pl
+                      WHERE pl.PaymentHeaderID = '${paymentID}')
                GROUP BY je.ID)
            SELECT COUNT(*) AS Entries,
                   SUM(CASE WHEN ABS(ISNULL(D,0)-ISNULL(C,0)) > 0.005 THEN 1 ELSE 0 END) AS Unbalanced
              FROM e`);
-        Assert(Number(l.Entries) > 0, "the capture booked at least one entry");
+
+        Assert(
+          Number(l.Entries) > 0,
+          "the capture booked at least one entry — the cash leg comes from the ALLOCATION, so this holds " +
+            "even on a database with no Processing Fee account linked",
+        );
         AssertEqual(Number(l.Unbalanced), 0, "and every one of them balances");
       }),
   },
