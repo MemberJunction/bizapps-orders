@@ -17,6 +17,9 @@ export {
     LoadConfirmOrderOperation,
 } from './SaveOrderOperation.js';
 
+export { PreviewConfirmOperation, LoadPreviewConfirmOperation } from './PreviewConfirmOperation.js';
+export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './GetOverdueWorklistOperation.js';
+
 export {
     HydrateOrderDraft,
     ORDER_HEADER_ENTITY,

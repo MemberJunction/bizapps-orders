@@ -27,6 +27,8 @@ import {
     LoadSaveOrderOperation,
     LoadPreviewOrderOperation,
     LoadConfirmOrderOperation,
+    LoadPreviewConfirmOperation,
+    LoadGetOverdueWorklistOperation,
     LoadDefaultPriceResolver,
     LoadPromotionEngine,
     LoadTaxResolver,
@@ -79,6 +81,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSaveOrderOperation();          // 'Orders.SaveOrder' — the only way a browser can compose an order
     LoadPreviewOrderOperation();       // 'Orders.PreviewOrder' — the real save, rolled back
     LoadConfirmOrderOperation();       // 'Orders.ConfirmOrder' — the irreversible step (D8)
+    LoadPreviewConfirmOperation();     // 'Orders.PreviewConfirm' — the real confirm, rolled back
+    LoadGetOverdueWorklistOperation(); // 'Orders.GetOverdueWorklist' — overdue is computed, not stored
     LoadDefaultPriceResolver();        // the data-driven price resolver the walk falls back to (D69)
     LoadPromotionEngine();             // the promotion qualifier plugin seam (D70)
     LoadTaxResolver();                 // the address -> jurisdiction seam (D72)
