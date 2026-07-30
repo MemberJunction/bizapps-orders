@@ -35,6 +35,8 @@ import type { MJLeftNavSection } from '@memberjunction/ng-ui-components';
 import type { ResourceData } from '@memberjunction/core-entities';
 
 import { MJOSectionShellComponent } from './section-shell.component';
+import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
+import { MJOOrderEditorPageComponent } from '../pages/orders/order-editor.page';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -238,8 +240,20 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
     protected get sectionIcon(): string {
         return 'fa-solid fa-file-invoice-dollar';
     }
-    protected resolvePage(_pageId: string): Type<unknown> | null {
-        return null;
+
+    /**
+     * Fast entry and the editor are live; the rest still render the "not built
+     * yet" notice rather than a blank pane.
+     */
+    protected resolvePage(pageId: string): Type<unknown> | null {
+        switch (pageId) {
+            case 'fast-entry':
+                return MJOFastEntryPageComponent;
+            case 'editor':
+                return MJOOrderEditorPageComponent;
+            default:
+                return null;
+        }
     }
 }
 

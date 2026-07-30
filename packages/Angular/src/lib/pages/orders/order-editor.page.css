@@ -1,0 +1,249 @@
+/*
+  Order editor — layout only. Colour, type and border come from orders-kit.css.
+
+  RESPONSIVE INTENT (basic):
+    ≥1000px  identity strip in one row, two-column panels below the table
+    <1000px  panels stack; the identity strip wraps to two rows
+    <760px   the lines table drops its lowest-value columns rather than
+             horizontally scrolling a nine-column grid on a phone
+*/
+
+:host {
+  display: block;
+  height: 100%;
+  overflow: auto;
+  padding: var(--mj-space-6);
+}
+
+/* ── Persistent chrome ────────────────────────────────────────────────── */
+
+.ed-sticky {
+  position: sticky;
+  top: calc(-1 * var(--mj-space-6));
+  z-index: var(--mj-z-sticky);
+  background: var(--mj-bg-page);
+  margin: calc(-1 * var(--mj-space-6)) calc(-1 * var(--mj-space-6)) 0;
+  padding: var(--mj-space-6) var(--mj-space-6) 0;
+}
+
+.ed-identity {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-md);
+  background: var(--mj-bg-surface);
+  overflow: hidden;
+  margin-bottom: var(--mj-space-3);
+}
+
+.ed-identity > div {
+  padding: var(--mj-space-3) var(--mj-space-4);
+  border-right: 1px solid var(--mj-border-subtle);
+}
+
+.ed-identity > div:last-child {
+  border-right: none;
+}
+
+.ed-identity .l {
+  font-size: 10px;
+  font-weight: var(--mj-font-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mj-text-muted);
+  display: block;
+  margin-bottom: 3px;
+}
+
+.ed-identity .v {
+  font-size: 13px;
+  font-weight: var(--mj-font-medium);
+}
+
+.ed-stage-row {
+  gap: var(--mj-space-4);
+}
+
+.ed-money {
+  display: block;
+  margin-top: var(--mj-space-3);
+}
+
+.ed-issues {
+  margin-top: var(--mj-space-3);
+}
+
+.ed-issues__list {
+  margin: var(--mj-space-2) 0 0;
+  padding-left: var(--mj-space-4);
+}
+
+.ed-tabs {
+  margin-top: var(--mj-space-4);
+}
+
+/* ── Panes ────────────────────────────────────────────────────────────── */
+
+.ed-pane {
+  padding-top: var(--mj-space-4);
+}
+
+.ed-below {
+  margin-top: var(--mj-space-4);
+}
+
+.ed-note {
+  margin-top: var(--mj-space-3);
+}
+
+.ed-pad {
+  padding: var(--mj-space-4);
+}
+
+.ed-empty {
+  padding: var(--mj-space-8);
+}
+
+/* ── Lines table ──────────────────────────────────────────────────────── */
+
+.ed-col-n { width: 30px; }
+.ed-col-co { width: 84px; }
+.ed-col-qty { width: 80px; }
+.ed-col-price { width: 150px; }
+.ed-col-disc { width: 110px; }
+.ed-col-net { width: 120px; }
+.ed-col-tax { width: 110px; }
+.ed-col-total { width: 120px; }
+.ed-col-act { width: 36px; }
+.ed-col-seq { width: 60px; }
+
+.ed-line-nm {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mj-space-2);
+}
+
+.ed-line-conseq {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.ed-input-qty { width: 64px; }
+.ed-input-price { width: 100px; }
+
+/* ── Charges ──────────────────────────────────────────────────────────── */
+
+.ed-base {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px var(--mj-space-4);
+  font-size: 12.5px;
+  padding: var(--mj-space-3) var(--mj-space-4);
+  background: var(--mj-bg-surface-sunken);
+  border-radius: var(--mj-radius-md);
+}
+
+.ed-base .amt {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.ed-base .tot {
+  border-top: 1px solid var(--mj-border-strong);
+  padding-top: 5px;
+  margin-top: 3px;
+  font-weight: var(--mj-font-semibold);
+}
+
+.ed-taxwhy {
+  padding: var(--mj-space-2) 0;
+  border-bottom: 1px solid var(--mj-border-subtle);
+}
+
+.ed-taxwhy:last-child {
+  border-bottom: none;
+}
+
+/* ── Promotions ───────────────────────────────────────────────────────── */
+
+.ed-promo {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mj-space-2);
+  padding: var(--mj-space-2) 0;
+  border-bottom: 1px solid var(--mj-border-subtle);
+}
+
+.ed-promo:last-child {
+  border-bottom: none;
+}
+
+.ed-promo__body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Drawer ───────────────────────────────────────────────────────────── */
+
+.ed-drawer__section {
+  margin-top: var(--mj-space-4);
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────── */
+
+.ed-footer {
+  position: sticky;
+  bottom: 0;
+  margin: var(--mj-space-6) calc(-1 * var(--mj-space-6)) 0;
+  padding: var(--mj-space-3) var(--mj-space-6);
+  background: var(--mj-bg-surface);
+  border-top: 1px solid var(--mj-border-default);
+  display: flex;
+  align-items: center;
+  gap: var(--mj-space-2);
+  flex-wrap: wrap;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────────── */
+
+@media (max-width: 1000px) {
+  .ed-stage-note {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  :host {
+    padding: var(--mj-space-4);
+  }
+
+  .ed-sticky {
+    margin: calc(-1 * var(--mj-space-4)) calc(-1 * var(--mj-space-4)) 0;
+    padding: var(--mj-space-4) var(--mj-space-4) 0;
+    /* Sticky chrome eats too much of a short viewport once it wraps. */
+    position: static;
+  }
+
+  /* Drop the columns a phone cannot use before it drops the ones it can. The
+     line total and quantity survive; discount and per-line tax move to the
+     drawer, which is where the detail already lives. */
+  .ed-col-disc,
+  .ed-col-tax,
+  .ed-col-co,
+  :host ::ng-deep .mj-table--lines td:nth-child(3),
+  :host ::ng-deep .mj-table--lines td:nth-child(6),
+  :host ::ng-deep .mj-table--lines td:nth-child(8) {
+    display: none;
+  }
+
+  .ed-drawer {
+    width: 100vw;
+  }
+
+  .ed-footer {
+    margin: var(--mj-space-4) calc(-1 * var(--mj-space-4)) 0;
+    padding: var(--mj-space-3) var(--mj-space-4);
+  }
+}

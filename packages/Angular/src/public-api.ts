@@ -46,6 +46,17 @@ export {
 /** The section frame, reusable by any surface that wants a rail over sub-pages. */
 export { MJOSectionShellComponent } from './lib/sections/section-shell.component';
 
+/** The panel library — the shared vocabulary every screen is assembled from. */
+export * from './lib/panels';
+export * from './lib/panels/confirm-preflight.component';
+
+/** The seam between a draft and the engine. */
+export * from './lib/services/order-entry.service';
+
+/** Screens. */
+export * from './lib/pages/orders/fast-entry.page';
+export * from './lib/pages/orders/order-editor.page';
+
 /** The information architecture, as data — testable, and injectable for badges. */
 export {
     BuildLeftNavSections,
