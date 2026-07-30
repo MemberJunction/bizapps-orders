@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="recognitionConfiguration"
         SectionName="Recognition Configuration"
-        Icon="fa fa-sliders-h"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -29,11 +29,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Recognition Schedule Section -->
+    <!-- Recognition Timeline Section -->
     <mj-collapsible-panel
-        SectionKey="recognitionSchedule"
-        SectionName="Recognition Schedule"
-        Icon="fa fa-calendar"
+        SectionKey="recognitionTimeline"
+        SectionName="Recognition Timeline"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -55,11 +55,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financial Metrics Section -->
+    <!-- Financial Summary Section -->
     <mj-collapsible-panel
-        SectionKey="financialMetrics"
-        SectionName="Financial Metrics"
-        Icon="fa fa-dollar-sign"
+        SectionKey="financialSummary"
+        SectionName="Financial Summary"
+        Icon="fa fa-chart-line"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -121,31 +121,6 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Order Lines Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersOrderLines"
-        SectionName="Order Lines"
-        Icon="fa fa-list-ol"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderLines')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','RevenueRecognitionScheduleID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLines')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Rev Rec Schedule Lines Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersRevRecScheduleLines"
@@ -165,6 +140,31 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersRevRecScheduleLines', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Order Lines Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersOrderLines"
+        SectionName="Order Lines"
+        Icon="fa fa-list-ol"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersOrderLines')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','RevenueRecognitionScheduleID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLines')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

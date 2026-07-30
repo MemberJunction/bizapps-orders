@@ -88,10 +88,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Quantity and Validity Section -->
+    <!-- Applicability Rules Section -->
     <mj-collapsible-panel
-        SectionKey="quantityAndValidity"
-        SectionName="Quantity and Validity"
+        SectionKey="applicabilityRules"
+        SectionName="Applicability Rules"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -127,16 +127,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Scheduling Rules Section -->
-    <mj-collapsible-panel
-        SectionKey="schedulingRules"
-        SectionName="Scheduling Rules"
-        Icon="fa fa-clock"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -188,10 +178,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Operational Settings Section -->
+    <!-- Rule Management Section -->
     <mj-collapsible-panel
-        SectionKey="operationalSettings"
-        SectionName="Operational Settings"
+        SectionKey="ruleManagement"
+        SectionName="Rule Management"
         Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">

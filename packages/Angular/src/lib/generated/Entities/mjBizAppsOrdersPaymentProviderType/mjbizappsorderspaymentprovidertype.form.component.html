@@ -41,24 +41,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Technical Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="technicalConfiguration"
-        SectionName="Technical Configuration"
-        Icon="fa fa-cogs"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="DriverClass"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -78,11 +60,29 @@
 
     </mj-collapsible-panel>
 
-    <!-- Capabilities Section -->
+    <!-- Technical Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="capabilities"
-        SectionName="Capabilities"
-        Icon="fa fa-check-double"
+        SectionKey="technicalConfiguration"
+        SectionName="Technical Configuration"
+        Icon="fa fa-cogs"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
+            FieldName="DriverClass"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Feature Capabilities Section -->
+    <mj-collapsible-panel
+        SectionKey="featureCapabilities"
+        SectionName="Feature Capabilities"
+        Icon="fa fa-check-square"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

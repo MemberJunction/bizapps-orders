@@ -3,7 +3,7 @@
     "fields": {
       "Code": "Stripe",
       "Name": "Stripe",
-      "Description": "Stripe payments — cards, wallets, hosted checkout.",
+      "Description": "Stripe payments \u2014 cards, wallets, hosted checkout.",
       "DriverClass": "StripePaymentProvider",
       "SupportsTokenization": 1,
       "SupportsRefund": 1,
@@ -15,7 +15,7 @@
       "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C01"
     },
     "sync": {
-      "lastModified": "2026-07-29T23:37:38.783Z",
+      "lastModified": "2026-07-30T01:49:08.305Z",
       "checksum": "8a429924cd927e3a553ca10d3238ff0f183966e22962e601cb8afc6a8850fae1"
     }
   },
@@ -35,8 +35,40 @@
       "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C02"
     },
     "sync": {
-      "lastModified": "2026-07-29T23:37:38.800Z",
+      "lastModified": "2026-07-30T01:49:08.318Z",
       "checksum": "f734ed356df2a128bfc48718f2810e48d15f29bd2801f8a54c10ba5352fabc84"
+    }
+  },
+  {
+    "fields": {
+      "Code": "StoredValue",
+      "Name": "Stored Value",
+      "Description": "Money we already hold: a gift card (StoredValueAccount, a bearer instrument with a redeemable code) or an over-paid order's negative balance (account credit, D68). One driver, because the mechanics of spending them are identical even though their ownership, transferability, expiry and accounting treatment are not. No gateway \u2014 we are the institution, so there is no fee.",
+      "DriverClass": "StoredValuePaymentProvider",
+      "SupportsTokenization": 0,
+      "SupportsRefund": 1,
+      "SupportsWebhooks": 0,
+      "Sequence": 30,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C03"
+    }
+  },
+  {
+    "fields": {
+      "Code": "JPMorgan",
+      "Name": "J.P. Morgan",
+      "Description": "PLACEHOLDER, deliberately INACTIVE. Which API is an open question \u2014 legacy Orbital/Paymentech versus the newer J.P. Morgan Payments API \u2014 and the answer changes the driver, not just its credentials. The row exists so the type is addressable and the capability flags are somewhere to correct; activating it before a driver is registered would make PaymentProviderResolver refuse, which is the correct behaviour and a confusing way to discover this.",
+      "DriverClass": "JPMorganPaymentProvider",
+      "SupportsTokenization": 1,
+      "SupportsRefund": 1,
+      "SupportsWebhooks": 1,
+      "Sequence": 40,
+      "IsActive": 0
+    },
+    "primaryKey": {
+      "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C04"
     }
   }
 ]

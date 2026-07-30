@@ -86,4 +86,13 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSubscriptionBehavior();        // the base subscription rules engine (D45)
     LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation
     LoadSpawnRenewalsOperation();      // the 'Orders.SpawnRenewals' remote operation (D55)
+
+    // Payment drivers (D19/D37). Each is keyed by its PaymentProviderType.Code, and WITHOUT these
+    // anchors the @RegisterClass decorators are tree-shaken away — the ClassFactory then falls back to
+    // the base driver, which declines every operation. `PaymentProviderResolver` refuses that fallback
+    // explicitly rather than letting "nobody registered a driver" read as "the gateway said no".
+    LoadStripePaymentProvider();       // cards and ACH; stub when the provider row is not live
+    LoadManualPaymentProvider();       // cheque, wire, cash — no gateway to call
+    LoadStoredValuePaymentProvider();  // gift cards and account credit, one driver (D38/D68)
+    LoadEnvironmentSecretResolver();   // the default CredentialsRef -> env lookup; replaceable
 }

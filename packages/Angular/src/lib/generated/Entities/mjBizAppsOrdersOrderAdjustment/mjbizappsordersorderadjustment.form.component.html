@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Adjustment Context Section -->
+    <!-- Adjustment Details Section -->
     <mj-collapsible-panel
-        SectionKey="adjustmentContext"
-        SectionName="Adjustment Context"
-        Icon="fa fa-link"
+        SectionKey="adjustmentDetails"
+        SectionName="Adjustment Details"
+        Icon="fa fa-money-bill-wave"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -35,14 +35,30 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Amount"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Sequence"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Promotion Details Section -->
+    <!-- Promotion Information Section -->
     <mj-collapsible-panel
-        SectionKey="promotionDetails"
-        SectionName="Promotion Details"
-        Icon="fa fa-gift"
+        SectionKey="promotionInformation"
+        SectionName="Promotion Information"
+        Icon="fa fa-tags"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -66,37 +82,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financial Details Section -->
-    <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Amount"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Sequence"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
     <!-- Authorization and Audit Section -->
     <mj-collapsible-panel
         SectionKey="authorizationAndAudit"
         SectionName="Authorization and Audit"
-        Icon="fa fa-shield-alt"
+        Icon="fa fa-user-shield"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

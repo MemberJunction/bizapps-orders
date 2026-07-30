@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Provider Details Section -->
+    <!-- Provider Information Section -->
     <mj-collapsible-panel
-        SectionKey="paymentProviderDetails"
-        SectionName="Payment Provider Details"
+        SectionKey="providerInformation"
+        SectionName="Provider Information"
         Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
@@ -45,11 +45,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Transaction Status Section -->
+    <!-- Payment Details Section -->
     <mj-collapsible-panel
-        SectionKey="transactionStatus"
-        SectionName="Transaction Status"
-        Icon="fa fa-check-circle"
+        SectionKey="paymentDetails"
+        SectionName="Payment Details"
+        Icon="fa fa-money-bill"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -79,11 +79,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Associated Entities Section -->
+    <!-- Customer and Order Section -->
     <mj-collapsible-panel
-        SectionKey="associatedEntities"
-        SectionName="Associated Entities"
-        Icon="fa fa-link"
+        SectionKey="customerAndOrder"
+        SectionName="Customer and Order"
+        Icon="fa fa-user"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -152,7 +152,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPaymentHeaders"
         SectionName="Payment Headers"
-        Icon="fa fa-money-bill-wave"
+        Icon="fa fa-credit-card"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

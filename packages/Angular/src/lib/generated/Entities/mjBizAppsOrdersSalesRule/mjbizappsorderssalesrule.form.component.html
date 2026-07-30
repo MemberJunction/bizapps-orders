@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="ruleDefinition"
         SectionName="Rule Definition"
-        Icon="fa fa-file-alt"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -44,11 +44,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Scope and Logic Section -->
+    <!-- Scope and Targeting Section -->
     <mj-collapsible-panel
-        SectionKey="scopeAndLogic"
-        SectionName="Scope and Logic"
-        Icon="fa fa-sliders-h"
+        SectionKey="scopeAndTargeting"
+        SectionName="Scope and Targeting"
+        Icon="fa fa-crosshairs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -67,9 +67,19 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Logic and Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="logicAndConfiguration"
+        SectionName="Logic and Configuration"
+        Icon="fa fa-code"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="PredicateJson"
             Type="code"
             [EditMode]="EditMode"
@@ -82,7 +92,7 @@
     <mj-collapsible-panel
         SectionKey="approvalWorkflow"
         SectionName="Approval Workflow"
-        Icon="fa fa-check-circle"
+        Icon="fa fa-check-double"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

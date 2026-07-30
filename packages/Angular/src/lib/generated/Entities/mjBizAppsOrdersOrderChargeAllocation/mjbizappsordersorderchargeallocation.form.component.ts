@@ -15,7 +15,7 @@ export class mjBizAppsOrdersOrderChargeAllocationFormComponent extends BaseFormC
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'allocationDetails', sectionName: 'Allocation Details', isExpanded: true },
+            { sectionKey: 'chargeAllocation', sectionName: 'Charge Allocation', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

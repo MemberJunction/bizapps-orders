@@ -65,24 +65,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="BookedAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Audit and Tracking Section -->
-    <mj-collapsible-panel
-        SectionKey="auditAndTracking"
-        SectionName="Audit and Tracking"
-        Icon="fa fa-history"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="AllocatedAt"
             Type="datepicker"
             [EditMode]="EditMode"
@@ -91,6 +73,24 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="BookedAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- User Tracking Section -->
+    <mj-collapsible-panel
+        SectionKey="userTracking"
+        SectionName="User Tracking"
+        Icon="fa fa-user-check"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
             FieldName="AllocatedByUserID"
             Type="textbox"
             [EditMode]="EditMode"

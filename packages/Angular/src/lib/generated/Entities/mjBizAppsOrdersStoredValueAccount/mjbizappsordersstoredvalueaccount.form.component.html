@@ -14,14 +14,14 @@
     <mj-collapsible-panel
         SectionKey="accountDetails"
         SectionName="Account Details"
-        Icon="fa fa-id-card"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
             FieldName="Code"
-            Type="code"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -79,32 +79,22 @@
 
     </mj-collapsible-panel>
 
-    <!-- Lifecycle Section -->
+    <!-- Origin and Beneficiary Section -->
     <mj-collapsible-panel
-        SectionKey="lifecycle"
-        SectionName="Lifecycle"
-        Icon="fa fa-history"
+        SectionKey="originAndBeneficiary"
+        SectionName="Origin and Beneficiary"
+        Icon="fa fa-user-friends"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="IssuedFromOrderLineID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Beneficiary Information Section -->
-    <mj-collapsible-panel
-        SectionKey="beneficiaryInformation"
-        SectionName="Beneficiary Information"
-        Icon="fa fa-user"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -158,31 +148,6 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Stored Value Transactions Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersStoredValueTransactions"
-        SectionName="Stored Value Transactions"
-        Icon="fa fa-wallet"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersStoredValueTransactions')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Stored Value Transactions','StoredValueAccountID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersStoredValueTransactions')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersStoredValueTransactions', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Payment Details Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPaymentDetails"
@@ -202,6 +167,31 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentDetails', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Stored Value Transactions Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersStoredValueTransactions"
+        SectionName="Stored Value Transactions"
+        Icon="fa fa-wallet"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersStoredValueTransactions')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Stored Value Transactions','StoredValueAccountID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersStoredValueTransactions')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersStoredValueTransactions', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

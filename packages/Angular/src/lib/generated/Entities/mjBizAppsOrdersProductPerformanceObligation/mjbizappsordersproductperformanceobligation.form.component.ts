@@ -17,7 +17,7 @@ export class mjBizAppsOrdersProductPerformanceObligationFormComponent extends Ba
         this.initSections([
             { sectionKey: 'productAssociation', sectionName: 'Product Association', isExpanded: true },
             { sectionKey: 'obligationDetails', sectionName: 'Obligation Details', isExpanded: true },
-            { sectionKey: 'revenueRecognition', sectionName: 'Revenue Recognition', isExpanded: true },
+            { sectionKey: 'pricingAndAllocation', sectionName: 'Pricing and Allocation', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

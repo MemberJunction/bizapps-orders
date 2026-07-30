@@ -10,21 +10,29 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Sales Representative Section -->
+    <!-- Authority Assignment Section -->
     <mj-collapsible-panel
-        SectionKey="salesRepresentative"
-        SectionName="Sales Representative"
-        Icon="fa fa-user"
+        SectionKey="authorityAssignment"
+        SectionName="Authority Assignment"
+        Icon="fa fa-user-shield"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="SalesRepUserID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
@@ -33,7 +41,7 @@
     <mj-collapsible-panel
         SectionKey="authorityLimits"
         SectionName="Authority Limits"
-        Icon="fa fa-shield-alt"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -56,7 +64,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="AllowedPaymentTermsTypeIDs"
-            Type="textarea"
+            Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -64,15 +72,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="AllowedProductCategoryIDs"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
+            Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
