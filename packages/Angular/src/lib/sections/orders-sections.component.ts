@@ -26,7 +26,9 @@ import {
     Type,
     ViewChild,
     ViewContainerRef,
+    inject,
     type ComponentRef,
+    type EventEmitter,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RegisterClass } from '@memberjunction/global';
@@ -35,6 +37,9 @@ import type { MJLeftNavSection } from '@memberjunction/ng-ui-components';
 import type { ResourceData } from '@memberjunction/core-entities';
 
 import { MJOSectionShellComponent } from './section-shell.component';
+import { MJOConfirmPreflightComponent, type MJOPreflight } from '../panels/confirm-preflight.component';
+import { MJOOrderEntryService } from '../services/order-entry.service';
+import type { OrderDraft } from '@mj-biz-apps/orders-entities';
 import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
 import { MJOOrderEditorPageComponent } from '../pages/orders/order-editor.page';
 import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
@@ -165,6 +170,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
         try {
             const ref = host.createComponent(type);
+            this.wirePage(ref);
             this.mounted.set(pageId, ref);
             this.LoadError = null;
         } catch (e) {
@@ -172,6 +178,127 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // it — the rail has to stay usable so the user can go somewhere else.
             this.LoadError = `That page could not be opened: ${e instanceof Error ? e.message : String(e)}`;
         }
+    }
+
+    /**
+     * Connect a freshly created page to the section.
+     *
+     * A page created through `ViewContainerRef.createComponent` has NO template
+     * binding its outputs — there is no host markup for Angular to wire. Every
+     * `@Output()` on every page therefore emitted into nothing: the confirm button
+     * fired `ConfirmRequested` at no listener, dashboard tiles fired
+     * `NavigateRequested` at no listener, and list rows fired `OrderOpened` at no
+     * listener. The pages looked complete and were inert.
+     *
+     * Subscribed by NAME and only when present, because the four sections host
+     * different pages and a missing output is normal rather than an error.
+     */
+    private wirePage(ref: ComponentRef<unknown>): void {
+        const instance = ref.instance as Record<string, unknown>;
+        const subscriptions: Array<{ unsubscribe(): void }> = [];
+
+        const on = <T>(name: string, handler: (value: T) => void): void => {
+            const output = instance[name] as EventEmitter<T> | undefined;
+            if (!output?.subscribe) return;
+            subscriptions.push(output.subscribe(handler));
+        };
+
+        // Navigation within the rail.
+        on<string>('NavigateRequested', (pageId) => this.OnPageSelected(pageId));
+
+        // Opening a record routes to the page that shows it. Each carries its id,
+        // which the destination reads on activation.
+        on<{ ID?: string } | string>('OrderOpened', (row) => this.openRecord('editor', row));
+        on<{ ID?: string } | string>('PaymentOpened', (row) => this.openRecord('entry', row));
+        on<{ ID?: string } | string>('ProductOpened', (row) => this.openRecord('products', row));
+
+        // The irreversible step, gated behind the pre-flight.
+        on<OrderDraft>('ConfirmRequested', (draft) => void this.OpenPreflight(draft));
+        on<OrderDraft>('EscalateRequested', () => this.OnPageSelected('editor'));
+
+        // Pages are cached rather than destroyed on rail changes, so these live as
+        // long as the section does — but a destroyed section must not leave them
+        // holding a reference to it.
+        ref.onDestroy(() => subscriptions.forEach((sub) => sub.unsubscribe()));
+    }
+
+    /** Remember which record a destination page should open, then go there. */
+    protected openRecord(pageId: string, row: { ID?: string } | string): void {
+        this.PendingRecordID = typeof row === 'string' ? row : (row?.ID ?? null);
+        this.OnPageSelected(pageId);
+    }
+
+    /** Set when a page was opened for a specific record. */
+    public PendingRecordID: string | null = null;
+
+    /* ── Confirm pre-flight ─────────────────────────────────────────────── */
+
+    private readonly entry = inject(MJOOrderEntryService);
+
+    /** The pre-flight being shown, or null when the overlay is closed. */
+    public Preflight: MJOPreflight | null = null;
+    public PreflightBusy = false;
+    public PreflightError: string | null = null;
+    private preflightDraft: OrderDraft | null = null;
+
+    /**
+     * Run `Orders.PreviewConfirm` and show what confirming would do.
+     *
+     * The preview executes the REAL confirm inside a rolled-back transaction, so
+     * the journal entries on screen are the ones the commit will write.
+     */
+    public async OpenPreflight(draft: OrderDraft): Promise<void> {
+        this.preflightDraft = draft;
+        this.PreflightBusy = true;
+        this.PreflightError = null;
+        this.Preflight = null;
+        try {
+            const output = await this.entry.PreviewConfirm(draft);
+            if (!output) {
+                this.PreflightError = 'The pre-flight could not be run, so nothing was confirmed.';
+                return;
+            }
+            this.Preflight = {
+                CanConfirm: output.CanConfirm,
+                GrossTotal: output.Totals?.GrossTotal ?? null,
+                JournalEntries: output.JournalEntries ?? [],
+                EntryCount: output.EntryCount ?? 0,
+                CompanyCount: output.CompanyCount ?? 0,
+                AllBalanced: output.AllBalanced ?? false,
+                SubscriptionDecisions: output.SubscriptionDecisions ?? [],
+                EntitlementGrants: output.EntitlementGrants ?? [],
+                Approvals: output.Approvals ?? [],
+                FulfillmentHolds: output.FulfillmentHolds ?? [],
+                Blockers: output.Blockers ?? [],
+            };
+        } catch (e) {
+            this.PreflightError = e instanceof Error ? e.message : String(e);
+        } finally {
+            this.PreflightBusy = false;
+        }
+    }
+
+    /** Commit. Only reachable when the pre-flight said it could be. */
+    public async ConfirmFromPreflight(): Promise<void> {
+        if (!this.preflightDraft) return;
+        this.PreflightBusy = true;
+        try {
+            const output = await this.entry.Confirm(this.preflightDraft);
+            if (!output?.Success) {
+                this.PreflightError = output?.Message ?? 'The order was not confirmed.';
+                return;
+            }
+            this.ClosePreflight();
+            this.OnPageSelected('list');
+        } finally {
+            this.PreflightBusy = false;
+        }
+    }
+
+    public ClosePreflight(): void {
+        this.Preflight = null;
+        this.PreflightError = null;
+        this.preflightDraft = null;
     }
 
     /** First page in the rail — the fallback when nothing is remembered. */
@@ -238,7 +365,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 @Component({
     selector: 'mjo-orders-section',
     standalone: true,
-    imports: [CommonModule, MJOSectionShellComponent],
+    imports: [CommonModule, MJOSectionShellComponent, MJOConfirmPreflightComponent],
     template: `
         <mjo-section-shell
             Title="Orders"
@@ -251,7 +378,34 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             (PageSelected)="OnPageSelected($event)">
             <ng-container #pageHost />
         </mjo-section-shell>
+
+        <!--
+          The pre-flight lives at the SECTION, not on a page: both fast entry and
+          the full editor confirm, and the overlay must survive the rail switch
+          between them. It renders only while a confirm is in flight.
+        -->
+        @if (Preflight || PreflightBusy || PreflightError) {
+            <mjo-confirm-preflight
+                [Preflight]="Preflight"
+                [Busy]="PreflightBusy"
+                (Confirmed)="ConfirmFromPreflight()"
+                (Cancelled)="ClosePreflight()" />
+        }
+        @if (PreflightError) {
+            <div class="mj-banner mj-banner--error mjo-section__preflight-error" role="alert">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                <div class="body"><strong>Nothing was confirmed.</strong> {{ PreflightError }}</div>
+            </div>
+        }
     `,
+    styles: [
+        `
+            .mjo-section__preflight-error {
+                position: fixed; left: 50%; bottom: var(--mj-space-6);
+                transform: translateX(-50%); z-index: 60; max-width: 560px;
+            }
+        `,
+    ],
 })
 export class OrdersSectionResource extends MJOSectionBaseComponent {
     protected get subPages(): OrdersSubPage[] {

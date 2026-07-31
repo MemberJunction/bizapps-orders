@@ -3,11 +3,15 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe } from '../../panels/money-format';
+import { OrderDraft } from '@mj-biz-apps/orders-entities';
+import { MJOOrderEntryService } from '../../services/order-entry.service';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
 
 /** A line being returned, with the cap the origin imposes. */
 interface MJOReturnLine {
     LineID: string;
+    /** The reversal line names the same product the origin line sold. */
+    ProductID: string;
     LineNumber: number;
     ProductName: string;
     UnitPrice: number;
@@ -178,7 +182,7 @@ interface MJOReturnLine {
                             type="button"
                             class="mj-btn mj-btn--primary"
                             [disabled]="!CanReturn"
-                            (click)="ReturnCreated.emit()">
+                            (click)="ConfirmReturn()">
                             <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm return
                         </button>
                     </div>
@@ -246,11 +250,16 @@ export class MJOReturnPageComponent implements OnInit {
      * first pass on, so later verify passes agree.
      */
     private readonly cdr = inject(ChangeDetectorRef);
+    private readonly entry = inject(MJOOrderEntryService);
 
     /** The order being returned against. */
     @Input() OriginOrderID: string | null = null;
 
-    @Output() ReturnCreated = new EventEmitter<void>();
+    /** Emitted AFTER the return is booked, carrying the new order's id. */
+    @Output() ReturnCreated = new EventEmitter<string | null>();
+
+    public Busy = false;
+    public Error: string | null = null;
 
     public Origin: MJOOrderRow | null = null;
     public Lines: MJOReturnLine[] = [];
@@ -268,6 +277,7 @@ export class MJOReturnPageComponent implements OnInit {
             const tax = Number(line['LineTax'] ?? 0);
             return {
                 LineID: String(line['ID']),
+                ProductID: String(line['ProductID'] ?? ''),
                 LineNumber: Number(line['LineNumber'] ?? 0),
                 ProductName: String(line['Product'] ?? ''),
                 // The origin is the sole authority on price. Re-resolving would
@@ -292,6 +302,58 @@ export class MJOReturnPageComponent implements OnInit {
     public credit(line: MJOReturnLine): number {
         const goods = line.Returning * line.UnitPrice;
         return Math.round(goods * (1 + line.TaxRate) * 100) / 100;
+    }
+
+    /**
+     * Book the return.
+     *
+     * A RETURN IS AN ORDER, so it goes through the same transport everything else
+     * does: an `OrderDraft` whose lines each name the line they reverse, confirmed
+     * through `Orders.ConfirmOrder`. There is no separate return operation and
+     * there should not be — the reversal rules live in the engine, and a second
+     * path to them would be a second place for them to drift.
+     *
+     * The button previously emitted `ReturnCreated` and nothing else. Nothing
+     * subscribed, so "Confirm return" was inert: it looked like it worked, and no
+     * goods ever came back.
+     */
+    public async ConfirmReturn(): Promise<void> {
+        if (!this.CanReturn || !this.Origin) return;
+        this.Busy = true;
+        this.Error = null;
+        try {
+            // The company is fixed at construction; everything else the return
+            // needs is a header patch. A return belongs to the SAME customer and
+            // the SAME company as the order it reverses — none of it is a choice.
+            const draft = new OrderDraft({ CompanyID: this.Origin.CompanyID });
+            draft.SetHeader({
+                BillToOrganizationID: (this.Origin['BillToOrganizationID'] as string) ?? null,
+                BillToPersonID: (this.Origin['BillToPersonID'] as string) ?? null,
+                ReversesOrderHeaderID: this.Origin.ID,
+                ReversalReason: this.Reason,
+            });
+            for (const line of this.Lines.filter((l) => l.Returning > 0)) {
+                draft.AddLine({
+                    ProductID: line.ProductID,
+                    Quantity: line.Returning,
+                    // The origin line is the sole authority on price, so the
+                    // reversal states nothing and lets the engine mirror it.
+                    ReversesOrderLineID: line.LineID,
+                });
+            }
+
+            const result = await this.entry.Confirm(draft);
+            if (!result?.Success) {
+                this.Error = result?.Message ?? 'The return could not be booked.';
+                return;
+            }
+            this.ReturnCreated.emit(result.OrderHeaderID ?? null);
+        } catch (e) {
+            this.Error = e instanceof Error ? e.message : String(e);
+        } finally {
+            this.Busy = false;
+            this.cdr.detectChanges();
+        }
     }
 
     public SetQuantity(line: MJOReturnLine, raw: string): void {
