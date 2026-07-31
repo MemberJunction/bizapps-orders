@@ -51,14 +51,20 @@ import { ConfirmOrder, type LineSpec } from "../order-builder.js";
 
 /** Create a person to receive a seat, returning its ID. */
 async function makePerson(ctx: IntegrationCheckContext, label: string): Promise<string> {
-  // WRITTEN DIRECTLY, and this is the one place in the suite where that is forced rather than chosen.
-  // Common's People entity is backed by an ENRICHED VIEW: 34 EntityFields (DisplayName,
-  // PrimaryAddress*, CurrentOrganization* and friends are joined or computed) against a
-  // spCreatePerson that accepts 16. BaseEntity.Save passes every declared field, so it fails with
-  // "Procedure or function spCreatePerson has too many arguments specified". The installed common
-  // schema is older than the common-server package expects — the same version skew that makes tasks'
-  // views select a Person.DisplayName our table does not have. Not ours to fix from this repo, and a
-  // Person is a row we merely REFERENCE rather than resolve through, so SQL is the honest boundary.
+  // WRITTEN DIRECTLY. A Person is a row we merely REFERENCE rather than resolve THROUGH, so it sits
+  // on the same side of the boundary as __mj.Company and the tax geography.
+  //
+  // An earlier version of this comment blamed an IS-A/enriched-view mismatch and cited field counts.
+  // That reasoning was wrong and is recorded here so nobody rebuilds it: `MJ.BizApps.Common: People`
+  // has ParentID NULL and ZERO virtual+updatable fields, so it is not an IS-A child at all; its 18
+  // non-virtual fields match the table's 18 columns, and spCreatePerson's 16 parameters are exactly
+  // those minus the two auto-managed timestamps. The proc is correct.
+  //
+  // The "too many arguments" failure that prompted the claim came from a probe run WITHOUT
+  // @mj-biz-apps/common-entities loaded, so the ClassFactory found no registration and fell back to
+  // a raw BaseEntity. That is a fault in the probe, not in Common. Whether a Person creates cleanly
+  // through the object model with the package properly loaded is UNVERIFIED — worth retrying before
+  // anyone treats this as a fixed boundary.
   const id = randomUUID();
   await TxQuery(
     ctx,

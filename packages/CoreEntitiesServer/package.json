@@ -26,10 +26,10 @@
     "@mj-biz-apps/orders-entities": "5.0.0"
   },
   "peerDependencies": {
-    "@memberjunction/core": "^5.49.0",
-    "@memberjunction/core-entities": "^5.49.0",
-    "@memberjunction/global": "^5.49.0",
-    "@memberjunction/sqlserver-dataprovider": "^5.49.0",
+    "@memberjunction/core": "^5.50.0",
+    "@memberjunction/core-entities": "^5.50.0",
+    "@memberjunction/global": "^5.50.0",
+    "@memberjunction/sqlserver-dataprovider": "^5.50.0",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-core-entities-server": ">=0.1.0"
   },

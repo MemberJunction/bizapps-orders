@@ -1035,34 +1035,73 @@ accounting as just another upstream emitter) · CRM / customer master (BizApps C
 
 ---
 
-## 22. Build inventory (state as of consolidation, 2026-07-23)
+## 22. Build inventory (state as of 2026-07-31)
 
-For orientation only — the plan above is the authority; this notes what exists on the donor branch
-(`feature/accounting-integration`, developed in the accounting-engine-dev instance) and its status
-relative to this plan. ◇ = agent-claimed, not independently verified.
+For orientation only — the plan above is the authority. This section previously described a donor
+branch (`feature/accounting-integration`) that has long since been consolidated, and listed as
+"not yet built" a dozen things that now ship with tests. It is rewritten against what is actually in
+the tree.
 
-**Built + validated:** the full baseline schema (catalog incl. Event IsA pair, pricing tables,
-Order/OrderLine + dimensions + sequences, payments + token vault + stored-value schema,
-subscriptions, rev-rec envelope, sales-rule schema, PaymentTermsType) · **per-line booking on this
-plan's shape** — `OrderLine.JournalEntryID` schema move + role-slot resolver + per-line JE draft
-assembly + `OrderJournalEntryFactory` + Save-override — order-to-je harness **8/8 green**
-(multi-line/multi-company, discount contra, DefRev, rollback, idempotency) · atomic Confirm via
-remote op with E5 rollback proven · lifecycle transition matrix + skip + void gating ◇ · totals
-validation ◇ · A/R fields + computed IsOverdue ◇ · manual payments + capture JE + application ◇ ·
-reversal orders booking mirror JEs ◇ · pricing resolution engine (`ResolvePrice`) · entitlement
-grants at booking ◇ · overdue worklist ◇ · engine split (`OrdersEngineBase` + server `OrdersEngine`)
-◇ · Stripe success-stub provider ◇ · tiered test harnesses + the JE-workspace-grade golden-path
-validation pattern (accounting side) to replicate.
+**How to read it.** Everything below is verified by an executable check unless marked otherwise —
+the suite is the source of truth, not this list. Current totals: **269 integration checks across 24
+bundles**, **616 unit tests**, and the registry-parity tests that stop a bundle silently going
+missing. `RequiresMutation` gates every integration check, so a run without `RUN_MUTATION_TESTS=1`
+executes nothing and reports success; the parity floor exists because of that.
 
-**Built but pending rework to this plan's shape:** rev-rec emission still writes through the
-retired ScheduledJournalEntry bridge → D14 forward-dated JEs · company columns absent
-(`Order.CompanyID` / `OrderLine.CompanyID` stamps / `ProductCategory.CompanyID` / `Product.CompanyID`
-rename+NOT NULL) → §18.2 · account-resolution anchor not yet re-based to the product's company
-throughout · UI wave mid-flight on pre-rework shapes (hand-rolled editors under the convert-on-touch
-guardrail; ~16 surfaces; order-editor pilot unscheduled).
+**Built and covered end to end**
 
-**Not yet built:** payments-side intercompany machinery · Stripe real (LXP checkout subset) +
-webhook receiver · coupons (any layer) · tax (any layer) · sales-rule evaluation engine + approval
-routing · subscription find-or-extend + renewal spawning · `Orders.RefundPayment` +
-create-into-Fulfilled ops · entitlement read/notify poll · gift-card flows · orders-side role
-seeding/RLS · statements/delivery · CDP migration tooling.
+- **Catalog** — types, categories, products, the Event IsA pair, entitlement templates, bundles.
+- **Pricing** (D69) — the resolution walk, volume/tiered/package models, price lists and customer
+  assignment, recurrence windows, the dry run, and the write-time ambiguity guard.
+- **Promotions** — percent/amount/free-shipping/override, additive and sequential stacking,
+  line and order scope, redemption limits, and explicit refusal reasons rather than silent no-ops.
+- **Charges and tax** — charge types with allocation to lines, layered jurisdictions by postal
+  geography, nexus gating, exemptions, and the taxability walk with recorded zero-reasons.
+- **Booking** — per-line journal entries, discount contra, deferred revenue, forward-dated
+  recognition (D14), and per-company entries on a multi-company order.
+- **Payments** — capture, application, the allocation invariant, over-payment as customer credit,
+  account credit as a tender, refunds, and the intercompany Due To/Due From machinery.
+- **Payment providers** (D19/D37) — the driver seam, Stripe's stub, Manual, StoredValue, webhook
+  signature verification with key rotation, and the fee split at capture.
+- **Subscriptions** — find-or-extend, anchored and prorated terms, renewal spawning, cancellation.
+- **Returns** (D16) — reversal lines, proportional unwind, tax given back, entitlement revocation.
+- **Entitlements** (D27/D76) — the policy walk, grant timing, quantity modes, validity windows.
+- **Gift cards** (D44) — issuance on sale as a LIABILITY, one card per unit, face value from
+  UnitPrice rather than the discounted amount, idempotent re-save, and voiding on return.
+- **Bundles** (D32/D41/D45) — expansion into component lines under a rollup parent that contributes
+  zero, allocation by relative standalone selling price summing exactly, and `ParentOrderLineID` so
+  two of the same bundle on one order stay distinguishable.
+
+**Shipped with a known limitation, recorded rather than hidden**
+
+- **`Gift Card Liability` GL role** is not among accounting's seeded roles. Booking falls back to
+  Deferred Revenue — the same shape of obligation, so the entry stays correct — and says so. Same
+  tolerance pattern as `Processing Fee`, which was seeded by bizapps-accounting#32.
+- **IsA children CAN be created through the object model** — an earlier revision of this section said
+  they could not, and that was wrong. You create the CHILD and set both its own fields and its
+  parent's; `BaseEntity` splits them by `EntityInfo.ParentEntityFieldNames`, saves the parent first,
+  and gives the child the parent's primary key (BO-D37). It works any number of levels up the chain.
+  What made it look broken was silence: on core 5.49.0 a failed PARENT save returned `false` with
+  `LatestResult` null and an empty `ResultHistory`, because every result was written to the parent
+  object that callers hold no reference to. Forgetting a NOT NULL parent column therefore produced a
+  silent false. MJ PR #3280 fixes the diagnostics and ships in 5.50.0, which this repo now uses.
+  The related claim that `IsVirtual=1 AND AllowUpdateAPI=1` was a CodeGen defect was also wrong —
+  it is the deliberate MARKER for an IS-A parent field (CodeGenLib `manage-metadata.ts`).
+- **Attaching a child to an ALREADY-SAVED parent is a different operation**, and the one place the
+  fixture still uses SQL. `EventOrderLine` hangs off an order line the confirm has already written,
+  and the IS-A save path always wants to save the parent too — which the immutability trigger
+  refuses on a Confirmed order. That is an ordering constraint, not a limitation of IS-A.
+
+**Not built** — each has a note in §21 saying why, and none is a surprise
+
+- Sales-rule evaluation beyond `DiscountLimit`, and approval routing (deferred to v-next; see §21
+  for exactly which slice is live and which is decorative).
+- Statements and consolidated bill packages · fulfilment queue and order splitting ·
+  `create-into-Fulfilled` · orders-side RLS and role seeding · CDP migration tooling.
+- Stripe against a real sandbox — the stub covers the path; the live run is a separate exercise.
+
+**Retired, so nobody looks for it**
+
+- `ProductPerformanceObligation` and the ASC-606 allocation engine — moved to bizapps-contracts per
+  D44. Revenue recognition itself stays here.
+- `Order.ContractID` — removed by D44 for the same reason.

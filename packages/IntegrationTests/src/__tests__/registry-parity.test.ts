@@ -46,6 +46,7 @@ import '../checks/tax.checks.js';
 import '../checks/composition.checks.js';
 import '../checks/returns.checks.js';
 import '../checks/gift-cards.checks.js';
+import '../checks/bundles.checks.js';
 import '../checks/arithmetic-edges.checks.js';
 import '../checks/concurrency.checks.js';
 import '../checks/volume.checks.js';
@@ -82,6 +83,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     composition: 10,
     returns: 12,
     'gift-cards': 12,
+    bundles: 12,
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,

@@ -21,6 +21,7 @@ export const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 export const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 export const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
 export const PRODUCT_PRICE_ENTITY = 'MJ_BizApps_Orders: Product Prices';
+export const PRODUCT_BUNDLE_ITEM_ENTITY = 'MJ_BizApps_Orders: Product Bundle Items';
 export const PROMOTION_ENTITY = 'MJ_BizApps_Orders: Promotions';
 export const PROMOTION_CODE_ENTITY = 'MJ_BizApps_Orders: Promotion Codes';
 export const PROMOTION_TARGET_ENTITY = 'MJ_BizApps_Orders: Promotion Targets';
@@ -71,6 +72,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PRODUCT_ENTITLEMENT_ENTITY,
     EVENT_PRODUCT_ENTITY,
     PRODUCT_PRICE_ENTITY,
+    PRODUCT_BUNDLE_ITEM_ENTITY,
     PROMOTION_ENTITY,
     PROMOTION_CODE_ENTITY,
     PROMOTION_TARGET_ENTITY,

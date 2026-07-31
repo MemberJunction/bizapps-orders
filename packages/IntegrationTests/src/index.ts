@@ -78,6 +78,7 @@ export * from './checks/tax.checks.js';
 export * from './checks/composition.checks.js';
 export * from './checks/returns.checks.js';
 export * from './checks/gift-cards.checks.js';
+export * from './checks/bundles.checks.js';
 export * from './checks/arithmetic-edges.checks.js';
 export * from './checks/concurrency.checks.js';
 export * from './checks/volume.checks.js';

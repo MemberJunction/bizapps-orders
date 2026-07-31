@@ -120,6 +120,23 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
         const pct = Math.round((this.DiscountPct ?? 0) * 1e4) / 1e4;
         if (pct !== (this.DiscountPct ?? 0)) this.DiscountPct = pct;
 
+        // A ROLLUP PARENT CONTRIBUTES NOTHING (D45).
+        //
+        // An expanded bundle's parent line is customer-facing: it keeps its UnitPrice so an invoice
+        // can print "Gold Package — 100", but the money lives on the children, which carry the
+        // allocated shares. Letting the parent compute a line total as well would DOUBLE the order —
+        // and do it invisibly, because the parent's own arithmetic is perfectly correct and every
+        // child's is too. The header rollup trigger sums LineTotalGross across all lines, so zero
+        // here is what keeps it honest without the trigger needing to know bundles exist.
+        //
+        // Deliberately after the DiscountPct rounding above, so the stored rate stays consistent
+        // whether or not the line happens to be a parent.
+        if ((this as unknown as { IsRollupParent?: boolean }).IsRollupParent) {
+            this.LineTotalNet = 0;
+            this.LineTotalGross = 0;
+            return;
+        }
+
         // `NetAfterDiscount` is shared with the charge/tax base in OrderEntityServer. It used to be
         // computed independently in both places, and both clamped a reversal line to zero — see
         // PricingBehavior for what that cost.

@@ -47,6 +47,7 @@ import {
     PRODUCT_ENTITLEMENT_ENTITY,
     EVENT_PRODUCT_ENTITY,
     PRODUCT_PRICE_ENTITY,
+    PRODUCT_BUNDLE_ITEM_ENTITY,
     PROMOTION_ENTITY,
     PROMOTION_CODE_ENTITY,
     PROMOTION_TARGET_ENTITY,
@@ -65,6 +66,7 @@ export {
     PRODUCT_ENTITLEMENT_ENTITY,
     EVENT_PRODUCT_ENTITY,
     PRODUCT_PRICE_ENTITY,
+    PRODUCT_BUNDLE_ITEM_ENTITY,
     PROMOTION_ENTITY,
     PROMOTION_CODE_ENTITY,
     PROMOTION_TARGET_ENTITY,
@@ -589,6 +591,15 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
          * the money is in but the goods are owed, and they are owed on some future order.
          */
         GiftCardA: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.GiftCard, catA, 'Gift Card A', rr('UpFront')),
+        /**
+         * A BUNDLE (D32/D41/D45). Selling it expands into component lines under a rollup parent:
+         * the parent is customer-facing and contributes nothing, the children carry the money.
+         */
+        BundleA: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Simple, catA, 'Bundle A', rr('UpFront')),
+        /** First component of Bundle A — worth 3x the second, so allocation has something to weight by. */
+        BundlePartX: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Simple, catA, 'Bundle Part X', rr('UpFront')),
+        /** Second component of Bundle A. */
+        BundlePartY: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Simple, catA, 'Bundle Part Y', rr('UpFront')),
         /** Co B, UpFront — same shape in the second company, for multi-company orders. */
         WidgetB: await createProduct(ctx, run, fixture.CoB.ID, fixture.ProductTypeIDs.Simple, catB, 'Widget B', rr('UpFront')),
         /** Co C, UpFront, but CoC has NO GL links — every confirm containing it must roll back whole. */
@@ -613,33 +624,10 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
          * needs its service period hand-set — this one has the dates on the EVENT, so the order line
          * needs none (D-EVENT).
          */
-        EventTicket: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Event, catA, 'Conference Ticket', rr('AllBackEnd')),
+        EventTicket: await createEventProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Event, catA, 'Conference Ticket', rr('AllBackEnd'), fixture.Event),
         /** A second ticket to the same event, owned by Co B — events crossing companies. */
-        EventTicketB: await createProduct(ctx, run, fixture.CoB.ID, fixture.ProductTypeIDs.Event, catB, 'Conference Ticket B', rr('AllBackEnd')),
+        EventTicketB: await createEventProduct(ctx, run, fixture.CoB.ID, fixture.ProductTypeIDs.Event, catB, 'Conference Ticket B', rr('AllBackEnd'), fixture.Event),
     };
-
-    // The IsA extension rows. PK = the SAME UUID as the parent Product (BO-D37), which is what
-    // makes `WHERE ID = <productID>` on Event Products the "is this product an event?" test.
-    for (const ticket of [fixture.Products.EventTicket, fixture.Products.EventTicketB]) {
-        // THE ONE CATALOG ROW THAT STAYS RAW SQL, and not for convenience.
-        //
-        // An IsA child takes its PARENT's id as its own primary key (BO-D37) — that identity IS the
-        // relationship. `BaseEntity` cannot express that: `NewRecord()` then setting the PK makes the
-        // save take the update path, which matches no row, and it returns false with no message, no
-        // `CompleteMessage` and an empty `Errors` array. Verified directly against a real product, not
-        // inferred. Every other catalog row in this fixture goes through the object model.
-        //
-        // Worth fixing upstream — creating an extension row is a legitimate thing an application does,
-        // and today it can only be done with SQL.
-        await PoolQuery(
-            ctx,
-            `INSERT INTO ${ORDERS_SCHEMA}.EventProduct
-                (ID, EventStartsAt, EventEndsAt, VenueName, Capacity, RequiresAttendeeInfo)
-             VALUES ('${ticket}','${fixture.Event.StartsAt.toISOString()}','${fixture.Event.EndsAt.toISOString()}',
-                     '${run} Convention Center', 500, 1)`,
-        );
-
-    }
 
     // ── ENTITLEMENT TEMPLATES (D27/D76) ───────────────────────────────────────
     // One per validity mode, because the modes are where the behaviour lives. Note that WidgetA
@@ -1082,6 +1070,28 @@ export async function EnsureTaxNexus(
     }
 }
 
+/**
+ * Attach a component to a bundle product (D32/D41).
+ *
+ * Through the object model like everything else: `UQ_ProductBundleItem_Pair` and the
+ * no-self-bundle CHECK are guards a raw INSERT would walk past, and a bundle that contains
+ * itself expands forever.
+ */
+export async function CreateBundleItem(
+    ctx: IntegrationCheckContext,
+    bundleProductID: string,
+    componentProductID: string,
+    opts: { Quantity?: number; PricingMode?: 'Bundled' | 'SumOfParts'; SortOrder?: number } = {},
+): Promise<string> {
+    return createViaEntity(ctx, PRODUCT_BUNDLE_ITEM_ENTITY, {
+        BundleProductID: bundleProductID,
+        ComponentProductID: componentProductID,
+        Quantity: opts.Quantity ?? 1,
+        PricingMode: opts.PricingMode ?? 'Bundled',
+        SortOrder: opts.SortOrder ?? 0,
+    });
+}
+
 async function createProductType(
     ctx: IntegrationCheckContext,
     run: string,
@@ -1102,6 +1112,19 @@ async function createProductType(
         DefaultEntitlementValidityMode?: string;
     } = {},
 ): Promise<string> {
+    // A CODED TYPE IS GLOBAL REFERENCE DATA, not per-run. `UQ_ProductType_Code` is a unique INDEX,
+    // so only one row may carry Code='GiftCard' across the whole database — which is correct, since
+    // the code is what the engine keys behaviour on (D4) and two different meanings for one code
+    // would be a bug waiting to happen. Runs therefore SHARE it: look it up, create it only if this
+    // is the first run to need it. Uncoded types stay per-run, distinguished by their Name.
+    if (opts.Code) {
+        const existing = await TxMaybeOne<{ ID: string }>(
+            ctx,
+            `SELECT ID FROM ${ORDERS_SCHEMA}.ProductType WHERE Code = '${opts.Code}'`,
+        );
+        if (existing?.ID) return existing.ID;
+    }
+
     // The three policy columns are NOT NULL with database defaults. Passing `undefined` leaves them
     // to the entity rather than writing a value, which is the point: the fixture should exercise the
     // defaults a real caller gets, not paper over them.
@@ -1186,6 +1209,48 @@ async function createProduct(
         Status: 'Active',
         RevenueRecognitionTypeID: revRecTypeID,
         SubscriptionTypeID: subscriptionTypeID,
+    });
+}
+
+/**
+ * Create an EVENT PRODUCT — the IsA child — in one save.
+ *
+ * HOW IS-A ACTUALLY WORKS, since this was got wrong twice. You do NOT create the parent Product and
+ * then attach an extension row to it. You create the CHILD and set BOTH its own fields and its
+ * parent's; `BaseEntity` splits them using `EntityInfo.ParentEntityFieldNames`, saves the parent
+ * first, and gives the child the parent's primary key (BO-D37). That identity IS the relationship.
+ *
+ * The earlier note here claimed BaseEntity "cannot express that" — it can. What made it look
+ * otherwise is that on @memberjunction/core 5.49.0 a failed PARENT save returns false with
+ * LatestResult null and an empty ResultHistory, because every result was written to the parent
+ * object, which callers have no reference to. So forgetting a NOT NULL parent column — Name,
+ * CompanyID, Status — produced a silent false and looked like a framework limitation. MJ PR #3280
+ * fixes the diagnostics and ships in v5.50.0; the save path itself was never broken.
+ */
+async function createEventProduct(
+    ctx: IntegrationCheckContext,
+    run: string,
+    companyID: string,
+    productTypeID: string,
+    categoryID: string,
+    label: string,
+    revRecTypeID: string,
+    event: { StartsAt: Date; EndsAt: Date },
+): Promise<string> {
+    return createViaEntity(ctx, EVENT_PRODUCT_ENTITY, {
+        // ── the child's own columns ──
+        EventStartsAt: event.StartsAt,
+        EventEndsAt: event.EndsAt,
+        VenueName: `${run} Convention Center`,
+        Capacity: 500,
+        RequiresAttendeeInfo: true,
+        // ── the PARENT's columns, routed up the IS-A chain ──
+        CompanyID: companyID,
+        ProductTypeID: productTypeID,
+        ProductCategoryID: categoryID,
+        Name: `${run} ${label}`,
+        Status: 'Active',
+        RevenueRecognitionTypeID: revRecTypeID,
     });
 }
 

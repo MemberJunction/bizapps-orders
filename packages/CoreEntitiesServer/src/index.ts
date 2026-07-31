@@ -168,6 +168,27 @@ export type {
     PlannedGiftCard,
 } from './GiftCardBehavior.js';
 export { IssueGiftCards } from './GiftCardEngine.js';
+
+export {
+    AllocateBundlePrice,
+    ChildQuantity,
+    PlanBundleExpansion,
+    PlanQuantityRipple,
+    RollupTotal,
+    SplitExactly,
+} from './BundleBehavior.js';
+export type {
+    BundleComponent,
+    BundleLineFacts,
+    BundlePlan,
+    BundlePricingMode,
+    BundleRefusal,
+    PlannedBundleChild,
+    RippleChange,
+    RippleChild,
+} from './BundleBehavior.js';
+export { ExpandBundleLines, RippleBundleQuantity } from './BundleEngine.js';
+export type { BundleExpansionOutcome, ExpandableLine } from './BundleEngine.js';
 export type { GiftCardOrder, GiftCardOrderLine, GiftCardOutcome } from './GiftCardEngine.js';
 
 // Payment providers (D19/D37) — the pure edge arithmetic, the driver seam, and the drivers.
