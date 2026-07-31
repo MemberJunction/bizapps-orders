@@ -53,7 +53,9 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
-import { PAYMENT_LINE_ENTITY } from "../entity-names.js";
+import {
+  PAYMENT_LINE_ENTITY,
+} from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 import { CreatePayment, type LooseEntity } from "../payment-builder.js";
 
@@ -499,7 +501,7 @@ export const IntercompanyChecks: NamedCheck[] = [
           `SELECT TOP 1 ID FROM ${ORDERS_SCHEMA}.PaymentLine WHERE PaymentHeaderID='${Payment.ID}'`,
         );
         const entity = await new Metadata().GetEntityObject<LooseEntity>(
-          "MJ_BizApps_Orders: Payment Lines",
+          PAYMENT_LINE_ENTITY,
           ctx.User,
         );
         // Cast for Load: LooseEntity's index signature widens every method to `unknown`.

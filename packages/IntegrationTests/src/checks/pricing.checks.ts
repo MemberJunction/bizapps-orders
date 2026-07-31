@@ -398,7 +398,7 @@ export const PricingChecks: NamedCheck[] = [
         // while they still have the context to fix it.
         const { Metadata } = await import("@memberjunction/core");
         const md = new Metadata();
-        const rule = await md.GetEntityObject<LooseEntity>("MJ_BizApps_Orders: Product Prices", ctx.User);
+        const rule = await md.GetEntityObject<LooseEntity>(PRODUCT_PRICE_ENTITY, ctx.User);
         rule.NewRecord();
         rule.ProductID = f.Products.WidgetA;
         rule.PricingModel = "PerUnit";
@@ -430,7 +430,7 @@ export const PricingChecks: NamedCheck[] = [
 
         const { Metadata } = await import("@memberjunction/core");
         const md = new Metadata();
-        const rule = await md.GetEntityObject<LooseEntity>("MJ_BizApps_Orders: Product Prices", ctx.User);
+        const rule = await md.GetEntityObject<LooseEntity>(PRODUCT_PRICE_ENTITY, ctx.User);
         rule.NewRecord();
         rule.ProductID = f.Products.WidgetA;
         rule.PricingModel = "PerUnit";

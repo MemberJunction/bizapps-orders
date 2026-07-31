@@ -143,7 +143,7 @@ export const OrderBookingChecks: NamedCheck[] = [
                      JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.JournalEntryID = je.ID
                      WHERE ol.OrderHeaderID = '${Order.ID}'`,
                 );
-                AssertEqual(entityName.Name, 'MJ_BizApps_Orders: Order Lines', 'LinkedEntityID resolves to');
+                AssertEqual(entityName.Name, ORDER_LINE_ENTITY, 'LinkedEntityID resolves to');
             }),
     },
     {
@@ -329,3 +329,6 @@ IntegrationCheckRegistry.Instance.RegisterLifecycle('order-booking', {
     },
     Teardown: TeardownOrdersFixture,
 });
+import {
+  ORDER_LINE_ENTITY,
+} from "../entity-names.js";

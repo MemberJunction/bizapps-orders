@@ -199,7 +199,13 @@ Product is the root of the app: it defines **how an item is billed** (one-time /
 | `OrderLineTaxLine` tax refs *(lands with the tax build, D23)* | tax snapshot entities | `bizapps-accounting` |
 | `PaymentProvider.CredentialsRef` | `MJ: Credentials` | `__mj` |
 | `Order` approval (via `Task Links`) | `Task` ("Approval Request") | `bizapps-tasks` |
-| `Order.ContractID` | `Contract.ID` (soft ref) | `bizapps-contracts` (future) |
+
+`Order.ContractID` used to appear here and was **removed** *(D44)*. `bizapps-contracts` sits
+DOWNSTREAM of orders, so a reference to it — hard or soft — inverts the dependency graph and encodes
+a contracts concern in an orders table. When that app exists it will join to orders from its own
+schema. The same rule retired `ProductPerformanceObligation`: allocating one transaction price across
+distinct performance obligations is an agreement-envelope concern, not an order-entry one. Revenue
+recognition itself stays here, because deferring revenue over a subscription term is genuinely ours.
 
 No currency/FX columns on Order/OrderLine day one — multi-currency is deferred with the design standing *(D24)*. See [Entity Model in the master plan](plans/bizapps-orders-master.md#4-entity-model) for the complete reference.
 

@@ -103,6 +103,7 @@ import {
   TxQuery,
 } from "../fixture.js";
 import {
+  ORDER_HEADER_ENTITY,
   PRICE_LIST_ASSIGNMENT_ENTITY,
   PRICE_LIST_ENTITY,
   PRODUCT_PRICE_ENTITY,
@@ -1402,7 +1403,7 @@ export const VolumeChecks: NamedCheck[] = [
         const started = Date.now();
         for (let i = 0; i < ids.length; i++) {
           const again = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(
-            "MJ_BizApps_Orders: Order Headers",
+            ORDER_HEADER_ENTITY,
             CompositeKey.FromID(ids[i]),
             ctx.User,
           );
