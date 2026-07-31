@@ -67,7 +67,7 @@ const registry = IntegrationCheckRegistry.Instance;
  * moment you confirm the metadata and the dispatcher know about it too.
  */
 const EXPECTED_BUNDLES: Record<string, number> = {
-    'order-booking': 9,
+    'order-booking': 10,
     'revenue-recognition': 7,
     subscriptions: 12,
     'subscription-cancellation': 10,
