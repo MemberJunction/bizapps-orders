@@ -361,6 +361,17 @@
           "primaryKey": {
             "ID": "916EE8FA-AC43-46D3-819F-B53FEC3660FB"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-25 - Fulfillment",
+            "Sequence": 25,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "094BDC1F-0D08-4A42-8A5A-1546ADEB03AD"
+          }
         }
       ]
     },

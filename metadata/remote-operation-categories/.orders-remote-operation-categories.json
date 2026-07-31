@@ -81,5 +81,19 @@
       "lastModified": "2026-07-31T13:12:07.522Z",
       "checksum": "2f00395e2c69d72d57a3ccfe39411f6f228cd67e3a326d5b9bec8842ed01e856"
     }
+  },
+  {
+    "fields": {
+      "Name": "Fulfillment",
+      "Description": "Getting goods out of the door. Fulfilment is a LOGISTICS fact, deliberately disconnected from revenue (D15) - no journal entry fires on Posted to Fulfilled.",
+      "ParentID": null
+    },
+    "primaryKey": {
+      "ID": "23AC9059-8A7E-4943-BCFA-DAE325C86419"
+    },
+    "sync": {
+      "lastModified": "2026-07-31T13:42:33.357Z",
+      "checksum": "069b0f33b85dec48f867b5e1344210514eefca0ab00f22c927de3cc9f4c7fb1c"
+    }
   }
 ]

@@ -222,6 +222,184 @@ export interface OrdersConfirmOrderOutput {
 }
 
 /**
+ * Input for `Orders.FulfillOrderLines`.
+ *
+ * Flipping lines to Fulfilled and advancing the order when the last one is done are ONE decision,
+ * so they are one operation. Doing them as two calls leaves a window where every line is shipped
+ * and the order still reads Posted — which is what a warehouse sees as "the system lost my work".
+ *
+ * Fulfilment is a LOGISTICS fact (D15). No journal entry fires on Posted to Fulfilled; revenue was
+ * settled at booking and releases on its own schedule. A delay in the warehouse must never restate
+ * a closed period.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersFulfillOrderLinesInput {
+    /**
+     * The lines to mark Fulfilled. Lines from several orders may be sent together — a picker works
+     * a shelf, not an order — and each order advances independently once its own lines are done.
+     */
+    OrderLineIDs: string[];
+    /**
+     * Refuse the whole call if ANY line cannot be fulfilled, rather than doing what is possible and
+     * reporting the rest. Default false: a picker who scans one already-shipped item should not
+     * lose the other nine scans.
+     */
+    AllOrNothing?: boolean;
+    /** Recorded against the order for audit. */
+    Notes?: string;
+}
+
+/**
+ * Output for `Orders.FulfillOrderLines`.
+ *
+ * Reports per line AND per order, because they answer different questions: a picker wants to know
+ * which scans took, and a supervisor wants to know which orders are now closed.
+ *
+ * A refusal is a normal outcome, not an error — scanning an already-shipped item is an ordinary
+ * mistake — so refusals come back as data with reasons rather than as a thrown failure.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface FulfilledLineResult {
+    OrderLineID: string;
+    /** True when this call moved it from Pending to Fulfilled. */
+    Fulfilled: boolean;
+    /**
+     * Why not, when it was not. One of LineNotFound, OrderNotPosted, DoesNotRequireFulfillment,
+     * IsReversal, IsRollupParent, AlreadyFulfilled — with wording that names the line.
+     */
+    Refusal?: string | null;
+    RefusalReason?: string | null;
+}
+
+export interface AdvancedOrderResult {
+    OrderHeaderID: string;
+    OrderNumber: string;
+    /** The status before this call — Confirmed or Posted. */
+    StatusBefore: string;
+    StatusAfter: string;
+    /** True when this call was what closed it out. */
+    AdvancedToFulfilled: boolean;
+    /** Fulfillable lines still pending on this order. Zero when it advanced. */
+    RemainingLineCount: number;
+}
+
+export interface OrdersFulfillOrderLinesOutput {
+    Success: boolean;
+    Message?: string;
+    Lines: FulfilledLineResult[];
+    /** Every order touched, whether or not it advanced. */
+    Orders: AdvancedOrderResult[];
+    FulfilledCount: number;
+    RefusedCount: number;
+    /** Orders this call moved to Fulfilled. */
+    AdvancedCount: number;
+}
+
+/**
+ * Input for `Orders.GetFulfillmentQueue`.
+ *
+ * The queue is a COMPUTED surface, like the overdue worklist: it is every line that still needs
+ * shipping, which changes as lines are flipped rather than as anything is written to the order. A
+ * stored flag would need a job to keep it honest, and the day the job failed the warehouse would
+ * quietly stop seeing work.
+ *
+ * A line holds its order open only when its product TYPE requires fulfilment. Subscriptions,
+ * downloads and donations never appear here — nothing ships — and neither do reversal lines (goods
+ * coming back are tracked on the line they reverse) or a bundle's rollup parent (its children carry
+ * the actual goods).
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersGetFulfillmentQueueInput {
+    /** Restrict to orders owned by these companies. Omit for everything in scope. */
+    CompanyIDs?: string[];
+    /** Restrict to one customer. */
+    BillToOrganizationID?: string;
+    BillToPersonID?: string;
+    /**
+     * Only orders confirmed on or before this date — the practical meaning of "oldest first".
+     * Defaults to no bound.
+     */
+    ConfirmedOnOrBefore?: string;
+    /** Restrict to lines shipping to one address, for a warehouse working a single destination. */
+    ShipToAddressID?: string;
+    /**
+     * Include orders whose fulfillable lines are ALL done. Off by default: a queue is work to do,
+     * and a screen full of finished orders is how a real backlog gets missed.
+     */
+    IncludeCompleted?: boolean;
+    /** Cap the result. Defaults to 500. */
+    MaxCount?: number;
+}
+
+/**
+ * Output for `Orders.GetFulfillmentQueue`.
+ *
+ * A worklist, not a report: a picker should be able to work a row without a second round trip, so
+ * each line carries what to send, how many, and where — including the ship-to that a LINE may
+ * override on the header (D61), because a bundle bought for three colleagues goes to three places.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface FulfillmentQueueLine {
+    OrderLineID: string;
+    LineNumber: number;
+    ProductID: string;
+    ProductName: string;
+    SKU?: string | null;
+    Quantity: number;
+    /** Pending | Fulfilled | Returned. Only Pending lines are work. */
+    FulfillmentStatus: string;
+    /**
+     * Where this LINE goes, which may differ from the order's — a seat bought for a colleague, a
+     * gift shipped elsewhere. Null means it follows the header.
+     */
+    ShipToAddressID?: string | null;
+    ShipToOrganizationID?: string | null;
+    ShipToPersonID?: string | null;
+    ShipToName?: string | null;
+    /** Set when this line came from a bundle, so a picker can see the components belong together. */
+    ParentOrderLineID?: string | null;
+    SourceBundleProductID?: string | null;
+}
+
+export interface FulfillmentQueueOrder {
+    OrderHeaderID: string;
+    OrderNumber: string;
+    OrderDate: string;
+    ConfirmedAt?: string | null;
+    Status: string;
+    CompanyID: string;
+    CompanyName: string;
+    /** Whichever party the order bills — organization wins, else the person. */
+    CustomerName: string;
+    BillToOrganizationID?: string | null;
+    BillToPersonID?: string | null;
+    /**
+     * How many fulfillable lines this order has in total, so a screen can say "1 of 3 remaining"
+     * rather than just "1". Excludes lines that require no fulfilment, reversals, and rollup parents.
+     */
+    FulfillableCount: number;
+    /** The lines still awaiting fulfilment. Never empty unless IncludeCompleted was set. */
+    Lines: FulfillmentQueueLine[];
+}
+
+export interface OrdersGetFulfillmentQueueOutput {
+    Success: boolean;
+    Message?: string;
+    /** Oldest confirmed first — the order a warehouse should work them in. */
+    Orders: FulfillmentQueueOrder[];
+    /** Orders returned. Distinct from the line count, which is what a picker actually works. */
+    OrderCount: number;
+    /** Lines still awaiting fulfilment across every returned order. */
+    AwaitingLineCount: number;
+    /** True when MaxCount capped the result, so a screen can say so rather than imply completeness. */
+    Truncated: boolean;
+}
+
+/**
  * Input for `Orders.GetOverdueWorklist`.
  *
  * Overdue is a COMPUTED surface — `Balance > 0 AND DueDate < now` — never a stored
@@ -1491,6 +1669,38 @@ export class OrdersConfirmOrderOperation extends BaseRemotableOperation<OrdersCo
     public readonly OperationKey = "Orders.ConfirmOrder";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:confirm";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.FulfillOrderLines — Fulfill Order Lines
+// ============================================================
+/**
+ * Fulfill Order Lines
+ * Mark lines Fulfilled and advance each order whose last fulfillable line is now done - ONE decision, so one operation. As two calls there is a window where every line is shipped and the order still reads Posted, which a warehouse experiences as the system losing its work. An order advances when nothing is AWAITING fulfilment rather than when every line is Fulfilled: on a mixed order the subscription line never flips, so the stricter test would hold it open forever. No journal entry fires (D15).
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.FulfillOrderLines'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersFulfillOrderLinesOperation extends BaseRemotableOperation<OrdersFulfillOrderLinesInput, OrdersFulfillOrderLinesOutput> {
+    public readonly OperationKey = "Orders.FulfillOrderLines";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.GetFulfillmentQueue — Get Fulfillment Queue
+// ============================================================
+/**
+ * Get Fulfillment Queue
+ * Every order line still awaiting shipment, oldest confirmed first. Computed at read time like the overdue worklist, because it changes as lines are flipped rather than as anything is written - a stored flag would need a job to keep it honest, and the day that job failed the warehouse would quietly stop seeing work. Lines whose product type requires no fulfilment never appear, and neither do reversals (goods coming back are tracked on the line they reverse) or a bundle rollup parent (its children carry the goods).
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.GetFulfillmentQueue'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersGetFulfillmentQueueOperation extends BaseRemotableOperation<OrdersGetFulfillmentQueueInput, OrdersGetFulfillmentQueueOutput> {
+    public readonly OperationKey = "Orders.GetFulfillmentQueue";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
     public readonly RequiresSystemUser = false;
 }
 

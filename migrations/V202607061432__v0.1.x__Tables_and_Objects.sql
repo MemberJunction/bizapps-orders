@@ -737,10 +737,37 @@ CREATE TABLE __mj_BizAppsOrders.PaymentHeader (
     -- (StoredValueAccountID moved to PaymentDetail — it is instrument data, D38)
     Description NVARCHAR(MAX) NULL,
     Notes NVARCHAR(MAX) NULL,
+    -- ── Idempotency (D68) ──────────────────────────────────────────────────────
+    -- A caller-supplied token that makes "take this payment" safe to retry. A
+    -- double-clicked Capture, a retried request after a timeout, a queue redelivery —
+    -- all of them must take the money ONCE.
+    --
+    -- WHY THIS IS ITS OWN COLUMN. `ProviderChargeID` already deduplicates a gateway
+    -- capture and is tested for it, but it means the PROVIDER'S charge id and only
+    -- exists when a provider was involved. Cash, cheque and account-credit payments
+    -- have no provider and are just as double-clickable, so reusing that column
+    -- would put a token in a field that claims to hold something else — and would
+    -- still leave the commonest tenders unprotected.
+    --
+    -- Deduplicating on a natural key instead (company + amount + date + tender) was
+    -- rejected outright: two people paying the same amount on the same day is
+    -- ordinary, and silently swallowing the second is a worse failure than taking
+    -- one twice, because nothing downstream can detect a payment that never existed.
+    IdempotencyKey NVARCHAR(200) NULL,
     CONSTRAINT PK_PaymentHeader PRIMARY KEY (ID),
     CONSTRAINT UQ_PaymentHeader_PaymentNumber UNIQUE (PaymentNumber),
     CONSTRAINT CK_PaymentHeader_Status CHECK (Status IN ('Pending','Captured','Failed','Refunded','Disputed'))
 );
+GO
+
+-- The token is unique when present. FILTERED, because the overwhelming majority of
+-- payments carry none — a back-office correction, a migration, anything not driven by
+-- a user pressing a button — and a plain UNIQUE would let exactly one of them be null.
+-- The database, not the application, is what makes the retry safe: two concurrent
+-- requests with the same token race, and only one insert can win.
+CREATE UNIQUE INDEX UX_PaymentHeader_IdempotencyKey
+    ON __mj_BizAppsOrders.PaymentHeader (IdempotencyKey)
+    WHERE IdempotencyKey IS NOT NULL;
 GO
 
 -- One PaymentHeader per PaymentDetail row (D39 copy-on-use).

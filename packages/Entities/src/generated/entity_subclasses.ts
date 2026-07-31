@@ -12656,6 +12656,7 @@ export class mjBizAppsOrdersProductEntitlementEntity extends BaseEntity<mjBizApp
     /**
     * Validate() method override for MJ_BizApps_Orders: Product Entitlements entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
     * * AccessLagHours: Access lag hours must be greater than or equal to 0 if a value is provided.
+    * * AccessLeadHours: Access lead hours must be a non-negative number (0 or greater) if specified.
     * * Table-Level: If the Validity Mode is set to 'FixedDuration', then the Validity Duration Days must be specified and must be greater than 0.
     * @public
     * @method
@@ -12664,6 +12665,7 @@ export class mjBizAppsOrdersProductEntitlementEntity extends BaseEntity<mjBizApp
     public override Validate(): ValidationResult {
         const result = super.Validate();
         this.ValidateAccessLagHoursGreaterThanOrEqualToZero(result);
+        this.ValidateAccessLeadHoursNonNegative(result);
         this.ValidateValidityDurationDaysForFixedDuration(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
@@ -12682,6 +12684,23 @@ export class mjBizAppsOrdersProductEntitlementEntity extends BaseEntity<mjBizApp
     			"AccessLagHours",
     			"Access lag hours must be greater than or equal to 0.",
     			this.AccessLagHours,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * Access lead hours must be a non-negative number (0 or greater) if specified.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateAccessLeadHoursNonNegative(result: ValidationResult) {
+    	if (this.AccessLeadHours != null && this.AccessLeadHours < 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"AccessLeadHours",
+    			"Access lead hours must be greater than or equal to 0.",
+    			this.AccessLeadHours,
     			ValidationErrorType.Failure
     		));
     	}
@@ -13681,6 +13700,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     /**
     * Validate() method override for MJ_BizApps_Orders: Products entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
     * * Table-Level: The availability end date must be on or after the availability start date, if both dates are specified.
+    * * Table-Level: A product cannot be its own successor product. If a successor product is specified, it must be a different product.
     * @public
     * @method
     * @override
@@ -13688,6 +13708,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     public override Validate(): ValidationResult {
         const result = super.Validate();
         this.ValidateAvailableToAfterAvailableFrom(result);
+        this.ValidateSuccessorProductIDNotEqualToID(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
@@ -13709,6 +13730,23 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     				ValidationErrorType.Failure
     			));
     		}
+    	}
+    }
+
+    /**
+    * A product cannot be its own successor product. If a successor product is specified, it must be a different product.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateSuccessorProductIDNotEqualToID(result: ValidationResult) {
+    	if (this.SuccessorProductID != null && this.SuccessorProductID === this.ID) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"SuccessorProductID",
+    			"A product cannot be its own successor product. Please select a different successor product.",
+    			this.SuccessorProductID,
+    			ValidationErrorType.Failure
+    		));
     	}
     }
 
@@ -17642,6 +17680,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     /**
     * Validate() method override for MJ_BizApps_Orders: Subscriptions entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
     * * RenewalLeadDays: Renewal lead days must be a non-negative number (0 or greater) if specified.
+    * * Table-Level: A subscription cannot be set to migrate from itself, ensuring that the migration source is a different subscription.
     * * Table-Level: A subscription cannot be set to migrate to itself. The destination subscription must be a different subscription record.
     * @public
     * @method
@@ -17650,6 +17689,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     public override Validate(): ValidationResult {
         const result = super.Validate();
         this.ValidateRenewalLeadDaysGreaterThanOrEqualToZero(result);
+        this.ValidateMigratesFromSubscriptionIDNotEqualToID(result);
         this.ValidateMigratesToSubscriptionNotSelf(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
@@ -17668,6 +17708,23 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     			"RenewalLeadDays",
     			"Renewal lead days must be greater than or equal to 0.",
     			this.RenewalLeadDays,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * A subscription cannot be set to migrate from itself, ensuring that the migration source is a different subscription.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateMigratesFromSubscriptionIDNotEqualToID(result: ValidationResult) {
+    	if (this.MigratesFromSubscriptionID != null && this.MigratesFromSubscriptionID === this.ID) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"MigratesFromSubscriptionID",
+    			"A subscription cannot migrate from itself.",
+    			this.MigratesFromSubscriptionID,
     			ValidationErrorType.Failure
     		));
     	}

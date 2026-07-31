@@ -20,6 +20,21 @@ export {
 export { PreviewConfirmOperation, LoadPreviewConfirmOperation } from './PreviewConfirmOperation.js';
 export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './GetOverdueWorklistOperation.js';
 
+// Fulfilment (D15) — a logistics fact, deliberately disconnected from revenue.
+export {
+    AutoAdvances,
+    AwaitingFulfillment,
+    ExplainRefusal,
+    GroupForQueue,
+    InitialFulfillmentStatus,
+    IsAwaitingFulfillment,
+    RefuseFlip,
+    ShouldAdvanceToFulfilled,
+} from './FulfillmentBehavior.js';
+export type { FulfillableLine, FulfillmentStatus, FlipRefusal, QueueGrouping } from './FulfillmentBehavior.js';
+export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from './GetFulfillmentQueueOperation.js';
+export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
+
 export {
     HydrateOrderDraft,
     ORDER_HEADER_ENTITY,
@@ -96,6 +111,7 @@ export { PaymentHeaderEntityServer, LoadPaymentHeaderEntityServer } from './Paym
 export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentLineEntityServer.js';
 
 export { RefundPaymentOperation, LoadRefundPaymentOperation } from './RefundPaymentOperation.js';
+export { CapturePaymentOperation, LoadCapturePaymentOperation } from './CapturePaymentOperation.js';
 export type { RefundPaymentInput, RefundPaymentOutput } from './RefundPaymentOperation.js';
 export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './ApplyAccountCreditOperation.js';
 // Pricing (D69): the pure engine, the resolver walk + its plugin seam, the dry run, and the

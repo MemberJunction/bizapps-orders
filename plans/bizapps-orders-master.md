@@ -1071,6 +1071,13 @@ executes nothing and reports success; the parity floor exists because of that.
 - **Bundles** (D32/D41/D45) — expansion into component lines under a rollup parent that contributes
   zero, allocation by relative standalone selling price summing exactly, and `ParentOrderLineID` so
   two of the same bundle on one order stay distinguishable.
+- **Fulfilment** (D15) — `Orders.GetFulfillmentQueue` and `Orders.FulfillOrderLines`. The queue is
+  computed at read time, like the overdue worklist, so it cannot go stale; the flip marks lines and
+  advances the order in ONE operation, because as two calls there is a window where every line is
+  shipped and the order still reads Posted. An order advances when nothing is AWAITING fulfilment
+  rather than when every line is Fulfilled — the mixed order (one physical line, one subscription)
+  is the case the naive rule holds open forever, and a mutant using it is killed by FU5 alone.
+  No journal entry fires, and FU8 asserts it.
 
 **Shipped with a known limitation, recorded rather than hidden**
 
@@ -1096,8 +1103,9 @@ executes nothing and reports success; the parity floor exists because of that.
 
 - Sales-rule evaluation beyond `DiscountLimit`, and approval routing (deferred to v-next; see §21
   for exactly which slice is live and which is decorative).
-- Statements and consolidated bill packages · fulfilment queue and order splitting ·
-  `create-into-Fulfilled` · orders-side RLS and role seeding · CDP migration tooling.
+- Statements and consolidated bill packages · ORDER SPLITTING (the queue ships; splitting one order
+  into several shipments does not) · `create-into-Fulfilled` (`Orders.CreateOrderInState`, D17) ·
+  orders-side RLS and role seeding · CDP migration tooling.
 - Stripe against a real sandbox — the stub covers the path; the live run is a separate exercise.
 
 **Retired, so nobody looks for it**

@@ -288,5 +288,82 @@
       "lastModified": "2026-07-31T13:12:07.750Z",
       "checksum": "d02d2661a5679f461e87bfa2c5039edc220115a5dfdff928e86cb210160d13da"
     }
+  },
+  {
+    "fields": {
+      "Name": "Get Fulfillment Queue",
+      "OperationKey": "Orders.GetFulfillmentQueue",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Fulfillment",
+      "Description": "Every order line still awaiting shipment, oldest confirmed first. Computed at read time like the overdue worklist, because it changes as lines are flipped rather than as anything is written - a stored flag would need a job to keep it honest, and the day that job failed the warehouse would quietly stop seeing work. Lines whose product type requires no fulfilment never appear, and neither do reversals (goods coming back are tracked on the line they reverse) or a bundle rollup parent (its children carry the goods).",
+      "InputTypeName": "OrdersGetFulfillmentQueueInput",
+      "InputTypeDefinition": "@file:types/orders-get-fulfillment-queue.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersGetFulfillmentQueueOutput",
+      "OutputTypeDefinition": "@file:types/orders-get-fulfillment-queue.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "3B2150C9-3D51-42F6-BF69-EAD0FD8D5A8D"
+    },
+    "sync": {
+      "lastModified": "2026-07-31T13:42:33.482Z",
+      "checksum": "f571bc4effb5f39805ea6a321ae1d4f34c697088075035efc5465a4dd05db6ba"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Fulfill Order Lines",
+      "OperationKey": "Orders.FulfillOrderLines",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Fulfillment",
+      "Description": "Mark lines Fulfilled and advance each order whose last fulfillable line is now done - ONE decision, so one operation. As two calls there is a window where every line is shipped and the order still reads Posted, which a warehouse experiences as the system losing its work. An order advances when nothing is AWAITING fulfilment rather than when every line is Fulfilled: on a mixed order the subscription line never flips, so the stricter test would hold it open forever. No journal entry fires (D15).",
+      "InputTypeName": "OrdersFulfillOrderLinesInput",
+      "InputTypeDefinition": "@file:types/orders-fulfill-order-lines.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersFulfillOrderLinesOutput",
+      "OutputTypeDefinition": "@file:types/orders-fulfill-order-lines.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "5CD713D6-C443-4340-ABBB-3348EFD2B2E5"
+    },
+    "sync": {
+      "lastModified": "2026-07-31T13:42:33.459Z",
+      "checksum": "10a0acc9499356ece52041850a229c62d741d59930b997188f8890706f9fc36b"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Capture Payment",
+      "OperationKey": "Orders.CapturePayment",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Take a payment and allocate it, in ONE transaction. A payment is a header plus its allocation lines, and PaymentHeaderEntityServer.Lines is a TRANSIENT collection rather than a column - CodeGen cannot emit it client-side, so a browser entity.Save() has nowhere to put the allocations. Same situation Orders.SaveOrder was built for. A two-step create-then-allocate flow was rejected because between the steps there would be a captured payment with no allocations in the database: cash recorded against nothing. The fee is computed server-side and returned, never accepted as input, because a client-supplied fee is a client-supplied general-ledger amount. Over-payment is ACCEPTED and becomes spendable credit (D68) rather than being refused. Preview runs the real capture inside a transaction that always rolls back rather than modelling the arithmetic separately.",
+      "InputTypeName": "OrdersCapturePaymentInput",
+      "InputTypeDefinition": "@file:types/orders-capture-payment.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersCapturePaymentOutput",
+      "OutputTypeDefinition": "@file:types/orders-capture-payment.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "87E03341-1F8F-4F1E-A72D-25311266693A"
+    }
   }
 ]
