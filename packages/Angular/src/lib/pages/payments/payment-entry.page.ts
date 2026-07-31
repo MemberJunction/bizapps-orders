@@ -150,7 +150,8 @@ export interface MJOTenderOption {
 
             <!-- ── Right: what it settles ── -->
             <div class="mjo-pe__right">
-                <div class="mjo-pe__payer">
+                <!-- Anchored like the product picker: see fast-entry for why. -->
+                <div class="mj-typeahead mjo-pe__payer">
                     <div class="mjo-search">
                         <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                         <input

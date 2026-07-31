@@ -77,7 +77,17 @@
           </div>
         </div>
       } @else {
-        <div class="mj-card mj-card-pad">
+        <div class="mj-card mj-card-pad fe-cust__card">
+          <!--
+            `.mj-typeahead` supplies `position: relative`, which is what anchors the
+            absolutely-positioned results UNDER the input. Without it the list has no
+            positioned ancestor and lays itself out against the page: it rendered at
+            y=1004 in a 1000px viewport, full window width, so matches existed and
+            were simply off-screen. Typing something that matched looked more broken
+            than typing something that did not, because the "nobody matches" hint is
+            an ordinary block and showed up fine.
+          -->
+          <div class="mj-typeahead">
           <div class="mjo-search fe-cust__search">
             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             <input
@@ -119,6 +129,7 @@
               searched, so there is no wrong box to have typed in.
             </div>
           }
+          </div>
         </div>
       }
     </section>
