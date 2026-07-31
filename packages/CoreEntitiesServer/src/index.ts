@@ -321,3 +321,45 @@ export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';
+
+// Invoicing (D-INV): an invoice is a PRESENTATION of an order, never a record. The decisions are in
+// InvoiceBehavior, the reads in InvoiceBuilder, the strings in InvoiceDisplay, and the markup lives
+// in an MJ Template so it can be changed without a deploy.
+export {
+    AttributeByLine,
+    BuildDocuments,
+    BuildLadder,
+    BuildRows,
+    CanRender,
+    DaysBetween,
+    DeriveDocumentKind,
+    DiscountTotalOf,
+    DocumentNumber,
+    DueDateFor,
+    LineDiscountOf,
+    ListAmountOf,
+    ListSubtotalOf,
+    PaymentStatusLabel,
+    SpreadAcrossCompanies,
+    TermsLabel,
+} from './InvoiceBehavior.js';
+export type {
+    DocumentKind,
+    InvoiceAdjustmentFacts,
+    InvoiceChargeFacts,
+    InvoiceDocument,
+    InvoiceIssuerFacts,
+    InvoiceLineFacts,
+    InvoiceOrderFacts,
+    InvoicePartyFacts,
+    InvoicePaymentFacts,
+    InvoiceRow,
+    LadderRow,
+} from './InvoiceBehavior.js';
+
+export { BuildInvoiceDocuments } from './InvoiceBuilder.js';
+export type { InvoiceBuildResult } from './InvoiceBuilder.js';
+
+export { DecorateInvoice, DuePhrase, FormatDate, FormatMoney, FormatQuantity } from './InvoiceDisplay.js';
+export type { DisplayInvoice, DisplayLadderRow, DisplayOptions, DisplayRow } from './InvoiceDisplay.js';
+export { ToISODate } from './InvoiceBuilder.js';
