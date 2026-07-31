@@ -107,6 +107,7 @@ const ALL_BUNDLES = [
     'bundles',
     'fulfillment',
     'capture-payment',
+    'create-in-state',
     'arithmetic-edges',
     'concurrency',
     'events',

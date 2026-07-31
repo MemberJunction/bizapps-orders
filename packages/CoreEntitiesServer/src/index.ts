@@ -112,6 +112,7 @@ export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentL
 
 export { RefundPaymentOperation, LoadRefundPaymentOperation } from './RefundPaymentOperation.js';
 export { CapturePaymentOperation, LoadCapturePaymentOperation } from './CapturePaymentOperation.js';
+export { CreateOrderInStateOperation, LoadCreateOrderInStateOperation } from './CreateOrderInStateOperation.js';
 export type { RefundPaymentInput, RefundPaymentOutput } from './RefundPaymentOperation.js';
 export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './ApplyAccountCreditOperation.js';
 // Pricing (D69): the pure engine, the resolver walk + its plugin seam, the dry run, and the

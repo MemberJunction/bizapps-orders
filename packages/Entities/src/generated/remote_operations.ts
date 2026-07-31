@@ -398,6 +398,117 @@ export interface OrdersConfirmOrderOutput {
 }
 
 /**
+ * Input for `Orders.CreateOrderInState`.
+ *
+ * WHAT THIS IS FOR. Back-office entry of something that has ALREADY happened — a sale taken at a
+ * counter, a shipment that went out before anyone opened the system, a migration from whatever came
+ * before. The order needs to land in its final state without a human clicking through Draft →
+ * Confirmed → Posted → Fulfilled.
+ *
+ * WHAT IT IS NOT. A shortcut past booking. It runs the REAL confirm path — the same
+ * `Orders.ConfirmOrder` machinery, the same per-line journal entries, the same subscription
+ * materialisation and entitlement grants — and only then advances the status. An operation that
+ * wrote `Status = 'Fulfilled'` directly would produce an order that looks complete and has no
+ * ledger behind it, which is precisely the failure nothing downstream can detect: the order
+ * reconciles against itself, and the money simply never existed (D17).
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersCreateOrderInStateInput {
+    /**
+     * The order to create. Same shape `Orders.ConfirmOrder` takes, so there is one draft mapping to
+     * be right rather than two.
+     */
+    Draft: OrderDraftInput;
+
+    /**
+     * Where it should end up: 'Confirmed', 'Posted' or 'Fulfilled'.
+     *
+     * 'Draft' and 'Quoted' are not accepted — that is `Orders.SaveOrder`, and routing them here
+     * would run booking on an order that is not meant to be locked yet. 'Voided' is not accepted
+     * either: voiding is a decision about an existing order, not a state to create one in.
+     */
+    TargetStatus: string;
+
+    /**
+     * The date the thing actually happened, when it is not today. Back-dating is the normal case
+     * here — this operation exists because the event preceded the record.
+     */
+    OrderDate?: string | null;
+
+    /**
+     * Refuse if the order's gross total does not come to this. Same guard `ConfirmOrder` offers, and
+     * worth more here: a migration that silently reprices at today's rates rather than the rate the
+     * customer was charged is a defect that looks like a successful import.
+     */
+    ExpectedGrossTotal?: number | null;
+
+    /**
+     * Advance to Fulfilled even when some fulfillable lines cannot be marked — a migration where the
+     * shipment records are incomplete. Default false, because an order marked Fulfilled with unshipped
+     * lines is a promise the system now claims to have kept.
+     */
+    ForceFulfillment?: boolean;
+
+    /** Recorded on the order, so the row says why it skipped the usual path. */
+    Reason?: string | null;
+}
+
+/**
+ * Output for `Orders.CreateOrderInState`.
+ *
+ * Mirrors `OrdersConfirmOrderOutput` and adds the lifecycle trail, because the whole point of this
+ * operation is that it moved through states rather than landing in one — and a caller importing a
+ * thousand orders needs to see WHERE one stopped, not just that it did.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+
+/** One step the order actually took. Recorded even when it was a no-op, so the trail is complete. */
+export interface OrderStateTransition {
+    From: string;
+    To: string;
+    /** False when the step was refused or skipped; `Reason` then says why. */
+    Applied: boolean;
+    Reason?: string | null;
+}
+
+export interface OrdersCreateOrderInStateOutput {
+    Success: boolean;
+    Message?: string;
+
+    OrderHeaderID?: string | null;
+    OrderNumber?: string | null;
+    /** Where it actually ended up, which is not always where it was asked to go. */
+    Status?: string | null;
+    /** What the caller asked for, echoed so a partial result is legible without the request. */
+    RequestedStatus?: string | null;
+
+    /** Draft → Confirmed → Posted → Fulfilled, in the order taken. */
+    Transitions?: OrderStateTransition[];
+
+    Totals?: OrderTotalsResult;
+
+    /**
+     * The entries the CONFIRM produced. Present because this operation's entire justification is
+     * that it books properly — an empty list on a successful create is the defect it exists to
+     * prevent, not a formatting detail.
+     */
+    JournalEntries?: JournalEntryPreview[];
+    EntryCount?: number;
+    AllBalanced?: boolean;
+
+    /**
+     * Fulfillable lines still Pending when the target was Fulfilled. Non-zero only with
+     * ForceFulfillment, and worth surfacing: the order now claims to have shipped things it has no
+     * record of shipping.
+     */
+    UnfulfilledLineCount?: number;
+
+    Blockers?: BlockerResult[];
+}
+
+/**
  * Input for `Orders.FulfillOrderLines`.
  *
  * Flipping lines to Fulfilled and advancing the order when the last one is done are ONE decision,
@@ -1865,6 +1976,22 @@ export class OrdersConfirmOrderOperation extends BaseRemotableOperation<OrdersCo
     public readonly OperationKey = "Orders.ConfirmOrder";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:confirm";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.CreateOrderInState — Create Order In State
+// ============================================================
+/**
+ * Create Order In State
+ * Create an order directly in Confirmed, Posted or Fulfilled - for back-office entry of something that has ALREADY happened: a counter sale, a shipment that went out before anyone opened the system, a migration. It delegates to the REAL Orders.ConfirmOrder rather than reimplementing it, then advances the status. The tempting implementation is one UPDATE setting Status='Fulfilled'; it would be faster, would pass any test checking the order's own fields, and would produce an order that looks complete with no ledger behind it - the failure nothing downstream can detect, because the order reconciles perfectly against itself and the revenue simply never existed (D17). Advancing books nothing: Posted to Fulfilled fires no journal entry (D15). Fulfillable lines are marked before the header advances, so an imported order cannot claim to have shipped things it has no record of shipping.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.CreateOrderInState'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersCreateOrderInStateOperation extends BaseRemotableOperation<OrdersCreateOrderInStateInput, OrdersCreateOrderInStateOutput> {
+    public readonly OperationKey = "Orders.CreateOrderInState";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 

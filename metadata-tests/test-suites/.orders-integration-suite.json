@@ -383,6 +383,17 @@
           "primaryKey": {
             "ID": "C826A373-C02F-47E1-B96E-5F573D053679"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-27 - Create Order In State",
+            "Sequence": 27,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "A58B0D32-78FA-4649-86E6-CA7163F38275"
+          }
         }
       ]
     },

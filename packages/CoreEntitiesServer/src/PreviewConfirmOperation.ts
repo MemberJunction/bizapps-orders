@@ -320,7 +320,7 @@ export class PreviewConfirmOperation extends OrdersPreviewConfirmOperationBase {
         const rv = RunView.FromMetadataProvider(provider);
         const headers = await rv.RunView<Record<string, unknown>>(
             {
-                EntityName: 'MJ_BizApps_Orders: Orders',
+                EntityName: 'MJ_BizApps_Orders: Order Headers', // NOT 'Orders' — named for the OrderHeader table
                 ExtraFilter: `ID = '${orderHeaderID}'`,
                 ResultType: 'simple',
             },

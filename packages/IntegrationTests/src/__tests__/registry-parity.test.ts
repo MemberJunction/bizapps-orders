@@ -49,6 +49,7 @@ import '../checks/gift-cards.checks.js';
 import '../checks/bundles.checks.js';
 import '../checks/fulfillment.checks.js';
 import '../checks/capture-payment.checks.js';
+import '../checks/create-in-state.checks.js';
 import '../checks/arithmetic-edges.checks.js';
 import '../checks/concurrency.checks.js';
 import '../checks/volume.checks.js';
@@ -88,6 +89,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     bundles: 12,
     fulfillment: 12,
     'capture-payment': 12,
+    'create-in-state': 12,
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,
