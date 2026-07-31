@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
-import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
+import { MJOOrdersDataService, type MJOOrderRow, type MJOPaymentRow } from '../../services/orders-data.service';
 import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money-format';
 
 /** A customer with a balance, as the left rail lists them. */
@@ -45,6 +45,21 @@ interface MJOCustomerSummary {
         <div class="mjo-ar__split">
             <!-- ── Customers ── -->
             <aside class="mjo-ar__left">
+                <div class="mj-card mjo-ar__total">
+                    <div class="mj-card-head">
+                        <i class="fa-solid fa-chart-column" aria-hidden="true"></i>
+                        <h3>Total A/R by age</h3>
+                        <span class="right mj-num small strong">{{ money(TotalOpen) }}</span>
+                    </div>
+                    <div class="mj-card-pad">
+                        <mjo-aging-bar [Buckets]="TotalBuckets" />
+                        <div class="small muted mjo-ar__note">
+                            Every customer, so the list below can be read against the whole. One
+                            customer at 90 days matters differently when they are all of it.
+                        </div>
+                    </div>
+                </div>
+
                 <div class="mj-card">
                     <div class="mj-card-head">
                         <i class="fa-solid fa-user-tag" aria-hidden="true"></i>
@@ -138,6 +153,103 @@ interface MJOCustomerSummary {
                             EmptyTitle="Nothing outstanding"
                             EmptyHint="Every confirmed order is settled."
                             (RowClicked)="OrderOpened.emit($any($event))" />
+                    </div>
+
+                    <div class="mjo-ar__grid">
+                        <div class="mj-card">
+                            <div class="mj-card-head">
+                                <i class="fa-solid fa-piggy-bank" aria-hidden="true"></i>
+                                <h3>Credits they hold</h3>
+                            </div>
+                            <div class="mj-card-pad">
+                                @for (credit of CreditItems; track credit.ID) {
+                                    <div class="mjo-ar__row">
+                                        <span class="mono small">{{ credit.OrderNumber }}</span>
+                                        <b class="mj-num mj-money--credit">
+                                            {{ money(-Math.abs(credit.Balance)) }}
+                                        </b>
+                                    </div>
+                                } @empty {
+                                    <div class="small muted">
+                                        No credit on file. A credit is an order paid for more than it
+                                        was worth — there is no separate instrument to look up.
+                                    </div>
+                                }
+                                @if (CreditItems.length) {
+                                    <div class="small muted mjo-ar__note">
+                                        Spend this before invoicing them again. Chasing cash from a
+                                        customer already holding your money is the call nobody wants
+                                        to make twice.
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="mj-card">
+                            <div class="mj-card-head">
+                                <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                                <h3>Payment history</h3>
+                            </div>
+                            <div class="mj-card-pad">
+                                @for (payment of Payments; track payment.ID) {
+                                    <div class="mjo-ar__row">
+                                        <span class="small">
+                                            <span class="mono">{{ payment.PaymentNumber }}</span>
+                                            <span class="muted"> · {{ dateOf(payment.PaymentDate) }}</span>
+                                        </span>
+                                        <b class="mj-num">{{ money(payment.Amount) }}</b>
+                                    </div>
+                                } @empty {
+                                    <div class="small muted">
+                                        No payments recorded for this customer.
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mj-card mjo-ar__block">
+                        <div class="mj-card-head">
+                            <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                            <h3>Subscriptions</h3>
+                            <span class="right small muted">{{ Subscriptions.length }}</span>
+                        </div>
+                        <div class="mj-table-wrap">
+                            <table class="mj-table mj-table--compact">
+                                <thead>
+                                    <tr>
+                                        <th>Subscription</th>
+                                        <th>Product</th>
+                                        <th>Covered to</th>
+                                        <th>Renews</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (sub of Subscriptions; track sub['ID']) {
+                                        <tr>
+                                            <td class="mono small">{{ sub['SubscriptionNumber'] }}</td>
+                                            <td class="small">{{ sub['Product'] ?? '—' }}</td>
+                                            <td class="small">{{ dateOf(sub['EndDate']) }}</td>
+                                            <td class="small">
+                                                {{ sub['AutoRenew'] ? 'automatically' : 'it simply ends' }}
+                                            </td>
+                                            <td>
+                                                <span class="mj-chip" [class]="subClass(sub)">
+                                                    {{ sub['Status'] ?? '—' }}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    } @empty {
+                                        <tr>
+                                            <td colspan="5" class="small muted">
+                                                No subscriptions. Nothing here renews on its own.
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 } @else {
                     <div class="mj-empty mjo-ar__empty">
@@ -253,8 +365,89 @@ export class MJOCustomerARPageComponent implements OnInit {
         await this.load();
     }
 
-    public Select(key: string): void {
+    public Payments: MJOPaymentRow[] = [];
+    public Subscriptions: Array<Record<string, unknown>> = [];
+
+    /** Exposed for the template — `Math` is not in Angular's expression scope. */
+    protected readonly Math = Math;
+
+    public async Select(key: string): Promise<void> {
         this.SelectedKey = key;
+        await this.loadCustomerDetail();
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Payments and subscriptions for the selected customer only.
+     *
+     * Fetched on selection rather than up front: this screen shows one customer at
+     * a time, and loading a hundred payment histories to render one is work with
+     * no answer attached to it. Both awaits complete BEFORE either is assigned, so
+     * no assignment straddles the boundary that produces NG0100.
+     */
+    private async loadCustomerDetail(): Promise<void> {
+        const selected = this.Selected;
+        if (!selected) {
+            this.Payments = [];
+            this.Subscriptions = [];
+            return;
+        }
+        const identity = {
+            OrganizationID: selected.IsOrganization ? selected.Key : null,
+            PersonID: selected.IsOrganization ? null : selected.Key,
+        };
+        const [payments, subscriptions] = await Promise.all([
+            this.data.GetPaymentsForCustomer(identity),
+            this.data.GetSubscriptionsForCustomer(identity),
+        ]);
+        this.Payments = payments;
+        this.Subscriptions = subscriptions;
+    }
+
+    /**
+     * The whole portfolio's aging, summed from the per-customer buckets.
+     *
+     * Derived rather than queried — the customers are already grouped and bucketed
+     * in memory, and asking the database to age the same rows again would be a
+     * second implementation of the same rule.
+     */
+    public get TotalBuckets(): MJOAgingBuckets {
+        const total: MJOAgingBuckets = { Current: 0, Days1To30: 0, Days31To60: 0, Days61Plus: 0 };
+        for (const customer of this.Customers) {
+            total.Current += customer.Buckets.Current;
+            total.Days1To30 += customer.Buckets.Days1To30;
+            total.Days31To60 += customer.Buckets.Days31To60;
+            total.Days61Plus += customer.Buckets.Days61Plus;
+        }
+        (Object.keys(total) as Array<keyof MJOAgingBuckets>).forEach(
+            (k) => (total[k] = Math.round(total[k] * 100) / 100),
+        );
+        return total;
+    }
+
+    /** What the whole book is owed, before credits are spent. */
+    public get TotalOpen(): number {
+        return Math.round(this.Customers.reduce((sum, c) => sum + c.Open, 0) * 100) / 100;
+    }
+
+    /** Orders this customer has OVER-paid — their spendable credit. */
+    public get CreditItems(): MJOOrderRow[] {
+        return (this.Selected?.Orders ?? []).filter((o) => o.Balance < 0);
+    }
+
+    protected dateOf(value: unknown): string {
+        return value ? FormatDate(String(value), { Short: true }) : '—';
+    }
+
+    protected subClass(sub: Record<string, unknown>): string {
+        switch (sub['Status']) {
+            case 'Active':
+                return 'mj-chip--success';
+            case 'Grace':
+                return 'mj-chip--warning';
+            default:
+                return 'mj-chip--outline';
+        }
     }
 
     public get Selected(): MJOCustomerSummary | undefined {

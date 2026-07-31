@@ -333,6 +333,62 @@ export class MJOOrdersDataService {
         );
     }
 
+    /**
+     * One customer's payments and subscriptions, in one round trip each.
+     *
+     * The A/R screen shows a customer at a time, so these are fetched for the
+     * SELECTED customer rather than for everyone up front — a hundred customers'
+     * payment histories to render one is work with no answer attached to it.
+     */
+    public async GetPaymentsForCustomer(
+        customer: { OrganizationID?: string | null; PersonID?: string | null },
+        user?: UserInfo,
+    ) {
+        const filters: string[] = [];
+        if (customer.OrganizationID && UUID_PATTERN.test(customer.OrganizationID)) {
+            filters.push(`BillToOrganizationID = '${customer.OrganizationID}'`);
+        } else if (customer.PersonID && UUID_PATTERN.test(customer.PersonID)) {
+            filters.push(`BillToPersonID = '${customer.PersonID}'`);
+        } else {
+            return [];
+        }
+        return this.run<MJOPaymentRow>(
+            MJO_ENTITIES.PaymentHeader,
+            filters,
+            'PaymentDate DESC',
+            50,
+            user,
+        );
+    }
+
+    /**
+     * Subscriptions a customer holds or benefits from.
+     *
+     * Both sides are checked because they are genuinely different roles — an
+     * employer HOLDS a seat that an employee BENEFITS from, and the A/R screen
+     * wants either to count as "theirs".
+     */
+    public async GetSubscriptionsForCustomer(
+        customer: { OrganizationID?: string | null; PersonID?: string | null },
+        user?: UserInfo,
+    ) {
+        const clauses: string[] = [];
+        if (customer.OrganizationID && UUID_PATTERN.test(customer.OrganizationID)) {
+            clauses.push(`HolderOrganizationID = '${customer.OrganizationID}'`);
+        }
+        if (customer.PersonID && UUID_PATTERN.test(customer.PersonID)) {
+            clauses.push(`BeneficiaryPersonID = '${customer.PersonID}'`);
+        }
+        if (!clauses.length) return [];
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.Subscription,
+            [`(${clauses.join(' OR ')})`],
+            'EndDate DESC',
+            50,
+            user,
+        );
+    }
+
     /** Price lists — the named sets a customer can be assigned to. */
     public async GetPriceLists(user?: UserInfo) {
         return this.run<Record<string, unknown>>(
