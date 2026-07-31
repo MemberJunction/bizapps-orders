@@ -22,3 +22,4 @@ SQL Scripts/generated/
 metadata/sql_logging/
 metadata-tests/sql_logging/
 .ux-harness/
+test-harnesses/.integration.lock

@@ -13,11 +13,78 @@
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openSync, closeSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import dotenv from 'dotenv';
 import sql from 'mssql';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '..', '.env'), quiet: true });
+
+/**
+ * ONE RUN AT A TIME, ENFORCED.
+ *
+ * Two concurrent runs fight over `OrderSequence`, which every confirm takes under
+ * UPDLOCK/HOLDLOCK to mint a gap-free order number. The loser times out at 15s and the failure
+ * surfaces as `Error executing SQL` on confirm — which reads exactly like a broken engine. It cost
+ * an hour of chasing nine phantom defects that were really one lock.
+ *
+ * The lock is CORRECT; the contention proves it works. What is wrong is finding out this way, so a
+ * second run is refused up front with the reason rather than allowed to produce a misleading
+ * result. A stale lock from a killed run is detected by checking whether the recorded pid is still
+ * alive, so a crash does not require manual cleanup.
+ */
+const LOCK = path.resolve(here, '.integration.lock');
+
+function acquireLock() {
+    try {
+        // 'wx' fails if the file exists — the atomic part.
+        closeSync(openSync(LOCK, 'wx'));
+    } catch {
+        let holder = null;
+        try {
+            holder = JSON.parse(readFileSync(LOCK, 'utf8'));
+        } catch {
+            // Unreadable lock: treat as stale rather than deadlocking on a corrupt file.
+        }
+        const alive = holder?.pid != null && isRunning(holder.pid);
+        if (alive) {
+            console.error(
+                `\n  Another integration run is already going (pid ${holder.pid}, started ${holder.startedAt}).\n` +
+                `  Refusing to start a second one.\n\n` +
+                `  Two runs contend for the OrderSequence lock that every confirm takes, and the loser\n` +
+                `  times out reporting 'Error executing SQL' — which looks like a broken engine rather\n` +
+                `  than contention. Wait for the other run, or kill pid ${holder.pid}.\n`,
+            );
+            process.exit(2);
+        }
+        console.warn(`  Clearing a stale lock from pid ${holder?.pid ?? 'unknown'} (no longer running).`);
+        try { unlinkSync(LOCK); } catch { /* raced with another cleanup; the write below settles it */ }
+        closeSync(openSync(LOCK, 'w'));
+    }
+    writeFileSync(LOCK, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+}
+
+function isRunning(pid) {
+    try {
+        // Signal 0 checks for existence without touching the process.
+        process.kill(pid, 0);
+        return true;
+    } catch (e) {
+        // EPERM means it exists but belongs to somebody else — still running.
+        return e?.code === 'EPERM';
+    }
+}
+
+function releaseLock() {
+    try { unlinkSync(LOCK); } catch { /* already gone */ }
+}
+
+acquireLock();
+// Released however this ends — a normal finish, a thrown error, or Ctrl-C.
+process.on('exit', releaseLock);
+for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => { releaseLock(); process.exit(130); });
+}
 
 /** Bundles in dependency-free order — each owns its own fixture, so order is presentational. */
 const ALL_BUNDLES = [
