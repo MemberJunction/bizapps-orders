@@ -156,6 +156,182 @@ export interface CancelSubscriptionOutput {
 }
 
 /**
+ * Input for `Orders.CapturePayment`.
+ *
+ * WHY THIS OPERATION EXISTS. A payment is a HEADER plus its ALLOCATION LINES, and the two must be
+ * written in one transaction. `PaymentHeaderEntityServer.Lines` is a TRANSIENT collection, not a
+ * column, so CodeGen cannot emit it on the client entity and a browser `entity.Save()` has nowhere
+ * to put the allocations. That is the same situation `Orders.SaveOrder` was built for, and it needs
+ * the same answer: one call, one transaction.
+ *
+ * A two-step create-then-allocate flow was rejected. Between the steps there would be a captured
+ * payment with no allocations in the database — cash recorded against nothing — and any failure in
+ * the second step would leave it there permanently.
+ *
+ * NOTE ON THE FEE: it is deliberately NOT an input. A client-supplied fee is a client-supplied
+ * general-ledger amount, and the client has no access to the provider's schedule. The server
+ * computes it and returns it.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersCapturePaymentAllocationInput {
+    OrderHeaderID: string;
+    Amount: number;
+    /** Settle a specific LINE rather than the order as a whole. Optional. */
+    OrderLineID?: string | null;
+}
+
+/** Instrument detail, when the tender needs one. Never the PAN — only tokens and references (D38). */
+export interface OrdersCapturePaymentDetailInput {
+    PaymentProviderID?: string | null;
+    ProviderInstrumentRef?: string | null;
+    SourceCustomerPaymentMethodID?: string | null;
+    ReferenceNumber?: string | null;
+    InstrumentDate?: string | null;
+}
+
+export interface OrdersCapturePaymentInput {
+    /**
+     * Gross amount received. Must equal the sum of `Allocations[].Amount` (D68).
+     *
+     * The invariant is checked HERE rather than trusted from the caller: the page enforces it before
+     * emitting, but the operation is the trust boundary, and a mismatch means cash recorded against
+     * nothing or an order credited with money that never arrived.
+     */
+    Amount: number;
+
+    /** Which company received the cash. */
+    ReceivingCompanyID: string;
+
+    /** Who paid. Exactly one of these. */
+    BillToOrganizationID?: string | null;
+    BillToPersonID?: string | null;
+
+    /**
+     * Tender by CODE, not id — the client should not have to resolve a lookup to take money. An
+     * unknown code is refused by name rather than falling back to a default tender, because a
+     * payment silently recorded as the wrong kind is invisible until somebody reconciles.
+     */
+    TenderCode: string;
+
+    /** 'YYYY-MM-DD'. Defaults to today. */
+    PaymentDate?: string;
+
+    /** Cheque number, wire confirmation, free text. */
+    Reference?: string | null;
+    Notes?: string | null;
+
+    /** Where the money lands. Must be non-empty. */
+    Allocations: OrdersCapturePaymentAllocationInput[];
+
+    PaymentDetail?: OrdersCapturePaymentDetailInput | null;
+
+    /** Spend a stored-value balance instead of taking new cash. */
+    SourceOrderHeaderID?: string | null;
+
+    /**
+     * Makes this call safe to retry. A double-clicked Capture, a retry after a timeout, a queue
+     * redelivery — all must take the money ONCE.
+     *
+     * Supply a token the CLIENT generates when the user opens the form, not one derived from the
+     * amount: two people legitimately paying the same amount on the same day must both go through.
+     * A repeat call with the same token returns the ORIGINAL payment and sets `WasRetry`, rather
+     * than taking money again or reporting a spurious failure.
+     *
+     * Optional. Without it a retry takes the payment twice, which is the caller's choice to make.
+     */
+    IdempotencyKey?: string | null;
+
+    /**
+     * Compute and validate WITHOUT writing.
+     *
+     * Runs the REAL capture inside a transaction that always rolls back — not a separate model of
+     * the arithmetic. A preview that reimplements the calculation eventually disagrees with the
+     * capture, and the disagreement surfaces as a balanced journal entry for the wrong amount, which
+     * nothing downstream can catch.
+     */
+    Preview?: boolean;
+}
+
+/**
+ * Output for `Orders.CapturePayment`.
+ *
+ * Mirrors `OrdersSaveOrderOutput`'s shape so a client handles both the same way, and adds
+ * `OrderEffects` — what each order looks like AFTER the payment — so a screen can show the result
+ * without a second round trip.
+ *
+ * EVERYTHING HERE IS READ BACK FROM WHAT THE ENGINE COMPUTED, never recomputed. Recomputing is the
+ * mistake that produces a screen quietly disagreeing with the ledger, and the disagreement shows up
+ * as a balanced journal entry for the wrong amount, which nothing downstream can catch.
+ *
+ * `JournalEntryPreview` and `BlockerResult` are declared in orders-save-order.input.ts and shared —
+ * CodeGen emits every type file into one namespace, so they are referenced rather than redeclared.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+
+/** What one order looks like after the payment landed on it. */
+export interface CapturePaymentOrderEffect {
+    OrderHeaderID: string;
+    OrderNumber: string;
+    /** As the rollup triggers left it, not as the operation calculated it. */
+    AmountPaid: number;
+    Balance: number;
+    PaymentStatus: string;
+    /**
+     * True when this order's balance went NEGATIVE — the customer over-paid and the surplus is now
+     * spendable credit (D68). Not an error: the account-credit screen depends on these existing.
+     */
+    HasCredit: boolean;
+}
+
+export interface OrdersCapturePaymentOutput {
+    Success: boolean;
+    Message?: string;
+
+    PaymentHeaderID?: string | null;
+    PaymentNumber?: string | null;
+    /** Expected 'Captured'. Null on a refusal or a preview that found blockers. */
+    Status?: string | null;
+
+    /** As booked, after the engine has had its say. */
+    Amount?: number;
+    /**
+     * The provider's cut, computed SERVER-SIDE. Never accepted as input — a client-supplied fee is a
+     * client-supplied general-ledger amount, and the client cannot see the provider's schedule.
+     * Zero for tenders with no provider.
+     */
+    ProcessingFeeAmount?: number;
+    /** What actually reached the bank: Amount minus the fee. */
+    NetAmount?: number;
+
+    OrderEffects?: CapturePaymentOrderEffect[];
+
+    /** The entries this produced, so a screen can show what moved. */
+    JournalEntries?: JournalEntryPreview[];
+    EntryCount?: number;
+    AllBalanced?: boolean;
+
+    /** Refusals, in the shape the UI already renders. */
+    Blockers?: BlockerResult[];
+
+    /**
+     * True when nothing was written because this was a preview. The numbers above are what a real
+     * capture WOULD produce — they come from running it and rolling back, not from a second model.
+     */
+    WasPreview?: boolean;
+
+    /**
+     * True when an `IdempotencyKey` matched an existing payment and THIS CALL TOOK NO MONEY. The
+     * fields above describe that original payment, so a retry after a timeout shows the user what
+     * actually happened rather than a spurious failure or a second charge.
+     */
+    WasRetry?: boolean;
+    /** Echoed back so a caller can correlate, and so a retry is legible in a log. */
+    IdempotencyKey?: string | null;
+}
+
+/**
  * Input for `Orders.ConfirmOrder`.
  *
  * The irreversible step. In ONE transaction it saves the draft (if one is
@@ -246,7 +422,11 @@ export interface OrdersFulfillOrderLinesInput {
      * lose the other nine scans.
      */
     AllOrNothing?: boolean;
-    /** Recorded against the order for audit. */
+    /**
+     * A picker's remark. ACCEPTED BUT NOT YET STORED — OrderHeader has no column for it, and adding
+     * one to hold a free-text note is a schema change nobody has asked for. Kept in the contract so
+     * callers can send it, and so the day there is somewhere honest to put it, nothing changes here.
+     */
     Notes?: string;
 }
 
@@ -1653,6 +1833,22 @@ export class OrdersCancelSubscriptionOperation extends BaseRemotableOperation<Ca
     public readonly OperationKey = "Orders.CancelSubscription";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "subscriptions:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.CapturePayment — Capture Payment
+// ============================================================
+/**
+ * Capture Payment
+ * Take a payment and allocate it, in ONE transaction. A payment is a header plus its allocation lines, and PaymentHeaderEntityServer.Lines is a TRANSIENT collection rather than a column - CodeGen cannot emit it client-side, so a browser entity.Save() has nowhere to put the allocations. Same situation Orders.SaveOrder was built for. A two-step create-then-allocate flow was rejected because between the steps there would be a captured payment with no allocations in the database: cash recorded against nothing. The fee is computed server-side and returned, never accepted as input, because a client-supplied fee is a client-supplied general-ledger amount. Over-payment is ACCEPTED and becomes spendable credit (D68) rather than being refused. Preview runs the real capture inside a transaction that always rolls back rather than modelling the arithmetic separately.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.CapturePayment'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersCapturePaymentOperation extends BaseRemotableOperation<OrdersCapturePaymentInput, OrdersCapturePaymentOutput> {
+    public readonly OperationKey = "Orders.CapturePayment";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 

@@ -16,12 +16,12 @@ export class mjBizAppsOrdersRevenueRecognitionTypeFormComponent extends BaseForm
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'recognitionConfiguration', sectionName: 'Recognition Configuration', isExpanded: true },
+            { sectionKey: 'recognitionTypeDetails', sectionName: 'Recognition Type Details', isExpanded: true },
             { sectionKey: 'recognitionLogic', sectionName: 'Recognition Logic', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductTypes', sectionName: 'Product Types', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductTypes', sectionName: 'Product Types', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersRevenueRecognitionSchedules', sectionName: 'Revenue Recognition Schedules', isExpanded: false }
         ]);
     }

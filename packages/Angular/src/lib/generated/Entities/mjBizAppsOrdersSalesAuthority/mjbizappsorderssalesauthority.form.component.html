@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Authority Assignment Section -->
+    <!-- Sales Representative Section -->
     <mj-collapsible-panel
-        SectionKey="authorityAssignment"
-        SectionName="Authority Assignment"
-        Icon="fa fa-user-shield"
+        SectionKey="salesRepresentative"
+        SectionName="Sales Representative"
+        Icon="fa fa-user-tie"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -41,7 +41,7 @@
     <mj-collapsible-panel
         SectionKey="authorityLimits"
         SectionName="Authority Limits"
-        Icon="fa fa-money-bill-wave"
+        Icon="fa fa-balance-scale"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -60,16 +60,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Scope and Permissions Section -->
-    <mj-collapsible-panel
-        SectionKey="scopeAndPermissions"
-        SectionName="Scope and Permissions"
-        Icon="fa fa-tags"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -125,7 +115,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderAdjustments"
         SectionName="Order Adjustments"
-        Icon="fa fa-tags"
+        Icon="fa fa-money-bill-wave"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

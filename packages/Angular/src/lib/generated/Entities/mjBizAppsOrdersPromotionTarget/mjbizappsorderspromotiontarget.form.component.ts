@@ -16,7 +16,7 @@ export class mjBizAppsOrdersPromotionTargetFormComponent extends BaseFormCompone
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'promotionDefinition', sectionName: 'Promotion Definition', isExpanded: true },
-            { sectionKey: 'targetingRules', sectionName: 'Targeting Rules', isExpanded: true },
+            { sectionKey: 'targetSelection', sectionName: 'Target Selection', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

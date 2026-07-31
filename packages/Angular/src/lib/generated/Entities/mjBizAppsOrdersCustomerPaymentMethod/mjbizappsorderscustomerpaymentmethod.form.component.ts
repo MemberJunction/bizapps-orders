@@ -17,7 +17,7 @@ export class mjBizAppsOrdersCustomerPaymentMethodFormComponent extends BaseFormC
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'ownershipInformation', sectionName: 'Ownership Information', isExpanded: true },
-            { sectionKey: 'paymentConfiguration', sectionName: 'Payment Configuration', isExpanded: true },
+            { sectionKey: 'paymentMethodDetails', sectionName: 'Payment Method Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentDetails', sectionName: 'Payment Details', isExpanded: false }
         ]);

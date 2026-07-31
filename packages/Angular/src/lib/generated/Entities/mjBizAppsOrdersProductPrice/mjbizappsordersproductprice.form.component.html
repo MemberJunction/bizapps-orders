@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Identification Section -->
+    <!-- Product Association Section -->
     <mj-collapsible-panel
-        SectionKey="productIdentification"
-        SectionName="Product Identification"
+        SectionKey="productAssociation"
+        SectionName="Product Association"
         Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
@@ -38,10 +38,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Pricing Configuration Section -->
+    <!-- Pricing Logic Section -->
     <mj-collapsible-panel
-        SectionKey="pricingConfiguration"
-        SectionName="Pricing Configuration"
+        SectionKey="pricingLogic"
+        SectionName="Pricing Logic"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -88,10 +88,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Applicability Rules Section -->
+    <!-- Quantity and Validity Section -->
     <mj-collapsible-panel
-        SectionKey="applicabilityRules"
-        SectionName="Applicability Rules"
+        SectionKey="quantityAndValidity"
+        SectionName="Quantity and Validity"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -127,6 +127,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Scheduling and Recurrence Section -->
+    <mj-collapsible-panel
+        SectionKey="schedulingAndRecurrence"
+        SectionName="Scheduling and Recurrence"
+        Icon="fa fa-clock"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -178,11 +188,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Governance and Status Section -->
+    <!-- Rule Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="governanceAndStatus"
-        SectionName="Governance and Status"
-        Icon="fa fa-shield-alt"
+        SectionKey="ruleConfiguration"
+        SectionName="Rule Configuration"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

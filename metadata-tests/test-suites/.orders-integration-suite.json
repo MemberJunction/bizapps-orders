@@ -372,6 +372,17 @@
           "primaryKey": {
             "ID": "094BDC1F-0D08-4A42-8A5A-1546ADEB03AD"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-26 - Capture Payment",
+            "Sequence": 26,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "C826A373-C02F-47E1-B96E-5F573D053679"
+          }
         }
       ]
     },

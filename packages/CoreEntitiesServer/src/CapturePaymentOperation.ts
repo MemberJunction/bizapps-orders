@@ -81,8 +81,18 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             );
         }
 
-        const orgID = input?.BillToOrganizationID ?? null;
-        const personID = input?.BillToPersonID ?? null;
+        // Validated even though these are Set() onto an entity rather than interpolated into a
+        // filter. The guard test enforces "every caller-supplied id is checked" with no exceptions,
+        // which is the right rule: an id that is safe because of where it happens to be used today
+        // stops being safe the moment somebody reads it back in a query.
+        let orgID: string | null = null;
+        let personID: string | null = null;
+        try {
+            orgID = input?.BillToOrganizationID ? RequireUUID(input.BillToOrganizationID, 'BillToOrganizationID') : null;
+            personID = input?.BillToPersonID ? RequireUUID(input.BillToPersonID, 'BillToPersonID') : null;
+        } catch (e) {
+            return this.refuse([this.blocker('BadPayerID', String((e as Error).message))]);
+        }
         if (!!orgID === !!personID) {
             blockers.push(
                 this.blocker(
@@ -136,8 +146,15 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
 
         // ── 2. IDEMPOTENCY ──
         // Checked BEFORE any write. A repeat call returns the ORIGINAL payment rather than taking
-        // money again or reporting a spurious failure. The unique index is what actually makes this
-        // safe under concurrency — this lookup just makes the common case fast and legible.
+        // money again or reporting a spurious failure.
+        //
+        // THIS LOOKUP IS AN OPTIMISATION, NOT THE GUARANTEE — and mutation testing proved it.
+        // Disabling this block alone leaves CP9 passing, because the insert then hits
+        // UX_PaymentHeader_IdempotencyKey and the duplicate-key handler below returns the original
+        // payment anyway. CP9 only fails when BOTH are disabled. The two are deliberately redundant:
+        // the INDEX is what makes a genuine race safe (two concurrent requests, neither having seen
+        // the other's row), while this lookup makes the common case — a user double-clicking a
+        // second later — cheap and legible rather than a caught exception.
         const idempotencyKey = (input?.IdempotencyKey ?? '').trim() || null;
         if (idempotencyKey && !input?.Preview) {
             const existing = await rv.RunView<{ ID: string }>(
@@ -273,6 +290,10 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
     ): Promise<string> {
         const header = await provider.GetEntityObject<BaseEntity>(PAYMENT_HEADER_ENTITY, user);
         header.NewRecord();
+        // A payment number is a cash-receipt document number, minted gap-consciously from the same
+        // PaymentSequence the confirm path and the account-credit path use — one sequence, so the
+        // numbers a customer sees never collide or skip regardless of which door the payment came in.
+        header.Set('PaymentNumber', await this.nextPaymentNumber(provider as unknown as DatabaseProviderBase));
         header.Set('ReceivingCompanyID', ctx.receivingCompanyID);
         header.Set('PaymentTypeID', ctx.paymentTypeID);
         header.Set('Amount', ctx.amount);
@@ -472,6 +493,23 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             entry.Balanced = Math.abs(money(dr - cr)) < 0.005;
         }
         return [...byEntry.values()];
+    }
+
+    /** Gap-conscious payment numbering — the same sequence every other capture path uses. */
+    private async nextPaymentNumber(db: DatabaseProviderBase): Promise<string> {
+        const rows = (await db.ExecuteSQL(`
+            DECLARE @seq TABLE (Seq INT);
+            UPDATE __mj_BizAppsOrders.PaymentSequence WITH (UPDLOCK, HOLDLOCK)
+            SET NextSequenceNumber = NextSequenceNumber + 1
+            OUTPUT deleted.NextSequenceNumber INTO @seq(Seq)
+            WHERE ID = 1;
+            SELECT Seq FROM @seq;`)) as Array<{ Seq: number }>;
+
+        const seq = rows?.[0]?.Seq;
+        if (!seq) {
+            throw new Error('Could not obtain the next payment number — PaymentSequence (ID=1) is missing.');
+        }
+        return `PAY-${String(seq).padStart(6, '0')}`;
     }
 
     private blocker(code: string, message: string, hint?: string): BlockerResult {

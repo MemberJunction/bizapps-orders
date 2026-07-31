@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Type Definition Section -->
+    <!-- Product Type Details Section -->
     <mj-collapsible-panel
-        SectionKey="productTypeDefinition"
-        SectionName="Product Type Definition"
-        Icon="fa fa-tag"
+        SectionKey="productTypeDetails"
+        SectionName="Product Type Details"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -138,11 +138,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- System Metadata Section -->
+    <!-- Configuration Extensions Section -->
     <mj-collapsible-panel
-        SectionKey="systemMetadata"
-        SectionName="System Metadata"
-        Icon="fa fa-cog"
+        SectionKey="configurationExtensions"
+        SectionName="Configuration Extensions"
+        Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -161,6 +161,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- System Metadata Section -->
+    <mj-collapsible-panel
+        SectionKey="systemMetadata"
+        SectionName="System Metadata"
+        Icon="fa fa-cog"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

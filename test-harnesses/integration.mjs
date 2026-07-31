@@ -39,6 +39,7 @@ const ALL_BUNDLES = [
     'gift-cards',
     'bundles',
     'fulfillment',
+    'capture-payment',
     'arithmetic-edges',
     'concurrency',
     'events',

@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-26 - Capture Payment",
+    "Description": "Orders.CapturePayment, the operation the UI was blocked on (CP1-CP12). A payment is a header plus its allocation lines written in ONE transaction, and PaymentHeaderEntityServer.Lines is a TRANSIENT collection rather than a column - CodeGen cannot emit it client-side, so a browser entity.Save() had nowhere to put the allocations and taking a payment in the UI was impossible rather than merely unwired. The checks are weighted toward the decisions where a plausible choice is wrong: over-payment must be ACCEPTED and become spendable credit rather than refused, because the account-credit screen depends on negative balances existing; idempotency must return the ORIGINAL payment rather than a second one or a spurious error; and Preview must run the real capture and roll it back rather than modelling the arithmetic separately, because a separate model eventually disagrees and the disagreement is a balanced journal entry for the wrong amount.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A capture writes the header and its allocation lines together in one transaction; the tender resolves by CODE and an unknown code is refused by name rather than defaulting; the order rollups move and the output reports the same figures read back rather than recomputed; the capture books balanced journal entries so the ledger and the order cannot disagree; an allocation total that does not equal the amount is refused with the shortfall named rather than silently adjusted; a payment splits across two orders and closes both; over-payment is accepted, leaves a negative balance and is flagged as credit; an order belonging to another company is refused by name; a repeated IdempotencyKey returns the original payment with WasRetry set and moves money once; a different key on the same shape takes a second legitimate payment; Preview returns the real numbers and leaves no row behind; and injected or malformed ids are refused at the boundary rather than reaching filter text."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "capture-payment"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "DE4BBE65-AB78-4DFB-A144-FCB261923557"
+  }
+}

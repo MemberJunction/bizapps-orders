@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Order Association Section -->
+    <!-- Order Context Section -->
     <mj-collapsible-panel
-        SectionKey="orderAssociation"
-        SectionName="Order Association"
-        Icon="fa fa-link"
+        SectionKey="orderContext"
+        SectionName="Order Context"
+        Icon="fa fa-shopping-cart"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -29,11 +29,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Charge Configuration Section -->
+    <!-- Charge Classification Section -->
     <mj-collapsible-panel
-        SectionKey="chargeConfiguration"
-        SectionName="Charge Configuration"
-        Icon="fa fa-cog"
+        SectionKey="chargeClassification"
+        SectionName="Charge Classification"
+        Icon="fa fa-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -60,7 +60,7 @@
     <mj-collapsible-panel
         SectionKey="financialDetails"
         SectionName="Financial Details"
-        Icon="fa fa-dollar-sign"
+        Icon="fa fa-money-bill"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -87,6 +87,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ComputedAmount"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -94,7 +102,7 @@
     <mj-collapsible-panel
         SectionKey="taxInformation"
         SectionName="Tax Information"
-        Icon="fa fa-landmark"
+        Icon="fa fa-balance-scale"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -116,34 +124,36 @@
 
     </mj-collapsible-panel>
 
-    <!-- Calculation Audit Section -->
+    <!-- Calculation Details Section -->
     <mj-collapsible-panel
-        SectionKey="calculationAudit"
-        SectionName="Calculation Audit"
-        Icon="fa fa-history"
+        SectionKey="calculationDetails"
+        SectionName="Calculation Details"
+        Icon="fa fa-calculator"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="CalculationSource"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Override Details Section -->
+    <mj-collapsible-panel
+        SectionKey="overrideDetails"
+        SectionName="Override Details"
+        Icon="fa fa-edit"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
             FieldName="IsOverridden"
             Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ComputedAmount"
-            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -178,7 +188,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

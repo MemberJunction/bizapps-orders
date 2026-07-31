@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="subscriptionDetails"
         SectionName="Subscription Details"
-        Icon="fa fa-id-card"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -46,11 +46,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Timeline and Status Section -->
+    <!-- Timeline Section -->
     <mj-collapsible-panel
-        SectionKey="timelineAndStatus"
-        SectionName="Timeline and Status"
-        Icon="fa fa-clock"
+        SectionKey="timeline"
+        SectionName="Timeline"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -66,14 +66,6 @@
             [ShowLabel]="true"
             FieldName="EndDate"
             Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -135,6 +127,24 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Status and Metadata Section -->
+    <mj-collapsible-panel
+        SectionKey="statusAndMetadata"
+        SectionName="Status and Metadata"
+        Icon="fa fa-flag"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
