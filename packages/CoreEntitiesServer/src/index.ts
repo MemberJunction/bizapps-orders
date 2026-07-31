@@ -150,6 +150,26 @@ export type {
 export { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
 
+export {
+    FormatGiftCardCode,
+    GIFT_CARD_ALPHABET,
+    GIFT_CARD_PRODUCT_TYPE_CODE,
+    GiftCardLiability,
+    IsGiftCardCode,
+    IsGiftCardLine,
+    PlanGiftCardIssuance,
+    PlanGiftCardVoid,
+} from './GiftCardBehavior.js';
+export type {
+    GiftCardLineFacts,
+    GiftCardOrderFacts,
+    GiftCardPlan,
+    GiftCardRefusal,
+    PlannedGiftCard,
+} from './GiftCardBehavior.js';
+export { IssueGiftCards } from './GiftCardEngine.js';
+export type { GiftCardOrder, GiftCardOrderLine, GiftCardOutcome } from './GiftCardEngine.js';
+
 // Payment providers (D19/D37) — the pure edge arithmetic, the driver seam, and the drivers.
 export {
     CurrencyExponent,

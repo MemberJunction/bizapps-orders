@@ -38,6 +38,19 @@ export const GL_ROLE = {
      * to Cash and reports the shortfall rather than silently misstating the bank line.
      */
     ProcessingFee: 'Processing Fee',
+    /**
+     * What the company OWES on an unredeemed gift card (D44).
+     *
+     * Selling a gift card earns nothing — money has come in and goods are owed — so the credit leg
+     * is a liability, not revenue. Recognising at issue and again at redemption is the classic
+     * gift-card double-count, and it is invisible in the ledger because both entries balance.
+     *
+     * NOT seeded by accounting's starter roles, so callers must tolerate it failing to resolve. The
+     * fallback is Deferred Revenue, which is the same SHAPE of obligation and keeps the entry
+     * correct and balanced — just coarser than a dedicated card liability. See
+     * OrderJournalEntryFactory, which records that it fell back rather than doing it silently.
+     */
+    GiftCardLiability: 'Gift Card Liability',
 } as const;
 
 export type GLRole = (typeof GL_ROLE)[keyof typeof GL_ROLE];

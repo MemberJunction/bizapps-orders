@@ -132,7 +132,7 @@ export interface OrdersFixture {
     SubscriptionTypeIDs: Map<string, string>;
     /** PaymentType IDs by Code. */
     PaymentTypeIDs: Map<string, string>;
-    ProductTypeIDs: { Simple: string; Subscription: string; Event: string };
+    ProductTypeIDs: { Simple: string; Subscription: string; Event: string; GiftCard: string };
     /** The event a ticket product is for — its dates drive the line's service period (D-EVENT). */
     Event: { StartsAt: Date; EndsAt: Date };
     /**
@@ -356,7 +356,7 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
         RevRecTypeIDs: await codeMap(ctx, `${ORDERS_SCHEMA}.RevenueRecognitionType`),
         SubscriptionTypeIDs: await codeMap(ctx, `${ORDERS_SCHEMA}.SubscriptionType`),
         PaymentTypeIDs: await codeMap(ctx, `${ORDERS_SCHEMA}.PaymentType`),
-        ProductTypeIDs: { Simple: '', Subscription: '', Event: '' },
+        ProductTypeIDs: { Simple: '', Subscription: '', Event: '', GiftCard: '' },
         // A FUTURE, fixed event window. Fixed rather than relative so a recognition date can be
         // asserted exactly; future so the deferral is real rather than already-earned.
         Event: { StartsAt: new Date('2027-04-15T09:00:00Z'), EndsAt: new Date('2027-04-17T17:00:00Z') },
@@ -562,6 +562,15 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
         DefaultEntitlementValidityMode: 'EventWindow',
     });
 
+    // GIFT CARD. The Code — not the name — is what `GiftCardEngine` and the journal-entry factory
+    // key on (D4), so this type is only a gift-card type because of it. UpFront rev-rec is
+    // deliberate: the factory routes a gift-card line to the liability role and skips the
+    // recognition schedule entirely, so the type's rev-rec rule must never get a chance to fire.
+    fixture.ProductTypeIDs.GiftCard = await createProductType(ctx, run, 'Gift Card', {
+        Code: 'GiftCard',
+        DefaultRevenueRecognitionTypeID: rr('UpFront'),
+    });
+
     const catA = await createCategory(ctx, run, fixture.CoA.ID, 'Cat A');
     const catB = await createCategory(ctx, run, fixture.CoB.ID, 'Cat B');
     const catC = await createCategory(ctx, run, fixture.CoC.ID, 'Cat C');
@@ -575,6 +584,11 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
     fixture.Products = {
         /** Co A, UpFront, no subscription — the plain revenue line. */
         WidgetA: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Simple, catA, 'Widget A', rr('UpFront')),
+        /**
+         * A GIFT CARD. Selling it issues a StoredValueAccount and books a LIABILITY, not revenue —
+         * the money is in but the goods are owed, and they are owed on some future order.
+         */
+        GiftCardA: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.GiftCard, catA, 'Gift Card A', rr('UpFront')),
         /** Co B, UpFront — same shape in the second company, for multi-company orders. */
         WidgetB: await createProduct(ctx, run, fixture.CoB.ID, fixture.ProductTypeIDs.Simple, catB, 'Widget B', rr('UpFront')),
         /** Co C, UpFront, but CoC has NO GL links — every confirm containing it must roll back whole. */
@@ -1073,6 +1087,12 @@ async function createProductType(
     run: string,
     label: string,
     opts: {
+        /**
+         * `ProductType.Code`. Usually left unset — the fixture's types are per-run and identified by
+         * ID. It matters for GiftCard, where the CODE is the discriminator the engine keys on (D4),
+         * so a gift-card type without one is just a service with a suggestive name.
+         */
+        Code?: string;
         ProductExtensionEntity?: string;
         OrderLineExtensionEntity?: string;
         DefaultRevenueRecognitionTypeID?: string;
@@ -1087,6 +1107,7 @@ async function createProductType(
     // defaults a real caller gets, not paper over them.
     return createViaEntity(ctx, PRODUCT_TYPE_ENTITY, {
         Name: `${run} ${label}`,
+        Code: opts.Code,
         RequiresFulfillment: false,
         IsActive: true,
         ProductExtensionEntity: opts.ProductExtensionEntity,
@@ -1268,6 +1289,13 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
             (SELECT ID FROM ${ORDERS_SCHEMA}.OrderCharge WHERE OrderHeaderID IN (${orderScope}))`,
         `DELETE FROM ${ORDERS_SCHEMA}.OrderCharge WHERE OrderHeaderID IN (${orderScope})`,
 
+        // Stored-value rows hang off the order line that issued them, so they go before the lines do.
+        `DELETE FROM ${ORDERS_SCHEMA}.StoredValueTransaction WHERE StoredValueAccountID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.StoredValueAccount WHERE IssuedFromOrderLineID IN
+                (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID IN (${orderScope})))`,
+        `DELETE FROM ${ORDERS_SCHEMA}.StoredValueTransaction WHERE RelatedOrderHeaderID IN (${orderScope})`,
+        `DELETE FROM ${ORDERS_SCHEMA}.StoredValueAccount WHERE IssuedFromOrderLineID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID IN (${orderScope}))`,
         `UPDATE ${ORDERS_SCHEMA}.OrderLine SET JournalEntryID=NULL WHERE OrderHeaderID IN (${orderScope})`,
         // Break the bundle self-reference (D45) before the rows go. Strictly this is belt and
         // braces: parent and children always share an OrderHeaderID, so one DELETE removes both

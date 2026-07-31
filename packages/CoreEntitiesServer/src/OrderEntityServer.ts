@@ -52,6 +52,7 @@ import { AllocateProRata, NetAfterDiscount } from './PricingBehavior.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+import { IssueGiftCards } from './GiftCardEngine.js';
 import type { StackingMode } from './PromotionBehavior.js';
 import {
     RunCharges,
@@ -328,6 +329,12 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
                 // And the mirror: a returned line takes its access with it.
                 await this.revokeEntitlementsForReversals(lines, options);
+
+                // GIFT CARDS, alongside entitlements and for the same reason. Selling a gift card
+                // that never mints an instrument has taken money for nothing, so a failure here
+                // rolls the confirm back rather than being logged. Handles both directions: an
+                // ordinary line issues, a reversal line voids what the origin issued.
+                await this.issueGiftCards(lines, options);
             }
 
             await dbProvider.CommitTransaction();
@@ -742,6 +749,48 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 ShipToOrganizationID: l.ShipToOrganizationID ?? null,
             })),
             subs.TermsByLine,
+            provider,
+            user,
+            options,
+        );
+    }
+
+    /**
+     * Mint the stored-value instruments this order's gift-card lines sell (D44).
+     *
+     * Delegates to `GiftCardEngine`; what lives here is the mapping from the order's entities to the
+     * shape the engine takes. The engine is idempotent against the database, so a re-save of an
+     * already confirmed order issues nothing — which matters because a second set of cards would be
+     * free money that reconciles perfectly, with the accounts present and the ledger balanced.
+     *
+     * `IssuingCompanyID` is the ORDER's company rather than any line's. A gift card is a claim on
+     * the entity that sold it, and on a multi-company order the seller is the header's company even
+     * where a line's product belongs to a sibling.
+     */
+    private async issueGiftCards(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        await IssueGiftCards(
+            {
+                ID: this.ID,
+                IssuingCompanyID: this.CompanyID,
+                BillToPersonID: this.BillToPersonID ?? null,
+                BillToOrganizationID: this.BillToOrganizationID ?? null,
+            },
+            lines.map((l) => ({
+                ID: l.ID,
+                ProductID: l.ProductID,
+                Quantity: Number(l.Quantity ?? 0),
+                UnitPrice: Number(l.UnitPrice ?? 0),
+                ReversesOrderLineID:
+                    (l as unknown as { ReversesOrderLineID?: string | null }).ReversesOrderLineID ?? null,
+                ShipToPersonID: l.ShipToPersonID ?? null,
+                ShipToOrganizationID: l.ShipToOrganizationID ?? null,
+            })),
             provider,
             user,
             options,

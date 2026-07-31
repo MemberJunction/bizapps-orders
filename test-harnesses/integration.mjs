@@ -36,6 +36,7 @@ const ALL_BUNDLES = [
     'tax',
     'composition',
     'returns',
+    'gift-cards',
     'arithmetic-edges',
     'concurrency',
     'events',

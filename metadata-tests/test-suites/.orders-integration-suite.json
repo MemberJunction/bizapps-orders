@@ -339,6 +339,17 @@
             "lastModified": "2026-07-30T21:32:28.164Z",
             "checksum": "659e8f5c0a2d3ee199d2c00ee4ee8a5d29c239defe78dead10dc9988667f071e"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-23 - Gift Cards",
+            "Sequence": 23,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "3BD0AC86-C8EE-4C07-BAF4-50488690D586"
+          }
         }
       ]
     },
