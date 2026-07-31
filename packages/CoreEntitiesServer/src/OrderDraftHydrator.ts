@@ -167,6 +167,16 @@ export async function HydrateOrderDraft(
     user: UserInfo,
 ): Promise<HydratedOrder> {
     const order = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(ORDER_HEADER_ENTITY, user);
+    if (!order) {
+        // NAME THE ENTITY. GetEntityObject returns null for an unknown name, and
+        // the next line then throws "Cannot read properties of null (reading
+        // 'NewRecord')" — an error that names neither the entity nor the lookup,
+        // and sends the reader hunting through the whole save path.
+        throw new Error(
+            `Could not create an entity object for "${ORDER_HEADER_ENTITY}". ` +
+                `Either the name is wrong or the entity is not registered with this provider.`,
+        );
+    }
 
     if (draft.Header.OrderHeaderID) {
         // Single-key `Load(id)` is emitted on the generated subclass, not declared
@@ -191,6 +201,12 @@ export async function HydrateOrderDraft(
 
     for (const spec of draft.Lines ?? []) {
         const line = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(ORDER_LINE_ENTITY, user);
+        if (!line) {
+            throw new Error(
+                `Could not create an entity object for "${ORDER_LINE_ENTITY}". ` +
+                    `Either the name is wrong or the entity is not registered with this provider.`,
+            );
+        }
         line.NewRecord();
         line.ProductID = spec.ProductID;
         // Line numbers come from ARRAY ORDER, assigned here rather than sent, so

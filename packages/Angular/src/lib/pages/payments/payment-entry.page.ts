@@ -150,6 +150,52 @@ export interface MJOTenderOption {
 
             <!-- ── Right: what it settles ── -->
             <div class="mjo-pe__right">
+                <div class="mjo-pe__payer">
+                    <div class="mjo-search">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <input
+                            id="mjo-payer-search"
+                            [(ngModel)]="PayerQuery"
+                            (ngModelChange)="OnPayerQuery()"
+                            name="payerSearch"
+                            placeholder="Who is paying? Find a person or organization…"
+                            autocomplete="off"
+                            aria-label="Find the payer">
+                    </div>
+                    @if (Payer) {
+                        <span class="mj-chip mj-chip--brand">
+                            {{ Payer.Name }}
+                            <button type="button" class="mj-why" (click)="ClearPayer()" aria-label="Clear payer">
+                                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                            </button>
+                        </span>
+                    }
+                </div>
+
+                @if (PayerResults.length) {
+                    <div class="mj-typeahead-list is-open" role="listbox">
+                        @for (option of PayerResults; track option.ID) {
+                            <div class="mj-typeahead-item" role="option" (mousedown)="ChoosePayer(option)">
+                                <div class="fe-picker__body">
+                                    <div class="name">{{ option.Name }}</div>
+                                    <div class="sub">{{ option.IsOrganization ? 'Organization' : 'Person' }}</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (!Payer) {
+                    <div class="mj-banner mj-banner--neutral mjo-pe__note">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        <div class="body">
+                            Showing every open order across all customers. Choose who is paying to
+                            narrow it — a payment belongs to one payer, and allocating across
+                            customers is almost always a mistake rather than an intention.
+                        </div>
+                    </div>
+                }
+
                 <mjo-allocation-grid
                     [Orders]="OpenOrders"
                     [Amount]="Amount"
@@ -217,10 +263,17 @@ export interface MJOTenderOption {
         `
             .mjo-pe__result { margin-top: var(--mj-space-4); }
             .mjo-pe__effect { margin-top: 4px; }
+            /*
+             * overflow:auto alone computed to hidden here — the host inherits a clip
+             * from the content area it is mounted into. overflow-y is specific
+             * enough to win, and min-height:0 lets a flex parent actually
+             * give this element a scrollable box rather than stretching it.
+             */
             :host {
                 display: block;
                 height: 100%;
-                overflow: auto;
+                min-height: 0;
+                overflow-y: auto !important;
                 padding: var(--mj-space-6);
             }
             .mjo-pe__split {
@@ -242,11 +295,30 @@ export interface MJOTenderOption {
             .mjo-pe__note {
                 margin-top: var(--mj-space-3);
             }
+            /*
+             * STICKY. With every open order listed the page runs to several
+             * thousand pixels, and the capture button sat at 3947px inside an
+             * 802px viewport — present in the DOM, unreachable in practice. An
+             * action bar that scrolls away is an action nobody can take.
+             */
             .mjo-pe__actions {
+                position: sticky;
+                bottom: 0;
+                z-index: 5;
                 display: flex;
                 align-items: center;
                 gap: var(--mj-space-2);
                 margin-top: var(--mj-space-4);
+                padding: var(--mj-space-3) 0;
+                flex-wrap: wrap;
+                background: var(--mj-bg-page);
+                border-top: 1px solid var(--mj-border-default);
+            }
+            .mjo-pe__payer {
+                display: flex;
+                align-items: center;
+                gap: var(--mj-space-2);
+                margin-bottom: var(--mj-space-3);
                 flex-wrap: wrap;
             }
 
@@ -324,6 +396,64 @@ export class MJOPaymentEntryPageComponent implements OnInit {
     private previewTimer: ReturnType<typeof setTimeout> | null = null;
     public OpenOrders: MJOAllocatableOrder[] = [];
 
+    /* ── Payer ──────────────────────────────────────────────────────────── */
+
+    public PayerQuery = '';
+    public PayerResults: Array<{ ID: string; Name: string; IsOrganization: boolean }> = [];
+    public Payer: { ID: string; Name: string; IsOrganization: boolean } | null = null;
+    private payerTimer: ReturnType<typeof setTimeout> | null = null;
+
+    /**
+     * Find who is paying.
+     *
+     * Without this the grid listed every open order in the business — 67 of them
+     * on this database — and allocating a payment across unrelated customers is
+     * almost always a mistake rather than an intention. A payment belongs to one
+     * payer, so naming them first is the natural order of the task, not a filter
+     * bolted on afterwards.
+     */
+    public OnPayerQuery(): void {
+        if (this.payerTimer) clearTimeout(this.payerTimer);
+        const query = this.PayerQuery;
+        if (query.trim().length < 2) {
+            this.PayerResults = [];
+            return;
+        }
+        this.payerTimer = setTimeout(async () => {
+            const results = await this.data.SearchCustomers(query);
+            this.PayerResults = results.map((r) => ({
+                ID: r.ID,
+                Name: r.Name,
+                IsOrganization: r.IsOrganization,
+            }));
+            this.cdr.detectChanges();
+        }, 300);
+    }
+
+    public async ChoosePayer(option: { ID: string; Name: string; IsOrganization: boolean }): Promise<void> {
+        this.Payer = option;
+        this.PayerQuery = '';
+        this.PayerResults = [];
+        // The allocations belonged to the previous payer's orders; keeping them
+        // would apply this payment to someone else's balance. The amount goes too:
+        // it was defaulted to everything owing across ALL customers, which is not
+        // a number this payer would ever hand over.
+        this.Allocations = {};
+        this.Amount = 0;
+        this.Fee = null;
+        this.NetCash = null;
+        await this.loadOpenOrders();
+        this.cdr.detectChanges();
+    }
+
+    public async ClearPayer(): Promise<void> {
+        this.Payer = null;
+        this.Allocations = {};
+        this.Amount = 0;
+        await this.loadOpenOrders();
+        this.cdr.detectChanges();
+    }
+
     public async ngOnInit(): Promise<void> {
         if (this.Tenders.length && !this.TenderCode) this.TenderCode = this.Tenders[0].Code;
         await this.loadOpenOrders();
@@ -395,7 +525,8 @@ export class MJOPaymentEntryPageComponent implements OnInit {
         return {
             Amount: this.Amount,
             ReceivingCompanyID: first.CompanyID,
-            BillToOrganizationID: this.CustomerID ?? null,
+            BillToOrganizationID: this.Payer?.IsOrganization ? this.Payer.ID : (this.CustomerID ?? null),
+            BillToPersonID: this.Payer && !this.Payer.IsOrganization ? this.Payer.ID : null,
             TenderCode: this.TenderCode,
             PaymentDate: this.PaymentDate,
             Reference: this.Reference || null,
@@ -484,9 +615,16 @@ export class MJOPaymentEntryPageComponent implements OnInit {
     }
 
     private async loadOpenOrders(): Promise<void> {
-        const rows = await this.data.GetOrders({
+        const organizationID = this.Payer?.IsOrganization
+            ? this.Payer.ID
+            : (this.CustomerID ?? undefined);
+        const rows = (await this.data.GetOrders({
             Preset: 'unpaid',
-            BillToOrganizationID: this.CustomerID ?? undefined,
+            BillToOrganizationID: organizationID,
+        })).filter((row) => {
+            if (!this.Payer) return true;
+            const key = this.Payer.IsOrganization ? 'BillToOrganizationID' : 'BillToPersonID';
+            return row[key] === this.Payer.ID;
         });
         const today = new Date().toISOString().slice(0, 10);
         this.OpenOrders = rows.map((row) => ({

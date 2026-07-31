@@ -40,6 +40,7 @@ import type { ResourceData } from '@memberjunction/core-entities';
 import { MJOSectionShellComponent } from './section-shell.component';
 import { MJOConfirmPreflightComponent, type MJOPreflight } from '../panels/confirm-preflight.component';
 import { MJOOrderEntryService } from '../services/order-entry.service';
+import { MJOOrdersDataService } from '../services/orders-data.service';
 import type { OrderDraft } from '@mj-biz-apps/orders-entities';
 import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
 import { MJOOrderEditorPageComponent } from '../pages/orders/order-editor.page';
@@ -127,8 +128,8 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         //
         // A macrotask lands after the cycle completes, so the child's fetch resolves
         // in its own tick and simply re-renders.
-        setTimeout(() => {
-            this.showPage(this.ActivePageId!);
+        setTimeout(async () => {
+            await this.showPage(this.ActivePageId!);
             this.LoadedAt = new Date();
             // Mounting the page and stamping the timestamp both change what the
             // header and the rail render. Writing the DOM here keeps that inside
@@ -140,10 +141,10 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     }
 
     /** Rail click handler. */
-    public OnPageSelected(pageId: string): void {
+    public async OnPageSelected(pageId: string): Promise<void> {
         this.ActivePageId = pageId;
         this.persistPageId(pageId);
-        this.showPage(pageId);
+        await this.showPage(pageId);
         this.cdr.detectChanges();
     }
 
@@ -159,7 +160,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
      * Cached views are detached rather than destroyed, which is what preserves a
      * part-typed order across a trip to another rail item.
      */
-    protected showPage(pageId: string): void {
+    protected async showPage(pageId: string): Promise<void> {
         const host = this.pageHost;
         if (!host) return;
 
@@ -182,7 +183,34 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         }
 
         try {
+            // Load the shared inputs BEFORE constructing the page. A component
+            // created imperatively runs `ngOnInit` on its first change detection,
+            // and fast entry builds its OrderDraft there from `CompanyID` — so an
+            // input that arrives afterwards is an input that arrives too late. The
+            // draft was being built with an empty company, which made every
+            // preview fail validation and left the line "resolving…" forever.
+            const inputs = await this.sharedInputs();
+
+            // A page opened FOR A RECORD needs that record, not a blank one.
+            // Opening an order used to set PendingRecordID and navigate, and the
+            // editor — which only accepts a Draft — was handed an empty one, so
+            // the screen came up blank and the click looked broken.
+            if (this.PendingRecordID && (pageId === 'editor' || pageId === 'document')) {
+                const draft = await this.entry.LoadDraft(this.PendingRecordID, this.data);
+                if (draft) inputs['Draft'] = draft;
+                inputs['OrderID'] = this.PendingRecordID;
+                this.PendingRecordID = null;
+            }
+
             const ref = host.createComponent(type);
+            const instance = ref.instance as Record<string, unknown>;
+            for (const [name, value] of Object.entries(inputs)) {
+                // `setInput` rather than assignment: it marks the view dirty and
+                // runs ngOnChanges, which direct assignment on an imperatively
+                // created component does not.
+                if (name in instance) ref.setInput(name, value);
+            }
+
             this.wirePage(ref);
             this.mounted.set(pageId, ref);
             this.LoadError = null;
@@ -208,6 +236,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
      */
     private wirePage(ref: ComponentRef<unknown>): void {
         const instance = ref.instance as Record<string, unknown>;
+
         const subscriptions: Array<{ unsubscribe(): void }> = [];
 
         const on = <T>(name: string, handler: (value: T) => void): void => {
@@ -233,6 +262,94 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         // long as the section does — but a destroyed section must not leave them
         // holding a reference to it.
         ref.onDestroy(() => subscriptions.forEach((sub) => sub.unsubscribe()));
+    }
+
+    /**
+     * Give a page the data its inputs expect.
+     *
+     * Set by NAME and only when the property exists, because the four sections
+     * host different pages and an absent input is normal rather than an error —
+     * the same shape as the output wiring above.
+     *
+     * The catalog is loaded ONCE per section and shared. Every page that needs it
+     * needs the same list, and re-reading it per page would be a round trip to
+     * produce an answer already in memory.
+     */
+    private async sharedInputs(): Promise<Record<string, unknown>> {  // eslint-disable-line
+        const [Catalog, CompanyID, Tenders] = await Promise.all([
+            this.catalogOptions(),
+            this.defaultCompanyID(),
+            this.tenderOptions(),
+        ]);
+        return { Catalog, CompanyID, Tenders };
+    }
+
+    private catalogCache: Array<Record<string, unknown>> | null = null;
+
+    /** The product picker's options, shaped as it expects them. */
+    private async catalogOptions(): Promise<Array<Record<string, unknown>>> {
+        if (!this.catalogCache) {
+            // The list price shown in the picker comes from the PRICE RULES, not
+            // from the product: StandaloneSellingPrice is null for anything priced
+            // by a rule, and rendering that as $0.00 tells an order taker the item
+            // is free. The rule is the indicative figure; the engine still resolves
+            // the real one on the line.
+            const [products, prices] = await Promise.all([
+                this.data.GetProducts({ MaxRows: 500 }),
+                this.data.GetProductPrices(),
+            ]);
+            const byProduct = new Map<string, number>();
+            for (const price of prices) {
+                const id = String(price['ProductID'] ?? '');
+                if (id && !byProduct.has(id)) byProduct.set(id, Number(price['Amount'] ?? 0));
+            }
+            this.catalogCache = products.map((product) => ({
+                ID: String(product['ID']),
+                Name: String(product['Name'] ?? ''),
+                SKU: String(product['SKU'] ?? ''),
+                TypeName: String(product['ProductType'] ?? ''),
+                CompanyName: String(product['Company'] ?? ''),
+                ListPrice:
+                    Number(product['StandaloneSellingPrice'] ?? 0) ||
+                    byProduct.get(String(product['ID'])) ||
+                    0,
+                Taxable: !!product['IsTaxable'],
+            }));
+        }
+        return this.catalogCache;
+    }
+
+    private companyCache: string | null = null;
+
+    /**
+     * The company a new order belongs to.
+     *
+     * Taken from the catalog rather than asked for: a company with no products
+     * cannot be sold from, so the first product's company is a better default than
+     * an empty picker. A multi-company user changes it on the order.
+     */
+    private async defaultCompanyID(): Promise<string> {
+        if (this.companyCache) return this.companyCache;
+        const products = await this.data.GetProducts({ MaxRows: 1 });
+        this.companyCache = String(products[0]?.['CompanyID'] ?? '');
+        return this.companyCache;
+    }
+
+    private tenderCache: Array<Record<string, unknown>> | null = null;
+
+    /** Tenders a payment can be taken on. */
+    private async tenderOptions(): Promise<Array<Record<string, unknown>>> {
+        if (!this.tenderCache) {
+            const types = await this.data.GetPaymentTypes();
+            this.tenderCache = types.map((type) => ({
+                ID: String(type['ID']),
+                Code: String(type['Code'] ?? ''),
+                Name: String(type['Name'] ?? ''),
+                RequiresReference: !!type['RequiresReference'],
+                RequiresInstrument: !!type['RequiresInstrument'],
+            }));
+        }
+        return this.tenderCache;
     }
 
     /** Remember which record a destination page should open, then go there. */
@@ -285,7 +402,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             this.mounted.delete(pageId);
             cached.destroy();
         }
-        this.showPage(pageId);
+        void this.showPage(pageId);
         this.LoadedAt = new Date();
     }
 
@@ -298,6 +415,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     /* ── Confirm pre-flight ─────────────────────────────────────────────── */
 
     private readonly entry = inject(MJOOrderEntryService);
+    private readonly data = inject(MJOOrdersDataService);
 
     /** The pre-flight being shown, or null when the overlay is closed. */
     public Preflight: MJOPreflight | null = null;

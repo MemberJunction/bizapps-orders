@@ -48,6 +48,7 @@ export const MJO_ENTITIES = {
     Promotion: 'MJ_BizApps_Orders: Promotions',
     PriceTier: 'MJ_BizApps_Orders: Price Tiers',
     OrderLineDimension: 'MJ_BizApps_Orders: Order Line Dimensions',
+    PaymentType: 'MJ_BizApps_Orders: Payment Types',
     SubscriptionTerm: 'MJ_BizApps_Orders: Subscription Terms',
     SubscriptionEvent: 'MJ_BizApps_Orders: Subscription Events',
     ChargeType: 'MJ_BizApps_Orders: Charge Types',
@@ -65,6 +66,17 @@ export const MJO_ENTITIES = {
  * Note the separator: Orders and Accounting use UNDERSCORES in the prefix, while
  * Common uses DOTS. It reads like a typo every time and is not one.
  */
+/**
+ * Entities read from the COMMON app — the shared party model.
+ *
+ * Note the separator: Common uses DOTS where Orders and Accounting use
+ * underscores. It reads like a typo every time and is not one.
+ */
+export const MJO_COMMON_ENTITIES = {
+    Organization: 'MJ.BizApps.Common: Organizations',
+    Person: 'MJ.BizApps.Common: People',
+} as const;
+
 export const MJO_ACCOUNTING_ENTITIES = {
     TaxJurisdiction: 'MJ_BizApps_Accounting: Tax Jurisdictions',
     TaxRate: 'MJ_BizApps_Accounting: Tax Rates',
@@ -419,6 +431,71 @@ export class MJOOrdersDataService {
             MJO_ENTITIES.OrderLineDimension,
             [`OrderLineID IN (${ids.map((id) => `'${id}'`).join(',')})`],
             'Dimension',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * Customers matching a query — organizations and people together.
+     *
+     * BOTH are searched because an order can be billed to either, and making the
+     * user choose which KIND of party they are looking for before they have found
+     * it is a question the screen can answer itself.
+     */
+    public async SearchCustomers(
+        query: string,
+        user?: UserInfo,
+    ): Promise<Array<{ ID: string; Name: string; IsOrganization: boolean; Email: string | null }>> {
+        const text = query.trim();
+        if (text.length < 2) return [];
+        const escaped = text.replace(/'/g, "''");
+
+        const [orgs, people] = await Promise.all([
+            this.run<Record<string, unknown>>(
+                MJO_COMMON_ENTITIES.Organization,
+                [`Name LIKE '%${escaped}%'`],
+                'Name',
+                20,
+                user,
+            ),
+            this.run<Record<string, unknown>>(
+                MJO_COMMON_ENTITIES.Person,
+                [`(FirstName LIKE '%${escaped}%' OR LastName LIKE '%${escaped}%' OR Email LIKE '%${escaped}%')`],
+                'LastName',
+                20,
+                user,
+            ),
+        ]);
+
+        return [
+            ...orgs.map((o) => ({
+                ID: String(o['ID']),
+                Name: String(o['Name'] ?? ''),
+                IsOrganization: true,
+                Email: (o['Email'] as string) ?? null,
+            })),
+            ...people.map((p) => ({
+                ID: String(p['ID']),
+                Name: [p['FirstName'], p['LastName']].filter(Boolean).join(' ').trim() || String(p['Email'] ?? ''),
+                IsOrganization: false,
+                Email: (p['Email'] as string) ?? null,
+            })),
+        ];
+    }
+
+    /**
+     * Tenders a payment can be taken on, in the order they should be offered.
+     *
+     * Reversal types are excluded because they are not something a person CHOOSES
+     * — a refund creates one, and offering it here would let someone record a
+     * reversal with nothing to reverse.
+     */
+    public async GetPaymentTypes(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.PaymentType,
+            [`IsActive = 1`, `IsReversal = 0`],
+            'Sequence',
             undefined,
             user,
         );
