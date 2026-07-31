@@ -45,6 +45,7 @@ export const MJO_ENTITIES = {
     PriceList: 'MJ_BizApps_Orders: Price Lists',
     ProductPrice: 'MJ_BizApps_Orders: Product Prices',
     Promotion: 'MJ_BizApps_Orders: Promotions',
+    PriceTier: 'MJ_BizApps_Orders: Price Tiers',
     ChargeType: 'MJ_BizApps_Orders: Charge Types',
     TaxExemption: 'MJ_BizApps_Orders: Customer Tax Exemptions',
 } as const;
@@ -327,6 +328,33 @@ export class MJOOrdersDataService {
             // whole query — so the promotions screen showed "No promotions", which
             // reads as an empty catalog rather than a broken one.
             'EffectiveFrom DESC',
+            undefined,
+            user,
+        );
+    }
+
+    /** Price lists — the named sets a customer can be assigned to. */
+    public async GetPriceLists(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.PriceList,
+            [],
+            'Name',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * Quantity bands, in the order they are read.
+     *
+     * A band belongs to a PRICE, not a product: the same product can be banded
+     * differently on two price lists, which is the point of having price lists.
+     */
+    public async GetPriceTiers(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.PriceTier,
+            [],
+            'SortOrder',
             undefined,
             user,
         );
