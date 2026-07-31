@@ -1343,6 +1343,25 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
 
+        // ENTITLEMENT GRANTS FIRST, before anything they point at.
+        //
+        // A grant references an OrderLine, a Subscription, a SubscriptionTerm and a
+        // ProductEntitlement — four FKs into rows this sweep is about to remove. Missing it does not
+        // fail loudly: the deletes are individually caught, so the FIRST conflict silently aborts
+        // the REST of the cascade and the whole fixture run survives. That is how two runs' worth of
+        // review data ended up in the database looking like one, with the seeder reporting success.
+        //
+        // Scoped by ORDER LINE rather than by company, because that is the link a grant always has —
+        // the subscription and term references are optional.
+        `DELETE FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE OrderLineID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID IN (${orderScope}))`,
+        // And any left pointing at this run's subscriptions or templates by another path.
+        `DELETE FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.Subscription WHERE CompanyID IN (${companies}))`,
+        `DELETE FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE ProductEntitlementID IN
+            (SELECT ID FROM ${ORDERS_SCHEMA}.ProductEntitlement WHERE ProductID IN
+                (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies})))`,
+
         // Money DETAIL that hangs off the lines — price components, adjustments and charges with
         // their allocations. These are what a line is made of, so they go before it.
         `DELETE FROM ${ORDERS_SCHEMA}.OrderLinePriceComponent WHERE OrderLineID IN

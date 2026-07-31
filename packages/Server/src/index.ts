@@ -9,6 +9,7 @@
 // Import entity and action packages to trigger @RegisterClass decorators
 import '@mj-biz-apps/orders-entities';
 import '@mj-biz-apps/orders-actions';
+import { LoadGenerateInvoiceAction } from '@mj-biz-apps/orders-actions';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -32,6 +33,7 @@ import {
     LoadGetFulfillmentQueueOperation,
     LoadFulfillOrderLinesOperation,
     LoadCapturePaymentOperation,
+    LoadCreateOrderInStateOperation,
     LoadDefaultPriceResolver,
     LoadPromotionEngine,
     LoadTaxResolver,
@@ -89,6 +91,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
     LoadCapturePaymentOperation(); // 'Orders.CapturePayment' — header + allocations in ONE transaction
+    LoadCreateOrderInStateOperation(); // 'Orders.CreateOrderInState' — runs the REAL confirm, then advances
     LoadDefaultPriceResolver();        // the data-driven price resolver the walk falls back to (D69)
     LoadPromotionEngine();             // the promotion qualifier plugin seam (D70)
     LoadTaxResolver();                 // the address -> jurisdiction seam (D72)
@@ -105,4 +108,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadManualPaymentProvider();       // cheque, wire, cash — no gateway to call
     LoadStoredValuePaymentProvider();  // gift cards and account credit, one driver (D38/D68)
     LoadEnvironmentSecretResolver();   // the default CredentialsRef -> env lookup; replaceable
+
+    // Actions. Same tree-shaking hazard as the operations above: without the anchor the action row
+    // exists in metadata and `ActionEngine` finds nothing registered under its DriverClass.
+    LoadGenerateInvoiceAction();       // 'Orders.GenerateInvoice' — an order, rendered (D-INV)
 }

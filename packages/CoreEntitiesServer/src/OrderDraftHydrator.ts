@@ -27,7 +27,16 @@
 import type { BaseEntity, IMetadataProvider, UserInfo } from '@memberjunction/core';
 
 /** MJ entity names. Centralised so a rename is one edit rather than a search. */
-export const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Orders';
+// 'Order Headers', NOT 'Orders'. The entity is named for its TABLE (OrderHeader), and the shorter
+// name looks so much more natural that it has now been invented independently three times: here,
+// in PreviewConfirm, and in the UI's MJO_ENTITIES.
+//
+// It fails at RUNTIME and quietly: GetEntityObject returns null and the next line throws
+// "Cannot read properties of null (reading 'NewRecord')", naming neither the entity nor the lookup.
+// Every operation built on this hydrator — SaveOrder, PreviewOrder, ConfirmOrder — was unusable
+// because of this one string, and nothing caught it because every integration check reaches the
+// engine through the order-builder rather than through the operations the UI actually calls.
+export const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 export const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
 /**
@@ -158,6 +167,16 @@ export async function HydrateOrderDraft(
     user: UserInfo,
 ): Promise<HydratedOrder> {
     const order = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(ORDER_HEADER_ENTITY, user);
+    if (!order) {
+        // NAME THE ENTITY. GetEntityObject returns null for an unknown name, and
+        // the next line then throws "Cannot read properties of null (reading
+        // 'NewRecord')" — an error that names neither the entity nor the lookup,
+        // and sends the reader hunting through the whole save path.
+        throw new Error(
+            `Could not create an entity object for "${ORDER_HEADER_ENTITY}". ` +
+                `Either the name is wrong or the entity is not registered with this provider.`,
+        );
+    }
 
     if (draft.Header.OrderHeaderID) {
         // Single-key `Load(id)` is emitted on the generated subclass, not declared
@@ -182,6 +201,12 @@ export async function HydrateOrderDraft(
 
     for (const spec of draft.Lines ?? []) {
         const line = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(ORDER_LINE_ENTITY, user);
+        if (!line) {
+            throw new Error(
+                `Could not create an entity object for "${ORDER_LINE_ENTITY}". ` +
+                    `Either the name is wrong or the entity is not registered with this provider.`,
+            );
+        }
         line.NewRecord();
         line.ProductID = spec.ProductID;
         // Line numbers come from ARRAY ORDER, assigned here rather than sent, so
@@ -238,9 +263,16 @@ function applyHeader(order: BaseEntity & Record<string, unknown>, header: Hydrat
 
     assign('CompanyID', header.CompanyID);
     assign('OrderType', header.OrderType ?? 'Sale');
-    // A stated order date wins; otherwise the engine's default stands. Backdating
-    // is allowed and unguarded — the entry bears whatever date the order carries.
-    if (header.OrderDate) assign('OrderDate', new Date(header.OrderDate));
+    // A stated order date wins; otherwise TODAY.
+    //
+    // The previous comment said "the engine's default stands", and there is no such default —
+    // OrderDate is NOT NULL and nothing fills it, so a draft that omitted the date failed at save
+    // with "Order Date cannot be null". Combined with the entity-name defect above, that meant every
+    // operation built on this hydrator refused a perfectly ordinary draft.
+    //
+    // Backdating stays allowed and unguarded: the entry bears whatever date the order carries, which
+    // is what Orders.CreateOrderInState depends on for recording something that already happened.
+    assign('OrderDate', header.OrderDate ? new Date(header.OrderDate) : new Date());
 
     assign('BillToPersonID', header.BillToPersonID);
     assign('BillToOrganizationID', header.BillToOrganizationID);

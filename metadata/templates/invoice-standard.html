@@ -1,0 +1,536 @@
+{#
+  The standard invoice, quote and credit memo — one template for all three, because they are the
+  same document with different words on it.
+
+  EDIT THIS FILE, NOT THE CODE. It is stored as an MJ Template Content row, so changing the wording,
+  the colours or the order of the blocks needs no rebuild and no deploy: edit here, push metadata,
+  and the next render picks it up. That is the whole reason the HTML lives in the database.
+
+  IT DOES NO ARITHMETIC. Every number arrives already formatted (`AmountText` beside `Amount`), so
+  there is no way for the page to disagree with the ledger about what a line comes to. If you need a
+  figure that is not here, add it in `InvoiceDisplay.ts` where it can be tested — do not compute it
+  in the markup.
+
+  IT IS SELF-CONTAINED ON PURPOSE. No external stylesheet, no webfont, no image host. This HTML gets
+  handed to a headless browser for PDF, pasted into an email body, and opened straight from disk;
+  every one of those breaks the moment it needs to fetch something.
+
+  IT COMMITS TO PAPER. The sheet is white in every colour scheme. A bill rendered dark is not a
+  considered dark mode, it is a bill nobody can print — so only the surround around the sheet
+  follows the viewer's theme.
+
+  Variables: `doc` is a DisplayInvoice (see InvoiceDisplay.ts), `options` carries render flags.
+#}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ doc.Kind }} {{ doc.DocumentNumber }} — {{ doc.Issuer.Name }}</title>
+<style>
+  :root {
+    --ink:        #111820;
+    --ink-soft:   #3d4753;
+    --muted:      #6b7681;
+    --navy:       #092340;
+    --rule:       #e2e6eb;
+    --rule-firm:  #c3cad2;
+    --paper:      #ffffff;
+    --surround:   #eceef1;
+    --overdue:    #9d2f1f;
+    --settled:    #2f6f4f;
+    --credit:     #1f5f7a;
+
+    --sheet-w:    8.5in;
+    --pad:        0.72in;
+  }
+
+  /* Only the surround follows the viewer's theme. The sheet is paper. */
+  @media (prefers-color-scheme: dark) { :root { --surround: #14181d; } }
+  :root[data-theme="dark"]  { --surround: #14181d; }
+  :root[data-theme="light"] { --surround: #eceef1; }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--surround);
+    color: var(--ink);
+    font: 400 12.5px/1.55 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sheet {
+    background: var(--paper);
+    width: var(--sheet-w);
+    max-width: 100%;
+    margin: 28px auto;
+    padding: var(--pad);
+    box-shadow: 0 1px 2px rgba(9,35,64,.10), 0 10px 30px rgba(9,35,64,.08);
+    position: relative;
+  }
+
+  /* ── Masthead ────────────────────────────────────────────────────────── */
+
+  .masthead {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 32px;
+    padding-bottom: 18px;
+    border-bottom: 2px solid var(--navy);
+  }
+
+  .issuer-name {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    font-size: 21px;
+    font-weight: 600;
+    letter-spacing: .005em;
+    color: var(--navy);
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+
+  .issuer-detail { color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+  .issuer-detail div + div { margin-top: 1px; }
+
+  .docmeta { text-align: right; flex: 0 0 auto; min-width: 2.5in; }
+
+  .doc-kind {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    font-size: 25px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--navy);
+    line-height: 1;
+    margin: 0;
+  }
+
+  .doc-number {
+    font-size: 15px;
+    color: var(--ink-soft);
+    letter-spacing: .02em;
+    margin-top: 5px;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 2px 14px;
+    justify-content: end;
+    margin: 12px 0 0;
+    font-size: 11.5px;
+  }
+  .meta-grid dt { color: var(--muted); text-align: right; }
+  .meta-grid dd { margin: 0; text-align: right; color: var(--ink); }
+
+  /* ── Status chips ────────────────────────────────────────────────────── */
+
+  .chips { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; margin-top: 10px; }
+  .chip {
+    font-size: 10px;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    font-weight: 600;
+    padding: 3px 8px;
+    border: 1px solid var(--rule-firm);
+    border-radius: 2px;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .chip--overdue { color: var(--overdue); border-color: var(--overdue); }
+  .chip--settled { color: var(--settled); border-color: var(--settled); }
+  .chip--credit  { color: var(--credit);  border-color: var(--credit); }
+
+  /* ── Parties ─────────────────────────────────────────────────────────── */
+
+  .parties {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 36px;
+    margin: 26px 0 24px;
+  }
+  .party-label {
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 5px;
+  }
+  .party-name { font-weight: 600; color: var(--ink); }
+  .party-body { color: var(--ink-soft); font-size: 12px; }
+
+  .banner {
+    border-left: 3px solid var(--credit);
+    background: #f3f8fa;
+    padding: 10px 14px;
+    margin: 0 0 22px;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  .banner strong { color: var(--ink); }
+
+  .banner--warn { border-left-color: var(--overdue); background: #fbf3f1; }
+
+  /* ── Lines ───────────────────────────────────────────────────────────── */
+
+  table.lines { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+
+  table.lines thead th {
+    font-size: 10px;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+    text-align: left;
+    padding: 0 0 7px;
+    border-bottom: 1px solid var(--rule-firm);
+    white-space: nowrap;
+  }
+
+  table.lines td {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+
+  .col-n    { width: 26px; color: var(--muted); font-size: 11px; }
+  .col-qty  { width: 58px; }
+  .col-unit { width: 88px; }
+  .col-disc { width: 92px; }
+  .col-amt  { width: 104px; }
+  .num      { text-align: right; white-space: nowrap; }
+
+  .item-name { font-weight: 600; color: var(--ink); }
+  .item-note { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .item-desc { color: var(--ink-soft); font-size: 11.5px; margin-top: 2px; }
+
+  tr.child td { border-bottom: 1px solid var(--rule); }
+  tr.child .item-name { font-weight: 400; color: var(--ink-soft); }
+  .child-indent { padding-left: 16px; border-left: 2px solid var(--rule); }
+  .included { color: var(--muted); font-style: italic; font-size: 11px; }
+
+  /* ── Ladder ──────────────────────────────────────────────────────────── */
+
+  .totals { display: flex; justify-content: flex-end; margin-top: 18px; }
+  .ladder { width: 3.4in; max-width: 100%; }
+
+  .ladder-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0;
+    font-size: 12px;
+  }
+  .ladder-row .label { color: var(--ink-soft); }
+  .ladder-row .label .note { color: var(--muted); font-size: 11px; margin-left: 5px; }
+  .ladder-row .amt { white-space: nowrap; }
+
+  .ladder-row.is-discount .label,
+  .ladder-row.is-discount .amt { color: var(--settled); }
+  .ladder-row.is-payment  .label,
+  .ladder-row.is-payment  .amt { color: var(--settled); }
+
+  .ladder-row.is-total {
+    border-top: 1px solid var(--rule-firm);
+    margin-top: 6px;
+    padding-top: 8px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .due-block {
+    border-top: 2px solid var(--navy);
+    margin-top: 10px;
+    padding-top: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+  }
+  .due-label {
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .due-amount {
+    font-size: 23px;
+    font-weight: 600;
+    color: var(--navy);
+    letter-spacing: -.01em;
+  }
+  .due-amount.is-overdue { color: var(--overdue); }
+  .due-amount.is-credit  { color: var(--credit); }
+  .due-when { text-align: right; font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .due-when.is-overdue { color: var(--overdue); font-weight: 600; }
+
+  /* ── Footer ──────────────────────────────────────────────────────────── */
+
+  .foot {
+    margin-top: 34px;
+    padding-top: 16px;
+    border-top: 1px solid var(--rule);
+    font-size: 11.5px;
+    color: var(--ink-soft);
+  }
+  .foot strong { color: var(--ink); }
+  .foot p { margin: 0 0 9px; }
+
+  .colophon {
+    display: flex;
+    gap: 26px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+    color: var(--muted);
+    font-size: 10.5px;
+  }
+
+  .diagnostics {
+    margin-top: 22px;
+    border: 1px dashed var(--overdue);
+    padding: 10px 14px;
+    font-size: 11px;
+    color: var(--overdue);
+  }
+  .diagnostics ul { margin: 6px 0 0; padding-left: 18px; }
+
+  /* ── Stamp ───────────────────────────────────────────────────────────── */
+
+  .stamp {
+    position: absolute;
+    top: 1.7in;
+    right: 0.9in;
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-size: 40px;
+    font-weight: 600;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--settled);
+    border: 3px solid var(--settled);
+    border-radius: 4px;
+    padding: 6px 18px 8px;
+    opacity: .22;
+    transform: rotate(-11deg);
+    pointer-events: none;
+  }
+
+  /* ── Print ───────────────────────────────────────────────────────────── */
+
+  @page { size: Letter; margin: 0.55in; }
+
+  @media print {
+    html, body { background: #fff; }
+    .sheet {
+      width: auto;
+      margin: 0;
+      padding: 0;
+      box-shadow: none;
+    }
+    /* Repeat the column headings on every page — a second page of unlabelled
+       numbers is where a reader loses track of which column is which. */
+    thead { display: table-header-group; }
+    tr, .ladder, .due-block, .foot { break-inside: avoid; }
+    .masthead { break-after: avoid; }
+    .stamp { opacity: .3; }
+  }
+
+  @media (max-width: 700px) {
+    .sheet { padding: 22px; margin: 0; box-shadow: none; }
+    .masthead, .parties { grid-template-columns: 1fr; flex-direction: column; }
+    .docmeta, .meta-grid, .chips { text-align: left; justify-content: flex-start; }
+    .meta-grid { justify-content: start; }
+    .meta-grid dt, .meta-grid dd { text-align: left; }
+    .ladder { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+{% macro lineRow(row, isChild) %}
+<tr class="{{ 'child' if isChild else 'top' }}">
+  <td class="col-n">{{ '' if isChild else row.LineNumber }}</td>
+  <td>
+    <div class="{{ 'child-indent' if isChild }}">
+      <div class="item-name">{{ row.ProductName }}</div>
+      {% if row.ProductSKU %}<div class="item-note">{{ row.ProductSKU }}</div>{% endif %}
+      {% if row.Description %}<div class="item-desc">{{ row.Description }}</div>{% endif %}
+      {% if row.ServicePeriodText %}<div class="item-note">Service period {{ row.ServicePeriodText }}</div>{% endif %}
+      {% if row.ReversesOrderLineID %}<div class="item-note">Returned against the original sale</div>{% endif %}
+    </div>
+  </td>
+  <td class="num col-qty">{{ row.QuantityText }}</td>
+  <td class="num col-unit">{{ row.UnitPriceText }}</td>
+  <td class="num col-disc">{{ row.DiscountText }}</td>
+  <td class="num col-amt">
+    {% if row.IncludedInParent %}<span class="included">included</span>{% else %}{{ row.AmountText }}{% endif %}
+  </td>
+</tr>
+{% for child in row.Children %}{{ lineRow(child, true) }}{% endfor %}
+{% endmacro %}
+
+<div class="sheet">
+
+  {% if doc.IsSettled %}<div class="stamp">Paid</div>{% endif %}
+
+  <header class="masthead">
+    <div>
+      <h1 class="issuer-name">{{ doc.Issuer.Name }}</h1>
+      <div class="issuer-detail">
+        {% for line in doc.Issuer.AddressLines %}<div>{{ line }}</div>{% endfor %}
+        {% if doc.Issuer.Email %}<div>{{ doc.Issuer.Email }}</div>{% endif %}
+        {% if doc.Issuer.Phone %}<div>{{ doc.Issuer.Phone }}</div>{% endif %}
+        {% if doc.Issuer.Website %}<div>{{ doc.Issuer.Website }}</div>{% endif %}
+        {% if doc.Issuer.TaxID %}<div>Tax ID {{ doc.Issuer.TaxID }}</div>{% endif %}
+      </div>
+    </div>
+
+    <div class="docmeta">
+      <div class="doc-kind">{{ doc.Kind }}</div>
+      <div class="doc-number">{{ doc.DocumentNumber }}</div>
+
+      <dl class="meta-grid">
+        <dt>{{ 'Issued' if doc.Kind == 'Credit Memo' else 'Date' }}</dt><dd>{{ doc.OrderDateText }}</dd>
+        {% if doc.DueDateText and doc.Kind == 'Invoice' %}<dt>Due</dt><dd>{{ doc.DueDateText }}</dd>{% endif %}
+        <dt>Terms</dt><dd>{{ doc.TermsLabel }}</dd>
+        {% if doc.ExternalDocumentNumber %}<dt>Your ref</dt><dd>{{ doc.ExternalDocumentNumber }}</dd>{% endif %}
+        {% if doc.ReversesOrderNumber %}<dt>Against</dt><dd>{{ doc.ReversesOrderNumber }}</dd>{% endif %}
+        {% if doc.DocumentNumber != doc.OrderNumber %}<dt>Order</dt><dd>{{ doc.OrderNumber }}</dd>{% endif %}
+      </dl>
+
+      <div class="chips">
+        {% if doc.Kind == 'Credit Memo' %}<span class="chip chip--credit">Credit</span>
+        {% elif doc.IsSettled %}<span class="chip chip--settled">Paid in full</span>
+        {% elif doc.IsOverdue %}<span class="chip chip--overdue">{{ doc.DuePhrase }}</span>
+        {% else %}<span class="chip">{{ doc.PaymentStatusLabel }}</span>{% endif %}
+        {% if doc.CurrencyCode %}<span class="chip">{{ doc.CurrencyCode }}</span>{% endif %}
+      </div>
+    </div>
+  </header>
+
+  <div class="parties">
+    <div>
+      <div class="party-label">{{ 'Credit to' if doc.Kind == 'Credit Memo' else 'Bill to' }}</div>
+      <div class="party-body">
+        {% if doc.BillTo.Name %}<div class="party-name">{{ doc.BillTo.Name }}</div>{% endif %}
+        {% if doc.BillTo.AttentionOf %}<div>Attn: {{ doc.BillTo.AttentionOf }}</div>{% endif %}
+        {% for line in doc.BillTo.AddressLines %}<div>{{ line }}</div>{% endfor %}
+        {% if doc.BillTo.Email %}<div>{{ doc.BillTo.Email }}</div>{% endif %}
+      </div>
+    </div>
+    {% if doc.ShipTo %}
+    <div>
+      <div class="party-label">Ship to</div>
+      <div class="party-body">
+        {% if doc.ShipTo.Name %}<div class="party-name">{{ doc.ShipTo.Name }}</div>{% endif %}
+        {% for line in doc.ShipTo.AddressLines %}<div>{{ line }}</div>{% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if doc.ReversesOrderNumber %}
+  <div class="banner">
+    <strong>This credit memo reverses {{ doc.ReversesOrderNumber }}.</strong>
+    {{ doc.ReversalReason if doc.ReversalReason else '' }}
+  </div>
+  {% endif %}
+
+  {% if doc.Description %}
+  <div class="banner">{{ doc.Description }}</div>
+  {% endif %}
+
+  <table class="lines">
+    <thead>
+      <tr>
+        <th class="col-n">#</th>
+        <th>Description</th>
+        <th class="num col-qty">Qty</th>
+        <th class="num col-unit">Unit</th>
+        <th class="num col-disc">Discount</th>
+        <th class="num col-amt">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in doc.Rows %}{{ lineRow(row, false) }}{% endfor %}
+      {% if doc.Rows.length == 0 %}
+      <tr><td colspan="6" class="item-note" style="padding:16px 0">This {{ doc.Kind|lower }} has no lines.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div class="ladder">
+      {# The ladder's own Due row is skipped here: the headline block below is the same figure, and
+         an email client that strips the stylesheet would otherwise show 'Amount due' twice. The
+         test is INSIDE the loop on purpose — Nunjucks has no Jinja-style `for x in y if cond`, and
+         writing one parses cleanly while filtering nothing. #}
+      {% for entry in doc.Ladder %}
+      {% if entry.Kind != 'Due' %}
+      <div class="ladder-row is-{{ entry.Kind|lower }}">
+        <span class="label">{{ entry.Label }}{% if entry.Note %}<span class="note">{{ entry.Note }}</span>{% endif %}</span>
+        <span class="amt">{{ entry.AmountText }}</span>
+      </div>
+      {% endif %}
+      {% endfor %}
+
+      <div class="due-block">
+        <span class="due-label">{{ doc.DueLabel }}</span>
+        <span class="due-amount {{ 'is-overdue' if doc.IsOverdue }}{{ 'is-credit' if doc.Kind == 'Credit Memo' }}">{{ doc.AmountDueText }}</span>
+      </div>
+      {% if doc.DuePhrase %}
+      <div class="due-when {{ 'is-overdue' if doc.IsOverdue }}">{{ doc.DuePhrase }}{% if doc.DueDateText %} — {{ doc.DueDateText }}{% endif %}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="foot">
+    {% if doc.Kind == 'Credit Memo' %}
+      <p><strong>How to use this credit.</strong> Apply it against another invoice from
+      {{ doc.Issuer.Name }}, or ask us to refund it to the original payment method. It does not expire.</p>
+    {% elif doc.Kind == 'Quote' %}
+      <p><strong>This is a quote, not a bill.</strong> Nothing is owed and nothing has been charged.
+      Prices and availability are as at {{ doc.OrderDateText }}.</p>
+    {% elif doc.IsSettled %}
+      <p><strong>Paid in full — thank you.</strong> Nothing further is due on this invoice.</p>
+    {% else %}
+      <p><strong>How to pay.</strong> Please reference <strong>{{ doc.DocumentNumber }}</strong> on your remittance so we
+      can match it to your account.{% if doc.Issuer.AddressLines.length %} Cheques payable to {{ doc.Issuer.Name }} at the
+      address above.{% endif %} For bank transfer or card, reply to this invoice and we will send details.</p>
+    {% endif %}
+
+    {% if doc.Payments.length %}
+    <p>Received against this {{ doc.Kind|lower }}:
+      {% for payment in doc.Payments %}{{ payment.PaymentNumber }} ({{ payment.PaymentDateText }}) {{ payment.AmountText }}{{ '; ' if not loop.last }}{% endfor %}.</p>
+    {% endif %}
+
+    <p>Questions? Reply with <strong>{{ doc.DocumentNumber }}</strong> in the subject.</p>
+
+    <div class="colophon">
+      <span>{{ doc.DocumentNumber }}</span>
+      <span>{{ doc.Issuer.Name }}</span>
+      <span>Generated {{ doc.GeneratedOnText }}</span>
+    </div>
+  </div>
+
+  {#
+    Never shown to a customer. `Notes` is where the builder records money it had to place by
+    judgement rather than by allocation, and a ladder that failed to reach its own total. Turn it on
+    with ShowDiagnostics when you are checking a document, not when you are sending one.
+  #}
+  {% if options and options.ShowDiagnostics and doc.Notes.length %}
+  <div class="diagnostics">
+    <strong>Diagnostics — not for the customer</strong>
+    <ul>{% for issue in doc.Notes %}<li>{{ issue }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+</div>
+</body>
+</html>

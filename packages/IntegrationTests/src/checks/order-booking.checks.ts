@@ -27,6 +27,7 @@ import {
 import {
     ACCT_SCHEMA,
     CreateOrdersFixture,
+    CreateProductPrice,
     Fx,
     InRolledBackTransaction,
     NormID,
@@ -176,6 +177,62 @@ export const OrderBookingChecks: NamedCheck[] = [
                     balances.every((b) => Number(b.D) > 0),
                     `an entry with zero debits is not a real entry: ${JSON.stringify(balances)}`,
                 );
+            }),
+    },
+    {
+        Id: 'order-booking.OB10',
+        Name: 'OB10: the booking debits reconcile against the ORDER\'s own totals',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // WHY THIS IS NOT OB4. OB4 proves each entry balances INTERNALLY — debits equal
+                // credits. An entry can balance perfectly and be for the wrong AMOUNT: book 90
+                // against a 100 line and Dr 90 / Cr 90 is still a balanced entry, still posted,
+                // still plausible. Nothing in OB1-OB9 would notice, because every one of them asks
+                // about the entry's shape rather than its size.
+                //
+                // The receivable is the anchor. What the order says the customer owes must equal
+                // what the ledger says we are owed, or the two records of the same fact disagree —
+                // which is the one thing a general ledger exists to prevent.
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    ShipToAddressID: f.Tax.AddressIDs.get('SantaClara'),
+                    Lines: [
+                        { ProductID: f.Products.WidgetA, Quantity: 3, UnitPrice: 100 },
+                        { ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 50, DiscountPct: 0.2 },
+                    ],
+                });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+                const header = await TxOne<{ TotalGross: number }>(
+                    ctx,
+                    `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${result.Order.ID}'`,
+                );
+
+                // AR is debited for net + tax + charges on every line, so the receivable across the
+                // order's booking entries IS the order's gross. Deliberately an order carrying a
+                // discount AND tax: on a plain undiscounted line the wrong number and the right one
+                // coincide, which is exactly why a defect here survives ordinary fixtures.
+                const ar = await TxOne<{ Net: number }>(
+                    ctx,
+                    `SELECT ISNULL(SUM(jel.DebitAmount),0) - ISNULL(SUM(jel.CreditAmount),0) AS Net
+                       FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+                       JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                      WHERE gl.Code = '11201'
+                        AND jel.JournalEntryID IN (
+                            SELECT ol.JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine ol
+                             WHERE ol.OrderHeaderID = '${result.Order.ID}' AND ol.JournalEntryID IS NOT NULL)`,
+                );
+
+                AssertEqual(
+                    Math.round(Number(ar.Net) * 100) / 100,
+                    Math.round(Number(header.TotalGross) * 100) / 100,
+                    'the receivable the ledger raised must equal what the order says is owed',
+                );
+                Assert(Number(header.TotalGross) > 0, 'and the order is actually worth something');
             }),
     },
     {

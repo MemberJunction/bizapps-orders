@@ -1,5 +1,10 @@
 import { ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import {
+    OrdersCapturePaymentOperation,
+    type OrdersCapturePaymentInput,
+    type OrdersCapturePaymentOutput,
+} from '@mj-biz-apps/orders-entities';
 import { FormsModule } from '@angular/forms';
 import {
     MJOAllocationGridComponent,
@@ -66,7 +71,7 @@ export interface MJOTenderOption {
                             <input
                                 class="mj-input is-num"
                                 [value]="Amount"
-                                (change)="SetAmount($any($event.target).value)"
+                                (change)="SetAmount($any($event.target).value); SchedulePreview()"
                                 aria-label="Amount received">
                         </label>
 
@@ -77,7 +82,11 @@ export interface MJOTenderOption {
 
                         <label class="mj-field">
                             <label>Tender</label>
-                            <select class="mj-select" [(ngModel)]="TenderCode" name="tender">
+                            <select
+                                class="mj-select"
+                                [(ngModel)]="TenderCode"
+                                name="tender"
+                                (ngModelChange)="OnTenderChanged()">
                                 @for (tender of Tenders; track tender.ID) {
                                     <option [value]="tender.Code">{{ tender.Name }}</option>
                                 }
@@ -118,9 +127,15 @@ export interface MJOTenderOption {
                         <h3>What this will book</h3>
                     </div>
                     <div class="mj-card-pad">
-                        <mjo-stated-value Label="Dr Cash">{{ NetCash | mjoMoney }}</mjo-stated-value>
-                        @if (Fee > 0) {
-                            <mjo-stated-value Label="Dr Processing fee">{{ Fee | mjoMoney }}</mjo-stated-value>
+                        @if (NetCash !== null) {
+                            <mjo-stated-value Label="Dr Cash">{{ NetCash | mjoMoney }}</mjo-stated-value>
+                        } @else {
+                            <mjo-stated-value Label="Dr Cash" From="pending the server's fee">—</mjo-stated-value>
+                        }
+                        @if (Fee) {
+                            <mjo-stated-value Label="Dr Processing fee" From="the provider's cut, computed server-side">
+                                {{ Fee | mjoMoney }}
+                            </mjo-stated-value>
                         }
                         <mjo-stated-value Label="Cr A/R" From="at GROSS">{{ Amount | mjoMoney }}</mjo-stated-value>
 
@@ -135,20 +150,68 @@ export interface MJOTenderOption {
 
             <!-- ── Right: what it settles ── -->
             <div class="mjo-pe__right">
+                <!-- Anchored like the product picker: see fast-entry for why. -->
+                <div class="mj-typeahead mjo-pe__payer">
+                    <div class="mjo-search">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <input
+                            id="mjo-payer-search"
+                            [(ngModel)]="PayerQuery"
+                            (ngModelChange)="OnPayerQuery()"
+                            name="payerSearch"
+                            placeholder="Who is paying? Find a person or organization…"
+                            autocomplete="off"
+                            aria-label="Find the payer">
+                    </div>
+                    @if (Payer) {
+                        <span class="mj-chip mj-chip--brand">
+                            {{ Payer.Name }}
+                            <button type="button" class="mj-why" (click)="ClearPayer()" aria-label="Clear payer">
+                                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                            </button>
+                        </span>
+                    }
+                </div>
+
+                @if (PayerResults.length) {
+                    <div class="mj-typeahead-list is-open" role="listbox">
+                        @for (option of PayerResults; track option.ID) {
+                            <div class="mj-typeahead-item" role="option" (mousedown)="ChoosePayer(option)">
+                                <div class="fe-picker__body">
+                                    <div class="name">{{ option.Name }}</div>
+                                    <div class="sub">{{ option.IsOrganization ? 'Organization' : 'Person' }}</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (!Payer) {
+                    <div class="mj-banner mj-banner--neutral mjo-pe__note">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        <div class="body">
+                            Showing every open order across all customers. Choose who is paying to
+                            narrow it — a payment belongs to one payer, and allocating across
+                            customers is almost always a mistake rather than an intention.
+                        </div>
+                    </div>
+                }
+
                 <mjo-allocation-grid
                     [Orders]="OpenOrders"
                     [Amount]="Amount"
                     [Allocations]="Allocations"
-                    (AllocationsChanged)="Allocations = $event"
-                    (AutoApplyRequested)="AutoApply()" />
+                    (AllocationsChanged)="Allocations = $event; SchedulePreview()"
+                    (AutoApplyRequested)="AutoApply(); SchedulePreview()" />
 
                 <div class="mjo-pe__actions">
                     <button
                         type="button"
                         class="mj-btn mj-btn--primary"
-                        [disabled]="!CanCapture"
+                        [disabled]="!CanCapture || Busy"
                         (click)="Capture()">
-                        <i class="fa-solid fa-check" aria-hidden="true"></i> Capture payment
+                        <i class="fa-solid fa-check" aria-hidden="true"></i>
+                        {{ Busy ? 'Capturing…' : 'Capture payment' }}
                     </button>
                     <button type="button" class="mj-btn mj-btn--outline">Save as pending</button>
                     <span class="small muted spacer">
@@ -157,13 +220,61 @@ export interface MJOTenderOption {
                 </div>
             </div>
         </div>
+
+        @if (Error) {
+            <div class="mj-banner mj-banner--error mjo-pe__result" role="alert">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                <div class="body"><strong>Nothing was captured.</strong> {{ Error }}</div>
+            </div>
+        }
+
+        @if (Result) {
+            <div
+                class="mj-banner mjo-pe__result"
+                [class.mj-banner--success]="!Result.WasRetry"
+                [class.mj-banner--info]="Result.WasRetry"
+                role="status">
+                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                <div class="body">
+                    @if (Result.WasRetry) {
+                        <strong>Already captured — no money moved.</strong>
+                        {{ Result.PaymentNumber }} was taken by an earlier attempt carrying the same
+                        token. This is that payment, not a second charge.
+                    } @else {
+                        <strong>{{ Result.PaymentNumber }} captured.</strong>
+                        {{ Result.EntryCount }} journal
+                        {{ Result.EntryCount === 1 ? 'entry' : 'entries' }},
+                        {{ Result.AllBalanced ? 'all balanced' : 'NOT balanced — investigate' }}.
+                    }
+
+                    @for (effect of Result.OrderEffects ?? []; track effect.OrderHeaderID) {
+                        <div class="small mjo-pe__effect">
+                            {{ effect.OrderNumber }} — {{ effect.PaymentStatus }}, balance
+                            {{ effect.Balance | mjoMoney }}
+                            @if (effect.HasCredit) {
+                                <span class="mj-chip mj-chip--info">now holding credit</span>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
     `,
     styles: [
         `
+            .mjo-pe__result { margin-top: var(--mj-space-4); }
+            .mjo-pe__effect { margin-top: 4px; }
+            /*
+             * overflow:auto alone computed to hidden here — the host inherits a clip
+             * from the content area it is mounted into. overflow-y is specific
+             * enough to win, and min-height:0 lets a flex parent actually
+             * give this element a scrollable box rather than stretching it.
+             */
             :host {
                 display: block;
                 height: 100%;
-                overflow: auto;
+                min-height: 0;
+                overflow-y: auto !important;
                 padding: var(--mj-space-6);
             }
             .mjo-pe__split {
@@ -185,11 +296,30 @@ export interface MJOTenderOption {
             .mjo-pe__note {
                 margin-top: var(--mj-space-3);
             }
+            /*
+             * STICKY. With every open order listed the page runs to several
+             * thousand pixels, and the capture button sat at 3947px inside an
+             * 802px viewport — present in the DOM, unreachable in practice. An
+             * action bar that scrolls away is an action nobody can take.
+             */
             .mjo-pe__actions {
+                position: sticky;
+                bottom: 0;
+                z-index: 5;
                 display: flex;
                 align-items: center;
                 gap: var(--mj-space-2);
                 margin-top: var(--mj-space-4);
+                padding: var(--mj-space-3) 0;
+                flex-wrap: wrap;
+                background: var(--mj-bg-page);
+                border-top: 1px solid var(--mj-border-default);
+            }
+            .mjo-pe__payer {
+                display: flex;
+                align-items: center;
+                gap: var(--mj-space-2);
+                margin-bottom: var(--mj-space-3);
                 flex-wrap: wrap;
             }
 
@@ -237,13 +367,8 @@ export class MJOPaymentEntryPageComponent implements OnInit {
     @Input() Tenders: MJOTenderOption[] = [];
 
     /** The user asked to capture. The host calls the operation. */
-    @Output() CaptureRequested = new EventEmitter<{
-        Amount: number;
-        Allocations: MJOAllocationMap;
-        TenderCode: string;
-        Reference: string;
-        PaymentDate: string;
-    }>();
+    /** Emitted AFTER the payment is captured, carrying what the server booked. */
+    @Output() CaptureRequested = new EventEmitter<OrdersCapturePaymentOutput>();
 
     public Amount = 0;
     public PaymentDate = new Date().toISOString().slice(0, 10);
@@ -251,7 +376,84 @@ export class MJOPaymentEntryPageComponent implements OnInit {
     public Reference = '';
     public Instrument = '';
     public Allocations: MJOAllocationMap = {};
+
+    /**
+     * Makes Capture safe to retry, generated when the FORM OPENS.
+     *
+     * Deliberately not derived from the amount: two people legitimately paying the
+     * same amount on the same day must both go through. Regenerated after a
+     * successful capture so the next payment on this screen is a new one — a
+     * reused token would make a genuine second payment look like a retry and take
+     * no money at all.
+     */
+    private idempotencyKey = crypto.randomUUID();
+
+    public Busy = false;
+    public Error: string | null = null;
+
+    /** Set after a capture. The screen reports what happened rather than assuming. */
+    public Result: OrdersCapturePaymentOutput | null = null;
+
+    private previewTimer: ReturnType<typeof setTimeout> | null = null;
     public OpenOrders: MJOAllocatableOrder[] = [];
+
+    /* ── Payer ──────────────────────────────────────────────────────────── */
+
+    public PayerQuery = '';
+    public PayerResults: Array<{ ID: string; Name: string; IsOrganization: boolean }> = [];
+    public Payer: { ID: string; Name: string; IsOrganization: boolean } | null = null;
+    private payerTimer: ReturnType<typeof setTimeout> | null = null;
+
+    /**
+     * Find who is paying.
+     *
+     * Without this the grid listed every open order in the business — 67 of them
+     * on this database — and allocating a payment across unrelated customers is
+     * almost always a mistake rather than an intention. A payment belongs to one
+     * payer, so naming them first is the natural order of the task, not a filter
+     * bolted on afterwards.
+     */
+    public OnPayerQuery(): void {
+        if (this.payerTimer) clearTimeout(this.payerTimer);
+        const query = this.PayerQuery;
+        if (query.trim().length < 2) {
+            this.PayerResults = [];
+            return;
+        }
+        this.payerTimer = setTimeout(async () => {
+            const results = await this.data.SearchCustomers(query);
+            this.PayerResults = results.map((r) => ({
+                ID: r.ID,
+                Name: r.Name,
+                IsOrganization: r.IsOrganization,
+            }));
+            this.cdr.detectChanges();
+        }, 300);
+    }
+
+    public async ChoosePayer(option: { ID: string; Name: string; IsOrganization: boolean }): Promise<void> {
+        this.Payer = option;
+        this.PayerQuery = '';
+        this.PayerResults = [];
+        // The allocations belonged to the previous payer's orders; keeping them
+        // would apply this payment to someone else's balance. The amount goes too:
+        // it was defaulted to everything owing across ALL customers, which is not
+        // a number this payer would ever hand over.
+        this.Allocations = {};
+        this.Amount = 0;
+        this.Fee = null;
+        this.NetCash = null;
+        await this.loadOpenOrders();
+        this.cdr.detectChanges();
+    }
+
+    public async ClearPayer(): Promise<void> {
+        this.Payer = null;
+        this.Allocations = {};
+        this.Amount = 0;
+        await this.loadOpenOrders();
+        this.cdr.detectChanges();
+    }
 
     public async ngOnInit(): Promise<void> {
         if (this.Tenders.length && !this.TenderCode) this.TenderCode = this.Tenders[0].Code;
@@ -259,19 +461,36 @@ export class MJOPaymentEntryPageComponent implements OnInit {
         this.cdr.detectChanges();
     }
 
+    /**
+     * The tender decides the fee, and the fee is the server's number.
+     *
+     * Clearing it here rather than leaving the previous tender's figure on screen:
+     * a card fee still showing beside a cheque is worse than an em dash, because
+     * it is a specific wrong number rather than an obvious absence.
+     */
+    public OnTenderChanged(): void {
+        this.Fee = null;
+        this.NetCash = null;
+        this.SchedulePreview();
+    }
+
     public get SelectedTender(): MJOTenderOption | undefined {
         return this.Tenders.find((t) => t.Code === this.TenderCode);
     }
 
-    /** Card processing costs money; a cheque does not. Illustrative until a provider quotes it. */
-    public get Fee(): number {
-        if (this.TenderCode !== 'Card') return 0;
-        return Math.round(this.Amount * 0.029 * 100) / 100;
-    }
+    /**
+     * The provider's cut, as the SERVER computed it.
+     *
+     * This was a 2.9%-on-card guess until `Orders.CapturePayment` landed. A
+     * client-side fee is a client-side general-ledger amount: the browser cannot
+     * see the provider's schedule, and a screen that invents one will eventually
+     * disagree with the ledger it is describing. Null until a preview has run —
+     * "unknown" is honest, a stale number is not.
+     */
+    public Fee: number | null = null;
 
-    public get NetCash(): number {
-        return Math.round((this.Amount - this.Fee) * 100) / 100;
-    }
+    /** What actually reaches the bank. Server's number, same reasoning. */
+    public NetCash: number | null = null;
 
     /** Capture waits for the allocations to balance. */
     public get CanCapture(): boolean {
@@ -288,21 +507,125 @@ export class MJOPaymentEntryPageComponent implements OnInit {
         this.Allocations = AllocateOldestFirst(this.Amount, this.OpenOrders);
     }
 
-    public Capture(): void {
-        if (!this.CanCapture) return;
-        this.CaptureRequested.emit({
+    /**
+     * Build the operation input from what is on screen.
+     *
+     * `ReceivingCompanyID` comes from the orders being settled rather than from a
+     * picker: the money is received by whoever is owed it, and asking the user to
+     * restate that invites the two disagreeing.
+     */
+    private buildInput(preview: boolean): OrdersCapturePaymentInput | null {
+        const allocations = Object.entries(this.Allocations)
+            .map(([OrderHeaderID, Amount]) => ({ OrderHeaderID, Amount: Number(Amount) }))
+            .filter((a) => a.Amount > 0);
+        if (!allocations.length) return null;
+
+        const first = this.OpenOrders.find((o) => o.ID === allocations[0].OrderHeaderID);
+        if (!first) return null;
+
+        return {
             Amount: this.Amount,
-            Allocations: this.Allocations,
+            ReceivingCompanyID: first.CompanyID,
+            BillToOrganizationID: this.Payer?.IsOrganization ? this.Payer.ID : (this.CustomerID ?? null),
+            BillToPersonID: this.Payer && !this.Payer.IsOrganization ? this.Payer.ID : null,
             TenderCode: this.TenderCode,
-            Reference: this.Reference,
             PaymentDate: this.PaymentDate,
-        });
+            Reference: this.Reference || null,
+            Allocations: allocations,
+            IdempotencyKey: this.idempotencyKey,
+            Preview: preview,
+        };
+    }
+
+    /**
+     * Ask the server what this would book, debounced.
+     *
+     * The fee and the net are the server's to compute, so the only way to show
+     * them before capturing is to run the real capture and roll it back — which is
+     * exactly what `Preview: true` does. Debounced because it fires on every
+     * keystroke in the amount field.
+     */
+    public SchedulePreview(): void {
+        if (this.previewTimer) clearTimeout(this.previewTimer);
+        this.previewTimer = setTimeout(() => void this.PreviewNow(), 400);
+    }
+
+    public async PreviewNow(): Promise<void> {
+        const input = this.buildInput(true);
+        if (!input || !this.CanCapture) {
+            this.Fee = null;
+            this.NetCash = null;
+            this.cdr.detectChanges();
+            return;
+        }
+        const op = new OrdersCapturePaymentOperation();
+        const result = await op.Execute(input);
+        const output = result.Output;
+        if (output?.Success) {
+            this.Fee = output.ProcessingFeeAmount ?? 0;
+            this.NetCash = output.NetAmount ?? this.Amount;
+        } else {
+            this.Fee = null;
+            this.NetCash = null;
+        }
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Take the money.
+     *
+     * A repeat call with the same key returns the ORIGINAL payment with
+     * `WasRetry`, so a double click or a retry after a timeout is reported as what
+     * it was rather than charging twice or showing a spurious failure.
+     */
+    public async Capture(): Promise<void> {
+        if (!this.CanCapture || this.Busy) return;
+        const input = this.buildInput(false);
+        if (!input) return;
+
+        this.Busy = true;
+        this.Error = null;
+        try {
+            const op = new OrdersCapturePaymentOperation();
+            const result = await op.Execute(input);
+            const output = result.Output;
+
+            if (!output?.Success) {
+                this.Error =
+                    output?.Blockers?.map((b) => b.Message).join(' ') ??
+                    output?.Message ??
+                    result.ErrorMessage ??
+                    'The payment was not captured.';
+                return;
+            }
+
+            this.Result = output;
+            this.Fee = output.ProcessingFeeAmount ?? 0;
+            this.NetCash = output.NetAmount ?? this.Amount;
+
+            // A new token, so the NEXT payment on this screen is a new payment
+            // rather than a retry of this one.
+            this.idempotencyKey = crypto.randomUUID();
+            this.CaptureRequested.emit(output);
+        } catch (e) {
+            this.Error = e instanceof Error ? e.message : String(e);
+        } finally {
+            this.Busy = false;
+            this.cdr.detectChanges();
+        }
     }
 
     private async loadOpenOrders(): Promise<void> {
-        const rows = await this.data.GetOrders({
+        const organizationID = this.Payer?.IsOrganization
+            ? this.Payer.ID
+            : (this.CustomerID ?? undefined);
+        const rows = (await this.data.GetOrders({
             Preset: 'unpaid',
-            BillToOrganizationID: this.CustomerID ?? undefined,
+            BillToOrganizationID: organizationID,
+        })).filter((row) => {
+            if (!this.Payer) return true;
+            const key = this.Payer.IsOrganization ? 'BillToOrganizationID' : 'BillToPersonID';
+            return row[key] === this.Payer.ID;
         });
         const today = new Date().toISOString().slice(0, 10);
         this.OpenOrders = rows.map((row) => ({

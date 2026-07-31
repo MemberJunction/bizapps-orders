@@ -232,7 +232,16 @@ kbd {
    19. TYPE-AHEAD  (fast entry)
    ============================================================================ */
 
-.mj-typeahead { position: relative; }
+/*
+ * The wrapper needs a STACKING CONTEXT, not just a positioning one.
+ *
+ * `position: relative` alone anchors the list under the input but leaves it in the
+ * parent's stacking order, so later siblings paint on top of it: the customer
+ * results rendered in the right place and were covered by the next section.
+ * `elementFromPoint` at the centre of the first option returned the section, not
+ * the option — the list was visible to the DOM and invisible to a person.
+ */
+.mj-typeahead { position: relative; z-index: 20; }
 .mj-typeahead-list {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0;
   z-index: var(--mj-z-popover); max-height: 320px; overflow: auto;

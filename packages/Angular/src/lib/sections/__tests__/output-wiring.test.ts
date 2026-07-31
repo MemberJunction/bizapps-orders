@@ -35,6 +35,7 @@ const NOTIFICATION_ONLY = new Set([
     'Applied',        // account credit: Orders.ApplyAccountCredit already ran
     'Refunded',       // refund: Orders.RefundPayment already ran
     'ReturnCreated',  // return: Orders.ConfirmOrder already ran
+    'CaptureRequested', // payment entry: Orders.CapturePayment already ran
     'LineOpened',     // opens an inline panel the page owns
     'OpenInAccounting', // deep link into a different app
 ]);
@@ -44,14 +45,14 @@ const NOTIFICATION_ONLY = new Set([
  * not exist. Listed separately from NOTIFICATION_ONLY on purpose: these are dead
  * controls, and calling them "notifications" would bury that.
  *
- * `CaptureRequested` — taking a payment needs a PaymentHeader and its allocation
- * lines to cross the wire together. `PaymentHeaderEntityServer` exposes `Lines`
- * as a transient collection exactly like `OrderEntityServer` does, so a browser
- * `entity.Save()` cannot compose one — the same reason `Orders.SaveOrder` exists
- * for orders. There is no equivalent payment operation among the ten defined, so
- * the front end has nothing to call. Backend work; tracked, not hidden.
+ * EMPTY, and that is the point. `CaptureRequested` sat here while taking a
+ * payment was impossible — a PaymentHeader and its allocation lines have to cross
+ * the wire together, and `PaymentHeaderEntityServer.Lines` is transient, so a
+ * browser `entity.Save()` had nowhere to put them. `Orders.CapturePayment` now
+ * exists and the page calls it, so the entry came off the list rather than
+ * quietly staying on it.
  */
-const AWAITING_OPERATION = new Set(['CaptureRequested']);
+const AWAITING_OPERATION = new Set<string>([]);
 
 /**
  * Outputs that are REQUESTS — the page cannot do the work and is asking the
@@ -91,9 +92,24 @@ describe('page outputs are wired to the section', () => {
     });
 
     it('keeps the blocked list honest', () => {
-        // If someone adds the missing operation, this list should shrink rather
-        // than quietly keep excusing a control that could now work.
-        expect([...AWAITING_OPERATION]).toEqual(['CaptureRequested']);
+        // The list shrinks when an operation lands; it must never grow silently.
+        // Adding to it is a decision worth making deliberately, because every
+        // entry is a control a user can press that does nothing.
+        expect([...AWAITING_OPERATION]).toEqual([]);
+    });
+
+    it('captures a payment through the operation, not an unheard event', () => {
+        const page = readFileSync(
+            join(LIB, 'pages', 'payments', 'payment-entry.page.ts'),
+            'utf8',
+        );
+        expect(page).toMatch(/OrdersCapturePaymentOperation/);
+        // The fee is the server's number. A client-side rate is a client-side
+        // general-ledger amount, and the 2.9% placeholder that used to be here is
+        // exactly the kind of figure that drifts from the ledger unnoticed.
+        expect(page).not.toMatch(/0\.029/);
+        // Retries must not take the money twice.
+        expect(page).toMatch(/IdempotencyKey/);
     });
 
     it('points every primary button at a page that exists', () => {

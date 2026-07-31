@@ -1,4 +1,4 @@
-import { Component, EventEmitter, HostListener, Input, OnDestroy, OnInit, Output, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, HostListener, Input, OnDestroy, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -7,6 +7,7 @@ import {
     type OrdersPreviewOrderOutput,
 } from '@mj-biz-apps/orders-entities';
 
+import { MJOOrdersDataService } from '../../services/orders-data.service';
 import { MJOOrderEntryService, type MJOPreviewState } from '../../services/order-entry.service';
 import { MJODecompositionLadderComponent, type MJOLadderRow } from '../../panels/decomposition-ladder.component';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
@@ -77,6 +78,8 @@ export interface MJOCustomerContext {
 })
 export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     private readonly orders = inject(MJOOrderEntryService);
+    private readonly data = inject(MJOOrdersDataService);
+    private readonly cdr = inject(ChangeDetectorRef);
 
     /** Owning company for the draft. */
     @Input() CompanyID = '';
@@ -164,6 +167,76 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     ];
 
     /* ── Product picker ─────────────────────────────────────────────────── */
+
+    /* ── Customer search ────────────────────────────────────────────────── */
+
+    public CustomerQuery = '';
+    public CustomerSearching = false;
+    public CustomerResults: Array<{ ID: string; Name: string; IsOrganization: boolean; Email: string | null }> = [];
+    private customerTimer: ReturnType<typeof setTimeout> | null = null;
+
+    /**
+     * Search as they type, debounced.
+     *
+     * The customer field was a placeholder with no bindings at all — the screen
+     * looked complete and could not start an order, because nothing could ever be
+     * chosen. The order draft needs a bill-to before it can price anything.
+     */
+    public OnCustomerQuery(): void {
+        if (this.customerTimer) clearTimeout(this.customerTimer);
+        const query = this.CustomerQuery;
+        if (query.trim().length < 2) {
+            this.CustomerResults = [];
+            this.CustomerSearching = false;
+            return;
+        }
+        this.CustomerSearching = true;
+        this.customerTimer = setTimeout(async () => {
+            const results = await this.data.SearchCustomers(query);
+            // Assign both AFTER the await, never across it.
+            this.CustomerResults = results;
+            this.CustomerSearching = false;
+            this.cdr.detectChanges();
+        }, 300);
+    }
+
+    /**
+     * Choose a customer and put them on the draft.
+     *
+     * An ORGANIZATION and a PERSON are different columns on the order, not one
+     * "customer" field — an employee's order billed to their employer is the
+     * employer's receivable, and collapsing the two would lose that.
+     */
+    public async ChooseCustomer(option: { ID: string; Name: string; IsOrganization: boolean; Email: string | null }): Promise<void> {
+        this.Draft.SetHeader(
+            option.IsOrganization
+                ? { BillToOrganizationID: option.ID, BillToPersonID: null }
+                : { BillToPersonID: option.ID, BillToOrganizationID: null },
+        );
+
+        // What an order taker needs to know before quoting: what they already owe,
+        // and what credit they are sitting on.
+        const orders = await this.data.GetOrders(
+            option.IsOrganization ? { BillToOrganizationID: option.ID } : {},
+        );
+        const theirs = orders.filter(
+            (o) => (option.IsOrganization ? o['BillToOrganizationID'] : o['BillToPersonID']) === option.ID,
+        );
+        const today = new Date().toISOString().slice(0, 10);
+
+        this.Customer = {
+            DisplayName: option.Name,
+            OrganizationName: option.IsOrganization ? option.Name : null,
+            Email: option.Email,
+            OpenBalance: Math.round(theirs.filter((o) => o.Balance > 0).reduce((s, o) => s + o.Balance, 0) * 100) / 100,
+            AvailableCredit:
+                Math.round(Math.abs(theirs.filter((o) => o.Balance < 0).reduce((s, o) => s + o.Balance, 0)) * 100) / 100,
+            OverdueCount: theirs.filter((o) => o.Balance > 0 && o.DueDate && o.DueDate < today).length,
+        };
+        this.CustomerQuery = '';
+        this.CustomerResults = [];
+        this.cdr.detectChanges();
+    }
 
     /** Catalog rows matching the query, capped — a picker is not a report. */
     public get PickerResults(): MJOProductOption[] {
@@ -422,9 +495,21 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         }
     }
 
+    public SaveError: string | null = null;
+    public Saving = false;
+
     public async SaveDraft(): Promise<void> {
-        const saved = await this.orders.Save(this.Draft);
-        if (saved) this.Saved.emit(this.Draft);
+        this.Saving = true;
+        this.SaveError = null;
+        try {
+            const saved = await this.orders.Save(this.Draft);
+            if (saved) this.Saved.emit(this.Draft);
+        } catch (e) {
+            this.SaveError = e instanceof Error ? e.message : String(e);
+        } finally {
+            this.Saving = false;
+            this.cdr.detectChanges();
+        }
     }
 
     /** Ask the host to run the pre-flight and confirm. */

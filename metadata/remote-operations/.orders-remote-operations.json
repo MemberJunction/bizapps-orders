@@ -369,5 +369,32 @@
       "lastModified": "2026-07-31T15:37:48.752Z",
       "checksum": "ea9afee8f5b441d490e5e0dffdb6ebe2bf8455811ade7bd0a5a726b3b51bbba7"
     }
+  },
+  {
+    "fields": {
+      "Name": "Create Order In State",
+      "OperationKey": "Orders.CreateOrderInState",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Lifecycle",
+      "Description": "Create an order directly in Confirmed, Posted or Fulfilled - for back-office entry of something that has ALREADY happened: a counter sale, a shipment that went out before anyone opened the system, a migration. It delegates to the REAL Orders.ConfirmOrder rather than reimplementing it, then advances the status. The tempting implementation is one UPDATE setting Status='Fulfilled'; it would be faster, would pass any test checking the order's own fields, and would produce an order that looks complete with no ledger behind it - the failure nothing downstream can detect, because the order reconciles perfectly against itself and the revenue simply never existed (D17). Advancing books nothing: Posted to Fulfilled fires no journal entry (D15). Fulfillable lines are marked before the header advances, so an imported order cannot claim to have shipped things it has no record of shipping.",
+      "InputTypeName": "OrdersCreateOrderInStateInput",
+      "InputTypeDefinition": "@file:types/orders-create-order-in-state.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersCreateOrderInStateOutput",
+      "OutputTypeDefinition": "@file:types/orders-create-order-in-state.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "16B67291-0B48-4D65-8BE5-46DEEEA8E2FC"
+    },
+    "sync": {
+      "lastModified": "2026-07-31T18:44:18.703Z",
+      "checksum": "8ed8c23722a8325279d66e185ac02b3df919439157196ec652308ccdbeb907b3"
+    }
   }
 ]

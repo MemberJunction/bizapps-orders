@@ -41,11 +41,47 @@ export const MJO_ENTITIES = {
     PaymentLine: 'MJ_BizApps_Orders: Payment Lines',
     Product: 'MJ_BizApps_Orders: Products',
     ProductType: 'MJ_BizApps_Orders: Product Types',
+    ProductCategory: 'MJ_BizApps_Orders: Product Categories',
     Subscription: 'MJ_BizApps_Orders: Subscriptions',
     PriceList: 'MJ_BizApps_Orders: Price Lists',
     ProductPrice: 'MJ_BizApps_Orders: Product Prices',
     Promotion: 'MJ_BizApps_Orders: Promotions',
+    PriceTier: 'MJ_BizApps_Orders: Price Tiers',
+    OrderLineDimension: 'MJ_BizApps_Orders: Order Line Dimensions',
+    PaymentType: 'MJ_BizApps_Orders: Payment Types',
+    SubscriptionTerm: 'MJ_BizApps_Orders: Subscription Terms',
+    SubscriptionEvent: 'MJ_BizApps_Orders: Subscription Events',
     ChargeType: 'MJ_BizApps_Orders: Charge Types',
+    TaxExemption: 'MJ_BizApps_Orders: Customer Tax Exemptions',
+} as const;
+
+/**
+ * Entities this app READS from the accounting app.
+ *
+ * Kept apart from MJO_ENTITIES so the boundary is visible at the call site: these
+ * are somebody else's records, and a change to them is a change in another
+ * repository. The dependency points UP the graph (D44) — Orders knows about
+ * Accounting, never the reverse.
+ *
+ * Note the separator: Orders and Accounting use UNDERSCORES in the prefix, while
+ * Common uses DOTS. It reads like a typo every time and is not one.
+ */
+/**
+ * Entities read from the COMMON app — the shared party model.
+ *
+ * Note the separator: Common uses DOTS where Orders and Accounting use
+ * underscores. It reads like a typo every time and is not one.
+ */
+export const MJO_COMMON_ENTITIES = {
+    Organization: 'MJ.BizApps.Common: Organizations',
+    Person: 'MJ.BizApps.Common: People',
+} as const;
+
+export const MJO_ACCOUNTING_ENTITIES = {
+    TaxJurisdiction: 'MJ_BizApps_Accounting: Tax Jurisdictions',
+    TaxRate: 'MJ_BizApps_Accounting: Tax Rates',
+    // SINGULAR — CodeGen leaves 'Nexus' alone rather than forming 'Nexuses'.
+    CompanyTaxNexus: 'MJ_BizApps_Accounting: Company Tax Nexus',
 } as const;
 
 /** A row as the order list renders it. */
@@ -308,6 +344,298 @@ export class MJOOrdersDataService {
             // whole query — so the promotions screen showed "No promotions", which
             // reads as an empty catalog rather than a broken one.
             'EffectiveFrom DESC',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * One customer's payments and subscriptions, in one round trip each.
+     *
+     * The A/R screen shows a customer at a time, so these are fetched for the
+     * SELECTED customer rather than for everyone up front — a hundred customers'
+     * payment histories to render one is work with no answer attached to it.
+     */
+    public async GetPaymentsForCustomer(
+        customer: { OrganizationID?: string | null; PersonID?: string | null },
+        user?: UserInfo,
+    ) {
+        const filters: string[] = [];
+        if (customer.OrganizationID && UUID_PATTERN.test(customer.OrganizationID)) {
+            filters.push(`BillToOrganizationID = '${customer.OrganizationID}'`);
+        } else if (customer.PersonID && UUID_PATTERN.test(customer.PersonID)) {
+            filters.push(`BillToPersonID = '${customer.PersonID}'`);
+        } else {
+            return [];
+        }
+        return this.run<MJOPaymentRow>(
+            MJO_ENTITIES.PaymentHeader,
+            filters,
+            'PaymentDate DESC',
+            50,
+            user,
+        );
+    }
+
+    /**
+     * Subscriptions a customer holds or benefits from.
+     *
+     * Both sides are checked because they are genuinely different roles — an
+     * employer HOLDS a seat that an employee BENEFITS from, and the A/R screen
+     * wants either to count as "theirs".
+     */
+    public async GetSubscriptionsForCustomer(
+        customer: { OrganizationID?: string | null; PersonID?: string | null },
+        user?: UserInfo,
+    ) {
+        const clauses: string[] = [];
+        if (customer.OrganizationID && UUID_PATTERN.test(customer.OrganizationID)) {
+            clauses.push(`HolderOrganizationID = '${customer.OrganizationID}'`);
+        }
+        if (customer.PersonID && UUID_PATTERN.test(customer.PersonID)) {
+            clauses.push(`BeneficiaryPersonID = '${customer.PersonID}'`);
+        }
+        if (!clauses.length) return [];
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.Subscription,
+            [`(${clauses.join(' OR ')})`],
+            'EndDate DESC',
+            50,
+            user,
+        );
+    }
+
+    /**
+     * Payments that have landed on one order.
+     *
+     * An allocation LINE, not a payment header: one payment can settle several
+     * orders, so the amount that matters here is what reached THIS order rather
+     * than what the customer handed over.
+     */
+    public async GetPaymentLinesForOrder(orderHeaderID: string, user?: UserInfo) {
+        if (!UUID_PATTERN.test(orderHeaderID)) return [];
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.PaymentLine,
+            [`OrderHeaderID = '${orderHeaderID}'`],
+            'AllocatedAt DESC',
+            undefined,
+            user,
+        );
+    }
+
+    /** Dimension tags on an order's lines — the analysis axes a line was filed under. */
+    public async GetLineDimensionsForOrder(orderLineIDs: string[], user?: UserInfo) {
+        const ids = [...new Set(orderLineIDs)].filter((id) => UUID_PATTERN.test(id));
+        if (!ids.length) return [];
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.OrderLineDimension,
+            [`OrderLineID IN (${ids.map((id) => `'${id}'`).join(',')})`],
+            'Dimension',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * Customers matching a query — organizations and people together.
+     *
+     * BOTH are searched because an order can be billed to either, and making the
+     * user choose which KIND of party they are looking for before they have found
+     * it is a question the screen can answer itself.
+     */
+    public async SearchCustomers(
+        query: string,
+        user?: UserInfo,
+    ): Promise<Array<{ ID: string; Name: string; IsOrganization: boolean; Email: string | null }>> {
+        const text = query.trim();
+        if (text.length < 2) return [];
+        const escaped = text.replace(/'/g, "''");
+
+        const [orgs, people] = await Promise.all([
+            this.run<Record<string, unknown>>(
+                MJO_COMMON_ENTITIES.Organization,
+                [`Name LIKE '%${escaped}%'`],
+                'Name',
+                20,
+                user,
+            ),
+            this.run<Record<string, unknown>>(
+                MJO_COMMON_ENTITIES.Person,
+                [`(FirstName LIKE '%${escaped}%' OR LastName LIKE '%${escaped}%' OR Email LIKE '%${escaped}%')`],
+                'LastName',
+                20,
+                user,
+            ),
+        ]);
+
+        return [
+            ...orgs.map((o) => ({
+                ID: String(o['ID']),
+                Name: String(o['Name'] ?? ''),
+                IsOrganization: true,
+                Email: (o['Email'] as string) ?? null,
+            })),
+            ...people.map((p) => ({
+                ID: String(p['ID']),
+                Name: [p['FirstName'], p['LastName']].filter(Boolean).join(' ').trim() || String(p['Email'] ?? ''),
+                IsOrganization: false,
+                Email: (p['Email'] as string) ?? null,
+            })),
+        ];
+    }
+
+    /**
+     * Tenders a payment can be taken on, in the order they should be offered.
+     *
+     * Reversal types are excluded because they are not something a person CHOOSES
+     * — a refund creates one, and offering it here would let someone record a
+     * reversal with nothing to reverse.
+     */
+    public async GetPaymentTypes(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.PaymentType,
+            [`IsActive = 1`, `IsReversal = 0`],
+            'Sequence',
+            undefined,
+            user,
+        );
+    }
+
+    /** Categories, which supply a product's defaults when it states none. */
+    public async GetProductCategories(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.ProductCategory,
+            [`IsActive = 1`],
+            'Name',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * Product types — the behaviour root.
+     *
+     * A type decides recognition, taxability, fulfilment and recurrence, and every
+     * order line inherits those answers. That is why an order screen never asks.
+     */
+    public async GetProductTypes(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.ProductType,
+            [`IsActive = 1`],
+            'Name',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * Coverage terms for one subscription, oldest first.
+     *
+     * A term is a PERIOD of coverage, and renewals APPEND one rather than moving a
+     * pointer. That is why "current" is not a field: it is the term whose window
+     * covers today, which cannot go stale.
+     */
+    public async GetSubscriptionTerms(subscriptionID: string, user?: UserInfo) {
+        if (!UUID_PATTERN.test(subscriptionID)) return [];
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.SubscriptionTerm,
+            [`SubscriptionID = '${subscriptionID}'`],
+            'TermNumber',
+            undefined,
+            user,
+        );
+    }
+
+    /** What happened to a subscription, newest first. */
+    public async GetSubscriptionEvents(subscriptionID: string, user?: UserInfo) {
+        if (!UUID_PATTERN.test(subscriptionID)) return [];
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.SubscriptionEvent,
+            [`SubscriptionID = '${subscriptionID}'`],
+            'OccurredAt DESC',
+            undefined,
+            user,
+        );
+    }
+
+    /** Price lists — the named sets a customer can be assigned to. */
+    public async GetPriceLists(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.PriceList,
+            [],
+            'Name',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * Quantity bands, in the order they are read.
+     *
+     * A band belongs to a PRICE, not a product: the same product can be banded
+     * differently on two price lists, which is the point of having price lists.
+     */
+    public async GetPriceTiers(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.PriceTier,
+            [],
+            'SortOrder',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * Tax jurisdictions with their current rates.
+     *
+     * READ FROM ACCOUNTING, not Orders. Jurisdictions, rates and nexus belong to
+     * the accounting app; Orders consumes them. That direction is deliberate
+     * (D44) — cross-app references point UP the graph, so tax can be reasoned
+     * about without knowing anything about orders.
+     */
+    public async GetTaxJurisdictions(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ACCOUNTING_ENTITIES.TaxJurisdiction,
+            [`IsActive = 1`],
+            'Name',
+            undefined,
+            user,
+        );
+    }
+
+    /** Rates, newest effective window first. */
+    public async GetTaxRates(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ACCOUNTING_ENTITIES.TaxRate,
+            [],
+            'EffectiveFrom DESC',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * Where each company is registered to collect.
+     *
+     * Nexus is the question that decides whether tax applies at all — a rate
+     * without a registration is a rate we must NOT charge.
+     */
+    public async GetTaxNexus(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ACCOUNTING_ENTITIES.CompanyTaxNexus,
+            [],
+            'RegisteredFrom DESC',
+            undefined,
+            user,
+        );
+    }
+
+    /** Customer exemption certificates, newest first. */
+    public async GetTaxExemptions(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.TaxExemption,
+            [],
+            'StartedAt DESC',
             undefined,
             user,
         );

@@ -1,0 +1,19 @@
+{
+  "entity": "MJ: Templates",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".orders-templates.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true,
+    "relatedEntities": {
+      "MJ: Template Contents": {
+        "entity": "MJ: Template Contents",
+        "foreignKey": "TemplateID",
+        "externalizeFields": ["TemplateText"]
+      }
+    }
+  }
+}

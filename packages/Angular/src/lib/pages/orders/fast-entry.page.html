@@ -77,10 +77,58 @@
           </div>
         </div>
       } @else {
-        <div class="mj-card mj-card-pad">
-          <div class="mj-search">
+        <div class="mj-card mj-card-pad fe-cust__card">
+          <!--
+            `.mj-typeahead` supplies `position: relative`, which is what anchors the
+            absolutely-positioned results UNDER the input. Without it the list has no
+            positioned ancestor and lays itself out against the page: it rendered at
+            y=1004 in a 1000px viewport, full window width, so matches existed and
+            were simply off-screen. Typing something that matched looked more broken
+            than typing something that did not, because the "nobody matches" hint is
+            an ordinary block and showed up fine.
+          -->
+          <div class="mj-typeahead">
+          <div class="mjo-search fe-cust__search">
             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-            <input placeholder="Find a person or organization…" aria-label="Find a customer">
+            <input
+              id="mjo-customer-search"
+              [(ngModel)]="CustomerQuery"
+              (ngModelChange)="OnCustomerQuery()"
+              placeholder="Find a person or organization…"
+              autocomplete="off"
+              role="combobox"
+              [attr.aria-expanded]="CustomerResults.length > 0"
+              aria-label="Find a customer">
+          </div>
+
+          @if (CustomerSearching) {
+            <div class="small muted fe-cust__hint">Searching…</div>
+          }
+
+          @if (CustomerResults.length) {
+            <div class="mj-typeahead-list is-open" role="listbox">
+              @for (option of CustomerResults; track option.ID) {
+                <div
+                  class="mj-typeahead-item"
+                  role="option"
+                  [attr.aria-selected]="false"
+                  (mousedown)="ChooseCustomer(option)">
+                  <div class="fe-picker__body">
+                    <div class="name">{{ option.Name }}</div>
+                    <div class="sub">
+                      {{ option.IsOrganization ? 'Organization' : 'Person' }}
+                      @if (option.Email) { · {{ option.Email }} }
+                    </div>
+                  </div>
+                </div>
+              }
+            </div>
+          } @else if (CustomerQuery.length >= 2 && !CustomerSearching) {
+            <div class="small muted fe-cust__hint">
+              Nobody matches that. An order can be billed to an organization or a person — both are
+              searched, so there is no wrong box to have typed in.
+            </div>
+          }
           </div>
         </div>
       }
@@ -355,6 +403,13 @@
 
 <!-- ═══════════════ FOOTER ═══════════════ -->
 <div class="fe-footer">
+  @if (SaveError) {
+    <div class="mj-banner mj-banner--error fe-save-error" role="alert">
+      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+      <div class="body"><strong>Nothing was saved.</strong> {{ SaveError }}</div>
+    </div>
+  }
+
   <button type="button" class="mj-btn mj-btn--outline" (click)="SaveDraft()">
     <i class="fa-regular fa-floppy-disk" aria-hidden="true"></i> Save draft
   </button>

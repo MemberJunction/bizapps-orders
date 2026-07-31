@@ -47,7 +47,7 @@ const files = ['index.html',
   ...['orders/dashboard', 'orders/list', 'orders/fast-entry', 'orders/editor', 'orders/document',
       'orders/return', 'orders/fulfillment', 'payments/dashboard', 'payments/list', 'payments/entry',
       'payments/refund', 'payments/credit', 'receivables/aging', 'receivables/overdue',
-      'receivables/subscriptions', 'catalog/products', 'catalog/pricing', 'catalog/promotions',
+      'receivables/subscriptions', 'receivables/statement', 'catalog/products', 'catalog/pricing', 'catalog/promotions',
       'catalog/charges-tax'].map(f => f + '.html')];
 
 let failures = 0;

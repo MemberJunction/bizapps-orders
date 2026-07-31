@@ -49,6 +49,8 @@ import '../checks/gift-cards.checks.js';
 import '../checks/bundles.checks.js';
 import '../checks/fulfillment.checks.js';
 import '../checks/capture-payment.checks.js';
+import '../checks/invoicing.checks.js';
+import '../checks/create-in-state.checks.js';
 import '../checks/arithmetic-edges.checks.js';
 import '../checks/concurrency.checks.js';
 import '../checks/volume.checks.js';
@@ -67,7 +69,7 @@ const registry = IntegrationCheckRegistry.Instance;
  * moment you confirm the metadata and the dispatcher know about it too.
  */
 const EXPECTED_BUNDLES: Record<string, number> = {
-    'order-booking': 9,
+    'order-booking': 10,
     'revenue-recognition': 7,
     subscriptions: 12,
     'subscription-cancellation': 10,
@@ -88,6 +90,8 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     bundles: 12,
     fulfillment: 12,
     'capture-payment': 12,
+    'create-in-state': 12,
+    invoicing: 15,
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,

@@ -42,8 +42,34 @@
 
 /* ── Steps ────────────────────────────────────────────────────────────── */
 
+/*
+ * MJ's `.mj-card` clips its children — sensible for rounded corners, fatal for a
+ * dropdown that has to escape the box. The customer results were positioned
+ * correctly and cut off 14px below the input, so a search that MATCHED showed a
+ * sliver of a box while a search that missed showed a readable "nobody matches".
+ * Typing something real looked more broken than typing nonsense.
+ */
+.fe-cust__card {
+  overflow: visible;
+}
+
 .fe-step {
   margin-bottom: var(--mj-space-6);
+  /*
+   * Steps are painted in DOM order, so step 2 covered step 1's open typeahead:
+   * the customer results were positioned correctly, sized correctly, and drawn
+   * underneath the next section. `elementFromPoint` over the first option
+   * returned the section, not the option — visible to the DOM, invisible to a
+   * person, which is why typing something that MATCHED looked more broken than
+   * typing something that did not.
+   *
+   * Only the step holding an open list is lifted, so nothing else changes.
+   */
+  position: relative;
+}
+
+.fe-step:has(.mj-typeahead-list) {
+  z-index: 30;
 }
 
 .fe-step-head {

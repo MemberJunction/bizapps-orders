@@ -121,6 +121,18 @@ import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-da
             </div>
 
             <div class="mjo-cr__actions">
+                <div class="mj-banner mj-banner--neutral mjo-cr__note">
+                    <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+                    <div class="body">
+                        <strong>The payment this writes, and what books.</strong>
+                        A payment whose Amount is ZERO, carrying two offsetting allocations: the
+                        credit order is drawn down, the target order is settled. Zero is not a
+                        degenerate case — no new cash entered the business. The money arrived
+                        earlier, on the payment that over-paid the first order; this only
+                        re-attributes it, so cash nets to nothing and A/R moves between orders.
+                    </div>
+                </div>
+
                 <button
                     type="button"
                     class="mj-btn mj-btn--primary"
@@ -326,9 +338,36 @@ export class MJOAccountCreditPageComponent implements OnInit {
         return FormatMoney(value);
     }
 
+    /**
+     * Load everything, THEN assign, then render once.
+     *
+     * The order matters. Assigning `Credits` and only afterwards awaiting the
+     * targets leaves a window where a tick can run: the header total reads
+     * $1,784.32 from the new data while the DOM still says $0.00 from before the
+     * load, and dev mode aborts the update. Splitting the render out of
+     * `applySource` was not enough on its own, because the ASSIGNMENT was still
+     * straddling an await.
+     *
+     * Nothing is written to the component until every await has settled.
+     */
     private async load(): Promise<void> {
-        this.Credits = await this.data.GetOrders({ Preset: 'credits' });
-        if (this.Credits.length && !this.SourceID) await this.applySource(this.Credits[0]);
+        const credits = await this.data.GetOrders({ Preset: 'credits' });
+        const first = !this.SourceID ? credits[0] : undefined;
+
+        const targets = first
+            ? await this.data.GetOrders({
+                  Preset: 'unpaid',
+                  BillToOrganizationID: (first['BillToOrganizationID'] as string) ?? undefined,
+              })
+            : [];
+
+        this.Credits = credits;
+        if (first) {
+            this.SourceID = first.ID;
+            this.Targets = targets;
+            this.TargetID = targets[0]?.ID ?? null;
+            this.Amount = Math.min(this.Available, targets[0]?.Balance ?? 0);
+        }
         this.cdr.detectChanges();
     }
 }

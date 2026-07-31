@@ -202,7 +202,7 @@ The current decision set. Each is the standing ruling — superseded ancestors l
 | D25 | **No periods, no closed-period guard — backdating allowed, unguarded (final).** The order carries `OrderDate`; the JE bears its date; accountants batch entries into the right periods; any future timing rule detects by DATE, never a period FK. | Marcelo 2026-07-14 (final, after a same-day manual-close detour was withdrawn); mirrors accounting D2. |
 | D26 | **Sales rules are metadata-driven** (`SalesRule` rule types + JSON predicates; `SalesAuthority` per-rep limits), evaluated at Order Confirm; violations raise an **"Approval Request" Task in BizApps Tasks** routed to the approver role (approve → proceed; reject → back to Draft with notes). The same tasks substrate carries every human gate (credit-limit override, discount exception, refund authorization, cancellation sign-off). Schema built; evaluation engine + routing not yet (§18). | BO-D17/D18/D27; tasks-app prerequisites verified satisfied 2026-07-15. |
 | D27 | **Entitlements split into definition + grant.** `ProductEntitlement` is the template; `EntitlementGrant` is the instance created at booking/activation, carrying a **beneficiary** (defaults to the buyer; a line may designate another — attendee, gift-card recipient, honoree). Downstream apps **poll** grants (MJ Scheduled Job + Record-Set-Processing; Amith recommends the poll) — no bespoke webhook/notification system. Provisioning/enforcement engine is later. | BO-D34/D39; LXP D14 (2026-07-14). |
-| D28 | **Order visibility is ROLE-GRANT-DRIVEN, not auto-involvement:** a user sees an order only when their `UserCompanyRole` grants (accounting's table) include the order's **OWNING company**; sees a product only when granted that product's company. Sibling-company users do NOT automatically see an order off a shared line (drill-through survives — the sister's revenue is in her own JE). WRITE stays owner-company-scoped. RLS filter = one owner-scoped leg; `OrderLine.CompanyID` is a perf/reporting column, not an RLS need. Orders seeds its own roles (order entry + an order **fulfiller**). | Robert's written answers 2026-07-20 (supersedes the involvement-based proposal); MOD-9a. |
+| D28 | **RETIRED (Amith 2026-07-31).** This decided that order visibility ran through a bespoke `UserCompanyRole` grants table in accounting, read by a hand-written orders-side RLS filter. That is an antipattern: **MemberJunction already has row-level security**, and every orders entity is a normal MJ entity subject to it. A parallel grants table would be a second answer to "may this user see this row", maintained by us and free to diverge from the one the platform enforces everywhere else — one security model plus a way around it. Company scoping is now an RLS filter configured as deployment metadata, keyed on `Order.CompanyID` (D6, unchanged). Orders seeds no roles: seeding one presumes a permission model this app does not own. `UserCompanyRole` was never built, and will not be. See §14. | Superseded by Amith 2026-07-31; originally Robert's written answers 2026-07-20 (MOD-9a). |
 | D29 | **Naming convention: transactions get number + memo; master data gets names.** No `Order.Name` column — `Order.Description` is the searchable memo, drives workspace-tab captions, and joins name/ID search. Products/categories are already named. | Marcelo 2026-07-17 (ratified the accounting norm). |
 | D30 | **Order numbering:** global `ORD-{seq}` via the `OrderSequence` table (as-built; payments likewise `PaymentSequence`). `ExternalDocumentNumber` exists as its own column (bill.com won't sync without it; may equal OrderNumber). Single vs BC-style dual sequence (draft → posted) is an open Jeremy decision (§20). | UPD-1 (Jeremy 2026-07-10). |
 | D31 | **Line-level dimension tagging:** `OrderLineDimension` junction carries accounting Dimension/DimensionValue tags on order lines so JE generation propagates them into JE lines. | §15-Q5 lean, implemented in the baseline. |
@@ -801,14 +801,30 @@ Grants are the machine-readable spine downstream apps read to provision access.
 
 ## 14. Permissions, roles, and company scope
 
-- **Visibility/write per D28** — role-grant-driven via accounting's `UserCompanyRole` table;
-  owner-company-scoped read AND write; BCHQ order-desk users get all companies by deployment
-  config, not code.
-- Orders **seeds its own roles** (order entry, Order Fulfiller) mirroring accounting's
-  roles + RLS model; the A2 co-design (Marcelo + Robert) executes the mechanism. Approver-style
-  enforcement matters before any non-dev use on the accounting side; orders-side RLS rides the same
-  wave.
-- Company-scope UX semantics: unruled, awaiting Marcelo's scope pass (§9).
+**Orders builds no permission machinery of its own. MemberJunction already has it.**
+
+An earlier version of this section (and D28) specified a bespoke `UserCompanyRole` grants table in
+accounting, with orders reading it through a hand-written RLS filter. That was an antipattern and is
+removed. MJ ships row-level security as a first-class feature — `RowLevelSecurityFilter` rows wired
+to `EntityPermission` per role, with `{{UserID}}`-style substitution — and every entity in this app
+is already a normal MJ entity subject to it.
+
+Building a parallel grants table would have meant a second answer to "may this user see this row",
+maintained by us, diverging from the one the platform enforces everywhere else. Two security models
+is not twice the security; it is one security model plus a way around it.
+
+**What this means in practice:**
+
+- Company scoping is an RLS filter on the orders entities, configured as deployment metadata rather
+  than written as code. A BCHQ order-desk user seeing every company is a filter that does not
+  restrict; a single-company user is one that does. Neither is an application concern.
+- Roles are ordinary MJ roles. If a deployment wants an order-entry role and a fulfiller role, it
+  creates them the way it creates any other — orders does not seed them, because seeding a role
+  presumes a permission model this app does not own.
+- `Order.CompanyID` remains the ownership anchor (D6) and is what any company-scoping filter would
+  key on. That has not changed; what changed is who enforces it.
+
+Nothing here is deferred work. There is no orders-side permission feature to build.
 
 ---
 
@@ -1105,7 +1121,8 @@ executes nothing and reports success; the parity floor exists because of that.
   for exactly which slice is live and which is decorative).
 - Statements and consolidated bill packages · ORDER SPLITTING (the queue ships; splitting one order
   into several shipments does not) · `create-into-Fulfilled` (`Orders.CreateOrderInState`, D17) ·
-  orders-side RLS and role seeding · CDP migration tooling.
+  CDP migration tooling. (Orders-side RLS and role seeding are REMOVED, not deferred — MJ's own
+  row-level security covers it; see §14.)
 - Stripe against a real sandbox — the stub covers the path; the live run is a separate exercise.
 
 **Retired, so nobody looks for it**

@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
-import { MJOMoneyPipe, FormatDate, DaysSince } from '../../panels/money-format';
+import { MJOMoneyPipe, FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
 import { MJOOrdersDataService, MJO_ENTITIES } from '../../services/orders-data.service';
 import { RunView, Metadata } from '@memberjunction/core';
 
@@ -57,6 +57,17 @@ interface MJORecognitionPeriod {
     template: `
         <div class="mjo-sub__split">
             <div class="mjo-sub__left">
+                <div class="mj-banner mj-banner--neutral mjo-sub__note">
+                    <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                    <div class="body">
+                        <strong>Why this cannot double-bill.</strong>
+                        A renewal is refused when a term already covers the period it would create.
+                        The check is against COVERAGE, not against whether a job has run — so a
+                        retried batch, a manual nudge and a scheduled sweep all reach the same
+                        answer.
+                    </div>
+                </div>
+
                 <mjo-worklist-table
                     [Columns]="Columns"
                     [Rows]="Rows"
@@ -90,8 +101,8 @@ interface MJORecognitionPeriod {
                             <mjo-stated-value Label="Beneficiary" From="who it is for">
                                 {{ Selected.BeneficiaryPerson ?? '—' }}
                             </mjo-stated-value>
-                            <mjo-stated-value Label="Covered through">
-                                {{ date(Selected.EndDate) }}
+                            <mjo-stated-value Label="Covered through" From="the last term's end">
+                                {{ CoveredThrough }}
                             </mjo-stated-value>
                             <mjo-stated-value Label="Auto-renew" From="the consent switch">
                                 {{ Selected.AutoRenew ? 'On' : 'Off — it simply ends' }}
@@ -114,6 +125,74 @@ interface MJORecognitionPeriod {
                                         With auto-renew on, the system places a confirmed order at lead time —
                                         invoicing ahead of the period, which is how subscription billing works.
                                     </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+
+                    <div class="mj-card mjo-sub__recog">
+                        <div class="mj-card-head">
+                            <i class="fa-solid fa-timeline" aria-hidden="true"></i>
+                            <h3>Coverage terms</h3>
+                            <span class="right small muted">{{ Terms.length }}</span>
+                        </div>
+                        <div class="mj-table-wrap">
+                            <table class="mj-table mj-table--compact">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Covers</th>
+                                        <th class="num">Amount</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (term of Terms; track term['ID']) {
+                                        <tr [class.is-current]="isCurrentTerm(term)">
+                                            <td class="small">{{ term['TermNumber'] }}</td>
+                                            <td class="small">
+                                                {{ dateOf(term['StartDate']) }} → {{ dateOf(term['EndDate']) }}
+                                                @if (term['IsProrated']) {
+                                                    <span class="mj-chip mj-chip--outline">prorated</span>
+                                                }
+                                            </td>
+                                            <td class="num">{{ moneyOf(term['Amount']) }}</td>
+                                            <td>
+                                                <span class="mj-chip" [class]="termClass(term)">
+                                                    {{ isCurrentTerm(term) ? 'current' : (term['Status'] ?? '—') }}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    } @empty {
+                                        <tr><td colspan="4" class="small muted">No terms recorded.</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="mj-card-pad small muted">
+                            A renewal APPENDS a term rather than moving a pointer, so "current" is
+                            the term whose window covers today — a fact that cannot go stale. It
+                            also keeps the difference visible between a customer buying more
+                            coverage and the system renewing them under standing authority.
+                        </div>
+                    </div>
+
+                    <div class="mj-card mjo-sub__recog">
+                        <div class="mj-card-head">
+                            <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                            <h3>History</h3>
+                        </div>
+                        <div class="mj-card-pad">
+                            @for (event of Events; track event['ID']) {
+                                <div class="mjo-sub__event">
+                                    <span class="mj-chip mj-chip--outline">{{ event['EventType'] }}</span>
+                                    <span class="small muted">{{ dateOf(event['OccurredAt']) }}</span>
+                                </div>
+                            } @empty {
+                                <div class="small muted">
+                                    No events yet. A subscription that has only ever been sold has
+                                    nothing to say here.
                                 </div>
                             }
                         </div>
@@ -161,6 +240,15 @@ interface MJORecognitionPeriod {
             .mjo-sub__right { flex: 0 0 360px; min-width: 0; }
             .mjo-sub__recog { margin-top: var(--mj-space-4); }
             .mjo-sub__note { margin-top: var(--mj-space-3); }
+            .mjo-sub__event {
+                display: flex;
+                align-items: center;
+                gap: var(--mj-space-2);
+                padding: 4px 0;
+                border-bottom: 1px solid var(--mj-border-subtle);
+            }
+            .mjo-sub__event:last-child { border-bottom: none; }
+            tr.is-current { background: var(--mj-status-success-bg); }
             .mjo-sub__waterfall {
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
@@ -254,12 +342,86 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         );
         this.AllRows = result.Success ? (result.Results ?? []) : [];
         this.applyPreset();
-        if (this.Rows.length) this.SelectedID = this.Rows[0].ID;
+        if (this.Rows.length) {
+            this.SelectedID = this.Rows[0].ID;
+            await this.loadDetail(this.SelectedID);
+        }
         this.cdr.detectChanges();
     }
 
-    public Select(row: MJOSubscriptionRow): void {
+    public Terms: Array<Record<string, unknown>> = [];
+    public Events: Array<Record<string, unknown>> = [];
+
+    public async Select(row: MJOSubscriptionRow): Promise<void> {
         this.SelectedID = row.ID;
+        await this.loadDetail(row.ID);
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Terms and history for one subscription.
+     *
+     * Fetched on selection, and both awaits settle before either is assigned —
+     * assigning between awaits is what puts the view into the NG0100 freeze.
+     */
+    private async loadDetail(subscriptionID: string): Promise<void> {
+        const [terms, events] = await Promise.all([
+            this.data.GetSubscriptionTerms(subscriptionID),
+            this.data.GetSubscriptionEvents(subscriptionID),
+        ]);
+        this.Terms = terms;
+        this.Events = events;
+    }
+
+    /**
+     * The term whose window covers today.
+     *
+     * Not a stored flag — renewals append terms, so "current" is a question about
+     * the calendar and answering it from the dates cannot go stale.
+     */
+    protected isCurrentTerm(term: Record<string, unknown>): boolean {
+        const today = new Date().toISOString().slice(0, 10);
+        const from = term['StartDate'] ? String(term['StartDate']).slice(0, 10) : null;
+        const to = term['EndDate'] ? String(term['EndDate']).slice(0, 10) : null;
+        return (!from || from <= today) && (!to || to >= today);
+    }
+
+    protected termClass(term: Record<string, unknown>): string {
+        if (this.isCurrentTerm(term)) return 'mj-chip--success';
+        return term['Status'] === 'Canceled' ? 'mj-chip--outline' : 'mj-chip--outline';
+    }
+
+    /**
+     * Dates and amounts arrive as `unknown` off a loosely-typed row.
+     *
+     * TERM WINDOWS SHOW THE YEAR. Consecutive terms differ only by it — a renewal
+     * of an annual subscription runs Jul 31 → Jul 30 exactly like the term before
+     * it — so the short format rendered two different years as the same window and
+     * made an appended renewal look like a duplicate.
+     */
+    protected dateOf(value: unknown): string {
+        return value ? FormatDate(String(value)) : '—';
+    }
+
+    /**
+     * The furthest date any term reaches.
+     *
+     * The subscription's own EndDate can be null while its terms know exactly how
+     * far coverage runs — terms are where renewals are recorded, so they are the
+     * authority. Reading the header field alone showed "—" for a subscription
+     * covered for another year.
+     */
+    public get CoveredThrough(): string {
+        const ends = this.Terms
+            .map((t) => (t['EndDate'] ? String(t['EndDate']).slice(0, 10) : null))
+            .filter((d): d is string => !!d)
+            .sort();
+        const furthest = ends[ends.length - 1] ?? this.Selected?.EndDate ?? null;
+        return furthest ? FormatDate(furthest) : '—';
+    }
+
+    protected moneyOf(value: unknown): string {
+        return FormatMoney(Number(value ?? 0));
     }
 
     public OnPreset(preset: string): void {

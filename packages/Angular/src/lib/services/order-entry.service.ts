@@ -10,6 +10,7 @@ import {
     type OrdersPreviewOrderOutput,
     type OrdersSaveOrderOutput,
 } from '@mj-biz-apps/orders-entities';
+import type { MJOOrderRow, MJOOrdersDataService } from './orders-data.service';
 
 /** What a preview attempt produced. */
 export interface MJOPreviewState {
@@ -125,7 +126,19 @@ export class MJOOrderEntryService {
     public async Save(draft: OrderDraft): Promise<OrdersSaveOrderOutput | null> {
         const op = new OrdersSaveOrderOperation();
         const result = await op.Execute({ Draft: draft.ToInput() });
-        if (!result.Success || !result.Output) return null;
+        if (!result.Success || !result.Output?.Success) {
+            // SAY WHY. Returning null made a refused save indistinguishable from a
+            // successful one that had nothing to report — the button appeared to
+            // work and no order existed. A save that fails silently is the worst
+            // outcome available on an order screen.
+            const reason =
+                result.Output?.Blockers?.map((b) => b.Message).join(' ') ||
+                result.Output?.Message ||
+                result.ErrorMessage ||
+                'The order could not be saved.';
+            console.error(`[MJOOrderEntryService] SaveOrder refused: ${reason}`);
+            throw new Error(reason);
+        }
 
         // Carry the assigned id back onto the draft, so the next save updates the
         // same order rather than creating a second one.
@@ -169,6 +182,45 @@ export class MJOOrderEntryService {
             ExpectedGrossTotal: draft.ConfirmableGrossTotal,
         });
         return result.Success && result.Output ? result.Output : (result.Output ?? null);
+    }
+
+    /**
+     * Load a SAVED order into an editable draft.
+     *
+     * Opening an existing order did nothing at all before this: the list emitted
+     * the row, the section remembered its id, and the editor — which only accepts
+     * a Draft — was handed a blank one. There was no path from an order id to
+     * something editable.
+     *
+     * Unit price is carried across explicitly. The engine resolved it once when
+     * the order was taken, and re-resolving on open would silently reprice last
+     * year's purchase at today's rules.
+     */
+    public async LoadDraft(orderHeaderID: string, data: MJOOrdersDataService): Promise<OrderDraft | null> {
+        const orders = await data.GetOrders({ MaxRows: 500 });
+        const order = orders.find((row: MJOOrderRow) => row.ID === orderHeaderID);
+        if (!order) return null;
+
+        const draft = new OrderDraft({
+            CompanyID: order.CompanyID,
+            OrderHeaderID: order.ID,
+        });
+        draft.SetHeader({
+            BillToOrganizationID: (order['BillToOrganizationID'] as string) ?? null,
+            BillToPersonID: (order['BillToPersonID'] as string) ?? null,
+            Description: order.Description ?? null,
+        });
+
+        for (const line of await data.GetOrderLines(orderHeaderID)) {
+            draft.AddLine({
+                ProductID: String(line['ProductID'] ?? ''),
+                Quantity: Number(line['Quantity'] ?? 0),
+                UnitPrice: Number(line['UnitPrice'] ?? 0),
+                DiscountPct: Number(line['DiscountPct'] ?? 0) || undefined,
+            });
+        }
+
+        return draft;
     }
 
     /** Cancel any pending preview — call from a component's `ngOnDestroy`. */

@@ -54,6 +54,7 @@ const MJ = (() => {
         { group: null },
         { key: 'aging',   label: 'Customer A/R',   icon: 'fa-solid fa-user-tag',      href: 'receivables/aging.html' },
         { key: 'overdue', label: 'Overdue worklist', icon: 'fa-solid fa-hourglass-half', href: 'receivables/overdue.html', badge: 4 },
+        { key: 'statement', label: 'Customer statement', icon: 'fa-solid fa-file-invoice-dollar', href: 'receivables/statement.html' },
         { key: 'subs',    label: 'Subscriptions',  icon: 'fa-solid fa-rotate',        href: 'receivables/subscriptions.html' },
       ]},
     { key: 'catalog', label: 'Catalog', icon: 'fa-solid fa-box-open', home: 'catalog/products.html',

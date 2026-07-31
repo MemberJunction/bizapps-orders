@@ -68,7 +68,7 @@ await import('@mj-biz-apps/orders-server').then((m) => m.LoadBizAppsOrdersServer
 
 const it = await import('@mj-biz-apps/orders-integration-tests');
 const { CreateOrdersFixture, PurgeAllFixtureData, ORDERS_SCHEMA, ACCT_SCHEMA } = it;
-const { CreateProductPrice, CreatePromotion, EnsureTaxNexus, EnsureIntercompanyAccounts } = it;
+const { CreateProductPrice, CreatePromotion, EnsureTaxNexus, EnsureIntercompanyAccounts, CreateBundleItem } = it;
 const { ConfirmOrder } = it;
 
 const ctx = {
@@ -121,6 +121,17 @@ for (const [productID, amount] of [
 
 await EnsureTaxNexus(ctx, f.CoA.ID,
     ['CA', 'CA-SANTACLARA'].map((k) => f.Tax.JurisdictionIDs.get(k)).filter(Boolean));
+
+// GIFT CARDS AND BUNDLES. Both features shipped and neither appeared in this data, so anyone
+// browsing the review set would conclude they did not exist — the same class of mistake as an
+// empty state that reads as a quiet afternoon. The bundle's components are deliberately UNEQUAL
+// (75 and 25 against a 100 bundle) so the allocation is visibly by relative value rather than an
+// even split; 50/50 and 75/25 both sum to 100, and only one of them is right.
+await CreateProductPrice(ctx, f.Products.GiftCardA, 50);
+await CreateProductPrice(ctx, f.Products.BundlePartX, 75);
+await CreateProductPrice(ctx, f.Products.BundlePartY, 25);
+await CreateBundleItem(ctx, f.Products.BundleA, f.Products.BundlePartX, { Quantity: 1, SortOrder: 10 });
+await CreateBundleItem(ctx, f.Products.BundleA, f.Products.BundlePartY, { Quantity: 2, SortOrder: 20 });
 
 const promotion = ({ kind = 'PercentOff', value, appliesAt = 'Order', targetProductID = null }) =>
     CreatePromotion(ctx, {
@@ -222,6 +233,22 @@ if (paymentType) {
 } else {
     console.log('  ·· skipped the payment scenarios — no ordinary PaymentType is seeded');
 }
+
+// Selling a gift card earns NOTHING — the credit leg is a liability, and revenue appears later on
+// whatever order the card is spent on. Worth looking at next to scenario 1: same money in, entirely
+// different entry.
+await confirm('a GIFT CARD sale — books a LIABILITY, not revenue; issues 3 spendable cards', {
+    ...buyer,
+    Lines: [{ ProductID: f.Products.GiftCardA, Quantity: 3, UnitPrice: 50 }],
+});
+
+// The parent line is customer-facing and carries ZERO; the children carry the money, allocated by
+// relative standalone selling price. Look at LineNumber ordering — children sit directly beneath
+// their parent — and at ParentOrderLineID, which is what tells two of the same bundle apart.
+await confirm('a BUNDLE — expands into component lines under a rollup parent that totals zero', {
+    ...buyer,
+    Lines: [{ ProductID: f.Products.BundleA, Quantity: 2, UnitPrice: 100 }],
+});
 
 // ── A VARIED POPULATION ────────────────────────────────────────────────────────────────────────
 // Deliberately NOT sixty copies of one order. Every axis the engine branches on gets varied, because

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
 import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.component';
 import { MJOOrdersDataService, type MJOPaymentRow } from '../../services/orders-data.service';
-import { FormatMoney } from '../../panels/money-format';
+import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 
 /**
  * `mjo-payments-dashboard-page` — what came in, and does it tie?
@@ -22,7 +22,7 @@ import { FormatMoney } from '../../panels/money-format';
 @Component({
     selector: 'mjo-payments-dashboard-page',
     standalone: true,
-    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent],
+    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent, MJOMoneyPipe],
     template: `
         <div class="mj-stat-grid">
             <mjo-stat-tile

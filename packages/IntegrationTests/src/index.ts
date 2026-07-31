@@ -81,6 +81,8 @@ export * from './checks/gift-cards.checks.js';
 export * from './checks/bundles.checks.js';
 export * from './checks/fulfillment.checks.js';
 export * from './checks/capture-payment.checks.js';
+export * from './checks/invoicing.checks.js';
+export * from './checks/create-in-state.checks.js';
 export * from './checks/arithmetic-edges.checks.js';
 export * from './checks/concurrency.checks.js';
 export * from './checks/volume.checks.js';

@@ -1,0 +1,263 @@
+[
+  {
+    "_comments": [
+      "Orders: Generate Invoice.",
+      "",
+      "GenerationType is effectively Manual here — Type=Custom, so nothing is AI-generated and the",
+      "DriverClass points at a hand-authored subclass in packages/Actions. The registration key is",
+      "namespaced ('Orders.GenerateInvoice') for the same reason the remote operations are: 'Generate",
+      "Invoice' is a name another Open App will eventually want, and the ClassFactory resolves by",
+      "string.",
+      "",
+      "AN ORDER CAN PRODUCE MORE THAN ONE DOCUMENT. Lines sold by different companies are different",
+      "receivables owed to different legal entities, so the action returns an ARRAY and the scalar",
+      "HTML output is null whenever it split. A caller that reads HTML and ignores DocumentCount gets",
+      "nothing rather than half a bill presented as the whole one.",
+      "",
+      "IT WRITES NOTHING. There is no invoice record — the confirmed order is the receivable — so this",
+      "is safe to call repeatedly, from a workflow, an agent, or a print button."
+    ],
+    "fields": {
+      "Name": "Generate Invoice",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Render an order as the document you send a customer: an invoice, a quote (for a draft or quoted order) or a credit memo (for a reversal). Returns self-contained HTML ready for a PDF renderer or an email body, plus the underlying figures so a caller can reconcile without parsing markup. Writes nothing. An order sold by more than one company produces one document per company, each billing only what that company is owed.",
+      "Type": "Custom",
+      "DriverClass": "Orders.GenerateInvoice",
+      "IconClass": "fa-regular fa-file-lines",
+      "UserPrompt": "Given an order, produce the customer-facing document for it using the 'Orders: Standard Invoice' template.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "896B0F83-AD89-4FC5-BDB9-330DE95AB3E4"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "OrderID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "The order to render. Any status except Voided — a voided order is refused rather than rendered, because a bill for money nobody owes is indistinguishable from a real one once it is a PDF in an inbox."
+          },
+          "primaryKey": {
+            "ID": "6F504857-6ECB-4332-A5FE-ED5B3D7B3933"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.099Z",
+            "checksum": "79e86cdcee8d15ab1eec4de6584ba55757aafe92ad85e16c0ccb0ac5cd1401af"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CompanyID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Render only the document for this selling company. Omit to get every document the order produces. Narrowing does not renumber the others: the -A/-B suffix describes the order, not the size of the result."
+          },
+          "primaryKey": {
+            "ID": "6F3C65E4-890A-446A-986F-3BCD857999C3"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.129Z",
+            "checksum": "e083af16b3faad71999ea0e102341afc54920d4499f9d57098e624339cb1e0b9"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AsOfDate",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The date the document is produced (YYYY-MM-DD). Drives the days-until-due countdown and the generated-on line, nothing else — the figures come from the order and do not move. Defaults to today."
+          },
+          "primaryKey": {
+            "ID": "74C1901D-E5F4-444F-97C6-69C212970DD9"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.159Z",
+            "checksum": "da1bb8cc85bcf8d8a3bdcd80de333924b469c3ecdc94711623a102858aaed158"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "TemplateName",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "DefaultValue": "Orders: Standard Invoice",
+            "Description": "The MJ Template to render. A deployment can point this at its own template without forking the code — that is the reason the markup lives in the database at all."
+          },
+          "primaryKey": {
+            "ID": "4C09F878-3711-47A8-91F4-9EC40964BE87"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.185Z",
+            "checksum": "f73215d5ce83bb992e912c36c2f649b853163d17cdccfefd81532bad362c9f73"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Locale",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "DefaultValue": "en-US",
+            "Description": "BCP 47 tag driving number grouping and date order."
+          },
+          "primaryKey": {
+            "ID": "C25C1DC6-C040-4D55-AA09-D1D21C7FDCB7"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.218Z",
+            "checksum": "0ee4101a3b1bed26ae371ce8e085df5846bf8a70c17c5fc4ea0f651d8dc3c33b"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CurrencyCode",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Override the currency. By default each document uses its SELLING COMPANY's functional currency from the accounting profile, which is where the fact actually lives — currency is a property of the seller, not of the sale."
+          },
+          "primaryKey": {
+            "ID": "3429C06E-F1A8-4276-B494-543735F13509"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.250Z",
+            "checksum": "2667445ccaefef153a190bbca126e12b9c5acee77a9c96660b10705652f52a97"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Format",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "DefaultValue": "HTML",
+            "Description": "'HTML' renders the document; 'DATA' returns the figures alone and skips the template entirely, for callers reconciling rather than sending. PDF is produced by handing the HTML to a renderer — this action does not shell out to one."
+          },
+          "primaryKey": {
+            "ID": "3754EEF1-2A39-4521-9215-3D89BF42E0DB"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.297Z",
+            "checksum": "e6f241dd45386e186ebb4d487ca341748f1c61aa1719ed5d1bbde5033bb88f21"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ShowDiagnostics",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "DefaultValue": "false",
+            "Description": "Print the internal notes block on the document — money the builder had to place by judgement rather than by allocation, and any ladder that failed to reach its own total. For checking a document, never for sending one."
+          },
+          "primaryKey": {
+            "ID": "42208AD1-DA68-4AE3-87B3-672AE2CD3CA7"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.323Z",
+            "checksum": "cf138b9e08564528664b674e085e5dae9c3fe58a1a7190db23d497812139ceb5"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Invoices",
+            "Type": "Output",
+            "ValueType": "Simple Object",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "One entry per document: DocumentNumber, Kind, CompanyID, CompanyName, Gross, AmountDue, HTML and the full decorated figures under Data. This is the authoritative output; the scalar HTML below is only a convenience."
+          },
+          "primaryKey": {
+            "ID": "30406C44-35FA-44A5-BCAE-2E36250FE194"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.345Z",
+            "checksum": "0f715db38c8932a5768457fe9ade1c7a3b8d148f70ea4382826e50f574225574"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "HTML",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The rendered document, for the overwhelmingly common single-company order. NULL when the order produced more than one — handing back the first of two as though it were the whole bill is the failure this deliberately refuses."
+          },
+          "primaryKey": {
+            "ID": "8E24A600-C4AE-42BE-A392-8FBA8731B565"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.365Z",
+            "checksum": "b6ab5795eaa6cea0927368e463c8623df454b2038af25f18c4edc0502b6c8b5d"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "DocumentCount",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many documents this order produced. Greater than one means the order was split by selling company, and the ResultCode says SPLIT_BY_COMPANY."
+          },
+          "primaryKey": {
+            "ID": "2BABEA0E-C323-453F-89DD-F0F3ED292998"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.394Z",
+            "checksum": "049f3fe815ad2d6779a9f26c0550aaf0bd6132dfa025bc0c3c20f5ede71dd4a3"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Notes",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Anything the builder decided rather than read, prefixed with the document it belongs to. Empty is the expected state; a non-empty list is worth a look before the document goes out."
+          },
+          "primaryKey": {
+            "ID": "84B0606F-2A8C-4A67-A773-A003D54C82B0"
+          },
+          "sync": {
+            "lastModified": "2026-07-31T20:09:25.413Z",
+            "checksum": "a7ca83e92ab5b8a824fe7ab035247a791a58b6b8a3971c9a100fe656efe17f5f"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-07-31T20:09:25.036Z",
+      "checksum": "5873885b00c69ce712346725c5cc75c503d60bcb062c819036ace7a9d23c2d96"
+    }
+  }
+]

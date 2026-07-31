@@ -150,6 +150,28 @@ interface MJOUnapplication {
                     </div>
                 </div>
 
+                <div class="mj-banner mj-banner--warning mjo-rf__note">
+                    <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                    <div class="body">
+                        <strong>Guards.</strong>
+                        A refund cannot exceed what remains after earlier refunds, and a captured
+                        payment is never edited — the refund is a NEW payment that reverses it. Both
+                        rules are enforced server-side, so a stale screen cannot talk its way past
+                        them.
+                    </div>
+                </div>
+
+                <div class="mj-banner mj-banner--info mjo-rf__note">
+                    <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+                    <div class="body">
+                        <strong>Mirrored entry.</strong>
+                        Cash is credited and A/R debited — the capture's entry with the directions
+                        swapped. The processing fee is NOT reversed unless the provider actually
+                        returned it, because our cost was incurred whether or not the customer kept
+                        the goods.
+                    </div>
+                </div>
+
                 <div class="mjo-rf__actions">
                     <button
                         type="button"

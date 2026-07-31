@@ -52,6 +52,159 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
             EmptyTitle="No price rules"
             EmptyHint="Without a rule, a line falls back to the product's list price."
             FootNote="Direct entry on an order line always wins over every rule here — pricing layers suggestion on top of it rather than replacing it, so it can never block a baseline flow." />
+
+        <div class="mjo-pr__grid">
+            <div class="mj-card">
+                <div class="mj-card-head">
+                    <i class="fa-solid fa-tags" aria-hidden="true"></i>
+                    <h3>Price lists</h3>
+                    <span class="right small muted">{{ PriceLists.length }}</span>
+                </div>
+                <div class="mj-table-wrap">
+                    <table class="mj-table mj-table--compact">
+                        <thead>
+                            <tr><th>List</th><th>Window</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            @for (list of PriceLists; track list['ID']) {
+                                <tr>
+                                    <td>
+                                        {{ list['Name'] }}
+                                        <div class="secondary mono">{{ list['Code'] }}</div>
+                                    </td>
+                                    <td class="small">{{ windowOf(list) }}</td>
+                                    <td>
+                                        <span class="mj-chip" [class]="statusChip(list['Status'])">
+                                            {{ list['Status'] ?? '—' }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            } @empty {
+                                <tr>
+                                    <td colspan="3" class="small muted">
+                                        No price lists. Every product then prices from its own
+                                        default — which is a valid configuration, not a gap.
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="mj-card">
+                <div class="mj-card-head">
+                    <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
+                    <h3>How a price resolves</h3>
+                </div>
+                <div class="mj-card-pad">
+                    <ol class="mjo-pr__walk">
+                        <li>
+                            <b>A price typed on the line</b> — wins outright. Nothing below is
+                            consulted, and the line records that it was stated.
+                        </li>
+                        <li>
+                            <b>A rule on the customer's price list</b>, highest priority first,
+                            within its effective window and recurrence.
+                        </li>
+                        <li>
+                            <b>A rule on the standard list</b>, same ordering.
+                        </li>
+                        <li>
+                            <b>The product's standalone selling price</b> — the floor, so a line can
+                            always be priced.
+                        </li>
+                    </ol>
+                    <div class="small muted mjo-pr__note">
+                        The walk stops at the first answer. That is what makes a price explainable:
+                        there is exactly one reason for it, and it can be named.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mjo-pr__grid mjo-pr__block">
+            <div class="mj-card">
+                <div class="mj-card-head">
+                    <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+                    <h3>Tiered bands</h3>
+                </div>
+                <div class="mj-table-wrap">
+                    <table class="mj-table mj-table--compact">
+                        <thead>
+                            <tr><th>Quantity</th><th class="num">Unit</th></tr>
+                        </thead>
+                        <tbody>
+                            @for (tier of Tiers; track tier['ID']) {
+                                <tr>
+                                    <td class="small">{{ bandOf(tier) }}</td>
+                                    <td class="num">{{ money(tier['Amount']) }}</td>
+                                </tr>
+                            } @empty {
+                                <tr>
+                                    <td colspan="2" class="small muted">
+                                        No banded prices. A product without bands charges one unit
+                                        price at every quantity.
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mj-card-pad small muted">
+                    Bands are read by quantity, and the band that matches sets the unit price for
+                    <b>every</b> unit — not just the ones above the threshold. That is the
+                    difference between a tier and a bracket, and getting it wrong is a silent
+                    overcharge.
+                </div>
+            </div>
+
+            <div class="mj-card">
+                <div class="mj-card-head">
+                    <i class="fa-solid fa-clock" aria-hidden="true"></i>
+                    <h3>Recurrence windows</h3>
+                </div>
+                <div class="mj-table-wrap">
+                    <table class="mj-table mj-table--compact">
+                        <thead>
+                            <tr><th>Rule</th><th>When it applies</th></tr>
+                        </thead>
+                        <tbody>
+                            @for (row of Recurring; track row.Key) {
+                                <tr>
+                                    <td class="small">{{ row.Product }}</td>
+                                    <td class="small">{{ row.When }}</td>
+                                </tr>
+                            } @empty {
+                                <tr>
+                                    <td colspan="2" class="small muted">
+                                        No recurrence restrictions — every rule applies whenever its
+                                        effective window is open.
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mj-card-pad small muted">
+                    A happy hour or a weekday rate is the SAME rule with a narrower window, not a
+                    second pricing system. Recurrence narrows when a rule is eligible; priority still
+                    decides which eligible rule wins.
+                </div>
+            </div>
+        </div>
+
+        <div class="mj-banner mj-banner--warning mjo-pr__block">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            <div class="body">
+                <strong>Ambiguity is refused at write time.</strong>
+                Two rules with the same priority that could both match are rejected when the rule is
+                SAVED, not resolved when a price is asked for. A price that depends on which row the
+                database returned first is a price nobody can explain — and the person who created
+                the ambiguity is the one who should resolve it, while they still remember what they
+                meant.
+            </div>
+        </div>
     `,
     styles: [
         `
@@ -62,6 +215,18 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                 padding: var(--mj-space-6);
             }
             .mjo-pr__note { margin-bottom: var(--mj-space-4); }
+            .mjo-pr__grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: var(--mj-space-4);
+                margin-top: var(--mj-space-4);
+            }
+            .mjo-pr__block { margin-top: var(--mj-space-4); }
+            .mjo-pr__walk { margin: 0; padding-left: var(--mj-space-5); }
+            .mjo-pr__walk li { margin-bottom: var(--mj-space-2); }
+            @media (max-width: 1000px) {
+                .mjo-pr__grid { grid-template-columns: 1fr; }
+            }
             @media (max-width: 760px) {
                 :host { padding: var(--mj-space-4); }
             }
@@ -126,9 +291,76 @@ export class MJOPricingPageComponent implements OnInit {
         },
     ];
 
+    public PriceLists: Array<Record<string, unknown>> = [];
+    public Tiers: Array<Record<string, unknown>> = [];
+
     public async ngOnInit(): Promise<void> {
-        this.Rows = await this.data.GetProductPrices();
+        const [rows, lists, tiers] = await Promise.all([
+            this.data.GetProductPrices(),
+            this.data.GetPriceLists(),
+            this.data.GetPriceTiers(),
+        ]);
+        this.Rows = rows;
+        this.PriceLists = lists;
+        this.Tiers = tiers;
         this.cdr.detectChanges();
+    }
+
+    /**
+     * Rules that only apply at certain times.
+     *
+     * Derived from the price rows already loaded rather than queried again — a
+     * recurrence is a narrowing ON a rule, not a separate record, which is the
+     * whole reason a happy hour is not a second pricing system.
+     */
+    public get Recurring(): Array<{ Key: string; Product: string; When: string }> {
+        const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const list = (csv: unknown, names: string[]): string | null => {
+            const raw = String(csv ?? '').trim();
+            if (!raw) return null;
+            return raw
+                .split(',')
+                .map((n) => names[Number(n.trim()) % names.length] ?? n.trim())
+                .join(', ');
+        };
+
+        return this.Rows.flatMap((row) => {
+            const days = list(row['RecurrenceDaysOfWeek'], DAYS);
+            const months = list(row['RecurrenceMonths'], MONTHS);
+            const from = row['TimeOfDayStart'] ? String(row['TimeOfDayStart']).slice(0, 5) : null;
+            const to = row['TimeOfDayEnd'] ? String(row['TimeOfDayEnd']).slice(0, 5) : null;
+            const time = from || to ? `${from ?? 'open'}–${to ?? 'close'}` : null;
+
+            const parts = [days, months, time].filter(Boolean);
+            if (!parts.length) return [];
+            return [{
+                Key: String(row['ID']),
+                Product: `${row['Product'] ?? ''} · ${row['PriceList'] ?? 'standard'}`,
+                When: parts.join(' · '),
+            }];
+        });
+    }
+
+    /** "5–9" or "10+" — a band with no ceiling is the last one. */
+    protected bandOf(tier: Record<string, unknown>): string {
+        const min = Number(tier['MinQuantity'] ?? 0);
+        const max = tier['MaxQuantity'];
+        return max == null || max === '' ? `${min}+` : `${min}–${Number(max)}`;
+    }
+
+    protected windowOf(row: Record<string, unknown>): string {
+        const from = row['EffectiveFrom'] ? FormatDate(String(row['EffectiveFrom']), { Short: true }) : '—';
+        const to = row['EffectiveTo'] ? FormatDate(String(row['EffectiveTo']), { Short: true }) : 'open';
+        return `${from} → ${to}`;
+    }
+
+    protected statusChip(status: unknown): string {
+        return status === 'Active' ? 'mj-chip--success' : 'mj-chip--outline';
+    }
+
+    protected money(value: unknown): string {
+        return FormatMoney(Number(value ?? 0));
     }
 }
 
