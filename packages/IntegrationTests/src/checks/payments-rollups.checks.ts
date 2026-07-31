@@ -29,6 +29,8 @@ import {
 } from '@memberjunction/testing-integration';
 import {
     CreateOrdersFixture,
+    createViaEntity,
+    upsertViaEntity,
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
@@ -38,6 +40,11 @@ import {
     TxOne,
     TxQuery,
 } from '../fixture.js';
+import {
+    PAYMENT_DETAIL_ENTITY,
+    PAYMENT_HEADER_ENTITY,
+    PAYMENT_LINE_ENTITY,
+} from '../entity-names.js';
 import { ConfirmOrder } from '../order-builder.js';
 
 interface RollupRow {
@@ -72,22 +79,23 @@ async function confirm250(ctx: IntegrationCheckContext) {
 /** Post a payment of `amount` against an order and apply all of it. */
 async function payOrder(ctx: IntegrationCheckContext, orderID: string, amount: number) {
     const f = Fx();
-    const paymentID = randomUUID();
     const cash = f.PaymentTypeIDs.get('Cash');
     Assert(cash != null, "PaymentType 'Cash' missing — push the orders app metadata");
 
-    await TxQuery(
-        ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.PaymentHeader
-            (ID, PaymentNumber, ReceivingCompanyID, PaymentTypeID, Amount, PaymentDate, Status)
-         VALUES ('${paymentID}','IT-${paymentID.slice(0, 8).toUpperCase()}','${f.CoA.ID}','${cash}',
-                 ${amount}, GETDATE(), 'Captured')`,
-    );
-    await TxQuery(
-        ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.PaymentLine (ID, PaymentHeaderID, OrderHeaderID, Amount, AllocatedAt)
-         VALUES ('${randomUUID()}','${paymentID}','${orderID}',${amount}, SYSDATETIMEOFFSET())`,
-    );
+    const paymentID = await createViaEntity(ctx, PAYMENT_HEADER_ENTITY, {
+        PaymentNumber: `IT-${randomUUID().slice(0, 8).toUpperCase()}`,
+        ReceivingCompanyID: f.CoA.ID,
+        PaymentTypeID: cash,
+        Amount: amount,
+        PaymentDate: new Date(),
+        Status: 'Captured',
+    });
+    await createViaEntity(ctx, PAYMENT_LINE_ENTITY, {
+        PaymentHeaderID: paymentID,
+        OrderHeaderID: orderID,
+        Amount: amount,
+        AllocatedAt: new Date(),
+    });
     return paymentID;
 }
 
@@ -163,11 +171,12 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
             // its cleanup. The row is a leaf; nothing references it.
             await OutsideTransaction(
                 async () => {
-                    await TxQuery(
-                        ctx,
-                        `INSERT INTO ${ORDERS_SCHEMA}.PaymentDetail (ID, CompanyID, PaymentTypeID, ReferenceNumber, InstrumentDate)
-                         VALUES ('${detailID}','${f.CoA.ID}','${check}','CHK-1000','2026-07-25')`,
-                    );
+                    await upsertViaEntity(ctx, PAYMENT_DETAIL_ENTITY, detailID, {
+                        CompanyID: f.CoA.ID,
+                        PaymentTypeID: check,
+                        ReferenceNumber: 'CHK-1000',
+                        InstrumentDate: '2026-07-25',
+                    });
 
                     let message = '';
                     try {
@@ -226,11 +235,12 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
                 const f = Fx();
                 const check = f.PaymentTypeIDs.get('Check')!;
                 const intentDetailID = randomUUID();
-                await TxQuery(
-                    ctx,
-                    `INSERT INTO ${ORDERS_SCHEMA}.PaymentDetail (ID, CompanyID, PaymentTypeID, ReferenceNumber, InstrumentDate)
-                     VALUES ('${intentDetailID}','${f.CoA.ID}','${check}','CHK-9911','2026-07-25')`,
-                );
+                await upsertViaEntity(ctx, PAYMENT_DETAIL_ENTITY, intentDetailID, {
+                    CompanyID: f.CoA.ID,
+                    PaymentTypeID: check,
+                    ReferenceNumber: 'CHK-9911',
+                    InstrumentDate: '2026-07-25',
+                });
 
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
@@ -294,11 +304,12 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
                 const f = Fx();
                 const check = f.PaymentTypeIDs.get('Check')!;
                 const intentDetailID = randomUUID();
-                await TxQuery(
-                    ctx,
-                    `INSERT INTO ${ORDERS_SCHEMA}.PaymentDetail (ID, CompanyID, PaymentTypeID, ReferenceNumber, InstrumentDate)
-                     VALUES ('${intentDetailID}','${f.CoA.ID}','${check}','CHK-9911','2026-07-25')`,
-                );
+                await upsertViaEntity(ctx, PAYMENT_DETAIL_ENTITY, intentDetailID, {
+                    CompanyID: f.CoA.ID,
+                    PaymentTypeID: check,
+                    ReferenceNumber: 'CHK-9911',
+                    InstrumentDate: '2026-07-25',
+                });
 
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,

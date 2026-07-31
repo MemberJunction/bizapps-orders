@@ -31,6 +31,7 @@ import {
 } from "@memberjunction/testing-integration";
 import {
   CreateOrdersFixture,
+  createViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -38,6 +39,12 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
+import {
+  PRICE_LIST_ASSIGNMENT_ENTITY,
+  PRICE_LIST_ENTITY,
+  PRICE_TIER_ENTITY,
+  PRODUCT_PRICE_ENTITY,
+} from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 import type { LooseEntity } from "../payment-builder.js";
 
@@ -72,20 +79,27 @@ async function addPrice(
     description?: string;
   },
 ): Promise<string> {
-  const id = randomUUID();
-  const v = (x: unknown) => (x == null ? "NULL" : typeof x === "string" ? `'${x.replace(/'/g, "''")}'` : String(x));
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
-       (ID, ProductID, PriceListID, PricingModel, FeeType, Amount, PackageQuantity,
-        MinQuantity, MaxQuantity, EffectiveFrom, EffectiveTo,
-        RecurrenceMonths, RecurrenceDaysOfWeek, Priority, Status, Description)
-     VALUES ('${id}', '${productID}', ${v(opts.priceListID ?? null)}, ${v(opts.model ?? "PerUnit")}, 'Standard',
-             ${opts.amount}, ${v(opts.packageQty ?? null)},
-             ${v(opts.minQty ?? null)}, ${v(opts.maxQty ?? null)},
-             ${v(opts.from ?? "2020-01-01")}, ${v(opts.to ?? null)},
-             ${v(opts.months ?? null)}, ${v(opts.daysOfWeek ?? null)},
-             ${opts.priority ?? 0}, 'Active', ${v(opts.description ?? null)})`);
-  return id;
+  // Through the object model, NOT an INSERT. ProductPriceEntityServer enforces the price-ambiguity
+  // guard — no two Active rules may share product, list, fee type and priority — and a raw INSERT
+  // walks straight past it. That is exactly how ambiguity used to surface at CONFIRM time, far from
+  // the rule that caused it, instead of loudly here where the offending rule is being written.
+  return createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
+    ProductID: productID,
+    PriceListID: opts.priceListID ?? null,
+    PricingModel: opts.model ?? "PerUnit",
+    FeeType: "Standard",
+    Amount: opts.amount,
+    PackageQuantity: opts.packageQty ?? null,
+    MinQuantity: opts.minQty ?? null,
+    MaxQuantity: opts.maxQty ?? null,
+    EffectiveFrom: opts.from ?? "2020-01-01",
+    EffectiveTo: opts.to ?? null,
+    RecurrenceMonths: opts.months ?? null,
+    RecurrenceDaysOfWeek: opts.daysOfWeek ?? null,
+    Priority: opts.priority ?? 0,
+    Status: "Active",
+    Description: opts.description ?? null,
+  });
 }
 
 async function addTier(
@@ -96,9 +110,13 @@ async function addTier(
   amount: number,
   sort = 0,
 ): Promise<void> {
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.PriceTier (ID, ProductPriceID, MinQuantity, MaxQuantity, Amount, SortOrder)
-     VALUES ('${randomUUID()}','${productPriceID}', ${min}, ${max == null ? "NULL" : max}, ${amount}, ${sort})`);
+  await createViaEntity(ctx, PRICE_TIER_ENTITY, {
+    ProductPriceID: productPriceID,
+    MinQuantity: min,
+    MaxQuantity: max,
+    Amount: amount,
+    SortOrder: sort,
+  });
 }
 
 /** Create a price list and assign it to an organization. */
@@ -107,12 +125,17 @@ async function addListFor(
   organizationID: string,
   code: string,
 ): Promise<string> {
-  const listID = randomUUID();
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.PriceList (ID, Code, Name, Status)
-     VALUES ('${listID}','${code}','${code} list','Active');
-     INSERT INTO ${ORDERS_SCHEMA}.PriceListAssignment (ID, PriceListID, OrganizationID, Priority, Status)
-     VALUES ('${randomUUID()}','${listID}','${organizationID}', 0, 'Active')`);
+  const listID = await createViaEntity(ctx, PRICE_LIST_ENTITY, {
+    Code: code,
+    Name: `${code} list`,
+    Status: "Active",
+  });
+  await createViaEntity(ctx, PRICE_LIST_ASSIGNMENT_ENTITY, {
+    PriceListID: listID,
+    OrganizationID: organizationID,
+    Priority: 0,
+    Status: "Active",
+  });
   return listID;
 }
 

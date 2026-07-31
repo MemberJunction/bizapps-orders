@@ -93,6 +93,8 @@ import {
   CreatePromotion,
   ACCT_SCHEMA,
   CreateOrdersFixture,
+  createViaEntity,
+  EnsureTaxNexus,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -100,6 +102,11 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
+import {
+  PRICE_LIST_ASSIGNMENT_ENTITY,
+  PRICE_LIST_ENTITY,
+  PRODUCT_PRICE_ENTITY,
+} from "../entity-names.js";
 import { ConfirmOrder, type LineSpec, type OrderSpec } from "../order-builder.js";
 import { CreatePayment } from "../payment-builder.js";
 
@@ -139,16 +146,9 @@ async function addPromotion(
  */
 async function grantNexus(ctx: IntegrationCheckContext, keys: string[]): Promise<void> {
   const f = Fx();
-  for (const key of keys) {
-    const jid = f.Tax.JurisdictionIDs.get(key);
-    if (!jid) continue;
-    await TxQuery(ctx,
-      `IF NOT EXISTS (SELECT 1 FROM ${ACCT_SCHEMA}.CompanyTaxNexus
-                       WHERE CompanyID='${f.CoA.ID}' AND TaxJurisdictionID='${jid}')
-       INSERT INTO ${ACCT_SCHEMA}.CompanyTaxNexus
-         (ID, CompanyID, TaxJurisdictionID, NexusType, RegisteredFrom, Status)
-       VALUES ('${randomUUID()}','${f.CoA.ID}','${jid}','Economic','2020-01-01','Active')`);
-  }
+  // WHICH jurisdictions are granted stays local to each bundle — the fixture's nexus GAP is
+  // load-bearing and a shared decision would invite removing it. Only the WRITE is shared.
+  await EnsureTaxNexus(ctx, f.CoA.ID, keys.map((k) => f.Tax.JurisdictionIDs.get(k)!).filter(Boolean));
 }
 
 /** Prices for every product the population uses, so half its lines can omit `UnitPrice`. */
@@ -1242,26 +1242,49 @@ export const VolumeChecks: NamedCheck[] = [
       // the failure mode of the cleanup below is a sweepable row, not a leak.
       const listPrice = 44.44;
       const memberPrice = 33.33;
-      const priceIDs = [randomUUID(), randomUUID()];
-      const listID = randomUUID();
+      const priceIDs: string[] = [];
+      let listID = "";
 
+      // Built through the object model like everything else, which works here BECAUSE these rows are
+      // committed: createViaEntity saves on the ambient provider, and with no transaction open that
+      // Save commits and is therefore visible to the other two sessions. It also puts both rules
+      // through ProductPriceEntityServer's ambiguity guard — the two differ by PriceListID, which is
+      // exactly the distinction the guard exists to police.
       const insert = async () => {
-        await query(primary,
-          `INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
-             (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
-           VALUES ('${priceIDs[0]}','${f.Products.WidgetA}','PerUnit','Standard',${listPrice},'2020-01-01',0,'Active')`);
-        await query(primary,
-          `INSERT INTO ${ORDERS_SCHEMA}.PriceList (ID, Code, Name, Status)
-           VALUES ('${listID}','VL11-${listID.slice(0, 6)}','VL11 list','Active');
-           INSERT INTO ${ORDERS_SCHEMA}.PriceListAssignment (ID, PriceListID, OrganizationID, Priority, Status)
-           VALUES ('${randomUUID()}','${listID}','${f.Customers.OrganizationID}', 0, 'Active');
-           INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
-             (ID, ProductID, PriceListID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
-           VALUES ('${priceIDs[1]}','${f.Products.WidgetA}','${listID}','PerUnit','Standard',${memberPrice},'2020-01-01',0,'Active')`);
+        priceIDs.push(await createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
+          ProductID: f.Products.WidgetA,
+          PricingModel: "PerUnit",
+          FeeType: "Standard",
+          Amount: listPrice,
+          EffectiveFrom: "2020-01-01",
+          Priority: 0,
+          Status: "Active",
+        }));
+        listID = await createViaEntity(ctx, PRICE_LIST_ENTITY, {
+          Code: `VL11-${randomUUID().slice(0, 6)}`,
+          Name: "VL11 list",
+          Status: "Active",
+        });
+        await createViaEntity(ctx, PRICE_LIST_ASSIGNMENT_ENTITY, {
+          PriceListID: listID,
+          OrganizationID: f.Customers.OrganizationID,
+          Priority: 0,
+          Status: "Active",
+        });
+        priceIDs.push(await createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
+          ProductID: f.Products.WidgetA,
+          PriceListID: listID,
+          PricingModel: "PerUnit",
+          FeeType: "Standard",
+          Amount: memberPrice,
+          EffectiveFrom: "2020-01-01",
+          Priority: 0,
+          Status: "Active",
+        }));
       };
       const cleanup = async () => {
         await query(primary,
-          `DELETE FROM ${ORDERS_SCHEMA}.ProductPrice WHERE ID IN ('${priceIDs[0]}','${priceIDs[1]}');
+          `DELETE FROM ${ORDERS_SCHEMA}.ProductPrice WHERE ID IN ('${priceIDs.join("','")}');
            DELETE FROM ${ORDERS_SCHEMA}.PriceListAssignment WHERE PriceListID='${listID}';
            DELETE FROM ${ORDERS_SCHEMA}.PriceList WHERE ID='${listID}'`).catch(() => undefined);
       };

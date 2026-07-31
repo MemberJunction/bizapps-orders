@@ -33,6 +33,7 @@ import {
   CreatePromotion,
   ACCT_SCHEMA,
   CreateOrdersFixture,
+  EnsureTaxNexus,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -67,16 +68,9 @@ async function addPromotion(
 
 async function grantNexus(ctx: IntegrationCheckContext, keys: string[]): Promise<void> {
   const f = Fx();
-  for (const key of keys) {
-    const jid = f.Tax.JurisdictionIDs.get(key);
-    if (!jid) continue;
-    await TxQuery(ctx,
-      `IF NOT EXISTS (SELECT 1 FROM ${ACCT_SCHEMA}.CompanyTaxNexus
-                       WHERE CompanyID='${f.CoA.ID}' AND TaxJurisdictionID='${jid}')
-       INSERT INTO ${ACCT_SCHEMA}.CompanyTaxNexus
-         (ID, CompanyID, TaxJurisdictionID, NexusType, RegisteredFrom, Status)
-       VALUES ('${randomUUID()}','${f.CoA.ID}','${jid}','Economic','2020-01-01','Active')`);
-  }
+  // WHICH jurisdictions are granted stays local to each bundle — the fixture's nexus GAP is
+  // load-bearing and a shared decision would invite removing it. Only the WRITE is shared.
+  await EnsureTaxNexus(ctx, f.CoA.ID, keys.map((k) => f.Tax.JurisdictionIDs.get(k)!).filter(Boolean));
 }
 
 /** N identical lines of the fixture's plain revenue product. */

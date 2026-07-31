@@ -40,6 +40,9 @@ import {
   CreateProductPrice,
   ACCT_SCHEMA,
   CreateOrdersFixture,
+  createViaEntity,
+  EnsureTaxNexus,
+  upsertViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -47,6 +50,10 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
+import {
+  CUSTOMER_TAX_EXEMPTION_ENTITY,
+  PRODUCT_CATEGORY_ENTITY,
+} from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 import type { LooseEntity } from "../payment-builder.js";
 
@@ -97,16 +104,17 @@ async function addExemption(
   },
 ): Promise<string> {
   const f = Fx();
-  const id = randomUUID();
   const jid = opts.jurisdictionKey ? f.Tax.JurisdictionIDs.get(opts.jurisdictionKey) : null;
-  const q = (v: string | null | undefined) => (v == null ? "NULL" : `'${v}'`);
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.CustomerTaxExemption
-       (ID, OrganizationID, PersonID, TaxJurisdictionID, TaxCategory, ExemptionType,
-        CertificateRef, CertificateExpiresAt, Status)
-     VALUES ('${id}', ${q(opts.organizationID)}, ${q(opts.personID)}, ${q(jid)}, ${q(opts.taxCategory)},
-             '${opts.type ?? "NonProfit"}', 'CERT-${id.slice(0, 8)}', ${q(opts.expiresAt)}, 'Active')`);
-  return id;
+  return createViaEntity(ctx, CUSTOMER_TAX_EXEMPTION_ENTITY, {
+    OrganizationID: opts.organizationID ?? null,
+    PersonID: opts.personID ?? null,
+    TaxJurisdictionID: jid ?? null,
+    TaxCategory: opts.taxCategory ?? null,
+    ExemptionType: opts.type ?? "NonProfit",
+    CertificateRef: `CERT-${randomUUID().slice(0, 8)}`,
+    CertificateExpiresAt: opts.expiresAt ?? null,
+    Status: "Active",
+  });
 }
 
 /** Confirm an order shipping to one of the fixture's addresses. */
@@ -212,12 +220,8 @@ export const TaxChecks: NamedCheck[] = [
         await addPrice(ctx, f.Products.WidgetA, 100);
         // CoA has NO Virginia nexus, so grant it for this check only — the point here is the
         // postal-range geography, not the nexus gate (TX6 covers that).
-        for (const key of ["VA", "VA-NOVA"]) {
-          await TxQuery(ctx,
-            `INSERT INTO ${ACCT_SCHEMA}.CompanyTaxNexus
-               (ID, CompanyID, TaxJurisdictionID, NexusType, RegisteredFrom, Status)
-             VALUES ('${randomUUID()}','${f.CoA.ID}','${f.Tax.JurisdictionIDs.get(key)}','Economic','2020-01-01','Active')`);
-        }
+        await EnsureTaxNexus(ctx, f.CoA.ID,
+          ["VA", "VA-NOVA"].map((k) => f.Tax.JurisdictionIDs.get(k)!).filter(Boolean));
 
         const nova = await confirmShippingTo(ctx, "NoVA", [{ ProductID: f.Products.WidgetA, Quantity: 10 }]);
         Assert(nova.Saved, `confirm failed: ${nova.Message}`);
@@ -236,12 +240,8 @@ export const TaxChecks: NamedCheck[] = [
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
         await addPrice(ctx, f.Products.WidgetA, 100);
-        for (const key of ["NY", "NY-NYC", "NY-MCTD"]) {
-          await TxQuery(ctx,
-            `INSERT INTO ${ACCT_SCHEMA}.CompanyTaxNexus
-               (ID, CompanyID, TaxJurisdictionID, NexusType, RegisteredFrom, Status)
-             VALUES ('${randomUUID()}','${f.CoA.ID}','${f.Tax.JurisdictionIDs.get(key)}','Economic','2020-01-01','Active')`);
-        }
+        await EnsureTaxNexus(ctx, f.CoA.ID,
+          ["NY", "NY-NYC", "NY-MCTD"].map((k) => f.Tax.JurisdictionIDs.get(k)!).filter(Boolean));
 
         const order = await confirmShippingTo(ctx, "NYC", [{ ProductID: f.Products.WidgetA, Quantity: 10 }]);
         Assert(order.Saved, `confirm failed: ${order.Message}`);
@@ -470,13 +470,18 @@ export const TaxChecks: NamedCheck[] = [
           ctx,
           `SELECT ProductCategoryID, CompanyID FROM ${ORDERS_SCHEMA}.Product WHERE ID='${f.Products.WidgetA}'`,
         );
-        const rootID = randomUUID();
-        await TxQuery(ctx,
-          `INSERT INTO ${ORDERS_SCHEMA}.ProductCategory (ID, CompanyID, Name, IsActive, DefaultIsTaxable)
-           VALUES ('${rootID}','${leaf.CompanyID}','${f.Run} Exempt Root',1,0);
-           UPDATE ${ORDERS_SCHEMA}.ProductCategory
-              SET ParentProductCategoryID='${rootID}', DefaultIsTaxable=NULL
-            WHERE ID='${leaf.ProductCategoryID}'`);
+        const rootID = await createViaEntity(ctx, PRODUCT_CATEGORY_ENTITY, {
+          CompanyID: leaf.CompanyID,
+          Name: `${f.Run} Exempt Root`,
+          IsActive: 1,
+          DefaultIsTaxable: 0,
+        });
+        // Re-parent the leaf under it, and clear its own taxability so the ANCESTOR decides — that
+        // inheritance walk is the thing under test.
+        await upsertViaEntity(ctx, PRODUCT_CATEGORY_ENTITY, leaf.ProductCategoryID, {
+          ParentProductCategoryID: rootID,
+          DefaultIsTaxable: null,
+        });
 
         const order = await confirmShippingTo(ctx, "Maryland", [{ ProductID: f.Products.WidgetA, Quantity: 10 }]);
         Assert(order.Saved, `confirm failed: ${order.Message}`);

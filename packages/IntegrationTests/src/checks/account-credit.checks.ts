@@ -33,9 +33,13 @@ import {
   type IntegrationCheckContext,
   type NamedCheck,
 } from "@memberjunction/testing-integration";
+import { AccountingEngineBase } from "@mj-biz-apps/accounting-engine-base";
 import {
   ACCT_SCHEMA,
   CreateOrdersFixture,
+  DUE_FROM_CODE,
+  DUE_TO_CODE,
+  EnsureIntercompanyAccounts,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -48,8 +52,6 @@ import { ApplyPayment, CreatePayment, CapturePayment } from "../payment-builder.
 
 const CASH_CODE = "10100";
 const AR_CODE = "11201";
-const DUE_TO_CODE = "21900";
-const DUE_FROM_CODE = "11900";
 
 interface CreditOutput {
   Success: boolean;
@@ -179,34 +181,11 @@ async function applyCredit(
 async function CreateAccountCreditFixture(ctx: IntegrationCheckContext): Promise<void> {
   await CreateOrdersFixture(ctx);
   const f = Fx();
-  for (const co of [f.CoA, f.CoB, f.CoC]) {
-    await TxQuery(ctx,
-      `IF NOT EXISTS (SELECT 1 FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${co.ID}' AND Code='${DUE_TO_CODE}')
-         INSERT INTO ${ACCT_SCHEMA}.GLAccount (ID, CompanyID, Code, Name, AccountType, IsActive)
-         VALUES ('${randomUUID()}','${co.ID}','${DUE_TO_CODE}','Due To Affiliates','Liability',1);
-       IF NOT EXISTS (SELECT 1 FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${co.ID}' AND Code='${DUE_FROM_CODE}')
-         INSERT INTO ${ACCT_SCHEMA}.GLAccount (ID, CompanyID, Code, Name, AccountType, IsActive)
-         VALUES ('${randomUUID()}','${co.ID}','${DUE_FROM_CODE}','Due From Affiliates','Asset',1);`,
-    );
-  }
-  const pairs: Array<[string, string]> = [
+  // Shared with intercompany.checks so the two cannot drift. CoC stays unpaired on purpose.
+  await EnsureIntercompanyAccounts(ctx, [f.CoA, f.CoB, f.CoC], [
     [f.CoA.ID, f.CoB.ID],
     [f.CoB.ID, f.CoA.ID],
-  ];
-  for (const [source, target] of pairs) {
-    await TxQuery(ctx,
-      `IF NOT EXISTS (
-         SELECT 1 FROM ${ACCT_SCHEMA}.IntercompanyAccountMatch
-         WHERE SourceCompanyID='${source}' AND TargetCompanyID='${target}' AND Status='Active')
-       INSERT INTO ${ACCT_SCHEMA}.IntercompanyAccountMatch
-         (ID, SourceCompanyID, TargetCompanyID, DueToGLAccountID, DueFromGLAccountID, Status)
-       SELECT '${randomUUID()}', '${source}', '${target}',
-              (SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${source}' AND Code='${DUE_TO_CODE}'),
-              (SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${target}' AND Code='${DUE_FROM_CODE}'),
-              'Active';`,
-    );
-  }
-  const { AccountingEngineBase } = await import("@mj-biz-apps/accounting-engine-base");
+  ]);
   await AccountingEngineBase.Instance.Config(true, ctx.User, ctx.Provider);
 }
 

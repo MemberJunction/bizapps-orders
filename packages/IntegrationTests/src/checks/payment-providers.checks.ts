@@ -38,6 +38,7 @@ import {
   CreateProductPrice,
   ACCT_SCHEMA,
   CreateOrdersFixture,
+  createViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -45,6 +46,11 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
+import {
+  PAYMENT_INTENT_ENTITY,
+  PAYMENT_PROVIDER_ENTITY,
+  PAYMENT_PROVIDER_TYPE_ENTITY,
+} from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 // STATIC, per the repo rule — no dynamic import()/require() anywhere.
 import { ResolvePaymentProvider } from "@mj-biz-apps/orders-core-entities-server";
@@ -63,7 +69,6 @@ async function makeProvider(
   opts: { live?: boolean; active?: boolean } = {},
 ): Promise<string> {
   const f = Fx();
-  const id = randomUUID();
 
   // CREATE THE TYPE IF THE APP METADATA HAS NOT SEEDED IT.
   //
@@ -74,21 +79,29 @@ async function makeProvider(
   //
   // The Code is what matters: it IS the ClassFactory key (D37), so a row created here resolves to the
   // same driver the seeded one would.
-  await TxQuery(ctx,
-    `IF NOT EXISTS (SELECT 1 FROM ${ORDERS_SCHEMA}.PaymentProviderType WHERE Code='${typeCode}')
-     INSERT INTO ${ORDERS_SCHEMA}.PaymentProviderType
-       (ID, Code, Name, DriverClass, SupportsTokenization, SupportsRefund, SupportsWebhooks, Sequence, IsActive)
-     VALUES ('${randomUUID()}','${typeCode}','IT ${typeCode}','${typeCode}PaymentProvider',
-             0, 1, ${typeCode === "Stripe" ? 1 : 0}, 90, 1)`);
-
-  const type = await TxOne<{ ID: string }>(ctx,
+  const existingType = await TxOne<{ ID: string }>(ctx,
     `SELECT ID FROM ${ORDERS_SCHEMA}.PaymentProviderType WHERE Code='${typeCode}'`);
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.PaymentProvider
-       (ID, PaymentProviderTypeID, CompanyID, Name, CredentialsRef, IsLiveMode, IsActive)
-     VALUES ('${id}','${type.ID}','${f.CoA.ID}','IT ${typeCode}', NULL,
-             ${opts.live ? 1 : 0}, ${opts.active === false ? 0 : 1})`);
-  return id;
+  const typeID =
+    existingType?.ID ??
+    (await createViaEntity(ctx, PAYMENT_PROVIDER_TYPE_ENTITY, {
+      Code: typeCode,
+      Name: `IT ${typeCode}`,
+      DriverClass: `${typeCode}PaymentProvider`,
+      SupportsTokenization: 0,
+      SupportsRefund: 1,
+      SupportsWebhooks: typeCode === "Stripe" ? 1 : 0,
+      Sequence: 90,
+      IsActive: 1,
+    }));
+
+  return createViaEntity(ctx, PAYMENT_PROVIDER_ENTITY, {
+    PaymentProviderTypeID: typeID,
+    CompanyID: f.CoA.ID,
+    Name: `IT ${typeCode}`,
+    CredentialsRef: null,
+    IsLiveMode: opts.live ? 1 : 0,
+    IsActive: opts.active === false ? 0 : 1,
+  });
 }
 
 /** A provider-side intent, as `Orders.CreatePaymentIntent` would open. */
@@ -98,13 +111,14 @@ async function makeIntent(
   amount: number,
   orderID?: string,
 ): Promise<{ ID: string; ProviderIntentID: string }> {
-  const id = randomUUID();
   const providerIntentID = `pi_it_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.PaymentIntent
-       (ID, PaymentProviderID, ProviderIntentID, Status, Amount, OrderHeaderID)
-     VALUES ('${id}','${providerID}','${providerIntentID}','RequiresPayment',${amount},
-             ${orderID ? `'${orderID}'` : "NULL"})`);
+  const id = await createViaEntity(ctx, PAYMENT_INTENT_ENTITY, {
+    PaymentProviderID: providerID,
+    ProviderIntentID: providerIntentID,
+    Status: "RequiresPayment",
+    Amount: amount,
+    OrderHeaderID: orderID ?? null,
+  });
   return { ID: id, ProviderIntentID: providerIntentID };
 }
 

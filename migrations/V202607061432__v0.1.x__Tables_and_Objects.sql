@@ -435,6 +435,39 @@ CREATE TABLE __mj_BizAppsOrders.OrderLine (
     FulfillmentStatus NVARCHAR(20) NULL,
     ReversesOrderLineID UNIQUEIDENTIFIER NULL,
     SourceBundleProductID UNIQUEIDENTIFIER NULL,
+    -- ── Bundle expansion: the LINE-level parent (D45) ──────────────────────────
+    -- SourceBundleProductID above records which bundle PRODUCT a component came
+    -- from. That is not enough. Two of the same bundle on one order produce two
+    -- sets of components that are indistinguishable by product alone, so nothing
+    -- can group them, roll them up, or ripple a quantity change to the right set.
+    -- ParentOrderLineID is the instance-level answer: it names the specific line
+    -- this component was expanded from.
+    --
+    -- SHAPE. The parent line is the customer-facing bundle; the children are the
+    -- components and they carry the money. The parent contributes ZERO to every
+    -- rollup — subtotal, tax base, charge base, discount base, GL — because the
+    -- bundle price is allocated down to the children by relative standalone
+    -- selling price. A parent that also carried an amount would double the order.
+    -- IsRollupParent below makes that a data question rather than something every
+    -- rollup has to infer from "does it have children".
+    --
+    -- ONE LEVEL ONLY. A component may not itself be a parent. Enforced in the
+    -- entity server (a bundle whose component is a bundle is rejected at expansion)
+    -- rather than by a CHECK, since SQL Server cannot express "my parent has no
+    -- parent" without a trigger or a scalar UDF in a constraint — both worse than
+    -- the server-side rule that already validates the rest of the line.
+    --
+    -- Snapshot, not a live view: expansion is frozen onto the order when it is
+    -- placed. Editing ProductBundleItem afterwards must never mutate a historical
+    -- order, so nothing re-derives children from the bundle definition later.
+    ParentOrderLineID UNIQUEIDENTIFIER NULL,
+    -- TRUE on an expanded bundle's parent line. Set by the expansion path, never
+    -- authored. Rollups skip these lines; the UI collapses children under them.
+    IsRollupParent BIT NOT NULL DEFAULT 0,
+    -- A child whose quantity was hand-edited detaches from the parent ripple. Without
+    -- this, bumping the bundle quantity silently overwrites a deliberate correction —
+    -- data loss that looks like arithmetic.
+    IsQuantityOverridden BIT NOT NULL DEFAULT 0,
     SubscriptionID UNIQUEIDENTIFIER NULL,
     RevenueRecognitionScheduleID UNIQUEIDENTIFIER NULL,
     Description NVARCHAR(500) NULL,
@@ -953,20 +986,23 @@ CREATE TABLE __mj_BizAppsOrders.ProductBundleItem (
 GO
 
 ---------------------------------------------------------------------------
--- 3.20 ProductPerformanceObligation — ASC 606 (BO-D35): one+ per product
---      (esp. bundles); SSP drives allocation. Fields now, allocation engine
---      later. NO GL columns (MOD-2 — GLAccountLink can point at PPO rows).
+-- 3.20 (retired) ProductPerformanceObligation — ASC 606 multi-element
+--      allocation moved OUT of orders. Allocating one transaction price
+--      across distinct obligations is an agreement-envelope concern, and
+--      D44 says cross-app references point UP the dependency graph only:
+--      bizapps-contracts sits downstream of orders, so encoding its concern
+--      in an orders table inverts the graph. The table shipped with fields
+--      but never got an allocation engine, so nothing is lost by removing
+--      it — bizapps-contracts will own obligations and join to orders from
+--      its own schema.
+--
+--      What STAYS here is revenue recognition itself: RevenueRecognitionType,
+--      RevenueRecognitionSchedule and RevRecScheduleLine. Deferring revenue
+--      over a subscription term is genuinely an order-entry concern and is
+--      driven from OrderJournalEntryFactory for any line whose product
+--      carries a deferred type. That is a different problem from splitting
+--      a price across obligations, and it works today.
 ---------------------------------------------------------------------------
-CREATE TABLE __mj_BizAppsOrders.ProductPerformanceObligation (
-    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
-    ProductID UNIQUEIDENTIFIER NOT NULL,
-    Name NVARCHAR(200) NULL,
-    RevenueRecognitionTypeID UNIQUEIDENTIFIER NOT NULL,
-    StandaloneSellingPrice DECIMAL(19,4) NOT NULL,
-    CONSTRAINT PK_ProductPerformanceObligation PRIMARY KEY (ID),
-    CONSTRAINT CK_PPO_SSP CHECK (StandaloneSellingPrice >= 0)
-);
-GO
 
 ---------------------------------------------------------------------------
 -- 3.21 ProductEntitlement — the DEFINITION of what a purchase grants
@@ -1751,6 +1787,44 @@ ALTER TABLE __mj_BizAppsOrders.OrderLine
     FOREIGN KEY (SourceBundleProductID) REFERENCES __mj_BizAppsOrders.Product(ID);
 GO
 
+-- Self-reference for bundle expansion (D45). NO cascade: SQL Server rejects a
+-- cascading self-FK outright, and even where it is allowed we would not want it —
+-- deleting a bundle parent has to run through the entity server so the children's
+-- journal entries and entitlement grants unwind too, which a DB-level cascade
+-- would silently skip.
+ALTER TABLE __mj_BizAppsOrders.OrderLine
+    ADD CONSTRAINT FK_OrderLine_ParentOrderLine
+    FOREIGN KEY (ParentOrderLineID) REFERENCES __mj_BizAppsOrders.OrderLine(ID);
+GO
+
+-- A line cannot be its own parent. The deeper rule — a parent may not itself have
+-- a parent, i.e. one level only — is enforced in the entity server, since SQL
+-- Server cannot express it in a CHECK without a trigger or scalar UDF.
+ALTER TABLE __mj_BizAppsOrders.OrderLine
+    ADD CONSTRAINT CK_OrderLine_NoSelfParent CHECK (ParentOrderLineID IS NULL OR ParentOrderLineID <> ID);
+GO
+
+-- A rollup parent contributes nothing to the order's money. Enforcing it here means
+-- a mis-set parent fails loudly at save instead of quietly doubling the order total.
+ALTER TABLE __mj_BizAppsOrders.OrderLine
+    ADD CONSTRAINT CK_OrderLine_RollupParentIsFree
+    CHECK (IsRollupParent = 0 OR (DiscountAmount = 0 AND ChargeAmount = 0 AND LineTax = 0));
+GO
+
+-- Only a child can be quantity-overridden; the flag is meaningless without a parent.
+ALTER TABLE __mj_BizAppsOrders.OrderLine
+    ADD CONSTRAINT CK_OrderLine_OverrideNeedsParent
+    CHECK (IsQuantityOverridden = 0 OR ParentOrderLineID IS NOT NULL);
+GO
+
+-- Finding a parent's children is the hot path for every rollup, the quantity ripple
+-- and the UI's collapse-under-parent rendering. Filtered, because the overwhelming
+-- majority of lines are not bundle components.
+CREATE INDEX IX_OrderLine_ParentOrderLineID
+    ON __mj_BizAppsOrders.OrderLine (ParentOrderLineID)
+    WHERE ParentOrderLineID IS NOT NULL;
+GO
+
 -- FKs to __mj core are allowed (precedent: common's FK_Person_LinkedUser).
 ALTER TABLE __mj_BizAppsOrders.OrderHeader
     ADD CONSTRAINT FK_OrderHeader_Company
@@ -1946,11 +2020,6 @@ GO
 ALTER TABLE __mj_BizAppsOrders.ProductBundleItem
     ADD CONSTRAINT FK_ProductBundleItem_ComponentProduct
     FOREIGN KEY (ComponentProductID) REFERENCES __mj_BizAppsOrders.Product(ID);
-GO
-
-ALTER TABLE __mj_BizAppsOrders.ProductPerformanceObligation
-    ADD CONSTRAINT FK_PPO_Product
-    FOREIGN KEY (ProductID) REFERENCES __mj_BizAppsOrders.Product(ID);
 GO
 
 ALTER TABLE __mj_BizAppsOrders.ProductEntitlement
@@ -2272,11 +2341,6 @@ GO
 ALTER TABLE __mj_BizAppsOrders.ProductType
     ADD CONSTRAINT FK_ProductType_DefaultRevenueRecognitionType
     FOREIGN KEY (DefaultRevenueRecognitionTypeID) REFERENCES __mj_BizAppsOrders.RevenueRecognitionType(ID);
-GO
-
-ALTER TABLE __mj_BizAppsOrders.ProductPerformanceObligation
-    ADD CONSTRAINT FK_PPO_RevenueRecognitionType
-    FOREIGN KEY (RevenueRecognitionTypeID) REFERENCES __mj_BizAppsOrders.RevenueRecognitionType(ID);
 GO
 
 ALTER TABLE __mj_BizAppsOrders.RevenueRecognitionSchedule
@@ -2924,6 +2988,9 @@ EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Engine-computed st
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Start of the service period for Deferred products (UPD-2 service-period recognition shape). Nullable.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLine', @level2type=N'COLUMN', @level2name=N'ServicePeriodStart';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'End of the service period for Deferred products (>= ServicePeriodStart). Nullable.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLine', @level2type=N'COLUMN', @level2name=N'ServicePeriodEnd';
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Pending | Fulfilled | Returned. NULL when the product type does not require fulfillment. The one line column a Fulfiller may change on Confirmed+ orders (trigger carve-out).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLine', @level2type=N'COLUMN', @level2name=N'FulfillmentStatus';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The bundle line this component was expanded from (D45). NULL on ordinary lines. Distinct from SourceBundleProductID, which names the bundle PRODUCT and therefore cannot tell two instances of the same bundle apart on one order. One level only: a component may not itself be a parent.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLine', @level2type=N'COLUMN', @level2name=N'ParentOrderLineID';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'TRUE on an expanded bundle''s parent line. The parent is customer-facing and contributes ZERO to every rollup - subtotal, tax base, charge base, discount base, GL - because the bundle price is allocated down to its children. Set by the expansion path, never authored.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLine', @level2type=N'COLUMN', @level2name=N'IsRollupParent';
+EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'TRUE when a child''s quantity was hand-edited, detaching it from the parent quantity ripple. Without it, bumping the bundle quantity would silently overwrite a deliberate correction.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLine', @level2type=N'COLUMN', @level2name=N'IsQuantityOverridden';
 GO
 
 -- PaymentTermsType
@@ -3069,11 +3136,6 @@ EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Bundled (fixed bun
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Display order of components within the bundle.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductBundleItem', @level2type=N'COLUMN', @level2name=N'SortOrder';
 GO
 
--- ProductPerformanceObligation
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'ASC 606 performance obligation (BO-D35): one or more per product; SSP drives bundle allocation. Fields now; the allocation engine is deferred. GL routing via GLAccountLink (MOD-2).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPerformanceObligation';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Display name of the obligation.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPerformanceObligation', @level2type=N'COLUMN', @level2name=N'Name';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Standalone selling price used for relative-SSP allocation across obligations.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductPerformanceObligation', @level2type=N'COLUMN', @level2name=N'StandaloneSellingPrice';
-GO
 
 -- ProductEntitlement
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The DEFINITION of what purchasing a product grants (BO-D34): feature, access level, or resource quantity. EntitlementGrant is the per-purchase instance.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'ProductEntitlement';

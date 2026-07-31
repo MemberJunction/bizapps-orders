@@ -247,6 +247,12 @@ export const ConcurrencyChecks: NamedCheck[] = [
         // The lock protocol is the first line of defence; this is the second. If both are absent,
         // two customers share an invoice number and nothing anywhere complains — so the constraint
         // is worth proving rather than assuming.
+        // DELIBERATELY a raw INSERT, and one of only two left in the suite. Everything else builds
+        // through the object model so the application's own logic is exercised — but the claim here
+        // is precisely that the DATABASE refuses a duplicate order number, independently of any
+        // application guard. Going through the entity server would prove the guard and leave the
+        // constraint untested, which is the opposite of what this check is for: if the unique index
+        // were ever dropped, an object-model version would still pass.
         let rejected = false;
         try {
           await TxQuery(ctx,

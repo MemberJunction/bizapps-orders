@@ -34,6 +34,7 @@ import {
 import {
   CreateProductPrice,
   CreateOrdersFixture,
+  createViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -41,6 +42,7 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
+import { PROMOTION_CODE_ENTITY, PROMOTION_ENTITY } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 import type { LooseEntity } from "../payment-builder.js";
 
@@ -227,12 +229,19 @@ export const ChargeChecks: NamedCheck[] = [
 
         const tid = await TxOne<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.PromotionType WHERE Code='PercentOff'`);
         const code = `CH7${randomUUID().slice(0, 5).toUpperCase()}`;
-        const promoID = randomUUID();
-        await TxQuery(ctx,
-          `INSERT INTO ${ORDERS_SCHEMA}.Promotion (ID, Code, Name, PromotionTypeID, Value, AppliesAt, Status)
-           VALUES ('${promoID}','${code}','${code}','${tid.ID}',0.2,'Either','Active');
-           INSERT INTO ${ORDERS_SCHEMA}.PromotionCode (ID, PromotionID, Code, Status)
-           VALUES ('${randomUUID()}','${promoID}','${code}','Active')`);
+        const promoID = await createViaEntity(ctx, PROMOTION_ENTITY, {
+          Code: code,
+          Name: code,
+          PromotionTypeID: tid.ID,
+          Value: 0.2,
+          AppliesAt: "Either",
+          Status: "Active",
+        });
+        await createViaEntity(ctx, PROMOTION_CODE_ENTITY, {
+          PromotionID: promoID,
+          Code: code,
+          Status: "Active",
+        });
 
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,

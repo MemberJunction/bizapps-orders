@@ -42,6 +42,10 @@ import {
 import {
   ACCT_SCHEMA,
   CreateOrdersFixture,
+  createViaEntity,
+  DUE_FROM_CODE,
+  DUE_TO_CODE,
+  EnsureIntercompanyAccounts,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -49,14 +53,12 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
+import { PAYMENT_LINE_ENTITY } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 import { CreatePayment, type LooseEntity } from "../payment-builder.js";
 
 const CASH_CODE = "10100";
 const AR_CODE = "11201";
-/** Codes for the intercompany accounts this bundle provisions. */
-const DUE_TO_CODE = "21900";
-const DUE_FROM_CODE = "11900";
 
 interface RefundOutput {
   Success: boolean;
@@ -165,38 +167,19 @@ export async function CreateIntercompanyFixture(ctx: IntegrationCheckContext): P
   const f = Fx();
   const companies = [f.CoA, f.CoB, f.CoC];
 
-  // One Due To (Liability) and one Due From (Asset) per company. The DB trigger enforces both the
-  // ownership and the type, so getting either wrong here fails loudly rather than silently.
-  for (const co of companies) {
-    await TxQuery(ctx,
-      `IF NOT EXISTS (SELECT 1 FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${co.ID}' AND Code='${DUE_TO_CODE}')
-         INSERT INTO ${ACCT_SCHEMA}.GLAccount (ID, CompanyID, Code, Name, AccountType, IsActive)
-         VALUES ('${randomUUID()}','${co.ID}','${DUE_TO_CODE}','Due To Affiliates','Liability',1);
-       IF NOT EXISTS (SELECT 1 FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${co.ID}' AND Code='${DUE_FROM_CODE}')
-         INSERT INTO ${ACCT_SCHEMA}.GLAccount (ID, CompanyID, Code, Name, AccountType, IsActive)
-         VALUES ('${randomUUID()}','${co.ID}','${DUE_FROM_CODE}','Due From Affiliates','Asset',1);`,
-    );
-  }
-
-  // Ordered pairs. CoA→CoB and CoB→CoA are configured; CoC is deliberately left UNPAIRED so IC5
-  // has a genuine missing-pair case to exercise.
-  const pairs: Array<[string, string]> = [
+  // One Due To (Liability) and one Due From (Asset) per company.
+  // Built through the object model, and SHARED with account-credit.checks so the two cannot drift.
+  // This is the case that most repays it: the DB trigger enforces that a Due To is a Liability owned
+  // by the right company and a Due From is an Asset, and the whole hazard of IC is that a
+  // mis-oriented pair STILL BALANCES — so a hand-written INSERT that gets the direction wrong
+  // produces a journal entry that looks perfectly healthy.
+  //
+  // CoA→CoB and CoB→CoA are configured; CoC is deliberately left UNPAIRED so IC5 has a genuine
+  // missing-pair case to exercise.
+  await EnsureIntercompanyAccounts(ctx, companies, [
     [f.CoA.ID, f.CoB.ID],
     [f.CoB.ID, f.CoA.ID],
-  ];
-  for (const [source, target] of pairs) {
-    await TxQuery(ctx,
-      `IF NOT EXISTS (
-         SELECT 1 FROM ${ACCT_SCHEMA}.IntercompanyAccountMatch
-         WHERE SourceCompanyID='${source}' AND TargetCompanyID='${target}' AND Status='Active')
-       INSERT INTO ${ACCT_SCHEMA}.IntercompanyAccountMatch
-         (ID, SourceCompanyID, TargetCompanyID, DueToGLAccountID, DueFromGLAccountID, Status)
-       SELECT '${randomUUID()}', '${source}', '${target}',
-              (SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${source}' AND Code='${DUE_TO_CODE}'),
-              (SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${target}' AND Code='${DUE_FROM_CODE}'),
-              'Active';`,
-    );
-  }
+  ]);
   await reloadEngine(ctx);
 }
 
@@ -393,12 +376,18 @@ export const IntercompanyChecks: NamedCheck[] = [
         Assert(Saved, "capture failed");
 
         // Targeted at Co A's own line: one line, one company, no intercompany question to answer.
-        await TxQuery(ctx,
-          `INSERT INTO ${ORDERS_SCHEMA}.PaymentLine (ID, PaymentHeaderID, OrderHeaderID, OrderLineID, Amount, AllocatedAt)
-             VALUES ('${randomUUID()}','${Payment.ID}','${order.Order.ID}','${coALine.ID}',100, SYSDATETIMEOFFSET())`,
-        );
-        // Written raw, so nothing books — the point here is the SHAPE the factory would produce,
-        // which IC8's multi-company case covers end to end. Assert the schema supports the target.
+        // Through the object model, so PaymentLineEntityServer actually runs — the raw INSERT this
+        // replaced deliberately booked nothing, which meant the allocation path it is standing in
+        // for was never executed here at all.
+        await createViaEntity(ctx, PAYMENT_LINE_ENTITY, {
+          PaymentHeaderID: Payment.ID,
+          OrderHeaderID: order.Order.ID,
+          OrderLineID: coALine.ID,
+          Amount: 100,
+          AllocatedAt: new Date(),
+        });
+        // The assertion is about the SHAPE — that a line-targeted allocation round-trips — while
+        // IC8's multi-company case covers the booking end to end.
         const stored = await TxOne<{ OrderLineID: string | null }>(
           ctx,
           `SELECT TOP 1 OrderLineID FROM ${ORDERS_SCHEMA}.PaymentLine WHERE PaymentHeaderID='${Payment.ID}'`,
