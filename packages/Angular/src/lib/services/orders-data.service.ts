@@ -21,10 +21,23 @@ export const MJO_ORIGIN_CHANNEL_AVAILABLE = false;
 /** Ids reach filter strings as SQL text, so they are shape-checked first. */
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
+/**
+ * Entity names, exactly as MJ's metadata registers them.
+ *
+ * These are looked up by STRING at runtime. A wrong name does not fail to
+ * compile and does not throw where it is written — `RunView` rejects it deep in
+ * the provider with "Entity ... not found in metadata", which surfaces as an
+ * empty list. Every screen then renders its empty state, which is
+ * indistinguishable from a database that genuinely has no rows.
+ *
+ * `Order Headers` and `Payment Headers` were `Orders` and `Payments` here until a
+ * run against a live database showed every dashboard tile reading zero. The names
+ * are verified by orders-data.service.test.ts against the entity list.
+ */
 export const MJO_ENTITIES = {
-    OrderHeader: 'MJ_BizApps_Orders: Orders',
+    OrderHeader: 'MJ_BizApps_Orders: Order Headers',
     OrderLine: 'MJ_BizApps_Orders: Order Lines',
-    PaymentHeader: 'MJ_BizApps_Orders: Payments',
+    PaymentHeader: 'MJ_BizApps_Orders: Payment Headers',
     PaymentLine: 'MJ_BizApps_Orders: Payment Lines',
     Product: 'MJ_BizApps_Orders: Products',
     ProductType: 'MJ_BizApps_Orders: Product Types',
