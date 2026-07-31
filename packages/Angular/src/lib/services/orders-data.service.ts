@@ -41,6 +41,7 @@ export const MJO_ENTITIES = {
     PaymentLine: 'MJ_BizApps_Orders: Payment Lines',
     Product: 'MJ_BizApps_Orders: Products',
     ProductType: 'MJ_BizApps_Orders: Product Types',
+    ProductCategory: 'MJ_BizApps_Orders: Product Categories',
     Subscription: 'MJ_BizApps_Orders: Subscriptions',
     PriceList: 'MJ_BizApps_Orders: Price Lists',
     ProductPrice: 'MJ_BizApps_Orders: Product Prices',
@@ -387,6 +388,33 @@ export class MJOOrdersDataService {
             [`(${clauses.join(' OR ')})`],
             'EndDate DESC',
             50,
+            user,
+        );
+    }
+
+    /** Categories, which supply a product's defaults when it states none. */
+    public async GetProductCategories(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.ProductCategory,
+            [`IsActive = 1`],
+            'Name',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * Product types — the behaviour root.
+     *
+     * A type decides recognition, taxability, fulfilment and recurrence, and every
+     * order line inherits those answers. That is why an order screen never asks.
+     */
+    public async GetProductTypes(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.ProductType,
+            [`IsActive = 1`],
+            'Name',
+            undefined,
             user,
         );
     }

@@ -62,6 +62,96 @@ interface MJOProductRow extends Record<string, unknown> {
             EmptyHint="Try a different search."
             (SearchChanged)="OnSearch($event)"
             (RowClicked)="ProductOpened.emit($any($event))" />
+
+        <div class="mjo-cat__grid">
+            <div class="mj-card">
+                <div class="mj-card-head">
+                    <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+                    <h3>Product types</h3>
+                    <span class="right small muted">{{ Types.length }}</span>
+                </div>
+                <div class="mj-table-wrap">
+                    <table class="mj-table mj-table--compact">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Ships</th>
+                                <th>Recognition</th>
+                                <th>Taxable</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (type of Types; track type['ID']) {
+                                <tr>
+                                    <td>
+                                        {{ type['Name'] }}
+                                        @if (type['ProductExtensionEntity']) {
+                                            <div class="secondary">extends {{ shortEntity(type['ProductExtensionEntity']) }}</div>
+                                        }
+                                    </td>
+                                    <td class="small">{{ type['RequiresFulfillment'] ? 'yes' : 'no' }}</td>
+                                    <td class="small">{{ type['DefaultRevenueRecognitionType'] ?? '—' }}</td>
+                                    <td class="small">
+                                        {{ type['DefaultIsTaxable'] ? (type['DefaultTaxCategory'] ?? 'yes') : 'no' }}
+                                    </td>
+                                </tr>
+                            } @empty {
+                                <tr><td colspan="4" class="small muted">No product types.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mj-card-pad small muted">
+                    <b>What a type decides:</b> whether a line ships, how its revenue is recognised,
+                    whether it is taxable, and whether it recurs. A product inherits all four and may
+                    override any — so a line never has to be asked.
+                </div>
+            </div>
+
+            <div class="mj-card">
+                <div class="mj-card-head">
+                    <i class="fa-solid fa-folder-tree" aria-hidden="true"></i>
+                    <h3>Categories</h3>
+                    <span class="right small muted">{{ Categories.length }}</span>
+                </div>
+                <div class="mj-table-wrap">
+                    <table class="mj-table mj-table--compact">
+                        <thead>
+                            <tr><th>Category</th><th>Within</th><th>Default tax</th></tr>
+                        </thead>
+                        <tbody>
+                            @for (category of Categories; track category['ID']) {
+                                <tr>
+                                    <td>{{ category['Name'] }}</td>
+                                    <td class="small muted">{{ category['ParentProductCategory'] ?? '—' }}</td>
+                                    <td class="small">
+                                        {{ category['DefaultIsTaxable'] ? (category['DefaultTaxCategory'] ?? 'taxable') : 'exempt' }}
+                                    </td>
+                                </tr>
+                            } @empty {
+                                <tr><td colspan="3" class="small muted">No categories.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mj-card-pad small muted">
+                    Categories group for reporting and supply defaults. They do NOT decide
+                    behaviour — that is the type's job. Keeping the two apart is what stops a
+                    reporting change from altering how something is taxed.
+                </div>
+            </div>
+        </div>
+
+        <div class="mj-banner mj-banner--neutral mjo-cat__block">
+            <i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i>
+            <div class="body">
+                <strong>Type extensions carry what only that type needs.</strong>
+                An event has a venue and a date; a subscription has a term length. Rather than a
+                products table with columns most rows leave null, a type names an extension entity
+                and the extra facts live there. The order line gets a matching extension, so a line
+                selling a ticket can hold ticket facts without every other line pretending to.
+            </div>
+        </div>
     `,
     styles: [
         `
@@ -72,6 +162,16 @@ interface MJOProductRow extends Record<string, unknown> {
                 padding: var(--mj-space-6);
             }
             .mjo-cat__note { margin-bottom: var(--mj-space-4); }
+            .mjo-cat__grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: var(--mj-space-4);
+                margin-top: var(--mj-space-4);
+            }
+            .mjo-cat__block { margin-top: var(--mj-space-4); }
+            @media (max-width: 1000px) {
+                .mjo-cat__grid { grid-template-columns: 1fr; }
+            }
             @media (max-width: 760px) {
                 :host { padding: var(--mj-space-4); }
             }
@@ -142,6 +242,14 @@ export class MJOProductsPageComponent implements OnInit {
         this.Search = text;
         await this.load();
         this.cdr.detectChanges();
+    }
+
+    public Categories: Array<Record<string, unknown>> = [];
+    public Types: Array<Record<string, unknown>> = [];
+
+    /** 'MJ_BizApps_Orders: Event Products' → 'Event Products'. */
+    protected shortEntity(name: unknown): string {
+        return String(name ?? '').split(':').pop()?.trim() ?? '';
     }
 
     private async load(): Promise<void> {
