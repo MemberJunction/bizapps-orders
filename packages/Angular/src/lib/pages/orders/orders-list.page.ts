@@ -1,7 +1,8 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
-import { MJO_ORIGIN_CHANNEL_AVAILABLE, MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
+import { MJOSummaryStripComponent, type MJOSummaryFigure } from '../../panels/summary-strip.component';
+import { MJO_ORIGIN_CHANNEL_AVAILABLE, MJOOrdersDataService, type MJOOrderRow, type MJOOrderSummary } from '../../services/orders-data.service';
 import { FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
 
 /**
@@ -28,8 +29,12 @@ import { FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
 @Component({
     selector: 'mjo-orders-list-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent],
+    imports: [CommonModule, MJOWorklistTableComponent, MJOSummaryStripComponent],
     template: `
+        <mjo-summary-strip
+            [Figures]="SummaryFigures"
+            Note="Counts are read once over the whole population, not per chip — six presets partition the same orders." />
+
         <mjo-worklist-table
             [Columns]="Columns"
             [Rows]="Rows"
@@ -92,7 +97,8 @@ export class MJOOrdersListPageComponent implements OnInit {
      * Presets, in the order someone reaches for them: the whole set, then the two
      * that represent money owed, then work-in-progress, then the cuts.
      */
-    public readonly Presets: MJOPreset[] = [
+    /** Rebuilt when the summary lands, so each chip carries its own count. */
+    public Presets: MJOPreset[] = [
         { Key: 'all', Label: 'All open' },
         { Key: 'overdue', Label: 'Overdue', Icon: 'fa-solid fa-hourglass-half' },
         { Key: 'unpaid', Label: 'Unpaid' },
@@ -230,7 +236,20 @@ export class MJOOrdersListPageComponent implements OnInit {
     }
 
     public async ngOnInit(): Promise<void> {
-        await this.load();
+        // The summary is read once. It describes the whole population, so it does
+        // not change when a preset narrows the table — re-reading it per chip
+        // would spend a round trip to produce the same four numbers.
+        await Promise.all([this.load(), this.loadSummary()]);
+        this.cdr.detectChanges();
+    }
+
+    /** Counts for the chips and totals for the strip. */
+    private async loadSummary(): Promise<void> {
+        this.Summary = await this.data.GetOrderSummary();
+        this.Presets = this.Presets.map((preset) => ({
+            ...preset,
+            Count: this.Summary?.Counts[preset.Key] ?? null,
+        }));
     }
 
     public async OnPreset(preset: string): Promise<void> {
@@ -244,6 +263,26 @@ export class MJOOrdersListPageComponent implements OnInit {
         await this.load();
         this.cdr.detectChanges();
     }
+
+    /** What the strip renders, already formatted. */
+    public get SummaryFigures(): MJOSummaryFigure[] {
+        const summary = this.Summary;
+        if (!summary) return [];
+        return [
+            { Label: 'Orders', Value: String(summary.Total) },
+            { Label: 'Total value', Value: FormatMoney(summary.TotalValue) },
+            { Label: 'Open balance', Value: FormatMoney(summary.OpenBalance) },
+            {
+                Label: 'Credits held',
+                // Shown NEGATIVE and in the credit tone: it is money owed the other
+                // way, and printing it like a debt inverts what it means.
+                Value: summary.CreditsHeld ? FormatMoney(-summary.CreditsHeld) : '—',
+                Tone: summary.CreditsHeld ? 'credit' : 'muted',
+            },
+        ];
+    }
+
+    public Summary: MJOOrderSummary | null = null;
 
     private async load(): Promise<void> {
         this.Loading = true;

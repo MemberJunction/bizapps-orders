@@ -69,6 +69,17 @@ export interface MJOOrderRow extends Record<string, unknown> {
     OriginExternalID?: string | null;
 }
 
+/** Counts and totals for the orders list header. */
+export interface MJOOrderSummary {
+    Total: number;
+    TotalValue: number;
+    OpenBalance: number;
+    /** A positive magnitude — the strip renders the direction, not the sign. */
+    CreditsHeld: number;
+    /** Keyed by preset, for the chip pills. */
+    Counts: Record<string, number>;
+}
+
 /** A row as the payment list renders it. */
 export interface MJOPaymentRow extends Record<string, unknown> {
     ID: string;
@@ -179,6 +190,49 @@ export class MJOOrdersDataService {
         }
 
         return this.run<MJOOrderRow>(MJO_ENTITIES.OrderHeader, filters, 'OrderDate DESC', options.MaxRows, options.User);
+    }
+
+    /**
+     * The counts and totals the orders list shows above its table.
+     *
+     * ONE query, not one per preset. The presets partition the same population
+     * six different ways, so six COUNT round trips would ask the database the
+     * same question repeatedly to fill one strip. This reads the few columns the
+     * arithmetic needs and derives every figure from them.
+     *
+     * The filters mirror `GetOrders` exactly. They are stated once here as the
+     * same expressions rather than re-queried, because a count that disagrees
+     * with the list it labels is worse than no count.
+     */
+    public async GetOrderSummary(user?: UserInfo): Promise<MJOOrderSummary> {
+        const rows = await this.run<MJOOrderRow>(
+            MJO_ENTITIES.OrderHeader,
+            [`Status <> 'Voided'`],
+            'OrderDate DESC',
+            5000,
+            user,
+        );
+        const today = new Date().toISOString().slice(0, 10);
+        const settleable = (o: MJOOrderRow): boolean =>
+            !['Draft', 'Quoted', 'Voided'].includes(o.Status);
+
+        const credits = rows.filter((o) => settleable(o) && o.Balance < 0);
+        const owing = rows.filter((o) => settleable(o) && o.Balance > 0);
+
+        return {
+            Total: rows.length,
+            TotalValue: rows.reduce((sum, o) => sum + Number(o.TotalGross ?? 0), 0),
+            OpenBalance: owing.reduce((sum, o) => sum + Number(o.Balance ?? 0), 0),
+            CreditsHeld: Math.abs(credits.reduce((sum, o) => sum + Number(o.Balance ?? 0), 0)),
+            Counts: {
+                all: rows.length,
+                overdue: owing.filter((o) => o.DueDate && o.DueDate < today).length,
+                unpaid: owing.length,
+                notposted: rows.filter((o) => o.Status === 'Confirmed').length,
+                drafts: rows.filter((o) => ['Draft', 'Quoted'].includes(o.Status)).length,
+                credits: credits.length,
+            },
+        };
     }
 
     /** Payments, newest first. */
