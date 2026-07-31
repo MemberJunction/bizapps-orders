@@ -264,6 +264,20 @@ export class MJOAccountCreditPageComponent implements OnInit {
     }
 
     public async SelectSource(row: MJOOrderRow): Promise<void> {
+        await this.applySource(row);
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Select a credit WITHOUT rendering.
+     *
+     * The render is split out because the initial load selects the first credit
+     * itself. Rendering inside that call put a DOM write between two assignments
+     * of the same load, so the header total was written as $0.00 and then changed
+     * to $1,784.32 before the load finished — NG0100, which aborts the update and
+     * freezes the view. One load, one render.
+     */
+    private async applySource(row: MJOOrderRow): Promise<void> {
         this.SourceID = row.ID;
         // Only this customer's open orders can receive it — a credit belongs to
         // whoever earned it.
@@ -272,7 +286,6 @@ export class MJOAccountCreditPageComponent implements OnInit {
         this.TargetID = this.Targets[0]?.ID ?? null;
         // Default to the most that both sides allow — the common intent.
         this.Amount = Math.min(this.Available, this.Targets[0]?.Balance ?? 0);
-        this.cdr.detectChanges();
     }
 
     public SetAmount(raw: string): void {
@@ -315,7 +328,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
 
     private async load(): Promise<void> {
         this.Credits = await this.data.GetOrders({ Preset: 'credits' });
-        if (this.Credits.length && !this.SourceID) await this.SelectSource(this.Credits[0]);
+        if (this.Credits.length && !this.SourceID) await this.applySource(this.Credits[0]);
         this.cdr.detectChanges();
     }
 }

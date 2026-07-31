@@ -212,6 +212,13 @@ export class MJOProductsPageComponent implements OnInit {
 })
 export class MJOChargesTaxPageComponent implements OnInit {
     private readonly data = inject(MJOOrdersDataService);
+    /**
+     * Render what was just loaded. See orders-dashboard.page.ts for the full
+     * reasoning: these pages are created imperatively by the section shell, and an
+     * async assignment across Angular's check/verify boundary raises NG0100, aborts
+     * the DOM write, and freezes the view on its pre-load values permanently.
+     */
+    private readonly cdr = inject(ChangeDetectorRef);
 
     public Rows: Array<Record<string, unknown>> = [];
 
@@ -253,5 +260,6 @@ export class MJOChargesTaxPageComponent implements OnInit {
     public async ngOnInit(): Promise<void> {
         const rows = await this.data.GetChargeTypes();
         this.Rows = rows;
+        this.cdr.detectChanges();
     }
 }
