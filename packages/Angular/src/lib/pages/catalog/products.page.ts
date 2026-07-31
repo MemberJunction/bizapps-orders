@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } fr
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
-import { FormatMoney } from '../../panels/money-format';
+import { FormatDate, FormatMoney } from '../../panels/money-format';
 
 /** A catalog row. */
 interface MJOProductRow extends Record<string, unknown> {
@@ -194,6 +194,166 @@ export class MJOProductsPageComponent implements OnInit {
             EmptyTitle="No charge types configured"
             EmptyHint="Shipping, handling and each tax jurisdiction are charge types."
             FootNote="Non-tax charges enlarge the taxable base; tax charges never do. That is what stops county tax being charged on state tax." />
+
+        <div class="mjo-tax__grid">
+            <div class="mj-card">
+                <div class="mj-card-head">
+                    <i class="fa-solid fa-percent" aria-hidden="true"></i>
+                    <h3>Jurisdiction layers</h3>
+                    <span class="right small muted">{{ Jurisdictions.length }} active</span>
+                </div>
+                <div class="mj-table-wrap">
+                    <table class="mj-table mj-table--compact">
+                        <thead>
+                            <tr>
+                                <th>Jurisdiction</th>
+                                <th>Where</th>
+                                <th>Category</th>
+                                <th class="num">Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (row of JurisdictionRates; track row.Key) {
+                                <tr>
+                                    <td>
+                                        {{ row.Name }}
+                                        @if (row.Parent) {
+                                            <div class="secondary">within {{ row.Parent }}</div>
+                                        }
+                                    </td>
+                                    <td class="small">{{ row.Where }}</td>
+                                    <td class="small">{{ row.Category }}</td>
+                                    <td class="num">{{ row.Rate }}</td>
+                                </tr>
+                            } @empty {
+                                <tr><td colspan="4" class="small muted">No jurisdictions configured.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mj-card-pad small muted">
+                    State, county and city are three ROWS, not one blended rate. Layering them
+                    separately is what lets a return be filed per authority — a single 8.25% cannot
+                    be split back apart afterwards.
+                </div>
+            </div>
+
+            <div class="mj-card">
+                <div class="mj-card-head">
+                    <i class="fa-solid fa-building-columns" aria-hidden="true"></i>
+                    <h3>Nexus — where we must collect</h3>
+                </div>
+                <div class="mj-table-wrap">
+                    <table class="mj-table mj-table--compact">
+                        <thead>
+                            <tr>
+                                <th>Company</th>
+                                <th>Jurisdiction</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (row of Nexus; track row['ID']) {
+                                <tr>
+                                    <td class="small">{{ row['Company'] ?? '—' }}</td>
+                                    <td class="small">{{ row['TaxJurisdiction'] ?? '—' }}</td>
+                                    <td class="small">{{ row['NexusType'] ?? '—' }}</td>
+                                    <td>
+                                        <span class="mj-chip" [class]="nexusClass(row)">
+                                            {{ row['Status'] ?? '—' }}
+                                        </span>
+                                    </td>
+                                </tr>
+                            } @empty {
+                                <tr><td colspan="4" class="small muted">No registrations.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mj-card-pad small muted">
+                    A rate without a registration is a rate we must <b>not</b> charge. Nexus decides
+                    whether tax applies at all; the rate only decides how much.
+                </div>
+            </div>
+        </div>
+
+        <div class="mj-card mjo-tax__block">
+            <div class="mj-card-head">
+                <i class="fa-solid fa-file-shield" aria-hidden="true"></i>
+                <h3>Customer exemptions</h3>
+                <span class="right small muted">{{ Exemptions.length }} on file</span>
+            </div>
+            <div class="mj-table-wrap">
+                <table class="mj-table mj-table--compact">
+                    <thead>
+                        <tr>
+                            <th>Customer</th>
+                            <th>Jurisdiction</th>
+                            <th>Category</th>
+                            <th>Certificate</th>
+                            <th>Expires</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @for (row of Exemptions; track row['ID']) {
+                            <tr>
+                                <td class="small">{{ row['Organization'] ?? row['Person'] ?? '—' }}</td>
+                                <td class="small">{{ row['TaxJurisdiction'] ?? 'all' }}</td>
+                                <td class="small">{{ row['TaxCategory'] ?? 'all' }}</td>
+                                <td class="small mono">{{ row['CertificateRef'] ?? '—' }}</td>
+                                <td class="small">{{ dateOf(row['CertificateExpiresAt']) }}</td>
+                                <td>
+                                    <span class="mj-chip" [class]="exemptionClass(row)">
+                                        {{ row['Status'] ?? '—' }}
+                                    </span>
+                                </td>
+                            </tr>
+                        } @empty {
+                            <tr><td colspan="6" class="small muted">No exemption certificates.</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div class="mj-card-pad small muted">
+                An exemption is scoped: a certificate can cover one jurisdiction, one category, or
+                everything. An EXPIRED certificate stops exempting on its own date — nobody has to
+                remember to switch it off, which is the only way this stays correct.
+            </div>
+        </div>
+
+        <div class="mjo-tax__grid mjo-tax__block">
+            <div class="mj-banner mj-banner--neutral">
+                <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
+                <div class="body">
+                    <strong>Taxability inherits down one chain.</strong>
+                    A product's tax category comes from its type unless the product overrides it, and
+                    the order line takes whatever the product resolved to. One chain, one override
+                    point — so "why was this taxed?" has a single answer rather than a search.
+                </div>
+            </div>
+
+            <div class="mj-banner mj-banner--neutral">
+                <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                <div class="body">
+                    <strong>Computed, but overridable.</strong>
+                    A charge computes from its basis, and a person may replace the amount — with a
+                    reason, which the database itself requires. An override without a reason is a
+                    number nobody can explain a year later.
+                </div>
+            </div>
+        </div>
+
+        <div class="mj-banner mj-banner--info mjo-tax__block">
+            <i class="fa-solid fa-check-double" aria-hidden="true"></i>
+            <div class="body">
+                <strong>Both must hold.</strong>
+                Tax is charged only where there is nexus AND the customer is not exempt for that
+                jurisdiction and category. Either one alone is not enough, and treating them as
+                interchangeable is how a business ends up collecting tax it must refund.
+            </div>
+        </div>
     `,
     styles: [
         `
@@ -204,6 +364,16 @@ export class MJOProductsPageComponent implements OnInit {
                 padding: var(--mj-space-6);
             }
             .mjo-cat__note { margin-bottom: var(--mj-space-4); }
+            .mjo-tax__grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: var(--mj-space-4);
+                margin-top: var(--mj-space-4);
+            }
+            .mjo-tax__block { margin-top: var(--mj-space-4); }
+            @media (max-width: 1000px) {
+                .mjo-tax__grid { grid-template-columns: 1fr; }
+            }
             @media (max-width: 760px) {
                 :host { padding: var(--mj-space-4); }
             }
@@ -257,9 +427,93 @@ export class MJOChargesTaxPageComponent implements OnInit {
         },
     ];
 
+    public Jurisdictions: Array<Record<string, unknown>> = [];
+    public Rates: Array<Record<string, unknown>> = [];
+    public Nexus: Array<Record<string, unknown>> = [];
+    public Exemptions: Array<Record<string, unknown>> = [];
+
     public async ngOnInit(): Promise<void> {
-        const rows = await this.data.GetChargeTypes();
+        // Four independent reads, so they go together rather than in sequence —
+        // none of them needs another's answer.
+        const [rows, jurisdictions, rates, nexus, exemptions] = await Promise.all([
+            this.data.GetChargeTypes(),
+            this.data.GetTaxJurisdictions(),
+            this.data.GetTaxRates(),
+            this.data.GetTaxNexus(),
+            this.data.GetTaxExemptions(),
+        ]);
         this.Rows = rows;
+        this.Jurisdictions = jurisdictions;
+        this.Rates = rates;
+        this.Nexus = nexus;
+        this.Exemptions = exemptions;
         this.cdr.detectChanges();
+    }
+
+    /**
+     * Jurisdictions joined to their CURRENT rate, one row per category.
+     *
+     * A jurisdiction with no live rate still appears, showing "—". It is a real
+     * layer that happens to charge nothing today, and hiding it would make the
+     * stack look shorter than it is.
+     */
+    public get JurisdictionRates(): Array<{
+        Key: string;
+        Name: string;
+        Parent: string | null;
+        Where: string;
+        Category: string;
+        Rate: string;
+    }> {
+        const today = new Date().toISOString().slice(0, 10);
+        const live = (rate: Record<string, unknown>): boolean => {
+            const from = rate['EffectiveFrom'] ? String(rate['EffectiveFrom']).slice(0, 10) : null;
+            const to = rate['EffectiveTo'] ? String(rate['EffectiveTo']).slice(0, 10) : null;
+            return (!from || from <= today) && (!to || to >= today);
+        };
+
+        const out: Array<{ Key: string; Name: string; Parent: string | null; Where: string; Category: string; Rate: string }> = [];
+        for (const j of this.Jurisdictions) {
+            const id = String(j['ID']);
+            const where = [j['CityName'], j['RegionCode'], j['CountryCode']].filter(Boolean).join(', ');
+            const mine = this.Rates.filter((r) => String(r['TaxJurisdictionID']) === id && live(r));
+            if (!mine.length) {
+                out.push({
+                    Key: id,
+                    Name: String(j['Name'] ?? ''),
+                    Parent: (j['ParentTaxJurisdiction'] as string) ?? null,
+                    Where: where || '—',
+                    Category: '—',
+                    Rate: '—',
+                });
+                continue;
+            }
+            for (const rate of mine) {
+                out.push({
+                    Key: `${id}:${String(rate['ID'])}`,
+                    Name: String(j['Name'] ?? ''),
+                    Parent: (j['ParentTaxJurisdiction'] as string) ?? null,
+                    Where: where || '—',
+                    Category: String(rate['TaxCategory'] ?? 'all'),
+                    Rate: `${(Number(rate['Rate'] ?? 0) * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}%`,
+                });
+            }
+        }
+        return out;
+    }
+
+    protected dateOf(value: unknown): string {
+        return value ? FormatDate(String(value), { Short: true }) : '—';
+    }
+
+    protected nexusClass(row: Record<string, unknown>): string {
+        return row['Status'] === 'Active' ? 'mj-chip--success' : 'mj-chip--outline';
+    }
+
+    /** An expired certificate stops exempting on its own date. */
+    protected exemptionClass(row: Record<string, unknown>): string {
+        const expires = row['CertificateExpiresAt'] ? String(row['CertificateExpiresAt']).slice(0, 10) : null;
+        if (expires && expires < new Date().toISOString().slice(0, 10)) return 'mj-chip--warning';
+        return row['Status'] === 'Active' ? 'mj-chip--success' : 'mj-chip--outline';
     }
 }

@@ -46,6 +46,25 @@ export const MJO_ENTITIES = {
     ProductPrice: 'MJ_BizApps_Orders: Product Prices',
     Promotion: 'MJ_BizApps_Orders: Promotions',
     ChargeType: 'MJ_BizApps_Orders: Charge Types',
+    TaxExemption: 'MJ_BizApps_Orders: Customer Tax Exemptions',
+} as const;
+
+/**
+ * Entities this app READS from the accounting app.
+ *
+ * Kept apart from MJO_ENTITIES so the boundary is visible at the call site: these
+ * are somebody else's records, and a change to them is a change in another
+ * repository. The dependency points UP the graph (D44) — Orders knows about
+ * Accounting, never the reverse.
+ *
+ * Note the separator: Orders and Accounting use UNDERSCORES in the prefix, while
+ * Common uses DOTS. It reads like a typo every time and is not one.
+ */
+export const MJO_ACCOUNTING_ENTITIES = {
+    TaxJurisdiction: 'MJ_BizApps_Accounting: Tax Jurisdictions',
+    TaxRate: 'MJ_BizApps_Accounting: Tax Rates',
+    // SINGULAR — CodeGen leaves 'Nexus' alone rather than forming 'Nexuses'.
+    CompanyTaxNexus: 'MJ_BizApps_Accounting: Company Tax Nexus',
 } as const;
 
 /** A row as the order list renders it. */
@@ -308,6 +327,62 @@ export class MJOOrdersDataService {
             // whole query — so the promotions screen showed "No promotions", which
             // reads as an empty catalog rather than a broken one.
             'EffectiveFrom DESC',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * Tax jurisdictions with their current rates.
+     *
+     * READ FROM ACCOUNTING, not Orders. Jurisdictions, rates and nexus belong to
+     * the accounting app; Orders consumes them. That direction is deliberate
+     * (D44) — cross-app references point UP the graph, so tax can be reasoned
+     * about without knowing anything about orders.
+     */
+    public async GetTaxJurisdictions(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ACCOUNTING_ENTITIES.TaxJurisdiction,
+            [`IsActive = 1`],
+            'Name',
+            undefined,
+            user,
+        );
+    }
+
+    /** Rates, newest effective window first. */
+    public async GetTaxRates(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ACCOUNTING_ENTITIES.TaxRate,
+            [],
+            'EffectiveFrom DESC',
+            undefined,
+            user,
+        );
+    }
+
+    /**
+     * Where each company is registered to collect.
+     *
+     * Nexus is the question that decides whether tax applies at all — a rate
+     * without a registration is a rate we must NOT charge.
+     */
+    public async GetTaxNexus(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ACCOUNTING_ENTITIES.CompanyTaxNexus,
+            [],
+            'RegisteredFrom DESC',
+            undefined,
+            user,
+        );
+    }
+
+    /** Customer exemption certificates, newest first. */
+    public async GetTaxExemptions(user?: UserInfo) {
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.TaxExemption,
+            [],
+            'StartedAt DESC',
             undefined,
             user,
         );
