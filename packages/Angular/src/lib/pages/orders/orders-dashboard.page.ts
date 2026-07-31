@@ -1,5 +1,6 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.component';
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
 import { FormatMoney, DaysSince } from '../../panels/money-format';
@@ -12,6 +13,16 @@ interface MJOQueue {
     Icon: string;
     Tone: 'neutral' | 'info' | 'warning' | 'error' | 'success' | 'violet';
     PageId: string;
+}
+
+/** Something specific worth acting on, with the order it concerns. */
+interface MJOAttentionItem {
+    Order: MJOOrderRow;
+    /** A banner modifier — the tone says how alarmed to be. */
+    Tone: string;
+    Icon: string;
+    Headline: string;
+    Detail: string;
 }
 
 /**
@@ -35,7 +46,7 @@ interface MJOQueue {
 @Component({
     selector: 'mjo-orders-dashboard-page',
     standalone: true,
-    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent],
+    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent],
     template: `
         <div class="mj-stat-grid">
             <mjo-stat-tile
@@ -95,6 +106,22 @@ interface MJOQueue {
 
             <div class="mj-card">
                 <div class="mj-card-head">
+                    <i class="fa-solid fa-chart-simple" aria-hidden="true"></i>
+                    <h3>Orders per day</h3>
+                    <span class="right small muted">last 7 days</span>
+                </div>
+                <div class="mj-card-pad">
+                    <mjo-day-bars [Bars]="OrdersPerDay" Unit="orders" />
+                    <div class="small muted mjo-dash__note">
+                        Bars rather than a line: seven discrete days are magnitudes to compare, not a
+                        curve to trace. One hue — the days are the categories, so colouring them
+                        differently would encode nothing.
+                    </div>
+                </div>
+            </div>
+
+            <div class="mj-card">
+                <div class="mj-card-head">
                     <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
                     <h3>Where orders are sitting</h3>
                 </div>
@@ -107,6 +134,72 @@ interface MJOQueue {
                 </div>
             </div>
         </div>
+
+        <div class="mjo-dash__split mjo-dash__split--wide">
+            <div class="mj-card">
+                <div class="mj-card-head">
+                    <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                    <h3>Latest orders</h3>
+                    <span class="right">
+                        <a href="#" class="small" (click)="go($event, 'list')">All orders →</a>
+                    </span>
+                </div>
+                <div class="mj-table-wrap">
+                    <table class="mj-table mj-table--compact">
+                        <thead>
+                            <tr>
+                                <th>Order</th>
+                                <th>Customer</th>
+                                <th>Status</th>
+                                <th class="num">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (order of LatestOrders; track order.ID) {
+                                <tr class="is-clickable" (click)="OrderOpened.emit(order)">
+                                    <td><span class="mono">{{ order.OrderNumber }}</span></td>
+                                    <td>{{ customerOf(order) }}</td>
+                                    <td>
+                                        <span class="mj-chip" [class]="statusClass(order)">
+                                            {{ order.Status }}
+                                        </span>
+                                    </td>
+                                    <td class="num" [class.mj-money--neg]="order.TotalGross < 0">
+                                        {{ order.TotalGross | mjoMoney }}
+                                    </td>
+                                </tr>
+                            } @empty {
+                                <tr><td colspan="4" class="small muted">No orders yet.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="mj-card">
+                <div class="mj-card-head">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                    <h3>Worth a look</h3>
+                </div>
+                <div class="mj-card-pad">
+                    @for (item of WorthALook; track item.Order.ID) {
+                        <div class="mj-banner" [class]="item.Tone" role="note">
+                            <i [class]="item.Icon" aria-hidden="true"></i>
+                            <div class="body">
+                                <strong>{{ item.Headline }}</strong>
+                                {{ item.Detail }}
+                                <a href="#" class="small" (click)="openFrom($event, item.Order)">Work it →</a>
+                            </div>
+                        </div>
+                    } @empty {
+                        <div class="small muted">
+                            Nothing is asking for attention. Named and specific is the only useful
+                            form here, so an empty panel is better than a vague one.
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
     `,
     styles: [
         `
@@ -116,9 +209,16 @@ interface MJOQueue {
                 overflow: auto;
                 padding: var(--mj-space-6);
             }
+            /* The bottom row is two panels, not three — a table needs the width. */
+            .mjo-dash__split--wide {
+                grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+                margin-top: var(--mj-space-4);
+            }
             .mjo-dash__split {
                 display: grid;
-                grid-template-columns: 1.2fr 1fr;
+                /* Queues, the per-day chart, and the status mix. The queues get the
+                   most room because they are the only column anyone acts on. */
+                grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
                 gap: var(--mj-space-4);
                 margin-top: var(--mj-space-6);
             }
@@ -161,10 +261,14 @@ interface MJOQueue {
             .mjo-dash__count { font-size: 16px; }
             .mjo-dash__note { margin-top: var(--mj-space-3); }
 
+            @media (max-width: 1200px) {
+                /* Three panels do not survive this width; the chart is the one
+                   that reads worst when squeezed, so it wraps first. */
+                .mjo-dash__split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            }
             @media (max-width: 1000px) {
-                .mjo-dash__split {
-                    grid-template-columns: 1fr;
-                }
+                .mjo-dash__split,
+                .mjo-dash__split--wide { grid-template-columns: 1fr; }
             }
             @media (max-width: 760px) {
                 :host {
@@ -197,11 +301,113 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     /** A tile or queue was activated. Carries the rail page id to open. */
     @Output() NavigateRequested = new EventEmitter<string>();
 
+    /** A row was chosen. The section routes it. */
+    @Output() OrderOpened = new EventEmitter<MJOOrderRow>();
+
     private orders: MJOOrderRow[] = [];
 
     public async ngOnInit(): Promise<void> {
         this.orders = await this.data.GetOrders({ Preset: 'all' });
         this.cdr.detectChanges();
+    }
+
+    /* ── Recent activity ────────────────────────────────────────────────── */
+
+    /**
+     * The last seven days, oldest first.
+     *
+     * Built from the orders ALREADY loaded rather than a grouped query. The
+     * dashboard has them in hand, and a GROUP BY round trip to bucket rows this
+     * screen is already holding is work with no answer attached to it.
+     */
+    public get OrdersPerDay(): MJODayBar[] {
+        const days: MJODayBar[] = [];
+        const today = new Date();
+        for (let back = 6; back >= 0; back--) {
+            const day = new Date(today);
+            day.setDate(day.getDate() - back);
+            const iso = day.toISOString().slice(0, 10);
+            days.push({
+                Label: day.toLocaleDateString('en-US', { weekday: 'short' }),
+                Value: this.orders.filter((o) => String(o.OrderDate ?? '').slice(0, 10) === iso).length,
+                Current: back === 0,
+            });
+        }
+        return days;
+    }
+
+    /** Newest first — what just happened, not what matters most. */
+    public get LatestOrders(): MJOOrderRow[] {
+        return [...this.orders]
+            .sort((a, b) => String(b.OrderDate ?? '').localeCompare(String(a.OrderDate ?? '')))
+            .slice(0, 7);
+    }
+
+    /**
+     * Named, specific things to act on.
+     *
+     * Deliberately NOT a count. "4 overdue invoices" is a number someone has to
+     * go and decode; "ORD-0961 is 90 days past due, $890 from Marcus Webb" is
+     * already the decision. A vague attention panel trains people to skip it, so
+     * an empty one is better than a general one.
+     */
+    public get WorthALook(): MJOAttentionItem[] {
+        const today = new Date().toISOString().slice(0, 10);
+        const items: MJOAttentionItem[] = [];
+
+        const worst = this.overdue
+            .slice()
+            .sort((a, b) => DaysSince(String(b.DueDate), today) - DaysSince(String(a.DueDate), today))[0];
+        if (worst) {
+            const days = DaysSince(String(worst.DueDate), today);
+            items.push({
+                Order: worst,
+                Tone: 'mj-banner--error',
+                Icon: 'fa-solid fa-hourglass-half',
+                Headline: `${worst.OrderNumber} is ${days} days past due.`,
+                Detail: `${FormatMoney(worst.Balance)} from ${this.customerOf(worst)}.`,
+            });
+        }
+
+        const biggestCredit = this.credits
+            .slice()
+            .sort((a, b) => a.Balance - b.Balance)[0];
+        if (biggestCredit) {
+            items.push({
+                Order: biggestCredit,
+                Tone: 'mj-banner--info',
+                Icon: 'fa-solid fa-piggy-bank',
+                Headline: `${this.customerOf(biggestCredit)} is holding ${FormatMoney(Math.abs(biggestCredit.Balance))}.`,
+                Detail: 'Spend it before invoicing them again.',
+            });
+        }
+
+        return items;
+    }
+
+    /** Who the order is for, however the customer is recorded. */
+    public customerOf(order: MJOOrderRow): string {
+        return (order.BillToOrganization ?? order.BillToPerson ?? '—') as string;
+    }
+
+    protected statusClass(order: MJOOrderRow): string {
+        switch (order.Status) {
+            case 'Posted':
+            case 'Fulfilled':
+                return 'mj-chip--success';
+            case 'Confirmed':
+                return 'mj-chip--info';
+            case 'Voided':
+                return 'mj-chip--outline';
+            default:
+                return '';
+        }
+    }
+
+    /** Named `openFrom`, not `open` — `open` is already the set of open orders. */
+    protected openFrom(event: Event, order: MJOOrderRow): void {
+        event.preventDefault();
+        this.OrderOpened.emit(order);
     }
 
     /* ── Tiles ──────────────────────────────────────────────────────────── */
