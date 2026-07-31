@@ -992,7 +992,8 @@ Not architecture tensions — rulings owed by named people, with our default not
 
 **Deferred, design standing** (each has a revisit trigger; nothing here is a contradiction):
 currency/FX (D24) · product variants (SKU matrix) · metered-billing engine (pricing fields ship) ·
-ASC-606 bundle allocation engine (fields ship) · gift-card flows (schema ships; issuance/redemption/
+ASC-606 bundle allocation engine (**RETIRED, not deferred** — `ProductPerformanceObligation` is
+dropped; see D44 note below) · gift-card flows (schema ships; issuance/redemption/
 cross-company/breakage later) · payment dispute case management · provider expansion
 (PayPal/Square/Authorize/Adyen) · statements & consolidated-bill report packages · bulk
 bill/statement delivery + bill.com adapter · per-line fulfillment queue + fulfillment
@@ -1000,10 +1001,33 @@ groups/order-splitting (Robert: real-world partial fulfillment splits the order)
 settlement op · ProductBehavior plugin seam activation · browser catalog lazy-loading for very
 large catalogs · customer portal / storefront · CDP migration timing (aidp Stage 4).
 
+**Deferred to a NEXT VERSION — sales-rule evaluation and approval routing** *(Amith 2026-07-31)*.
+The tables ship and one slice works; the rest is a v-next feature rather than something this version
+needs. Recording precisely what is and is not live, because the gap is not visible from the schema:
+
+- **Live:** `SalesRule.RuleType = 'DiscountLimit'` and `SalesAuthority.MaxDiscountPct`. A manual
+  discount above a rep's cap is refused, and the message names the role that could approve it.
+- **Schema only:** `PaymentTermsRequired`, `ProductAuthorization`, `CreditLimit` have no evaluator.
+  `MaxOrderValue` is SELECTed by `PromotionEngine` and never compared. `AllowedPaymentTermsTypeIDs`
+  and `AllowedProductCategoryIDs` are read by no server file.
+- **The trap to fix first when this is picked up:** `PredicateJson` and `ScopeReferenceID` are read
+  NOWHERE, so `Scope` is decorative — a rule saved as `PerProduct` or `PerCustomer` behaves exactly
+  like `Global`, because nothing consults the reference that would narrow it. It configures cleanly,
+  saves cleanly, and silently applies everywhere. That is a wrong answer that looks like a right one,
+  so it wants a check asserting scope actually scopes, not merely that the rule fires.
+- **Not built:** approval ROUTING. §3.31 says a violation should raise an Approval Request Task in
+  bizapps-tasks routed to `ApprovalRequiredRoleID`. Today it refuses with a message instead. Note
+  bizapps-tasks cannot currently be installed alongside our bizapps-common (see D44), so this is
+  gated on that version alignment regardless.
+
 **Explicitly out (other apps' domain):** GL functionality, financial statements, year-end close
-(ERP / accounting) · contract terms/escalators/renewal envelopes (**BizApps Contracts** — future;
-Orders ships the seams: soft `Order.ContractID`, the pricing-precedence top slot, a rev-rec
-override hook, order events) · inventory, costing (FIFO/LIFO/Average), COGS, asset valuation
+(ERP / accounting) · contract terms/escalators/renewal envelopes, **and ASC-606 multi-element
+allocation** (**BizApps Contracts** — future; Orders ships the seams: the pricing-precedence top
+slot, a rev-rec override hook, order events. NOT `Order.ContractID`, which D44 removed — contracts
+is downstream and will join to orders from its own schema. `ProductPerformanceObligation` went the
+same way and for the same reason: splitting one transaction price across distinct obligations is an
+agreement-envelope concern. Revenue recognition itself STAYS in orders — deferring revenue over a
+subscription term is a different problem and it works today) · inventory, costing (FIFO/LIFO/Average), COGS, asset valuation
 (**BizApps Inventory** — future bolt-on; Orders ships the seams: `PhysicalGoodProduct.IsStockTracked`,
 `OrderLine.FulfillmentStatus`, fulfillment events; Inventory emits its own COGS/asset JEs into
 accounting as just another upstream emitter) · CRM / customer master (BizApps Common) · marketplace
