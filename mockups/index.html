@@ -280,6 +280,13 @@ const JOBS = [
         d: `Ordered by what to do next, not by what is biggest. Every row carries its contact history and a
             suggested next action. Dunning notifies a person; nothing auto-cancels.`,
         f: ['next action', 'grace ≠ revenue'] },
+      { href: 'receivables/statement.html', icon: 'fa-file-invoice-dollar', t: 'Customer statement',
+        d: `Where a customer stands across every purchase in a period — not one invoice, but opening balance,
+            what moved, and what is owed. Derived from orders and payments between two dates, so it can never
+            disagree with the ledger it summarises. Open-item and full-activity conventions, aged buckets
+            computed from due dates, and a remittance slip because a cheque with no reference is the commonest
+            cause of unapplied cash.`,
+        f: ['ties to the ledger', 'aging from dates, not columns', 'print/PDF ready'] },
       { href: 'receivables/subscriptions.html', icon: 'fa-rotate', t: 'Subscriptions & renewals',
         d: `Terms as a timeline because coverage is appended, never mutated. Recognition waterfall, holder versus
             beneficiary, and a cancellation preview that computes the proration from a date and a policy.`,
