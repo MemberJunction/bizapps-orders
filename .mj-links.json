@@ -9,9 +9,16 @@
     "",
     "Paths are relative to this file. Client (-ng) packages are deliberately NOT linked:",
     "duplicate @angular/* copies in one browser bundle break DI, which is class-identity",
-    "based. Server-side duplication is safe — MJ's BaseSingleton stores instances on",
-    "globalThis, so one ClassFactory is shared across copies (verified: 32 Orders + 22",
-    "Accounting registrations in a single registry)."
+    "based.",
+    "",
+    "Server-side duplication is safe FOR MEMBERJUNCTION specifically — BaseSingleton stores",
+    "instances on globalThis, so one ClassFactory is shared across copies (verified: 32 Orders",
+    "+ 22 Accounting registrations in a single registry). That is a property of MJ, not a",
+    "general rule, and it does not hold for type-graphql, graphql or reflect-metadata, which",
+    "keep state in module-local storage. Two copies of those is two universes: accounting's",
+    "decorators register into its copy while buildSchema reads ours, and the API dies with",
+    "CannotDetermineGraphQLTypeError on a decorator that is perfectly correct. link-local-apps.mjs",
+    "redirects those three onto our copy — see SHARED_IDENTITY there."
   ],
   "links": {
     "mj-bizapps-accounting": {
