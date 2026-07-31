@@ -225,13 +225,13 @@ h1, h2, h3, h4 { margin: 0; font-weight: var(--mj-font-semibold); }
 
 
 
-.mj-search {
+.mjo-search {
   display: flex; align-items: center; gap: var(--mj-space-2);
   background: var(--mj-bg-surface); border: 1px solid var(--mj-border-strong);
   border-radius: var(--mj-radius-md); padding: 6px 10px; min-width: 260px;
 }
-.mj-search i { color: var(--mj-text-muted); font-size: 12px; }
-.mj-search input { border: none; outline: none; background: none; font-family: inherit; font-size: 13px; color: inherit; width: 100%; }
+.mjo-search i { color: var(--mj-text-muted); font-size: 12px; }
+.mjo-search input { border: none; outline: none; background: none; font-family: inherit; font-size: 13px; color: inherit; width: 100%; }
 
 .mj-segmented {
   display: inline-flex; background: var(--mj-bg-surface-sunken);
