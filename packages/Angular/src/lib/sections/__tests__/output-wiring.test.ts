@@ -96,6 +96,19 @@ describe('page outputs are wired to the section', () => {
         expect([...AWAITING_OPERATION]).toEqual(['CaptureRequested']);
     });
 
+    it('points every primary button at a page that exists', () => {
+        // A header button is the most prominent control on the section. Aiming it
+        // at a page id the rail does not have would land on "not built yet",
+        // which is the worst possible first click.
+        const nav = readFileSync(join(LIB, 'sections', 'section-nav.model.ts'), 'utf8');
+        const railIds = new Set([...nav.matchAll(/Id: '([a-z-]+)'/g)].map((m) => m[1]));
+        const targets = [...shell.matchAll(/PageId: '([a-z-]+)'/g)].map((m) => m[1]);
+
+        expect(targets.length).toBeGreaterThan(0);
+        const missing = targets.filter((id) => !railIds.has(id));
+        expect(missing, `primary actions point at unknown pages: ${missing.join(', ')}`).toEqual([]);
+    });
+
     it('reaches ConfirmOrder from the UI', () => {
         // The specific regression: this is the only path to the operation that
         // writes journal entries, and it was unreachable.

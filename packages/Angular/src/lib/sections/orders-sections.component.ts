@@ -92,7 +92,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     /** Live counts the rail badges. Sections refresh these; zero badges do not render. */
     protected badges: OrdersNavBadges = {};
 
-    private readonly mounted = new Map<string, ComponentRef<unknown>>();
+    protected readonly mounted = new Map<string, ComponentRef<unknown>>();
 
     /** The section's pages, in rail order. */
     protected abstract get subPages(): OrdersSubPage[];
@@ -124,7 +124,10 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         //
         // A macrotask lands after the cycle completes, so the child's fetch resolves
         // in its own tick and simply re-renders.
-        setTimeout(() => this.showPage(this.ActivePageId!));
+        setTimeout(() => {
+            this.showPage(this.ActivePageId!);
+            this.LoadedAt = new Date();
+        });
     }
 
     /** Rail click handler. */
@@ -230,6 +233,57 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
     /** Set when a page was opened for a specific record. */
     public PendingRecordID: string | null = null;
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+
+    /**
+     * The action the primary button performs, or null for a section that has no
+     * single obvious thing to start.
+     *
+     * Deliberately per-section rather than a global "New order". On Receivables
+     * and Catalog there is no one thing a person arrives wanting to create, and a
+     * primary button that guesses is worse than none — it makes the wrong action
+     * the most prominent one on the page.
+     */
+    protected get primaryAction(): { Label: string; Icon: string; PageId: string } | null {
+        return null;
+    }
+
+    /** When the visible data was last read. Shown so a stale screen can be spotted. */
+    public LoadedAt: Date | null = null;
+
+    /** The 'as of' chip. Time only — the date is today by construction. */
+    public get LoadedAtDisplay(): string {
+        if (!this.LoadedAt) return '';
+        return this.LoadedAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    }
+
+    /**
+     * Re-read the active page.
+     *
+     * Destroys the cached instance rather than asking it to reload, because a page
+     * has no reload contract — some load in `ngOnInit`, some on a preset change,
+     * and inventing an interface every page must implement to support one button
+     * is more surface than the button is worth. Recreating runs whatever the page
+     * already does on mount.
+     */
+    public RefreshActivePage(): void {
+        const pageId = this.ActivePageId;
+        if (!pageId) return;
+        const cached = this.mounted.get(pageId);
+        if (cached) {
+            this.mounted.delete(pageId);
+            cached.destroy();
+        }
+        this.showPage(pageId);
+        this.LoadedAt = new Date();
+    }
+
+    /** Start the section's primary action. */
+    public StartPrimary(): void {
+        const action = this.primaryAction;
+        if (action) this.OnPageSelected(action.PageId);
+    }
 
     /* ── Confirm pre-flight ─────────────────────────────────────────────── */
 
@@ -376,6 +430,29 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             [Loading]="IsLoading"
             [Error]="LoadError"
             (PageSelected)="OnPageSelected($event)">
+
+            <div meta>
+                @if (LoadedAtDisplay) {
+                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                        as of {{ LoadedAtDisplay }}
+                    </span>
+                }
+            </div>
+
+            <div actions>
+                <button
+                    type="button"
+                    class="mj-btn mj-btn--outline"
+                    (click)="RefreshActivePage()"
+                    aria-label="Refresh this page">
+                    <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
+                </button>
+                @if (primaryAction; as action) {
+                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                        <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
+                    </button>
+                }
+            </div>
             <ng-container #pageHost />
         </mjo-section-shell>
 
@@ -408,6 +485,11 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     ],
 })
 export class OrdersSectionResource extends MJOSectionBaseComponent {
+    /** Taking an order is what someone arrives at this section to do. */
+    protected override get primaryAction() {
+        return { Label: 'New order', Icon: 'fa-solid fa-plus', PageId: 'fast-entry' };
+    }
+
     protected get subPages(): OrdersSubPage[] {
         return ORDERS_SUB_PAGES;
     }
@@ -465,11 +547,38 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
             [Loading]="IsLoading"
             [Error]="LoadError"
             (PageSelected)="OnPageSelected($event)">
+
+            <div meta>
+                @if (LoadedAtDisplay) {
+                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                        as of {{ LoadedAtDisplay }}
+                    </span>
+                }
+            </div>
+
+            <div actions>
+                <button
+                    type="button"
+                    class="mj-btn mj-btn--outline"
+                    (click)="RefreshActivePage()"
+                    aria-label="Refresh this page">
+                    <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
+                </button>
+                @if (primaryAction; as action) {
+                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                        <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
+                    </button>
+                }
+            </div>
             <ng-container #pageHost />
         </mjo-section-shell>
     `,
 })
 export class PaymentsSectionResource extends MJOSectionBaseComponent {
+    protected override get primaryAction() {
+        return { Label: 'Take a payment', Icon: 'fa-solid fa-plus', PageId: 'entry' };
+    }
+
     protected get subPages(): OrdersSubPage[] {
         return PAYMENTS_SUB_PAGES;
     }
@@ -526,6 +635,29 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
             [Loading]="IsLoading"
             [Error]="LoadError"
             (PageSelected)="OnPageSelected($event)">
+
+            <div meta>
+                @if (LoadedAtDisplay) {
+                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                        as of {{ LoadedAtDisplay }}
+                    </span>
+                }
+            </div>
+
+            <div actions>
+                <button
+                    type="button"
+                    class="mj-btn mj-btn--outline"
+                    (click)="RefreshActivePage()"
+                    aria-label="Refresh this page">
+                    <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
+                </button>
+                @if (primaryAction; as action) {
+                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                        <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
+                    </button>
+                }
+            </div>
             <ng-container #pageHost />
         </mjo-section-shell>
     `,
@@ -583,6 +715,29 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
             [Loading]="IsLoading"
             [Error]="LoadError"
             (PageSelected)="OnPageSelected($event)">
+
+            <div meta>
+                @if (LoadedAtDisplay) {
+                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                        as of {{ LoadedAtDisplay }}
+                    </span>
+                }
+            </div>
+
+            <div actions>
+                <button
+                    type="button"
+                    class="mj-btn mj-btn--outline"
+                    (click)="RefreshActivePage()"
+                    aria-label="Refresh this page">
+                    <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
+                </button>
+                @if (primaryAction; as action) {
+                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                        <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
+                    </button>
+                }
+            </div>
             <ng-container #pageHost />
         </mjo-section-shell>
     `,
