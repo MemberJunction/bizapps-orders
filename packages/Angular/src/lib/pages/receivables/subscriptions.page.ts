@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
@@ -189,6 +189,13 @@ interface MJORecognitionPeriod {
 })
 export class MJOSubscriptionsPageComponent implements OnInit {
     private readonly data = inject(MJOOrdersDataService);
+    /**
+     * Render what was just loaded. See orders-dashboard.page.ts for the full
+     * reasoning: these pages are created imperatively by the section shell, and an
+     * async assignment across Angular's check/verify boundary raises NG0100, aborts
+     * the DOM write, and freezes the view on its pre-load values permanently.
+     */
+    private readonly cdr = inject(ChangeDetectorRef);
 
     public AllRows: MJOSubscriptionRow[] = [];
     public Rows: MJOSubscriptionRow[] = [];
@@ -248,6 +255,7 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         this.AllRows = result.Success ? (result.Results ?? []) : [];
         this.applyPreset();
         if (this.Rows.length) this.SelectedID = this.Rows[0].ID;
+        this.cdr.detectChanges();
     }
 
     public Select(row: MJOSubscriptionRow): void {

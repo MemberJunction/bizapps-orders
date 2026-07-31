@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
 import { MJO_ORIGIN_CHANNEL_AVAILABLE, MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
@@ -63,6 +63,22 @@ import { FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
 })
 export class MJOOrdersListPageComponent implements OnInit {
     private readonly data = inject(MJOOrdersDataService);
+    /**
+     * Render what was just loaded.
+     *
+     * These pages are created imperatively by the section shell through
+     * `ViewContainerRef.createComponent`. When an async load assigns across
+     * Angular's check/verify boundary, dev mode raises NG0100 and ABORTS the DOM
+     * write. Nothing re-renders afterwards, so the recorded "previous" value stays
+     * pre-load while the getter returns the loaded one — the mismatch then repeats
+     * on every tick and the view is frozen for good. It is not a flicker: the
+     * Orders dashboard sat at "0 open orders / $0.00" against 73 real orders, and
+     * read as a quiet day rather than a broken screen.
+     *
+     * Writing the DOM here ends it: the rendered value matches the getter from the
+     * first pass on, so later verify passes agree.
+     */
+    private readonly cdr = inject(ChangeDetectorRef);
 
     /** A row was opened. The host decides whether that is a slide-in or a tab. */
     @Output() OrderOpened = new EventEmitter<MJOOrderRow>();
@@ -220,11 +236,13 @@ export class MJOOrdersListPageComponent implements OnInit {
     public async OnPreset(preset: string): Promise<void> {
         this.Preset = preset;
         await this.load();
+        this.cdr.detectChanges();
     }
 
     public async OnSearch(text: string): Promise<void> {
         this.Search = text;
         await this.load();
+        this.cdr.detectChanges();
     }
 
     private async load(): Promise<void> {
@@ -237,5 +255,6 @@ export class MJOOrdersListPageComponent implements OnInit {
         } finally {
             this.Loading = false;
         }
+        this.cdr.detectChanges();
     }
 }

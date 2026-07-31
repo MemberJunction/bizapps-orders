@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
@@ -177,6 +177,23 @@ interface MJOQueue {
 export class MJOOrdersDashboardPageComponent implements OnInit {
     private readonly data = inject(MJOOrdersDataService);
 
+    /**
+     * Render what was just loaded.
+     *
+     * These pages are created imperatively by the section shell through
+     * `ViewContainerRef.createComponent`. When an async load assigns across
+     * Angular's check/verify boundary, dev mode raises NG0100 and ABORTS the DOM
+     * write. Nothing re-renders afterwards, so the recorded "previous" value stays
+     * pre-load while the getter returns the loaded one — the mismatch then repeats
+     * on every tick and the view is frozen for good. It is not a flicker: this
+     * dashboard sat at "0 open orders / $0.00" against 73 real orders, reading as a
+     * quiet day rather than a broken screen.
+     *
+     * Writing the DOM here ends it: the rendered value matches the getter from the
+     * first pass on, so later verify passes agree.
+     */
+    private readonly cdr = inject(ChangeDetectorRef);
+
     /** A tile or queue was activated. Carries the rail page id to open. */
     @Output() NavigateRequested = new EventEmitter<string>();
 
@@ -184,6 +201,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
 
     public async ngOnInit(): Promise<void> {
         this.orders = await this.data.GetOrders({ Preset: 'all' });
+        this.cdr.detectChanges();
     }
 
     /* ── Tiles ──────────────────────────────────────────────────────────── */

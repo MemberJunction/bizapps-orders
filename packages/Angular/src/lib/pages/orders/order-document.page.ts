@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Input, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
@@ -269,6 +269,22 @@ export interface MJOIssuer {
 })
 export class MJOOrderDocumentPageComponent implements OnInit {
     private readonly data = inject(MJOOrdersDataService);
+    /**
+     * Render what was just loaded.
+     *
+     * These pages are created imperatively by the section shell through
+     * `ViewContainerRef.createComponent`. When an async load assigns across
+     * Angular's check/verify boundary, dev mode raises NG0100 and ABORTS the DOM
+     * write. Nothing re-renders afterwards, so the recorded "previous" value stays
+     * pre-load while the getter returns the loaded one — the mismatch then repeats
+     * on every tick and the view is frozen for good. It is not a flicker: the
+     * Orders dashboard sat at "0 open orders / $0.00" against 73 real orders, and
+     * read as a quiet day rather than a broken screen.
+     *
+     * Writing the DOM here ends it: the rendered value matches the getter from the
+     * first pass on, so later verify passes agree.
+     */
+    private readonly cdr = inject(ChangeDetectorRef);
 
     /** Which order to render. */
     @Input() OrderID: string | null = null;
@@ -285,6 +301,7 @@ export class MJOOrderDocumentPageComponent implements OnInit {
         const orders = await this.data.GetOrders({ Preset: 'all' });
         this.Order = orders.find((o) => o.ID === this.OrderID) ?? null;
         if (this.Order) this.Lines = await this.data.GetOrderLines(this.Order.ID);
+        this.cdr.detectChanges();
     }
 
     /** A credit memo is a return — the same document with a negative total. */

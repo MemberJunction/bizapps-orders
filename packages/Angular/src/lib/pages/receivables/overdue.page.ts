@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnInit, Output } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     OrdersGetOverdueWorklistOperation,
@@ -124,6 +124,14 @@ interface MJONextAction {
     ],
 })
 export class MJOOverduePageComponent implements OnInit {
+
+    /**
+     * Render what was just loaded. See orders-dashboard.page.ts for the full
+     * reasoning: these pages are created imperatively by the section shell, and an
+     * async assignment across Angular's check/verify boundary raises NG0100, aborts
+     * the DOM write, and freezes the view on its pre-load values permanently.
+     */
+    private readonly cdr = inject(ChangeDetectorRef);
     @Output() OrderOpened = new EventEmitter<OverdueWorklistRow>();
 
     public AllRows: OverdueWorklistRow[] = [];
@@ -271,6 +279,7 @@ export class MJOOverduePageComponent implements OnInit {
         };
         this.Truncated = result.Output.Truncated;
         this.applyPreset();
+        this.cdr.detectChanges();
     }
 
     private applyPreset(): void {

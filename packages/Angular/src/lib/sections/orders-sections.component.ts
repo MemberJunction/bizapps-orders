@@ -106,8 +106,20 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         super.ngOnInit();
         this.NavSections = BuildLeftNavSections(this.subPages, this.badges);
         this.ActivePageId = this.restorePageId();
-        // The host view has to exist before a page can be created into it.
-        queueMicrotask(() => this.showPage(this.ActivePageId!));
+        // The host view has to exist before a page can be created into it, AND the
+        // page must be created outside the change-detection pass that is running now.
+        //
+        // WHY NOT queueMicrotask. Microtasks drain before the CD cycle finishes, so
+        // the page was constructed inside this turn. Its `ngOnInit` is async, so the
+        // fetch resolved between Angular's check pass and its dev-mode verify pass —
+        // NG0100, which ABORTS the rest of that update. Nothing schedules another
+        // tick afterwards, so the DOM stayed frozen on the pre-fetch render: the
+        // Orders dashboard sat at "0 open orders / $0.00" against a database holding
+        // 73 orders, and looked like a quiet day rather than a bug.
+        //
+        // A macrotask lands after the cycle completes, so the child's fetch resolves
+        // in its own tick and simply re-renders.
+        setTimeout(() => this.showPage(this.ActivePageId!));
     }
 
     /** Rail click handler. */

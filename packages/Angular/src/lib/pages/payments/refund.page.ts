@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { OrdersRefundPaymentOperation } from '@mj-biz-apps/orders-entities';
@@ -201,6 +201,14 @@ interface MJOUnapplication {
     ],
 })
 export class MJORefundPageComponent implements OnInit {
+
+    /**
+     * Render what was just loaded. See orders-dashboard.page.ts for the full
+     * reasoning: these pages are created imperatively by the section shell, and an
+     * async assignment across Angular's check/verify boundary raises NG0100, aborts
+     * the DOM write, and freezes the view on its pre-load values permanently.
+     */
+    private readonly cdr = inject(ChangeDetectorRef);
     /** The captured payment being reversed. */
     @Input() PaymentID: string | null = null;
 
@@ -283,6 +291,7 @@ export class MJORefundPageComponent implements OnInit {
         } finally {
             this.Busy = false;
         }
+        this.cdr.detectChanges();
     }
 
 }
