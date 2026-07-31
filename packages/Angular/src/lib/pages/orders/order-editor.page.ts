@@ -15,6 +15,7 @@ import {
     type OrdersPreviewOrderOutput,
 } from '@mj-biz-apps/orders-entities';
 
+import { MJOOrdersDataService } from '../../services/orders-data.service';
 import { MJOOrderEntryService, type MJOPreviewState } from '../../services/order-entry.service';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { MJOStatusStepperComponent } from '../../panels/status-stepper.component';
@@ -26,7 +27,7 @@ import {
     MJOPriceSourceBadgeComponent,
     MJOStatedValueComponent,
 } from '../../panels/chips.component';
-import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
+import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format';
 import { BuildOrderStages, type MJOOrderStage, type MJOStageChangeRequestEventArgs } from '../../panels/order-stages';
 import type { MJOProductOption } from './fast-entry.page';
 
@@ -95,6 +96,7 @@ export interface MJOEditorTabDef {
 })
 export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     private readonly orders = inject(MJOOrderEntryService);
+    private readonly data = inject(MJOOrdersDataService);
 
     /**
      * The order being edited. Supplied by the host — often the SAME instance fast
@@ -132,6 +134,12 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     /** An entry's Accounting link was followed. */
     @Output() OpenInAccounting = new EventEmitter<MJOJournalEntry>();
 
+    /** Allocation lines that have landed on this order. */
+    public AppliedPayments: Array<Record<string, unknown>> = [];
+
+    /** Dimension tags across this order's lines. */
+    public Dimensions: Array<Record<string, unknown>> = [];
+
     /** Active tab. */
     public ActiveTab: MJOEditorTab = 'lines';
 
@@ -152,6 +160,10 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
             this.orders.SchedulePreview(this.Draft, (state) => (this.Preview = state));
         });
         void this.orders.PreviewNow(this.Draft, (state) => (this.Preview = state));
+
+        // Payments and dimension tags exist only against a SAVED order, so this
+        // resolves to empty for a fresh draft rather than querying for nothing.
+        void this.loadPersistedDetail();
     }
 
     public ngOnDestroy(): void {
@@ -185,6 +197,59 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
             { Key: 'payment', Label: 'Payment', HasError: sections.includes('payment') },
             { Key: 'accounting', Label: 'Accounting' },
         ];
+    }
+
+    /**
+     * Load what only a SAVED order can have.
+     *
+     * Payments and dimension tags exist against persisted rows, so a draft that
+     * has never been saved has neither — and asking for them with no id would be a
+     * query guaranteed to return nothing. Both awaits settle before either is
+     * assigned.
+     */
+    private async loadPersistedDetail(): Promise<void> {
+        const orderID = this.Draft?.Header?.OrderHeaderID ?? null;
+        if (!orderID) {
+            this.AppliedPayments = [];
+            this.Dimensions = [];
+            return;
+        }
+        // A draft line carries a CLIENT key, and the preview's projection carries
+        // one too — neither is a database id, because a line has no id until it is
+        // saved. Dimensions hang off the SAVED lines, so those are read first and
+        // their ids are what the dimension query is given.
+        const [payments, savedLines] = await Promise.all([
+            this.data.GetPaymentLinesForOrder(orderID),
+            this.data.GetOrderLines(orderID),
+        ]);
+        const dimensions = await this.data.GetLineDimensionsForOrder(
+            savedLines.map((line) => String(line['ID'])),
+        );
+        this.AppliedPayments = payments;
+        this.Dimensions = dimensions;
+    }
+
+    /** What has actually reached this order, summed from its allocations. */
+    public get AppliedTotal(): number {
+        return Math.round(
+            this.AppliedPayments.reduce((sum, line) => sum + Number(line['Amount'] ?? 0), 0) * 100,
+        ) / 100;
+    }
+
+    public get GrossTotal(): number {
+        return this.Preview.Result?.Totals.GrossTotal ?? 0;
+    }
+
+    public get BalanceDue(): number {
+        return Math.round((this.GrossTotal - this.AppliedTotal) * 100) / 100;
+    }
+
+    protected dateOf(value: unknown): string {
+        return value ? FormatDate(String(value), { Short: true }) : '—';
+    }
+
+    protected moneyOf(value: unknown): string {
+        return FormatMoney(Number(value ?? 0));
     }
 
     public SelectTab(tab: MJOEditorTab): void {

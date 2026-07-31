@@ -444,6 +444,54 @@
         </div>
       </div>
     </div>
+
+    <div class="mj-card ed-block">
+      <div class="mj-card-head">
+        <i class="fa-solid fa-list-check" aria-hidden="true"></i>
+        <h3>Payments applied</h3>
+        <span class="right small muted">{{ AppliedTotal | mjoMoney }} of {{ GrossTotal | mjoMoney }}</span>
+      </div>
+      <div class="mj-table-wrap">
+        <table class="mj-table mj-table--compact">
+          <thead>
+            <tr><th>Payment</th><th>Applied</th><th class="num">Amount</th></tr>
+          </thead>
+          <tbody>
+            @for (line of AppliedPayments; track line['ID']) {
+              <tr>
+                <td class="mono small">{{ line['PaymentHeader'] ?? '—' }}</td>
+                <td class="small muted">{{ dateOf(line['AllocatedAt']) }}</td>
+                <td class="num">{{ moneyOf(line['Amount']) }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="3" class="small muted">Nothing applied yet.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="mj-card-pad small muted">
+        These are allocation LINES, not payments. One payment can settle several orders, so what
+        matters here is the amount that reached THIS order — not what the customer handed over.
+      </div>
+    </div>
+
+    <div class="mj-card ed-block">
+      <div class="mj-card-head">
+        <i class="fa-solid fa-calendar-day" aria-hidden="true"></i>
+        <h3>Terms</h3>
+      </div>
+      <div class="mj-card-pad">
+        <mjo-stated-value Label="Due" From="set when the order confirms">
+          {{ dateOf(Draft.Header.DueDate) }}
+        </mjo-stated-value>
+        <mjo-stated-value Label="Balance">{{ BalanceDue | mjoMoney }}</mjo-stated-value>
+        <div class="small muted ed-note">
+          Terms decide the due date, and the due date is what makes an order overdue. Nothing here
+          is a stored "overdue" flag — that is a question about today's date, so it is asked rather
+          than remembered.
+        </div>
+      </div>
+    </div>
   </div>
 }
 
@@ -459,6 +507,40 @@
     <div class="small muted ed-note">
       Read-only, and never duplicated. Orders creates <b>Pending</b> entries and owns nothing in the
       ledger, so every account links out to Accounting rather than being editable here.
+    </div>
+
+    <div class="mj-card ed-block">
+      <div class="mj-card-head">
+        <i class="fa-solid fa-tags" aria-hidden="true"></i>
+        <h3>Dimension tags</h3>
+        <span class="right small muted">{{ Dimensions.length }}</span>
+      </div>
+      <div class="mj-card-pad">
+        @for (dim of Dimensions; track dim['ID']) {
+          <div class="ed-dim">
+            <span class="mj-chip mj-chip--outline">{{ dim['Dimension'] }}</span>
+            <span class="small">{{ dim['DimensionValue'] }}</span>
+          </div>
+        } @empty {
+          <div class="small muted">
+            No tags. Dimensions are the axes a line is filed under for analysis — department,
+            campaign, region — and an untagged line still books correctly; it is simply harder to
+            group later.
+          </div>
+        }
+      </div>
+    </div>
+
+    <div class="mj-card ed-block">
+      <div class="mj-card-head">
+        <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+        <h3>Record changes</h3>
+      </div>
+      <div class="mj-card-pad small muted">
+        Every field change on this order is recorded by the platform, not by this app — which is why
+        there is no "edit history" table of our own to keep in step. Open the record in Explorer's
+        entity viewer to read it.
+      </div>
     </div>
   </div>
 }

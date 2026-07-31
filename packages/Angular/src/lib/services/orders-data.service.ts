@@ -47,6 +47,7 @@ export const MJO_ENTITIES = {
     ProductPrice: 'MJ_BizApps_Orders: Product Prices',
     Promotion: 'MJ_BizApps_Orders: Promotions',
     PriceTier: 'MJ_BizApps_Orders: Price Tiers',
+    OrderLineDimension: 'MJ_BizApps_Orders: Order Line Dimensions',
     SubscriptionTerm: 'MJ_BizApps_Orders: Subscription Terms',
     SubscriptionEvent: 'MJ_BizApps_Orders: Subscription Events',
     ChargeType: 'MJ_BizApps_Orders: Charge Types',
@@ -388,6 +389,37 @@ export class MJOOrdersDataService {
             [`(${clauses.join(' OR ')})`],
             'EndDate DESC',
             50,
+            user,
+        );
+    }
+
+    /**
+     * Payments that have landed on one order.
+     *
+     * An allocation LINE, not a payment header: one payment can settle several
+     * orders, so the amount that matters here is what reached THIS order rather
+     * than what the customer handed over.
+     */
+    public async GetPaymentLinesForOrder(orderHeaderID: string, user?: UserInfo) {
+        if (!UUID_PATTERN.test(orderHeaderID)) return [];
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.PaymentLine,
+            [`OrderHeaderID = '${orderHeaderID}'`],
+            'AllocatedAt DESC',
+            undefined,
+            user,
+        );
+    }
+
+    /** Dimension tags on an order's lines — the analysis axes a line was filed under. */
+    public async GetLineDimensionsForOrder(orderLineIDs: string[], user?: UserInfo) {
+        const ids = [...new Set(orderLineIDs)].filter((id) => UUID_PATTERN.test(id));
+        if (!ids.length) return [];
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.OrderLineDimension,
+            [`OrderLineID IN (${ids.map((id) => `'${id}'`).join(',')})`],
+            'Dimension',
+            undefined,
             user,
         );
     }
