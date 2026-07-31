@@ -96,6 +96,16 @@ interface MJOFulfillmentRow extends Record<string, unknown> {
             </div>
         }
 
+        <div class="mj-banner mj-banner--neutral mjo-fq__note">
+            <i class="fa-solid fa-box-open" aria-hidden="true"></i>
+            <div class="body">
+                <strong>Orders held only by fulfillment.</strong>
+                Everything here has already been paid for and booked — the money and the revenue
+                moved when the order confirmed. What is outstanding is the goods, which is why
+                nothing on this screen writes a journal entry.
+            </div>
+        </div>
+
         <div class="mjo-fq__actions">
             <button
                 type="button"

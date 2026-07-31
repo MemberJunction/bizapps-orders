@@ -81,6 +81,16 @@ interface MJONextAction {
             </div>
         }
 
+        <div class="mj-banner mj-banner--neutral mjo-ov__error">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            <div class="body">
+                <strong>Dunning notifies a person; nothing here auto-cancels.</strong>
+                A failed card is usually an expired card, not a lost customer. Escalation is a
+                sequence of reminders with a human at the end of it — cancelling access on a missed
+                payment turns a billing problem into a churn problem.
+            </div>
+        </div>
+
         <div class="mj-card mjo-ov__aging">
             <div class="mj-card-head">
                 <i class="fa-solid fa-chart-column" aria-hidden="true"></i>

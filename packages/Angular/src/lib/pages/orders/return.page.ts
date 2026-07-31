@@ -177,6 +177,28 @@ interface MJOReturnLine {
                         </div>
                     </div>
 
+                    <div class="mj-banner mj-banner--info mjo-rt__note">
+                        <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+                        <div class="body">
+                            <strong>Mirrored entry.</strong>
+                            The return books the origin's entry with debit and credit swapped and
+                            positive amounts — same accounts, opposite direction. It is never an
+                            edit of the booked order, because that order genuinely happened and
+                            rewriting it would destroy the trail of money that moved.
+                        </div>
+                    </div>
+
+                    <div class="mj-banner mj-banner--neutral mjo-rt__note">
+                        <i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i>
+                        <div class="body">
+                            <strong>How to settle it.</strong>
+                            A return creates a credit — an order with a negative balance. It can be
+                            spent on the customer's next order or refunded as cash. Nothing is
+                            refunded automatically: which one happens is a decision, and the system
+                            should not make it silently.
+                        </div>
+                    </div>
+
                     <div class="mjo-rt__actions">
                         <button
                             type="button"

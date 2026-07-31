@@ -121,6 +121,18 @@ import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-da
             </div>
 
             <div class="mjo-cr__actions">
+                <div class="mj-banner mj-banner--neutral mjo-cr__note">
+                    <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+                    <div class="body">
+                        <strong>The payment this writes, and what books.</strong>
+                        A payment whose Amount is ZERO, carrying two offsetting allocations: the
+                        credit order is drawn down, the target order is settled. Zero is not a
+                        degenerate case — no new cash entered the business. The money arrived
+                        earlier, on the payment that over-paid the first order; this only
+                        re-attributes it, so cash nets to nothing and A/R moves between orders.
+                    </div>
+                </div>
+
                 <button
                     type="button"
                     class="mj-btn mj-btn--primary"
