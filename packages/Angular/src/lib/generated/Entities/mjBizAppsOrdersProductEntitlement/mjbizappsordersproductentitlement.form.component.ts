@@ -19,7 +19,7 @@ export class mjBizAppsOrdersProductEntitlementFormComponent extends BaseFormComp
             { sectionKey: 'productAssociation', sectionName: 'Product Association', isExpanded: true },
             { sectionKey: 'entitlementConfiguration', sectionName: 'Entitlement Configuration', isExpanded: true },
             { sectionKey: 'resourceAllocation', sectionName: 'Resource Allocation', isExpanded: true },
-            { sectionKey: 'accessAndValidity', sectionName: 'Access and Validity', isExpanded: true },
+            { sectionKey: 'validityAndAccess', sectionName: 'Validity and Access', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false }
         ]);

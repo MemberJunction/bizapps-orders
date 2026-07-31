@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Type Details Section -->
+    <!-- General Information Section -->
     <mj-collapsible-panel
-        SectionKey="productTypeDetails"
-        SectionName="Product Type Details"
+        SectionKey="generalInformation"
+        SectionName="General Information"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -52,11 +52,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Fulfillment and Entitlements Section -->
+    <!-- Order Processing Section -->
     <mj-collapsible-panel
-        SectionKey="fulfillmentAndEntitlements"
-        SectionName="Fulfillment and Entitlements"
-        Icon="fa fa-truck"
+        SectionKey="orderProcessing"
+        SectionName="Order Processing"
+        Icon="fa fa-tasks"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -94,10 +94,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financial and Tax Defaults Section -->
+    <!-- Financial Defaults Section -->
     <mj-collapsible-panel
-        SectionKey="financialAndTaxDefaults"
-        SectionName="Financial and Tax Defaults"
+        SectionKey="financialDefaults"
+        SectionName="Financial Defaults"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -138,10 +138,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Configuration and Extensions Section -->
+    <!-- System Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="configurationAndExtensions"
-        SectionName="Configuration and Extensions"
+        SectionKey="systemConfiguration"
+        SectionName="System Configuration"
         Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">

@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Provider Information Section -->
+    <!-- Provider Details Section -->
     <mj-collapsible-panel
-        SectionKey="providerInformation"
-        SectionName="Provider Information"
+        SectionKey="providerDetails"
+        SectionName="Provider Details"
         Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
@@ -34,22 +34,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProviderEventID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Payment Details Section -->
+    <!-- Payment Status Section -->
     <mj-collapsible-panel
-        SectionKey="paymentDetails"
-        SectionName="Payment Details"
-        Icon="fa fa-money-bill"
+        SectionKey="paymentStatus"
+        SectionName="Payment Status"
+        Icon="fa fa-check-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -71,6 +63,14 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="ProviderEventID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="LastEventAt"
             Type="datepicker"
             [EditMode]="EditMode"
@@ -79,11 +79,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Customer and Order Section -->
+    <!-- Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="customerAndOrder"
-        SectionName="Customer and Order"
-        Icon="fa fa-user"
+        SectionKey="relationships"
+        SectionName="Relationships"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -152,7 +152,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPaymentHeaders"
         SectionName="Payment Headers"
-        Icon="fa fa-credit-card"
+        Icon="fa fa-money-bill-wave"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

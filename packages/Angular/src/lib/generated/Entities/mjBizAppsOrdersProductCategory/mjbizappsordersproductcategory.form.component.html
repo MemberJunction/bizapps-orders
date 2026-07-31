@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Organization Section -->
+    <!-- Organizational Context Section -->
     <mj-collapsible-panel
-        SectionKey="organization"
-        SectionName="Organization"
+        SectionKey="organizationalContext"
+        SectionName="Organizational Context"
         Icon="fa fa-building"
         [Form]="this"
         [FormContext]="formContext">
@@ -180,31 +180,6 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Product Categories Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersProductCategories"
-        SectionName="Product Categories"
-        Icon="fa fa-sitemap"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductCategories')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Categories','ParentProductCategoryID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Categories')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductCategories')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductCategories', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Products Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersProducts"
@@ -224,6 +199,31 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProducts', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Product Categories Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersProductCategories"
+        SectionName="Product Categories"
+        Icon="fa fa-sitemap"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductCategories')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Categories','ParentProductCategoryID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Categories')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductCategories')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductCategories', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Customer Information Section -->
+    <!-- Entity Associations Section -->
     <mj-collapsible-panel
-        SectionKey="customerInformation"
-        SectionName="Customer Information"
-        Icon="fa fa-user"
+        SectionKey="entityAssociations"
+        SectionName="Entity Associations"
+        Icon="fa fa-users"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -38,11 +38,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Tax Details Section -->
+    <!-- Taxation Details Section -->
     <mj-collapsible-panel
-        SectionKey="taxDetails"
-        SectionName="Tax Details"
-        Icon="fa fa-file-invoice"
+        SectionKey="taxationDetails"
+        SectionName="Taxation Details"
+        Icon="fa fa-balance-scale"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -69,6 +69,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Exemption Certificate Section -->
+    <mj-collapsible-panel
+        SectionKey="exemptionCertificate"
+        SectionName="Exemption Certificate"
+        Icon="fa fa-certificate"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -77,16 +87,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Exemption Timeline Section -->
-    <mj-collapsible-panel
-        SectionKey="exemptionTimeline"
-        SectionName="Exemption Timeline"
-        Icon="fa fa-calendar-alt"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -103,6 +103,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Validity Period Section -->
+    <mj-collapsible-panel
+        SectionKey="validityPeriod"
+        SectionName="Validity Period"
+        Icon="fa fa-calendar-alt"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -119,16 +129,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Exemption Details Section -->
-    <mj-collapsible-panel
-        SectionKey="exemptionDetails"
-        SectionName="Exemption Details"
-        Icon="fa fa-info-circle"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
