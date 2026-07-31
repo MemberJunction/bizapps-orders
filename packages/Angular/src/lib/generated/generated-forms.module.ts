@@ -46,7 +46,6 @@ import { mjBizAppsOrdersPriceTierFormComponent } from "./Entities/mjBizAppsOrder
 import { mjBizAppsOrdersProductBundleItemFormComponent } from "./Entities/mjBizAppsOrdersProductBundleItem/mjbizappsordersproductbundleitem.form.component";
 import { mjBizAppsOrdersProductCategoryFormComponent } from "./Entities/mjBizAppsOrdersProductCategory/mjbizappsordersproductcategory.form.component";
 import { mjBizAppsOrdersProductEntitlementFormComponent } from "./Entities/mjBizAppsOrdersProductEntitlement/mjbizappsordersproductentitlement.form.component";
-import { mjBizAppsOrdersProductPerformanceObligationFormComponent } from "./Entities/mjBizAppsOrdersProductPerformanceObligation/mjbizappsordersproductperformanceobligation.form.component";
 import { mjBizAppsOrdersProductPriceFormComponent } from "./Entities/mjBizAppsOrdersProductPrice/mjbizappsordersproductprice.form.component";
 import { mjBizAppsOrdersProductTypeFormComponent } from "./Entities/mjBizAppsOrdersProductType/mjbizappsordersproducttype.form.component";
 import { mjBizAppsOrdersProductFormComponent } from "./Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component";
@@ -117,7 +116,6 @@ declarations: [
     mjBizAppsOrdersProductBundleItemFormComponent,
     mjBizAppsOrdersProductCategoryFormComponent,
     mjBizAppsOrdersProductEntitlementFormComponent,
-    mjBizAppsOrdersProductPerformanceObligationFormComponent,
     mjBizAppsOrdersProductPriceFormComponent,
     mjBizAppsOrdersProductTypeFormComponent,
     mjBizAppsOrdersProductFormComponent,
@@ -125,7 +123,8 @@ declarations: [
     mjBizAppsOrdersPromotionTargetFormComponent,
     mjBizAppsOrdersPromotionTypeFormComponent,
     mjBizAppsOrdersPromotionFormComponent,
-    mjBizAppsOrdersRevRecScheduleLineFormComponent],
+    mjBizAppsOrdersRevRecScheduleLineFormComponent,
+    mjBizAppsOrdersRevenueRecognitionScheduleFormComponent],
 imports: [
     CommonModule,
     FormsModule,
@@ -142,7 +141,6 @@ export class GeneratedForms_SubModule_1 { }
 
 @NgModule({
 declarations: [
-    mjBizAppsOrdersRevenueRecognitionScheduleFormComponent,
     mjBizAppsOrdersRevenueRecognitionTypeFormComponent,
     mjBizAppsOrdersSalesAuthorityFormComponent,
     mjBizAppsOrdersSalesRuleFormComponent,

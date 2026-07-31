@@ -39,13 +39,21 @@ import {
 import {
   ACCT_SCHEMA,
   CreateOrdersFixture,
+  createViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
   TeardownOrdersFixture,
+  TxMaybeOne,
   TxOne,
   TxQuery,
 } from "../fixture.js";
+import {
+  GL_ACCOUNT_ENTITY,
+  GL_ACCOUNT_LINK_ENTITY,
+  GL_ACCOUNT_ROLE_ENTITY,
+  PAYMENT_HEADER_ENTITY,
+} from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 import {
   ApplyPayment,
@@ -217,35 +225,37 @@ const netOnAccount = (
 async function PL4Body(ctx: IntegrationCheckContext): Promise<void> {
   await InRolledBackTransaction(ctx, async () => {
     const f = Fx();
-    // Give this company a Processing Fee account so the fee leg can resolve.
-    await TxQuery(
-      ctx,
-      `INSERT INTO ${ACCT_SCHEMA}.GLAccount (ID, CompanyID, Code, Name, AccountType, IsActive)
-                     VALUES ('${randomUUID()}','${f.CoA.ID}','${FEE_CODE}','Payment Processing Fees','Expense',1)`,
-    );
-    const fee = await TxOne<{ ID: string }>(
-      ctx,
-      `SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${f.CoA.ID}' AND Code='${FEE_CODE}'`,
-    );
+    // Give this company a Processing Fee account so the fee leg can resolve. Built through the
+    // object model, not INSERT: the GL account and especially the LINK are what our own resolution
+    // walk reads, so fabricating them by hand would exercise the walk against data no application
+    // ever validated.
+    const feeID = await createViaEntity(ctx, GL_ACCOUNT_ENTITY, {
+      CompanyID: f.CoA.ID,
+      Code: FEE_CODE,
+      Name: "Payment Processing Fees",
+      AccountType: "Expense",
+      IsActive: 1,
+    });
     // 'Processing Fee' is NOT one of accounting's eight seeded roles — that is exactly
     // why the factory tolerates it missing (PL5). Here we create it to exercise the
-    // path where it IS configured.
-    const roleID = randomUUID();
-    await TxQuery(
-      ctx,
-      `IF NOT EXISTS (SELECT 1 FROM ${ACCT_SCHEMA}.GLAccountRole WHERE Name='Processing Fee')
-                        INSERT INTO ${ACCT_SCHEMA}.GLAccountRole (ID, Name, Description)
-                        VALUES ('${roleID}','Processing Fee','Payment processor fees expensed on capture (D18).')`,
-    );
-    const role = await TxOne<{ ID: string }>(
+    // path where it IS configured. Reused if a prior check in this bundle already made it.
+    const existingRole = await TxMaybeOne<{ ID: string }>(
       ctx,
       `SELECT ID FROM ${ACCT_SCHEMA}.GLAccountRole WHERE Name='Processing Fee'`,
     );
-    await TxQuery(
-      ctx,
-      `INSERT INTO ${ACCT_SCHEMA}.GLAccountLink (ID, GLAccountID, GLAccountRoleID, EntityID, RecordID, Status)
-                     VALUES ('${randomUUID()}','${fee.ID}','${role.ID}','${f.CompanyEntityID}','${f.CoA.ID}','Active')`,
-    );
+    const roleID =
+      existingRole?.ID ??
+      (await createViaEntity(ctx, GL_ACCOUNT_ROLE_ENTITY, {
+        Name: "Processing Fee",
+        Description: "Payment processor fees expensed on capture (D18).",
+      }));
+    await createViaEntity(ctx, GL_ACCOUNT_LINK_ENTITY, {
+      GLAccountID: feeID,
+      GLAccountRoleID: roleID,
+      EntityID: f.CompanyEntityID,
+      RecordID: f.CoA.ID,
+      Status: "Active",
+    });
     await ReloadAccountingEngine(ctx);
 
     const order = await confirmOrder(ctx);
@@ -704,15 +714,15 @@ export const PaymentLedgerChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        const paymentID = randomUUID();
         // Pending: authorized but never captured, so no money ever moved.
-        await TxQuery(
-          ctx,
-          `INSERT INTO ${ORDERS_SCHEMA}.PaymentHeader
-                        (ID, PaymentNumber, ReceivingCompanyID, PaymentTypeID, Amount, PaymentDate, Status)
-                     VALUES ('${paymentID}','IT-PEND-${paymentID.slice(0, 6).toUpperCase()}','${f.CoA.ID}',
-                             '${f.PaymentTypeIDs.get("Cash")}', 100, GETDATE(), 'Pending')`,
-        );
+        const paymentID = await createViaEntity(ctx, PAYMENT_HEADER_ENTITY, {
+          PaymentNumber: `IT-PEND-${randomUUID().slice(0, 6).toUpperCase()}`,
+          ReceivingCompanyID: f.CoA.ID,
+          PaymentTypeID: f.PaymentTypeIDs.get("Cash"),
+          Amount: 100,
+          PaymentDate: new Date(),
+          Status: "Pending",
+        });
 
         const out = await refund(ctx, { PaymentHeaderID: paymentID });
         Assert(!out.Success, "a Pending payment has nothing to refund");

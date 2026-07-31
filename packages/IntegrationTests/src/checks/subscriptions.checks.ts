@@ -364,7 +364,7 @@ export const SubscriptionChecks: NamedCheck[] = [
                 );
                 AssertEqual(releases.length, 12, 'monthly releases anchored to the term');
                 Assert(
-                    releases.every((r) => r.LinkedEntity === 'MJ_BizApps_Orders: Subscription Terms'),
+                    releases.every((r) => r.LinkedEntity === SUBSCRIPTION_TERM_ENTITY),
                     `release origin entity: ${JSON.stringify([...new Set(releases.map((r) => r.LinkedEntity))])}`,
                 );
 
@@ -379,7 +379,7 @@ export const SubscriptionChecks: NamedCheck[] = [
                        AND je.LinkedRecordID IN (
                            SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${result.Order.ID}')`,
                 );
-                AssertEqual(booking.LinkedEntity, 'MJ_BizApps_Orders: Order Lines', 'booking entry origin');
+                AssertEqual(booking.LinkedEntity, ORDER_LINE_ENTITY, 'booking entry origin');
             }),
     },
     {
@@ -469,3 +469,7 @@ IntegrationCheckRegistry.Instance.RegisterLifecycle('subscriptions', {
     },
     Teardown: TeardownOrdersFixture,
 });
+import {
+  ORDER_LINE_ENTITY,
+  SUBSCRIPTION_TERM_ENTITY,
+} from "../entity-names.js";

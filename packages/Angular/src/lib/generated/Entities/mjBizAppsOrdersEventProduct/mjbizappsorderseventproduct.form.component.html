@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="eventDetails"
         SectionName="Event Details"
-        Icon="fa fa-calendar-alt"
+        Icon="fa fa-map-marker-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -50,6 +50,16 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Event Logistics Section -->
+    <mj-collapsible-panel
+        SectionKey="eventLogistics"
+        SectionName="Event Logistics"
+        Icon="fa fa-users"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

@@ -38,6 +38,7 @@ import {
 import {
   ACCT_SCHEMA,
   CreateOrdersFixture,
+  createViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -45,6 +46,7 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
+import { PRODUCT_ENTITY } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 
 const AR_CODE = "11201";
@@ -249,19 +251,30 @@ export const EventChecks: NamedCheck[] = [
         const f = Fx();
         // A webinar: EventEndsAt is null. Without the fallback, AllBackEnd would have no end date
         // to aim at and RequireServicePeriod would refuse the line outright.
-        const productID = randomUUID();
         const catA = await TxOne<{ ID: string }>(
           ctx,
           `SELECT TOP 1 ID FROM ${ORDERS_SCHEMA}.ProductCategory WHERE CompanyID='${f.CoA.ID}'`,
         );
+        // The PRODUCT goes through the object model like everything else.
+        const productID = await createViaEntity(ctx, PRODUCT_ENTITY, {
+          CompanyID: f.CoA.ID,
+          ProductTypeID: f.ProductTypeIDs.Event,
+          ProductCategoryID: catA.ID,
+          Name: `${f.Run} Webinar`,
+          Status: "Active",
+          RevenueRecognitionTypeID: f.RevRecTypeIDs.get("AllBackEnd"),
+          IsTaxable: 0,
+        });
+        // The IsA CHILD cannot. An IsA entity's view exposes the parent's fields as well as its own —
+        // Event Products has 30 EntityFields — while spCreateEventProduct accepts only the child's 11
+        // columns. BaseEntity.Save passes everything the entity declares, so the create fails with
+        // "Procedure or function spCreateEventProduct has too many arguments specified". That is a
+        // property of the IsA pattern (BO-D37), not something this fixture can route around, so the
+        // child row is written directly and the reason recorded here.
         await TxQuery(
           ctx,
-          `INSERT INTO ${ORDERS_SCHEMA}.Product
-             (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, IsTaxable)
-           VALUES ('${productID}','${f.CoA.ID}','${f.ProductTypeIDs.Event}','${catA.ID}','${f.Run} Webinar','Active',
-                   '${f.RevRecTypeIDs.get("AllBackEnd")}',0);
-           INSERT INTO ${ORDERS_SCHEMA}.EventProduct (ID, EventStartsAt, EventEndsAt, RequiresAttendeeInfo)
-           VALUES ('${productID}','2027-02-10T15:00:00Z', NULL, 0);`,
+          `INSERT INTO ${ORDERS_SCHEMA}.EventProduct (ID, EventStartsAt, EventEndsAt, RequiresAttendeeInfo)
+           VALUES ('${productID}','2027-02-10T15:00:00Z', NULL, 0)`,
         );
 
         const result = await ConfirmOrder(ctx.User, {
@@ -334,10 +347,11 @@ export const EventChecks: NamedCheck[] = [
 
         // The IsA child shares the parent's PK (BO-D37), which is what lets attendee data hang off
         // a line without widening OrderLine for every product type that will never use it.
+        // Same IsA constraint as EventProduct above — see the note there.
         await TxQuery(
           ctx,
           `INSERT INTO ${ORDERS_SCHEMA}.EventOrderLine (ID, AttendeeName, AttendeeEmail)
-             VALUES ('${line.ID}','Dana Whitfield','dana@example.org')`,
+           VALUES ('${line.ID}','Dana Whitfield','dana@example.org')`,
         );
         const attendee = await TxOne<{ AttendeeName: string; ID: string }>(
           ctx,

@@ -29,6 +29,8 @@ import {
 } from '@memberjunction/testing-integration';
 import {
     CreateOrdersFixture,
+    createViaEntity,
+    upsertViaEntity,
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
@@ -38,7 +40,13 @@ import {
     TxOne,
     TxQuery,
 } from '../fixture.js';
+import {
+    PAYMENT_DETAIL_ENTITY,
+    PAYMENT_HEADER_ENTITY,
+    PAYMENT_LINE_ENTITY,
+} from '../entity-names.js';
 import { ConfirmOrder } from '../order-builder.js';
+import { CreatePayment } from '../payment-builder.js';
 
 interface RollupRow {
     OrderNumber: string;
@@ -72,23 +80,22 @@ async function confirm250(ctx: IntegrationCheckContext) {
 /** Post a payment of `amount` against an order and apply all of it. */
 async function payOrder(ctx: IntegrationCheckContext, orderID: string, amount: number) {
     const f = Fx();
-    const paymentID = randomUUID();
     const cash = f.PaymentTypeIDs.get('Cash');
     Assert(cash != null, "PaymentType 'Cash' missing — push the orders app metadata");
 
-    await TxQuery(
-        ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.PaymentHeader
-            (ID, PaymentNumber, ReceivingCompanyID, PaymentTypeID, Amount, PaymentDate, Status)
-         VALUES ('${paymentID}','IT-${paymentID.slice(0, 8).toUpperCase()}','${f.CoA.ID}','${cash}',
-                 ${amount}, GETDATE(), 'Captured')`,
-    );
-    await TxQuery(
-        ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.PaymentLine (ID, PaymentHeaderID, OrderHeaderID, Amount, AllocatedAt)
-         VALUES ('${randomUUID()}','${paymentID}','${orderID}',${amount}, SYSDATETIMEOFFSET())`,
-    );
-    return paymentID;
+    // ONE save, through the payment builder (D68). Creating the header and its allocation as two
+    // separate saves cannot work: a Captured payment's Amount must equal the sum of its lines, so the
+    // header save is refused for having 0 allocations totalling 0 against an Amount of 100. That
+    // invariant is the point of the design, and the raw-SQL version simply wrote around it.
+    const { Payment, Saved, Message } = await CreatePayment(ctx.User, {
+        PaymentNumber: `IT-${randomUUID().slice(0, 8).toUpperCase()}`,
+        ReceivingCompanyID: f.CoA.ID,
+        PaymentTypeID: cash!,
+        Amount: amount,
+        Allocations: [{ OrderHeaderID: orderID, Amount: amount }],
+    });
+    Assert(Saved, `payOrder failed: ${Message}`);
+    return Payment.ID as string;
 }
 
 export const PaymentsRollupsChecks: NamedCheck[] = [
@@ -163,11 +170,12 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
             // its cleanup. The row is a leaf; nothing references it.
             await OutsideTransaction(
                 async () => {
-                    await TxQuery(
-                        ctx,
-                        `INSERT INTO ${ORDERS_SCHEMA}.PaymentDetail (ID, CompanyID, PaymentTypeID, ReferenceNumber, InstrumentDate)
-                         VALUES ('${detailID}','${f.CoA.ID}','${check}','CHK-1000','2026-07-25')`,
-                    );
+                    await upsertViaEntity(ctx, PAYMENT_DETAIL_ENTITY, detailID, {
+                        CompanyID: f.CoA.ID,
+                        PaymentTypeID: check,
+                        ReferenceNumber: 'CHK-1000',
+                        InstrumentDate: '2026-07-25',
+                    });
 
                     let message = '';
                     try {
@@ -226,11 +234,12 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
                 const f = Fx();
                 const check = f.PaymentTypeIDs.get('Check')!;
                 const intentDetailID = randomUUID();
-                await TxQuery(
-                    ctx,
-                    `INSERT INTO ${ORDERS_SCHEMA}.PaymentDetail (ID, CompanyID, PaymentTypeID, ReferenceNumber, InstrumentDate)
-                     VALUES ('${intentDetailID}','${f.CoA.ID}','${check}','CHK-9911','2026-07-25')`,
-                );
+                await upsertViaEntity(ctx, PAYMENT_DETAIL_ENTITY, intentDetailID, {
+                    CompanyID: f.CoA.ID,
+                    PaymentTypeID: check,
+                    ReferenceNumber: 'CHK-9911',
+                    InstrumentDate: '2026-07-25',
+                });
 
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
@@ -294,11 +303,12 @@ export const PaymentsRollupsChecks: NamedCheck[] = [
                 const f = Fx();
                 const check = f.PaymentTypeIDs.get('Check')!;
                 const intentDetailID = randomUUID();
-                await TxQuery(
-                    ctx,
-                    `INSERT INTO ${ORDERS_SCHEMA}.PaymentDetail (ID, CompanyID, PaymentTypeID, ReferenceNumber, InstrumentDate)
-                     VALUES ('${intentDetailID}','${f.CoA.ID}','${check}','CHK-9911','2026-07-25')`,
-                );
+                await upsertViaEntity(ctx, PAYMENT_DETAIL_ENTITY, intentDetailID, {
+                    CompanyID: f.CoA.ID,
+                    PaymentTypeID: check,
+                    ReferenceNumber: 'CHK-9911',
+                    InstrumentDate: '2026-07-25',
+                });
 
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,

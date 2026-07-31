@@ -51,6 +51,14 @@ import { ConfirmOrder, type LineSpec } from "../order-builder.js";
 
 /** Create a person to receive a seat, returning its ID. */
 async function makePerson(ctx: IntegrationCheckContext, label: string): Promise<string> {
+  // WRITTEN DIRECTLY, and this is the one place in the suite where that is forced rather than chosen.
+  // Common's People entity is backed by an ENRICHED VIEW: 34 EntityFields (DisplayName,
+  // PrimaryAddress*, CurrentOrganization* and friends are joined or computed) against a
+  // spCreatePerson that accepts 16. BaseEntity.Save passes every declared field, so it fails with
+  // "Procedure or function spCreatePerson has too many arguments specified". The installed common
+  // schema is older than the common-server package expects — the same version skew that makes tasks'
+  // views select a Person.DisplayName our table does not have. Not ours to fix from this repo, and a
+  // Person is a row we merely REFERENCE rather than resolve through, so SQL is the honest boundary.
   const id = randomUUID();
   await TxQuery(
     ctx,
@@ -400,13 +408,19 @@ async function affiliate(
   typeName: string,
   startDate: string,
 ): Promise<void> {
+  // Resolved explicitly rather than by an inline subquery: a RelationshipType name that does not
+  // match inserts a NULL FK and the check then fails somewhere far away, blaming the resolver.
+  const type = await TxOne<{ ID: string }>(
+    ctx,
+    `SELECT ID FROM ${COMMON_SCHEMA}.RelationshipType WHERE Name='${typeName}'`,
+  );
+  Assert(type?.ID != null, `no RelationshipType named '${typeName}'`);
+  // Same common-schema skew as makePerson above.
   await TxQuery(
     ctx,
     `INSERT INTO ${COMMON_SCHEMA}.Relationship
         (ID, RelationshipTypeID, FromPersonID, ToOrganizationID, Status, StartDate)
-     VALUES ('${randomUUID()}',
-             (SELECT ID FROM ${COMMON_SCHEMA}.RelationshipType WHERE Name='${typeName}'),
-             '${personID}','${organizationID}','Active','${startDate}')`,
+     VALUES ('${randomUUID()}','${type!.ID}','${personID}','${organizationID}','Active','${startDate}')`,
   );
 }
 

@@ -20,8 +20,8 @@ export class mjBizAppsOrdersPriceListFormComponent extends BaseFormComponent {
             { sectionKey: 'validityPeriod', sectionName: 'Validity Period', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductPrices', sectionName: 'Product Prices', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderCompanyPolicies', sectionName: 'Order Company Policies', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPriceListAssignments', sectionName: 'Price List Assignments', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPriceListAssignments', sectionName: 'Price List Assignments', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderCompanyPolicies', sectionName: 'Order Company Policies', isExpanded: false }
         ]);
     }
 }

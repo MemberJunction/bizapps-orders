@@ -31,6 +31,7 @@ import {
 } from "@memberjunction/testing-integration";
 import {
   CreateOrdersFixture,
+  createViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -38,6 +39,12 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
+import {
+  PRICE_LIST_ASSIGNMENT_ENTITY,
+  PRICE_LIST_ENTITY,
+  PRICE_TIER_ENTITY,
+  PRODUCT_PRICE_ENTITY,
+} from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 import type { LooseEntity } from "../payment-builder.js";
 
@@ -72,20 +79,27 @@ async function addPrice(
     description?: string;
   },
 ): Promise<string> {
-  const id = randomUUID();
-  const v = (x: unknown) => (x == null ? "NULL" : typeof x === "string" ? `'${x.replace(/'/g, "''")}'` : String(x));
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
-       (ID, ProductID, PriceListID, PricingModel, FeeType, Amount, PackageQuantity,
-        MinQuantity, MaxQuantity, EffectiveFrom, EffectiveTo,
-        RecurrenceMonths, RecurrenceDaysOfWeek, Priority, Status, Description)
-     VALUES ('${id}', '${productID}', ${v(opts.priceListID ?? null)}, ${v(opts.model ?? "PerUnit")}, 'Standard',
-             ${opts.amount}, ${v(opts.packageQty ?? null)},
-             ${v(opts.minQty ?? null)}, ${v(opts.maxQty ?? null)},
-             ${v(opts.from ?? "2020-01-01")}, ${v(opts.to ?? null)},
-             ${v(opts.months ?? null)}, ${v(opts.daysOfWeek ?? null)},
-             ${opts.priority ?? 0}, 'Active', ${v(opts.description ?? null)})`);
-  return id;
+  // Through the object model, NOT an INSERT. ProductPriceEntityServer enforces the price-ambiguity
+  // guard — no two Active rules may share product, list, fee type and priority — and a raw INSERT
+  // walks straight past it. That is exactly how ambiguity used to surface at CONFIRM time, far from
+  // the rule that caused it, instead of loudly here where the offending rule is being written.
+  return createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
+    ProductID: productID,
+    PriceListID: opts.priceListID ?? null,
+    PricingModel: opts.model ?? "PerUnit",
+    FeeType: "Standard",
+    Amount: opts.amount,
+    PackageQuantity: opts.packageQty ?? null,
+    MinQuantity: opts.minQty ?? null,
+    MaxQuantity: opts.maxQty ?? null,
+    EffectiveFrom: opts.from ?? "2020-01-01",
+    EffectiveTo: opts.to ?? null,
+    RecurrenceMonths: opts.months ?? null,
+    RecurrenceDaysOfWeek: opts.daysOfWeek ?? null,
+    Priority: opts.priority ?? 0,
+    Status: "Active",
+    Description: opts.description ?? null,
+  });
 }
 
 async function addTier(
@@ -96,9 +110,13 @@ async function addTier(
   amount: number,
   sort = 0,
 ): Promise<void> {
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.PriceTier (ID, ProductPriceID, MinQuantity, MaxQuantity, Amount, SortOrder)
-     VALUES ('${randomUUID()}','${productPriceID}', ${min}, ${max == null ? "NULL" : max}, ${amount}, ${sort})`);
+  await createViaEntity(ctx, PRICE_TIER_ENTITY, {
+    ProductPriceID: productPriceID,
+    MinQuantity: min,
+    MaxQuantity: max,
+    Amount: amount,
+    SortOrder: sort,
+  });
 }
 
 /** Create a price list and assign it to an organization. */
@@ -107,13 +125,41 @@ async function addListFor(
   organizationID: string,
   code: string,
 ): Promise<string> {
-  const listID = randomUUID();
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.PriceList (ID, Code, Name, Status)
-     VALUES ('${listID}','${code}','${code} list','Active');
-     INSERT INTO ${ORDERS_SCHEMA}.PriceListAssignment (ID, PriceListID, OrganizationID, Priority, Status)
-     VALUES ('${randomUUID()}','${listID}','${organizationID}', 0, 'Active')`);
+  const listID = await createViaEntity(ctx, PRICE_LIST_ENTITY, {
+    Code: code,
+    Name: `${code} list`,
+    Status: "Active",
+  });
+  await createViaEntity(ctx, PRICE_LIST_ASSIGNMENT_ENTITY, {
+    PriceListID: listID,
+    OrganizationID: organizationID,
+    Priority: 0,
+    Status: "Active",
+  });
   return listID;
+}
+
+
+/**
+ * Write a price rule DIRECTLY, bypassing ProductPriceEntityServer's ambiguity guard.
+ *
+ * Used by exactly two checks, and only to construct a state the application now REFUSES to create.
+ * PC12 proves the guard rejects a colliding rule at write time; PC5 and PC15 prove what the
+ * RESOLVER does if a collision exists anyway — which matters because the guard is not the only way
+ * rows arrive. A migration, a bulk load, or a rule whose window later widens can all produce a tie
+ * the writer never saw. Routing these through the object model would make the setup fail with the
+ * guard's message and the resolver's own defence would never run.
+ */
+async function addCollidingPriceRaw(
+  ctx: IntegrationCheckContext,
+  productID: string,
+  opts: { amount: number; priority: number; description: string },
+): Promise<void> {
+  await TxQuery(ctx,
+    `INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
+       (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status, Description)
+     VALUES ('${randomUUID()}','${productID}','PerUnit','Standard',${opts.amount},'2020-01-01',
+             ${opts.priority},'Active','${opts.description}')`);
 }
 
 /** Confirm a one-line order WITHOUT stating a price, so the engine must resolve it. */
@@ -235,8 +281,8 @@ export const PricingChecks: NamedCheck[] = [
         const f = Fx();
         // Written with raw SQL so the write-time guard (PC12) does not stop us setting up the very
         // state the ORDER-time refusal exists to catch.
-        await addPrice(ctx, f.Products.WidgetA, { amount: 25, priority: 5, description: "rule A" });
-        await addPrice(ctx, f.Products.WidgetA, { amount: 30, priority: 5, description: "rule B" });
+        await addCollidingPriceRaw(ctx, f.Products.WidgetA, { amount: 25, priority: 5, description: "rule A" });
+        await addCollidingPriceRaw(ctx, f.Products.WidgetA, { amount: 30, priority: 5, description: "rule B" });
 
         const order = await confirmUnpriced(ctx, f.Products.WidgetA, 3);
         Assert(!order.Saved, "an ambiguous rule set must refuse the confirm");
@@ -375,7 +421,7 @@ export const PricingChecks: NamedCheck[] = [
         // while they still have the context to fix it.
         const { Metadata } = await import("@memberjunction/core");
         const md = new Metadata();
-        const rule = await md.GetEntityObject<LooseEntity>("MJ_BizApps_Orders: Product Prices", ctx.User);
+        const rule = await md.GetEntityObject<LooseEntity>(PRODUCT_PRICE_ENTITY, ctx.User);
         rule.NewRecord();
         rule.ProductID = f.Products.WidgetA;
         rule.PricingModel = "PerUnit";
@@ -407,7 +453,7 @@ export const PricingChecks: NamedCheck[] = [
 
         const { Metadata } = await import("@memberjunction/core");
         const md = new Metadata();
-        const rule = await md.GetEntityObject<LooseEntity>("MJ_BizApps_Orders: Product Prices", ctx.User);
+        const rule = await md.GetEntityObject<LooseEntity>(PRODUCT_PRICE_ENTITY, ctx.User);
         rule.NewRecord();
         rule.ProductID = f.Products.WidgetA;
         rule.PricingModel = "PerUnit";
@@ -460,8 +506,8 @@ export const PricingChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        await addPrice(ctx, f.Products.WidgetA, { amount: 25, priority: 3, description: "one" });
-        await addPrice(ctx, f.Products.WidgetA, { amount: 31, priority: 3, description: "two" });
+        await addCollidingPriceRaw(ctx, f.Products.WidgetA, { amount: 25, priority: 3, description: "one" });
+        await addCollidingPriceRaw(ctx, f.Products.WidgetA, { amount: 31, priority: 3, description: "two" });
 
         // A configuration problem the caller can fix is a refusal WITH a reason. Reporting it as a
         // thrown fault would make the preview look broken when it is working and telling the truth.

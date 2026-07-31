@@ -15,6 +15,14 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { IntegrationCheckRegistry } from '@memberjunction/testing-integration';
+import * as entityNames from '../entity-names.js';
+import {
+    ALL_ENTITY_NAMES,
+    GL_ACCOUNT_LINK_ENTITY,
+    ORDER_HEADER_ENTITY,
+    PERSON_ENTITY,
+    RELATIONSHIP_ENTITY,
+} from '../entity-names.js';
 
 // The CHECK modules only — deliberately not `../index.js`, which also imports the server bootstrap
 // packages to register the code under test. Those pull in @memberjunction/server's config loader and
@@ -270,5 +278,61 @@ describe('no check file escapes this test', () => {
                     `bundle nobody verifies, and the rest of this file would stay green without it`,
             ).toContain(`import '../checks/${file}';`);
         }
+    });
+});
+
+describe('entity names are stated once and used everywhere', () => {
+    // WHY THIS EXISTS. Entity names resolve at RUNTIME. A typo compiles, type-checks, and then
+    // `RunView` returns an empty result — indistinguishable from a table that is genuinely empty.
+    // The UX agent lost an entire live run to exactly this: a dashboard asked for `Orders` and
+    // `Payments` when the entities are `Order Headers` and `Payment Headers`, and every tile
+    // rendered a healthy-looking 0 and $0.00. Unit tests and mockups all passed straight over it.
+    //
+    // The DATABASE half of the claim is checked by the integration suite, which cannot create a row
+    // through an entity that does not exist. What is asserted here is the half that needs no
+    // database: that the names live in one module, and that check files do not reintroduce literals.
+
+    it('declares no entity-name literals outside entity-names.ts', () => {
+        const checksDir = resolve(dirname(fileURLToPath(import.meta.url)), '../checks');
+        const offenders: string[] = [];
+        for (const file of readdirSync(checksDir).filter((f) => f.endsWith('.checks.ts'))) {
+            const body = readFileSync(resolve(checksDir, file), 'utf8');
+            // A quoted string shaped like an MJ entity name: "<Prefix>: <Entity Name>".
+            for (const m of body.matchAll(/["'`](MJ[._][A-Za-z._]*[A-Za-z]:\s[^"'`]+)["'`]/g)) {
+                offenders.push(`${file}: ${m[1]}`);
+            }
+        }
+        expect(
+            offenders,
+            'entity names belong in entity-names.ts, where a typo is wrong once instead of ' +
+                `silently wrong in fifteen places. Found: ${offenders.join(', ')}`,
+        ).toEqual([]);
+    });
+
+    it('keeps the Common prefix on DOTS, not underscores', () => {
+        // Orders and Accounting are `MJ_BizApps_Orders:` / `MJ_BizApps_Accounting:`; Common is
+        // `MJ.BizApps.Common:`. It reads like a typo every single time, so it is asserted here to
+        // stop somebody "fixing" it into a runtime failure that surfaces as an empty grid.
+        expect(PERSON_ENTITY).toBe('MJ.BizApps.Common: People');
+        expect(RELATIONSHIP_ENTITY).toBe('MJ.BizApps.Common: Relationships');
+        expect(ORDER_HEADER_ENTITY).toBe('MJ_BizApps_Orders: Order Headers');
+        expect(GL_ACCOUNT_LINK_ENTITY).toBe('MJ_BizApps_Accounting: GL Account Links');
+    });
+
+    it('lists every exported name in ALL_ENTITY_NAMES', () => {
+        // ALL_ENTITY_NAMES is what the integration fixture can iterate to prove each name resolves.
+        // A name exported but missing from the list is one nothing ever validates.
+        const exported = Object.entries(entityNames)
+            .filter(([k, v]) => k.endsWith('_ENTITY') && typeof v === 'string')
+            .map(([, v]) => v as string);
+        const missing = exported.filter((n) => !ALL_ENTITY_NAMES.includes(n));
+        expect(missing, `add these to ALL_ENTITY_NAMES: ${missing.join(', ')}`).toEqual([]);
+    });
+
+    it('has no duplicate names', () => {
+        const seen = new Map<string, number>();
+        for (const n of ALL_ENTITY_NAMES) seen.set(n, (seen.get(n) ?? 0) + 1);
+        const dupes = [...seen.entries()].filter(([, c]) => c > 1).map(([n]) => n);
+        expect(dupes, `duplicated in ALL_ENTITY_NAMES: ${dupes.join(', ')}`).toEqual([]);
     });
 });

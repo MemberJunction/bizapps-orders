@@ -69,6 +69,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -76,7 +84,7 @@
     <mj-collapsible-panel
         SectionKey="financials"
         SectionName="Financials"
-        Icon="fa fa-dollar-sign"
+        Icon="fa fa-money-bill"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -115,21 +123,13 @@
 
     </mj-collapsible-panel>
 
-    <!-- Status and Lifecycle Section -->
+    <!-- Cancellation Details Section -->
     <mj-collapsible-panel
-        SectionKey="statusAndLifecycle"
-        SectionName="Status and Lifecycle"
-        Icon="fa fa-flag"
+        SectionKey="cancellationDetails"
+        SectionName="Cancellation Details"
+        Icon="fa fa-times-circle"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -185,7 +185,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersEntitlementGrants"
         SectionName="Entitlement Grants"
-        Icon="fa fa-gift"
+        Icon="fa fa-shield-alt"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

@@ -8,8 +8,10 @@
  * checks commit instead would be the wrong fix twice over: they would start seeing each other's
  * rows, and the result would be 217 fragments rather than anything a person can read.
  *
- * So this walks the SAME engine over a deliberately chosen set of scenarios and commits them. Each
- * one exists to make a different part of the pipeline visible in the data:
+ * So this walks the SAME engine over a deliberately chosen set of scenarios and commits them, using
+ * the SAME fixture helpers the checks use for every piece of setup — prices, promotions, tax nexus,
+ * GL accounts and intercompany pairs. Nothing here is a second implementation. Each scenario exists
+ * to make a different part of the pipeline visible in the data:
  *
  *   1  a plain sale                 the baseline — one line, one company, one journal entry
  *   2  a two-company order          per-line company resolution, and two ledgers from one order
@@ -66,6 +68,7 @@ await import('@mj-biz-apps/orders-server').then((m) => m.LoadBizAppsOrdersServer
 
 const it = await import('@mj-biz-apps/orders-integration-tests');
 const { CreateOrdersFixture, PurgeAllFixtureData, ORDERS_SCHEMA, ACCT_SCHEMA } = it;
+const { CreateProductPrice, CreatePromotion, EnsureTaxNexus, EnsureIntercompanyAccounts } = it;
 const { ConfirmOrder } = it;
 
 const ctx = {
@@ -94,66 +97,47 @@ const f = await CreateOrdersFixture(ctx);
 console.log(`Fixture: ${f.Run}\n`);
 
 // ── Reference data the scenarios need ──────────────────────────────────────────────────────────
-const price = (productID, amount) =>
-    q(`INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
-         (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
-       VALUES ('${randomUUID()}','${productID}','PerUnit','Standard',${amount},'2020-01-01',0,'Active')`);
+//
+// ALL OF IT THROUGH THE OBJECT MODEL, using the SAME helpers the check bundles use.
+//
+// The orders below were always confirmed through the engine, but everything they depend on — the
+// prices, the tax nexus, the promotions, the intercompany GL accounts and pairs — used to be raw
+// INSERTs local to this file. That made this a second, unvalidated implementation of setup the
+// suite already had, and the two drifted exactly as you would expect: this file used 13900 for the
+// Due From account while every check used 11900. A GL account code that disagrees with the checks
+// does not fail loudly; it books to an account nobody is looking at, and the entry still balances.
+//
+// Sharing the helpers removes the second implementation. It also means the seeding pass is itself a
+// test of the account-link walk: a link our resolver would consider malformed now fails here, at
+// creation, instead of quietly producing a plausible journal entry.
+for (const [productID, amount] of [
+    [f.Products.WidgetA, 300],
+    [f.Products.WidgetB, 100],
+    [f.Products.SubRolling, 1200],
+    [f.Products.EventTicket, 450],
+]) {
+    await CreateProductPrice(ctx, productID, amount);
+}
 
-const nexus = async (key) => {
-    const jid = f.Tax.JurisdictionIDs.get(key);
-    if (!jid) return;
-    await q(`IF NOT EXISTS (SELECT 1 FROM ${ACCT_SCHEMA}.CompanyTaxNexus
-                             WHERE CompanyID='${f.CoA.ID}' AND TaxJurisdictionID='${jid}')
-             INSERT INTO ${ACCT_SCHEMA}.CompanyTaxNexus
-               (ID, CompanyID, TaxJurisdictionID, NexusType, RegisteredFrom, Status)
-             VALUES ('${randomUUID()}','${f.CoA.ID}','${jid}','Economic','2020-01-01','Active')`);
-};
+await EnsureTaxNexus(ctx, f.CoA.ID,
+    ['CA', 'CA-SANTACLARA'].map((k) => f.Tax.JurisdictionIDs.get(k)).filter(Boolean));
 
-const promotion = async ({ kind = 'PercentOff', value, appliesAt = 'Order', targetProductID = null }) => {
-    const code = `REVIEW-${randomUUID().slice(0, 5).toUpperCase()}`;
-    const id = randomUUID();
-    const t = await q(`SELECT ID FROM ${ORDERS_SCHEMA}.PromotionType WHERE Code='${kind}'`);
-    await q(`INSERT INTO ${ORDERS_SCHEMA}.Promotion (ID, Code, Name, PromotionTypeID, Value, AppliesAt, Status)
-             VALUES ('${id}','${code}','${code}','${t.recordset[0].ID}',${value},'${appliesAt}','Active');
-             INSERT INTO ${ORDERS_SCHEMA}.PromotionCode (ID, PromotionID, Code, Status)
-             VALUES ('${randomUUID()}','${id}','${code}','Active')`);
-    if (targetProductID) {
-        await q(`INSERT INTO ${ORDERS_SCHEMA}.PromotionTarget (ID, PromotionID, ProductID, IncludeDescendants)
-                 VALUES ('${randomUUID()}','${id}','${targetProductID}',1)`);
-    }
-    return code;
-};
-
-await price(f.Products.WidgetA, 300);
-await price(f.Products.WidgetB, 100);
-await price(f.Products.SubRolling, 1200);
-await price(f.Products.EventTicket, 450);
-await nexus('CA');
-await nexus('CA-SANTACLARA');
+const promotion = ({ kind = 'PercentOff', value, appliesAt = 'Order', targetProductID = null }) =>
+    CreatePromotion(ctx, {
+        Kind: kind,
+        Value: value,
+        AppliesAt: appliesAt,
+        TargetProductID: targetProductID,
+        Code: `REVIEW-${randomUUID().slice(0, 5).toUpperCase()}`,
+    });
 
 // Intercompany pairs, so a payment across two companies can settle each one's own receivable.
-const DUE_TO = '21900';
-const DUE_FROM = '13900';
-for (const co of [f.CoA, f.CoB]) {
-    for (const [code, name, type] of [
-        [DUE_TO, 'Due To Affiliates', 'Liability'],
-        [DUE_FROM, 'Due From Affiliates', 'Asset'],
-    ]) {
-        await q(`IF NOT EXISTS (SELECT 1 FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${co.ID}' AND Code='${code}')
-                 INSERT INTO ${ACCT_SCHEMA}.GLAccount (ID, CompanyID, Code, Name, AccountType, IsActive)
-                 VALUES ('${randomUUID()}','${co.ID}','${code}','${name}','${type}',1)`);
-    }
-}
-for (const [source, target] of [[f.CoA.ID, f.CoB.ID], [f.CoB.ID, f.CoA.ID]]) {
-    await q(`IF NOT EXISTS (SELECT 1 FROM ${ACCT_SCHEMA}.IntercompanyAccountMatch
-                             WHERE SourceCompanyID='${source}' AND TargetCompanyID='${target}' AND Status='Active')
-             INSERT INTO ${ACCT_SCHEMA}.IntercompanyAccountMatch
-               (ID, SourceCompanyID, TargetCompanyID, DueToGLAccountID, DueFromGLAccountID, Status)
-             SELECT '${randomUUID()}','${source}','${target}',
-                    (SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${source}' AND Code='${DUE_TO}'),
-                    (SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${target}' AND Code='${DUE_FROM}'),
-                    'Active'`);
-}
+// Codes come from the fixture (DUE_TO_CODE / DUE_FROM_CODE) rather than being restated here, which
+// is what let the 13900/11900 split happen in the first place.
+await EnsureIntercompanyAccounts(ctx, [f.CoA, f.CoB], [
+    [f.CoA.ID, f.CoB.ID],
+    [f.CoB.ID, f.CoA.ID],
+]);
 
 const paymentType = [...f.PaymentTypeIDs.entries()].find(([c]) => c !== 'AccountCredit')?.[1];
 

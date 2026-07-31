@@ -24,7 +24,7 @@
       "Name": "Orders",
       "Description": "Order entry, payments, receivables and the product catalog. The confirmed order is the receivable — there is no separate invoice — so billing, collections and revenue recognition all read the same record the order taker created.",
       "Icon": "fa-solid fa-cart-shopping",
-      "DefaultForNewUser": false,
+      "DefaultForNewUser": true,
       "DefaultNavItems": [
         {
           "Label": "Orders",
@@ -60,8 +60,8 @@
       "ID": "D3E6A4C2-8F5B-4C31-9A74-2E3F7C03D501"
     },
     "sync": {
-      "lastModified": "2026-07-30T21:43:39.794Z",
-      "checksum": "4e7589f1fc1324be65cc4d482c225e42da201ade7722c1e5ad9b40f99e12ebca"
+      "lastModified": "2026-07-31T01:39:27.014Z",
+      "checksum": "3cf725102a33a8afb3a5a62bd1c0d8f09819894034324e417042d59c07136118"
     }
   }
 ]

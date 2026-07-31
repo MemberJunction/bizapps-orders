@@ -6,14 +6,20 @@
  * engine, and the MJ entity IDs the polymorphic `GLAccountLink` rows hang off. This module owns
  * both so there is exactly one copy of the coupling rather than one per entity server.
  *
- * The engine is loaded through a dynamic import ON PURPOSE. `@mj-biz-apps/accounting-engine-base` is
- * a PEER dependency: orders must not pull accounting into a bundle that does not already have it,
- * and the load order matters (accounting's server package registers the remote operation this class
- * later resolves by key). Keeping the import here means that decision is made once, in a file whose
- * whole job is the boundary, instead of being copy-pasted into every caller.
+ * `@mj-biz-apps/accounting-engine-base` is imported STATICALLY, like every other import in the repo
+ * (CLAUDE.md forbids dynamic require/import). This file used to load the engine through
+ * `await import(...)`, justified as keeping a peer dependency out of bundles that do not already
+ * have it — but the justification never held, because `pickActiveLinkIndex` below has always been a
+ * static import from the same package. The module was therefore already resolved and evaluated at
+ * load time; the dynamic form bought nothing and only cost us a lazy failure mode, where a missing
+ * peer surfaced deep inside a booking call instead of at import.
+ *
+ * Load ORDER still matters — accounting's server package registers the remote operation this class
+ * resolves by key — but that is a different package (`accounting-server`, wired up by the host app's
+ * resolver paths) and is unaffected by how this one is imported.
  */
 import { IMetadataProvider, Metadata, UserInfo } from '@memberjunction/core';
-import { pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
+import { AccountingEngineBase, pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
 import { GLAccountResolver, type ResolverEntityIDs } from './GLAccountResolver.js';
 
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
@@ -72,10 +78,7 @@ export async function LoadAccountingEngine(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<AccountingEngineSurface> {
-    const mod = (await import('@mj-biz-apps/accounting-engine-base')) as unknown as {
-        AccountingEngineBase: { Instance: AccountingEngineSurface };
-    };
-    const engine = mod.AccountingEngineBase.Instance;
+    const engine = (AccountingEngineBase as unknown as { Instance: AccountingEngineSurface }).Instance;
     await engine.ConfigEx({ contextUser: user, provider });
     return engine;
 }

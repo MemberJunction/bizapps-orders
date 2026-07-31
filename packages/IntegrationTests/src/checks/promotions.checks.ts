@@ -34,13 +34,23 @@ import {
 import {
   CreateProductPrice,
   CreateOrdersFixture,
+  createViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
+  upsertViaEntity,
 } from "../fixture.js";
+import {
+  ORDER_COMPANY_POLICY_ENTITY,
+  PROMOTION_CODE_ENTITY,
+  PROMOTION_ENTITY,
+  PROMOTION_TARGET_ENTITY,
+  SALES_AUTHORITY_ENTITY,
+  SALES_RULE_ENTITY,
+} from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 import type { LooseEntity } from "../payment-builder.js";
 
@@ -72,27 +82,38 @@ async function addPromotion(
     code?: string;
   },
 ): Promise<{ PromotionID: string; Code: string }> {
-  const promotionID = randomUUID();
   const code = opts.code ?? `PR${randomUUID().slice(0, 6).toUpperCase()}`;
   const tid = await typeID(ctx, opts.kind ?? "PercentOff");
 
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.Promotion
-       (ID, Code, Name, PromotionTypeID, Value, AppliesAt, AllowsStacking, StackSequence,
-        MaxRedemptions, MaxRedemptionsPerCustomer, MinimumOrderAmount, MinimumQuantity,
-        QualifierKey, Status)
-     VALUES ('${promotionID}', '${code}', '${code} promotion', '${tid}', ${opts.value},
-             ${q(opts.appliesAt ?? "Either")}, ${opts.stacks ? 1 : 0}, ${opts.stackSequence ?? 0},
-             ${q(opts.maxRedemptions ?? null)}, ${q(opts.maxPerCustomer ?? null)},
-             ${q(opts.minOrder ?? null)}, ${q(opts.minQty ?? null)},
-             ${q(opts.qualifierKey ?? null)}, ${q(opts.status ?? "Active")});
-     INSERT INTO ${ORDERS_SCHEMA}.PromotionCode (ID, PromotionID, Code, Status)
-     VALUES ('${randomUUID()}', '${promotionID}', '${code}', 'Active')`);
+  const promotionID = await createViaEntity(ctx, PROMOTION_ENTITY, {
+    Code: code,
+    Name: `${code} promotion`,
+    PromotionTypeID: tid,
+    Value: opts.value,
+    AppliesAt: opts.appliesAt ?? "Either",
+    AllowsStacking: opts.stacks ? 1 : 0,
+    StackSequence: opts.stackSequence ?? 0,
+    MaxRedemptions: opts.maxRedemptions ?? null,
+    MaxRedemptionsPerCustomer: opts.maxPerCustomer ?? null,
+    MinimumOrderAmount: opts.minOrder ?? null,
+    MinimumQuantity: opts.minQty ?? null,
+    QualifierKey: opts.qualifierKey ?? null,
+    Status: opts.status ?? "Active",
+  });
+
+  await createViaEntity(ctx, PROMOTION_CODE_ENTITY, {
+    PromotionID: promotionID,
+    Code: code,
+    Status: "Active",
+  });
 
   if (opts.targetProductID || opts.targetCategoryID) {
-    await TxQuery(ctx,
-      `INSERT INTO ${ORDERS_SCHEMA}.PromotionTarget (ID, PromotionID, ProductID, ProductCategoryID, IncludeDescendants)
-       VALUES ('${randomUUID()}','${promotionID}', ${q(opts.targetProductID ?? null)}, ${q(opts.targetCategoryID ?? null)}, 1)`);
+    await createViaEntity(ctx, PROMOTION_TARGET_ENTITY, {
+      PromotionID: promotionID,
+      ProductID: opts.targetProductID ?? null,
+      ProductCategoryID: opts.targetCategoryID ?? null,
+      IncludeDescendants: 1,
+    });
   }
   return { PromotionID: promotionID, Code: code };
 }
@@ -109,26 +130,33 @@ async function setPolicy(
   companyID: string,
   opts: { allowStacking?: boolean; mode?: "Sequential" | "Additive" },
 ): Promise<void> {
-  await TxQuery(ctx,
-    `DELETE FROM ${ORDERS_SCHEMA}.OrderCompanyPolicy WHERE ID='${companyID}';
-     INSERT INTO ${ORDERS_SCHEMA}.OrderCompanyPolicy (ID, AllowPromotionStacking, StackingMode, RefuseUnpricedLines)
-     VALUES ('${companyID}', ${opts.allowStacking ? 1 : 0}, '${opts.mode ?? "Sequential"}', 1)`);
+  // Keyed BY the company, so this is an update when the bundle sets a policy twice — not a second
+  // row. The old DELETE-then-INSERT destroyed and recreated it, which is a different event.
+  await upsertViaEntity(ctx, ORDER_COMPANY_POLICY_ENTITY, companyID, {
+    AllowPromotionStacking: opts.allowStacking ? 1 : 0,
+    StackingMode: opts.mode ?? "Sequential",
+    RefuseUnpricedLines: 1,
+  });
 }
 
 /** Grant the current user a discount authority. */
 async function grantAuthority(ctx: IntegrationCheckContext, maxPct: number): Promise<string> {
-  const id = randomUUID();
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.SalesAuthority (ID, SalesRepUserID, MaxDiscountPct, IsActive)
-     VALUES ('${id}', '${ctx.User.ID}', ${maxPct}, 1)`);
-  return id;
+  return createViaEntity(ctx, SALES_AUTHORITY_ENTITY, {
+    SalesRepUserID: ctx.User.ID,
+    MaxDiscountPct: maxPct,
+    IsActive: 1,
+  });
 }
 
 /** Configure a DiscountLimit rule naming the role that may approve over-cap discounts. */
 async function addDiscountLimitRule(ctx: IntegrationCheckContext, roleID: string | null): Promise<void> {
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.SalesRule (ID, Name, RuleType, Scope, ApprovalRequiredRoleID, IsActive)
-     VALUES ('${randomUUID()}','Discount limit','DiscountLimit','Global', ${roleID ? `'${roleID}'` : "NULL"}, 1)`);
+  await createViaEntity(ctx, SALES_RULE_ENTITY, {
+    Name: "Discount limit",
+    RuleType: "DiscountLimit",
+    Scope: "Global",
+    ApprovalRequiredRoleID: roleID,
+    IsActive: 1,
+  });
 }
 
 /** A role the current user does NOT hold. */

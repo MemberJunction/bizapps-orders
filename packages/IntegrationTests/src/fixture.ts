@@ -40,16 +40,35 @@ export const ORDERS_SCHEMA = '__mj_BizAppsOrders';
 export const ACCT_SCHEMA = '__mj_BizAppsAccounting';
 export const COMMON_SCHEMA = '__mj_BizAppsCommon';
 
-/** Stamped on every fixture row so a stranded run is identifiable and sweepable by name. */
-export const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
-const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
-const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
-const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
-const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
-const PRODUCT_PRICE_ENTITY = 'MJ_BizApps_Orders: Product Prices';
-const PROMOTION_ENTITY = 'MJ_BizApps_Orders: Promotions';
-const PROMOTION_CODE_ENTITY = 'MJ_BizApps_Orders: Promotion Codes';
-const PROMOTION_TARGET_ENTITY = 'MJ_BizApps_Orders: Promotion Targets';
+import {
+    PRODUCT_TYPE_ENTITY,
+    PRODUCT_CATEGORY_ENTITY,
+    PRODUCT_ENTITY,
+    PRODUCT_ENTITLEMENT_ENTITY,
+    EVENT_PRODUCT_ENTITY,
+    PRODUCT_PRICE_ENTITY,
+    PROMOTION_ENTITY,
+    PROMOTION_CODE_ENTITY,
+    PROMOTION_TARGET_ENTITY,
+    GL_ACCOUNT_ENTITY,
+    INTERCOMPANY_ACCOUNT_MATCH_ENTITY,
+    COMPANY_TAX_NEXUS_ENTITY,
+} from './entity-names.js';
+
+// Entity names live in ./entity-names.js — one definition each, so a typo is wrong in one place
+// rather than silently wrong in fifteen. Re-exported here because callers have always imported
+// PRODUCT_TYPE_ENTITY from the fixture.
+export {
+    PRODUCT_TYPE_ENTITY,
+    PRODUCT_CATEGORY_ENTITY,
+    PRODUCT_ENTITY,
+    PRODUCT_ENTITLEMENT_ENTITY,
+    EVENT_PRODUCT_ENTITY,
+    PRODUCT_PRICE_ENTITY,
+    PROMOTION_ENTITY,
+    PROMOTION_CODE_ENTITY,
+    PROMOTION_TARGET_ENTITY,
+} from './entity-names.js';
 
 const FIXTURE_TAG = '(bizapps-orders integration test — safe to delete)';
 
@@ -171,6 +190,22 @@ export async function TxOne<T = Record<string, unknown>>(
     const rows = await TxQuery<T>(ctx, query);
     Assert(rows.length > 0, `expected a row from: ${query}`);
     return rows[0];
+}
+
+/**
+ * The row, or `null` when there is none.
+ *
+ * `TxOne` ASSERTS a row exists, which is right when the caller's logic depends on one and wrong for
+ * an EXISTENCE check — "does this company already have a nexus row?" has `no` as a perfectly good
+ * answer. Using TxOne for that turns the common case into a thrown assertion, which is exactly how
+ * an idempotency guard becomes a hard failure.
+ */
+export async function TxMaybeOne<T = Record<string, unknown>>(
+    ctx: IntegrationCheckContext,
+    query: string,
+): Promise<T | null> {
+    const rows = await TxQuery<T>(ctx, query);
+    return rows.length > 0 ? rows[0] : null;
 }
 
 /**
@@ -841,15 +876,26 @@ export async function CreatePromotion(
  * raw-SQL price in this suite walked straight past it. That is why ambiguity kept surfacing at CONFIRM
  * time, far from the rule that caused it, instead of loudly at creation.
  *
- * WHAT IS DELIBERATELY STILL SQL: rows this application does not own — `__mj.Company`, accounting's
- * `GLAccount`/`GLAccountLink`/tax geography, common's `Organization`/`Person`/`Address`. Creating
- * those through their own entity APIs would test THEIR software, not ours, and couple this fixture to
- * their Save-overrides. The boundary is ownership, not convenience.
+ * THE BOUNDARY MOVED (Amith 2026-07-30). This used to say that rows we do not own — accounting's
+ * `GLAccount`/`GLAccountLink`, common's `Person` — stay on SQL, because creating them through their
+ * own entity APIs tests THEIR software rather than ours. That reasoning is sound for rows we merely
+ * reference, and wrong for the ones our own logic depends on.
+ *
+ * GL accounts and GL account LINKS are the case in point. The resolution walk — product → category →
+ * ancestors → company/type → default — is ours, and it reads exactly those link rows. Fabricating
+ * them with `INSERT` means the walk is exercised against data no application ever validated, so a
+ * link that our own resolver would consider malformed still produces a plausible-looking journal
+ * entry. Building them through the object model makes the seeding pass itself a test of the walk: a
+ * missing or mis-scoped link now fails loudly at creation instead of quietly booking to the wrong
+ * account.
+ *
+ * What stays on SQL is genuinely inert infrastructure — `__mj.Company` and the tax geography rows —
+ * which nothing of ours resolves THROUGH; they are only ever pointed at.
  *
  * Failures are loud and name the entity: a fixture that half-builds leaves every check in the bundle
  * failing for a reason that has nothing to do with what it was testing.
  */
-async function createViaEntity(
+export async function createViaEntity(
     ctx: IntegrationCheckContext,
     entityName: string,
     fields: Record<string, unknown>,
@@ -872,6 +918,154 @@ async function createViaEntity(
         throw new Error(`Fixture could not create a '${entityName}' through the object model: ${detail}`);
     }
     return entity.Get('ID') as string;
+}
+
+/**
+ * Create-or-update one row THROUGH THE OBJECT MODEL, keyed on its primary key.
+ *
+ * Some fixture rows are singletons rather than new records — `OrderCompanyPolicy` is keyed BY the
+ * company, so a bundle that sets a stacking policy twice is updating one row, not creating a second.
+ * The SQL version expressed that as DELETE-then-INSERT, which is not the same thing: it destroys and
+ * recreates the row, so anything referencing it, and any Save-override that distinguishes a create
+ * from an update, sees the wrong event. Loading first and saving over it is what the application
+ * itself would do.
+ */
+export async function upsertViaEntity(
+    ctx: IntegrationCheckContext,
+    entityName: string,
+    primaryKey: string,
+    fields: Record<string, unknown>,
+): Promise<string> {
+    const md = new Metadata();
+    const entity = await md.GetEntityObject<BaseEntity & Record<string, unknown>>(entityName, ctx.User);
+
+    // Load returns false when the row is absent, which is the create path — not an error. The cast
+    // matches the convention already used in payment-builder and OrderDraftHydrator: the
+    // `& Record<string, unknown>` that makes Set/Get ergonomic also widens every method to `{}`.
+    const existed = await (entity as unknown as { Load(id: string): Promise<boolean> }).Load(primaryKey);
+    if (!existed) {
+        entity.NewRecord();
+        entity.Set('ID', primaryKey);
+    }
+    for (const [key, value] of Object.entries(fields)) {
+        if (value !== undefined) entity.Set(key, value);
+    }
+    if (!(await entity.Save())) {
+        const result = entity.LatestResult;
+        const detail =
+            (result?.Errors ?? [])
+                .map((e) => (typeof e === 'string' ? e : JSON.stringify(e)))
+                .join('; ') || result?.CompleteMessage || 'no reason given';
+        throw new Error(
+            `Fixture could not ${existed ? 'update' : 'create'} '${entityName}' (${primaryKey}) ` +
+            `through the object model: ${detail}`,
+        );
+    }
+    return entity.Get('ID') as string;
+}
+
+/** Intercompany account codes. Shared so the two bundles that provision them cannot drift apart. */
+export const DUE_TO_CODE = '21900';
+export const DUE_FROM_CODE = '11900';
+
+/** Create a company's GL account for a code, or return the existing one. */
+export async function EnsureGLAccount(
+    ctx: IntegrationCheckContext,
+    companyID: string,
+    code: string,
+    name: string,
+    accountType: string,
+): Promise<string> {
+    const existing = await TxMaybeOne<{ ID: string }>(
+        ctx,
+        `SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${companyID}' AND Code='${code}'`,
+    );
+    if (existing?.ID) return existing.ID;
+    return createViaEntity(ctx, GL_ACCOUNT_ENTITY, {
+        CompanyID: companyID,
+        Code: code,
+        Name: name,
+        AccountType: accountType,
+        IsActive: 1,
+    });
+}
+
+/**
+ * Provision Due To / Due From accounts for each company and the ordered pairs between them.
+ *
+ * WHY THIS IS SHARED. `intercompany` and `account-credit` both need it, and they had two separate
+ * copies of the same SQL. Two copies of the setup for a feature whose whole hazard is DIRECTION —
+ * a mis-oriented pair still balances, so the ledger looks healthy either way — is exactly the kind
+ * of duplication that lets one copy drift into being wrong without any check failing.
+ *
+ * The DUE TO belongs to the SOURCE company and the DUE FROM to the TARGET. Both are resolved
+ * explicitly rather than by a correlated subquery, which reads identically whichever way round the
+ * pair is and therefore cannot catch a reversal.
+ *
+ * CoC is deliberately left UNPAIRED so the missing-pair case has something genuine to exercise.
+ */
+export async function EnsureIntercompanyAccounts(
+    ctx: IntegrationCheckContext,
+    companies: Array<{ ID: string }>,
+    pairs: Array<[string, string]>,
+): Promise<void> {
+    for (const co of companies) {
+        await EnsureGLAccount(ctx, co.ID, DUE_TO_CODE, 'Due To Affiliates', 'Liability');
+        await EnsureGLAccount(ctx, co.ID, DUE_FROM_CODE, 'Due From Affiliates', 'Asset');
+    }
+
+    for (const [source, target] of pairs) {
+        const existing = await TxMaybeOne<{ ID: string }>(
+            ctx,
+            `SELECT ID FROM ${ACCT_SCHEMA}.IntercompanyAccountMatch
+              WHERE SourceCompanyID='${source}' AND TargetCompanyID='${target}' AND Status='Active'`,
+        );
+        if (existing?.ID) continue;
+
+        const dueTo = await EnsureGLAccount(ctx, source, DUE_TO_CODE, 'Due To Affiliates', 'Liability');
+        const dueFrom = await EnsureGLAccount(ctx, target, DUE_FROM_CODE, 'Due From Affiliates', 'Asset');
+        await createViaEntity(ctx, INTERCOMPANY_ACCOUNT_MATCH_ENTITY, {
+            SourceCompanyID: source,
+            TargetCompanyID: target,
+            DueToGLAccountID: dueTo,
+            DueFromGLAccountID: dueFrom,
+            Status: 'Active',
+        });
+    }
+}
+
+/**
+ * Register a company as having tax nexus in the given jurisdictions.
+ *
+ * Four bundles carried byte-identical copies of this INSERT. Nexus decides whether tax is charged
+ * at all, so a bundle whose copy drifted would silently start proving the wrong thing: zero tax
+ * because the company was never registered reads exactly like zero tax because the product is
+ * exempt. Asserting the REASON is what tax.checks does; sharing the setup is what stops the reason
+ * from differing between bundles in the first place.
+ *
+ * Idempotent per (company, jurisdiction) so bundles that call it repeatedly do not stack rows.
+ */
+export async function EnsureTaxNexus(
+    ctx: IntegrationCheckContext,
+    companyID: string,
+    jurisdictionIDs: Iterable<string>,
+): Promise<void> {
+    for (const jid of jurisdictionIDs) {
+        if (!jid) continue;
+        const existing = await TxMaybeOne<{ ID: string }>(
+            ctx,
+            `SELECT ID FROM ${ACCT_SCHEMA}.CompanyTaxNexus
+              WHERE CompanyID='${companyID}' AND TaxJurisdictionID='${jid}'`,
+        );
+        if (existing?.ID) continue;
+        await createViaEntity(ctx, COMPANY_TAX_NEXUS_ENTITY, {
+            CompanyID: companyID,
+            TaxJurisdictionID: jid,
+            NexusType: 'Economic',
+            RegisteredFrom: '2020-01-01',
+            Status: 'Active',
+        });
+    }
 }
 
 async function createProductType(
@@ -1075,6 +1269,13 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
         `DELETE FROM ${ORDERS_SCHEMA}.OrderCharge WHERE OrderHeaderID IN (${orderScope})`,
 
         `UPDATE ${ORDERS_SCHEMA}.OrderLine SET JournalEntryID=NULL WHERE OrderHeaderID IN (${orderScope})`,
+        // Break the bundle self-reference (D45) before the rows go. Strictly this is belt and
+        // braces: parent and children always share an OrderHeaderID, so one DELETE removes both
+        // and SQL Server checks the self-FK at statement end, which is why ReversesOrderLineID
+        // has never needed the same treatment. It matters when the scope is ever narrowed to a
+        // subset of an order's lines, where the delete would otherwise trip its own FK — a
+        // failure that would surface as an unrelated-looking cleanup error.
+        `UPDATE ${ORDERS_SCHEMA}.OrderLine SET ParentOrderLineID=NULL WHERE OrderHeaderID IN (${orderScope})`,
         `DELETE jel FROM ${ACCT_SCHEMA}.JournalEntryLine jel
             JOIN ${ACCT_SCHEMA}.JournalEntry je ON je.ID=jel.JournalEntryID WHERE je.CompanyID IN (${companies})`,
         `DELETE FROM ${ACCT_SCHEMA}.JournalEntry WHERE CompanyID IN (${companies})`,
@@ -1111,8 +1312,6 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
             (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))
               OR ComponentProductID IN (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))`,
         `DELETE FROM ${ORDERS_SCHEMA}.ProductEntitlement WHERE ProductID IN
-            (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))`,
-        `DELETE FROM ${ORDERS_SCHEMA}.ProductPerformanceObligation WHERE ProductID IN
             (SELECT ID FROM ${ORDERS_SCHEMA}.Product WHERE CompanyID IN (${companies}))`,
         `UPDATE ${ORDERS_SCHEMA}.Product SET SuccessorProductID = NULL WHERE CompanyID IN (${companies})`,
         `DELETE FROM ${ORDERS_SCHEMA}.EventProduct WHERE ID IN
