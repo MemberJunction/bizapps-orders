@@ -46,6 +46,8 @@ export const MJO_ENTITIES = {
     ProductPrice: 'MJ_BizApps_Orders: Product Prices',
     Promotion: 'MJ_BizApps_Orders: Promotions',
     PriceTier: 'MJ_BizApps_Orders: Price Tiers',
+    SubscriptionTerm: 'MJ_BizApps_Orders: Subscription Terms',
+    SubscriptionEvent: 'MJ_BizApps_Orders: Subscription Events',
     ChargeType: 'MJ_BizApps_Orders: Charge Types',
     TaxExemption: 'MJ_BizApps_Orders: Customer Tax Exemptions',
 } as const;
@@ -385,6 +387,36 @@ export class MJOOrdersDataService {
             [`(${clauses.join(' OR ')})`],
             'EndDate DESC',
             50,
+            user,
+        );
+    }
+
+    /**
+     * Coverage terms for one subscription, oldest first.
+     *
+     * A term is a PERIOD of coverage, and renewals APPEND one rather than moving a
+     * pointer. That is why "current" is not a field: it is the term whose window
+     * covers today, which cannot go stale.
+     */
+    public async GetSubscriptionTerms(subscriptionID: string, user?: UserInfo) {
+        if (!UUID_PATTERN.test(subscriptionID)) return [];
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.SubscriptionTerm,
+            [`SubscriptionID = '${subscriptionID}'`],
+            'TermNumber',
+            undefined,
+            user,
+        );
+    }
+
+    /** What happened to a subscription, newest first. */
+    public async GetSubscriptionEvents(subscriptionID: string, user?: UserInfo) {
+        if (!UUID_PATTERN.test(subscriptionID)) return [];
+        return this.run<Record<string, unknown>>(
+            MJO_ENTITIES.SubscriptionEvent,
+            [`SubscriptionID = '${subscriptionID}'`],
+            'OccurredAt DESC',
+            undefined,
             user,
         );
     }
