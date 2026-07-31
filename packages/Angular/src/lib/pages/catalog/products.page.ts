@@ -220,20 +220,25 @@ export class MJOChargesTaxPageComponent implements OnInit {
         { Key: 'Name', Label: 'Charge type', Secondary: (r) => (r['Description'] as string) ?? null },
         { Key: 'Basis', Label: 'Basis', Width: '190px' },
         {
-            Key: 'IsTax',
+            // Tax-ness is the CATEGORY, not a boolean. `IsTax` is not a column on
+            // this entity, so both this chip and the column below read undefined
+            // and every row claimed to be an ordinary charge that enlarges the tax
+            // base — the exact opposite of the truth for the tax rows.
+            Key: 'Category',
             Label: 'Kind',
             Kind: 'chip',
             Width: '100px',
-            Format: (r) => (r['IsTax'] ? 'tax' : 'charge'),
-            ChipClass: (r) => (r['IsTax'] ? 'mj-chip--info' : 'mj-chip--outline'),
+            Format: (r) => (r['Category'] === 'Tax' ? 'tax' : 'charge'),
+            ChipClass: (r) => (r['Category'] === 'Tax' ? 'mj-chip--info' : 'mj-chip--outline'),
         },
         {
             Key: 'EnlargesBase',
             Label: 'Enlarges tax base',
             Width: '160px',
             HideBelow: 760,
-            // The single most consequential flag on this screen.
-            Format: (r) => (r['IsTax'] ? 'no — never compounds' : 'yes'),
+            // The single most consequential flag on this screen: a tax never
+            // enlarges the base another tax is computed on, so taxes cannot compound.
+            Format: (r) => (r['Category'] === 'Tax' ? 'no — never compounds' : 'yes'),
         },
         {
             Key: 'IsActive',

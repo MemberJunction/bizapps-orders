@@ -90,15 +90,19 @@ export class MJOPricingPageComponent implements OnInit {
     public Rows: Array<Record<string, unknown>> = [];
 
     public readonly Columns: MJOColumn[] = [
-        { Key: 'Product', Label: 'Product', Secondary: (r) => (r['SKU'] as string) ?? null },
+        // No SKU on a price row — it belongs to the product. The price list is the
+        // useful second line here anyway: it says WHICH price this is.
+        { Key: 'Product', Label: 'Product', Secondary: (r) => (r['Description'] as string) ?? null },
         { Key: 'PriceList', Label: 'Price list', Width: '150px' },
         { Key: 'PricingModel', Label: 'Model', Width: '110px' },
         {
-            Key: 'UnitPrice',
+            Key: 'Amount',
             Label: 'Unit',
             Kind: 'money',
             Width: '110px',
-            Format: (r) => FormatMoney(Number(r['UnitPrice'] ?? 0)),
+            // The column is Amount on Product Prices. UnitPrice is the ORDER LINE's
+            // field; naming them alike is what made the mix-up easy.
+            Format: (r) => FormatMoney(Number(r['Amount'] ?? 0)),
         },
         {
             Key: 'Priority',
@@ -195,11 +199,11 @@ export class MJOPromotionsPageComponent implements OnInit {
         { Key: 'Name', Label: 'Promotion', Secondary: (r) => (r['Description'] as string) ?? null },
         { Key: 'PromotionType', Label: 'Type', Width: '130px' },
         {
-            Key: 'Scope',
+            Key: 'AppliesAt',
             Label: 'Scope',
             Kind: 'chip',
             Width: '100px',
-            Format: (r) => String(r['Scope'] ?? 'Line'),
+            Format: (r) => String(r['AppliesAt'] ?? 'Line'),
             ChipClass: () => 'mj-chip--outline',
         },
         {
@@ -208,18 +212,18 @@ export class MJOPromotionsPageComponent implements OnInit {
             Width: '190px',
             HideBelow: 1000,
             Format: (r) => {
-                const from = r['StartDate'] ? FormatDate(String(r['StartDate']), { Short: true }) : '—';
-                const to = r['EndDate'] ? FormatDate(String(r['EndDate']), { Short: true }) : 'open';
+                const from = r['EffectiveFrom'] ? FormatDate(String(r['EffectiveFrom']), { Short: true }) : '—';
+                const to = r['EffectiveTo'] ? FormatDate(String(r['EffectiveTo']), { Short: true }) : 'open';
                 return `${from} → ${to}`;
             },
         },
         {
-            Key: 'IsActive',
+            Key: 'Status',
             Label: 'Status',
             Kind: 'chip',
             Width: '100px',
-            Format: (r) => (r['IsActive'] === false ? 'Inactive' : 'Active'),
-            ChipClass: (r) => (r['IsActive'] === false ? 'mj-chip--outline' : 'mj-chip--success'),
+            Format: (r) => String(r['Status'] ?? 'Active'),
+            ChipClass: (r) => (r['Status'] === 'Active' ? 'mj-chip--success' : 'mj-chip--outline'),
         },
     ];
 

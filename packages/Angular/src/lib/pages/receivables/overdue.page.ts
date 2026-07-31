@@ -71,6 +71,16 @@ interface MJONextAction {
                 Detail="Spend this before chasing cash" />
         </div>
 
+        @if (LoadError) {
+            <div class="mj-banner mj-banner--error mjo-ov__error">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                <div class="body">
+                    <strong>The worklist did not load.</strong>
+                    {{ LoadError }}
+                </div>
+            </div>
+        }
+
         <div class="mj-card mjo-ov__aging">
             <div class="mj-card-head">
                 <i class="fa-solid fa-chart-column" aria-hidden="true"></i>
@@ -115,6 +125,7 @@ interface MJONextAction {
                 padding: var(--mj-space-6);
             }
             .mjo-ov__tiles { margin-bottom: var(--mj-space-4); }
+            .mjo-ov__error { margin-bottom: var(--mj-space-4); }
             .mjo-ov__aging { margin-bottom: var(--mj-space-4); }
             .mjo-ov__truncated { margin-bottom: var(--mj-space-4); }
             @media (max-width: 760px) {
@@ -132,6 +143,9 @@ export class MJOOverduePageComponent implements OnInit {
      * the DOM write, and freezes the view on its pre-load values permanently.
      */
     private readonly cdr = inject(ChangeDetectorRef);
+
+    /** Non-null when the worklist could not be read. Rendered instead of the aging bar. */
+    public LoadError: string | null = null;
     @Output() OrderOpened = new EventEmitter<OverdueWorklistRow>();
 
     public AllRows: OverdueWorklistRow[] = [];
@@ -266,10 +280,19 @@ export class MJOOverduePageComponent implements OnInit {
         const op = new OrdersGetOverdueWorklistOperation();
         const result = await op.Execute({});
         if (!result.Success || !result.Output) {
+            // SAY SO. An empty worklist and a failed one look identical — both
+            // render "Nothing overdue", which is the single most reassuring
+            // sentence on the screen. Reporting a clean collections desk because
+            // a server call failed is worse than reporting nothing at all.
+            this.LoadError =
+                result.ErrorMessage?.trim() ||
+                'The overdue worklist could not be loaded, so this is not a statement that nothing is overdue.';
             this.AllRows = [];
             this.Rows = [];
+            this.cdr.detectChanges();
             return;
         }
+        this.LoadError = null;
         this.AllRows = result.Output.Rows;
         this.Buckets = {
             Current: result.Output.Buckets.Current,

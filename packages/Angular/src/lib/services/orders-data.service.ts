@@ -249,7 +249,11 @@ export class MJOOrdersDataService {
         return this.run<Record<string, unknown>>(
             MJO_ENTITIES.Promotion,
             [],
-            'StartDate DESC',
+            // The window columns are EffectiveFrom/EffectiveTo. `StartDate` does not
+            // exist on this entity, and ordering by it made SQL Server reject the
+            // whole query — so the promotions screen showed "No promotions", which
+            // reads as an empty catalog rather than a broken one.
+            'EffectiveFrom DESC',
             undefined,
             user,
         );
@@ -346,7 +350,26 @@ export class MJOOrdersDataService {
             },
             user ?? this.currentUser,
         );
-        return result.Success ? (result.Results ?? []) : [];
+        if (!result.Success) {
+            // NEVER fail silently into an empty list. Every caller renders an
+            // empty state, and an empty state is the most reassuring thing on the
+            // screen — "no orders", "nothing overdue", "no payments". A failed
+            // query that reads as good news is the worst outcome available.
+            //
+            // This is not theoretical: two entity names in MJO_ENTITIES were wrong
+            // for the entire build, and the only symptom was dashboards reporting
+            // zero against a database with 73 orders. Logging the entity and the
+            // filter makes the next one findable in seconds rather than by
+            // noticing a number looks too calm.
+            console.error(
+                `[MJOOrdersDataService] Query failed for "${entityName}" — the screen ` +
+                    `will render an empty state that does NOT mean "no data".\n` +
+                    `  Filter: ${filters.filter(Boolean).join(' AND ') || '(none)'}\n` +
+                    `  Reason: ${result.ErrorMessage ?? 'no error message supplied'}`,
+            );
+            return [];
+        }
+        return result.Results ?? [];
     }
 
     private get currentUser(): UserInfo | undefined {
