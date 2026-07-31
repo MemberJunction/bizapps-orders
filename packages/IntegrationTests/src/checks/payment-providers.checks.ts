@@ -43,6 +43,7 @@ import {
   InRolledBackTransaction,
   ORDERS_SCHEMA,
   TeardownOrdersFixture,
+  TxMaybeOne,
   TxOne,
   TxQuery,
 } from "../fixture.js";
@@ -79,7 +80,7 @@ async function makeProvider(
   //
   // The Code is what matters: it IS the ClassFactory key (D37), so a row created here resolves to the
   // same driver the seeded one would.
-  const existingType = await TxOne<{ ID: string }>(ctx,
+  const existingType = await TxMaybeOne<{ ID: string }>(ctx,
     `SELECT ID FROM ${ORDERS_SCHEMA}.PaymentProviderType WHERE Code='${typeCode}'`);
   const typeID =
     existingType?.ID ??

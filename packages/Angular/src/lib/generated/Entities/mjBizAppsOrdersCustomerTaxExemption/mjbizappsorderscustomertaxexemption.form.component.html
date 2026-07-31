@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Entity Associations Section -->
+    <!-- Customer Information Section -->
     <mj-collapsible-panel
-        SectionKey="entityAssociations"
-        SectionName="Entity Associations"
+        SectionKey="customerInformation"
+        SectionName="Customer Information"
         Icon="fa fa-users"
         [Form]="this"
         [FormContext]="formContext">
@@ -38,11 +38,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Taxation Details Section -->
+    <!-- Tax Details Section -->
     <mj-collapsible-panel
-        SectionKey="taxationDetails"
-        SectionName="Taxation Details"
-        Icon="fa fa-balance-scale"
+        SectionKey="taxDetails"
+        SectionName="Tax Details"
+        Icon="fa fa-landmark"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -72,11 +72,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Exemption Certificate Section -->
+    <!-- Certification Details Section -->
     <mj-collapsible-panel
-        SectionKey="exemptionCertificate"
-        SectionName="Exemption Certificate"
-        Icon="fa fa-certificate"
+        SectionKey="certificationDetails"
+        SectionName="Certification Details"
+        Icon="fa fa-file-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -100,6 +100,14 @@
             [ShowLabel]="true"
             FieldName="CertificateExpiresAt"
             Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Comments"
+            Type="textarea"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -134,14 +142,6 @@
             [ShowLabel]="true"
             FieldName="Status"
             Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Comments"
-            Type="textarea"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

@@ -41,6 +41,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Charge Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="chargeConfiguration"
+        SectionName="Charge Configuration"
+        Icon="fa fa-sliders-h"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -49,24 +59,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Computation Rules Section -->
-    <mj-collapsible-panel
-        SectionKey="computationRules"
-        SectionName="Computation Rules"
-        Icon="fa fa-calculator"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -87,6 +79,14 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="AllowsOverride"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
             Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -130,7 +130,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderCharges"
         SectionName="Order Charges"
-        Icon="fa fa-receipt"
+        Icon="fa fa-money-bill-wave"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

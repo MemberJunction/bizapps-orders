@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Provider Details Section -->
+    <!-- Provider Information Section -->
     <mj-collapsible-panel
-        SectionKey="providerDetails"
-        SectionName="Provider Details"
-        Icon="fa fa-plug"
+        SectionKey="providerInformation"
+        SectionName="Provider Information"
+        Icon="fa fa-network-wired"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -30,6 +30,14 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="ProviderIntentID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProviderEventID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -63,14 +71,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ProviderEventID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="LastEventAt"
             Type="datepicker"
             [EditMode]="EditMode"
@@ -79,11 +79,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Relationships Section -->
+    <!-- Customer and Order Section -->
     <mj-collapsible-panel
-        SectionKey="relationships"
-        SectionName="Relationships"
-        Icon="fa fa-link"
+        SectionKey="customerAndOrder"
+        SectionName="Customer and Order"
+        Icon="fa fa-user-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

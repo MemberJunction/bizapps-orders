@@ -39,7 +39,6 @@ import {
   ACCT_SCHEMA,
   CreateOrdersFixture,
   createViaEntity,
-  upsertViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -47,11 +46,7 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
-import {
-  EVENT_ORDER_LINE_ENTITY,
-  EVENT_PRODUCT_ENTITY,
-  PRODUCT_ENTITY,
-} from "../entity-names.js";
+import { PRODUCT_ENTITY } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 
 const AR_CODE = "11201";
@@ -260,8 +255,7 @@ export const EventChecks: NamedCheck[] = [
           ctx,
           `SELECT TOP 1 ID FROM ${ORDERS_SCHEMA}.ProductCategory WHERE CompanyID='${f.CoA.ID}'`,
         );
-        // Product first, then the IsA child on the SAME primary key (BO-D37). upsert, not create,
-        // because EventProduct's PK is the Product's — there is no separate identity to generate.
+        // The PRODUCT goes through the object model like everything else.
         const productID = await createViaEntity(ctx, PRODUCT_ENTITY, {
           CompanyID: f.CoA.ID,
           ProductTypeID: f.ProductTypeIDs.Event,
@@ -271,11 +265,17 @@ export const EventChecks: NamedCheck[] = [
           RevenueRecognitionTypeID: f.RevRecTypeIDs.get("AllBackEnd"),
           IsTaxable: 0,
         });
-        await upsertViaEntity(ctx, EVENT_PRODUCT_ENTITY, productID, {
-          EventStartsAt: "2027-02-10T15:00:00Z",
-          EventEndsAt: null,
-          RequiresAttendeeInfo: 0,
-        });
+        // The IsA CHILD cannot. An IsA entity's view exposes the parent's fields as well as its own —
+        // Event Products has 30 EntityFields — while spCreateEventProduct accepts only the child's 11
+        // columns. BaseEntity.Save passes everything the entity declares, so the create fails with
+        // "Procedure or function spCreateEventProduct has too many arguments specified". That is a
+        // property of the IsA pattern (BO-D37), not something this fixture can route around, so the
+        // child row is written directly and the reason recorded here.
+        await TxQuery(
+          ctx,
+          `INSERT INTO ${ORDERS_SCHEMA}.EventProduct (ID, EventStartsAt, EventEndsAt, RequiresAttendeeInfo)
+           VALUES ('${productID}','2027-02-10T15:00:00Z', NULL, 0)`,
+        );
 
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
@@ -347,10 +347,12 @@ export const EventChecks: NamedCheck[] = [
 
         // The IsA child shares the parent's PK (BO-D37), which is what lets attendee data hang off
         // a line without widening OrderLine for every product type that will never use it.
-        await upsertViaEntity(ctx, EVENT_ORDER_LINE_ENTITY, line.ID as string, {
-          AttendeeName: "Dana Whitfield",
-          AttendeeEmail: "dana@example.org",
-        });
+        // Same IsA constraint as EventProduct above — see the note there.
+        await TxQuery(
+          ctx,
+          `INSERT INTO ${ORDERS_SCHEMA}.EventOrderLine (ID, AttendeeName, AttendeeEmail)
+           VALUES ('${line.ID}','Dana Whitfield','dana@example.org')`,
+        );
         const attendee = await TxOne<{ AttendeeName: string; ID: string }>(
           ctx,
           `SELECT ID, AttendeeName FROM ${ORDERS_SCHEMA}.EventOrderLine WHERE ID='${line.ID}'`,

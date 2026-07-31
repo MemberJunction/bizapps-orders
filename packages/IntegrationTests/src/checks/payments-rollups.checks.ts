@@ -46,6 +46,7 @@ import {
     PAYMENT_LINE_ENTITY,
 } from '../entity-names.js';
 import { ConfirmOrder } from '../order-builder.js';
+import { CreatePayment } from '../payment-builder.js';
 
 interface RollupRow {
     OrderNumber: string;
@@ -82,21 +83,19 @@ async function payOrder(ctx: IntegrationCheckContext, orderID: string, amount: n
     const cash = f.PaymentTypeIDs.get('Cash');
     Assert(cash != null, "PaymentType 'Cash' missing — push the orders app metadata");
 
-    const paymentID = await createViaEntity(ctx, PAYMENT_HEADER_ENTITY, {
+    // ONE save, through the payment builder (D68). Creating the header and its allocation as two
+    // separate saves cannot work: a Captured payment's Amount must equal the sum of its lines, so the
+    // header save is refused for having 0 allocations totalling 0 against an Amount of 100. That
+    // invariant is the point of the design, and the raw-SQL version simply wrote around it.
+    const { Payment, Saved, Message } = await CreatePayment(ctx.User, {
         PaymentNumber: `IT-${randomUUID().slice(0, 8).toUpperCase()}`,
         ReceivingCompanyID: f.CoA.ID,
-        PaymentTypeID: cash,
+        PaymentTypeID: cash!,
         Amount: amount,
-        PaymentDate: new Date(),
-        Status: 'Captured',
+        Allocations: [{ OrderHeaderID: orderID, Amount: amount }],
     });
-    await createViaEntity(ctx, PAYMENT_LINE_ENTITY, {
-        PaymentHeaderID: paymentID,
-        OrderHeaderID: orderID,
-        Amount: amount,
-        AllocatedAt: new Date(),
-    });
-    return paymentID;
+    Assert(Saved, `payOrder failed: ${Message}`);
+    return Payment.ID as string;
 }
 
 export const PaymentsRollupsChecks: NamedCheck[] = [

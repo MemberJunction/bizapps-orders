@@ -193,6 +193,22 @@ export async function TxOne<T = Record<string, unknown>>(
 }
 
 /**
+ * The row, or `null` when there is none.
+ *
+ * `TxOne` ASSERTS a row exists, which is right when the caller's logic depends on one and wrong for
+ * an EXISTENCE check — "does this company already have a nexus row?" has `no` as a perfectly good
+ * answer. Using TxOne for that turns the common case into a thrown assertion, which is exactly how
+ * an idempotency guard becomes a hard failure.
+ */
+export async function TxMaybeOne<T = Record<string, unknown>>(
+    ctx: IntegrationCheckContext,
+    query: string,
+): Promise<T | null> {
+    const rows = await TxQuery<T>(ctx, query);
+    return rows.length > 0 ? rows[0] : null;
+}
+
+/**
  * Compare two GUIDs. SQL Server returns `UNIQUEIDENTIFIER` uppercased while `randomUUID()` produces
  * lowercase, so a bare `===` between a fixture ID and a queried one is always false — a trap that
  * silently turns a real assertion into one that can never pass.
@@ -960,7 +976,7 @@ export async function EnsureGLAccount(
     name: string,
     accountType: string,
 ): Promise<string> {
-    const existing = await TxOne<{ ID: string }>(
+    const existing = await TxMaybeOne<{ ID: string }>(
         ctx,
         `SELECT ID FROM ${ACCT_SCHEMA}.GLAccount WHERE CompanyID='${companyID}' AND Code='${code}'`,
     );
@@ -999,7 +1015,7 @@ export async function EnsureIntercompanyAccounts(
     }
 
     for (const [source, target] of pairs) {
-        const existing = await TxOne<{ ID: string }>(
+        const existing = await TxMaybeOne<{ ID: string }>(
             ctx,
             `SELECT ID FROM ${ACCT_SCHEMA}.IntercompanyAccountMatch
               WHERE SourceCompanyID='${source}' AND TargetCompanyID='${target}' AND Status='Active'`,
@@ -1036,7 +1052,7 @@ export async function EnsureTaxNexus(
 ): Promise<void> {
     for (const jid of jurisdictionIDs) {
         if (!jid) continue;
-        const existing = await TxOne<{ ID: string }>(
+        const existing = await TxMaybeOne<{ ID: string }>(
             ctx,
             `SELECT ID FROM ${ACCT_SCHEMA}.CompanyTaxNexus
               WHERE CompanyID='${companyID}' AND TaxJurisdictionID='${jid}'`,

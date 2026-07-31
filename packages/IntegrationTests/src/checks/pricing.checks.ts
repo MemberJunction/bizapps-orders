@@ -139,6 +139,29 @@ async function addListFor(
   return listID;
 }
 
+
+/**
+ * Write a price rule DIRECTLY, bypassing ProductPriceEntityServer's ambiguity guard.
+ *
+ * Used by exactly two checks, and only to construct a state the application now REFUSES to create.
+ * PC12 proves the guard rejects a colliding rule at write time; PC5 and PC15 prove what the
+ * RESOLVER does if a collision exists anyway — which matters because the guard is not the only way
+ * rows arrive. A migration, a bulk load, or a rule whose window later widens can all produce a tie
+ * the writer never saw. Routing these through the object model would make the setup fail with the
+ * guard's message and the resolver's own defence would never run.
+ */
+async function addCollidingPriceRaw(
+  ctx: IntegrationCheckContext,
+  productID: string,
+  opts: { amount: number; priority: number; description: string },
+): Promise<void> {
+  await TxQuery(ctx,
+    `INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
+       (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status, Description)
+     VALUES ('${randomUUID()}','${productID}','PerUnit','Standard',${opts.amount},'2020-01-01',
+             ${opts.priority},'Active','${opts.description}')`);
+}
+
 /** Confirm a one-line order WITHOUT stating a price, so the engine must resolve it. */
 async function confirmUnpriced(
   ctx: IntegrationCheckContext,
@@ -258,8 +281,8 @@ export const PricingChecks: NamedCheck[] = [
         const f = Fx();
         // Written with raw SQL so the write-time guard (PC12) does not stop us setting up the very
         // state the ORDER-time refusal exists to catch.
-        await addPrice(ctx, f.Products.WidgetA, { amount: 25, priority: 5, description: "rule A" });
-        await addPrice(ctx, f.Products.WidgetA, { amount: 30, priority: 5, description: "rule B" });
+        await addCollidingPriceRaw(ctx, f.Products.WidgetA, { amount: 25, priority: 5, description: "rule A" });
+        await addCollidingPriceRaw(ctx, f.Products.WidgetA, { amount: 30, priority: 5, description: "rule B" });
 
         const order = await confirmUnpriced(ctx, f.Products.WidgetA, 3);
         Assert(!order.Saved, "an ambiguous rule set must refuse the confirm");
@@ -483,8 +506,8 @@ export const PricingChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        await addPrice(ctx, f.Products.WidgetA, { amount: 25, priority: 3, description: "one" });
-        await addPrice(ctx, f.Products.WidgetA, { amount: 31, priority: 3, description: "two" });
+        await addCollidingPriceRaw(ctx, f.Products.WidgetA, { amount: 25, priority: 3, description: "one" });
+        await addCollidingPriceRaw(ctx, f.Products.WidgetA, { amount: 31, priority: 3, description: "two" });
 
         // A configuration problem the caller can fix is a refusal WITH a reason. Reporting it as a
         // thrown fault would make the preview look broken when it is working and telling the truth.

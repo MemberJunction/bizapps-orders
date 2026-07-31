@@ -6651,12 +6651,15 @@ input CreatemjBizAppsOrdersEventOrderLineInput {
   DiscountPct: Float
   FulfillmentStatus: String
   ID: String
+  IsQuantityOverridden: Boolean
+  IsRollupParent: Boolean
   JournalEntryID: String
   LineNumber: Int
   LineTax: Float
   LineTotalGross: Float
   LineTotalNet: Float
   OrderHeaderID: String
+  ParentOrderLineID: String
   ProductID: String
   ProductPriceID: String
   Quantity: Float
@@ -6816,12 +6819,15 @@ input CreatemjBizAppsOrdersOrderLineInput {
   DiscountPct: Float
   FulfillmentStatus: String
   ID: String
+  IsQuantityOverridden: Boolean
+  IsRollupParent: Boolean
   JournalEntryID: String
   LineNumber: Int
   LineTax: Float
   LineTotalGross: Float
   LineTotalNet: Float
   OrderHeaderID: String
+  ParentOrderLineID: String
   ProductID: String
   ProductPriceID: String
   Quantity: Float
@@ -7087,15 +7093,6 @@ input CreatemjBizAppsOrdersProductInput {
   SubscriptionTypeID: String
   SuccessorProductID: String
   TaxCategory: String
-}
-
-input CreatemjBizAppsOrdersProductPerformanceObligationInput {
-  ID: String
-  Name: String
-  ProductID: String
-  RestoreContext___: RestoreContextInput
-  RevenueRecognitionTypeID: String
-  StandaloneSellingPrice: Float
 }
 
 input CreatemjBizAppsOrdersProductPriceInput {
@@ -26228,7 +26225,6 @@ type Mutation {
   CreatemjBizAppsOrdersProductBundleItem(input: CreatemjBizAppsOrdersProductBundleItemInput!): mjBizAppsOrdersProductBundleItem_!
   CreatemjBizAppsOrdersProductCategory(input: CreatemjBizAppsOrdersProductCategoryInput!): mjBizAppsOrdersProductCategory_!
   CreatemjBizAppsOrdersProductEntitlement(input: CreatemjBizAppsOrdersProductEntitlementInput!): mjBizAppsOrdersProductEntitlement_!
-  CreatemjBizAppsOrdersProductPerformanceObligation(input: CreatemjBizAppsOrdersProductPerformanceObligationInput!): mjBizAppsOrdersProductPerformanceObligation_!
   CreatemjBizAppsOrdersProductPrice(input: CreatemjBizAppsOrdersProductPriceInput!): mjBizAppsOrdersProductPrice_!
   CreatemjBizAppsOrdersProductType(input: CreatemjBizAppsOrdersProductTypeInput!): mjBizAppsOrdersProductType_!
   CreatemjBizAppsOrdersPromotion(input: CreatemjBizAppsOrdersPromotionInput!): mjBizAppsOrdersPromotion_!
@@ -26696,7 +26692,6 @@ type Mutation {
   DeletemjBizAppsOrdersProductBundleItem(ID: String!, options___: DeleteOptionsInput!): mjBizAppsOrdersProductBundleItem_!
   DeletemjBizAppsOrdersProductCategory(ID: String!, options___: DeleteOptionsInput!): mjBizAppsOrdersProductCategory_!
   DeletemjBizAppsOrdersProductEntitlement(ID: String!, options___: DeleteOptionsInput!): mjBizAppsOrdersProductEntitlement_!
-  DeletemjBizAppsOrdersProductPerformanceObligation(ID: String!, options___: DeleteOptionsInput!): mjBizAppsOrdersProductPerformanceObligation_!
   DeletemjBizAppsOrdersProductPrice(ID: String!, options___: DeleteOptionsInput!): mjBizAppsOrdersProductPrice_!
   DeletemjBizAppsOrdersProductType(ID: String!, options___: DeleteOptionsInput!): mjBizAppsOrdersProductType_!
   DeletemjBizAppsOrdersPromotion(ID: String!, options___: DeleteOptionsInput!): mjBizAppsOrdersPromotion_!
@@ -27372,7 +27367,6 @@ type Mutation {
   UpdatemjBizAppsOrdersProductBundleItem(input: UpdatemjBizAppsOrdersProductBundleItemInput!): mjBizAppsOrdersProductBundleItem_!
   UpdatemjBizAppsOrdersProductCategory(input: UpdatemjBizAppsOrdersProductCategoryInput!): mjBizAppsOrdersProductCategory_!
   UpdatemjBizAppsOrdersProductEntitlement(input: UpdatemjBizAppsOrdersProductEntitlementInput!): mjBizAppsOrdersProductEntitlement_!
-  UpdatemjBizAppsOrdersProductPerformanceObligation(input: UpdatemjBizAppsOrdersProductPerformanceObligationInput!): mjBizAppsOrdersProductPerformanceObligation_!
   UpdatemjBizAppsOrdersProductPrice(input: UpdatemjBizAppsOrdersProductPriceInput!): mjBizAppsOrdersProductPrice_!
   UpdatemjBizAppsOrdersProductType(input: UpdatemjBizAppsOrdersProductTypeInput!): mjBizAppsOrdersProductType_!
   UpdatemjBizAppsOrdersPromotion(input: UpdatemjBizAppsOrdersPromotionInput!): mjBizAppsOrdersPromotion_!
@@ -29379,9 +29373,6 @@ type Query {
   RunmjBizAppsOrdersProductEntitlementDynamicView(input: RunDynamicViewInput!): RunmjBizAppsOrdersProductEntitlementViewResult!
   RunmjBizAppsOrdersProductEntitlementViewByID(input: RunViewByIDInput!): RunmjBizAppsOrdersProductEntitlementViewResult!
   RunmjBizAppsOrdersProductEntitlementViewByName(input: RunViewByNameInput!): RunmjBizAppsOrdersProductEntitlementViewResult!
-  RunmjBizAppsOrdersProductPerformanceObligationDynamicView(input: RunDynamicViewInput!): RunmjBizAppsOrdersProductPerformanceObligationViewResult!
-  RunmjBizAppsOrdersProductPerformanceObligationViewByID(input: RunViewByIDInput!): RunmjBizAppsOrdersProductPerformanceObligationViewResult!
-  RunmjBizAppsOrdersProductPerformanceObligationViewByName(input: RunViewByNameInput!): RunmjBizAppsOrdersProductPerformanceObligationViewResult!
   RunmjBizAppsOrdersProductPriceDynamicView(input: RunDynamicViewInput!): RunmjBizAppsOrdersProductPriceViewResult!
   RunmjBizAppsOrdersProductPriceViewByID(input: RunViewByIDInput!): RunmjBizAppsOrdersProductPriceViewResult!
   RunmjBizAppsOrdersProductPriceViewByName(input: RunViewByNameInput!): RunmjBizAppsOrdersProductPriceViewResult!
@@ -29531,7 +29522,6 @@ type Query {
   mjBizAppsOrdersProductBundleItem(ID: String!): mjBizAppsOrdersProductBundleItem_
   mjBizAppsOrdersProductCategory(ID: String!): mjBizAppsOrdersProductCategory_
   mjBizAppsOrdersProductEntitlement(ID: String!): mjBizAppsOrdersProductEntitlement_
-  mjBizAppsOrdersProductPerformanceObligation(ID: String!): mjBizAppsOrdersProductPerformanceObligation_
   mjBizAppsOrdersProductPrice(ID: String!): mjBizAppsOrdersProductPrice_
   mjBizAppsOrdersProductType(ID: String!): mjBizAppsOrdersProductType_
   mjBizAppsOrdersPromotion(ID: String!): mjBizAppsOrdersPromotion_
@@ -34928,16 +34918,6 @@ type RunmjBizAppsOrdersProductEntitlementViewResult {
   ErrorMessage: String
   ExecutionTime: Int
   Results: [mjBizAppsOrdersProductEntitlement_!]!
-  RowCount: Int
-  Success: Boolean!
-  TotalRowCount: Int
-  UserViewRunID: String
-}
-
-type RunmjBizAppsOrdersProductPerformanceObligationViewResult {
-  ErrorMessage: String
-  ExecutionTime: Int
-  Results: [mjBizAppsOrdersProductPerformanceObligation_!]!
   RowCount: Int
   Success: Boolean!
   TotalRowCount: Int
@@ -42220,6 +42200,8 @@ input UpdatemjBizAppsOrdersEventOrderLineInput {
   DiscountPct: Float
   FulfillmentStatus: String
   ID: String!
+  IsQuantityOverridden: Boolean
+  IsRollupParent: Boolean
   JournalEntryID: String
   LineNumber: Int
   LineTax: Float
@@ -42227,6 +42209,7 @@ input UpdatemjBizAppsOrdersEventOrderLineInput {
   LineTotalNet: Float
   OldValues___: [KeyValuePairInput!]
   OrderHeaderID: String
+  ParentOrderLineID: String
   ProductID: String
   ProductPriceID: String
   Quantity: Float
@@ -42394,6 +42377,8 @@ input UpdatemjBizAppsOrdersOrderLineInput {
   DiscountPct: Float
   FulfillmentStatus: String
   ID: String!
+  IsQuantityOverridden: Boolean
+  IsRollupParent: Boolean
   JournalEntryID: String
   LineNumber: Int
   LineTax: Float
@@ -42401,6 +42386,7 @@ input UpdatemjBizAppsOrdersOrderLineInput {
   LineTotalNet: Float
   OldValues___: [KeyValuePairInput!]
   OrderHeaderID: String
+  ParentOrderLineID: String
   ProductID: String
   ProductPriceID: String
   Quantity: Float
@@ -42684,16 +42670,6 @@ input UpdatemjBizAppsOrdersProductInput {
   SubscriptionTypeID: String
   SuccessorProductID: String
   TaxCategory: String
-}
-
-input UpdatemjBizAppsOrdersProductPerformanceObligationInput {
-  ID: String!
-  Name: String
-  OldValues___: [KeyValuePairInput!]
-  ProductID: String
-  RestoreContext___: RestoreContextInput
-  RevenueRecognitionTypeID: String
-  StandaloneSellingPrice: Float
 }
 
 input UpdatemjBizAppsOrdersProductPriceInput {
@@ -44496,12 +44472,15 @@ type mjBizAppsOrdersEventOrderLine_ {
   DiscountPct: Float!
   FulfillmentStatus: String
   ID: String!
+  IsQuantityOverridden: Boolean!
+  IsRollupParent: Boolean!
   JournalEntryID: String
   LineNumber: Int!
   LineTax: Float!
   LineTotalGross: Float
   LineTotalNet: Float
   OrderHeaderID: String!
+  ParentOrderLineID: String
   ProductID: String!
   ProductPriceID: String
   Quantity: Float!
@@ -44943,6 +44922,16 @@ type mjBizAppsOrdersOrderLine_ {
   """
   FulfillmentStatus: String
   ID: String!
+
+  """
+  TRUE when a child's quantity was hand-edited, detaching it from the parent quantity ripple. Without it, bumping the bundle quantity would silently overwrite a deliberate correction.
+  """
+  IsQuantityOverridden: Boolean!
+
+  """
+  TRUE on an expanded bundle's parent line. The parent is customer-facing and contributes ZERO to every rollup - subtotal, tax base, charge base, discount base, GL - because the bundle price is allocated down to its children. Set by the expansion path, never authored.
+  """
+  IsRollupParent: Boolean!
   JournalEntry: String
 
   """
@@ -44967,6 +44956,11 @@ type mjBizAppsOrdersOrderLine_ {
   LineTotalNet: Float
   OrderHeader: String!
   OrderHeaderID: String!
+
+  """
+  The bundle line this component was expanded from (D45). NULL on ordinary lines. Distinct from SourceBundleProductID, which names the bundle PRODUCT and therefore cannot tell two instances of the same bundle apart on one order. One level only: a component may not itself be a parent.
+  """
+  ParentOrderLineID: String
   Product: String!
   ProductID: String!
 
@@ -44984,6 +44978,7 @@ type mjBizAppsOrdersOrderLine_ {
   """
   RevenueRecognitionScheduleID: String
   ReversesOrderLineID: String
+  RootParentOrderLineID: String
   RootReversesOrderLineID: String
 
   """
@@ -45020,6 +45015,7 @@ type mjBizAppsOrdersOrderLine_ {
   mjBizAppsOrdersOrderChargeAllocations_OrderLineIDArray: [mjBizAppsOrdersOrderChargeAllocation_!]!
   mjBizAppsOrdersOrderLineDimensions_OrderLineIDArray: [mjBizAppsOrdersOrderLineDimension_!]!
   mjBizAppsOrdersOrderLinePriceComponents_OrderLineIDArray: [mjBizAppsOrdersOrderLinePriceComponent_!]!
+  mjBizAppsOrdersOrderLines_ParentOrderLineIDArray: [mjBizAppsOrdersOrderLine_!]!
   mjBizAppsOrdersOrderLines_ReversesOrderLineIDArray: [mjBizAppsOrdersOrderLine_!]!
   mjBizAppsOrdersPaymentLines_OrderLineIDArray: [mjBizAppsOrdersPaymentLine_!]!
   mjBizAppsOrdersStoredValueAccounts_IssuedFromOrderLineIDArray: [mjBizAppsOrdersStoredValueAccount_!]!
@@ -45061,6 +45057,7 @@ type mjBizAppsOrdersPaymentDetail_ {
   ProviderInstrumentRef: String
   ReferenceNumber: String
   RoutingLast4: String
+  SourceCustomerPaymentMethod: String
   SourceCustomerPaymentMethodID: String
   SourceOrderHeader: String
 
@@ -45503,27 +45500,6 @@ type mjBizAppsOrdersProductEntitlement_ {
 }
 
 """
-ASC 606 performance obligation (BO-D35): one or more per product; SSP drives bundle allocation. Fields now; the allocation engine is deferred. GL routing via GLAccountLink (MOD-2).
-"""
-type mjBizAppsOrdersProductPerformanceObligation_ {
-  ID: String!
-
-  """Display name of the obligation."""
-  Name: String
-  Product: String!
-  ProductID: String!
-  RevenueRecognitionType: String!
-  RevenueRecognitionTypeID: String!
-
-  """
-  Standalone selling price used for relative-SSP allocation across obligations.
-  """
-  StandaloneSellingPrice: Float!
-  _mj__CreatedAt: Timestamp!
-  _mj__UpdatedAt: Timestamp!
-}
-
-"""
 ONE ROW IS ONE PRICE RULE. Several rows per product and list express quantity bands, seasons, promotional windows and time-of-day rates; Priority disambiguates. The row carries both the applicability predicates and the outcome, so there is no separate rule table to keep in step. Ties on Priority are refused when WRITTEN, not resolved when read - an arbitrary winner between two applicable rules is stable in test and liable to flip in production.
 """
 type mjBizAppsOrdersProductPrice_ {
@@ -45727,7 +45703,6 @@ type mjBizAppsOrdersProduct_ {
   mjBizAppsOrdersProductBundleItems_BundleProductIDArray: [mjBizAppsOrdersProductBundleItem_!]!
   mjBizAppsOrdersProductBundleItems_ComponentProductIDArray: [mjBizAppsOrdersProductBundleItem_!]!
   mjBizAppsOrdersProductEntitlements_ProductIDArray: [mjBizAppsOrdersProductEntitlement_!]!
-  mjBizAppsOrdersProductPerformanceObligations_ProductIDArray: [mjBizAppsOrdersProductPerformanceObligation_!]!
   mjBizAppsOrdersProductPrices_ProductIDArray: [mjBizAppsOrdersProductPrice_!]!
   mjBizAppsOrdersProducts_SuccessorProductIDArray: [mjBizAppsOrdersProduct_!]!
   mjBizAppsOrdersPromotionTargets_ProductIDArray: [mjBizAppsOrdersPromotionTarget_!]!
@@ -45925,7 +45900,6 @@ type mjBizAppsOrdersRevenueRecognitionType_ {
   Sequence: Int!
   _mj__CreatedAt: Timestamp!
   _mj__UpdatedAt: Timestamp!
-  mjBizAppsOrdersProductPerformanceObligations_RevenueRecognitionTypeIDArray: [mjBizAppsOrdersProductPerformanceObligation_!]!
   mjBizAppsOrdersProductTypes_DefaultRevenueRecognitionTypeIDArray: [mjBizAppsOrdersProductType_!]!
   mjBizAppsOrdersProducts_RevenueRecognitionTypeIDArray: [mjBizAppsOrdersProduct_!]!
   mjBizAppsOrdersRevenueRecognitionSchedules_RevenueRecognitionTypeIDArray: [mjBizAppsOrdersRevenueRecognitionSchedule_!]!

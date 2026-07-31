@@ -44,6 +44,7 @@ import {
   InRolledBackTransaction,
   ORDERS_SCHEMA,
   TeardownOrdersFixture,
+  TxMaybeOne,
   TxOne,
   TxQuery,
 } from "../fixture.js";
@@ -238,7 +239,7 @@ async function PL4Body(ctx: IntegrationCheckContext): Promise<void> {
     // 'Processing Fee' is NOT one of accounting's eight seeded roles — that is exactly
     // why the factory tolerates it missing (PL5). Here we create it to exercise the
     // path where it IS configured. Reused if a prior check in this bundle already made it.
-    const existingRole = await TxOne<{ ID: string }>(
+    const existingRole = await TxMaybeOne<{ ID: string }>(
       ctx,
       `SELECT ID FROM ${ACCT_SCHEMA}.GLAccountRole WHERE Name='Processing Fee'`,
     );

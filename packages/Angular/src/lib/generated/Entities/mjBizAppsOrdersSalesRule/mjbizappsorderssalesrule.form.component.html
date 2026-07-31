@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Rule Definition Section -->
+    <!-- Rule Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="ruleDefinition"
-        SectionName="Rule Definition"
-        Icon="fa fa-info-circle"
+        SectionKey="ruleConfiguration"
+        SectionName="Rule Configuration"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -44,11 +44,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Rule Scope Section -->
+    <!-- Scope and Logic Section -->
     <mj-collapsible-panel
-        SectionKey="ruleScope"
-        SectionName="Rule Scope"
-        Icon="fa fa-crosshairs"
+        SectionKey="scopeAndLogic"
+        SectionName="Scope and Logic"
+        Icon="fa fa-code"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -67,19 +67,9 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Rule Logic Section -->
-    <mj-collapsible-panel
-        SectionKey="ruleLogic"
-        SectionName="Rule Logic"
-        Icon="fa fa-code"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="PredicateJson"
             Type="code"
             [EditMode]="EditMode"
@@ -88,11 +78,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Approval Configuration Section -->
+    <!-- Approval Workflow Section -->
     <mj-collapsible-panel
-        SectionKey="approvalConfiguration"
-        SectionName="Approval Configuration"
-        Icon="fa fa-check-double"
+        SectionKey="approvalWorkflow"
+        SectionName="Approval Workflow"
+        Icon="fa fa-check-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

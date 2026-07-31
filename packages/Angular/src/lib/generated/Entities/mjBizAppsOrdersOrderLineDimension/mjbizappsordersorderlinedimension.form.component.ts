@@ -15,8 +15,8 @@ export class mjBizAppsOrdersOrderLineDimensionFormComponent extends BaseFormComp
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'orderLineAssociation', sectionName: 'Order Line Association', isExpanded: true },
-            { sectionKey: 'dimensionDetails', sectionName: 'Dimension Details', isExpanded: true },
+            { sectionKey: 'orderLineReference', sectionName: 'Order Line Reference', isExpanded: true },
+            { sectionKey: 'dimensionConfiguration', sectionName: 'Dimension Configuration', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

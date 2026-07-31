@@ -39,7 +39,6 @@ import {
 import {
   COMMON_SCHEMA,
   CreateOrdersFixture,
-  createViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -48,15 +47,25 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
-import { PERSON_ENTITY, RELATIONSHIP_ENTITY } from "../entity-names.js";
 import { ConfirmOrder, type LineSpec } from "../order-builder.js";
 
 /** Create a person to receive a seat, returning its ID. */
 async function makePerson(ctx: IntegrationCheckContext, label: string): Promise<string> {
-  return createViaEntity(ctx, PERSON_ENTITY, {
-    FirstName: label,
-    LastName: Fx().Run,
-  });
+  // WRITTEN DIRECTLY, and this is the one place in the suite where that is forced rather than chosen.
+  // Common's People entity is backed by an ENRICHED VIEW: 34 EntityFields (DisplayName,
+  // PrimaryAddress*, CurrentOrganization* and friends are joined or computed) against a
+  // spCreatePerson that accepts 16. BaseEntity.Save passes every declared field, so it fails with
+  // "Procedure or function spCreatePerson has too many arguments specified". The installed common
+  // schema is older than the common-server package expects — the same version skew that makes tasks'
+  // views select a Person.DisplayName our table does not have. Not ours to fix from this repo, and a
+  // Person is a row we merely REFERENCE rather than resolve through, so SQL is the honest boundary.
+  const id = randomUUID();
+  await TxQuery(
+    ctx,
+    `INSERT INTO ${COMMON_SCHEMA}.Person (ID, FirstName, LastName)
+     VALUES ('${id}','${label}','${Fx().Run}')`,
+  );
+  return id;
 }
 
 /** The subscriptions produced by an order, with their resolved subscriber. */
@@ -406,13 +415,13 @@ async function affiliate(
     `SELECT ID FROM ${COMMON_SCHEMA}.RelationshipType WHERE Name='${typeName}'`,
   );
   Assert(type?.ID != null, `no RelationshipType named '${typeName}'`);
-  await createViaEntity(ctx, RELATIONSHIP_ENTITY, {
-    RelationshipTypeID: type!.ID,
-    FromPersonID: personID,
-    ToOrganizationID: organizationID,
-    Status: "Active",
-    StartDate: startDate,
-  });
+  // Same common-schema skew as makePerson above.
+  await TxQuery(
+    ctx,
+    `INSERT INTO ${COMMON_SCHEMA}.Relationship
+        (ID, RelationshipTypeID, FromPersonID, ToOrganizationID, Status, StartDate)
+     VALUES ('${randomUUID()}','${type!.ID}','${personID}','${organizationID}','Active','${startDate}')`,
+  );
 }
 
 /** Point the app setting at a value for the duration of a check. */
