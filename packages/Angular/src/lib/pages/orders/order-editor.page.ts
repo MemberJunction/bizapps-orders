@@ -1,0 +1,321 @@
+import {
+    Component,
+    EventEmitter,
+    Input,
+    OnDestroy,
+    OnInit,
+    Output,
+    inject,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import {
+    OrderDraft,
+    type OrderDraftLine,
+    type OrdersPreviewOrderOutput,
+} from '@mj-biz-apps/orders-entities';
+
+import { MJOOrderEntryService, type MJOPreviewState } from '../../services/order-entry.service';
+import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
+import { MJOStatusStepperComponent } from '../../panels/status-stepper.component';
+import { MJOJournalEntryPreviewComponent, type MJOJournalEntry } from '../../panels/journal-entry-preview.component';
+import { MJODecompositionLadderComponent, type MJOLadderRow } from '../../panels/decomposition-ladder.component';
+import {
+    MJOConsequenceChipComponent,
+    MJOOriginChipComponent,
+    MJOPriceSourceBadgeComponent,
+    MJOStatedValueComponent,
+} from '../../panels/chips.component';
+import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
+import { BuildOrderStages, type MJOOrderStage, type MJOStageChangeRequestEventArgs } from '../../panels/order-stages';
+import type { MJOProductOption } from './fast-entry.page';
+
+/** Which tab is showing. */
+export type MJOEditorTab = 'lines' | 'parties' | 'charges' | 'payment' | 'accounting';
+
+/** A tab, with the red-dot state that drives completeness gating. */
+export interface MJOEditorTabDef {
+    Key: MJOEditorTab;
+    Label: string;
+    /** Count badge — lines, charges. Omit where a count says nothing. */
+    Count?: number | null;
+    /** Something on this tab is required and missing. */
+    HasError?: boolean;
+}
+
+/**
+ * `mjo-order-editor-page` — the hard order, in five tabs.
+ *
+ * The full lane. Where fast entry covers one customer and a few products, this
+ * covers the order that has per-line ship-to parties, charge overrides, dimension
+ * tags and lines belonging to different companies.
+ *
+ * FIVE NUMBERS ON THE ROW, THE REST IN A DRAWER. An order line carries around
+ * eighteen meaningful fields. Putting them all inline makes the common case
+ * unreadable to serve the rare one, so the row shows product, quantity, unit
+ * price, discount and line total, and everything else opens on click.
+ *
+ * REQUIRED STATE IS A RED DOT ON THE TAB, never a disabled Save with no
+ * explanation. The validation comes from `OrderDraft.SectionsWithErrors`, so the
+ * dot and the reason are the same source.
+ *
+ * CONFIRMING IS INTERCEPTED. The stepper's stage change is cancelable, and this
+ * page always cancels a move to `Confirmed` so the pre-flight review can run
+ * first — booking journal entries is not undoable, and an irreversible action
+ * gets a review step.
+ *
+ * ## Example
+ *
+ * ```html
+ * <mjo-order-editor-page
+ *   [Draft]="draft"
+ *   [Catalog]="products"
+ *   [Status]="'Draft'"
+ *   (ConfirmRequested)="openPreflight($event)" />
+ * ```
+ */
+@Component({
+    selector: 'mjo-order-editor-page',
+    standalone: true,
+    imports: [
+        CommonModule,
+        FormsModule,
+        MJOMoneyStripComponent,
+        MJOStatusStepperComponent,
+        MJOJournalEntryPreviewComponent,
+        MJODecompositionLadderComponent,
+        MJOConsequenceChipComponent,
+        MJOOriginChipComponent,
+        MJOPriceSourceBadgeComponent,
+        MJOStatedValueComponent,
+        MJOMoneyPipe,
+    ],
+    templateUrl: './order-editor.page.html',
+    styleUrls: ['./order-editor.page.css'],
+})
+export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
+    private readonly orders = inject(MJOOrderEntryService);
+
+    /**
+     * The order being edited. Supplied by the host — often the SAME instance fast
+     * entry was working on, which is what makes escalation lossless.
+     */
+    @Input() Draft!: OrderDraft;
+
+    /** Catalog for the product column and the add-line picker. */
+    @Input() Catalog: MJOProductOption[] = [];
+
+    /** Where the order is. Drives the stepper and which verbs are offered. */
+    @Input() Status: MJOOrderStage = 'Draft';
+
+    /** Document number, once the order has one. Drafts have none. */
+    @Input() OrderNumber: string | null = null;
+
+    /** Where the order came from. */
+    @Input() OriginChannel: string | null = 'Staff';
+
+    /** The originating system's reference, when there is one. */
+    @Input() OriginExternalID: string | null = null;
+
+    /** Journal entries — populated on the Accounting tab from a preview. */
+    @Input() JournalEntries: MJOJournalEntry[] = [];
+
+    /** The user asked to confirm. The host runs the pre-flight. */
+    @Output() ConfirmRequested = new EventEmitter<OrderDraft>();
+
+    /** The draft was saved. */
+    @Output() Saved = new EventEmitter<OrderDraft>();
+
+    /** A line was opened. The host may show it in a slide-in instead of the built-in drawer. */
+    @Output() LineOpened = new EventEmitter<OrderDraftLine>();
+
+    /** An entry's Accounting link was followed. */
+    @Output() OpenInAccounting = new EventEmitter<MJOJournalEntry>();
+
+    /** Active tab. */
+    public ActiveTab: MJOEditorTab = 'lines';
+
+    /** Latest preview. */
+    public Preview: MJOPreviewState = { Result: null, Loading: false, Error: null };
+
+    /** The line whose drawer is open, or null. */
+    public OpenLine: OrderDraftLine | null = null;
+
+    private stopWatching: (() => void) | null = null;
+
+    public ngOnInit(): void {
+        // Tolerate a host that forgot to supply one rather than throwing: a blank
+        // editor is recoverable, a crashed tab is not.
+        if (!this.Draft) this.Draft = new OrderDraft({ CompanyID: '' });
+
+        this.stopWatching = this.Draft.Subscribe(() => {
+            this.orders.SchedulePreview(this.Draft, (state) => (this.Preview = state));
+        });
+        void this.orders.PreviewNow(this.Draft, (state) => (this.Preview = state));
+    }
+
+    public ngOnDestroy(): void {
+        this.stopWatching?.();
+        this.orders.CancelPending();
+    }
+
+    /* ── Chrome ─────────────────────────────────────────────────────────── */
+
+    public get Stages() {
+        return BuildOrderStages(this.Status, this.RequiresFulfillment);
+    }
+
+    /** Whether any line must ship — changes what the stepper says about Fulfilled. */
+    public get RequiresFulfillment(): boolean {
+        return (this.Preview.Result?.Lines ?? []).some((l) => l.RequiresFulfillment);
+    }
+
+    public get Totals(): OrdersPreviewOrderOutput['Totals'] | null {
+        return this.Preview.Result?.Totals ?? null;
+    }
+
+    /** The five tabs, with counts and the red-dot state. */
+    public get Tabs(): MJOEditorTabDef[] {
+        const sections = this.Draft?.SectionsWithErrors ?? [];
+        const chargeCount = this.Preview.Result?.Charges?.length ?? 0;
+        return [
+            { Key: 'lines', Label: 'Lines', Count: this.Draft?.LineCount ?? 0, HasError: sections.includes('lines') },
+            { Key: 'parties', Label: 'Parties', HasError: sections.includes('parties') },
+            { Key: 'charges', Label: 'Charges & tax', Count: chargeCount || null, HasError: sections.includes('charges') },
+            { Key: 'payment', Label: 'Payment', HasError: sections.includes('payment') },
+            { Key: 'accounting', Label: 'Accounting' },
+        ];
+    }
+
+    public SelectTab(tab: MJOEditorTab): void {
+        this.ActiveTab = tab;
+    }
+
+    /**
+     * Always cancels a move to Confirmed so the pre-flight runs first. Booking is
+     * not undoable, and a stepper click is too easy a way to trigger it.
+     */
+    public OnBeforeStageChange(event: MJOStageChangeRequestEventArgs): void {
+        if (event.To === 'Confirmed') {
+            event.Cancel = true;
+            event.CancelReason = 'Pre-flight review runs first.';
+            this.ConfirmRequested.emit(this.Draft);
+        }
+    }
+
+    /* ── Lines ──────────────────────────────────────────────────────────── */
+
+    public get Lines(): OrderDraftLine[] {
+        return this.Draft?.Lines ?? [];
+    }
+
+    public ProductFor(line: OrderDraftLine): MJOProductOption | undefined {
+        return this.Catalog.find((p) => p.ID === line.ProductID);
+    }
+
+    public PricedLine(line: OrderDraftLine): OrdersPreviewOrderOutput['Lines'][number] | undefined {
+        return this.Preview.Result?.Lines?.find((l) => l.ClientKey === line.ClientKey);
+    }
+
+    public SetQuantity(line: OrderDraftLine, raw: string): void {
+        const n = Number.parseFloat(raw);
+        this.Draft.UpdateLine(line.ClientKey, { Quantity: !Number.isFinite(n) || n === 0 ? 1 : n });
+    }
+
+    /**
+     * Typing a price is DIRECT ENTRY and wins over any resolved one. Clearing the
+     * field restores resolution, which is why an empty string maps to `undefined`
+     * rather than to zero.
+     */
+    public SetUnitPrice(line: OrderDraftLine, raw: string): void {
+        const trimmed = raw.trim();
+        if (!trimmed) {
+            this.Draft.UpdateLine(line.ClientKey, { UnitPrice: undefined });
+            return;
+        }
+        const n = Number.parseFloat(trimmed.replace(/[^0-9.\-]/g, ''));
+        if (Number.isFinite(n) && n >= 0) this.Draft.UpdateLine(line.ClientKey, { UnitPrice: n });
+    }
+
+    public Remove(line: OrderDraftLine): void {
+        if (this.OpenLine?.ClientKey === line.ClientKey) this.OpenLine = null;
+        this.Draft.RemoveLine(line.ClientKey);
+    }
+
+    public Open(line: OrderDraftLine): void {
+        this.OpenLine = line;
+        this.LineOpened.emit(line);
+    }
+
+    public CloseDrawer(): void {
+        this.OpenLine = null;
+    }
+
+    /* ── Charges & tax ──────────────────────────────────────────────────── */
+
+    public get Charges() {
+        return this.Preview.Result?.Charges ?? [];
+    }
+
+    public get TaxableBase() {
+        return this.Preview.Result?.Totals.TaxableBase ?? null;
+    }
+
+    /** Lines with their tax outcome, for the "why did this tax" panel. */
+    public get TaxExplanations(): OrdersPreviewOrderOutput['Lines'] {
+        return this.Preview.Result?.Lines ?? [];
+    }
+
+    /* ── Totals ladder (Lines tab) ──────────────────────────────────────── */
+
+    public get LadderRows(): MJOLadderRow[] {
+        const t = this.Totals;
+        if (!t) return [];
+        const rows: MJOLadderRow[] = [{ Label: 'Subtotal at list', Amount: t.ListSubtotal }];
+        if (t.DiscountTotal > 0) {
+            rows.push({ Label: 'Discounts', Amount: t.DiscountTotal, IsSub: true, IsCredit: true });
+            rows.push({ Label: '<b>Net after discounts</b>', Amount: t.NetTotal });
+        }
+        if (t.ChargeTotal) rows.push({ Label: 'Charges', Amount: t.ChargeTotal });
+        if (t.TaxTotal) {
+            rows.push({
+                Label: 'Tax',
+                Amount: t.TaxTotal,
+                Detail: `on ${FormatMoney(t.TaxableBase.Base)}`,
+                Why:
+                    'Every layer computes on the same base — a non-tax charge enlarges it, a tax charge does not. ' +
+                    'That is what "tax layers never compound" means.',
+            });
+        }
+        rows.push({ Label: 'Total', Amount: t.GrossTotal, IsTotal: true });
+        return rows;
+    }
+
+    /* ── Actions ────────────────────────────────────────────────────────── */
+
+    public get IsEditable(): boolean {
+        // Edit gating rides the status. After confirming, corrections are reversing
+        // orders — so the fields lock and the verbs change rather than a Save
+        // sitting there greyed out with no explanation.
+        return this.Status === 'Draft' || this.Status === 'Quoted';
+    }
+
+    public get CanConfirm(): boolean {
+        return this.IsEditable && this.Draft?.Validate().IsValid === true && !!this.Preview.Result;
+    }
+
+    /** Errors worth surfacing above the tabs, so a red dot is never the only clue. */
+    public get Issues() {
+        return this.Draft?.Validate().Issues ?? [];
+    }
+
+    public async SaveDraft(): Promise<void> {
+        const saved = await this.orders.Save(this.Draft);
+        if (saved) this.Saved.emit(this.Draft);
+    }
+
+    public RequestConfirm(): void {
+        if (!this.CanConfirm) return;
+        this.ConfirmRequested.emit(this.Draft);
+    }
+}

@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-22 - Payment Providers",
+    "Description": "The gateway seam against a real database (PV1-PV12). The drivers were unit-tested and mutation-tested, which proved the arithmetic; what that could not prove is that the ROWS are what the code thinks they are - and they were not. Two assumptions failed the moment anything read a real schema: PaymentHeader has no ProviderIntentID (the gateway's string lives on PaymentIntent, and the header holds a foreign key to that row), and there is no CurrencyCode on a payment at all (MOD-4 makes these single-currency, so it is a property of the collecting company). Both compiled, because every column access on a server subclass is a cast, and both were undefined at run time - refusing every provider-backed capture. Found by running, not by reading. These checks are therefore weighted toward what only a database can answer: does the provider row resolve to the right driver, does the driver reach the entity, does the fee land where the ledger expects it. Stripe's deterministic stub is selected by IsLiveMode=0, so the real capture path runs with no network and no Stripe account; the live path is verified separately.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A configured provider row resolves to its driver via the type's Code rather than its Name; three seeded types resolve to three DISTINCT drivers, so a missing Load anchor cannot go unnoticed; an inactive provider is refused with a reason; a capture through a provider reaches the gateway and records a non-zero fee, gross and net; fee plus net reconciles to gross to the penny on awkward amounts so the D18 entry can balance; a payment with NO provider captures exactly as it always did, since back-office corrections and account-credit transfers have none; a provider named without an intent is refused with a message naming the intent; the provider intent string is proven to come from PaymentIntent rather than the header; a re-saved captured payment does not charge the customer twice, with ProviderChargeID as the idempotency key; a Manual provider captures with a genuine zero fee; the order's trigger-maintained rollups follow a provider capture as they do any other; and the capture's journal entry balances."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "payment-providers"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "8D5A4726-9CD3-411D-B820-F0F09FECC04E"
+  },
+  "sync": {
+    "lastModified": "2026-07-30T21:32:27.852Z",
+    "checksum": "5d4550d62452cd1db138ee1cfa082d7f38771a6866668fb1ea8f0e78e0b405c7"
+  }
+}

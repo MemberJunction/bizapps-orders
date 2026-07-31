@@ -110,6 +110,31 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
+    <!-- Product Prices Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersProductPrices"
+        SectionName="Product Prices"
+        Icon="fa fa-tags"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductPrices')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Prices','PriceListID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Prices')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductPrices')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductPrices', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <!-- Order Company Policies Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderCompanyPolicies"
@@ -139,7 +164,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPriceListAssignments"
         SectionName="Price List Assignments"
-        Icon="fa fa-tags"
+        Icon="fa fa-list-ol"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
@@ -154,31 +179,6 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPriceListAssignments', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Product Prices Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersProductPrices"
-        SectionName="Product Prices"
-        Icon="fa fa-tags"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductPrices')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Prices','PriceListID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Prices')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductPrices')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductPrices', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

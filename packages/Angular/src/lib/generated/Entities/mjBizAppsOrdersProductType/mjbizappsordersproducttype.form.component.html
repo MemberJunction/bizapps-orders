@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Type Details Section -->
+    <!-- General Information Section -->
     <mj-collapsible-panel
-        SectionKey="productTypeDetails"
-        SectionName="Product Type Details"
+        SectionKey="generalInformation"
+        SectionName="General Information"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -52,18 +52,42 @@
 
     </mj-collapsible-panel>
 
-    <!-- Operational Settings Section -->
+    <!-- Order Processing Section -->
     <mj-collapsible-panel
-        SectionKey="operationalSettings"
-        SectionName="Operational Settings"
-        Icon="fa fa-cogs"
+        SectionKey="orderProcessing"
+        SectionName="Order Processing"
+        Icon="fa fa-tasks"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="RequiresFulfillment"
             Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DefaultEntitlementGrantTiming"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DefaultEntitlementQuantityMode"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DefaultEntitlementValidityMode"
+            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -114,45 +138,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Entitlement Configuration Section -->
+    <!-- System Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="entitlementConfiguration"
-        SectionName="Entitlement Configuration"
-        Icon="fa fa-shield-alt"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="DefaultEntitlementGrantTiming"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="DefaultEntitlementQuantityMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="DefaultEntitlementValidityMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- System Metadata Section -->
-    <mj-collapsible-panel
-        SectionKey="systemMetadata"
-        SectionName="System Metadata"
-        Icon="fa fa-database"
+        SectionKey="systemConfiguration"
+        SectionName="System Configuration"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -171,6 +161,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- System Metadata Section -->
+    <mj-collapsible-panel
+        SectionKey="systemMetadata"
+        SectionName="System Metadata"
+        Icon="fa fa-database"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

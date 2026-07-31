@@ -1,0 +1,552 @@
+<!--
+  Order editor — the hard order in five tabs.
+
+  Ported from mockups/orders/editor.html and using the same class names, which
+  resolve through orders-kit.css.
+-->
+
+<!-- ═══════ Persistent chrome: identity, stage, money ═══════ -->
+<div class="ed-sticky">
+  <div class="ed-identity">
+    <div>
+      <span class="l">Order</span>
+      <span class="v mono">{{ OrderNumber ?? 'New draft' }}</span>
+    </div>
+    <div>
+      <span class="l">Type</span>
+      <span class="v">{{ Draft.Header.OrderType ?? 'Sale' }}</span>
+    </div>
+    <div>
+      <span class="l">Order date</span>
+      <span class="v">{{ Draft.Header.OrderDate ?? 'today' }}</span>
+    </div>
+    <div>
+      <span class="l">Due</span>
+      <span class="v">{{ Draft.Header.DueDate ?? '—' }}</span>
+    </div>
+    <div>
+      <span class="l">Origin</span>
+      <span class="v"><mjo-origin-chip [Channel]="OriginChannel" [ExternalID]="OriginExternalID" /></span>
+    </div>
+    <div>
+      <span class="l">Their PO</span>
+      <span class="v mono">{{ Draft.Header.ExternalDocumentNumber ?? '—' }}</span>
+    </div>
+  </div>
+
+  <div class="row wrap ed-stage-row">
+    <mjo-status-stepper
+      [Current]="Status"
+      [Stages]="Stages"
+      [ReadOnly]="!IsEditable"
+      (BeforeStageChange)="OnBeforeStageChange($event)" />
+    <span class="small muted spacer ed-stage-note">
+      Stage order is fixed; skipping <i>forward</i> is legal. After confirming, corrections are
+      reversing orders.
+    </span>
+  </div>
+
+  <mjo-money-strip
+    class="ed-money"
+    [Total]="Totals?.GrossTotal ?? null"
+    [Paid]="0"
+    [Balance]="Totals?.GrossTotal ?? null"
+    [ShowPaid]="Status !== 'Draft'"
+    [PaymentStatus]="Status === 'Draft' ? null : 'Unpaid'"
+    Note="Rollups are trigger-maintained from the lines — never authored." />
+
+  <!-- Issues above the tabs: a red dot alone leaves the user hunting. -->
+  @if (Issues.length) {
+    <div class="mj-banner mj-banner--warning ed-issues">
+      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+      <div class="body">
+        <strong>{{ Issues.length }} thing{{ Issues.length === 1 ? '' : 's' }} to sort out before this can confirm.</strong>
+        <ul class="ed-issues__list">
+          @for (issue of Issues; track issue.Code) {
+            <li>{{ issue.Message }}</li>
+          }
+        </ul>
+      </div>
+    </div>
+  }
+
+  <div class="mj-tabs ed-tabs" role="tablist">
+    @for (tab of Tabs; track tab.Key) {
+      <button
+        type="button"
+        class="mj-tab"
+        role="tab"
+        [class.is-active]="ActiveTab === tab.Key"
+        [attr.aria-selected]="ActiveTab === tab.Key"
+        (click)="SelectTab(tab.Key)">
+        {{ tab.Label }}
+        @if (tab.Count != null) {
+          <span class="n">{{ tab.Count }}</span>
+        }
+        @if (tab.HasError) {
+          <span class="dot" [attr.aria-label]="tab.Label + ' has something required and missing'"></span>
+        }
+      </button>
+    }
+  </div>
+</div>
+
+<!-- ═══════ LINES ═══════ -->
+@if (ActiveTab === 'lines') {
+  <div class="ed-pane">
+    <div class="mj-table-wrap">
+      <table class="mj-table mj-table--lines">
+        <thead>
+          <tr>
+            <th class="ed-col-n">#</th>
+            <th>Product</th>
+            <th class="ed-col-co">Co.</th>
+            <th class="num ed-col-qty">Qty</th>
+            <th class="num ed-col-price">Unit price</th>
+            <th class="num ed-col-disc">Discount</th>
+            <th class="num ed-col-net">Line net</th>
+            <th class="num ed-col-tax">Tax</th>
+            <th class="num ed-col-total">Line total</th>
+            <th class="ed-col-act"></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (line of Lines; track line.ClientKey; let i = $index) {
+            <tr class="is-clickable" (click)="Open(line)">
+              <td class="muted">{{ i + 1 }}</td>
+
+              <td>
+                <div class="ed-line-nm">
+                  <span class="primary">{{ ProductFor(line)?.Name ?? 'Product' }}</span>
+                  <span class="secondary">{{ ProductFor(line)?.SKU }}</span>
+                </div>
+                <div class="ed-line-conseq">
+                  @if (PricedLine(line); as priced) {
+                    @if (priced.ServicePeriodSource) {
+                      <mjo-consequence-chip Kind="event">{{ priced.ServicePeriodSource }}</mjo-consequence-chip>
+                    }
+                    @if (priced.RequiresFulfillment) {
+                      <mjo-consequence-chip Kind="fulfillment">Ships</mjo-consequence-chip>
+                    }
+                    @if (priced.TaxZeroReason) {
+                      <mjo-consequence-chip Kind="untaxable">Untaxable</mjo-consequence-chip>
+                    }
+                  }
+                </div>
+              </td>
+
+              <td>
+                <span class="mj-chip mj-chip--outline">{{ PricedLine(line)?.CompanyName ?? '—' }}</span>
+              </td>
+
+              <td class="num" (click)="$event.stopPropagation()">
+                <input
+                  class="mj-input is-num ed-input-qty"
+                  [value]="line.Quantity"
+                  [disabled]="!IsEditable"
+                  (change)="SetQuantity(line, $any($event.target).value)"
+                  aria-label="Quantity">
+              </td>
+
+              <td class="num" (click)="$event.stopPropagation()">
+                <input
+                  class="mj-input is-num ed-input-price"
+                  [value]="line.UnitPriceWasStated ? line.UnitPrice : (PricedLine(line)?.UnitPrice ?? '')"
+                  [disabled]="!IsEditable"
+                  placeholder="resolve"
+                  (change)="SetUnitPrice(line, $any($event.target).value)"
+                  aria-label="Unit price">
+                <mjo-price-source-badge
+                  [Source]="PricedLine(line)?.PriceSource ?? null"
+                  [Overridden]="line.UnitPriceWasStated" />
+              </td>
+
+              <td class="num">
+                @if (PricedLine(line)?.DiscountAmount) {
+                  <span class="mj-money--credit">−{{ PricedLine(line)?.DiscountAmount | mjoMoney: { Sign: 'absolute' } }}</span>
+                } @else {
+                  <span class="muted">—</span>
+                }
+              </td>
+
+              <td class="num strong">{{ PricedLine(line)?.LineTotalNet | mjoMoney }}</td>
+
+              <td class="num">
+                {{ PricedLine(line)?.LineTax | mjoMoney: { Zero: '$0.00' } }}
+                @if (PricedLine(line)?.TaxLayers?.length) {
+                  <div class="secondary">{{ PricedLine(line)?.TaxLayers?.length }} layers</div>
+                }
+              </td>
+
+              <td class="num strong">{{ PricedLine(line)?.LineTotalGross | mjoMoney }}</td>
+
+              <td (click)="$event.stopPropagation()">
+                @if (IsEditable) {
+                  <button type="button" class="mj-iconbtn" (click)="Remove(line)" aria-label="Remove line">
+                    <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                  </button>
+                }
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="10">
+                <div class="mj-empty ed-empty">
+                  <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+                  <div class="t">No lines yet</div>
+                  <div class="small">An order needs at least one line before it can confirm.</div>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+
+        @if (Totals) {
+          <tfoot>
+            <tr class="is-total">
+              <td colspan="6">Order totals</td>
+              <td class="num">{{ Totals.NetTotal | mjoMoney }}</td>
+              <td class="num">{{ Totals.TaxTotal | mjoMoney }}</td>
+              <td class="num">{{ Totals.GrossTotal | mjoMoney }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        }
+      </table>
+    </div>
+
+    <div class="grid-2 ed-below">
+      <div class="mj-card">
+        <div class="mj-card-head">
+          <i class="fa-solid fa-percent" aria-hidden="true"></i>
+          <h3>Promotions</h3>
+        </div>
+        <div class="mj-card-pad">
+          @for (promo of Preview.Result?.Promotions ?? []; track promo.Code) {
+            <div class="ed-promo">
+              <i
+                class="fa-solid"
+                [class.fa-circle-check]="promo.Applied"
+                [class.fa-circle-minus]="!promo.Applied"
+                [style.color]="promo.Applied ? 'var(--mj-status-success)' : 'var(--mj-text-disabled)'"
+                aria-hidden="true"></i>
+              <div class="ed-promo__body">
+                <div><b class="mono">{{ promo.Code }}</b> {{ promo.Name }}</div>
+                @if (!promo.Applied && promo.NotAppliedReason) {
+                  <div class="small muted">{{ promo.NotAppliedReason }}</div>
+                }
+              </div>
+              <span class="mj-num strong" [class.mj-money--credit]="promo.Applied">
+                {{ promo.Applied ? '−' + (promo.Amount | mjoMoney: { Sign: 'absolute' }) : '—' }}
+              </span>
+            </div>
+          } @empty {
+            <div class="small muted">No promotion codes on this order.</div>
+          }
+        </div>
+      </div>
+
+      <div class="mj-card">
+        <div class="mj-card-head">
+          <i class="fa-solid fa-calculator" aria-hidden="true"></i>
+          <h3>Totals</h3>
+        </div>
+        <div class="mj-card-pad">
+          <mjo-decomposition-ladder [Rows]="LadderRows" [Stale]="Preview.Loading" />
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══════ PARTIES ═══════ -->
+@if (ActiveTab === 'parties') {
+  <div class="ed-pane">
+    <div class="grid-2">
+      <div class="mj-card">
+        <div class="mj-card-head">
+          <i class="fa-solid fa-file-invoice-dollar" aria-hidden="true"></i>
+          <h3>Bill to — who pays</h3>
+          <span class="right"><span class="mj-chip mj-chip--outline">header only</span></span>
+        </div>
+        <div class="mj-card-pad">
+          <mjo-stated-value Label="Organization" From="stamped at order time">
+            {{ Draft.Header.BillToOrganizationID ?? '— none —' }}
+          </mjo-stated-value>
+          <mjo-stated-value Label="Person">
+            {{ Draft.Header.BillToPersonID ?? '— none —' }}
+          </mjo-stated-value>
+          <mjo-stated-value Label="Terms" From="organization default">
+            {{ Draft.Header.PaymentTermsTypeID ?? '— default —' }}
+          </mjo-stated-value>
+          <div class="small muted ed-note">
+            Bill-to is header-only: one order, one payer, one bill. That is why there is no
+            line-level counterpart to it.
+          </div>
+        </div>
+      </div>
+
+      <div class="mj-card">
+        <div class="mj-card-head">
+          <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
+          <h3>Ship to — who receives</h3>
+          <span class="right"><span class="mj-chip mj-chip--outline">line default</span></span>
+        </div>
+        <div class="mj-card-pad">
+          <mjo-stated-value Label="Organization">
+            {{ Draft.Header.ShipToOrganizationID ?? '— none —' }}
+          </mjo-stated-value>
+          <mjo-stated-value Label="Person">
+            {{ Draft.Header.ShipToPersonID ?? '— none —' }}
+          </mjo-stated-value>
+          <mjo-stated-value Label="Address">
+            {{ Draft.Header.ShipToAddressID ?? '— none —' }}
+          </mjo-stated-value>
+          <div class="small muted ed-note">
+            Each side falls back <b>independently</b>, so a line naming only a person keeps the
+            header's organization. For an intangible there is nothing to ship, and the same fields
+            say who the line is <i>for</i>.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══════ CHARGES & TAX ═══════ -->
+@if (ActiveTab === 'charges') {
+  <div class="ed-pane">
+    <div class="mj-table-wrap">
+      <table class="mj-table mj-table--compact">
+        <thead>
+          <tr>
+            <th class="num ed-col-seq">Seq</th>
+            <th>Charge</th>
+            <th>Basis</th>
+            <th class="num">Basis amount</th>
+            <th class="num">Rate</th>
+            <th class="num">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (charge of Charges; track $index) {
+            <tr>
+              <td class="num muted">{{ charge.Sequence }}</td>
+              <td>
+                <b>{{ charge.Name }}</b>
+                @if (charge.JurisdictionName) {
+                  <div class="secondary">{{ charge.JurisdictionName }}</div>
+                }
+                <span class="mj-chip" [class.mj-chip--info]="charge.IsTax" [class.mj-chip--outline]="!charge.IsTax">
+                  {{ charge.IsTax ? 'tax' : 'charge' }}
+                </span>
+              </td>
+              <td class="small">{{ charge.Basis }}</td>
+              <td class="num">{{ charge.BasisAmount == null ? '—' : (charge.BasisAmount | mjoMoney) }}</td>
+              <td class="num">{{ charge.Rate == null ? '—' : (charge.Rate * 100) + '%' }}</td>
+              <td class="num strong">{{ charge.Amount | mjoMoney }}</td>
+            </tr>
+          } @empty {
+            <tr><td colspan="6" class="small muted ed-pad">No charges on this order.</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="grid-2 ed-below">
+      <div class="mj-card">
+        <div class="mj-card-head">
+          <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
+          <h3>How the taxable base was built</h3>
+        </div>
+        <div class="mj-card-pad">
+          @if (TaxableBase; as base) {
+            <div class="ed-base">
+              <span>Taxable goods</span><span class="amt">{{ base.TaxableGoods | mjoMoney }}</span>
+              <span class="muted">Untaxable goods</span>
+              <span class="amt muted">excluded ({{ base.UntaxableGoods | mjoMoney }})</span>
+              <span>Non-tax charges</span><span class="amt">+ {{ base.NonTaxCharges | mjoMoney }}</span>
+              <span class="muted tiny">Tax charges</span>
+              <span class="amt muted tiny">never enlarge the base</span>
+              <span class="tot">Taxable base</span><span class="amt tot">{{ base.Base | mjoMoney }}</span>
+            </div>
+
+            <div class="mj-banner mj-banner--success ed-note">
+              <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+              <div class="body">
+                <strong>Tax layers never compound.</strong> Every jurisdiction computes on the same
+                {{ base.Base | mjoMoney }}. A non-tax charge enlarges the taxable base; a tax charge
+                does not — so county tax is not charged on state tax.
+              </div>
+            </div>
+          } @else {
+            <div class="small muted">No taxable base — nothing on this order is taxable.</div>
+          }
+        </div>
+      </div>
+
+      <div class="mj-card">
+        <div class="mj-card-head">
+          <i class="fa-solid fa-scale-unbalanced" aria-hidden="true"></i>
+          <h3>Why each line taxed the way it did</h3>
+        </div>
+        <div class="mj-card-pad">
+          @for (line of TaxExplanations; track line.LineNumber) {
+            <div class="ed-taxwhy">
+              <div class="row">
+                <b>Line {{ line.LineNumber }} · {{ line.ProductName }}</b>
+                <span class="spacer mj-num strong">{{ line.LineTax | mjoMoney }}</span>
+              </div>
+              @if (line.TaxZeroReason) {
+                <div class="small muted">{{ line.TaxZeroReason }}</div>
+                <div class="tiny muted">
+                  A zero always records <b>which</b> of four reasons produced it — untaxable, no
+                  nexus, exempt, or no jurisdiction.
+                </div>
+              } @else {
+                @for (layer of line.TaxLayers; track layer.Name) {
+                  <div class="row small">
+                    <span class="muted">{{ layer.Name }} · {{ layer.Rate * 100 }}%</span>
+                    <span class="spacer mj-num">{{ layer.Amount | mjoMoney }}</span>
+                  </div>
+                }
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══════ PAYMENT ═══════ -->
+@if (ActiveTab === 'payment') {
+  <div class="ed-pane">
+    <div class="mj-card">
+      <div class="mj-card-head">
+        <i class="fa-solid fa-credit-card" aria-hidden="true"></i>
+        <h3>Initial payment — intent</h3>
+        <span class="right"><span class="mj-chip mj-chip--info">not yet a payment</span></span>
+      </div>
+      <div class="mj-card-pad">
+        <mjo-stated-value Label="Tender">
+          {{ Draft.Header.InitialPaymentTypeID ?? '— invoice on terms —' }}
+        </mjo-stated-value>
+        <mjo-stated-value Label="Amount">
+          {{ Draft.Header.InitialPaymentAmount | mjoMoney: { Zero: '—' } }}
+        </mjo-stated-value>
+
+        <div class="small muted ed-note">
+          What is recorded here is <b>intent</b>. On confirm it becomes a real PaymentHeader and
+          PaymentLine in the same transaction as the booking; from then on the payment record is the
+          truth and these fields are never updated again. A wallet entry is <b>copied</b>, never
+          shared, so the snapshot cannot drift if the saved card is later edited.
+        </div>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ═══════ ACCOUNTING ═══════ -->
+@if (ActiveTab === 'accounting') {
+  <div class="ed-pane">
+    <mjo-journal-entry-preview
+      [Entries]="JournalEntries"
+      [Pending]="Status === 'Draft' || Status === 'Quoted'"
+      EmptyText="Nothing booked yet — confirm the order to create its entries."
+      (OpenInAccounting)="OpenInAccounting.emit($event)" />
+
+    <div class="small muted ed-note">
+      Read-only, and never duplicated. Orders creates <b>Pending</b> entries and owns nothing in the
+      ledger, so every account links out to Accounting rather than being editable here.
+    </div>
+  </div>
+}
+
+<!-- ═══════ LINE DRAWER ═══════ -->
+@if (OpenLine) {
+  <aside class="mj-slide-in is-open ed-drawer" role="dialog" aria-label="Line detail">
+    <div class="mj-slide-in-head">
+      <div>
+        <h2>{{ ProductFor(OpenLine)?.Name ?? 'Line' }}</h2>
+        <div class="small muted">
+          {{ ProductFor(OpenLine)?.SKU }} · revenue to {{ PricedLine(OpenLine)?.CompanyName }}
+        </div>
+      </div>
+      <span class="right">
+        <button type="button" class="mj-iconbtn" (click)="CloseDrawer()" aria-label="Close">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
+      </span>
+    </div>
+
+    <div class="mj-slide-in-body">
+      <div class="sec-label">Who this line is for</div>
+      <mjo-stated-value Label="Ship-to address" From="falls back to the header">
+        {{ OpenLine.ShipToAddressID ?? '— header default —' }}
+      </mjo-stated-value>
+      <mjo-stated-value Label="Ship-to person" From="falls back independently">
+        {{ OpenLine.ShipToPersonID ?? '— header default —' }}
+      </mjo-stated-value>
+      <mjo-stated-value Label="Ship-to organization" From="falls back independently">
+        {{ OpenLine.ShipToOrganizationID ?? '— header default —' }}
+      </mjo-stated-value>
+
+      <div class="sec-label ed-drawer__section">Timing</div>
+      @if (PricedLine(OpenLine); as priced) {
+        <mjo-stated-value Label="Service period" [From]="priced.ServicePeriodSource ?? null">
+          {{ priced.ServicePeriodStart ?? '—' }} – {{ priced.ServicePeriodEnd ?? '—' }}
+        </mjo-stated-value>
+        <mjo-stated-value Label="Revenue recognition" From="product type">
+          {{ priced.RevenueRecognitionType ?? '—' }}
+        </mjo-stated-value>
+      }
+
+      <div class="sec-label ed-drawer__section">Reversal</div>
+      <mjo-stated-value Label="Reverses">
+        {{ OpenLine.ReversesOrderLineID ?? '— nothing —' }}
+      </mjo-stated-value>
+      <div class="small muted">
+        A line that reverses another inherits its price and is capped at the quantity still
+        returnable there.
+      </div>
+
+      <div class="sec-label ed-drawer__section">Subscription</div>
+      <mjo-stated-value Label="Renews">
+        {{ OpenLine.RenewsSubscriptionID ?? '— none —' }}
+      </mjo-stated-value>
+      <div class="small muted">
+        Naming a renewal target <i>is</i> the statement of who the subscriber is, so the target's
+        holder wins over the line's ship-to.
+      </div>
+    </div>
+
+    <div class="mj-slide-in-foot">
+      <button type="button" class="mj-btn mj-btn--primary mj-btn--sm" (click)="CloseDrawer()">Done</button>
+      <span class="small muted spacer">Every field here defaults from something. Nothing is required.</span>
+    </div>
+  </aside>
+}
+
+<!-- ═══════ FOOTER ═══════ -->
+<div class="ed-footer">
+  @if (IsEditable) {
+    <button type="button" class="mj-btn mj-btn--outline" (click)="SaveDraft()">
+      <i class="fa-regular fa-floppy-disk" aria-hidden="true"></i> Save draft
+    </button>
+    <button type="button" class="mj-btn mj-btn--primary" [disabled]="!CanConfirm" (click)="RequestConfirm()">
+      <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm order
+    </button>
+  } @else {
+    <!-- Edit gating shows the state's REAL verbs rather than a greyed-out Save. -->
+    <button type="button" class="mj-btn mj-btn--outline">
+      <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Create reversal…
+    </button>
+    <button type="button" class="mj-btn mj-btn--outline">
+      <i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Take payment
+    </button>
+    <span class="small muted">
+      This order has booked. Corrections are reversing orders — locked history is never edited.
+    </span>
+  }
+</div>

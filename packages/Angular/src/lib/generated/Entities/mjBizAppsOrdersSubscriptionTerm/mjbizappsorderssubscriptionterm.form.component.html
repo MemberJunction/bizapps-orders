@@ -43,21 +43,13 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Timeline Section -->
+    <!-- Term Timeline Section -->
     <mj-collapsible-panel
-        SectionKey="timeline"
-        SectionName="Timeline"
+        SectionKey="termTimeline"
+        SectionName="Term Timeline"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -73,22 +65,6 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="EndDate"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CanceledAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CancellationEffectiveDate"
             Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -135,6 +111,40 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Status and Lifecycle Section -->
+    <mj-collapsible-panel
+        SectionKey="statusAndLifecycle"
+        SectionName="Status and Lifecycle"
+        Icon="fa fa-flag"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CanceledAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CancellationEffectiveDate"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>

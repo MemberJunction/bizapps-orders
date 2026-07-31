@@ -17,7 +17,7 @@ export class mjBizAppsOrdersRevenueRecognitionScheduleFormComponent extends Base
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'recognitionConfiguration', sectionName: 'Recognition Configuration', isExpanded: true },
-            { sectionKey: 'recognitionSchedule', sectionName: 'Recognition Schedule', isExpanded: true },
+            { sectionKey: 'recognitionTimeline', sectionName: 'Recognition Timeline', isExpanded: true },
             { sectionKey: 'financialMetrics', sectionName: 'Financial Metrics', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },

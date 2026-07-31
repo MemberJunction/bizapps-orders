@@ -159,8 +159,18 @@ export async function CreateEntitlementGrants(
     );
     const eventByProduct = new Map((events?.Results ?? []).map((e) => [key(e.ID), e]));
 
+    // NORMALISE THE CALLER'S KEYS. `materializeSubscriptions` keys `TermsByLine` by the raw line ID
+    // as SQL returned it — uppercase — and a lowercased lookup here found nothing, so EVERY
+    // subscription grant fell back to Perpetual while looking entirely correct. The suite caught it
+    // only because EN6 asserts `ValidityModeApplied` rather than just the dates.
+    //
+    // Re-keying here rather than asking the caller to change: a map that arrives with unknown casing
+    // is the caller's business, and normalising on receipt cannot be forgotten by the next caller.
+    const termsByLineKey = new Map<string, TermForLine>();
+    for (const [lineID, term] of termsByLine) termsByLineKey.set(key(lineID), term);
+
     // Subscription IDs behind the terms, so a grant can point at both.
-    const termIDs = [...termsByLine.values()].map((t) => t.ID);
+    const termIDs = [...termsByLineKey.values()].map((t) => t.ID);
     const subscriptionByTerm = new Map<string, string>();
     if (termIDs.length) {
         const terms = await rv.RunView<{ ID: string; SubscriptionID: string }>(
@@ -189,7 +199,7 @@ export async function CreateEntitlementGrants(
             );
         }
 
-        const term = termsByLine.get(key(line.ID)) ?? null;
+        const term = termsByLineKey.get(key(line.ID)) ?? null;
 
         for (const template of forThisProduct) {
             const resolved = ResolveEntitlementPolicy(

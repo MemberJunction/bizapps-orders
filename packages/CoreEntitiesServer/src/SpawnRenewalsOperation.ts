@@ -44,6 +44,7 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { RequireOptionalUUID } from './sql-guards.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
@@ -121,6 +122,10 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<SpawnRenewalsOutput> {
+        // Caller-supplied ids reach SQL filter text downstream. Validated here,
+        // at the boundary, so every frame below this one can trust them.
+        RequireOptionalUUID(input.SubscriptionID, 'SubscriptionID');
+
         const asOf = input.AsOfDate ? new Date(input.AsOfDate) : new Date();
         const candidates = await this.findDue(provider, user, asOf, input.SubscriptionID);
 

@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="pricingPolicies"
         SectionName="Pricing Policies"
-        Icon="fa fa-sliders-h"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -41,19 +41,9 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Pricing Defaults Section -->
-    <mj-collapsible-panel
-        SectionKey="pricingDefaults"
-        SectionName="Pricing Defaults"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="DefaultPriceListID"
             Type="textbox"
             [EditMode]="EditMode"

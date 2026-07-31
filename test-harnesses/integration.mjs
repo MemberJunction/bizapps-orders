@@ -42,6 +42,8 @@ const ALL_BUNDLES = [
     'line-subscriber',
     // Last on purpose: it is the slowest bundle by an order of magnitude (hundreds of confirms), so
     // a failure anywhere else surfaces before the run settles in to build populations.
+    'entitlements',
+    'payment-providers',
     'volume',
 ];
 

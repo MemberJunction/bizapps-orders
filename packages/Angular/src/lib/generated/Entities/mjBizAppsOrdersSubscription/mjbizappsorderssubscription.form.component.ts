@@ -17,17 +17,19 @@ export class mjBizAppsOrdersSubscriptionFormComponent extends BaseFormComponent 
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'subscriptionDetails', sectionName: 'Subscription Details', isExpanded: true },
-            { sectionKey: 'timeline', sectionName: 'Timeline', isExpanded: true },
-            { sectionKey: 'renewalSettings', sectionName: 'Renewal Settings', isExpanded: true },
-            { sectionKey: 'billingAndProvider', sectionName: 'Billing and Provider', isExpanded: true },
             { sectionKey: 'relationships', sectionName: 'Relationships', isExpanded: true },
+            { sectionKey: 'lifecycleTimeline', sectionName: 'Lifecycle Timeline', isExpanded: true },
+            { sectionKey: 'renewalSettings', sectionName: 'Renewal Settings', isExpanded: true },
+            { sectionKey: 'paymentInformation', sectionName: 'Payment Information', isExpanded: true },
+            { sectionKey: 'migrationHistory', sectionName: 'Migration History', isExpanded: true },
+            { sectionKey: 'displayLabels', sectionName: 'Display Labels', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID', sectionName: 'Subscriptions (Migrates From Subscription ID)', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID', sectionName: 'Subscriptions (Migrates To Subscription ID)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID', sectionName: 'Subscriptions (Migrates To Subscription)', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID', sectionName: 'Subscriptions (Migrates From Subscription)', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false }
         ]);
     }
 }

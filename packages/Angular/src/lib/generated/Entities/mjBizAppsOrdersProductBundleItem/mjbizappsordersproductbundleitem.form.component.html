@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Bundle Configuration Section -->
+    <!-- Bundle Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="bundleConfiguration"
-        SectionName="Bundle Configuration"
-        Icon="fa fa-layer-group"
+        SectionKey="bundleRelationships"
+        SectionName="Bundle Relationships"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -38,11 +38,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Pricing and Rules Section -->
+    <!-- Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="pricingAndRules"
-        SectionName="Pricing and Rules"
-        Icon="fa fa-dollar-sign"
+        SectionKey="configuration"
+        SectionName="Configuration"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -76,7 +76,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-cog"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

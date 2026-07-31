@@ -21,7 +21,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="Code"
-            Type="code"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -79,32 +79,22 @@
 
     </mj-collapsible-panel>
 
-    <!-- Lifecycle Section -->
+    <!-- Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="lifecycle"
-        SectionName="Lifecycle"
-        Icon="fa fa-history"
+        SectionKey="relationships"
+        SectionName="Relationships"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="IssuedFromOrderLineID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Beneficiary Information Section -->
-    <mj-collapsible-panel
-        SectionKey="beneficiaryInformation"
-        SectionName="Beneficiary Information"
-        Icon="fa fa-user"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

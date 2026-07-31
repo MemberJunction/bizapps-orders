@@ -325,6 +325,112 @@ different total than its mockup, one of them is wrong and it's worth finding out
 
 ---
 
+## 9a. Implementation architecture (CONFIRMED — Amith 2026-07-29)
+
+### Where code lives — four existing packages, no new ones
+
+| Package | Role | Why there |
+|---|---|---|
+| `packages/Entities` | Operation **contracts** + `OrderDraft` | Only dependency is `zod`; browser-safe, and already a dependency of the Angular package and every server package. The one place both tiers can share types. |
+| `packages/CoreEntitiesServer` | Operation **implementations** + `OrderDraftHydrator` | Where every engine already lives. |
+| `packages/Angular` | All UI | Already the declared client bootstrap; already peer-deps `ng-base-forms` + `ng-ui-components`. |
+| `packages/Server` | Registration only — unchanged | Already imports CoreEntitiesServer for side-effect registration. |
+
+### U21 — The API surface is METADATA, and CodeGen emits the bases. No custom APIs.
+
+Ten `MJ: Remote Operations` rows in `metadata/remote-operations/`, each with its I/O
+declared as a `@file:` TypeScript definition. `mj.config.cjs` gains
+`{ type: 'RemoteOperations', directory: './packages/Entities/src/generated' }`, so CodeGen emits one
+typed base per row into the **browser-safe** package — which is the whole point: the client imports
+the contract and calls `.Execute()` without pulling the server engine.
+
+All ten are `GenerationType: Manual`, so CodeGen emits a typed *shell* and a hand-authored server
+subclass supplies `InternalExecute` and registers under the key. AI generation is deliberately unused
+here: these bodies orchestrate the booking transaction, the GL resolution walk and the subscription
+decision — the places where being subtly wrong produces a **balanced** journal entry that nothing
+downstream can catch.
+
+Two consequences worth knowing:
+
+- **Definitions are emitted verbatim and de-duped by exact text, with no import resolution.** So a
+  definition file cannot `import` a sibling. The family's shared shapes are therefore declared once,
+  in `types/orders-save-order.input.ts` — the operation whose input they *are*. TypeScript hoists
+  interfaces, so emission order does not matter.
+- **Remote operations carry no schema**, so CodeGen has no core/non-core partition for them the way
+  it does for entities. Our generated file therefore also picks up MJ's 16 core operations. Harmless:
+  every one is `Manual`, which emits an unregistered type shell — dead interfaces, no
+  `@RegisterClass`, no duplicate factory registration. Upstream names a per-op core/non-core marker
+  as the open decision that would remove the noise.
+
+The five pre-existing operations are re-plumbed the same way rather than left as hand-rolled classes,
+because their I/O currently lives in a server package the browser cannot import — meaning they are
+server-callable only, and four of them are called by the mockups.
+
+### U22 — `OrderDraft` is the client model; `OrderDraftHydrator` is the transport.
+
+`OrderEntityServer.Save()` composes an order from **transient** collections on the server entity —
+`Lines` (unsaved line entities), `PromotionCodes`, `ManualDiscounts`, `Charges`. None is a column, so
+none crosses the entity-save boundary. That is precisely why the API is operations rather than CRUD.
+
+The path is: `OrderDraft` (browser, pure) → `.ToInput()` → plain JSON over the operation →
+`HydrateOrderDraft()` (server) → header entity + unsaved line entities + the three request
+collections → `Save()`.
+
+One hydration path, shared by every operation that writes an order. Two rules in it carry real risk
+and are unit-asserted on the client side:
+
+1. **An unstated `UnitPrice` is OMITTED, never sent or assigned as 0.** The engine treats a stated
+   price as direct entry that wins outright, and `0` is a legitimate free line. Sending 0 for "I
+   didn't type one" would suppress price resolution and book a free order.
+2. **Line numbers come from array order**, assigned at hydration, so removing the second of three
+   lines leaves 1-2-3 rather than 1-3.
+
+`OrderDraft` never prices anything. Every derived number comes from `Orders.PreviewOrder` and is
+stored via `ApplyPreview`, and the draft reports `IsPreviewStale` so a moved price cannot be confirmed
+against a number the user is no longer looking at. **The browser calculation in the mockups does not
+ship** — it existed to prove the interaction was honest rather than hardcoded.
+
+### U23 — The app is a first-class MJ `Application` with four `DefaultNavItems`.
+
+`metadata/applications/.orders-application.json` declares the Application; its four nav items each
+name a `DriverClass` registered with `@RegisterClass(BaseResourceComponent, …)`. Explorer reads the
+metadata, asks the class factory, and mounts the tab — no host-side wiring.
+
+Each section owns a **left rail** over its own sub-pages, via MJ's `<mj-left-nav>` +
+`<mj-left-nav-content>` inside the chrome trio. Sub-pages are created once and **cached**, so
+switching rails and coming back does not discard a half-entered order.
+
+Composition, not inheritance, for the frame: `<mjo-section-shell>` is one presentational component
+the four sections hand a rail to. Angular does not inherit templates, so a base *class* would have
+meant four copies of the frame — and four copies is four places for it to drift.
+
+### U24 — Pixel fidelity is structural: ONE stylesheet, two consumers.
+
+`packages/Angular/src/lib/styles/orders-kit.css` is the canonical source for this app's own component
+CSS, and `mockups/assets/app.css` `@import`s it. The mockups and the shipped UI cannot drift because
+they are reading the same file.
+
+Only classes MJ does **not** ship live there. Page chrome, buttons, inputs, chips, collapsible panels,
+overlays and tab navigation all come from `ng-ui-components` / `ng-base-forms` at runtime; the mockups
+shim those separately, since they have no Angular to provide them. Every value resolves through MJ's
+semantic tokens.
+
+### Component standards — `ng-conversations` and `ui-components` as the reference
+
+- **PascalCase public API** (`@Input() Title`, `@Output() PageSelected`), camelCase for private members.
+- `standalone: true` for new leaf components; `mj-` / `mjo-` selectors.
+- Class-level JSDoc with a runnable `## Example` block, and a documented reason for every non-obvious
+  decision — the house style in both reference packages.
+- Named `ng-content select="[slot]"` projection for extension, mirroring `<mj-page-header>`'s
+  `[meta]` / `[actions]` / `[toolbar]`.
+- Before/After **cancelable** event args classes (`Cancel: boolean`) for actions a consumer should be
+  able to veto; single emitters for informational events.
+- Feature-toggle inputs that **remove** an affordance rather than disabling it.
+- `--mj-<widget>-*` CSS custom properties for per-widget theming, defaulting to semantic `--mj-*`.
+- Colocated `.dom.test.ts`; `models/` for interfaces, `events/` for event args, `services/` for state.
+
+---
+
 ## 10. Angular build mapping
 
 | Mockup surface | Angular realization |
@@ -365,6 +471,17 @@ Named honestly, because each is a prerequisite the mockups will stub.
 
 These are engine work, not UI work. Mockups stub them and annotate the call site, per Amith
 2026-07-29: "stub out on mockups and otherwise where they would be called."
+
+### One thing that landed while this was being written
+
+Entitlement policy shipped in parallel (`EntitlementBehavior` / `EntitlementEngine`: **GrantTiming**,
+**QuantityMode**, **ValidityMode**, resolved by the same product → category → ancestors → type walk as
+taxability). The pre-flight's **Entitlement grants** section currently states only the grant and its
+beneficiary. It should also state the three resolved policy values and how many seats a fractional
+quantity rounds to — a five-seat product bought at 0.5833 for a prorated period grants three seats,
+and that is exactly the kind of number someone should see before confirming rather than discover in a
+support ticket. Small addition to one panel; noted here so the mockup isn't mistaken for complete on
+that point.
 
 ---
 

@@ -19,17 +19,8 @@
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="ProductID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PriceListID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -45,6 +36,15 @@
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="PriceListID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -85,13 +85,37 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Priority"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Description"
+            Type="textarea"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Quantity and Validity Section -->
+    <!-- Applicability Rules Section -->
     <mj-collapsible-panel
-        SectionKey="quantityAndValidity"
-        SectionName="Quantity and Validity"
+        SectionKey="applicabilityRules"
+        SectionName="Applicability Rules"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -127,16 +151,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Scheduling Rules Section -->
-    <mj-collapsible-panel
-        SectionKey="schedulingRules"
-        SectionName="Scheduling Rules"
-        Icon="fa fa-clock"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -188,40 +202,6 @@
 
     </mj-collapsible-panel>
 
-    <!-- Operational Settings Section -->
-    <mj-collapsible-panel
-        SectionKey="operationalSettings"
-        SectionName="Operational Settings"
-        Icon="fa fa-sliders-h"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Priority"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Description"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
     <!-- System Metadata Section -->
     <mj-collapsible-panel
         SectionKey="systemMetadata"
@@ -254,6 +234,31 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
+    <!-- Price Tiers Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPriceTiers"
+        SectionName="Price Tiers"
+        Icon="fa fa-layer-group"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPriceTiers')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Price Tiers','ProductPriceID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Price Tiers')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPriceTiers')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPriceTiers', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <!-- Order Lines Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderLines"
@@ -273,31 +278,6 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Price Tiers Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPriceTiers"
-        SectionName="Price Tiers"
-        Icon="fa fa-tags"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPriceTiers')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Price Tiers','ProductPriceID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Price Tiers')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPriceTiers')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPriceTiers', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

@@ -1,0 +1,292 @@
+[
+  {
+    "_comments": [
+      "The Orders API surface, declared as metadata. CodeGen reads these rows and emits one typed",
+      "BaseRemotableOperation subclass per row into packages/Entities/src/generated/remote_operations.ts —",
+      "a browser-safe package, which is the whole point: the client imports the CONTRACT without pulling",
+      "the server engine.",
+      "",
+      "Every row is GenerationType=Manual, so CodeGen emits a typed SHELL and a hand-authored server",
+      "subclass in packages/CoreEntitiesServer supplies InternalExecute and registers under the key. The",
+      "server subclass registers LAST (it extends the generated base), so it wins ClassFactory dispatch.",
+      "",
+      "AI generation is deliberately not used here. These bodies orchestrate the booking transaction, the",
+      "GL resolution walk and the subscription decision — the places where being subtly wrong produces a",
+      "BALANCED journal entry that no downstream check can catch.",
+      "",
+      "RequiredScope is per functional area rather than one blanket scope, so a reporting integration can",
+      "be granted reads without also being able to confirm an order.",
+      "",
+      "SaveOrder is listed FIRST because its InputTypeDefinition carries the shared shapes the whole",
+      "family references — see the header comment in types/orders-save-order.input.ts."
+    ],
+    "fields": {
+      "Name": "Save Order",
+      "OperationKey": "Orders.SaveOrder",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Lifecycle",
+      "Description": "Create or update a DRAFT order and its lines in one transaction, returning the priced decomposition. Never confirms — confirming books journal entries and is a separate, deliberate step. This is the operation that makes browser-side order entry possible at all: line, charge and promotion collections are transient properties on the server entity, so they cannot cross the entity-save boundary as scalars.",
+      "InputTypeName": "OrdersSaveOrderInput",
+      "InputTypeDefinition": "@file:types/orders-save-order.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersSaveOrderOutput",
+      "OutputTypeDefinition": "@file:types/orders-save-order.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C401"
+    },
+    "sync": {
+      "lastModified": "2026-07-30T21:43:39.675Z",
+      "checksum": "d00dcc86cc956fc458b474c2e432ffe8a1281a4dc2f2f6c9d531c43fd867b86d"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Preview Order",
+      "OperationKey": "Orders.PreviewOrder",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Lifecycle",
+      "Description": "Run the real pricing pipeline over an unsaved draft and return the full decomposition — net, promotions (applied and offered-not-applied), charges, tax layers on their shared base, and per-company subtotals — without writing anything. This is what lets order entry show what an order will cost while it is being typed, using the engine rather than a second copy of the rules in the browser.",
+      "InputTypeName": "OrdersPreviewOrderInput",
+      "InputTypeDefinition": "@file:types/orders-preview-order.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersPreviewOrderOutput",
+      "OutputTypeDefinition": "@file:types/orders-preview-order.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C402"
+    },
+    "sync": {
+      "lastModified": "2026-07-30T21:43:39.709Z",
+      "checksum": "380d90d13d72a95567c75dffe6ee3566b218c3fec5618ed5ce4aed8df25e8746"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Preview Confirm",
+      "OperationKey": "Orders.PreviewConfirm",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Lifecycle",
+      "Description": "A dry run of Orders.ConfirmOrder that writes nothing: resolves a GL account for every role every line needs, runs the subscription decision, resolves entitlement policy and evaluates sales rules, then reports what would happen and what would stop it. Exists so a user learns about an unresolvable account before pressing Confirm rather than from a failure banner after. Must stay in lock-step with ConfirmOrder — a preview that can disagree with reality is worse than no preview.",
+      "InputTypeName": "OrdersPreviewConfirmInput",
+      "InputTypeDefinition": "@file:types/orders-preview-confirm.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersPreviewConfirmOutput",
+      "OutputTypeDefinition": "@file:types/orders-preview-confirm.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C403"
+    },
+    "sync": {
+      "lastModified": "2026-07-30T21:43:39.622Z",
+      "checksum": "43e122ff97ae8013671f8f2689259e0c7f42590a2ddad820513dd62bee26d04a"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Confirm Order",
+      "OperationKey": "Orders.ConfirmOrder",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Lifecycle",
+      "Description": "The irreversible step. In one transaction: saves the draft, transitions to Confirmed, books one journal entry per line, decides and writes subscriptions, issues entitlement grants, and captures the initial payment when the order carries one. Any failure rolls back everything — a confirmed order without its entries is invalid state, not a partial success. Accepts an expected gross total so a price that moved underneath the user stops the confirm instead of silently booking a different amount.",
+      "InputTypeName": "OrdersConfirmOrderInput",
+      "InputTypeDefinition": "@file:types/orders-confirm-order.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersConfirmOrderOutput",
+      "OutputTypeDefinition": "@file:types/orders-confirm-order.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:confirm",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C404"
+    },
+    "sync": {
+      "lastModified": "2026-07-30T21:43:39.604Z",
+      "checksum": "1def491682d815014701790032ee83498237f5e53baf401c5cbc0e8926bc06e5"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Preview Price",
+      "OperationKey": "Orders.PreviewPrice",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Pricing",
+      "Description": "Resolve one product's price through the real pricing pipeline and explain how — which list, which rule, which volume band, which resolver. Read-only. Powers the order line's price badge and the pricing admin screen's resolution-walk visualiser.",
+      "InputTypeName": "PreviewPriceInput",
+      "InputTypeDefinition": "@file:types/orders-preview-price.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "PreviewPriceOutput",
+      "OutputTypeDefinition": "@file:types/orders-preview-price.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C405"
+    },
+    "sync": {
+      "lastModified": "2026-07-30T21:43:39.640Z",
+      "checksum": "12fa9a78b62d464b24b53a67f92f4ec4f9555da81fafc9627f6bc111d2b7dbbe"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Refund Payment",
+      "OperationKey": "Orders.RefundPayment",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Issue a refund against a captured payment. A refund is a NEW payment, never an edit: the reversal carries its own instrument snapshot and negative allocation lines that un-apply proportionally to how the original was applied. The processing fee is not reversed — the processor kept it. Guards: must be captured, never more than remains, never twice.",
+      "InputTypeName": "RefundPaymentInput",
+      "InputTypeDefinition": "@file:types/orders-refund-payment.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "RefundPaymentOutput",
+      "OutputTypeDefinition": "@file:types/orders-refund-payment.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "payments:refund",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C406"
+    },
+    "sync": {
+      "lastModified": "2026-07-30T21:43:39.746Z",
+      "checksum": "95f32d390aa3998efb850d7c12c2f16aefeff2ed2afba479c4512a1bcea5053b"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Apply Account Credit",
+      "OperationKey": "Orders.ApplyAccountCredit",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Spend a customer's credit on another order. Writes a zero-amount payment with two offsetting lines — no new cash entered the business, so this only re-attributes money already received. A credit IS a negative order balance; there is no separate instrument to fall out of sync with it. Cross-company applications raise the intercompany legs through the ordinary allocation path, which is required rather than convenient.",
+      "InputTypeName": "ApplyAccountCreditInput",
+      "InputTypeDefinition": "@file:types/orders-apply-account-credit.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "ApplyAccountCreditOutput",
+      "OutputTypeDefinition": "@file:types/orders-apply-account-credit.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "payments:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C407"
+    },
+    "sync": {
+      "lastModified": "2026-07-30T21:43:39.692Z",
+      "checksum": "53c64f6a831f10bdcce6a5e872105754ca4d99e80941713e8754883344fc2698"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Cancel Subscription",
+      "OperationKey": "Orders.CancelSubscription",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
+      "Description": "Cancel a subscription: policy in, reversal out. The subscription type's cancellation mode, refund mode and grace period decide when coverage ends, when access ends and what is refunded; the operation emits the reversal order, stamps the term and logs the lifecycle event in one transaction. Grace extends ACCESS, never revenue — storing one in place of the other silently revokes access early.",
+      "InputTypeName": "CancelSubscriptionInput",
+      "InputTypeDefinition": "@file:types/orders-cancel-subscription.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "CancelSubscriptionOutput",
+      "OutputTypeDefinition": "@file:types/orders-cancel-subscription.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "subscriptions:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C408"
+    },
+    "sync": {
+      "lastModified": "2026-07-30T21:43:39.657Z",
+      "checksum": "73cd5bf00bf1ecc1ed7d98baa0676481e7cdf3091bc5055d8fb25eb0c86b57d4"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Spawn Renewals",
+      "OperationKey": "Orders.SpawnRenewals",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
+      "Description": "Place renewal orders for subscriptions whose latest term expires inside their own lead window and whose holder consented via auto-renew. Two independent idempotency guards, because an unattended job that double-spawns double-bills: the selection only finds subscriptions whose LATEST term is expiring, plus an explicit check for an order already renewing that subscription. Renewals bypass the concurrency rule — a renewal is not a second subscription.",
+      "InputTypeName": "SpawnRenewalsInput",
+      "InputTypeDefinition": "@file:types/orders-spawn-renewals.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "SpawnRenewalsOutput",
+      "OutputTypeDefinition": "@file:types/orders-spawn-renewals.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "LongRunning",
+      "RequiredScope": "subscriptions:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C409"
+    },
+    "sync": {
+      "lastModified": "2026-07-30T21:43:39.729Z",
+      "checksum": "45fc4776d3216bded23d5cfd07b54f8ecaeca2fe0dc2774075e7d33a71c4f142"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Get Overdue Worklist",
+      "OperationKey": "Orders.GetOverdueWorklist",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
+      "Description": "Assemble the collections worklist. Overdue is a computed surface — balance above zero and past due — never a stored flag, because it changes with the clock rather than with a write; so this cannot be a client-side filter over a column. Each row carries what is needed to decide the next action without a second round trip, including the credit the customer already holds, since spending that comes before chasing cash.",
+      "InputTypeName": "OrdersGetOverdueWorklistInput",
+      "InputTypeDefinition": "@file:types/orders-get-overdue-worklist.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersGetOverdueWorklistOutput",
+      "OutputTypeDefinition": "@file:types/orders-get-overdue-worklist.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C410"
+    },
+    "sync": {
+      "lastModified": "2026-07-30T21:43:39.763Z",
+      "checksum": "d02d2661a5679f461e87bfa2c5039edc220115a5dfdff928e86cb210160d13da"
+    }
+  }
+]

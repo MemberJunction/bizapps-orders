@@ -12,6 +12,13 @@
     "enableResourceInlining": true,
     "strictTemplates": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "**/__tests__/**",
+    "**/*.test.ts",
+    "**/*.dom.test.ts"
+  ]
 }

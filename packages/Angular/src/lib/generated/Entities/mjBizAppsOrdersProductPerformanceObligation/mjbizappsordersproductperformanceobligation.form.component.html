@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Association Section -->
+    <!-- Product Information Section -->
     <mj-collapsible-panel
-        SectionKey="productAssociation"
-        SectionName="Product Association"
+        SectionKey="productInformation"
+        SectionName="Product Information"
         Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
@@ -29,11 +29,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Obligation Details Section -->
+    <!-- Performance Obligation Details Section -->
     <mj-collapsible-panel
-        SectionKey="obligationDetails"
-        SectionName="Obligation Details"
-        Icon="fa fa-info-circle"
+        SectionKey="performanceObligationDetails"
+        SectionName="Performance Obligation Details"
+        Icon="fa fa-file-contract"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -47,29 +47,29 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="StandaloneSellingPrice"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Revenue Recognition Section -->
-    <mj-collapsible-panel
-        SectionKey="revenueRecognition"
-        SectionName="Revenue Recognition"
-        Icon="fa fa-chart-line"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="false"
             FieldName="RevenueRecognitionTypeID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Pricing and Allocation Section -->
+    <mj-collapsible-panel
+        SectionKey="pricingAndAllocation"
+        SectionName="Pricing and Allocation"
+        Icon="fa fa-dollar-sign"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="false"
+            FieldName="StandaloneSellingPrice"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>

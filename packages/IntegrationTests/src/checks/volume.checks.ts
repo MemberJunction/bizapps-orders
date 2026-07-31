@@ -89,6 +89,8 @@ import {
   type NamedCheck,
 } from "@memberjunction/testing-integration";
 import {
+  CreateProductPrice,
+  CreatePromotion,
   ACCT_SCHEMA,
   CreateOrdersFixture,
   Fx,
@@ -104,10 +106,9 @@ import { CreatePayment } from "../payment-builder.js";
 // ─── shared fixture edits ──────────────────────────────────────────────────────────────────────
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.ProductPrice
-       (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
-     VALUES ('${randomUUID()}','${productID}','PerUnit','Standard',${amount},'2020-01-01',0,'Active')`);
+  // Delegates to the shared builder so the price goes through `ProductPriceEntityServer` and its
+  // ambiguity guard, rather than around it. Idempotent per product — see CreateProductPrice.
+  await CreateProductPrice(ctx, productID, amount);
 }
 
 /** One reusable order-level promotion code. Volume checks apply the SAME code many times. */
@@ -115,16 +116,20 @@ async function addPromotion(
   ctx: IntegrationCheckContext,
   opts: { kind?: string; value: number },
 ): Promise<string> {
-  const code = `VL${randomUUID().slice(0, 6).toUpperCase()}`;
-  const id = randomUUID();
-  const t = await TxOne<{ ID: string }>(ctx,
-    `SELECT ID FROM ${ORDERS_SCHEMA}.PromotionType WHERE Code='${opts.kind ?? "AmountOff"}'`);
-  await TxQuery(ctx,
-    `INSERT INTO ${ORDERS_SCHEMA}.Promotion (ID, Code, Name, PromotionTypeID, Value, AppliesAt, Status)
-     VALUES ('${id}','${code}','${code}','${t.ID}',${opts.value},'Order','Active');
-     INSERT INTO ${ORDERS_SCHEMA}.PromotionCode (ID, PromotionID, Code, Status)
-     VALUES ('${randomUUID()}','${id}','${code}','Active')`);
-  return code;
+  // Delegates to the shared builder so the Promotion, its PromotionCode and any target all
+  // go through their entity servers rather than around them.
+  return CreatePromotion(ctx, {
+    // AmountOff, not the shared builder's PercentOff default. This bundle's promotions carry values
+    // like 15 meaning "15 off"; read as a percentage that is 1500%, which drives the line to zero and
+    // fails booking with "line amount must be a finite number > 0".
+    Kind: opts.kind ?? "AmountOff",
+    Value: opts.value,
+    // This bundle's own default, preserved. The shared builder defaults to 'Either',
+    // and letting that win applied order-level promotions PER LINE — 13 lines turned a
+    // 0.07 discount into 0.91, which still reconciled internally and was still wrong.
+    AppliesAt: (opts as { appliesAt?: string }).appliesAt ?? "Order",
+    TargetProductID: (opts as { targetProductID?: string | null }).targetProductID ?? null,
+  });
 }
 
 /**

@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Entity Association Section -->
+    <!-- Entity Associations Section -->
     <mj-collapsible-panel
-        SectionKey="entityAssociation"
-        SectionName="Entity Association"
+        SectionKey="entityAssociations"
+        SectionName="Entity Associations"
         Icon="fa fa-users"
         [Form]="this"
         [FormContext]="formContext">
@@ -103,14 +103,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Comments"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -142,6 +134,14 @@
             [ShowLabel]="true"
             FieldName="Status"
             Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Comments"
+            Type="textarea"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

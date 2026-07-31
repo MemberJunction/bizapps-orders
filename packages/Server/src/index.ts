@@ -15,6 +15,8 @@ import '@mj-biz-apps/orders-actions';
 import '@mj-biz-apps/orders-core-entities-server';
 import {
     LoadCancelSubscriptionOperation,
+    LoadEnvironmentSecretResolver,
+    LoadManualPaymentProvider,
     LoadOrderEntityServer,
     LoadOrderLineEntityServer,
     LoadPaymentHeaderEntityServer,
@@ -22,11 +24,18 @@ import {
     LoadRefundPaymentOperation,
     LoadApplyAccountCreditOperation,
     LoadPreviewPriceOperation,
+    LoadSaveOrderOperation,
+    LoadPreviewOrderOperation,
+    LoadConfirmOrderOperation,
+    LoadPreviewConfirmOperation,
+    LoadGetOverdueWorklistOperation,
     LoadDefaultPriceResolver,
     LoadPromotionEngine,
     LoadTaxResolver,
     LoadRevenueRecognitionDrivers,
     LoadSpawnRenewalsOperation,
+    LoadStoredValuePaymentProvider,
+    LoadStripePaymentProvider,
     LoadSubscriptionBehavior,
 } from '@mj-biz-apps/orders-core-entities-server';
 
@@ -69,6 +78,11 @@ export function LoadBizAppsOrdersServer(): void {
     LoadRefundPaymentOperation();     // the 'Orders.RefundPayment' remote operation (D17)
     LoadApplyAccountCreditOperation(); // the 'Orders.ApplyAccountCredit' remote operation (D68)
     LoadPreviewPriceOperation();       // the 'Orders.PreviewPrice' dry run (D69)
+    LoadSaveOrderOperation();          // 'Orders.SaveOrder' — the only way a browser can compose an order
+    LoadPreviewOrderOperation();       // 'Orders.PreviewOrder' — the real save, rolled back
+    LoadConfirmOrderOperation();       // 'Orders.ConfirmOrder' — the irreversible step (D8)
+    LoadPreviewConfirmOperation();     // 'Orders.PreviewConfirm' — the real confirm, rolled back
+    LoadGetOverdueWorklistOperation(); // 'Orders.GetOverdueWorklist' — overdue is computed, not stored
     LoadDefaultPriceResolver();        // the data-driven price resolver the walk falls back to (D69)
     LoadPromotionEngine();             // the promotion qualifier plugin seam (D70)
     LoadTaxResolver();                 // the address -> jurisdiction seam (D72)
@@ -76,4 +90,13 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSubscriptionBehavior();        // the base subscription rules engine (D45)
     LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation
     LoadSpawnRenewalsOperation();      // the 'Orders.SpawnRenewals' remote operation (D55)
+
+    // Payment drivers (D19/D37). Each is keyed by its PaymentProviderType.Code, and WITHOUT these
+    // anchors the @RegisterClass decorators are tree-shaken away — the ClassFactory then falls back to
+    // the base driver, which declines every operation. `PaymentProviderResolver` refuses that fallback
+    // explicitly rather than letting "nobody registered a driver" read as "the gateway said no".
+    LoadStripePaymentProvider();       // cards and ACH; stub when the provider row is not live
+    LoadManualPaymentProvider();       // cheque, wire, cash — no gateway to call
+    LoadStoredValuePaymentProvider();  // gift cards and account credit, one driver (D38/D68)
+    LoadEnvironmentSecretResolver();   // the default CredentialsRef -> env lookup; replaceable
 }

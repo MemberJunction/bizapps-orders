@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Sales Representative Section -->
+    <!-- Assignment Section -->
     <mj-collapsible-panel
-        SectionKey="salesRepresentative"
-        SectionName="Sales Representative"
+        SectionKey="assignment"
+        SectionName="Assignment"
         Icon="fa fa-user"
         [Form]="this"
         [FormContext]="formContext">
@@ -33,7 +33,7 @@
     <mj-collapsible-panel
         SectionKey="authorityLimits"
         SectionName="Authority Limits"
-        Icon="fa fa-shield-alt"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -55,8 +55,26 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Permissions Section -->
+    <mj-collapsible-panel
+        SectionKey="permissions"
+        SectionName="Permissions"
+        Icon="fa fa-lock"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="AllowedPaymentTermsTypeIDs"
-            Type="textarea"
+            Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -64,15 +82,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="AllowedProductCategoryIDs"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
+            Type="code"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -115,7 +125,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderAdjustments"
         SectionName="Order Adjustments"
-        Icon="fa fa-tags"
+        Icon="fa fa-money-bill-wave"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

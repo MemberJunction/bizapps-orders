@@ -38,6 +38,7 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { RequireUUID } from './sql-guards.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -96,6 +97,10 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<RefundPaymentOutput> {
+        // Caller-supplied ids reach SQL filter text downstream. Validated here,
+        // at the boundary, so every frame below this one can trust them.
+        RequireUUID(input.PaymentHeaderID, 'PaymentHeaderID');
+
         const payment = await this.loadPayment(provider, user, input.PaymentHeaderID);
         if (!payment) {
             return { Success: false, Message: `No payment found with ID '${input.PaymentHeaderID}'.` };

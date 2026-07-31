@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Charges &amp; tax — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  .cx-chain { display: flex; flex-direction: column; gap: 2px; }
+  .cx-chain > div {
+    display: flex; align-items: center; gap: var(--mj-space-2);
+    padding: 7px var(--mj-space-3); border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface-sunken); font-size: 12.5px;
+  }
+  .cx-chain > div.is-answer {
+    background: var(--mj-status-success-bg); color: var(--mj-status-success-text);
+    font-weight: var(--mj-font-medium);
+  }
+  .cx-chain > div .lv { width: 108px; flex: none; color: var(--mj-text-muted); font-size: 11px; }
+  .cx-chain .arrow { justify-content: center; background: none; padding: 0; color: var(--mj-text-disabled); }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta">
+    <span class="mj-chip mj-chip--outline" id="cx-count">—</span>
+    <span class="mj-chip mj-chip--info">tax is a charge</span>
+  </div>
+
+  <div slot="actions">
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-plus"></i> New charge type</button>
+    <button class="mj-btn mj-btn--primary" data-open="#cx-why">
+      <i class="fa-solid fa-circle-question"></i> Why did this line tax?</button>
+  </div>
+
+  <div slot="toolbar">
+    <div class="mj-segmented" data-on-select="cxTab">
+      <button class="is-active" data-value="charges">Charge types</button>
+      <button data-value="tax">Tax setup</button>
+      <button data-value="exempt">Nexus &amp; exemptions</button>
+    </div>
+  </div>
+
+  <div slot="body">
+
+    <!-- ══ CHARGE TYPES ══ -->
+    <div id="cx-pane-charges">
+      <div class="mock-note">
+        Shipping, handling <b>and tax are all charges</b>. Modelling tax this way means multi-layer tax — state plus
+        county plus city — is several rows rather than a special case, so ordering, allocation, override and GL
+        treatment get written once instead of twice. Each type's <i>basis</i> decides what it computes on, which is
+        how tax-on-shipping works and why it is configuration rather than code.
+      </div>
+
+      <div class="mj-table-wrap">
+        <table class="mj-table">
+          <thead><tr><th class="num" style="width:60px">Seq</th><th>Charge type</th>
+            <th style="width:190px">Basis</th><th class="num" style="width:90px">Rate</th>
+            <th style="width:90px">Is tax</th><th style="width:150px">Enlarges tax base</th>
+            <th style="width:190px">GL role</th><th style="width:90px">Active</th></tr></thead>
+          <tbody id="cx-rows" data-on-row="cxOpen" data-single-select></tbody>
+        </table>
+      </div>
+
+      <div class="grid-2" style="margin-top:var(--mj-space-4)">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-layer-group"></i><h3>Sequence is what makes layering work</h3></div>
+          <div class="mj-card-pad">
+            <div class="small">Charges compute in sequence order. Non-tax charges run first (10–99) and
+              <b>enlarge the taxable base</b>; tax charges run after (100+) and never do.</div>
+            <div class="ed-base" style="margin-top:var(--mj-space-3);display:grid;
+                 grid-template-columns:1fr auto;gap:4px var(--mj-space-4);font-size:12.5px;
+                 padding:var(--mj-space-3) var(--mj-space-4);background:var(--mj-bg-surface-sunken);
+                 border-radius:var(--mj-radius-md)">
+              <span>Taxable goods</span><span class="mj-num">$360.00</span>
+              <span>Shipping <span class="muted">seq 10, enlarges</span></span><span class="mj-num">+ $25.00</span>
+              <span class="muted">CA State Tax <span class="tiny">seq 100, does not</span></span>
+                <span class="mj-num muted">—</span>
+              <span class="muted">LA County Tax <span class="tiny">seq 110, does not</span></span>
+                <span class="mj-num muted">—</span>
+              <span style="border-top:1px solid var(--mj-border-strong);padding-top:5px;margin-top:3px;
+                    font-weight:var(--mj-font-semibold)">Taxable base</span>
+              <span class="mj-num" style="border-top:1px solid var(--mj-border-strong);padding-top:5px;
+                    margin-top:3px;font-weight:var(--mj-font-semibold)">$385.00</span>
+            </div>
+            <div class="mj-banner mj-banner--success" style="margin-top:var(--mj-space-3)">
+              <i class="fa-solid fa-circle-check"></i>
+              <div class="body"><strong>Every tax layer computes on that same $385.00.</strong> County tax is not
+              charged on state tax. Compounding would inflate the liability quietly and there is no report that
+              would flag it, because the arithmetic still balances.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-pen"></i><h3>Computed, but overridable</h3></div>
+          <div class="mj-card-pad">
+            <div class="small">Charges are never hand-typed — they are computed from a basis and a rate. But they
+              are overridable <b>on the record</b>, and an override stores four things.</div>
+            <div class="mj-stated" style="margin-top:var(--mj-space-3)">
+              <span class="muted small" style="width:150px">Who</span><span class="value">the user</span></div>
+            <div class="mj-stated"><span class="muted small" style="width:150px">When</span>
+              <span class="value">timestamp</span></div>
+            <div class="mj-stated"><span class="muted small" style="width:150px">Why</span>
+              <span class="value">a required reason</span></div>
+            <div class="mj-stated"><span class="muted small" style="width:150px">What it replaced</span>
+              <span class="value">the computed amount</span></div>
+            <div class="small muted" style="margin-top:var(--mj-space-3)">
+              Keeping the computed value is the point. Without it, an override is indistinguishable from a bug in
+              the engine, and nobody can tell which one they are looking at six months later.
+            </div>
+            <div class="mj-banner mj-banner--warning" style="margin-top:var(--mj-space-3)">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <div class="body">Overriding a non-tax charge <b>recomputes every tax layer</b>, because the base
+              moved. That cascade is shown before the override is accepted.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAX SETUP ══ -->
+    <div id="cx-pane-tax" class="hidden">
+      <div class="mock-note">
+        Orders never calculates tax. A third-party engine does, and these tables record what it returned — which is
+        why rates resolve from a jurisdiction rather than from a rate typed into a product.
+      </div>
+
+      <div class="grid-2">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-percent"></i><h3>Jurisdiction layers</h3></div>
+          <table class="mj-table mj-table--compact">
+            <thead><tr><th>Jurisdiction</th><th class="num" style="width:90px">Rate</th>
+              <th class="num" style="width:60px">Seq</th><th style="width:110px">Level</th></tr></thead>
+            <tbody>
+              <tr><td>California</td><td class="num">6.250%</td><td class="num">100</td>
+                <td><span class="mj-chip mj-chip--outline">State</span></td></tr>
+              <tr><td>Los Angeles County</td><td class="num">2.250%</td><td class="num">110</td>
+                <td><span class="mj-chip mj-chip--outline">County</span></td></tr>
+              <tr><td>City of Los Angeles</td><td class="num">1.000%</td><td class="num">120</td>
+                <td><span class="mj-chip mj-chip--outline">City</span></td></tr>
+              <tr><td>Pennsylvania</td><td class="num">6.000%</td><td class="num">100</td>
+                <td><span class="mj-chip mj-chip--outline">State</span></td></tr>
+              <tr><td>Washington</td><td class="num">6.500%</td><td class="num">100</td>
+                <td><span class="mj-chip mj-chip--outline">State</span></td></tr>
+            </tbody>
+          </table>
+          <div class="mj-card-pad" style="border-top:1px solid var(--mj-border-default)">
+            <div class="mj-banner mj-banner--info">
+              <i class="fa-solid fa-map-location-dot"></i>
+              <div class="body"><strong>Address → jurisdiction is a documented seam.</strong> Postal and city
+              matching is not rooftop-accurate, and that gap is precisely where a commercial provider earns its
+              money. The tables are shaped to record what a provider returns rather than to replace one.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-sitemap"></i><h3>Taxability inherits down one chain</h3></div>
+          <div class="mj-card-pad">
+            <div class="small" style="margin-bottom:var(--mj-space-3)">
+              Product → its category → that category's ancestors → the product type. Nullable at product and
+              category so &ldquo;ask my parent&rdquo; is sayable; <b>not null at the type</b> so the walk always
+              ends with a real answer instead of a shrug.
+            </div>
+            <div class="cx-chain">
+              <div><span class="lv">Product</span> Printed Handbook — <span class="muted">no override</span></div>
+              <div class="arrow"><i class="fa-solid fa-arrow-down"></i></div>
+              <div><span class="lv">Category</span> Publications — <span class="muted">no override</span></div>
+              <div class="arrow"><i class="fa-solid fa-arrow-down"></i></div>
+              <div class="is-answer"><span class="lv" style="color:inherit;opacity:.75">Product type</span>
+                Physical Good — <b>taxable</b>, category <i>Tangible goods</i></div>
+            </div>
+            <div class="small muted" style="margin-top:var(--mj-space-3)">
+              Taxability and tax <i>category</i> resolve independently through that same chain — a product can be
+              taxable while inheriting its category from further up.
+            </div>
+            <div class="sec-label" style="margin-top:var(--mj-space-4)">A zero always says which reason</div>
+            <table class="mj-table mj-table--compact">
+              <tbody>
+                <tr><td><span class="mj-chip mj-chip--outline">Untaxable</span></td>
+                  <td class="small">The chain resolved to non-taxable</td></tr>
+                <tr><td><span class="mj-chip mj-chip--outline">No nexus</span></td>
+                  <td class="small">We are not registered to collect there</td></tr>
+                <tr><td><span class="mj-chip mj-chip--outline">Exempt</span></td>
+                  <td class="small">The buyer holds a certificate</td></tr>
+                <tr><td><span class="mj-chip mj-chip--outline">No jurisdiction</span></td>
+                  <td class="small">The address resolved to nothing</td></tr>
+              </tbody>
+            </table>
+            <div class="small muted" style="margin-top:var(--mj-space-2)">
+              Four very different situations that all print as $0.00. Recording which one applied is the difference
+              between an audit answered in a minute and an audit answered by re-deriving history.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ NEXUS & EXEMPTIONS ══ -->
+    <div id="cx-pane-exempt" class="hidden">
+      <div class="mock-note">
+        <b>Nexus is about the seller; exemption is about the buyer</b> — and they live in different apps. Nexus says
+        where <i>our</i> legal entity must collect and belongs with the ledger. Exemption says whether <i>this</i>
+        buyer must pay and belongs here, because customer concerns start at orders. Both must hold to charge tax.
+      </div>
+
+      <div class="grid-2">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-building-columns"></i><h3>Nexus — where we must collect</h3>
+            <span class="right"><span class="mj-chip mj-chip--outline">lives in Accounting</span></span></div>
+          <table class="mj-table mj-table--compact">
+            <thead><tr><th>Company</th><th>Jurisdiction</th><th style="width:120px">Registered</th>
+              <th style="width:90px">Status</th></tr></thead>
+            <tbody id="cx-nexus"></tbody>
+          </table>
+          <div class="mj-card-pad" style="border-top:1px solid var(--mj-border-default)">
+            <div class="small muted">Read-only here. Registering a legal entity in a new state is an accounting
+              action with filing obligations attached — it should not be a checkbox on a catalog screen.
+              <a href="#">Manage in Accounting ↗</a></div>
+          </div>
+        </div>
+
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-file-shield"></i><h3>Customer exemptions</h3>
+            <span class="right"><button class="mj-btn mj-btn--outline mj-btn--sm">
+              <i class="fa-solid fa-plus"></i> Add</button></span></div>
+          <table class="mj-table mj-table--compact">
+            <thead><tr><th>Party</th><th>Jurisdiction</th><th>Scope</th>
+              <th style="width:130px">Certificate</th><th style="width:110px">Expires</th></tr></thead>
+            <tbody id="cx-exempt"></tbody>
+          </table>
+          <div class="mj-card-pad" style="border-top:1px solid var(--mj-border-default)">
+            <div class="small muted">Scoped by jurisdiction <b>and</b> product category, for a person or an
+              organization. A blanket per-customer flag cannot express &ldquo;exempt on publications in Illinois,
+              taxable on everything else&rdquo; — which is the shape real certificates actually take.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mj-card" style="margin-top:var(--mj-space-4)">
+        <div class="mj-card-head"><i class="fa-solid fa-check-double"></i><h3>Both must hold</h3></div>
+        <div class="mj-card-pad">
+          <table class="mj-table mj-table--compact">
+            <thead><tr><th>Scenario</th><th style="width:130px">Nexus</th><th style="width:150px">Exemption</th>
+              <th style="width:130px">Taxable?</th><th>Recorded reason</th></tr></thead>
+            <tbody>
+              <tr><td>Handbook shipped to Los Angeles, Meridian</td>
+                <td><span class="mj-chip mj-chip--success">yes, CA</span></td>
+                <td><span class="mj-chip mj-chip--outline">none held</span></td>
+                <td><span class="mj-chip mj-chip--warning">taxed</span></td>
+                <td class="small">3 layers on $385.00</td></tr>
+              <tr><td>Exam sold to Northwind, Seattle</td>
+                <td><span class="mj-chip mj-chip--outline">no, WA</span></td>
+                <td><span class="mj-chip mj-chip--success">WA-EX-88213</span></td>
+                <td><span class="mj-chip mj-chip--outline">$0.00</span></td>
+                <td class="small">Exempt — certificate on file</td></tr>
+              <tr><td>Membership sold anywhere</td>
+                <td><span class="mj-chip mj-chip--outline">n/a</span></td>
+                <td><span class="mj-chip mj-chip--outline">n/a</span></td>
+                <td><span class="mj-chip mj-chip--outline">$0.00</span></td>
+                <td class="small">Untaxable — type resolved non-taxable</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div slot="overlays">
+    <div class="mj-modal" id="cx-why">
+      <div class="mj-modal-head">
+        <i class="fa-solid fa-circle-question" style="color:var(--mj-brand-primary)"></i>
+        <div><h2>Why did this line tax the way it did?</h2>
+          <div class="small muted">The full resolution, for one line</div></div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-modal-body">
+        <div class="mj-field"><label>Line</label>
+          <select class="mj-select" id="cw-line">
+            <option value="taxed">ORD-1016 line 2 — Printed Handbook × 5, ship to Los Angeles</option>
+            <option value="untaxable">ORD-1016 line 1 — Annual Membership × 1</option>
+            <option value="exempt">ORD-1008 line 1 — Certification Exam × 4, Northwind</option>
+          </select></div>
+        <div id="cw-out"></div>
+      </div>
+      <div class="mj-modal-foot"><span class="right">
+        <button class="mj-btn mj-btn--flat" data-close>Close</button></span></div>
+    </div>
+
+    <aside class="mj-slide-in" id="cx-detail">
+      <div class="mj-slide-in-head">
+        <div><h2 id="cxd-title">Charge type</h2><div class="small muted" id="cxd-sub"></div></div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-slide-in-body" id="cxd-body"></div>
+      <div class="mj-slide-in-foot">
+        <button class="mj-btn mj-btn--primary mj-btn--sm" data-close>Save</button>
+        <button class="mj-btn mj-btn--flat mj-btn--sm" data-close>Cancel</button>
+      </div>
+    </aside>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+const H = MJ.H;
+
+function render() {
+  document.getElementById('cx-count').textContent =
+    `${DB.chargeTypes.filter(c => c.active).length} active charge types`;
+
+  document.getElementById('cx-rows').innerHTML = DB.chargeTypes
+    .slice().sort((a, b) => a.seq - b.seq).map(c => `
+    <tr class="is-clickable" data-row="${c.id}">
+      <td class="num muted">${c.seq}</td>
+      <td><span class="primary">${c.name}</span>
+        ${c.jurisdiction ? `<div class="secondary">${c.jurisdiction}</div>` : ''}</td>
+      <td class="small">${c.basis}</td>
+      <td class="num">${c.rate != null ? F.rate(c.rate) : '<span class="muted">—</span>'}</td>
+      <td>${c.isTax ? '<span class="mj-chip mj-chip--info">tax</span>'
+        : '<span class="mj-chip mj-chip--outline">charge</span>'}</td>
+      <td>${c.taxable ? '<span class="mj-chip mj-chip--warning">yes</span>'
+        : '<span class="mj-chip mj-chip--outline">no</span>'}</td>
+      <td class="small">${c.glRole}</td>
+      <td>${c.active ? '<span class="mj-chip mj-chip--success">Active</span>'
+        : '<span class="mj-chip">Off</span>'}</td>
+    </tr>`).join('');
+
+  document.getElementById('cx-nexus').innerHTML = DB.nexus.map(n => `
+    <tr><td>${DB.companies[n.companyID].short}</td><td>${n.jurisdiction}</td>
+      <td>${F.date(n.registered)}</td>
+      <td><span class="mj-chip mj-chip--success">${n.status}</span></td></tr>`).join('');
+
+  document.getElementById('cx-exempt').innerHTML = DB.exemptions.map(e => `
+    <tr><td>${e.party}<div class="secondary">${e.partyKind}</div></td>
+      <td>${e.jurisdiction}</td>
+      <td class="small">${e.productCategory}</td>
+      <td class="mono small">${e.certificate}</td>
+      <td>${e.to ? F.dateShort(e.to) : '<span class="muted">no expiry</span>'}</td></tr>`).join('');
+}
+
+function cxOpen(id) {
+  const c = DB.chargeTypes.find(x => x.id === id);
+  document.getElementById('cxd-title').textContent = c.name;
+  document.getElementById('cxd-sub').innerHTML =
+    `sequence ${c.seq} · ${c.isTax ? 'a tax layer' : 'a non-tax charge'}`;
+  document.getElementById('cxd-body').innerHTML = `
+    <div class="grid-2">
+      <div class="mj-field"><label>Name</label><input class="mj-input" value="${c.name}"></div>
+      <div class="mj-field"><label>Sequence</label><input class="mj-input is-num" value="${c.seq}">
+        <div class="hint">Non-tax below 100, tax at 100+. Order decides the base.</div></div>
+      <div class="mj-field"><label>Basis</label>
+        <select class="mj-select">${['Flat per order', 'Flat per line', 'Percent of net', 'Percent of taxable base',
+          'Per unit'].map(b => `<option ${b === c.basis ? 'selected' : ''}>${b}</option>`).join('')}</select>
+        <div class="hint">What this charge computes on. Changing it changes the whole layering behavior.</div></div>
+      <div class="mj-field"><label>Rate</label>
+        <input class="mj-input is-num" value="${c.rate != null ? (c.rate * 100).toFixed(3) : ''}" placeholder="n/a">
+        <div class="hint">Percent bases only.</div></div>
+    </div>
+
+    <div class="sec-label" style="margin-top:var(--mj-space-4)">Behavior</div>
+    <div class="mj-stated" style="border-bottom:1px solid var(--mj-border-subtle)">
+      <span class="muted small" style="width:170px">Is a tax layer</span>
+      <span class="value">${c.isTax ? 'Yes' : 'No'}</span>
+      <span class="from">${c.isTax ? 'runs after non-tax charges' : 'runs before tax'}</span></div>
+    <div class="mj-stated" style="border-bottom:1px solid var(--mj-border-subtle)">
+      <span class="muted small" style="width:170px">Enlarges the taxable base</span>
+      <span class="value">${c.taxable ? 'Yes' : 'No'}</span>
+      <span class="from">${c.taxable ? 'tax is charged on it' : 'never compounds'}</span></div>
+    <div class="mj-stated" style="border-bottom:1px solid var(--mj-border-subtle)">
+      <span class="muted small" style="width:170px">GL role</span>
+      <span class="value">${c.glRole}</span><span class="from">resolved by role, not a stored account</span></div>
+    ${c.jurisdiction ? `<div class="mj-stated" style="border-bottom:1px solid var(--mj-border-subtle)">
+      <span class="muted small" style="width:170px">Jurisdiction</span>
+      <span class="value">${c.jurisdiction}</span><span class="from">from the ship-to address</span></div>` : ''}
+
+    <div class="mj-field" style="margin-top:var(--mj-space-4)">
+      <label><input type="checkbox" ${c.active ? 'checked' : ''}> Active</label>
+      <div class="hint">Inactive types stop computing on new orders and leave existing ones untouched.</div></div>
+
+    ${c.isTax ? `<div class="mj-banner mj-banner--info" style="margin-top:var(--mj-space-3)">
+      <i class="fa-solid fa-circle-info"></i>
+      <div class="body">This is a tax layer, so it computes on the taxable base and does <b>not</b> enlarge it.
+      That single flag is what makes state + county + city three ordinary rows instead of a special case in the
+      engine.</div></div>`
+    : `<div class="mj-banner mj-banner--neutral" style="margin-top:var(--mj-space-3)">
+      <i class="fa-solid fa-circle-info"></i>
+      <div class="body">A non-tax charge that is itself taxable enlarges the base — which is exactly how
+      tax-on-shipping is expressed, with no code that knows the word &ldquo;shipping&rdquo;.</div></div>`}`;
+
+  MJ.open('#cx-detail');
+}
+
+function cxTab(v) {
+  ['charges', 'tax', 'exempt'].forEach(k =>
+    document.getElementById('cx-pane-' + k).classList.toggle('hidden', k !== v));
+}
+
+function taxWhy() {
+  const which = document.getElementById('cw-line').value;
+
+  const chain = (levels) => `<div class="cx-chain">${levels.map((l, i) => `
+    ${i ? '<div class="arrow"><i class="fa-solid fa-arrow-down"></i></div>' : ''}
+    <div class="${l.answer ? 'is-answer' : ''}"><span class="lv"
+      style="${l.answer ? 'color:inherit;opacity:.75' : ''}">${l.level}</span>${l.text}</div>`).join('')}</div>`;
+
+  const out = {
+    taxed: `
+      <div class="mj-money-strip" style="grid-template-columns:1fr 1fr 1fr">
+        <div><span class="l">Taxable base</span><span class="v">$385.00</span></div>
+        <div><span class="l">Layers</span><span class="v">3</span></div>
+        <div><span class="l">Tax</span><span class="v">$36.57</span></div>
+      </div>
+      <div class="sec-label" style="margin-top:var(--mj-space-4)">1 · Is it taxable?</div>
+      ${chain([
+        { level: 'Product', text: 'Printed Handbook — <span class="muted">no override</span>' },
+        { level: 'Category', text: 'Publications — <span class="muted">no override</span>' },
+        { level: 'Product type', text: 'Physical Good — <b>taxable</b>, <i>Tangible goods</i>', answer: true },
+      ])}
+      <div class="sec-label" style="margin-top:var(--mj-space-4)">2 · Where?</div>
+      <div class="small">Ship-to 1180 Wilshire Blvd, Los Angeles CA 90017 → California ›
+        Los Angeles County › City of Los Angeles.</div>
+      <div class="sec-label" style="margin-top:var(--mj-space-4)">3 · Must we collect, and must they pay?</div>
+      <div class="small">BC Media has nexus in California since Jun 2024 ✓ · Meridian holds no CA exemption ✓ —
+        both conditions hold, so tax applies.</div>
+      <div class="sec-label" style="margin-top:var(--mj-space-4)">4 · The base, then the layers</div>
+      <table class="mj-table mj-table--compact">
+        <thead><tr><th>Layer</th><th class="num">Rate</th><th class="num">Base</th><th class="num">Amount</th></tr></thead>
+        <tbody>
+          <tr><td>CA State Tax</td><td class="num">6.25%</td><td class="num">$385.00</td><td class="num">$24.06</td></tr>
+          <tr><td>LA County Tax</td><td class="num">2.25%</td><td class="num">$385.00</td><td class="num">$8.66</td></tr>
+          <tr><td>LA City Tax</td><td class="num">1.00%</td><td class="num">$385.00</td><td class="num">$3.85</td></tr>
+          <tr class="is-total"><td colspan="3">Total</td><td class="num">$36.57</td></tr>
+        </tbody></table>
+      <div class="small muted" style="margin-top:var(--mj-space-2)">
+        Same base three times. $360.00 of goods plus $25.00 of shipping, and nothing else.
+      </div>`,
+    untaxable: `
+      <div class="mj-money-strip" style="grid-template-columns:1fr 1fr">
+        <div><span class="l">Tax</span><span class="v mj-money--muted">$0.00</span></div>
+        <div><span class="l">Reason</span><span class="v" style="font-size:14px">Untaxable</span></div>
+      </div>
+      <div class="sec-label" style="margin-top:var(--mj-space-4)">Is it taxable?</div>
+      ${chain([
+        { level: 'Product', text: 'Annual Membership — <span class="muted">no override</span>' },
+        { level: 'Category', text: 'Membership — <span class="muted">no override</span>' },
+        { level: 'Product type', text: 'Membership — <b>not taxable</b>, <i>Education</i>', answer: true },
+      ])}
+      <div class="mj-banner mj-banner--neutral" style="margin-top:var(--mj-space-4)">
+        <i class="fa-solid fa-circle-info"></i>
+        <div class="body">Resolution stops at the first question. Nexus and exemption are never consulted, because
+        an untaxable thing is untaxable everywhere — and the recorded reason says <b>Untaxable</b> rather than a
+        bare zero.</div></div>`,
+    exempt: `
+      <div class="mj-money-strip" style="grid-template-columns:1fr 1fr">
+        <div><span class="l">Tax</span><span class="v mj-money--muted">$0.00</span></div>
+        <div><span class="l">Reason</span><span class="v" style="font-size:14px">Exempt</span></div>
+      </div>
+      <div class="sec-label" style="margin-top:var(--mj-space-4)">Resolution</div>
+      <div class="small stack-2">
+        <div><b>Taxable?</b> The chain resolves the exam's category from <i>Certification</i> — non-taxable, so it
+          would be $0.00 on that ground alone.</div>
+        <div><b>Exemption also on file.</b> Northwind Society holds <span class="mono">WA-EX-88213</span> covering
+          all categories in Washington until Dec 2027.</div>
+      </div>
+      <div class="mj-banner mj-banner--info" style="margin-top:var(--mj-space-4)">
+        <i class="fa-solid fa-circle-info"></i>
+        <div class="body">Two reasons both produce zero, and which one is recorded matters: if the product later
+        becomes taxable, the exemption is what still holds the line at zero. A single &ldquo;no tax&rdquo; flag
+        would lose that.</div></div>`,
+  }[which];
+
+  document.getElementById('cw-out').innerHTML = out;
+}
+
+MJ.mount({
+  nav: 'catalog', rail: 'charges',
+  title: 'Charges & tax',
+  icon: 'fa-solid fa-receipt',
+  subtitle: 'Shipping, handling and tax are one mechanism — basis and sequence do the work',
+  ready() {
+    render();
+    document.getElementById('cw-line').addEventListener('change', taxWhy);
+    taxWhy();
+  },
+});
+</script>
+</body>
+</html>

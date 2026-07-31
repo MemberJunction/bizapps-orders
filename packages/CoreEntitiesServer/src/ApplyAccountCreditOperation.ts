@@ -63,6 +63,7 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { RequireUUID } from './sql-guards.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -124,6 +125,11 @@ export class ApplyAccountCreditOperation extends BaseRemotableOperation<ApplyAcc
         if (!input?.SourceOrderHeaderID || !input?.TargetOrderHeaderID) {
             return { Success: false, Message: 'Both SourceOrderHeaderID and TargetOrderHeaderID are required.' };
         }
+        // Caller-supplied ids reach SQL filter text downstream. Validated here,
+        // at the boundary, so every frame below this one can trust them.
+        RequireUUID(input.SourceOrderHeaderID, 'SourceOrderHeaderID');
+        RequireUUID(input.TargetOrderHeaderID, 'TargetOrderHeaderID');
+
         if (input.SourceOrderHeaderID.toLowerCase() === input.TargetOrderHeaderID.toLowerCase()) {
             return {
                 Success: false,

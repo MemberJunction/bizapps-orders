@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Schedule Information Section -->
+    <!-- Schedule Details Section -->
     <mj-collapsible-panel
-        SectionKey="scheduleInformation"
-        SectionName="Schedule Information"
-        Icon="fa fa-info-circle"
+        SectionKey="scheduleDetails"
+        SectionName="Schedule Details"
+        Icon="fa fa-list-ul"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -29,11 +29,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Recognition Timeline Section -->
+    <!-- Recognition Period Section -->
     <mj-collapsible-panel
-        SectionKey="recognitionTimeline"
-        SectionName="Recognition Timeline"
-        Icon="fa fa-calendar-alt"
+        SectionKey="recognitionPeriod"
+        SectionName="Recognition Period"
+        Icon="fa fa-clock"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -52,16 +52,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Financial Details Section -->
-    <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
-        Icon="fa fa-money-bill"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -70,9 +60,19 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Accounting Integration Section -->
+    <mj-collapsible-panel
+        SectionKey="accountingIntegration"
+        SectionName="Accounting Integration"
+        Icon="fa fa-book"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="JournalEntryID"
             Type="textbox"
             [EditMode]="EditMode"

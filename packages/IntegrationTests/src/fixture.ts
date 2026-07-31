@@ -31,7 +31,7 @@
  *   USED BY: every bundle under ./checks
  */
 import { randomUUID } from 'node:crypto';
-import { Metadata, RunView } from '@memberjunction/core';
+import { BaseEntity, Metadata, RunView } from '@memberjunction/core';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
@@ -41,7 +41,17 @@ export const ACCT_SCHEMA = '__mj_BizAppsAccounting';
 export const COMMON_SCHEMA = '__mj_BizAppsCommon';
 
 /** Stamped on every fixture row so a stranded run is identifiable and sweepable by name. */
-export const FIXTURE_TAG = '(bizapps-orders integration test — safe to delete)';
+export const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
+const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
+const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
+const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
+const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
+const PRODUCT_PRICE_ENTITY = 'MJ_BizApps_Orders: Product Prices';
+const PROMOTION_ENTITY = 'MJ_BizApps_Orders: Promotions';
+const PROMOTION_CODE_ENTITY = 'MJ_BizApps_Orders: Promotion Codes';
+const PROMOTION_TARGET_ENTITY = 'MJ_BizApps_Orders: Promotion Targets';
+
+const FIXTURE_TAG = '(bizapps-orders integration test — safe to delete)';
 
 /** The GL account shape each fixture company gets. Codes mirror accounting's starter chart. */
 const FIXTURE_ACCOUNTS = [
@@ -114,6 +124,12 @@ export interface OrdersFixture {
     Customers: { OrganizationID: string; SecondOrganizationID: string; PersonID: string };
     /** Products by mnemonic — see {@link CreateOrdersFixture} for what each one is for. */
     Products: Record<string, string>;
+    /**
+     * `ProductEntitlement` template IDs by mnemonic (D27/D76). Chosen to cover all four validity
+     * modes and both quantity shapes, because the modes are where the interesting behaviour is:
+     * a perpetual download, a term-scoped seat count, an event window, and a fixed duration.
+     */
+    Entitlements: Record<string, string>;
 }
 
 // ─── Fixture handoff ───────────────────────────────────────────────────────────────────────────
@@ -311,6 +327,7 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
         Event: { StartsAt: new Date('2027-04-15T09:00:00Z'), EndsAt: new Date('2027-04-17T17:00:00Z') },
         Customers: { OrganizationID: '', SecondOrganizationID: '', PersonID: '' },
         Products: {},
+        Entitlements: {},
         // Populated below, once the jurisdictions and addresses exist.
         Tax: { JurisdictionIDs: new Map(), AddressIDs: new Map() },
     };
@@ -495,13 +512,19 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
     };
 
     fixture.ProductTypeIDs.Simple = await createProductType(ctx, run, 'Service');
-    fixture.ProductTypeIDs.Subscription = await createProductType(ctx, run, 'Subscription');
+    // A SUBSCRIPTION type's grants follow the TERM, not the order date (D76). Seeding this here rather
+    // than per product is what makes the walk's terminating answer the right one for the whole type.
+    fixture.ProductTypeIDs.Subscription = await createProductType(ctx, run, 'Subscription', {
+        DefaultEntitlementValidityMode: 'SubscriptionTerm',
+    });
     // The extension pointers are what make this type an EVENT type rather than a label: they name
     // the IsA children that carry event data (BO-D37).
     fixture.ProductTypeIDs.Event = await createProductType(ctx, run, 'Event', {
         ProductExtensionEntity: 'MJ_BizApps_Orders: Event Products',
         OrderLineExtensionEntity: 'MJ_BizApps_Orders: Event Order Lines',
         DefaultRevenueRecognitionTypeID: rr('AllBackEnd'),
+        // A ticket grants access for the length of the EVENT, whenever the ticket was bought.
+        DefaultEntitlementValidityMode: 'EventWindow',
     });
 
     const catA = await createCategory(ctx, run, fixture.CoA.ID, 'Cat A');
@@ -549,6 +572,16 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
     // The IsA extension rows. PK = the SAME UUID as the parent Product (BO-D37), which is what
     // makes `WHERE ID = <productID>` on Event Products the "is this product an event?" test.
     for (const ticket of [fixture.Products.EventTicket, fixture.Products.EventTicketB]) {
+        // THE ONE CATALOG ROW THAT STAYS RAW SQL, and not for convenience.
+        //
+        // An IsA child takes its PARENT's id as its own primary key (BO-D37) — that identity IS the
+        // relationship. `BaseEntity` cannot express that: `NewRecord()` then setting the PK makes the
+        // save take the update path, which matches no row, and it returns false with no message, no
+        // `CompleteMessage` and an empty `Errors` array. Verified directly against a real product, not
+        // inferred. Every other catalog row in this fixture goes through the object model.
+        //
+        // Worth fixing upstream — creating an extension row is a legitimate thing an application does,
+        // and today it can only be done with SQL.
         await PoolQuery(
             ctx,
             `INSERT INTO ${ORDERS_SCHEMA}.EventProduct
@@ -556,7 +589,65 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
              VALUES ('${ticket}','${fixture.Event.StartsAt.toISOString()}','${fixture.Event.EndsAt.toISOString()}',
                      '${run} Convention Center', 500, 1)`,
         );
+
     }
+
+    // ── ENTITLEMENT TEMPLATES (D27/D76) ───────────────────────────────────────
+    // One per validity mode, because the modes are where the behaviour lives. Note that WidgetA
+    // carries TWO templates with DIFFERENT windows — the case a policy resolved purely from the
+    // product could not express, and the reason ValidityMode sits on the template.
+    fixture.Entitlements = {
+        /** Uncountable, perpetual: the shape of a digital download or a lifetime feature flag. */
+        WidgetSupport: await addEntitlement(ctx, fixture.Products.WidgetA, {
+            Code: 'WIDGET-SUPPORT',
+            EntitlementType: 'Feature',
+            ValidityMode: 'Perpetual',
+        }),
+        /** Countable, and time-boxed independently of its sibling above. */
+        WidgetForum: await addEntitlement(ctx, fixture.Products.WidgetA, {
+            Code: 'WIDGET-FORUM',
+            EntitlementType: 'ResourceQuantity',
+            Quantity: 5,
+            UnitOfMeasure: 'Seat',
+            ValidityMode: 'FixedDuration',
+            ValidityDurationDays: 90,
+        }),
+        /** Follows the TERM, so a cancelled year revokes one grant and leaves the rest of history. */
+        SubSeats: await addEntitlement(ctx, fixture.Products.SubRolling, {
+            Code: 'SUB-SEATS',
+            EntitlementType: 'ResourceQuantity',
+            Quantity: 3,
+            UnitOfMeasure: 'Seat',
+            ValidityMode: 'SubscriptionTerm',
+        }),
+        /** Opens an hour early and closes a day late — the online-event case. */
+        TicketAccess: await addEntitlement(ctx, fixture.Products.EventTicket, {
+            Code: 'TICKET-ACCESS',
+            EntitlementType: 'AccessLevel',
+            ValidityMode: 'EventWindow',
+            AccessLeadHours: 1,
+            AccessLagHours: 24,
+        }),
+        /**
+         * On the PRORATING product, so a fractional line quantity reaches the quantity rule. That is
+         * where round-up actually matters: a half-year of a 4-seat product is 2.33 seats, and handing
+         * the customer two is a support ticket while handing them three is nothing.
+         */
+        ProratedSeats: await addEntitlement(ctx, fixture.Products.SubCalendar, {
+            Code: 'PRORATED-SEATS',
+            EntitlementType: 'ResourceQuantity',
+            Quantity: 4,
+            UnitOfMeasure: 'Seat',
+            ValidityMode: 'SubscriptionTerm',
+        }),
+        /** Deliberately SILENT on validity, so the product/category/type walk has to answer. */
+        DeferredAccess: await addEntitlement(ctx, fixture.Products.DeferredA, {
+            Code: 'DEFERRED-ACCESS',
+            EntitlementType: 'Feature',
+            ValidityMode: null,
+        }),
+    };
+
 
     // The GL links we just wrote are invisible to booking until the accounting engine reloads.
     // `AccountingEngineBase` is a BaseEngine: it caches accounts, roles and links in-process on
@@ -628,6 +719,161 @@ async function createPerson(ctx: IntegrationCheckContext, run: string): Promise<
     return id;
 }
 
+/**
+ * Price a product THROUGH THE OBJECT MODEL, once.
+ *
+ * TWO THINGS THIS BUYS, and the first is the reason it exists at all.
+ *
+ * `ProductPriceEntityServer.ValidateAsync` enforces the AMBIGUITY GUARD: no two active rules may share
+ * a product, price list, fee type and priority, because the engine refuses to pick between them rather
+ * than take whichever the database returned first (D69). Thirteen raw-SQL prices across this suite
+ * walked straight past that guard, which is why ambiguity kept surfacing at CONFIRM time — far from the
+ * rule that caused it — instead of loudly here.
+ *
+ * And it is IDEMPOTENT by product, because a check that prices the same product twice creates exactly
+ * the collision the guard exists to catch. Guarding here beats making every caller remember.
+ */
+export async function CreateProductPrice(
+    ctx: IntegrationCheckContext,
+    productID: string,
+    amount: number,
+    opts: {
+        PricingModel?: string;
+        FeeType?: string;
+        Priority?: number;
+        PriceListID?: string | null;
+        MinQuantity?: number | null;
+        MaxQuantity?: number | null;
+        EffectiveFrom?: string;
+        EffectiveTo?: string | null;
+        PackageQuantity?: number | null;
+    } = {},
+): Promise<string | null> {
+    const existing = await TxQuery<{ ID: string }>(
+        ctx,
+        `SELECT ID FROM ${ORDERS_SCHEMA}.ProductPrice
+          WHERE ProductID='${productID}' AND Status='Active'
+            AND FeeType='${(opts.FeeType ?? 'Standard').replace(/'/g, "''")}'
+            AND Priority=${opts.Priority ?? 0}
+            AND ${opts.PriceListID ? `PriceListID='${opts.PriceListID}'` : 'PriceListID IS NULL'}`,
+    );
+    if (existing.length) return existing[0].ID;
+
+    return createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
+        ProductID: productID,
+        PricingModel: opts.PricingModel ?? 'PerUnit',
+        FeeType: opts.FeeType ?? 'Standard',
+        Amount: amount,
+        EffectiveFrom: opts.EffectiveFrom ?? '2020-01-01',
+        EffectiveTo: opts.EffectiveTo ?? null,
+        Priority: opts.Priority ?? 0,
+        Status: 'Active',
+        PriceListID: opts.PriceListID ?? null,
+        MinQuantity: opts.MinQuantity ?? null,
+        MaxQuantity: opts.MaxQuantity ?? null,
+        PackageQuantity: opts.PackageQuantity ?? null,
+    });
+}
+
+/**
+ * A promotion, its redeemable code and any product target — through the object model.
+ *
+ * `Promotion` is the offer and `PromotionCode` is the string a customer presents (D70); they are
+ * separate rows because one offer can have many codes. Returns the code, since that is what an order
+ * actually carries.
+ */
+export async function CreatePromotion(
+    ctx: IntegrationCheckContext,
+    opts: {
+        Kind?: string;
+        Value: number;
+        AppliesAt?: string;
+        TargetProductID?: string | null;
+        TargetProductCategoryID?: string | null;
+        Code?: string;
+        MinimumOrderAmount?: number | null;
+        StackingMode?: string | null;
+    },
+): Promise<string> {
+    const code = opts.Code ?? `IT-${randomUUID().slice(0, 6).toUpperCase()}`;
+    const type = await TxOne<{ ID: string }>(
+        ctx,
+        `SELECT ID FROM ${ORDERS_SCHEMA}.PromotionType WHERE Code='${opts.Kind ?? 'PercentOff'}'`,
+    );
+
+    const promotionID = await createViaEntity(ctx, PROMOTION_ENTITY, {
+        Code: code,
+        Name: code,
+        PromotionTypeID: type.ID,
+        Value: opts.Value,
+        AppliesAt: opts.AppliesAt ?? 'Either',
+        Status: 'Active',
+        MinimumOrderAmount: opts.MinimumOrderAmount ?? null,
+    });
+
+    await createViaEntity(ctx, PROMOTION_CODE_ENTITY, {
+        PromotionID: promotionID,
+        Code: code,
+        Status: 'Active',
+    });
+
+    if (opts.TargetProductID || opts.TargetProductCategoryID) {
+        await createViaEntity(ctx, PROMOTION_TARGET_ENTITY, {
+            PromotionID: promotionID,
+            ProductID: opts.TargetProductID ?? null,
+            ProductCategoryID: opts.TargetProductCategoryID ?? null,
+            IncludeDescendants: true,
+        });
+    }
+    return code;
+}
+
+/**
+ * Create one row THROUGH THE OBJECT MODEL and return its id.
+ *
+ * WHY THE CATALOG IS BUILT THIS WAY AND NOT WITH `INSERT`.
+ *
+ * Creating a product IS part of the product. A fixture that inserts one by hand skips every
+ * validation, default and Save-override the application would run, so the suite proves that ORDERS
+ * work against a catalog that never went through our software — and any defect in the catalog path is
+ * invisible by construction. `ProductPriceEntityServer` is the sharpest case: it enforces the
+ * price-ambiguity guard (no two active rules sharing product, list, fee type and priority), and every
+ * raw-SQL price in this suite walked straight past it. That is why ambiguity kept surfacing at CONFIRM
+ * time, far from the rule that caused it, instead of loudly at creation.
+ *
+ * WHAT IS DELIBERATELY STILL SQL: rows this application does not own — `__mj.Company`, accounting's
+ * `GLAccount`/`GLAccountLink`/tax geography, common's `Organization`/`Person`/`Address`. Creating
+ * those through their own entity APIs would test THEIR software, not ours, and couple this fixture to
+ * their Save-overrides. The boundary is ownership, not convenience.
+ *
+ * Failures are loud and name the entity: a fixture that half-builds leaves every check in the bundle
+ * failing for a reason that has nothing to do with what it was testing.
+ */
+async function createViaEntity(
+    ctx: IntegrationCheckContext,
+    entityName: string,
+    fields: Record<string, unknown>,
+): Promise<string> {
+    const md = new Metadata();
+    const entity = await md.GetEntityObject<BaseEntity & Record<string, unknown>>(entityName, ctx.User);
+    entity.NewRecord();
+    for (const [key, value] of Object.entries(fields)) {
+        if (value !== undefined) entity.Set(key, value);
+    }
+    if (!(await entity.Save())) {
+        // `CompleteMessage` is often empty on a validation failure — the detail lives in `Errors`, one
+        // entry per offending field. Reporting only the message turns a precise "Field X is required"
+        // into "unknown error", which is how a fixture failure becomes a twenty-minute hunt.
+        const result = entity.LatestResult;
+        const detail =
+            (result?.Errors ?? [])
+                .map((e) => (typeof e === 'string' ? e : JSON.stringify(e)))
+                .join('; ') || result?.CompleteMessage || 'no reason given';
+        throw new Error(`Fixture could not create a '${entityName}' through the object model: ${detail}`);
+    }
+    return entity.Get('ID') as string;
+}
+
 async function createProductType(
     ctx: IntegrationCheckContext,
     run: string,
@@ -636,20 +882,62 @@ async function createProductType(
         ProductExtensionEntity?: string;
         OrderLineExtensionEntity?: string;
         DefaultRevenueRecognitionTypeID?: string;
+        /** Entitlement policy backstops (D76). Left to the entity's own defaults when not stated. */
+        DefaultEntitlementGrantTiming?: string;
+        DefaultEntitlementQuantityMode?: string;
+        DefaultEntitlementValidityMode?: string;
     } = {},
 ): Promise<string> {
-    const id = randomUUID();
-    const q = (v?: string) => (v ? `'${v.replace(/'/g, "''")}'` : 'NULL');
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.ProductType
-            (ID, Name, RequiresFulfillment, IsActive,
-             ProductExtensionEntity, OrderLineExtensionEntity, DefaultRevenueRecognitionTypeID)
-         VALUES ('${id}','${run} ${label}',0,1,
-                 ${q(opts.ProductExtensionEntity)}, ${q(opts.OrderLineExtensionEntity)},
-                 ${q(opts.DefaultRevenueRecognitionTypeID)})`,
-    );
-    return id;
+    // The three policy columns are NOT NULL with database defaults. Passing `undefined` leaves them
+    // to the entity rather than writing a value, which is the point: the fixture should exercise the
+    // defaults a real caller gets, not paper over them.
+    return createViaEntity(ctx, PRODUCT_TYPE_ENTITY, {
+        Name: `${run} ${label}`,
+        RequiresFulfillment: false,
+        IsActive: true,
+        ProductExtensionEntity: opts.ProductExtensionEntity,
+        OrderLineExtensionEntity: opts.OrderLineExtensionEntity,
+        DefaultRevenueRecognitionTypeID: opts.DefaultRevenueRecognitionTypeID,
+        DefaultEntitlementGrantTiming: opts.DefaultEntitlementGrantTiming ?? 'OnConfirm',
+        DefaultEntitlementQuantityMode: opts.DefaultEntitlementQuantityMode ?? 'PerUnit',
+        DefaultEntitlementValidityMode: opts.DefaultEntitlementValidityMode ?? 'Perpetual',
+    });
+}
+
+/**
+ * Attach an entitlement TEMPLATE to a product (D27/D76).
+ *
+ * Returns the template ID so a check can assert against the grants it produced. `ValidityMode` here
+ * overrides the product/category/type walk, which is the point of having it on the template: one
+ * product can grant a perpetual download and ninety days of forum access at the same time.
+ */
+async function addEntitlement(
+    ctx: IntegrationCheckContext,
+    productID: string,
+    opts: {
+        Code: string;
+        EntitlementType?: 'Feature' | 'AccessLevel' | 'ResourceQuantity' | 'Custom';
+        Quantity?: number | null;
+        UnitOfMeasure?: string;
+        ValidityMode?: string | null;
+        ValidityDurationDays?: number | null;
+        AccessLeadHours?: number | null;
+        AccessLagHours?: number | null;
+    },
+): Promise<string> {
+    return createViaEntity(ctx, PRODUCT_ENTITLEMENT_ENTITY, {
+        ProductID: productID,
+        EntitlementType: opts.EntitlementType ?? 'Feature',
+        Code: opts.Code,
+        Name: opts.Code,
+        Quantity: opts.Quantity ?? null,
+        UnitOfMeasure: opts.UnitOfMeasure ?? null,
+        IsActive: true,
+        ValidityMode: opts.ValidityMode ?? null,
+        ValidityDurationDays: opts.ValidityDurationDays ?? null,
+        AccessLeadHours: opts.AccessLeadHours ?? null,
+        AccessLagHours: opts.AccessLagHours ?? null,
+    });
 }
 
 async function createCategory(
@@ -658,13 +946,11 @@ async function createCategory(
     companyID: string,
     label: string,
 ): Promise<string> {
-    const id = randomUUID();
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.ProductCategory (ID, CompanyID, Name, IsActive)
-         VALUES ('${id}','${companyID}','${run} ${label}',1)`,
-    );
-    return id;
+    return createViaEntity(ctx, PRODUCT_CATEGORY_ENTITY, {
+        CompanyID: companyID,
+        Name: `${run} ${label}`,
+        IsActive: true,
+    });
 }
 
 async function createProduct(
@@ -677,18 +963,15 @@ async function createProduct(
     revRecTypeID: string,
     subscriptionTypeID?: string,
 ): Promise<string> {
-    const id = randomUUID();
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.Product
-            (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, SubscriptionTypeID, IsTaxable)
-         VALUES ('${id}','${companyID}','${productTypeID}','${categoryID}','${run} ${label}','Active',
-                 '${revRecTypeID}',${subscriptionTypeID ? `'${subscriptionTypeID}'` : 'NULL'},1)`,
-        // IsTaxable = 1. It was hardcoded 0 when this fixture predated tax resolution, which made
-        // every product silently non-taxable — so the tax checks measured a zero the engine was
-        // producing CORRECTLY, for a reason that had nothing to do with what they were testing.
-    );
-    return id;
+    return createViaEntity(ctx, PRODUCT_ENTITY, {
+        CompanyID: companyID,
+        ProductTypeID: productTypeID,
+        ProductCategoryID: categoryID,
+        Name: `${run} ${label}`,
+        Status: 'Active',
+        RevenueRecognitionTypeID: revRecTypeID,
+        SubscriptionTypeID: subscriptionTypeID,
+    });
 }
 
 // ─── Teardown ──────────────────────────────────────────────────────────────────────────────────

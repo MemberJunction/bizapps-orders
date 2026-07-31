@@ -46,6 +46,14 @@ export interface PaymentSpec {
     BillToPersonID?: string | null;
     PaymentDetailID?: string | null;
     /**
+     * The configured gateway account this payment is collected through (D19/D37). Optional, and that
+     * matters: a back-office correction, an account-credit transfer or a historical import has none,
+     * and the capture path skips the driver entirely rather than refusing.
+     */
+    PaymentProviderID?: string | null;
+    /** OUR PaymentIntent row. The gateway's own string lives on it, not on the header. */
+    PaymentIntentID?: string | null;
+    /**
      * The allocations. Required for a `Captured` payment — its Amount must equal their sum (D68).
      * A `Pending` payment may omit them and add them later, exactly as a Draft order may have no
      * lines yet.
@@ -79,6 +87,8 @@ export async function CreatePayment(user: UserInfo, spec: PaymentSpec): Promise<
     if (spec.BillToOrganizationID) payment.BillToOrganizationID = spec.BillToOrganizationID;
     if (spec.BillToPersonID) payment.BillToPersonID = spec.BillToPersonID;
     if (spec.PaymentDetailID) payment.PaymentDetailID = spec.PaymentDetailID;
+    if (spec.PaymentProviderID) payment.PaymentProviderID = spec.PaymentProviderID;
+    if (spec.PaymentIntentID) payment.PaymentIntentID = spec.PaymentIntentID;
 
     const lines: BaseEntity[] = [];
     for (const alloc of spec.Allocations ?? []) {

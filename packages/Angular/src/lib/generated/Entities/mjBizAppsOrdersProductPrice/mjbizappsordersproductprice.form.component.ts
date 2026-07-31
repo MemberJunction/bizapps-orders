@@ -18,12 +18,10 @@ export class mjBizAppsOrdersProductPriceFormComponent extends BaseFormComponent 
         this.initSections([
             { sectionKey: 'productAssociation', sectionName: 'Product Association', isExpanded: true },
             { sectionKey: 'pricingConfiguration', sectionName: 'Pricing Configuration', isExpanded: true },
-            { sectionKey: 'quantityAndValidity', sectionName: 'Quantity and Validity', isExpanded: true },
-            { sectionKey: 'schedulingRules', sectionName: 'Scheduling Rules', isExpanded: true },
-            { sectionKey: 'operationalSettings', sectionName: 'Operational Settings', isExpanded: true },
+            { sectionKey: 'applicabilityRules', sectionName: 'Applicability Rules', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPriceTiers', sectionName: 'Price Tiers', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPriceTiers', sectionName: 'Price Tiers', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false }
         ]);
     }
 }

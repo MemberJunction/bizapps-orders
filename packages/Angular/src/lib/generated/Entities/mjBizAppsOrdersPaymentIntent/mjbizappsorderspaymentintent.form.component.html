@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Provider Details Section -->
+    <!-- Provider Details Section -->
     <mj-collapsible-panel
-        SectionKey="paymentProviderDetails"
-        SectionName="Payment Provider Details"
+        SectionKey="providerDetails"
+        SectionName="Provider Details"
         Icon="fa fa-plug"
         [Form]="this"
         [FormContext]="formContext">
@@ -34,21 +34,13 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProviderEventID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Transaction Status Section -->
+    <!-- Payment Status Section -->
     <mj-collapsible-panel
-        SectionKey="transactionStatus"
-        SectionName="Transaction Status"
+        SectionKey="paymentStatus"
+        SectionName="Payment Status"
         Icon="fa fa-check-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -71,6 +63,14 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="ProviderEventID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="LastEventAt"
             Type="datepicker"
             [EditMode]="EditMode"
@@ -79,10 +79,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Associated Entities Section -->
+    <!-- Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="associatedEntities"
-        SectionName="Associated Entities"
+        SectionKey="relationships"
+        SectionName="Relationships"
         Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">

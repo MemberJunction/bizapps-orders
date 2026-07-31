@@ -1,0 +1,67 @@
+[
+  {
+    "_comments": [
+      "The BizApps Orders Application — what makes this app a first-class citizen of MJ Explorer",
+      "rather than a set of loose dashboards.",
+      "",
+      "DefaultNavItems is the top tab bar, and it is the information architecture: four sections",
+      "organised by JOB rather than by entity. Fifty-one tables would otherwise be fifty-one",
+      "destinations, leaving the user to assemble the workflow in their head.",
+      "",
+      "Each item is ResourceType 'Custom' pointing at a DriverClass registered with",
+      "@RegisterClass(BaseResourceComponent, '<DriverClass>') in @mj-biz-apps/orders-ng. Each of those",
+      "components owns a LEFT navigation rail over its own sub-pages — MJ's rule is top nav across",
+      "sections, left nav within one, and these four are the sections.",
+      "",
+      "Orders is the default tab because taking an order is the job most people open this app to do.",
+      "",
+      "Every generated entity form remains reachable for admin work; it is simply not the navigation.",
+      "",
+      "The fixed UUID means a re-push against a rebuilt database updates this row rather than creating",
+      "a second Application with the same name."
+    ],
+    "fields": {
+      "Name": "Orders",
+      "Description": "Order entry, payments, receivables and the product catalog. The confirmed order is the receivable — there is no separate invoice — so billing, collections and revenue recognition all read the same record the order taker created.",
+      "Icon": "fa-solid fa-cart-shopping",
+      "DefaultForNewUser": false,
+      "DefaultNavItems": [
+        {
+          "Label": "Orders",
+          "Icon": "fa-solid fa-file-invoice-dollar",
+          "ResourceType": "Custom",
+          "DriverClass": "OrdersSectionResource",
+          "isDefault": true
+        },
+        {
+          "Label": "Payments",
+          "Icon": "fa-solid fa-money-check-dollar",
+          "ResourceType": "Custom",
+          "DriverClass": "PaymentsSectionResource",
+          "isDefault": false
+        },
+        {
+          "Label": "Receivables",
+          "Icon": "fa-solid fa-chart-column",
+          "ResourceType": "Custom",
+          "DriverClass": "ReceivablesSectionResource",
+          "isDefault": false
+        },
+        {
+          "Label": "Catalog",
+          "Icon": "fa-solid fa-box-open",
+          "ResourceType": "Custom",
+          "DriverClass": "CatalogSectionResource",
+          "isDefault": false
+        }
+      ]
+    },
+    "primaryKey": {
+      "ID": "D3E6A4C2-8F5B-4C31-9A74-2E3F7C03D501"
+    },
+    "sync": {
+      "lastModified": "2026-07-30T21:43:39.794Z",
+      "checksum": "4e7589f1fc1324be65cc4d482c225e42da201ade7722c1e5ad9b40f99e12ebca"
+    }
+  }
+]

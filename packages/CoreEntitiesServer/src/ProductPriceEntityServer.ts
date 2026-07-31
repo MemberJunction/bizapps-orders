@@ -24,7 +24,7 @@
  *   PURE:  ./PricingBehavior.ts (PickPriceRule — the reader this protects)
  *   DOC:   plans/pricing-schema.md
  */
-import { BaseEntity, IRunViewProvider, ValidationErrorInfo, ValidationResult } from '@memberjunction/core';
+import { BaseEntity, IRunViewProvider, RunView, ValidationErrorInfo, ValidationResult } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersProductPriceEntity } from '@mj-biz-apps/orders-entities';
 
@@ -74,9 +74,9 @@ export class ProductPriceEntityServer extends mjBizAppsOrdersProductPriceEntity 
         const result = await super.ValidateAsync();
         if (this.Status !== 'Active') return result; // an inactive rule collides with nothing
 
-        const rv = new (await import('@memberjunction/core')).RunView(
-            this.ProviderToUse as unknown as IRunViewProvider,
-        );
+        // Statically imported. A dynamic `import()` here violated the house rule and bought nothing:
+        // `@memberjunction/core` is already imported at the top of this file for BaseEntity.
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const listClause = this.PriceListID ? `PriceListID = '${this.PriceListID}'` : `PriceListID IS NULL`;
         const notSelf = this.IsSaved ? ` AND ID <> '${this.ID}'` : '';
 
