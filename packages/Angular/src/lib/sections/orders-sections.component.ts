@@ -20,6 +20,7 @@
  */
 
 import {
+    ChangeDetectorRef,
     Component,
     Directive,
     OnInit,
@@ -80,6 +81,8 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     @ViewChild('pageHost', { read: ViewContainerRef, static: false })
     protected pageHost?: ViewContainerRef;
 
+    private readonly cdr = inject(ChangeDetectorRef);
+
     /** The rail, rebuilt whenever a badge count changes. */
     public NavSections: MJLeftNavSection[] = [];
 
@@ -127,6 +130,12 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         setTimeout(() => {
             this.showPage(this.ActivePageId!);
             this.LoadedAt = new Date();
+            // Mounting the page and stamping the timestamp both change what the
+            // header and the rail render. Writing the DOM here keeps that inside
+            // one pass — without it the nav's active index is read as -1 before
+            // the mount and 2 after, which is NG0100 and freezes the section the
+            // same way it froze the pages.
+            this.cdr.detectChanges();
         });
     }
 
@@ -135,6 +144,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         this.ActivePageId = pageId;
         this.persistPageId(pageId);
         this.showPage(pageId);
+        this.cdr.detectChanges();
     }
 
     /** Rebuild the rail after badge counts change. */

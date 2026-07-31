@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.component';
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
-import { FormatMoney, DaysSince } from '../../panels/money-format';
+import { DaysSince, FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 
 /** A queue worth someone's attention, with where it leads. */
 interface MJOQueue {
@@ -46,7 +46,7 @@ interface MJOAttentionItem {
 @Component({
     selector: 'mjo-orders-dashboard-page',
     standalone: true,
-    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent],
+    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent, MJOMoneyPipe],
     template: `
         <div class="mj-stat-grid">
             <mjo-stat-tile

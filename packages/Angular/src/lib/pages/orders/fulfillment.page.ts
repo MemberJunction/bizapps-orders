@@ -110,7 +110,9 @@ interface MJOFulfillmentRow extends Record<string, unknown> {
                 class="mj-btn mj-btn--outline"
                 [disabled]="!Rows.length"
                 (click)="ToggleAll()">
-                {{ SelectedCount === Rows.length ? 'Clear selection' : 'Select all' }}
+                <!-- Guarded on a NON-EMPTY selection: with no rows, 0 === 0 read
+                     as "everything is selected" and offered to clear nothing. -->
+                {{ SelectedCount && SelectedCount === Rows.length ? 'Clear selection' : 'Select all' }}
             </button>
             @if (Truncated) {
                 <span class="small muted">
