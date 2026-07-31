@@ -52,6 +52,8 @@ import { AllocateProRata, NetAfterDiscount } from './PricingBehavior.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+import { IssueGiftCards } from './GiftCardEngine.js';
+import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import type { StackingMode } from './PromotionBehavior.js';
 import {
     RunCharges,
@@ -301,6 +303,14 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             // change afterwards. Deciding first means the line is INSERTED at its final quantity
             // and never updated, which keeps the trigger's guarantee intact instead of working
             // around it.
+            // BUNDLES EXPAND FIRST, before anything reads the line collection. Everything downstream
+            // — pricing, proration, totals, tax, booking, entitlements — operates per line, so the
+            // components have to BE lines by the time any of it runs. It also has to happen before
+            // the insert: a Confirmed line is frozen by trigger 51003, so turning a parent's money to
+            // zero afterwards would be an update the trigger refuses, reported as an INSERT-EXEC
+            // rollback that names neither the line nor the rule.
+            await this.expandBundles();
+
             const decisions = booking ? await this.decideSubscriptions() : new Map();
 
             await this.savePendingLines(options, decisions);
@@ -328,6 +338,12 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
                 // And the mirror: a returned line takes its access with it.
                 await this.revokeEntitlementsForReversals(lines, options);
+
+                // GIFT CARDS, alongside entitlements and for the same reason. Selling a gift card
+                // that never mints an instrument has taken money for nothing, so a failure here
+                // rolls the confirm back rather than being logged. Handles both directions: an
+                // ordinary line issues, a reversal line voids what the origin issued.
+                await this.issueGiftCards(lines, options);
             }
 
             await dbProvider.CommitTransaction();
@@ -742,6 +758,117 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 ShipToOrganizationID: l.ShipToOrganizationID ?? null,
             })),
             subs.TermsByLine,
+            provider,
+            user,
+            options,
+        );
+    }
+
+    /**
+     * Turn any bundle line into a parent plus its component children (D32/D41/D45).
+     *
+     * Delegates to `BundleEngine`; what lives here is making a fresh line entity the way this class
+     * does, and giving the parent an ID before either row is written so the children can point at it
+     * at INSERT time rather than through a later update the immutability trigger would refuse.
+     */
+    private async expandBundles(): Promise<void> {
+        if (!this._lines.length) return;
+
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        // A parent needs an ID the children can name. Unsaved lines may not have one yet, and the
+        // database default would only assign it at insert — too late for the child rows going down
+        // in the same batch.
+        for (const line of this._lines) {
+            if (!line.ID) (line as unknown as { ID: string }).ID = crypto.randomUUID().toUpperCase();
+        }
+
+        const before = this._lines.length;
+        await ExpandBundleLines(
+            this._lines as unknown as ExpandableLine[],
+            async () => {
+                const row = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
+                    'MJ_BizApps_Orders: Order Lines',
+                    user,
+                );
+                row.NewRecord();
+                (row as unknown as { ID: string }).ID = crypto.randomUUID().toUpperCase();
+                return row as unknown as ExpandableLine;
+            },
+            provider,
+            user,
+        );
+        if (this._lines.length === before) return;
+
+        // REORDER AND RENUMBER. Children are appended to the end of the collection, so without this
+        // a two-bundle order interleaves as parent, parent, child, child, child, child — unreadable
+        // on an invoice and impossible to group by eye. Putting each child directly beneath its
+        // parent is also what `UQ_OrderLine_OrderHeader_LineNumber` needs: the children arrive with
+        // no LineNumber at all, and the column is NOT NULL.
+        const byParent = new Map<string, mjBizAppsOrdersOrderLineEntity[]>();
+        const roots: mjBizAppsOrdersOrderLineEntity[] = [];
+        for (const line of this._lines) {
+            const parentID = (line as unknown as { ParentOrderLineID?: string | null }).ParentOrderLineID;
+            if (parentID) {
+                const k = parentID.toLowerCase();
+                if (!byParent.has(k)) byParent.set(k, []);
+                byParent.get(k)!.push(line);
+            } else {
+                roots.push(line);
+            }
+        }
+
+        const ordered: mjBizAppsOrdersOrderLineEntity[] = [];
+        for (const root of roots) {
+            ordered.push(root);
+            for (const child of byParent.get((root.ID ?? '').toLowerCase()) ?? []) ordered.push(child);
+        }
+        // Anything whose parent is not on this order still has to be saved rather than dropped.
+        for (const line of this._lines) if (!ordered.includes(line)) ordered.push(line);
+
+        ordered.forEach((line, i) => {
+            line.LineNumber = i + 1;
+        });
+        this._lines = ordered;
+    }
+
+    /**
+     * Mint the stored-value instruments this order's gift-card lines sell (D44).
+     *
+     * Delegates to `GiftCardEngine`; what lives here is the mapping from the order's entities to the
+     * shape the engine takes. The engine is idempotent against the database, so a re-save of an
+     * already confirmed order issues nothing — which matters because a second set of cards would be
+     * free money that reconciles perfectly, with the accounts present and the ledger balanced.
+     *
+     * `IssuingCompanyID` is the ORDER's company rather than any line's. A gift card is a claim on
+     * the entity that sold it, and on a multi-company order the seller is the header's company even
+     * where a line's product belongs to a sibling.
+     */
+    private async issueGiftCards(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        await IssueGiftCards(
+            {
+                ID: this.ID,
+                IssuingCompanyID: this.CompanyID,
+                BillToPersonID: this.BillToPersonID ?? null,
+                BillToOrganizationID: this.BillToOrganizationID ?? null,
+            },
+            lines.map((l) => ({
+                ID: l.ID,
+                ProductID: l.ProductID,
+                Quantity: Number(l.Quantity ?? 0),
+                UnitPrice: Number(l.UnitPrice ?? 0),
+                ReversesOrderLineID:
+                    (l as unknown as { ReversesOrderLineID?: string | null }).ReversesOrderLineID ?? null,
+                ShipToPersonID: l.ShipToPersonID ?? null,
+                ShipToOrganizationID: l.ShipToOrganizationID ?? null,
+            })),
             provider,
             user,
             options,

@@ -26,7 +26,9 @@ import {
     Type,
     ViewChild,
     ViewContainerRef,
+    inject,
     type ComponentRef,
+    type EventEmitter,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RegisterClass } from '@memberjunction/global';
@@ -35,6 +37,9 @@ import type { MJLeftNavSection } from '@memberjunction/ng-ui-components';
 import type { ResourceData } from '@memberjunction/core-entities';
 
 import { MJOSectionShellComponent } from './section-shell.component';
+import { MJOConfirmPreflightComponent, type MJOPreflight } from '../panels/confirm-preflight.component';
+import { MJOOrderEntryService } from '../services/order-entry.service';
+import type { OrderDraft } from '@mj-biz-apps/orders-entities';
 import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
 import { MJOOrderEditorPageComponent } from '../pages/orders/order-editor.page';
 import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
@@ -87,7 +92,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     /** Live counts the rail badges. Sections refresh these; zero badges do not render. */
     protected badges: OrdersNavBadges = {};
 
-    private readonly mounted = new Map<string, ComponentRef<unknown>>();
+    protected readonly mounted = new Map<string, ComponentRef<unknown>>();
 
     /** The section's pages, in rail order. */
     protected abstract get subPages(): OrdersSubPage[];
@@ -106,8 +111,23 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         super.ngOnInit();
         this.NavSections = BuildLeftNavSections(this.subPages, this.badges);
         this.ActivePageId = this.restorePageId();
-        // The host view has to exist before a page can be created into it.
-        queueMicrotask(() => this.showPage(this.ActivePageId!));
+        // The host view has to exist before a page can be created into it, AND the
+        // page must be created outside the change-detection pass that is running now.
+        //
+        // WHY NOT queueMicrotask. Microtasks drain before the CD cycle finishes, so
+        // the page was constructed inside this turn. Its `ngOnInit` is async, so the
+        // fetch resolved between Angular's check pass and its dev-mode verify pass —
+        // NG0100, which ABORTS the rest of that update. Nothing schedules another
+        // tick afterwards, so the DOM stayed frozen on the pre-fetch render: the
+        // Orders dashboard sat at "0 open orders / $0.00" against a database holding
+        // 73 orders, and looked like a quiet day rather than a bug.
+        //
+        // A macrotask lands after the cycle completes, so the child's fetch resolves
+        // in its own tick and simply re-renders.
+        setTimeout(() => {
+            this.showPage(this.ActivePageId!);
+            this.LoadedAt = new Date();
+        });
     }
 
     /** Rail click handler. */
@@ -153,6 +173,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
         try {
             const ref = host.createComponent(type);
+            this.wirePage(ref);
             this.mounted.set(pageId, ref);
             this.LoadError = null;
         } catch (e) {
@@ -160,6 +181,178 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // it — the rail has to stay usable so the user can go somewhere else.
             this.LoadError = `That page could not be opened: ${e instanceof Error ? e.message : String(e)}`;
         }
+    }
+
+    /**
+     * Connect a freshly created page to the section.
+     *
+     * A page created through `ViewContainerRef.createComponent` has NO template
+     * binding its outputs — there is no host markup for Angular to wire. Every
+     * `@Output()` on every page therefore emitted into nothing: the confirm button
+     * fired `ConfirmRequested` at no listener, dashboard tiles fired
+     * `NavigateRequested` at no listener, and list rows fired `OrderOpened` at no
+     * listener. The pages looked complete and were inert.
+     *
+     * Subscribed by NAME and only when present, because the four sections host
+     * different pages and a missing output is normal rather than an error.
+     */
+    private wirePage(ref: ComponentRef<unknown>): void {
+        const instance = ref.instance as Record<string, unknown>;
+        const subscriptions: Array<{ unsubscribe(): void }> = [];
+
+        const on = <T>(name: string, handler: (value: T) => void): void => {
+            const output = instance[name] as EventEmitter<T> | undefined;
+            if (!output?.subscribe) return;
+            subscriptions.push(output.subscribe(handler));
+        };
+
+        // Navigation within the rail.
+        on<string>('NavigateRequested', (pageId) => this.OnPageSelected(pageId));
+
+        // Opening a record routes to the page that shows it. Each carries its id,
+        // which the destination reads on activation.
+        on<{ ID?: string } | string>('OrderOpened', (row) => this.openRecord('editor', row));
+        on<{ ID?: string } | string>('PaymentOpened', (row) => this.openRecord('entry', row));
+        on<{ ID?: string } | string>('ProductOpened', (row) => this.openRecord('products', row));
+
+        // The irreversible step, gated behind the pre-flight.
+        on<OrderDraft>('ConfirmRequested', (draft) => void this.OpenPreflight(draft));
+        on<OrderDraft>('EscalateRequested', () => this.OnPageSelected('editor'));
+
+        // Pages are cached rather than destroyed on rail changes, so these live as
+        // long as the section does — but a destroyed section must not leave them
+        // holding a reference to it.
+        ref.onDestroy(() => subscriptions.forEach((sub) => sub.unsubscribe()));
+    }
+
+    /** Remember which record a destination page should open, then go there. */
+    protected openRecord(pageId: string, row: { ID?: string } | string): void {
+        this.PendingRecordID = typeof row === 'string' ? row : (row?.ID ?? null);
+        this.OnPageSelected(pageId);
+    }
+
+    /** Set when a page was opened for a specific record. */
+    public PendingRecordID: string | null = null;
+
+    /* ── Header ─────────────────────────────────────────────────────────── */
+
+    /**
+     * The action the primary button performs, or null for a section that has no
+     * single obvious thing to start.
+     *
+     * Deliberately per-section rather than a global "New order". On Receivables
+     * and Catalog there is no one thing a person arrives wanting to create, and a
+     * primary button that guesses is worse than none — it makes the wrong action
+     * the most prominent one on the page.
+     */
+    protected get primaryAction(): { Label: string; Icon: string; PageId: string } | null {
+        return null;
+    }
+
+    /** When the visible data was last read. Shown so a stale screen can be spotted. */
+    public LoadedAt: Date | null = null;
+
+    /** The 'as of' chip. Time only — the date is today by construction. */
+    public get LoadedAtDisplay(): string {
+        if (!this.LoadedAt) return '';
+        return this.LoadedAt.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    }
+
+    /**
+     * Re-read the active page.
+     *
+     * Destroys the cached instance rather than asking it to reload, because a page
+     * has no reload contract — some load in `ngOnInit`, some on a preset change,
+     * and inventing an interface every page must implement to support one button
+     * is more surface than the button is worth. Recreating runs whatever the page
+     * already does on mount.
+     */
+    public RefreshActivePage(): void {
+        const pageId = this.ActivePageId;
+        if (!pageId) return;
+        const cached = this.mounted.get(pageId);
+        if (cached) {
+            this.mounted.delete(pageId);
+            cached.destroy();
+        }
+        this.showPage(pageId);
+        this.LoadedAt = new Date();
+    }
+
+    /** Start the section's primary action. */
+    public StartPrimary(): void {
+        const action = this.primaryAction;
+        if (action) this.OnPageSelected(action.PageId);
+    }
+
+    /* ── Confirm pre-flight ─────────────────────────────────────────────── */
+
+    private readonly entry = inject(MJOOrderEntryService);
+
+    /** The pre-flight being shown, or null when the overlay is closed. */
+    public Preflight: MJOPreflight | null = null;
+    public PreflightBusy = false;
+    public PreflightError: string | null = null;
+    private preflightDraft: OrderDraft | null = null;
+
+    /**
+     * Run `Orders.PreviewConfirm` and show what confirming would do.
+     *
+     * The preview executes the REAL confirm inside a rolled-back transaction, so
+     * the journal entries on screen are the ones the commit will write.
+     */
+    public async OpenPreflight(draft: OrderDraft): Promise<void> {
+        this.preflightDraft = draft;
+        this.PreflightBusy = true;
+        this.PreflightError = null;
+        this.Preflight = null;
+        try {
+            const output = await this.entry.PreviewConfirm(draft);
+            if (!output) {
+                this.PreflightError = 'The pre-flight could not be run, so nothing was confirmed.';
+                return;
+            }
+            this.Preflight = {
+                CanConfirm: output.CanConfirm,
+                GrossTotal: output.Totals?.GrossTotal ?? null,
+                JournalEntries: output.JournalEntries ?? [],
+                EntryCount: output.EntryCount ?? 0,
+                CompanyCount: output.CompanyCount ?? 0,
+                AllBalanced: output.AllBalanced ?? false,
+                SubscriptionDecisions: output.SubscriptionDecisions ?? [],
+                EntitlementGrants: output.EntitlementGrants ?? [],
+                Approvals: output.Approvals ?? [],
+                FulfillmentHolds: output.FulfillmentHolds ?? [],
+                Blockers: output.Blockers ?? [],
+            };
+        } catch (e) {
+            this.PreflightError = e instanceof Error ? e.message : String(e);
+        } finally {
+            this.PreflightBusy = false;
+        }
+    }
+
+    /** Commit. Only reachable when the pre-flight said it could be. */
+    public async ConfirmFromPreflight(): Promise<void> {
+        if (!this.preflightDraft) return;
+        this.PreflightBusy = true;
+        try {
+            const output = await this.entry.Confirm(this.preflightDraft);
+            if (!output?.Success) {
+                this.PreflightError = output?.Message ?? 'The order was not confirmed.';
+                return;
+            }
+            this.ClosePreflight();
+            this.OnPageSelected('list');
+        } finally {
+            this.PreflightBusy = false;
+        }
+    }
+
+    public ClosePreflight(): void {
+        this.Preflight = null;
+        this.PreflightError = null;
+        this.preflightDraft = null;
     }
 
     /** First page in the rail — the fallback when nothing is remembered. */
@@ -226,7 +419,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 @Component({
     selector: 'mjo-orders-section',
     standalone: true,
-    imports: [CommonModule, MJOSectionShellComponent],
+    imports: [CommonModule, MJOSectionShellComponent, MJOConfirmPreflightComponent],
     template: `
         <mjo-section-shell
             Title="Orders"
@@ -237,11 +430,66 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             [Loading]="IsLoading"
             [Error]="LoadError"
             (PageSelected)="OnPageSelected($event)">
+
+            <div meta>
+                @if (LoadedAtDisplay) {
+                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                        as of {{ LoadedAtDisplay }}
+                    </span>
+                }
+            </div>
+
+            <div actions>
+                <button
+                    type="button"
+                    class="mj-btn mj-btn--outline"
+                    (click)="RefreshActivePage()"
+                    aria-label="Refresh this page">
+                    <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
+                </button>
+                @if (primaryAction; as action) {
+                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                        <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
+                    </button>
+                }
+            </div>
             <ng-container #pageHost />
         </mjo-section-shell>
+
+        <!--
+          The pre-flight lives at the SECTION, not on a page: both fast entry and
+          the full editor confirm, and the overlay must survive the rail switch
+          between them. It renders only while a confirm is in flight.
+        -->
+        @if (Preflight || PreflightBusy || PreflightError) {
+            <mjo-confirm-preflight
+                [Preflight]="Preflight"
+                [Busy]="PreflightBusy"
+                (Confirmed)="ConfirmFromPreflight()"
+                (Cancelled)="ClosePreflight()" />
+        }
+        @if (PreflightError) {
+            <div class="mj-banner mj-banner--error mjo-section__preflight-error" role="alert">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                <div class="body"><strong>Nothing was confirmed.</strong> {{ PreflightError }}</div>
+            </div>
+        }
     `,
+    styles: [
+        `
+            .mjo-section__preflight-error {
+                position: fixed; left: 50%; bottom: var(--mj-space-6);
+                transform: translateX(-50%); z-index: 60; max-width: 560px;
+            }
+        `,
+    ],
 })
 export class OrdersSectionResource extends MJOSectionBaseComponent {
+    /** Taking an order is what someone arrives at this section to do. */
+    protected override get primaryAction() {
+        return { Label: 'New order', Icon: 'fa-solid fa-plus', PageId: 'fast-entry' };
+    }
+
     protected get subPages(): OrdersSubPage[] {
         return ORDERS_SUB_PAGES;
     }
@@ -299,11 +547,38 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
             [Loading]="IsLoading"
             [Error]="LoadError"
             (PageSelected)="OnPageSelected($event)">
+
+            <div meta>
+                @if (LoadedAtDisplay) {
+                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                        as of {{ LoadedAtDisplay }}
+                    </span>
+                }
+            </div>
+
+            <div actions>
+                <button
+                    type="button"
+                    class="mj-btn mj-btn--outline"
+                    (click)="RefreshActivePage()"
+                    aria-label="Refresh this page">
+                    <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
+                </button>
+                @if (primaryAction; as action) {
+                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                        <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
+                    </button>
+                }
+            </div>
             <ng-container #pageHost />
         </mjo-section-shell>
     `,
 })
 export class PaymentsSectionResource extends MJOSectionBaseComponent {
+    protected override get primaryAction() {
+        return { Label: 'Take a payment', Icon: 'fa-solid fa-plus', PageId: 'entry' };
+    }
+
     protected get subPages(): OrdersSubPage[] {
         return PAYMENTS_SUB_PAGES;
     }
@@ -360,6 +635,29 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
             [Loading]="IsLoading"
             [Error]="LoadError"
             (PageSelected)="OnPageSelected($event)">
+
+            <div meta>
+                @if (LoadedAtDisplay) {
+                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                        as of {{ LoadedAtDisplay }}
+                    </span>
+                }
+            </div>
+
+            <div actions>
+                <button
+                    type="button"
+                    class="mj-btn mj-btn--outline"
+                    (click)="RefreshActivePage()"
+                    aria-label="Refresh this page">
+                    <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
+                </button>
+                @if (primaryAction; as action) {
+                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                        <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
+                    </button>
+                }
+            </div>
             <ng-container #pageHost />
         </mjo-section-shell>
     `,
@@ -417,6 +715,29 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
             [Loading]="IsLoading"
             [Error]="LoadError"
             (PageSelected)="OnPageSelected($event)">
+
+            <div meta>
+                @if (LoadedAtDisplay) {
+                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                        as of {{ LoadedAtDisplay }}
+                    </span>
+                }
+            </div>
+
+            <div actions>
+                <button
+                    type="button"
+                    class="mj-btn mj-btn--outline"
+                    (click)="RefreshActivePage()"
+                    aria-label="Refresh this page">
+                    <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
+                </button>
+                @if (primaryAction; as action) {
+                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                        <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
+                    </button>
+                }
+            </div>
             <ng-container #pageHost />
         </mjo-section-shell>
     `,

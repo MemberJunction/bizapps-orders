@@ -29,7 +29,7 @@ cd "$(dirname "$0")/.."
 ROOT="$PWD"
 set -a; . ./.env; set +a
 
-MJ_VERSION="${MJ_CORE_VERSION:-v5.49.0}"
+MJ_VERSION="${MJ_CORE_VERSION:-v5.50.0}"
 COMMON_REPO="${BIZAPPS_COMMON_REPO:-$ROOT/../bizapps-common}"
 ACCOUNTING_REPO="${BIZAPPS_ACCOUNTING_REPO:-$ROOT/../bizapps-accounting}"
 MJ="node $ROOT/node_modules/@memberjunction/cli/bin/run.js"

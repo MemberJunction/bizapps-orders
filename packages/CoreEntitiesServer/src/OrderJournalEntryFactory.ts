@@ -44,6 +44,7 @@ import { MJGlobal } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { GL_ROLE, GLAccountResolver, GLAccountResolutionError } from './GLAccountResolver.js';
 import { RevenueRecognitionDriver, type RevRecEntry } from './RevenueRecognition.js';
+import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
 
 /** Mirrors accounting's `JournalEntryLineDraft`. */
 export interface JELineDraft {
@@ -81,6 +82,7 @@ interface ProductRow {
     ID: string;
     CompanyID: string;
     ProductCategoryID: string | null;
+    ProductTypeID: string;
     RevenueRecognitionTypeID: string;
     Name: string;
 }
@@ -153,6 +155,7 @@ export class OrderJournalEntryFactory {
         }
 
         const products = await this.loadProducts(lines.map((l) => l.ProductID));
+        const giftCardTypeIDs = await this.loadGiftCardTypeIDs();
         const revRecTypes = await this.loadRevRecTypes();
         const dimensions = await this.loadLineDimensions(lines.map((l) => l.ID));
         const effectiveDate = this.effectiveDateOf(order);
@@ -162,7 +165,7 @@ export class OrderJournalEntryFactory {
         for (const line of lines) {
             drafts.push(
                 ...(await this.buildLineDrafts(
-                    order, line, products, revRecTypes, dimensions, effectiveDate, asOf,
+                    order, line, products, revRecTypes, dimensions, effectiveDate, asOf, giftCardTypeIDs,
                     termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
                 )),
             );
@@ -178,6 +181,7 @@ export class OrderJournalEntryFactory {
         dimensions: Map<string, Array<{ DimensionID: string; DimensionValueID: string }>>,
         effectiveDate: string,
         asOf: Date,
+        giftCardTypeIDs: Set<string>,
         term?: { ID: string; StartDate: Date; EndDate: Date; Amount: number },
         recognitionMonths?: number,
     ): Promise<OrderLineDraft[]> {
@@ -222,8 +226,44 @@ export class OrderJournalEntryFactory {
 
         const arAccount = await resolve(GL_ROLE.AccountsReceivable);
         const salesAccount = await resolve(GL_ROLE.Sales);
-        // Deferred types park the credit in Deferred Revenue until the schedule releases it.
-        const bookingCreditAccount = revRec.IsDeferred ? await resolve(GL_ROLE.DeferredRevenue) : salesAccount;
+
+        // SELLING A GIFT CARD EARNS NOTHING (D44). Money has come in and goods are owed, so the
+        // credit is a LIABILITY. Recognising here and again when the card is spent is the classic
+        // gift-card double-count, and it hides well: both entries balance, the order reconciles,
+        // and only the revenue figure is wrong.
+        //
+        // It also means NO revenue-recognition schedule. A deferred type releases on dates; a gift
+        // card releases when somebody spends it, which is an event on a different order entirely.
+        const isGiftCard = giftCardTypeIDs.has(product.ProductTypeID);
+
+        let bookingCreditAccount: string;
+        let creditLabel: string;
+        if (isGiftCard) {
+            try {
+                bookingCreditAccount = await resolve(GL_ROLE.GiftCardLiability);
+                creditLabel = 'Gift card liability';
+            } catch {
+                // Same tolerance as Processing Fee: a role accounting has not seeded must not take
+                // the sale down. Deferred Revenue is the same SHAPE of obligation, so the entry stays
+                // correct and balanced — just coarser than a dedicated card liability. Reported
+                // rather than swallowed, because the difference matters at year end.
+                bookingCreditAccount = await resolve(GL_ROLE.DeferredRevenue);
+                creditLabel = 'Gift card liability (in Deferred Revenue)';
+                console.warn(
+                    `Order line ${line.ID}: no 'Gift Card Liability' GL account is linked for company ` +
+                        `${companyID}, so the card's liability was booked to Deferred Revenue instead. ` +
+                        `The entry balances and no revenue is overstated, but the two obligations are ` +
+                        `now indistinguishable on the balance sheet. Link a Gift Card Liability account.`,
+                );
+            }
+        } else if (revRec.IsDeferred) {
+            // Deferred types park the credit in Deferred Revenue until the schedule releases it.
+            bookingCreditAccount = await resolve(GL_ROLE.DeferredRevenue);
+            creditLabel = 'Deferred revenue';
+        } else {
+            bookingCreditAccount = salesAccount;
+            creditLabel = 'Sales';
+        }
 
         let discountAccount: string | null = null;
         if (discount !== 0) {
@@ -245,7 +285,7 @@ export class OrderJournalEntryFactory {
             {
                 GLAccountID: bookingCreditAccount,
                 CreditAmount: discountAccount ? gross : net,
-                Description: `${revRec.IsDeferred ? 'Deferred revenue' : 'Sales'} — ${product.Name}`,
+                Description: `${creditLabel} — ${product.Name}`,
                 Dimensions: lineDims,
             },
         ];
@@ -316,7 +356,7 @@ export class OrderJournalEntryFactory {
             : [];
 
         // ── the forward-dated releases (D14/D43) ──
-        if (revRec.IsDeferred) {
+        if (revRec.IsDeferred && !isGiftCard) {
             // A subscription line's coverage window comes from its TERM (which applied anchoring,
             // deferral and proration); a non-subscription deferred line uses the line's own dates.
             const schedule = this.driverFor(revRec).BuildSchedule({
@@ -417,12 +457,32 @@ export class OrderJournalEntryFactory {
             {
                 EntityName: 'MJ_BizApps_Orders: Products',
                 ExtraFilter: `ID IN (${inList})`,
-                Fields: ['ID', 'CompanyID', 'ProductCategoryID', 'RevenueRecognitionTypeID', 'Name'],
+                Fields: ['ID', 'CompanyID', 'ProductCategoryID', 'ProductTypeID', 'RevenueRecognitionTypeID', 'Name'],
                 ResultType: 'simple',
             },
             this._contextUser,
         );
         return new Map((result?.Results ?? []).map((p) => [p.ID, p]));
+    }
+
+    /**
+     * ProductType IDs whose Code marks them a gift card.
+     *
+     * Resolved by CODE rather than by a hardcoded ID because product types are per-deployment data,
+     * not seeded metadata with stable keys. One query for the whole draft build, not one per line.
+     */
+    private async loadGiftCardTypeIDs(): Promise<Set<string>> {
+        const rv = new RunView(this._provider as unknown as IRunViewProvider);
+        const result = await rv.RunView<{ ID: string }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Product Types',
+                ExtraFilter: `Code = '${GIFT_CARD_PRODUCT_TYPE_CODE}'`,
+                Fields: ['ID'],
+                ResultType: 'simple',
+            },
+            this._contextUser,
+        );
+        return new Set((result?.Results ?? []).map((r) => r.ID));
     }
 
     private async loadRevRecTypes(): Promise<Map<string, RevRecTypeRow>> {

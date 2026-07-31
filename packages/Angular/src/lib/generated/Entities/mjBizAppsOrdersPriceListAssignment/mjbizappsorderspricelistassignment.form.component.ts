@@ -17,7 +17,7 @@ export class mjBizAppsOrdersPriceListAssignmentFormComponent extends BaseFormCom
         this.initSections([
             { sectionKey: 'assignmentDetails', sectionName: 'Assignment Details', isExpanded: true },
             { sectionKey: 'validityPeriod', sectionName: 'Validity Period', isExpanded: true },
-            { sectionKey: 'referenceData', sectionName: 'Reference Data', isExpanded: true },
+            { sectionKey: 'statusAndNotes', sectionName: 'Status and Notes', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

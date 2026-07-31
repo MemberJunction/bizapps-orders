@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Order Context Section -->
+    <!-- Order Association Section -->
     <mj-collapsible-panel
-        SectionKey="orderContext"
-        SectionName="Order Context"
+        SectionKey="orderAssociation"
+        SectionName="Order Association"
         Icon="fa fa-shopping-cart"
         [Form]="this"
         [FormContext]="formContext">
@@ -35,21 +35,13 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Sequence"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Discount Details Section -->
+    <!-- Promotion Details Section -->
     <mj-collapsible-panel
-        SectionKey="discountDetails"
-        SectionName="Discount Details"
+        SectionKey="promotionDetails"
+        SectionName="Promotion Details"
         Icon="fa fa-tags"
         [Form]="this"
         [FormContext]="formContext">
@@ -74,10 +66,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financials Section -->
+    <!-- Financial Details Section -->
     <mj-collapsible-panel
-        SectionKey="financials"
-        SectionName="Financials"
+        SectionKey="financialDetails"
+        SectionName="Financial Details"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -92,21 +84,29 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="Reason"
-            Type="textarea"
+            FieldName="Sequence"
+            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Authorization and Audit Section -->
+    <!-- Approval and Audit Section -->
     <mj-collapsible-panel
-        SectionKey="authorizationAndAudit"
-        SectionName="Authorization and Audit"
+        SectionKey="approvalAndAudit"
+        SectionName="Approval and Audit"
         Icon="fa fa-user-check"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Reason"
+            Type="textarea"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

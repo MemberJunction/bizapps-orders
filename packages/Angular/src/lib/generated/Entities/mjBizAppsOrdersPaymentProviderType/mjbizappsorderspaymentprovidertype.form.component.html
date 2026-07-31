@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Provider Identification Section -->
+    <!-- General Information Section -->
     <mj-collapsible-panel
-        SectionKey="providerIdentification"
-        SectionName="Provider Identification"
+        SectionKey="generalInformation"
+        SectionName="General Information"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -49,6 +49,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -61,17 +69,9 @@
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="DriverClass"
             Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -82,7 +82,7 @@
     <mj-collapsible-panel
         SectionKey="capabilities"
         SectionName="Capabilities"
-        Icon="fa fa-check-double"
+        Icon="fa fa-check-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

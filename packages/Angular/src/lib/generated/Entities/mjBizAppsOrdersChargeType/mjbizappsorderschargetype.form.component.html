@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Charge Definition Section -->
+    <!-- Charge Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="chargeDefinition"
-        SectionName="Charge Definition"
-        Icon="fa fa-tag"
+        SectionKey="chargeConfiguration"
+        SectionName="Charge Configuration"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -41,16 +41,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Charge Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="chargeConfiguration"
-        SectionName="Charge Configuration"
-        Icon="fa fa-sliders-h"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -59,6 +49,24 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Calculation Logic Section -->
+    <mj-collapsible-panel
+        SectionKey="calculationLogic"
+        SectionName="Calculation Logic"
+        Icon="fa fa-calculator"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -83,14 +91,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -98,7 +98,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-cog"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -130,7 +130,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderCharges"
         SectionName="Order Charges"
-        Icon="fa fa-money-bill-wave"
+        Icon="fa fa-receipt"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

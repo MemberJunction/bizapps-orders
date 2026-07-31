@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="pricingContext"
         SectionName="Pricing Context"
-        Icon="fa fa-layer-group"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -42,16 +42,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Pricing Details Section -->
-    <mj-collapsible-panel
-        SectionKey="pricingDetails"
-        SectionName="Pricing Details"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -60,6 +50,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Financial Values Section -->
+    <mj-collapsible-panel
+        SectionKey="financialValues"
+        SectionName="Financial Values"
+        Icon="fa fa-dollar-sign"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -83,7 +83,7 @@
     <mj-collapsible-panel
         SectionKey="provenance"
         SectionName="Provenance"
-        Icon="fa fa-history"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

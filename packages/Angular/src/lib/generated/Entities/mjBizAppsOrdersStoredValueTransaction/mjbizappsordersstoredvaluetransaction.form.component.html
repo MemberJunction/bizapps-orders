@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="transactionDetails"
         SectionName="Transaction Details"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-money-bill-wave"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -37,24 +37,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="OccurredAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Financial Activity Section -->
-    <mj-collapsible-panel
-        SectionKey="financialActivity"
-        SectionName="Financial Activity"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="Amount"
             Type="number"
             [EditMode]="EditMode"
@@ -65,6 +47,14 @@
             [ShowLabel]="true"
             FieldName="BalanceAfter"
             Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="OccurredAt"
+            Type="datepicker"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

@@ -17,20 +17,21 @@ export class mjBizAppsOrdersProductFormComponent extends BaseFormComponent {
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'productInformation', sectionName: 'Product Information', isExpanded: true },
-            { sectionKey: 'classification', sectionName: 'Classification', isExpanded: true },
-            { sectionKey: 'financialAndAccounting', sectionName: 'Financial and Accounting', isExpanded: true },
+            { sectionKey: 'productClassification', sectionName: 'Product Classification', isExpanded: true },
+            { sectionKey: 'businessContext', sectionName: 'Business Context', isExpanded: true },
             { sectionKey: 'lifecycleAndAvailability', sectionName: 'Lifecycle and Availability', isExpanded: true },
-            { sectionKey: 'subscriptionAndEntitlements', sectionName: 'Subscription and Entitlements', isExpanded: true },
+            { sectionKey: 'financialAndTaxSettings', sectionName: 'Financial and Tax Settings', isExpanded: true },
+            { sectionKey: 'entitlementSettings', sectionName: 'Entitlement Settings', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductBundleItemsComponentProductID', sectionName: 'Product Bundle Items (Component Product ID)', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductBundleItemsBundleProductID', sectionName: 'Product Bundle Items (Bundle Product ID)', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPromotionTargets', sectionName: 'Promotion Targets', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLinesSourceBundleProductID', sectionName: 'Order Lines (Source Bundle Product)', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLinesProductID', sectionName: 'Order Lines (Product)', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductPrices', sectionName: 'Product Prices', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductEntitlements', sectionName: 'Product Entitlements', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLinesProductID', sectionName: 'Order Lines (Product)', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLinesSourceBundleProductID', sectionName: 'Order Lines (Source Bundle Product)', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductBundleItemsBundleProductID', sectionName: 'Product Bundle Items (Bundle Product ID)', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductBundleItemsComponentProductID', sectionName: 'Product Bundle Items (Component Product ID)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductPrices', sectionName: 'Product Prices', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPromotionTargets', sectionName: 'Promotion Targets', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false }
         ]);
     }
 }

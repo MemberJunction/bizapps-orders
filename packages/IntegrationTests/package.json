@@ -26,9 +26,9 @@
     "@mj-biz-apps/orders-server": "5.0.0"
   },
   "peerDependencies": {
-    "@memberjunction/core": "^5.49.0",
-    "@memberjunction/global": "^5.49.0",
-    "@memberjunction/testing-integration": "^5.49.0",
+    "@memberjunction/core": "^5.50.0",
+    "@memberjunction/global": "^5.50.0",
+    "@memberjunction/testing-integration": "^5.50.0",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-server": ">=0.1.0"
   },

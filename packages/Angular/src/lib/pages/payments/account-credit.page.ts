@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { OrdersApplyAccountCreditOperation } from '@mj-biz-apps/orders-entities';
@@ -184,6 +184,22 @@ import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-da
 })
 export class MJOAccountCreditPageComponent implements OnInit {
     private readonly data = inject(MJOOrdersDataService);
+    /**
+     * Render what was just loaded.
+     *
+     * These pages are created imperatively by the section shell through
+     * `ViewContainerRef.createComponent`. When an async load assigns across
+     * Angular's check/verify boundary, dev mode raises NG0100 and ABORTS the DOM
+     * write. Nothing re-renders afterwards, so the recorded "previous" value stays
+     * pre-load while the getter returns the loaded one — the mismatch then repeats
+     * on every tick and the view is frozen for good. It is not a flicker: the
+     * Orders dashboard sat at "0 open orders / $0.00" against 73 real orders, and
+     * read as a quiet day rather than a broken screen.
+     *
+     * Writing the DOM here ends it: the rendered value matches the getter from the
+     * first pass on, so later verify passes agree.
+     */
+    private readonly cdr = inject(ChangeDetectorRef);
 
     /** A credit was applied. */
     @Output() Applied = new EventEmitter<void>();
@@ -248,6 +264,20 @@ export class MJOAccountCreditPageComponent implements OnInit {
     }
 
     public async SelectSource(row: MJOOrderRow): Promise<void> {
+        await this.applySource(row);
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Select a credit WITHOUT rendering.
+     *
+     * The render is split out because the initial load selects the first credit
+     * itself. Rendering inside that call put a DOM write between two assignments
+     * of the same load, so the header total was written as $0.00 and then changed
+     * to $1,784.32 before the load finished — NG0100, which aborts the update and
+     * freezes the view. One load, one render.
+     */
+    private async applySource(row: MJOOrderRow): Promise<void> {
         this.SourceID = row.ID;
         // Only this customer's open orders can receive it — a credit belongs to
         // whoever earned it.
@@ -289,6 +319,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
         } finally {
             this.Busy = false;
         }
+        this.cdr.detectChanges();
     }
 
     protected money(value: number): string {
@@ -297,6 +328,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
 
     private async load(): Promise<void> {
         this.Credits = await this.data.GetOrders({ Preset: 'credits' });
-        if (this.Credits.length && !this.SourceID) await this.SelectSource(this.Credits[0]);
+        if (this.Credits.length && !this.SourceID) await this.applySource(this.Credits[0]);
+        this.cdr.detectChanges();
     }
 }

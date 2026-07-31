@@ -2,9 +2,11 @@ import { Injectable } from '@angular/core';
 import {
     OrderDraft,
     OrdersConfirmOrderOperation,
+    OrdersPreviewConfirmOperation,
     OrdersPreviewOrderOperation,
     OrdersSaveOrderOperation,
     type OrdersConfirmOrderOutput,
+    type OrdersPreviewConfirmOutput,
     type OrdersPreviewOrderOutput,
     type OrdersSaveOrderOutput,
 } from '@mj-biz-apps/orders-entities';
@@ -131,6 +133,24 @@ export class MJOOrderEntryService {
             draft.SetHeader({ OrderHeaderID: result.Output.OrderHeaderID });
         }
         return result.Output;
+    }
+
+    /**
+     * What confirming WOULD do, without doing it.
+     *
+     * Runs the real confirm transition inside a transaction that always rolls
+     * back, so the journal entries, subscription decisions and entitlement grants
+     * shown on the pre-flight are the ones the commit will actually produce. It
+     * cannot drift from `Confirm` because it *is* `Confirm`, discarded.
+     *
+     * Returns null only when the call itself failed; a refusal comes back as a
+     * successful result with `CanConfirm: false` and populated `Blockers`, which
+     * is the case the pre-flight is designed to render.
+     */
+    public async PreviewConfirm(draft: OrderDraft): Promise<OrdersPreviewConfirmOutput | null> {
+        const op = new OrdersPreviewConfirmOperation();
+        const result = await op.Execute({ Draft: draft.ToInput() });
+        return result.Output ?? null;
     }
 
     /**

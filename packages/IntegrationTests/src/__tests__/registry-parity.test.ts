@@ -45,6 +45,10 @@ import '../checks/charges.checks.js';
 import '../checks/tax.checks.js';
 import '../checks/composition.checks.js';
 import '../checks/returns.checks.js';
+import '../checks/gift-cards.checks.js';
+import '../checks/bundles.checks.js';
+import '../checks/fulfillment.checks.js';
+import '../checks/capture-payment.checks.js';
 import '../checks/arithmetic-edges.checks.js';
 import '../checks/concurrency.checks.js';
 import '../checks/volume.checks.js';
@@ -80,6 +84,10 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     tax: 15,
     composition: 10,
     returns: 12,
+    'gift-cards': 12,
+    bundles: 12,
+    fulfillment: 12,
+    'capture-payment': 12,
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,
@@ -296,7 +304,12 @@ describe('entity names are stated once and used everywhere', () => {
         const checksDir = resolve(dirname(fileURLToPath(import.meta.url)), '../checks');
         const offenders: string[] = [];
         for (const file of readdirSync(checksDir).filter((f) => f.endsWith('.checks.ts'))) {
-            const body = readFileSync(resolve(checksDir, file), 'utf8');
+            // Strip comments first. A comment that DISCUSSES an entity name is documentation, not a
+            // call site, and flagging it would push people to describe names vaguely — the opposite
+            // of what this test is for. Only a literal in executable code is an offence.
+            const body = readFileSync(resolve(checksDir, file), 'utf8')
+                .replace(/\/\*[\s\S]*?\*\//g, '')
+                .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
             // A quoted string shaped like an MJ entity name: "<Prefix>: <Entity Name>".
             for (const m of body.matchAll(/["'`](MJ[._][A-Za-z._]*[A-Za-z]:\s[^"'`]+)["'`]/g)) {
                 offenders.push(`${file}: ${m[1]}`);

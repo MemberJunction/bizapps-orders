@@ -20,6 +20,21 @@ export {
 export { PreviewConfirmOperation, LoadPreviewConfirmOperation } from './PreviewConfirmOperation.js';
 export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './GetOverdueWorklistOperation.js';
 
+// Fulfilment (D15) — a logistics fact, deliberately disconnected from revenue.
+export {
+    AutoAdvances,
+    AwaitingFulfillment,
+    ExplainRefusal,
+    GroupForQueue,
+    InitialFulfillmentStatus,
+    IsAwaitingFulfillment,
+    RefuseFlip,
+    ShouldAdvanceToFulfilled,
+} from './FulfillmentBehavior.js';
+export type { FulfillableLine, FulfillmentStatus, FlipRefusal, QueueGrouping } from './FulfillmentBehavior.js';
+export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from './GetFulfillmentQueueOperation.js';
+export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
+
 export {
     HydrateOrderDraft,
     ORDER_HEADER_ENTITY,
@@ -96,6 +111,7 @@ export { PaymentHeaderEntityServer, LoadPaymentHeaderEntityServer } from './Paym
 export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentLineEntityServer.js';
 
 export { RefundPaymentOperation, LoadRefundPaymentOperation } from './RefundPaymentOperation.js';
+export { CapturePaymentOperation, LoadCapturePaymentOperation } from './CapturePaymentOperation.js';
 export type { RefundPaymentInput, RefundPaymentOutput } from './RefundPaymentOperation.js';
 export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './ApplyAccountCreditOperation.js';
 // Pricing (D69): the pure engine, the resolver walk + its plugin seam, the dry run, and the
@@ -149,6 +165,47 @@ export type {
 } from './EntitlementBehavior.js';
 export { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
+
+export {
+    FormatGiftCardCode,
+    GIFT_CARD_ALPHABET,
+    GIFT_CARD_PRODUCT_TYPE_CODE,
+    GiftCardLiability,
+    IsGiftCardCode,
+    IsGiftCardLine,
+    PlanGiftCardIssuance,
+    PlanGiftCardVoid,
+} from './GiftCardBehavior.js';
+export type {
+    GiftCardLineFacts,
+    GiftCardOrderFacts,
+    GiftCardPlan,
+    GiftCardRefusal,
+    PlannedGiftCard,
+} from './GiftCardBehavior.js';
+export { IssueGiftCards } from './GiftCardEngine.js';
+
+export {
+    AllocateBundlePrice,
+    ChildQuantity,
+    PlanBundleExpansion,
+    PlanQuantityRipple,
+    RollupTotal,
+    SplitExactly,
+} from './BundleBehavior.js';
+export type {
+    BundleComponent,
+    BundleLineFacts,
+    BundlePlan,
+    BundlePricingMode,
+    BundleRefusal,
+    PlannedBundleChild,
+    RippleChange,
+    RippleChild,
+} from './BundleBehavior.js';
+export { ExpandBundleLines, RippleBundleQuantity } from './BundleEngine.js';
+export type { BundleExpansionOutcome, ExpandableLine } from './BundleEngine.js';
+export type { GiftCardOrder, GiftCardOrderLine, GiftCardOutcome } from './GiftCardEngine.js';
 
 // Payment providers (D19/D37) — the pure edge arithmetic, the driver seam, and the drivers.
 export {

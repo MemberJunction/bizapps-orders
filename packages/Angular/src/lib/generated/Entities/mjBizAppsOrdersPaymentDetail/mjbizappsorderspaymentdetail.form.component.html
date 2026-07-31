@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="paymentContext"
         SectionName="Payment Context"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-building"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -35,6 +35,16 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Payment Provider Section -->
+    <mj-collapsible-panel
+        SectionKey="paymentProvider"
+        SectionName="Payment Provider"
+        Icon="fa fa-network-wired"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -53,16 +63,6 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Provider Details Section -->
-    <mj-collapsible-panel
-        SectionKey="providerDetails"
-        SectionName="Provider Details"
-        Icon="fa fa-plug"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -178,7 +178,7 @@
     <mj-collapsible-panel
         SectionKey="transactionDetails"
         SectionName="Transaction Details"
-        Icon="fa fa-receipt"
+        Icon="fa fa-file-invoice-dollar"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -312,7 +312,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPaymentHeaders"
         SectionName="Payment Headers"
-        Icon="fa fa-money-bill-wave"
+        Icon="fa fa-money-bill"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

@@ -42,7 +42,7 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C401"
     },
     "sync": {
-      "lastModified": "2026-07-31T01:39:26.830Z",
+      "lastModified": "2026-07-31T15:37:48.580Z",
       "checksum": "d00dcc86cc956fc458b474c2e432ffe8a1281a4dc2f2f6c9d531c43fd867b86d"
     }
   },
@@ -69,7 +69,7 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C402"
     },
     "sync": {
-      "lastModified": "2026-07-31T01:39:26.896Z",
+      "lastModified": "2026-07-31T15:37:48.611Z",
       "checksum": "380d90d13d72a95567c75dffe6ee3566b218c3fec5618ed5ce4aed8df25e8746"
     }
   },
@@ -96,7 +96,7 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C403"
     },
     "sync": {
-      "lastModified": "2026-07-31T01:39:26.811Z",
+      "lastModified": "2026-07-31T15:37:48.564Z",
       "checksum": "43e122ff97ae8013671f8f2689259e0c7f42590a2ddad820513dd62bee26d04a"
     }
   },
@@ -123,7 +123,7 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C404"
     },
     "sync": {
-      "lastModified": "2026-07-31T01:39:26.912Z",
+      "lastModified": "2026-07-31T15:37:48.596Z",
       "checksum": "1def491682d815014701790032ee83498237f5e53baf401c5cbc0e8926bc06e5"
     }
   },
@@ -150,7 +150,7 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C405"
     },
     "sync": {
-      "lastModified": "2026-07-31T01:39:26.847Z",
+      "lastModified": "2026-07-31T15:37:48.657Z",
       "checksum": "12fa9a78b62d464b24b53a67f92f4ec4f9555da81fafc9627f6bc111d2b7dbbe"
     }
   },
@@ -177,7 +177,7 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C406"
     },
     "sync": {
-      "lastModified": "2026-07-31T01:39:26.880Z",
+      "lastModified": "2026-07-31T15:37:48.673Z",
       "checksum": "95f32d390aa3998efb850d7c12c2f16aefeff2ed2afba479c4512a1bcea5053b"
     }
   },
@@ -204,7 +204,7 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C407"
     },
     "sync": {
-      "lastModified": "2026-07-31T01:39:26.863Z",
+      "lastModified": "2026-07-31T15:37:48.642Z",
       "checksum": "53c64f6a831f10bdcce6a5e872105754ca4d99e80941713e8754883344fc2698"
     }
   },
@@ -231,7 +231,7 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C408"
     },
     "sync": {
-      "lastModified": "2026-07-31T01:39:26.959Z",
+      "lastModified": "2026-07-31T15:37:48.627Z",
       "checksum": "73cd5bf00bf1ecc1ed7d98baa0676481e7cdf3091bc5055d8fb25eb0c86b57d4"
     }
   },
@@ -258,7 +258,7 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C409"
     },
     "sync": {
-      "lastModified": "2026-07-31T01:39:26.928Z",
+      "lastModified": "2026-07-31T15:37:48.688Z",
       "checksum": "45fc4776d3216bded23d5cfd07b54f8ecaeca2fe0dc2774075e7d33a71c4f142"
     }
   },
@@ -285,8 +285,89 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C410"
     },
     "sync": {
-      "lastModified": "2026-07-31T01:39:26.944Z",
+      "lastModified": "2026-07-31T15:37:48.703Z",
       "checksum": "d02d2661a5679f461e87bfa2c5039edc220115a5dfdff928e86cb210160d13da"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Get Fulfillment Queue",
+      "OperationKey": "Orders.GetFulfillmentQueue",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Fulfillment",
+      "Description": "Every order line still awaiting shipment, oldest confirmed first. Computed at read time like the overdue worklist, because it changes as lines are flipped rather than as anything is written - a stored flag would need a job to keep it honest, and the day that job failed the warehouse would quietly stop seeing work. Lines whose product type requires no fulfilment never appear, and neither do reversals (goods coming back are tracked on the line they reverse) or a bundle rollup parent (its children carry the goods).",
+      "InputTypeName": "OrdersGetFulfillmentQueueInput",
+      "InputTypeDefinition": "@file:types/orders-get-fulfillment-queue.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersGetFulfillmentQueueOutput",
+      "OutputTypeDefinition": "@file:types/orders-get-fulfillment-queue.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "3B2150C9-3D51-42F6-BF69-EAD0FD8D5A8D"
+    },
+    "sync": {
+      "lastModified": "2026-07-31T15:37:48.766Z",
+      "checksum": "f571bc4effb5f39805ea6a321ae1d4f34c697088075035efc5465a4dd05db6ba"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Fulfill Order Lines",
+      "OperationKey": "Orders.FulfillOrderLines",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Fulfillment",
+      "Description": "Mark lines Fulfilled and advance each order whose last fulfillable line is now done - ONE decision, so one operation. As two calls there is a window where every line is shipped and the order still reads Posted, which a warehouse experiences as the system losing its work. An order advances when nothing is AWAITING fulfilment rather than when every line is Fulfilled: on a mixed order the subscription line never flips, so the stricter test would hold it open forever. No journal entry fires (D15).",
+      "InputTypeName": "OrdersFulfillOrderLinesInput",
+      "InputTypeDefinition": "@file:types/orders-fulfill-order-lines.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersFulfillOrderLinesOutput",
+      "OutputTypeDefinition": "@file:types/orders-fulfill-order-lines.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "5CD713D6-C443-4340-ABBB-3348EFD2B2E5"
+    },
+    "sync": {
+      "lastModified": "2026-07-31T15:37:48.736Z",
+      "checksum": "1f7f09b2d642a275b496dc92dbfe4eb5f722de4b39f29e8fd4efa791ba073e1b"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Capture Payment",
+      "OperationKey": "Orders.CapturePayment",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Take a payment and allocate it, in ONE transaction. A payment is a header plus its allocation lines, and PaymentHeaderEntityServer.Lines is a TRANSIENT collection rather than a column - CodeGen cannot emit it client-side, so a browser entity.Save() has nowhere to put the allocations. Same situation Orders.SaveOrder was built for. A two-step create-then-allocate flow was rejected because between the steps there would be a captured payment with no allocations in the database: cash recorded against nothing. The fee is computed server-side and returned, never accepted as input, because a client-supplied fee is a client-supplied general-ledger amount. Over-payment is ACCEPTED and becomes spendable credit (D68) rather than being refused. Preview runs the real capture inside a transaction that always rolls back rather than modelling the arithmetic separately.",
+      "InputTypeName": "OrdersCapturePaymentInput",
+      "InputTypeDefinition": "@file:types/orders-capture-payment.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersCapturePaymentOutput",
+      "OutputTypeDefinition": "@file:types/orders-capture-payment.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "87E03341-1F8F-4F1E-A72D-25311266693A"
+    },
+    "sync": {
+      "lastModified": "2026-07-31T15:37:48.752Z",
+      "checksum": "ea9afee8f5b441d490e5e0dffdb6ebe2bf8455811ade7bd0a5a726b3b51bbba7"
     }
   }
 ]

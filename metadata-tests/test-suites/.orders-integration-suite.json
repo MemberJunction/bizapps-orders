@@ -339,6 +339,50 @@
             "lastModified": "2026-07-30T21:32:28.164Z",
             "checksum": "659e8f5c0a2d3ee199d2c00ee4ee8a5d29c239defe78dead10dc9988667f071e"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-23 - Gift Cards",
+            "Sequence": 23,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "3BD0AC86-C8EE-4C07-BAF4-50488690D586"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-24 - Bundles",
+            "Sequence": 24,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "916EE8FA-AC43-46D3-819F-B53FEC3660FB"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-25 - Fulfillment",
+            "Sequence": 25,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "094BDC1F-0D08-4A42-8A5A-1546ADEB03AD"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-26 - Capture Payment",
+            "Sequence": 26,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "C826A373-C02F-47E1-B96E-5F573D053679"
+          }
         }
       ]
     },

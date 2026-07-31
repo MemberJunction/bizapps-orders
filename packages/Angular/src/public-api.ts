@@ -51,6 +51,8 @@ export * from './lib/panels';
 export * from './lib/panels/confirm-preflight.component';
 export * from './lib/panels/worklist-table.component';
 export * from './lib/panels/stat-tile.component';
+export * from './lib/panels/summary-strip.component';
+export * from './lib/panels/day-bars.component';
 export * from './lib/panels/allocation-grid.component';
 export * from './lib/panels/allocation-math';
 

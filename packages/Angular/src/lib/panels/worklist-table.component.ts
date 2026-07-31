@@ -100,7 +100,7 @@ export type MJORow = any;
         @if (Presets.length || Searchable) {
             <div class="mjo-wl__toolbar">
                 @if (Searchable) {
-                    <div class="mj-search">
+                    <div class="mjo-search">
                         <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                         <input
                             [value]="Search"

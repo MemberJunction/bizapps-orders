@@ -15,9 +15,9 @@ export class mjBizAppsOrdersCustomerTaxExemptionFormComponent extends BaseFormCo
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'customerInformation', sectionName: 'Customer Information', isExpanded: true },
-            { sectionKey: 'taxDetails', sectionName: 'Tax Details', isExpanded: true },
-            { sectionKey: 'certificationDetails', sectionName: 'Certification Details', isExpanded: true },
+            { sectionKey: 'entityAssociation', sectionName: 'Entity Association', isExpanded: true },
+            { sectionKey: 'taxExemptionDetails', sectionName: 'Tax Exemption Details', isExpanded: true },
+            { sectionKey: 'certificateInformation', sectionName: 'Certificate Information', isExpanded: true },
             { sectionKey: 'validityPeriod', sectionName: 'Validity Period', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);

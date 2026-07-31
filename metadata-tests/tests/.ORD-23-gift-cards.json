@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-23 - Gift Cards",
+    "Description": "Gift-card issuance on sale and the liability it creates (GC1-GC12). Selling a gift card is the one sale that earns NOTHING: money comes in and goods are owed, so the credit leg is a liability and revenue appears later, on whatever order the card is eventually spent on. Recognising at issue AND at redemption is the classic gift-card double-count, and it is invisible from the ledger - both entries balance, the order reconciles, the customer is billed correctly, and only the revenue figure is wrong. The redemption half already worked, because StoredValuePaymentProvider spends a card as a tender; what did not exist was ISSUANCE, so the schema shipped and the feature did not. These checks are weighted toward the cases where a wrong answer still looks right: a card credited to Sales, a face value taken from the discounted amount instead of the unit price, and a re-save minting a second set of cards that reconcile perfectly and are simply free money.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Selling a gift card issues a StoredValueAccount carrying the line's face value, with an unambiguous printed code; a quantity of three issues THREE cards rather than one worth three times as much; the opening Issue transaction is written and BalanceAfter agrees with the account's balance; the sale credits a LIABILITY and never Sales, which is the double-count guard; no revenue-recognition schedule or release entry is created, because a card is earned when somebody spends it rather than on a timetable; re-saving a confirmed order issues nothing at all; the beneficiary is the line's ship-to where one is named and the buyer otherwise, falling back per side so naming an organization does not blank the person; a discounted card is worth its FACE value while the customer pays less; returning a gift-card line voids the card, zeroes its balance and records the refund on its ledger; a partial return voids only as many cards as came back; an ordinary product issues no stored value and credits Sales as usual; and the issued card resolves by its code with a unique row, so issuance and redemption meet on the same instrument."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "gift-cards"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "BAB16DDC-D1C6-44E2-A1FA-E0C19122BE41"
+  }
+}

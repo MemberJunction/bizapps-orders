@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
@@ -70,19 +70,39 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
 })
 export class MJOPricingPageComponent implements OnInit {
     private readonly data = inject(MJOOrdersDataService);
+    /**
+     * Render what was just loaded.
+     *
+     * These pages are created imperatively by the section shell through
+     * `ViewContainerRef.createComponent`. When an async load assigns across
+     * Angular's check/verify boundary, dev mode raises NG0100 and ABORTS the DOM
+     * write. Nothing re-renders afterwards, so the recorded "previous" value stays
+     * pre-load while the getter returns the loaded one — the mismatch then repeats
+     * on every tick and the view is frozen for good. It is not a flicker: the
+     * Orders dashboard sat at "0 open orders / $0.00" against 73 real orders, and
+     * read as a quiet day rather than a broken screen.
+     *
+     * Writing the DOM here ends it: the rendered value matches the getter from the
+     * first pass on, so later verify passes agree.
+     */
+    private readonly cdr = inject(ChangeDetectorRef);
 
     public Rows: Array<Record<string, unknown>> = [];
 
     public readonly Columns: MJOColumn[] = [
-        { Key: 'Product', Label: 'Product', Secondary: (r) => (r['SKU'] as string) ?? null },
+        // No SKU on a price row — it belongs to the product. The price list is the
+        // useful second line here anyway: it says WHICH price this is.
+        { Key: 'Product', Label: 'Product', Secondary: (r) => (r['Description'] as string) ?? null },
         { Key: 'PriceList', Label: 'Price list', Width: '150px' },
         { Key: 'PricingModel', Label: 'Model', Width: '110px' },
         {
-            Key: 'UnitPrice',
+            Key: 'Amount',
             Label: 'Unit',
             Kind: 'money',
             Width: '110px',
-            Format: (r) => FormatMoney(Number(r['UnitPrice'] ?? 0)),
+            // The column is Amount on Product Prices. UnitPrice is the ORDER LINE's
+            // field; naming them alike is what made the mix-up easy.
+            Format: (r) => FormatMoney(Number(r['Amount'] ?? 0)),
         },
         {
             Key: 'Priority',
@@ -108,6 +128,7 @@ export class MJOPricingPageComponent implements OnInit {
 
     public async ngOnInit(): Promise<void> {
         this.Rows = await this.data.GetProductPrices();
+        this.cdr.detectChanges();
     }
 }
 
@@ -171,6 +192,13 @@ export class MJOPricingPageComponent implements OnInit {
 })
 export class MJOPromotionsPageComponent implements OnInit {
     private readonly data = inject(MJOOrdersDataService);
+    /**
+     * Render what was just loaded. See orders-dashboard.page.ts for the full
+     * reasoning: these pages are created imperatively by the section shell, and an
+     * async assignment across Angular's check/verify boundary raises NG0100, aborts
+     * the DOM write, and freezes the view on its pre-load values permanently.
+     */
+    private readonly cdr = inject(ChangeDetectorRef);
 
     public Rows: Array<Record<string, unknown>> = [];
 
@@ -178,11 +206,11 @@ export class MJOPromotionsPageComponent implements OnInit {
         { Key: 'Name', Label: 'Promotion', Secondary: (r) => (r['Description'] as string) ?? null },
         { Key: 'PromotionType', Label: 'Type', Width: '130px' },
         {
-            Key: 'Scope',
+            Key: 'AppliesAt',
             Label: 'Scope',
             Kind: 'chip',
             Width: '100px',
-            Format: (r) => String(r['Scope'] ?? 'Line'),
+            Format: (r) => String(r['AppliesAt'] ?? 'Line'),
             ChipClass: () => 'mj-chip--outline',
         },
         {
@@ -191,22 +219,23 @@ export class MJOPromotionsPageComponent implements OnInit {
             Width: '190px',
             HideBelow: 1000,
             Format: (r) => {
-                const from = r['StartDate'] ? FormatDate(String(r['StartDate']), { Short: true }) : '—';
-                const to = r['EndDate'] ? FormatDate(String(r['EndDate']), { Short: true }) : 'open';
+                const from = r['EffectiveFrom'] ? FormatDate(String(r['EffectiveFrom']), { Short: true }) : '—';
+                const to = r['EffectiveTo'] ? FormatDate(String(r['EffectiveTo']), { Short: true }) : 'open';
                 return `${from} → ${to}`;
             },
         },
         {
-            Key: 'IsActive',
+            Key: 'Status',
             Label: 'Status',
             Kind: 'chip',
             Width: '100px',
-            Format: (r) => (r['IsActive'] === false ? 'Inactive' : 'Active'),
-            ChipClass: (r) => (r['IsActive'] === false ? 'mj-chip--outline' : 'mj-chip--success'),
+            Format: (r) => String(r['Status'] ?? 'Active'),
+            ChipClass: (r) => (r['Status'] === 'Active' ? 'mj-chip--success' : 'mj-chip--outline'),
         },
     ];
 
     public async ngOnInit(): Promise<void> {
         this.Rows = await this.data.GetPromotions();
+        this.cdr.detectChanges();
     }
 }

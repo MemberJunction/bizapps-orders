@@ -16,27 +16,28 @@ export class mjBizAppsOrdersOrderLineFormComponent extends BaseFormComponent {
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'orderRelationships', sectionName: 'Order Relationships', isExpanded: true },
-            { sectionKey: 'productAndServiceDetails', sectionName: 'Product and Service Details', isExpanded: true },
+            { sectionKey: 'orderAssociation', sectionName: 'Order Association', isExpanded: true },
+            { sectionKey: 'productInformation', sectionName: 'Product Information', isExpanded: true },
+            { sectionKey: 'accountingAndOwnership', sectionName: 'Accounting and Ownership', isExpanded: true },
             { sectionKey: 'orderDetails', sectionName: 'Order Details', isExpanded: true },
             { sectionKey: 'pricingAndQuantities', sectionName: 'Pricing and Quantities', isExpanded: true },
             { sectionKey: 'shippingDetails', sectionName: 'Shipping Details', isExpanded: true },
-            { sectionKey: 'subscriptionAndService', sectionName: 'Subscription and Service', isExpanded: true },
-            { sectionKey: 'financialAccounting', sectionName: 'Financial Accounting', isExpanded: true },
+            { sectionKey: 'subscriptionAndRevenue', sectionName: 'Subscription and Revenue', isExpanded: true },
+            { sectionKey: 'bundleDetails', sectionName: 'Bundle Details', isExpanded: true },
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLinePriceComponents', sectionName: 'Order Line Price Components', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersStoredValueAccounts', sectionName: 'Stored Value Accounts', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderAdjustmentAllocations', sectionName: 'Order Adjustment Allocations', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLineDimensions', sectionName: 'Order Line Dimensions', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderChargeAllocations', sectionName: 'Order Charge Allocations', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderAdjustments', sectionName: 'Order Adjustments', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLinesReversesOrderLineID', sectionName: 'Order Lines (Reverses Order Line)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLinesParentOrderLineID', sectionName: 'Order Lines (Parent Order Line)', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderAdjustments', sectionName: 'Order Adjustments', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLinePriceComponents', sectionName: 'Order Line Price Components', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderChargeAllocations', sectionName: 'Order Charge Allocations', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersStoredValueAccounts', sectionName: 'Stored Value Accounts', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderAdjustmentAllocations', sectionName: 'Order Adjustment Allocations', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false }
         ]);
     }
 }

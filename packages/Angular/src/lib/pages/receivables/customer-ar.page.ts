@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
@@ -214,6 +214,13 @@ interface MJOCustomerSummary {
 })
 export class MJOCustomerARPageComponent implements OnInit {
     private readonly data = inject(MJOOrdersDataService);
+    /**
+     * Render what was just loaded. See orders-dashboard.page.ts for the full
+     * reasoning: these pages are created imperatively by the section shell, and an
+     * async assignment across Angular's check/verify boundary raises NG0100, aborts
+     * the DOM write, and freezes the view on its pre-load values permanently.
+     */
+    private readonly cdr = inject(ChangeDetectorRef);
 
     @Output() OrderOpened = new EventEmitter<MJOOrderRow>();
 
@@ -352,5 +359,6 @@ export class MJOCustomerARPageComponent implements OnInit {
             .sort((a, b) => b.Open - a.Open);
 
         if (!this.SelectedKey && this.Customers.length) this.SelectedKey = this.Customers[0].Key;
+        this.cdr.detectChanges();
     }
 }

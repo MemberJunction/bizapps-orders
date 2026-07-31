@@ -16,11 +16,12 @@ export class mjBizAppsOrdersOrderChargeFormComponent extends BaseFormComponent {
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'orderAssociation', sectionName: 'Order Association', isExpanded: true },
+            { sectionKey: 'orderContext', sectionName: 'Order Context', isExpanded: true },
             { sectionKey: 'chargeClassification', sectionName: 'Charge Classification', isExpanded: true },
             { sectionKey: 'financialDetails', sectionName: 'Financial Details', isExpanded: true },
-            { sectionKey: 'provenanceAndAudit', sectionName: 'Provenance and Audit', isExpanded: true },
-            { sectionKey: 'overrideManagement', sectionName: 'Override Management', isExpanded: true },
+            { sectionKey: 'taxInformation', sectionName: 'Tax Information', isExpanded: true },
+            { sectionKey: 'calculationDetails', sectionName: 'Calculation Details', isExpanded: true },
+            { sectionKey: 'overrideDetails', sectionName: 'Override Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderChargeAllocations', sectionName: 'Order Charge Allocations', isExpanded: false }
         ]);

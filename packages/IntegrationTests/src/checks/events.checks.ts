@@ -46,7 +46,7 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
-import { PRODUCT_ENTITY } from "../entity-names.js";
+import { EVENT_ORDER_LINE_ENTITY, EVENT_PRODUCT_ENTITY } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 
 const AR_CODE = "11201";
@@ -255,8 +255,15 @@ export const EventChecks: NamedCheck[] = [
           ctx,
           `SELECT TOP 1 ID FROM ${ORDERS_SCHEMA}.ProductCategory WHERE CompanyID='${f.CoA.ID}'`,
         );
-        // The PRODUCT goes through the object model like everything else.
-        const productID = await createViaEntity(ctx, PRODUCT_ENTITY, {
+        // ONE SAVE, through the object model. An IsA child is created by creating the CHILD and
+        // setting both its own fields and its parent's — BaseEntity splits them by
+        // EntityInfo.ParentEntityFieldNames, saves the parent first, and hands the child the
+        // parent's primary key (BO-D37). Creating the Product first and attaching an extension row
+        // afterwards is the wrong shape and fails silently on 5.49.0.
+        const productID = await createViaEntity(ctx, EVENT_PRODUCT_ENTITY, {
+          EventStartsAt: "2027-02-10T15:00:00Z",
+          EventEndsAt: null,
+          RequiresAttendeeInfo: false,
           CompanyID: f.CoA.ID,
           ProductTypeID: f.ProductTypeIDs.Event,
           ProductCategoryID: catA.ID,
@@ -265,17 +272,6 @@ export const EventChecks: NamedCheck[] = [
           RevenueRecognitionTypeID: f.RevRecTypeIDs.get("AllBackEnd"),
           IsTaxable: 0,
         });
-        // The IsA CHILD cannot. An IsA entity's view exposes the parent's fields as well as its own —
-        // Event Products has 30 EntityFields — while spCreateEventProduct accepts only the child's 11
-        // columns. BaseEntity.Save passes everything the entity declares, so the create fails with
-        // "Procedure or function spCreateEventProduct has too many arguments specified". That is a
-        // property of the IsA pattern (BO-D37), not something this fixture can route around, so the
-        // child row is written directly and the reason recorded here.
-        await TxQuery(
-          ctx,
-          `INSERT INTO ${ORDERS_SCHEMA}.EventProduct (ID, EventStartsAt, EventEndsAt, RequiresAttendeeInfo)
-           VALUES ('${productID}','2027-02-10T15:00:00Z', NULL, 0)`,
-        );
 
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
@@ -347,7 +343,12 @@ export const EventChecks: NamedCheck[] = [
 
         // The IsA child shares the parent's PK (BO-D37), which is what lets attendee data hang off
         // a line without widening OrderLine for every product type that will never use it.
-        // Same IsA constraint as EventProduct above — see the note there.
+        // DIFFERENT SHAPE FROM EventProduct, deliberately. There the child is created WITH its
+        // parent in one save. Here the parent order line already exists — it was written by the
+        // confirm — so this attaches a child row to an existing parent, which BaseEntity's IS-A
+        // path does not model: it always wants to save the parent too, and the parent is frozen by
+        // the immutability trigger on a Confirmed order. So the extension row is written directly,
+        // and the reason is that the ORDER of operations differs, not that IsA cannot be expressed.
         await TxQuery(
           ctx,
           `INSERT INTO ${ORDERS_SCHEMA}.EventOrderLine (ID, AttendeeName, AttendeeEmail)
