@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Organization Details Section -->
+    <!-- Organization Section -->
     <mj-collapsible-panel
-        SectionKey="organizationDetails"
-        SectionName="Organization Details"
+        SectionKey="organization"
+        SectionName="Organization"
         Icon="fa fa-building"
         [Form]="this"
         [FormContext]="formContext">
@@ -29,10 +29,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Category Identification Section -->
+    <!-- Category Details Section -->
     <mj-collapsible-panel
-        SectionKey="categoryIdentification"
-        SectionName="Category Identification"
+        SectionKey="categoryDetails"
+        SectionName="Category Details"
         Icon="fa fa-tag"
         [Form]="this"
         [FormContext]="formContext">
@@ -71,10 +71,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Hierarchy and Structure Section -->
+    <!-- Hierarchy Section -->
     <mj-collapsible-panel
-        SectionKey="hierarchyAndStructure"
-        SectionName="Hierarchy and Structure"
+        SectionKey="hierarchy"
+        SectionName="Hierarchy"
         Icon="fa fa-sitemap"
         [Form]="this"
         [FormContext]="formContext">
@@ -98,11 +98,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Default Business Rules Section -->
+    <!-- Taxation and Entitlements Section -->
     <mj-collapsible-panel
-        SectionKey="defaultBusinessRules"
-        SectionName="Default Business Rules"
-        Icon="fa fa-cogs"
+        SectionKey="taxationAndEntitlements"
+        SectionName="Taxation and Entitlements"
+        Icon="fa fa-file-invoice-dollar"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -152,7 +152,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -205,6 +205,31 @@
         }
     </mj-collapsible-panel>
 
+    <!-- Promotion Targets Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPromotionTargets"
+        SectionName="Promotion Targets"
+        Icon="fa fa-bullhorn"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPromotionTargets')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Targets','ProductCategoryID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionTargets')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionTargets', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <!-- Products Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersProducts"
@@ -224,31 +249,6 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProducts', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- Promotion Targets Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPromotionTargets"
-        SectionName="Promotion Targets"
-        Icon="fa fa-bullseye"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPromotionTargets')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Targets','ProductCategoryID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionTargets')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionTargets', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

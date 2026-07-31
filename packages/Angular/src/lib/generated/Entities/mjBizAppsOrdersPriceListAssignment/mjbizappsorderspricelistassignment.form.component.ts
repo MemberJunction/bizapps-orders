@@ -16,8 +16,8 @@ export class mjBizAppsOrdersPriceListAssignmentFormComponent extends BaseFormCom
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'assignmentDetails', sectionName: 'Assignment Details', isExpanded: true },
-            { sectionKey: 'validityPeriod', sectionName: 'Validity Period', isExpanded: true },
-            { sectionKey: 'referenceData', sectionName: 'Reference Data', isExpanded: true },
+            { sectionKey: 'timeline', sectionName: 'Timeline', isExpanded: true },
+            { sectionKey: 'displayInformation', sectionName: 'Display Information', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

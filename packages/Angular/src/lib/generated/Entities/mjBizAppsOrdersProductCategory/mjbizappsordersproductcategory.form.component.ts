@@ -16,14 +16,14 @@ export class mjBizAppsOrdersProductCategoryFormComponent extends BaseFormCompone
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'organizationDetails', sectionName: 'Organization Details', isExpanded: true },
-            { sectionKey: 'categoryIdentification', sectionName: 'Category Identification', isExpanded: true },
-            { sectionKey: 'hierarchyAndStructure', sectionName: 'Hierarchy and Structure', isExpanded: true },
-            { sectionKey: 'defaultBusinessRules', sectionName: 'Default Business Rules', isExpanded: true },
+            { sectionKey: 'organization', sectionName: 'Organization', isExpanded: true },
+            { sectionKey: 'categoryDetails', sectionName: 'Category Details', isExpanded: true },
+            { sectionKey: 'hierarchy', sectionName: 'Hierarchy', isExpanded: true },
+            { sectionKey: 'taxationAndEntitlements', sectionName: 'Taxation and Entitlements', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductCategories', sectionName: 'Product Categories', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPromotionTargets', sectionName: 'Promotion Targets', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPromotionTargets', sectionName: 'Promotion Targets', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false }
         ]);
     }
 }

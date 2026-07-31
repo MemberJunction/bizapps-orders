@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Assignment Details Section -->
+    <!-- Authority Assignment Section -->
     <mj-collapsible-panel
-        SectionKey="assignmentDetails"
-        SectionName="Assignment Details"
-        Icon="fa fa-user-tag"
+        SectionKey="authorityAssignment"
+        SectionName="Authority Assignment"
+        Icon="fa fa-user-shield"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -41,7 +41,7 @@
     <mj-collapsible-panel
         SectionKey="authorityLimits"
         SectionName="Authority Limits"
-        Icon="fa fa-balance-scale"
+        Icon="fa fa-money-bill-wave"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -60,6 +60,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Scope and Permissions Section -->
+    <mj-collapsible-panel
+        SectionKey="scopeAndPermissions"
+        SectionName="Scope and Permissions"
+        Icon="fa fa-tags"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

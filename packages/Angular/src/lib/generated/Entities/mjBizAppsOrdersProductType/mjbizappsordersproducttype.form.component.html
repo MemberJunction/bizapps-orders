@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- General Information Section -->
+    <!-- Product Type Definition Section -->
     <mj-collapsible-panel
-        SectionKey="generalInformation"
-        SectionName="General Information"
-        Icon="fa fa-info-circle"
+        SectionKey="productTypeDefinition"
+        SectionName="Product Type Definition"
+        Icon="fa fa-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -56,7 +56,7 @@
     <mj-collapsible-panel
         SectionKey="fulfillmentAndEntitlements"
         SectionName="Fulfillment and Entitlements"
-        Icon="fa fa-truck"
+        Icon="fa fa-shipping-fast"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -94,10 +94,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financial Defaults Section -->
+    <!-- Financial and Tax Defaults Section -->
     <mj-collapsible-panel
-        SectionKey="financialDefaults"
-        SectionName="Financial Defaults"
+        SectionKey="financialAndTaxDefaults"
+        SectionName="Financial and Tax Defaults"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -138,11 +138,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- System Configuration Section -->
+    <!-- System Metadata Section -->
     <mj-collapsible-panel
-        SectionKey="systemConfiguration"
-        SectionName="System Configuration"
-        Icon="fa fa-cogs"
+        SectionKey="systemMetadata"
+        SectionName="System Metadata"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -161,16 +161,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- System Metadata Section -->
-    <mj-collapsible-panel
-        SectionKey="systemMetadata"
-        SectionName="System Metadata"
-        Icon="fa fa-database"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

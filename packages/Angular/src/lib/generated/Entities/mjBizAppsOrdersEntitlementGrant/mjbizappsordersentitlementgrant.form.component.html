@@ -29,24 +29,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="Quantity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Source Information Section -->
-    <mj-collapsible-panel
-        SectionKey="sourceInformation"
-        SectionName="Source Information"
-        Icon="fa fa-link"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="OrderLineID"
             Type="textbox"
             [EditMode]="EditMode"
@@ -102,13 +84,21 @@
 
     </mj-collapsible-panel>
 
-    <!-- Validity and Status Section -->
+    <!-- Grant Terms Section -->
     <mj-collapsible-panel
-        SectionKey="validityAndStatus"
-        SectionName="Validity and Status"
-        Icon="fa fa-calendar-check"
+        SectionKey="grantTerms"
+        SectionName="Grant Terms"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Quantity"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -128,14 +118,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="ValidityModeApplied"
             Type="select"
             [EditMode]="EditMode"
@@ -144,13 +126,21 @@
 
     </mj-collapsible-panel>
 
-    <!-- Provisioning Details Section -->
+    <!-- Status and Lifecycle Section -->
     <mj-collapsible-panel
-        SectionKey="provisioningDetails"
-        SectionName="Provisioning Details"
-        Icon="fa fa-cogs"
+        SectionKey="statusAndLifecycle"
+        SectionName="Status and Lifecycle"
+        Icon="fa fa-history"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -182,7 +172,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

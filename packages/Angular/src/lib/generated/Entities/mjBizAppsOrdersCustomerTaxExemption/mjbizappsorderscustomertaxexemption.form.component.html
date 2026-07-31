@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Customer Information Section -->
+    <!-- Entity Association Section -->
     <mj-collapsible-panel
-        SectionKey="customerInformation"
-        SectionName="Customer Information"
+        SectionKey="entityAssociation"
+        SectionName="Entity Association"
         Icon="fa fa-users"
         [Form]="this"
         [FormContext]="formContext">
@@ -38,11 +38,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Tax Details Section -->
+    <!-- Taxation Details Section -->
     <mj-collapsible-panel
-        SectionKey="taxDetails"
-        SectionName="Tax Details"
-        Icon="fa fa-landmark"
+        SectionKey="taxationDetails"
+        SectionName="Taxation Details"
+        Icon="fa fa-balance-scale"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -72,11 +72,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Certification Details Section -->
+    <!-- Certificate Information Section -->
     <mj-collapsible-panel
-        SectionKey="certificationDetails"
-        SectionName="Certification Details"
-        Icon="fa fa-file-alt"
+        SectionKey="certificateInformation"
+        SectionName="Certificate Information"
+        Icon="fa fa-certificate"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

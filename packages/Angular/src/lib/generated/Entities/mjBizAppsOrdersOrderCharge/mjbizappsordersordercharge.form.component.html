@@ -29,11 +29,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Charge Classification Section -->
+    <!-- Charge Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="chargeClassification"
-        SectionName="Charge Classification"
-        Icon="fa fa-tag"
+        SectionKey="chargeConfiguration"
+        SectionName="Charge Configuration"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -87,22 +87,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ComputedAmount"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Provenance and Audit Section -->
+    <!-- Tax Information Section -->
     <mj-collapsible-panel
-        SectionKey="provenanceAndAudit"
-        SectionName="Provenance and Audit"
-        Icon="fa fa-history"
+        SectionKey="taxInformation"
+        SectionName="Tax Information"
+        Icon="fa fa-landmark"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -121,6 +113,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Calculation Audit Section -->
+    <mj-collapsible-panel
+        SectionKey="calculationAudit"
+        SectionName="Calculation Audit"
+        Icon="fa fa-history"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -129,21 +131,19 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Override Management Section -->
-    <mj-collapsible-panel
-        SectionKey="overrideManagement"
-        SectionName="Override Management"
-        Icon="fa fa-edit"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
             FieldName="IsOverridden"
             Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ComputedAmount"
+            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -178,7 +178,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-cog"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

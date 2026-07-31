@@ -10,22 +10,32 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Promotion Targeting Section -->
+    <!-- Promotion Definition Section -->
     <mj-collapsible-panel
-        SectionKey="promotionTargeting"
-        SectionName="Promotion Targeting"
-        Icon="fa fa-bullseye"
+        SectionKey="promotionDefinition"
+        SectionName="Promotion Definition"
+        Icon="fa fa-tag"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="PromotionID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Targeting Rules Section -->
+    <mj-collapsible-panel
+        SectionKey="targetingRules"
+        SectionName="Targeting Rules"
+        Icon="fa fa-crosshairs"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
