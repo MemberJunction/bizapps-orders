@@ -23,3 +23,7 @@ metadata/sql_logging/
 metadata-tests/sql_logging/
 .ux-harness/
 test-harnesses/.integration.lock
+
+# Sample documents written by test-harnesses/invoice-live.mjs so somebody can LOOK at them.
+# Rendered from whatever is in the database at the time; never a source artefact.
+.invoice-samples/

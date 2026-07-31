@@ -1,0 +1,18 @@
+{
+  "entity": "MJ: Actions",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".orders-actions.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true,
+    "relatedEntities": {
+      "MJ: Action Params": {
+        "entity": "MJ: Action Params",
+        "foreignKey": "ActionID"
+      }
+    }
+  }
+}

@@ -9,6 +9,7 @@
 // Import entity and action packages to trigger @RegisterClass decorators
 import '@mj-biz-apps/orders-entities';
 import '@mj-biz-apps/orders-actions';
+import { LoadGenerateInvoiceAction } from '@mj-biz-apps/orders-actions';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -107,4 +108,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadManualPaymentProvider();       // cheque, wire, cash — no gateway to call
     LoadStoredValuePaymentProvider();  // gift cards and account credit, one driver (D38/D68)
     LoadEnvironmentSecretResolver();   // the default CredentialsRef -> env lookup; replaceable
+
+    // Actions. Same tree-shaking hazard as the operations above: without the anchor the action row
+    // exists in metadata and `ActionEngine` finds nothing registered under its DriverClass.
+    LoadGenerateInvoiceAction();       // 'Orders.GenerateInvoice' — an order, rendered (D-INV)
 }
