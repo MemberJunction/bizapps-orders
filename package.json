@@ -13,6 +13,7 @@
     "build:stream": "turbo --log-order=stream build",
     "build:generated": "turbo --log-order=stream build --filter=\"@mj-biz-apps/orders-entities\" --filter=\"@mj-biz-apps/orders-actions\"",
     "build:packages": "turbo --log-order=stream build --filter=\"@mj-biz-apps/orders-*\"",
+    "check:ui-layers": "node .github/scripts/check-ui-layers.mjs packages",
     "build:api": "turbo --log-order=stream build --filter=\"mj_api\"",
     "build:explorer": "turbo --log-order=stream build --filter=\"mj_explorer\"",
     "start": "turbo start --filter=mj_explorer --filter=mj_api",

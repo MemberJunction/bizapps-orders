@@ -4,7 +4,8 @@ import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../..
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
 import { MJOOrdersDataService, MJO_ENTITIES } from '../../services/orders-data.service';
-import { RunView, Metadata } from '@memberjunction/core';
+import { RunView } from '@memberjunction/core';
+import { BaseAngularComponent } from '@memberjunction/ng-base-types';
 
 /** A subscription row. */
 interface MJOSubscriptionRow extends Record<string, unknown> {
@@ -275,7 +276,7 @@ interface MJORecognitionPeriod {
         `,
     ],
 })
-export class MJOSubscriptionsPageComponent implements OnInit {
+export class MJOSubscriptionsPageComponent extends BaseAngularComponent implements OnInit {
     private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded. See orders-dashboard.page.ts for the full
@@ -331,14 +332,19 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     ];
 
     public async ngOnInit(): Promise<void> {
-        const rv = new RunView();
+        // Provider-scoped, not global. `new RunView()` here would ignore the `Provider` this
+        // component was handed and quietly read from whichever MJ server happens to be the
+        // default — the exact failure the widget layering exists to prevent. `ProviderToUse`
+        // comes from BaseAngularComponent and falls back to the global default, so
+        // single-provider apps are unaffected.
+        const rv = RunView.FromMetadataProvider(this.ProviderToUse);
         const result = await rv.RunView<MJOSubscriptionRow>(
             {
                 EntityName: MJO_ENTITIES.Subscription,
                 OrderBy: 'EndDate',
                 ResultType: 'simple',
             },
-            new Metadata().CurrentUser,
+            this.ProviderToUse.CurrentUser,
         );
         this.AllRows = result.Success ? (result.Results ?? []) : [];
         this.applyPreset();

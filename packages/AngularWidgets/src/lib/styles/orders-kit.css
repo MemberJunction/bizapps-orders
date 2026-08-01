@@ -4,7 +4,7 @@
    THE CANONICAL SOURCE for this app's own component CSS. Both consumers read
    THIS FILE, so the mockups and the shipped UI cannot drift:
 
-     · packages/Angular/src/lib/styles/orders-kit.css   ← you are here
+     · packages/AngularWidgets/src/lib/styles/orders-kit.css   ← you are here
      · mockups/assets/app.css                            @imports it
 
    Only classes MJ does NOT ship live here. Page chrome, buttons, inputs, chips,

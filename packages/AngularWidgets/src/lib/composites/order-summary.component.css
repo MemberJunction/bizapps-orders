@@ -1,0 +1,68 @@
+/* Order summary composite — layout only. Colour, type and border come from orders-kit.css. */
+
+:host {
+  display: block;
+}
+
+.mjos {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mjos__identity {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.mjos__number {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mjos__customer,
+.mjos__date {
+  opacity: 0.75;
+}
+
+.mjos__empty,
+.mjos__note {
+  margin: 0;
+  opacity: 0.75;
+}
+
+.mjos__note--error {
+  opacity: 1;
+}
+
+.mjos__lines {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.mjos__lines th,
+.mjos__lines td {
+  text-align: left;
+  padding: 6px 10px;
+}
+
+.mjos__num {
+  width: 44px;
+}
+
+.mjos__amt {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.mjos__total-label {
+  text-align: right;
+  font-weight: 600;
+}
+
+.mjos__total {
+  font-weight: 600;
+}

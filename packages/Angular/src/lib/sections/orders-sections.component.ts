@@ -38,26 +38,34 @@ import type { MJLeftNavSection } from '@memberjunction/ng-ui-components';
 import type { ResourceData } from '@memberjunction/core-entities';
 
 import { MJOSectionShellComponent } from './section-shell.component';
-import { MJOConfirmPreflightComponent, type MJOPreflight } from '../panels/confirm-preflight.component';
-import { MJOOrderEntryService } from '../services/order-entry.service';
-import { MJOOrdersDataService } from '../services/orders-data.service';
 import type { OrderDraft } from '@mj-biz-apps/orders-entities';
-import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
-import { MJOOrderEditorPageComponent } from '../pages/orders/order-editor.page';
-import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
-import { MJOOrdersDashboardPageComponent } from '../pages/orders/orders-dashboard.page';
-import { MJOFulfillmentPageComponent } from '../pages/orders/fulfillment.page';
-import { MJOPaymentEntryPageComponent } from '../pages/payments/payment-entry.page';
-import { MJOPaymentsListPageComponent } from '../pages/payments/payments-list.page';
-import { MJORefundPageComponent } from '../pages/payments/refund.page';
-import { MJOAccountCreditPageComponent } from '../pages/payments/account-credit.page';
-import { MJOPaymentsDashboardPageComponent } from '../pages/payments/payments-dashboard.page';
-import { MJOOverduePageComponent } from '../pages/receivables/overdue.page';
-import { MJOCustomerARPageComponent } from '../pages/receivables/customer-ar.page';
-import { MJOSubscriptionsPageComponent } from '../pages/receivables/subscriptions.page';
-import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/catalog/products.page';
-import { MJOPricingPageComponent, MJOPromotionsPageComponent } from '../pages/catalog/pricing.page';
-import { MJOReturnPageComponent } from '../pages/orders/return.page';
+// Layers 1 + 2 — the panel vocabulary, the data seam and the screen composites. They live in
+// their own package so nothing in them can reach `@memberjunction/ng-shared`, which THIS
+// package depends on for BaseResourceComponent.
+import {
+    MJOConfirmPreflightComponent,
+    type MJOPreflight,
+    MJOOrderEntryService,
+    MJOOrdersDataService,
+    MJOFastEntryPageComponent,
+    MJOOrderEditorPageComponent,
+    MJOOrdersListPageComponent,
+    MJOOrdersDashboardPageComponent,
+    MJOFulfillmentPageComponent,
+    MJOPaymentEntryPageComponent,
+    MJOPaymentsListPageComponent,
+    MJORefundPageComponent,
+    MJOAccountCreditPageComponent,
+    MJOPaymentsDashboardPageComponent,
+    MJOOverduePageComponent,
+    MJOCustomerARPageComponent,
+    MJOSubscriptionsPageComponent,
+    MJOProductsPageComponent,
+    MJOChargesTaxPageComponent,
+    MJOPricingPageComponent,
+    MJOPromotionsPageComponent,
+    MJOReturnPageComponent,
+} from '@mj-biz-apps/orders-ng-widgets';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,

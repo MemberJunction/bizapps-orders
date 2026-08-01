@@ -24,7 +24,7 @@
  * The kit only defines classes MJ does not ship; everything else the Orders
  * screens use comes from ng-ui-components at runtime.
  */
-@use "@mj-biz-apps/orders-ng/styles/orders-kit.css";
+@use "@mj-biz-apps/orders-ng-widgets/styles/orders-kit.css";
 
 /* Application-specific layout adjustments */
 html,

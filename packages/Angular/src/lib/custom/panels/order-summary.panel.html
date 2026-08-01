@@ -1,0 +1,11 @@
+@if (SummaryHeader) {
+  <!--
+    The entire visual is one widget. This panel supplies the record, a veto and a presentation
+    decision — nothing else. If markup starts accumulating here, it belongs in the widget package.
+  -->
+  <mjo-order-summary
+      [Header]="SummaryHeader"
+      [AllowStageChange]="false"
+      (BeforeStageChange)="OnBeforeStageChange($event)"
+      (RecordOpenRequested)="OnRecordOpenRequested($event)"></mjo-order-summary>
+}

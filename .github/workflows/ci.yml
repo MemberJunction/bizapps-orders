@@ -53,6 +53,12 @@ jobs:
           cache: npm
       - run: npm ci
 
+      # UI layer boundaries: the widgets package must not import Router or MJ Explorer, and must
+      # read through ProviderToUse rather than the global provider. Opt-in per package via
+      # "mjUILayer" in package.json. Cheap and non-negotiable — see docs/UI_LAYERING.md.
+      - name: UI layering gate
+        run: npm run check:ui-layers
+
       # Includes `registry-parity.test.ts`, which is the anti-vacuity floor: it asserts exact
       # per-bundle check counts against the filesystem and cross-checks the four places a bundle
       # name has to agree. Adding a bundle without a Test record, or a Test record that never joins

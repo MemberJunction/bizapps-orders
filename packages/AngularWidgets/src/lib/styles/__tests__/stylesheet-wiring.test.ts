@@ -17,7 +17,7 @@ import { join } from 'node:path';
 
 const REPO = join(import.meta.dirname, '..', '..', '..', '..', '..', '..');
 const appCss = readFileSync(join(REPO, 'mockups', 'assets', 'app.css'), 'utf8');
-const pkgJson = JSON.parse(readFileSync(join(REPO, 'packages', 'Angular', 'package.json'), 'utf8'));
+const pkgJson = JSON.parse(readFileSync(join(REPO, 'packages', 'AngularWidgets', 'package.json'), 'utf8'));
 const explorerScss = readFileSync(
     join(REPO, 'apps', 'MJExplorer', 'src', 'styles.scss'),
     'utf8',
@@ -59,6 +59,6 @@ describe('shipped package stylesheet', () => {
 
     it('is actually loaded by the Explorer host', () => {
         // Without this line every Orders screen renders unstyled in the real app.
-        expect(explorerScss).toContain('@mj-biz-apps/orders-ng/styles/orders-kit.css');
+        expect(explorerScss).toContain('@mj-biz-apps/orders-ng-widgets/styles/orders-kit.css');
     });
 });

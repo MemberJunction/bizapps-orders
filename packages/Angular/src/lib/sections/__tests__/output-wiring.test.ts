@@ -25,6 +25,16 @@ const LIB = join(import.meta.dirname, '..', '..');
 const shell = readFileSync(join(LIB, 'sections', 'orders-sections.component.ts'), 'utf8');
 
 /**
+ * The pages moved to `@mj-biz-apps/orders-ng-widgets` (UI layers 1 + 2) — they must not be able to
+ * reach `@memberjunction/ng-shared`, and sharing a package with `BaseResourceComponent` meant they
+ * could. This guard deliberately still reaches ACROSS that boundary to read them, because the thing
+ * it protects IS the seam: a page declares a request, and the section on the other side of the
+ * package boundary has to answer it. A dead button is exactly as dead when the halves ship
+ * separately — more so, since nothing in either package's own build sees both sides.
+ */
+const PAGES = join(LIB, '..', '..', '..', 'AngularWidgets', 'src', 'lib', 'pages');
+
+/**
  * Outputs the shell deliberately does not handle, because the page has ALREADY
  * done the work by the time it emits. These are announcements, not requests — a
  * host may listen to close an overlay or refresh a list, and nothing breaks when
@@ -59,11 +69,11 @@ const AWAITING_OPERATION = new Set<string>([]);
  * section to. An unhandled one is a dead button.
  */
 const pageOutputs = new Map<string, string[]>();
-for (const dir of readdirSync(join(LIB, 'pages'), { withFileTypes: true })) {
+for (const dir of readdirSync(PAGES, { withFileTypes: true })) {
     if (!dir.isDirectory() || dir.name === '__tests__') continue;
-    for (const file of readdirSync(join(LIB, 'pages', dir.name))) {
+    for (const file of readdirSync(join(PAGES, dir.name))) {
         if (!file.endsWith('.page.ts')) continue;
-        const source = readFileSync(join(LIB, 'pages', dir.name, file), 'utf8');
+        const source = readFileSync(join(PAGES, dir.name, file), 'utf8');
         const names = [...source.matchAll(/@Output\(\)\s+(\w+)/g)].map((m) => m[1]);
         if (names.length) pageOutputs.set(`${dir.name}/${file}`, names);
     }
@@ -100,7 +110,7 @@ describe('page outputs are wired to the section', () => {
 
     it('captures a payment through the operation, not an unheard event', () => {
         const page = readFileSync(
-            join(LIB, 'pages', 'payments', 'payment-entry.page.ts'),
+            join(PAGES, 'payments', 'payment-entry.page.ts'),
             'utf8',
         );
         expect(page).toMatch(/OrdersCapturePaymentOperation/);

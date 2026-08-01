@@ -1,0 +1,12 @@
+/*
+ * Order summary panel — spacing only.
+ *
+ * Everything about how an ORDER looks lives in the widget package
+ * (packages/AngularWidgets/src/lib/composites/order-summary.component.css). What belongs here is
+ * only how the widget sits inside an Explorer form.
+ */
+
+:host {
+  display: block;
+  margin-bottom: 16px;
+}

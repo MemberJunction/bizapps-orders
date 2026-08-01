@@ -1,4 +1,5 @@
 import {
+    ChangeDetectorRef,
     Component,
     EventEmitter,
     Input,
@@ -97,6 +98,7 @@ export interface MJOEditorTabDef {
 export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     private readonly orders = inject(MJOOrderEntryService);
     private readonly data = inject(MJOOrdersDataService);
+    private readonly cdr = inject(ChangeDetectorRef);
 
     /**
      * The order being edited. Supplied by the host — often the SAME instance fast
@@ -227,6 +229,10 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         );
         this.AppliedPayments = payments;
         this.Dimensions = dimensions;
+        // Assigning across Angular's check/verify boundary aborts the update in dev mode and
+        // nothing schedules another pass — the view freezes on the pre-load render and shows
+        // empty states that read as "no data". See render-after-load.test.ts for the full story.
+        this.cdr.detectChanges();
     }
 
     /** What has actually reached this order, summed from its allocations. */

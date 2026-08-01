@@ -1,0 +1,79 @@
+@if (!Header) {
+  <p class="mjos__empty">No order loaded.</p>
+} @else {
+  <div class="mjos">
+    <!-- Identity -->
+    <div class="mjos__identity">
+      <span class="mjos__number">{{ Header.OrderNumber ?? 'Draft order' }}</span>
+      @if (Header.Customer) {
+        <span class="mjos__customer">{{ Header.Customer }}</span>
+      }
+      @if (Header.OrderDate) {
+        <span class="mjos__date">{{ Header.OrderDate | date: 'mediumDate' }}</span>
+      }
+      @if (Header.OriginChannel) {
+        <mjo-origin-chip [Channel]="Header.OriginChannel" />
+      }
+    </div>
+
+    <!-- Where it is. Read-only unless the host says otherwise: a stepper that can move an order
+         on a surface with no pre-flight review would book journal entries with no review step. -->
+    <mjo-status-stepper
+      [Current]="Header.Status"
+      [Stages]="Stages"
+      [ReadOnly]="!AllowStageChange"
+      (BeforeStageChange)="onBeforeStageChange($event)"
+      (StageChanged)="onStageChanged($event)" />
+
+    <!-- What it is worth -->
+    <mjo-money-strip
+      [Total]="Header.TotalAmount"
+      [Paid]="Header.PaidAmount"
+      [Balance]="Header.BalanceAmount"
+      [PaymentStatus]="Header.PaymentStatus"
+      (BalanceClicked)="onBalanceClicked()" />
+
+    <!-- What is on it -->
+    @if (ShowLines) {
+      @if (IsLoadingLines) {
+        <p class="mjos__note"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Loading lines…</p>
+      } @else if (LinesError) {
+        <p class="mjos__note mjos__note--error" role="alert">
+          <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ LinesError }}
+        </p>
+      } @else if (Lines.length === 0) {
+        <p class="mjos__note">This order has no lines.</p>
+      } @else {
+        <table class="mjos__lines">
+          <thead>
+            <tr>
+              <th class="mjos__num" scope="col">#</th>
+              <th scope="col">Product</th>
+              <th class="mjos__amt" scope="col">Qty</th>
+              <th class="mjos__amt" scope="col">Unit price</th>
+              <th class="mjos__amt" scope="col">Line total</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (line of Lines; track line.ID) {
+              <tr>
+                <td class="mjos__num">{{ line.LineNumber }}</td>
+                <td>{{ line.Product }}</td>
+                <td class="mjos__amt">{{ line.Quantity }}</td>
+                <td class="mjos__amt">{{ line.UnitPrice | mjoMoney }}</td>
+                <td class="mjos__amt">{{ line.LineTotal | mjoMoney }}</td>
+              </tr>
+            }
+          </tbody>
+          <tfoot>
+            <tr>
+              <!-- Spans #, Product, Qty and Unit price so the total lands under Line total. -->
+              <td colspan="4" class="mjos__total-label">Lines</td>
+              <td class="mjos__amt mjos__total">{{ LineTotal | mjoMoney }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      }
+    }
+  </div>
+}

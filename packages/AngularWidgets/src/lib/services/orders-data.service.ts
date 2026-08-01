@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import { Metadata, RunView, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 
 /** MJ entity names, in one place so a rename is one edit. */
 /**
@@ -151,6 +151,24 @@ export interface MJOPaymentRow extends Record<string, unknown> {
  */
 @Injectable({ providedIn: 'root' })
 export class MJOOrdersDataService {
+    /**
+     * The provider every read goes through.
+     *
+     * The browser is NOT inherently single-provider: one Angular app may talk to several MJ
+     * servers, and a component tree can be mounted under a non-default provider. A service that
+     * called `new RunView()` would silently bind the global default and ignore whichever provider
+     * its host was handed — the exact reuse this package's layering exists to enable.
+     *
+     * Null means "use the global default", so single-provider apps see no behaviour change.
+     * A multi-provider host sets this once from its own `ProviderToUse`.
+     */
+    public Provider: IMetadataProvider | null = null;
+
+    /** The provider to actually use — the injected one, or the global default. */
+    public get ProviderToUse(): IMetadataProvider {
+        return this.Provider ?? Metadata.Provider;
+    }
+
     /**
      * Orders matching a preset.
      *
@@ -721,7 +739,7 @@ export class MJOOrdersDataService {
         maxRows?: number,
         user?: UserInfo,
     ): Promise<T[]> {
-        const rv = new RunView();
+        const rv = RunView.FromMetadataProvider(this.ProviderToUse);
         const result = await rv.RunView<T>(
             {
                 EntityName: entityName,
@@ -757,7 +775,9 @@ export class MJOOrdersDataService {
     private get currentUser(): UserInfo | undefined {
         // The browser session supplies the acting user; on the server a caller
         // passes one explicitly. Reading it lazily keeps this service usable in
-        // both places without a constructor dependency.
-        return new Metadata().CurrentUser;
+        // both places without a constructor dependency — and reading it from
+        // ProviderToUse rather than `new Metadata()` keeps it correct under a
+        // non-default provider.
+        return this.ProviderToUse.CurrentUser;
     }
 }
