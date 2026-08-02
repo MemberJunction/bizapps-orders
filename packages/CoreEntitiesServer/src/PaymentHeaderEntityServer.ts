@@ -16,8 +16,13 @@
  * precision the underlying fact does not have.
  *
  * WHEN IT BOOKS
- * On the transition INTO `Captured`, once, and only when there IS a fee with an account to book it
- * to. `JournalEntryID` is NULL→value-once and is checked first, so a re-save never books twice.
+ * On the transition INTO `Captured`, once, and only when there IS a fee, an account to book it to,
+ * and a tender that asks for it inline (`PaymentType.BookProcessingFeeInline`, off by default —
+ * D82). `JournalEntryID` is NULL→value-once and stamps THIS entry, so the fee cannot book twice.
+ *
+ * NOTE THAT MOST PAYMENTS NEVER SET IT. A cheque, a wire, cash, an account-credit transfer and — since
+ * D82 — every gateway payment on a default configuration all book their CASH LEG and no fee entry, so
+ * `JournalEntryID` stays null on the header. See {@link willBookOnThisSave} for what that costs.
  *
  * ── THE ALLOCATION INVARIANT (D68) ─────────────────────────────────────────────────────────────
  * `Amount` MUST equal the sum of the payment's lines. A payment that says 1000 arrived while its
@@ -201,10 +206,33 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
     }
 
     /**
-     * True when this save is the first transition into a booked status.
+     * True when this save should run the booking co-ordination.
      *
-     * `JournalEntryID` is the idempotency key, not the status: a captured payment re-saved for any
-     * reason (a note edited, a provider id backfilled) must not book again.
+     * ⚠️ IT DOES NOT DETECT A TRANSITION, DESPITE READING LIKE IT DOES — and the comment that used to
+     * sit here claimed otherwise, so here is what is actually true.
+     *
+     * `JournalEntryID` is stamped by ONE thing: the processing-fee entry. Any payment that books no
+     * fee leaves it null for ever — a cheque, a wire, cash, an account-credit transfer, and since D82
+     * every gateway payment on a default configuration. For all of those this returns TRUE on every
+     * subsequent save, so editing a note on a captured payment re-enters the whole transaction path
+     * rather than doing a plain row save.
+     *
+     * NOTHING IS BOOKED TWICE, and that is worth being precise about, because it is not this method
+     * that prevents it. The real guards are one layer down and each is specific to what it protects:
+     *
+     *   `PaymentLine.BookedAt`     the cash leg — a booked allocation is skipped on re-save
+     *   `ProviderChargeID`         `settleWithProvider` returns early once the gateway has answered
+     *   `JournalEntryID`           the fee entry, when there is one
+     *
+     * So the current behaviour is correct but wasteful, and it is a trap: work added inside the
+     * `if (capturing)` branch on the assumption that it runs once will run on every save instead.
+     *
+     * THE FIX, when somebody picks this up: ask whether `Status` CHANGED into a booked value rather
+     * than whether it currently IS one. `BaseEntity` exposes per-field `OldValue`/`Dirty`, so the
+     * transition is answerable without a query and without depending on a fee entry existing. Left
+     * alone here deliberately — it is a pre-existing wrinkle rather than anything D82 introduced (it
+     * has always held for every zero-fee tender), it moves no money, and it belongs with somebody
+     * who has the integration suite in front of them.
      */
     private willBookOnThisSave(): boolean {
         if (!BOOKED_STATUSES.has(this.Status)) return false;
