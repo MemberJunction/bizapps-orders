@@ -64,6 +64,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { RequireUUID } from './sql-guards.js';
+import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -288,7 +289,19 @@ export class ApplyAccountCreditOperation extends BaseRemotableOperation<ApplyAcc
         return res?.Results?.[0] ?? null;
     }
 
+    /**
+     * The `AccountCredit` tender's ID.
+     *
+     * Cache first, then the query it always did. The row is seeded metadata and the cache answers it
+     * without a round trip; the fallback stays because a deployment that has not seeded this tender
+     * yet, or one that added it in the transaction now running, must still resolve it — and the
+     * caller's whole operation depends on finding it.
+     */
     private async accountCreditTypeID(provider: IMetadataProvider, user: UserInfo): Promise<string | null> {
+        await LoadOrdersEngine(provider, user);
+        const cached = OrdersEngine.Instance.PaymentTypeByCode(ACCOUNT_CREDIT_TYPE_CODE);
+        if (cached?.ID) return cached.ID;
+
         const rv = new RunView(provider as unknown as IRunViewProvider);
         const res = await rv.RunView<{ ID: string }>(
             {

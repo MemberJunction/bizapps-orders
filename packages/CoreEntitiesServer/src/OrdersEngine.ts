@@ -28,10 +28,23 @@
  * payment or a subscription is read for a specific row at a specific moment, and a cached copy is a
  * stale answer waiting to be believed.
  *
- * REFRESH IS AUTOMATIC. `BaseEngine` subscribes to entity save/delete events, so an administrator
- * adding a payment type through the API is visible without a restart. `Config()` is idempotent and
- * cheap after the first call, which is why the entity servers can simply call it on their paths
- * rather than co-ordinating a startup order.
+ * REFRESH IS AUTOMATIC, THROUGH THE ENTITY LAYER. `BaseEngine` subscribes to entity save/delete
+ * events, so an administrator adding a payment type through the API is visible without a restart —
+ * and, usefully, so is a change made inside an open transaction, because the refresh reads back
+ * through the same provider. `Config()` is idempotent and cheap after the first call, which is why
+ * the entity servers can call it on their paths rather than co-ordinating a startup order.
+ *
+ * THE ONE THING THAT DEFEATS IT IS A RAW `UPDATE`. A statement executed outside the entity layer
+ * fires no event, so the cache keeps answering with what it loaded. That is the boundary of what
+ * this is for, and it is not hypothetical: `ChargeEngine` deliberately does NOT read charge types
+ * from here, because `ChargeType.Basis` — whether tax computes on the goods alone or on goods plus
+ * shipping — is configuration a caller may set for the order it is about to price, in the same
+ * transaction. Serving that from cache prices the order on the previous basis and produces a tax
+ * figure that is plausible, balanced and wrong by the shipping.
+ *
+ * So: cache what nobody changes mid-transaction. Where a miss would be fatal rather than merely
+ * slower — `PaymentProviderResolver`, which throws "not configured" on a miss — read the cache first
+ * and fall through to the query, so the common path is free and the uncommon one still works.
  *
  * CONNECTS TO:
  *   CODE: PaymentHeaderEntityServer.feeBooksInline · PaymentProviderResolver
@@ -112,9 +125,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
 
     /** One payment type by ID, or undefined. */
     public PaymentTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentTypeEntity | undefined {
-        if (!id) return undefined;
-        const wanted = id.toLowerCase();
-        return this._paymentTypes.find((t) => t.ID?.toLowerCase() === wanted);
+        return byID(this._paymentTypes, id);
     }
 
     /** One payment type by its stable `Code` — `Cash`, `ACH`, `CreditCard`. */
@@ -130,6 +141,28 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         const wanted = code.trim().toLowerCase();
         return this._chargeTypes.find((t) => t.Code?.trim().toLowerCase() === wanted);
     }
+
+    /** One charge type by ID. */
+    public ChargeTypeByID(id: string | null | undefined): mjBizAppsOrdersChargeTypeEntity | undefined {
+        return byID(this._chargeTypes, id);
+    }
+
+    /** One provider type by ID. */
+    public PaymentProviderTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentProviderTypeEntity | undefined {
+        return byID(this._paymentProviderTypes, id);
+    }
+
+    /** One terms record by ID — `NetDays` is what derives an order's due date. */
+    public PaymentTermsTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentTermsTypeEntity | undefined {
+        return byID(this._paymentTermsTypes, id);
+    }
+}
+
+/** Case-insensitive ID match — SQL Server hands UUIDs back in either case. */
+function byID<T extends { ID?: string }>(rows: T[], id: string | null | undefined): T | undefined {
+    if (!id) return undefined;
+    const wanted = id.toLowerCase();
+    return rows.find((r) => r.ID?.toLowerCase() === wanted);
 }
 
 /**

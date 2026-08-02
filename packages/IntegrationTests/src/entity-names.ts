@@ -43,6 +43,7 @@ export const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 export const CUSTOMER_TAX_EXEMPTION_ENTITY = 'MJ_BizApps_Orders: Customer Tax Exemptions';
 
 export const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
+export const PAYMENT_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Types';
 export const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 export const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 export const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
@@ -88,6 +89,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     SALES_RULE_ENTITY,
     CUSTOMER_TAX_EXEMPTION_ENTITY,
     PAYMENT_HEADER_ENTITY,
+    PAYMENT_TYPE_ENTITY,
     PAYMENT_LINE_ENTITY,
     PAYMENT_DETAIL_ENTITY,
     PAYMENT_PROVIDER_ENTITY,

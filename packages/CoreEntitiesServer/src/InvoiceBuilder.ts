@@ -32,6 +32,7 @@ import {
     type InvoicePaymentFacts,
 } from './InvoiceBehavior.js';
 import { ORDER_HEADER_ENTITY } from './OrderDraftHydrator.js';
+import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 import { RequireUUID } from './sql-guards.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
@@ -166,12 +167,9 @@ export async function BuildInvoiceDocuments(
             const ids = uuidList(lineRows.map((l) => l.ProductID as string | null), 'ProductID');
             return ids ? view<Row>(provider, user, PRODUCT_ENTITY, `ID IN (${ids})`) : { rows: [] as Row[] };
         })(),
-        (async () => {
-            const termsID = order.PaymentTermsTypeID as string | null;
-            return termsID
-                ? view<Row>(provider, user, PAYMENT_TERMS_TYPE_ENTITY, `ID = '${RequireUUID(termsID, 'PaymentTermsTypeID')}'`)
-                : { rows: [] as Row[] };
-        })(),
+        // Terms and charge types come from the lookup cache instead of two of the round trips this
+        // batch used to make — they are seeded reference data, and an invoice render read both.
+        LoadOrdersEngine(provider, user).then(() => ({ rows: [] as Row[] })),
         (async () => {
             const ids = uuidList([order.BillToAddressID as string | null, order.ShipToAddressID as string | null], 'AddressID');
             return ids ? view<Row>(provider, user, ADDRESS_ENTITY, `ID IN (${ids})`) : { rows: [] as Row[] };
@@ -185,7 +183,6 @@ export async function BuildInvoiceDocuments(
 
     const chargeIDs = uuidList(chargeResult.rows.map((c) => String(c.ID)), 'OrderChargeID');
     const adjustmentIDs = uuidList(adjustmentResult.rows.map((a) => String(a.ID)), 'OrderAdjustmentID');
-    const chargeTypeIDs = uuidList(chargeResult.rows.map((c) => c.ChargeTypeID as string | null), 'ChargeTypeID');
     const paymentHeaderIDs = uuidList(paymentLineResult.rows.map((p) => p.PaymentHeaderID as string | null), 'PaymentHeaderID');
     const companyIDs = uuidList([...lineRows.map((l) => l.CompanyID as string), order.CompanyID as string], 'CompanyID');
 
@@ -196,7 +193,7 @@ export async function BuildInvoiceDocuments(
         adjustmentIDs
             ? view<Row>(provider, user, ORDER_ADJUSTMENT_ALLOCATION_ENTITY, `OrderAdjustmentID IN (${adjustmentIDs})`)
             : Promise.resolve({ rows: [] as Row[] }),
-        chargeTypeIDs ? view<Row>(provider, user, CHARGE_TYPE_ENTITY, `ID IN (${chargeTypeIDs})`) : Promise.resolve({ rows: [] as Row[] }),
+        Promise.resolve({ rows: [] as Row[] }), // charge types come from the lookup cache
         paymentHeaderIDs
             ? view<Row>(provider, user, PAYMENT_HEADER_ENTITY, `ID IN (${paymentHeaderIDs})`)
             : Promise.resolve({ rows: [] as Row[] }),
@@ -236,7 +233,7 @@ export async function BuildInvoiceDocuments(
     // ── Index everything once ────────────────────────────────────────────────────────────────────
 
     const productByID = new Map(productResult.rows.map((p) => [String(p.ID), p]));
-    const chargeTypeByID = new Map(chargeTypeResult.rows.map((t) => [String(t.ID), t]));
+    const engine = OrdersEngine.Instance;
     const paymentHeaderByID = new Map(paymentHeaderResult.rows.map((p) => [String(p.ID), p]));
     const addressByID = new Map(addressResult.rows.map((a) => [String(a.ID), a]));
     const companyNames = new Map(companyResult.rows.map((c) => [String(c.ID), String(c.Name ?? '')]));
@@ -291,7 +288,7 @@ export async function BuildInvoiceDocuments(
 
     // ── Shape the facts ──────────────────────────────────────────────────────────────────────────
 
-    const terms = termsResult.rows[0];
+    const terms = engine.PaymentTermsTypeByID(order.PaymentTermsTypeID as string | null);
 
     const orderFacts: InvoiceOrderFacts = {
         ID: String(order.ID),
@@ -344,7 +341,7 @@ export async function BuildInvoiceDocuments(
     });
 
     const charges: InvoiceChargeFacts[] = chargeResult.rows.map((c) => {
-        const type = c.ChargeTypeID ? chargeTypeByID.get(String(c.ChargeTypeID)) : undefined;
+        const type = engine.ChargeTypeByID(c.ChargeTypeID as string | null);
         return {
             ID: String(c.ID),
             Name: str(c.ChargeType) ?? str(type?.Name) ?? 'Charge',
