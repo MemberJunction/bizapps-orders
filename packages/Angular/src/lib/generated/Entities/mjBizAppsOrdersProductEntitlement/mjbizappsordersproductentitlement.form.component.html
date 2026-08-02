@@ -10,25 +10,6 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Association Section -->
-    <mj-collapsible-panel
-        SectionKey="productAssociation"
-        SectionName="Product Association"
-        Icon="fa fa-tags"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="false"
-            FieldName="ProductID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
     <!-- Entitlement Definition Section -->
     <mj-collapsible-panel
         SectionKey="entitlementDefinition"
@@ -36,6 +17,15 @@
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ProductID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -71,11 +61,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Resource Configuration Section -->
+    <!-- Resource Allocation Section -->
     <mj-collapsible-panel
-        SectionKey="resourceConfiguration"
-        SectionName="Resource Configuration"
-        Icon="fa fa-cubes"
+        SectionKey="resourceAllocation"
+        SectionName="Resource Allocation"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -97,11 +87,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Access and Validity Section -->
+    <!-- Validity and Access Section -->
     <mj-collapsible-panel
-        SectionKey="accessAndValidity"
-        SectionName="Access and Validity"
-        Icon="fa fa-calendar-alt"
+        SectionKey="validityAndAccess"
+        SectionName="Validity and Access"
+        Icon="fa fa-clock"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -175,7 +165,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersEntitlementGrants"
         SectionName="Entitlement Grants"
-        Icon="fa fa-shield-alt"
+        Icon="fa fa-gift"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

@@ -15,7 +15,7 @@ export class mjBizAppsOrdersEventOrderLineFormComponent extends BaseFormComponen
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'attendeeDetails', sectionName: 'Attendee Details', isExpanded: true },
+            { sectionKey: 'attendeeInformation', sectionName: 'Attendee Information', isExpanded: true },
             { sectionKey: 'orderLines', sectionName: 'Order Lines', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);

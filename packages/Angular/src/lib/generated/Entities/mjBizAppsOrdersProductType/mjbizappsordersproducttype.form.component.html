@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Type Details Section -->
+    <!-- General Information Section -->
     <mj-collapsible-panel
-        SectionKey="productTypeDetails"
-        SectionName="Product Type Details"
+        SectionKey="generalInformation"
+        SectionName="General Information"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -52,11 +52,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Fulfillment and Entitlements Section -->
+    <!-- Operational Settings Section -->
     <mj-collapsible-panel
-        SectionKey="fulfillmentAndEntitlements"
-        SectionName="Fulfillment and Entitlements"
-        Icon="fa fa-shipping-fast"
+        SectionKey="operationalSettings"
+        SectionName="Operational Settings"
+        Icon="fa fa-cogs"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -70,34 +70,26 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="DefaultEntitlementGrantTiming"
-            Type="select"
+            FieldName="ProductExtensionEntity"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="DefaultEntitlementQuantityMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="DefaultEntitlementValidityMode"
-            Type="select"
+            FieldName="OrderLineExtensionEntity"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financial and Tax Defaults Section -->
+    <!-- Financial Defaults Section -->
     <mj-collapsible-panel
-        SectionKey="financialAndTaxDefaults"
-        SectionName="Financial and Tax Defaults"
+        SectionKey="financialDefaults"
+        SectionName="Financial Defaults"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -126,6 +118,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Subscription Settings Section -->
+    <mj-collapsible-panel
+        SectionKey="subscriptionSettings"
+        SectionName="Subscription Settings"
+        Icon="fa fa-sync-alt"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -135,29 +137,27 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Configuration Extensions Section -->
-    <mj-collapsible-panel
-        SectionKey="configurationExtensions"
-        SectionName="Configuration Extensions"
-        Icon="fa fa-plug"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ProductExtensionEntity"
-            Type="textbox"
+            FieldName="DefaultEntitlementGrantTiming"
+            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="OrderLineExtensionEntity"
-            Type="textbox"
+            FieldName="DefaultEntitlementQuantityMode"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="DefaultEntitlementValidityMode"
+            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -168,7 +168,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-cog"
+        Icon="fa fa-database"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

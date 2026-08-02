@@ -16,10 +16,9 @@ export class mjBizAppsOrdersProductEntitlementFormComponent extends BaseFormComp
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'productAssociation', sectionName: 'Product Association', isExpanded: true },
             { sectionKey: 'entitlementDefinition', sectionName: 'Entitlement Definition', isExpanded: true },
-            { sectionKey: 'resourceConfiguration', sectionName: 'Resource Configuration', isExpanded: true },
-            { sectionKey: 'accessAndValidity', sectionName: 'Access and Validity', isExpanded: true },
+            { sectionKey: 'resourceAllocation', sectionName: 'Resource Allocation', isExpanded: true },
+            { sectionKey: 'validityAndAccess', sectionName: 'Validity and Access', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false }
         ]);

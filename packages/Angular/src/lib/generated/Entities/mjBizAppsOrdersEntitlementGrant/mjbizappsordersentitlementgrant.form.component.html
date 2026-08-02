@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="entitlementDetails"
         SectionName="Entitlement Details"
-        Icon="fa fa-box"
+        Icon="fa fa-gift"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -26,6 +26,24 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Quantity"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Source Information Section -->
+    <mj-collapsible-panel
+        SectionKey="sourceInformation"
+        SectionName="Source Information"
+        Icon="fa fa-link"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -84,21 +102,13 @@
 
     </mj-collapsible-panel>
 
-    <!-- Grant Terms Section -->
+    <!-- Validity and Status Section -->
     <mj-collapsible-panel
-        SectionKey="grantTerms"
-        SectionName="Grant Terms"
-        Icon="fa fa-calendar-alt"
+        SectionKey="validityAndStatus"
+        SectionName="Validity and Status"
+        Icon="fa fa-calendar-check"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Quantity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -118,24 +128,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ValidityModeApplied"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Lifecycle and Status Section -->
-    <mj-collapsible-panel
-        SectionKey="lifecycleAndStatus"
-        SectionName="Lifecycle and Status"
-        Icon="fa fa-sync-alt"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="Status"
             Type="select"
             [EditMode]="EditMode"
@@ -146,6 +138,14 @@
             [ShowLabel]="true"
             FieldName="ProvisionedAt"
             Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ValidityModeApplied"
+            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

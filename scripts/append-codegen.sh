@@ -36,6 +36,16 @@ BANNER_END=$(awk -v s="$BANNER_END" 'NR>=s && /^-- =+$/ { print NR; exit }' "$MI
 # (88k lines -> 8k). Compare against what is already below the banner and refuse a large shrink.
 EXISTING_GENERATED=$(( $(wc -l < "$MIGRATION") - BANNER_END ))
 INCOMING_GENERATED=$(cat "${GENERATED[@]}" | wc -l | tr -d ' ')
+
+# In the NORMAL flow the migration was trimmed by rebuild-db.sh before it was applied, so
+# EXISTING_GENERATED is zero and the comparison below has nothing to bite on — the guard could never
+# fire in the one sequence it was written to protect. rebuild-db.sh leaves the pre-trim count here so
+# the check still has a baseline to measure against.
+PREVIOUS_FILE="$GENERATED_DIR/.previous-generated-lines"
+if (( EXISTING_GENERATED == 0 )) && [[ -f "$PREVIOUS_FILE" ]]; then
+    EXISTING_GENERATED=$(cat "$PREVIOUS_FILE")
+    printf '  comparing against %s lines trimmed by the last rebuild\n' "$EXISTING_GENERATED" >&2
+fi
 if (( EXISTING_GENERATED > 1000 )) && (( INCOMING_GENERATED * 2 < EXISTING_GENERATED )); then
     cat >&2 <<EOF
 REFUSING: the incoming CodeGen output ($INCOMING_GENERATED lines) is less than half of what is
