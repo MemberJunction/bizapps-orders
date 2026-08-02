@@ -248,12 +248,23 @@ export class StripePaymentProvider extends BasePaymentProvider {
     }
 
     public override ParseWebhookEvent(rawBody: string): WebhookEvent | null {
-        let payload: Record<string, unknown>;
+        let parsed: unknown;
         try {
-            payload = JSON.parse(rawBody) as Record<string, unknown>;
+            parsed = JSON.parse(rawBody);
         } catch {
             return null;
         }
+
+        // VALID JSON IS NOT NECESSARILY AN OBJECT. `JSON.parse` happily returns `null` for the body
+        // `null`, and a number for `42` — both of which then threw a TypeError on the first property
+        // read, from a method whose contract is "null when it is not an event we can read". The throw
+        // escaped `HandlePaymentWebhook`'s parse step, which is not wrapped, so a body that verified
+        // and was not an object crashed the route instead of answering 400.
+        //
+        // Reachable only behind signature verification, so not an open door — but the contract is the
+        // contract, and "returns null OR throws" is not a thing a caller can branch on.
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+        const payload = parsed as Record<string, unknown>;
 
         const kind = payload.type as string | undefined;
         const object = ((payload.data as Record<string, unknown>)?.object ?? {}) as Record<string, unknown>;

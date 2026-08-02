@@ -117,6 +117,7 @@ const ALL_BUNDLES = [
     // a failure anywhere else surfaces before the run settles in to build populations.
     'entitlements',
     'payment-providers',
+    'ach-settlement',
     'volume',
 ];
 
