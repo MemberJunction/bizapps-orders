@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-29 - ACH Settlement",
+    "Description": "Money that arrives days late, and can leave again (AS1-AS17). A bank debit breaks the assumption every other payment check rests on: nothing has moved when the caller asks, the answer arrives days later in a webhook, and it can arrive a SECOND time as a return after the cash is already in the ledger. These checks are weighted toward what only a database can answer. Does a capture through an async-settling provider land Pending rather than Captured - a decision made by asking the driver, which is resolved from a provider row? Does promoting Pending to Captured book the CASH LEG - the defect that motivated the bundle, where savePendingLines writes the header's transient Lines collection, which is empty on a promotion, so the allocations persisted unbooked and nothing ever went back for them? Does a return after settlement produce a reversing payment whose negative lines put the order's trigger-maintained balance back? Webhooks are driven through SettlePaymentForEvent rather than over HTTP: the route is proven by unit tests (signature, idempotency, status codes), while what is unproven is what settlement does to real rows. Stripe's deterministic stub is selected by IsLiveMode=0, so the real path - resolver, driver, fee split, journal entry, settlement - runs with no network and no Stripe account.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "OpenPaymentIntent writes a PaymentIntent row a capture can read, opening as Processing because a bank debit is already submitted; the client secret is never persisted and PaymentIntent has no column it could land in; a repeated open reuses the row rather than opening a second, because ProviderIntentID is UNIQUE and a duplicate would charge a saved instrument twice; a capture through an ACH provider lands Pending and books nothing; its allocations persist unbooked; promoting to Captured books every allocation's cash leg and every entry balances; a redelivered success books nothing further; the promotion moves the order's trigger-maintained Balance and AmountPaid; a debit failing before settlement marks the payment Failed with no ledger entry; a return AFTER settlement writes a reversing payment carrying the bank's own words while leaving the original Captured and untouched; the reversal restores the order's balance; a second return does not reverse twice; an intent with no payment behind it settles to a no-op rather than an error; a payment with no provider still captures synchronously, proving the card path is unchanged; the promoted fee is the bank-debit rate rather than the card rate and net reconciles to gross minus fee; and the payment is linked to the intent it settles. Finally, the processor fee is RECORDED on the payment but does NOT become a journal entry: a per-payment fee leg cannot reconcile to a bank statement, because the processor batches into payouts and deducts costs that never attach to any payment, so the whole cost is accrued at month end instead (D82, default off)."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "ach-settlement"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "3E7B91C4-5A28-4D6F-9B03-C81F2A6E5D47"
+  }
+}

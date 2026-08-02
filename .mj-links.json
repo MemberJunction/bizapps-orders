@@ -1,5 +1,11 @@
 {
   "$comment": [
+    "MANDATORY, NOT CONVENIENCE. bizapps-accounting is a hard requirement of this app — orders",
+    "books revenue on confirm and cash on capture, and PaymentLineEntityServer statically imports",
+    "AccountingEngineBase. Without the link below, orders does not typecheck and does not run.",
+    "The package.json peer markings still say optional:true; that is KNOWN-WRONG and scheduled to",
+    "be fixed the day accounting publishes. See docs/dependency-on-accounting.md.",
+    "",
     "Local development links to sibling Open App checkouts — the interim stand-in for",
     "`mj app link` (proposed: MemberJunction/MJ#3273).",
     "",

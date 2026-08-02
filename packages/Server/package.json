@@ -18,22 +18,29 @@
   "author": "MemberJunction.com",
   "license": "ISC",
   "devDependencies": {
+    "@types/express": "^5.0.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "5.0.0",
     "@mj-biz-apps/orders-actions": "5.0.0",
-    "class-validator": "^0.14.3",
-    "@mj-biz-apps/orders-core-entities-server": "5.0.0"
+    "@mj-biz-apps/orders-core-entities-server": "5.0.0",
+    "@mj-biz-apps/orders-entities": "5.0.0",
+    "body-parser": "^2.2.0",
+    "class-validator": "^0.14.3"
   },
   "peerDependencies": {
     "@memberjunction/core": "^5.50.0",
     "@memberjunction/global": "^5.50.0",
     "@memberjunction/server": "^5.50.0",
+    "@memberjunction/server-extensions-core": "^5.50.0",
     "@memberjunction/sqlserver-dataprovider": "^5.50.0",
-    "@mj-biz-apps/accounting-server": ">=0.1.0",
+    "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-entities": ">=0.1.0",
-    "@mj-biz-apps/accounting-engine-base": ">=0.1.0"
+    "@mj-biz-apps/accounting-server": ">=0.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MemberJunction/bizapps-orders"
   },
   "peerDependenciesMeta": {
     "@mj-biz-apps/accounting-server": {
@@ -45,9 +52,5 @@
     "@mj-biz-apps/accounting-engine-base": {
       "optional": true
     }
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/MemberJunction/bizapps-orders"
   }
 }

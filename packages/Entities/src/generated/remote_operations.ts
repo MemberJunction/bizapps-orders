@@ -192,6 +192,18 @@ export interface OrdersCapturePaymentDetailInput {
 
 export interface OrdersCapturePaymentInput {
     /**
+     * The `PaymentIntent` row this payment settles, from `Orders.OpenPaymentIntent`.
+     *
+     * REQUIRED FOR A GATEWAY-COLLECTED PAYMENT and meaningless without one. `PaymentHeaderEntityServer`
+     * reads the gateway's own intent string THROUGH this row on the way to capture; a provider-backed
+     * payment that does not carry it is refused with "there is nothing for the gateway to capture".
+     *
+     * Omitted for a RECORDED payment — a cheque, a wire, cash — where the money moved before any of
+     * this code ran and there is no gateway to ask.
+     */
+    PaymentIntentID?: string | null;
+
+    /**
      * Gross amount received. Must equal the sum of `Allocations[].Amount` (D68).
      *
      * The invariant is checked HERE rather than trusted from the caller: the page enforces it before

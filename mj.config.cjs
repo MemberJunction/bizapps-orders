@@ -127,6 +127,31 @@ module.exports = {
   excludeSchemas: ['sys', 'staging', 'dbo', '__mj', '__mj_BizAppsCommon', '__mj_BizAppsAccounting', '__mj_BizAppsTasks'],
 
   /**
+   * Server extensions — routes this app adds to MJServer.
+   *
+   * MJServer loads these BEFORE it installs the auth middleware, which is the only window an
+   * unauthenticated webhook can be mounted in. That ordering is the entire reason the payment webhook
+   * is an extension rather than something the bootstrap mounts: Stripe presents no bearer token, so
+   * behind auth every delivery would be a 401 and no bank debit would ever capture.
+   *
+   * The route is `POST {RootPath}/:providerId`, one endpoint per configured `PaymentProvider` row.
+   * The id in the path is what tells the handler which signing secret to verify against before it has
+   * read a byte of the payload.
+   *
+   * Turning this off disables inbound gateway notifications entirely. That is survivable for cards
+   * (a capture books when it is asked) and NOT survivable for ACH (a debit is captured BY the
+   * webhook), so leave it on wherever a StripeACH provider is configured.
+   */
+  serverExtensions: [
+    {
+      Enabled: true,
+      DriverClass: 'OrdersPaymentWebhook',
+      RootPath: '/webhooks/payments',
+      Settings: {},
+    },
+  ],
+
+  /**
    * Integration testing. `mj test` loads these modules before resolving a
    * `MJ: Tests` record's check bundles, which is the extension seam MJ's testing
    * framework exposes for external adopters. Our package registers its bundles on

@@ -9,7 +9,8 @@
       "RequiresInstrument": 1,
       "RequiresReference": 0,
       "Sequence": 10,
-      "IsActive": 1
+      "IsActive": 1,
+      "BookProcessingFeeInline": 0
     },
     "primaryKey": {
       "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E01"
@@ -29,7 +30,8 @@
       "RequiresInstrument": 1,
       "RequiresReference": 0,
       "Sequence": 20,
-      "IsActive": 1
+      "IsActive": 1,
+      "BookProcessingFeeInline": 0
     },
     "primaryKey": {
       "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E02"
@@ -49,7 +51,8 @@
       "RequiresInstrument": 0,
       "RequiresReference": 1,
       "Sequence": 30,
-      "IsActive": 1
+      "IsActive": 1,
+      "BookProcessingFeeInline": 0
     },
     "primaryKey": {
       "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E03"
@@ -69,7 +72,8 @@
       "RequiresInstrument": 1,
       "RequiresReference": 1,
       "Sequence": 40,
-      "IsActive": 1
+      "IsActive": 1,
+      "BookProcessingFeeInline": 0
     },
     "primaryKey": {
       "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E04"
@@ -89,7 +93,8 @@
       "RequiresInstrument": 0,
       "RequiresReference": 0,
       "Sequence": 50,
-      "IsActive": 1
+      "IsActive": 1,
+      "BookProcessingFeeInline": 0
     },
     "primaryKey": {
       "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E05"
@@ -109,7 +114,8 @@
       "RequiresInstrument": 0,
       "RequiresReference": 1,
       "Sequence": 60,
-      "IsActive": 1
+      "IsActive": 1,
+      "BookProcessingFeeInline": 0
     },
     "primaryKey": {
       "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E06"
@@ -129,7 +135,8 @@
       "RequiresInstrument": 1,
       "RequiresReference": 0,
       "Sequence": 70,
-      "IsActive": 1
+      "IsActive": 1,
+      "BookProcessingFeeInline": 0
     },
     "primaryKey": {
       "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E07"
@@ -149,7 +156,8 @@
       "RequiresInstrument": 0,
       "RequiresReference": 0,
       "Sequence": 80,
-      "IsActive": 1
+      "IsActive": 1,
+      "BookProcessingFeeInline": 0
     },
     "primaryKey": {
       "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E08"
@@ -169,7 +177,8 @@
       "RequiresInstrument": 0,
       "RequiresReference": 0,
       "Sequence": 90,
-      "IsActive": 1
+      "IsActive": 1,
+      "BookProcessingFeeInline": 0
     },
     "primaryKey": {
       "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E09"
@@ -189,7 +198,8 @@
       "RequiresInstrument": 0,
       "RequiresReference": 0,
       "Sequence": 100,
-      "IsActive": 1
+      "IsActive": 1,
+      "BookProcessingFeeInline": 0
     },
     "primaryKey": {
       "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E0A"
@@ -209,7 +219,8 @@
       "RequiresInstrument": 1,
       "RequiresReference": 0,
       "Sequence": 110,
-      "IsActive": 1
+      "IsActive": 1,
+      "BookProcessingFeeInline": 0
     },
     "primaryKey": {
       "ID": "CDBEE527-0231-485C-B0D4-2C28950CCEC5"

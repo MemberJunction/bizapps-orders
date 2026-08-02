@@ -259,5 +259,499 @@
       "lastModified": "2026-07-31T20:09:25.036Z",
       "checksum": "5873885b00c69ce712346725c5cc75c503d60bcb062c819036ace7a9d23c2d96"
     }
+  },
+  {
+    "_comments": [
+      "Orders: Send Document — the irreversible twin of Generate Invoice.",
+      "",
+      "SEPARATE FROM GENERATE INVOICE ON PURPOSE. Generating writes nothing and is safe to call a",
+      "hundred times; sending reaches a person outside the company and cannot be undone. A `Send: true`",
+      "flag on the render action would put this app's most consequential side effect behind a boolean",
+      "that is easy to set by accident.",
+      "",
+      "IT IS NOT IDEMPOTENT. Calling it twice sends the document twice. The Deliveries output carries an",
+      "IdempotencyKeys array per document so a caller that needs at-most-once can build its own guard —",
+      "this action cannot make that judgement, because re-sending at a customer's request is ordinary and",
+      "re-sending because a workflow retried is not.",
+      "",
+      "AN ORDER SOLD BY TWO COMPANIES SENDS TWO DOCUMENTS, one per selling company, each billing only",
+      "what its company is owed. A partial failure returns PARTIALLY_SENT rather than failing the whole",
+      "call, so a retry does not re-send the ones that worked."
+    ],
+    "fields": {
+      "Name": "Send Document",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Render an order as its customer-facing document and SEND it. Resolves the billing contacts the order names, refuses anything that is not a bill (a draft or a voided order), and delivers through the requested channel. Email today; the channel is a plugin seam. Set PreviewOnly to render and address the message without sending it.",
+      "Type": "Custom",
+      "DriverClass": "Orders.SendDocument",
+      "IconClass": "fa-regular fa-paper-plane",
+      "UserPrompt": "Given an order, render its invoice and email it to the customer's billing contacts.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C41E7A55-9B2D-4E38-A6F1-2D7C4B90E118"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "OrderID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "The order to send. Any status except Draft, Voided or Cancelled — those render but are refused here, because a document that looks exactly like a real invoice must not reach a customer's inbox for money nobody owes."
+          },
+          "primaryKey": {
+            "ID": "1A6D2F70-8C41-4B92-9E5A-3F8B6D014C21"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CompanyID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Send only the document for this selling company. Omit to send every document the order produces."
+          },
+          "primaryKey": {
+            "ID": "2B7E3F81-9D52-4CA3-8F6B-4A9C7E125D32"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Channel",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How to send it. 'Email' today; the resolver refuses a code with no registered channel rather than silently doing nothing."
+          },
+          "primaryKey": {
+            "ID": "3C8F4A92-AE63-4DB4-9A7C-5BAD8F236E43"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ToAddress",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Override the recipients with a single address — for 'send me a copy'. Omit to use the billing contacts the order names. Naming an address IS the deliberate decision that recipient resolution otherwise requires."
+          },
+          "primaryKey": {
+            "ID": "4D9A5BA3-BF74-4EC5-AB8D-6CBE9A347F54"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CC",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Additional recipients, comma- or semicolon-separated."
+          },
+          "primaryKey": {
+            "ID": "5EAB6CB4-C085-4FD6-BC9E-7DCFAB458A65"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "BCC",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Blind recipients, comma- or semicolon-separated. Useful for an archive mailbox."
+          },
+          "primaryKey": {
+            "ID": "6FBC7DC5-D196-40E7-CDAF-8EDABC569B76"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "From",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Sending address. Omit to let the communication provider use its configured sender — a guess here is either rejected by domain authentication or, worse, accepted and sends invoices from an address nobody monitors."
+          },
+          "primaryKey": {
+            "ID": "70CD8ED6-E2A7-41F8-DEBA-9FEBCD670C87"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "FromName",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Display name for the sender."
+          },
+          "primaryKey": {
+            "ID": "81DE9FE7-F3B8-4209-EFCB-A0FCDE781D98"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "TemplateName",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Template to render. Defaults to 'Orders: Standard Invoice'."
+          },
+          "primaryKey": {
+            "ID": "92EFA0F8-04C9-431A-FADC-B10DEF892EA9"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Locale",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Locale for dates and money on the rendered document. Defaults to en-US."
+          },
+          "primaryKey": {
+            "ID": "A3FAB109-15DA-442B-0BED-C21EFA9A3FBA"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CurrencyCode",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Overrides the selling company's functional currency. Only for a caller who genuinely knows better."
+          },
+          "primaryKey": {
+            "ID": "B40BC21A-26EB-453C-1CFE-D32F0BAB40CB"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PreviewOnly",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Render and address the message WITHOUT sending it. A channel must honour this — a preview that sends is invisible on the sending side."
+          },
+          "primaryKey": {
+            "ID": "C51CD32B-37FC-464D-2D0F-E4301CBC51DC"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Deliveries",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "One entry per document: its number, whether it was sent, the addresses that accepted it, the reason if not, and the idempotency keys for a caller doing its own de-duplication."
+          },
+          "primaryKey": {
+            "ID": "D62DE43C-480D-4750-3E10-F5412DCD62ED"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SentCount",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many documents went out."
+          },
+          "primaryKey": {
+            "ID": "E73EF54D-591E-4861-4F21-06523EDE73FE"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "FailedCount",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many did not. Non-zero means the result code is NOT_SENT or PARTIALLY_SENT."
+          },
+          "primaryKey": {
+            "ID": "F84A065E-6A2F-4972-5032-17634FEF840F"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "_comments": [
+      "Orders: Open Payment Intent — the FIRST half of a gateway-collected payment.",
+      "",
+      "WHY IT HAD TO EXIST. Every payment driver has implemented CreateIntent since the payment seam",
+      "landed, and nothing called it but unit tests. PaymentHeaderEntityServer refuses a provider-backed",
+      "capture without an intent — 'there is nothing for the gateway to capture. Open an intent first' —",
+      "and there was no way to open one. The gateway path was complete at both ends with no beginning.",
+      "",
+      "IT MOVES NO MONEY AND WRITES NO PAYMENT. An intent is the gateway agreeing to stand ready. An",
+      "intent nobody completes simply expires; nothing is owed differently because of it. The payment is",
+      "written by Orders.CapturePayment, which takes the PaymentIntentID this returns.",
+      "",
+      "WHY AN INTENT IS ITS OWN ROW rather than a status on PaymentHeader: retries are 1:N (a second ACH",
+      "attempt is its own gateway intent), an intent can exist with NO payment (abandoned checkout), and",
+      "ProviderEventID — the webhook idempotency key — lives on the intent because events can arrive",
+      "before any payment exists."
+    ],
+    "fields": {
+      "Name": "Open Payment Intent",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Ask a payment gateway to stand ready to collect an amount, and record the resulting PaymentIntent. Moves no money and writes no payment. Returns the PaymentIntentID that Orders.CapturePayment needs, plus a client secret for a browser-side confirmation flow. Supply an IdempotencyKey so a retry reuses the open intent instead of charging twice.",
+      "Type": "Custom",
+      "DriverClass": "Orders.OpenPaymentIntent",
+      "IconClass": "fa-regular fa-hourglass-start",
+      "UserPrompt": "Open a payment intent with the configured gateway for a given amount and order.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "9F3C1D82-6A47-4B59-BE28-7C51D0A9E3F4"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PaymentProviderID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "Which configured PaymentProvider account to ask. Decides the driver and the credentials. This is the PaymentProvider row's ID, not the type code."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C01"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Amount",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "Gross amount to collect, in major units. Must be positive — a gateway has nothing to stand ready for otherwise."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C02"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CurrencyCode",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "ISO currency. Defaults to USD. The driver converts to the gateway's minor units at its own edge."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C03"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "OrderHeaderID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The order this intent collects for. Omit for a payment on account. Several intents may point at one order — a retried bank debit is the ordinary case."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C04"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "BillToPersonID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Who we are collecting from, so the gateway's record matches ours (D65)."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C05"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "BillToOrganizationID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The paying organization, so the gateway's record matches ours (D65)."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C06"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ProviderCustomerRef",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The gateway's customer id, when one exists. Required alongside a saved instrument."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C07"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ProviderInstrumentRef",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "A saved payment method to charge — the recurring-renewal path, where the mandate was captured once and is being debited on our schedule."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C08"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "IdempotencyKey",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Sent to the gateway so a retried call does not open a SECOND intent — which, against a saved instrument, would charge the customer twice. A repeat returns the intent already opened."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C09"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PaymentIntentID",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "OUR PaymentIntent row's ID. Pass this to Orders.CapturePayment when the money is confirmed — without it a provider-backed capture is refused."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0A"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ProviderIntentID",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The GATEWAY's id for the same intent. Appears on every webhook about it."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0B"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Status",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The intent as the gateway reads it: RequiresPayment, Processing, Succeeded, Canceled or Failed. A bank debit opens as Processing; a card checkout opens as RequiresPayment."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0C"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ClientSecret",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Authorises a browser to confirm THIS intent. Never persisted and never logged — hand it straight to the gateway's client SDK."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0D"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "HostedUrl",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Where to send the customer for a hosted-checkout flow, when the gateway returns one."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0E"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "WasExisting",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when this call found an intent already open rather than opening a new one — the idempotent-retry case."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0F"
+          }
+        }
+      ]
+    }
   }
 ]

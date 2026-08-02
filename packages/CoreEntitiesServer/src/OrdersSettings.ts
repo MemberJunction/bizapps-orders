@@ -113,4 +113,5 @@ export class OrdersSettings {
             DEFAULTS.OrganizationAffiliationRelationshipTypes,
         );
     }
+
 }

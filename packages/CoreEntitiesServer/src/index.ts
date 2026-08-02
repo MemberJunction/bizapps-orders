@@ -219,12 +219,16 @@ export {
     MapStripeIntentStatus,
     DecideWebhookAction,
     SplitCapturedAmount,
+    AchFeeEstimate,
+    DecideSettlement,
 } from './PaymentProviderBehavior.js';
 export type {
     IntentStatus,
     SignatureVerification,
     WebhookAction,
     WebhookDecision,
+    SettlementAction,
+    SettlementDecision,
 } from './PaymentProviderBehavior.js';
 
 export { BasePaymentProvider, LoadBasePaymentProvider } from './BasePaymentProvider.js';
@@ -241,6 +245,7 @@ export type {
 } from './BasePaymentProvider.js';
 
 export { StripePaymentProvider, LoadStripePaymentProvider, ToFormBody } from './StripePaymentProvider.js';
+export { StripeACHPaymentProvider, LoadStripeACHPaymentProvider } from './StripeACHPaymentProvider.js';
 export { ManualPaymentProvider, LoadManualPaymentProvider } from './ManualPaymentProvider.js';
 export {
     StoredValuePaymentProvider,
@@ -258,7 +263,46 @@ export {
     BuildPaymentProvider,
 } from './PaymentProviderResolver.js';
 
+// Document delivery (§4.4) — the pure decisions, the channel seam, and the one shipped channel.
+// Document-AGNOSTIC: nothing below knows what an invoice is, which is what makes it reusable for
+// statements, dunning notices, order confirmations and receipts.
+export { DecideDelivery, ResolveRecipients, BuildSubject, DeliveryIdempotencyKey } from './DeliveryBehavior.js';
+export type {
+    DeliveryChannelCode,
+    DeliveryContact,
+    DeliverableFacts,
+    DeliveryVerdict,
+    DeliveryDecision,
+} from './DeliveryBehavior.js';
+export { BaseDeliveryChannel, LoadBaseDeliveryChannel } from './BaseDeliveryChannel.js';
+export type {
+    DeliverableDocument,
+    DeliveryAddressing,
+    DeliveryResult,
+    DeliveryContext,
+} from './BaseDeliveryChannel.js';
+export { EmailDeliveryChannel, LoadEmailDeliveryChannel } from './EmailDeliveryChannel.js';
+export { ResolveDeliveryChannel, DeliveryChannelNotConfiguredError } from './DeliveryResolver.js';
+export { LoadOrderDeliveryContacts, LoadOrderStatus } from './DeliveryRecipientResolver.js';
+
 export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
+export { OpenPaymentIntent } from './PaymentIntentService.js';
+export type { OpenIntentRequest, OpenIntentResult } from './PaymentIntentService.js';
+export { SettlePaymentForEvent } from './PaymentSettlement.js';
+export type { SettlementOutcome } from './PaymentSettlement.js';
+export {
+    LoadAppliedAllocations,
+    BuildUnapplyLines,
+    CopyPaymentDetail,
+    NextPaymentNumber,
+    CreateReversingPayment,
+} from './PaymentReversalFactory.js';
+export type {
+    ReversiblePayment,
+    AppliedAllocation,
+    PaymentReversalRequest,
+    PaymentReversalResult,
+} from './PaymentReversalFactory.js';
 export type {
     WebhookRequest,
     WebhookResponse,

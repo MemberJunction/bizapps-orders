@@ -36,7 +36,8 @@ import {
     type OrdersCapturePaymentOutput,
 } from '@mj-biz-apps/orders-entities';
 
-import { RequireUUID } from './sql-guards.js';
+import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
+import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -68,6 +69,15 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             receivingCompanyID = RequireUUID(input?.ReceivingCompanyID, 'ReceivingCompanyID');
         } catch (e) {
             return this.refuse([this.blocker('BadCompanyID', String((e as Error).message))]);
+        }
+
+        // Validated at the boundary like every other caller-supplied id, even though this one reaches
+        // an entity Set() rather than a filter: the FilterInjection guard is a floor, not a ceiling,
+        // and an id that is not an id should be refused where the caller can still read the reason.
+        try {
+            RequireOptionalUUID(input?.PaymentIntentID, 'PaymentIntentID');
+        } catch (e) {
+            return this.refuse([this.blocker('BadPaymentIntentID', String((e as Error).message))]);
         }
 
         const allocations = input?.Allocations ?? [];
@@ -330,6 +340,14 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             }
         }
 
+        // THE LINK THAT MAKES A GATEWAY CAPTURE POSSIBLE. `settleWithProvider` reads the gateway's own
+        // intent string through this row; without it a provider-backed payment is refused with
+        // "there is nothing for the gateway to capture", which is precisely the state this whole path
+        // sat in before `Orders.OpenPaymentIntent` existed.
+        if (input?.PaymentIntentID) {
+            header.Set('PaymentIntentID', input.PaymentIntentID);
+        }
+
         const lines: BaseEntity[] = [];
         for (const a of input?.Allocations ?? []) {
             const line = await provider.GetEntityObject<BaseEntity>(PAYMENT_LINE_ENTITY, user);
@@ -343,10 +361,19 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
         }
         (header as unknown as { Lines: BaseEntity[] }).Lines = lines;
 
-        // Captured, not Pending. `savePendingLines` books each allocation from this collection, and
-        // a header saved Pending would persist the lines with nothing booked — a captured payment
-        // with no cash leg, which balances and is wrong.
-        header.Set('Status', 'Captured');
+        // CAPTURED FOR EVERY RAIL THAT ANSWERS IMMEDIATELY. `savePendingLines` books each allocation
+        // from this collection, and a header saved Pending would persist the lines with nothing
+        // booked — a captured payment with no cash leg, which balances and is wrong.
+        //
+        // PENDING FOR A RAIL THAT DOES NOT (D77). A bank debit has moved no money when this runs: the
+        // bank answers days later. Writing `Captured` would send `settleWithProvider` to a driver whose
+        // Capture is a READ, which correctly refuses an intent that is still processing — so the whole
+        // capture would fail and there would be no way to record the debit at all. `Pending` records
+        // exactly what is true (submitted, waiting), the allocations persist unbooked, and the webhook
+        // promotes it when the bank confirms — at which point `bookPersistedLines` settles the cash
+        // leg. The debt is deliberate and is discharged in exactly one place.
+        const settlesLate = await this.settlesAsynchronously(header, provider, user);
+        header.Set('Status', settlesLate ? 'Pending' : 'Captured');
 
         if (!(await header.Save())) {
             throw new Error(
@@ -354,6 +381,32 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             );
         }
         return header.Get('ID') as string;
+    }
+
+    /**
+     * Whether this payment's gateway settles on someone else's schedule.
+     *
+     * Asked of the DRIVER, not of configuration — see `BasePaymentProvider.SettlesAsynchronously` for
+     * why an operator must not be able to declare that ACH settles instantly.
+     *
+     * FALSE WHEN ANYTHING GOES WRONG, deliberately. A payment with no provider is a recorded one
+     * (cheque, cash) and captures immediately; a provider that cannot be resolved is a configuration
+     * fault that the save path is about to report far more clearly than a status guess here would.
+     * Defaulting to the existing behaviour keeps every rail that worked before working unchanged.
+     */
+    private async settlesAsynchronously(
+        header: BaseEntity,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<boolean> {
+        const providerID = header.Get('PaymentProviderID') as string | null;
+        if (!providerID) return false;
+        try {
+            const driver = await ResolvePaymentProvider(providerID, provider, user);
+            return driver.SettlesAsynchronously === true;
+        } catch {
+            return false;
+        }
     }
 
     /**
