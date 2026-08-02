@@ -157,6 +157,16 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
             await this.savePendingLines(options);
 
             if (capturing) {
+                // BOOK THE LINES THAT WERE ALREADY ON DISK. A payment that was saved `Pending` — the
+                // shape a bank debit takes, because nothing has cleared when the caller asks — persisted
+                // its allocations with nothing booked, exactly as `PaymentLineEntityServer` intends
+                // ("it books when the payment reaches Captured, not here"). THIS is that moment, and
+                // without this call the cash leg never books: `savePendingLines` only writes the
+                // transient collection, which is empty on a promotion.
+                //
+                // Safe to run on every capture. `BookedAt` is the allocation's idempotency key, so a
+                // line booked on its own save is skipped here rather than credited twice.
+                await this.bookPersistedLines(options);
                 await this.assertAllocationInvariant();
                 // Only reach the fee builder when there IS a fee. Since the cash leg moved to the
                 // allocation (D13), this is the header's ONLY entry — so a payment without a fee has
@@ -219,6 +229,51 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
         this._lines = [];
         void provider;
         void user;
+    }
+
+    /**
+     * Re-save any allocation already on disk that has not booked yet, so its cash leg lands.
+     *
+     * ONLY REACHABLE FROM A DELAYED CAPTURE. A payment captured in one act saves its lines from the
+     * transient collection while the header is already `Captured`, so each one books as it is written
+     * and arrives here with `BookedAt` set — this method then finds nothing and costs one query. A
+     * payment that sat `Pending` first (a bank debit waiting on the bank) persisted its lines
+     * unbooked, and this is the only place that debt is settled.
+     *
+     * RE-SAVED AS ENTITY OBJECTS, deliberately. `PaymentLineEntityServer.Save` is what books an
+     * allocation, and it needs the real subclass to do it — reading these as `simple` rows and
+     * updating them would write the columns and book nothing, which is the failure this method exists
+     * to prevent.
+     */
+    private async bookPersistedLines(options?: EntitySaveOptions): Promise<void> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<BaseEntity>(
+            {
+                EntityName: PAYMENT_LINE_ENTITY,
+                ExtraFilter: `PaymentHeaderID='${this.ID}' AND BookedAt IS NULL`,
+                ResultType: 'entity_object',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+
+        if (!result?.Success) {
+            throw new Error(
+                `Could not read the unbooked allocations for payment ${this.PaymentNumber}: ` +
+                    `${result?.ErrorMessage ?? 'unknown error'}`,
+            );
+        }
+
+        for (const line of result.Results ?? []) {
+            // A no-op save: nothing on the row changes, and the ONLY purpose is to run the subclass's
+            // booking path now that the header it reads is Captured.
+            if (!(await line.Save(options))) {
+                throw new Error(
+                    `Could not book an allocation of payment ${this.PaymentNumber}: ` +
+                        `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+        }
     }
 
     /**

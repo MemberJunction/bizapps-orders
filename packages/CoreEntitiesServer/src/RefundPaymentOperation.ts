@@ -27,9 +27,7 @@
  *   TABLES:  __mj_BizAppsOrders.{PaymentHeader,PaymentLine,PaymentDetail}
  */
 import {
-    BaseEntity,
     BaseRemotableOperation,
-    CompositeKey,
     DatabaseProviderBase,
     IMetadataProvider,
     IRunViewProvider,
@@ -39,10 +37,14 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { RequireUUID } from './sql-guards.js';
+import {
+    BuildUnapplyLines,
+    CreateReversingPayment,
+    LoadAppliedAllocations,
+    type AppliedAllocation,
+} from './PaymentReversalFactory.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
-const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
-const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 
 export interface RefundPaymentInput {
     PaymentHeaderID: string;
@@ -79,11 +81,6 @@ interface PaymentRow {
     Amount: number;
     ProcessingFeeAmount: number;
     Status: string;
-}
-
-interface AppliedRow {
-    OrderHeaderID: string;
-    Amount: number;
 }
 
 const money = (v: number): number => Math.round((v + Number.EPSILON) * 100) / 100;
@@ -140,7 +137,7 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
             };
         }
 
-        const applications = await this.applicationsOf(provider, user, payment.ID);
+        const applications = await LoadAppliedAllocations(provider, user, payment.ID);
         if (applications.length === 0) {
             return {
                 Success: false,
@@ -165,8 +162,18 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
             // The un-apply lines are built BEFORE the header is saved and ride its Lines collection,
             // because the header's save is what checks the D68 invariant — saving it first with no
             // allocations would fail on a payment that is about to be perfectly consistent.
-            const lines = await this.buildUnapplyLines(provider, user, payment, applications, requested);
-            const refund = await this.createReversal(provider, user, payment, requested, input, lines);
+            const lines = await BuildUnapplyLines(provider, user, applications, requested);
+            const refund = await CreateReversingPayment(
+                provider,
+                user,
+                payment,
+                {
+                    Amount: requested,
+                    Reason: input.Reason ?? null,
+                    ProviderRefundID: input.ProviderRefundID ?? null,
+                },
+                lines,
+            );
 
             await dbProvider.CommitTransaction();
             return {
@@ -235,160 +242,6 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
             user,
         );
         return money((result?.Results ?? []).reduce((sum, r) => sum + Math.abs(Number(r.Amount ?? 0)), 0));
-    }
-
-    private async applicationsOf(
-        provider: IMetadataProvider,
-        user: UserInfo,
-        paymentID: string,
-    ): Promise<AppliedRow[]> {
-        const rv = new RunView(provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<AppliedRow>(
-            {
-                EntityName: PAYMENT_LINE_ENTITY,
-                ExtraFilter: `PaymentHeaderID='${paymentID}'`,
-                Fields: ['OrderHeaderID', 'Amount'],
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            user,
-        );
-        return (result?.Results ?? []).filter((r) => Number(r.Amount) > 0);
-    }
-
-    // ─── Writes ────────────────────────────────────────────────────────────────
-
-    /**
-     * The reversing PaymentHeader.
-     *
-     * `Status='Refunded'` is what makes `PaymentHeaderEntityServer` book the mirrored entry, so the
-     * ledger side needs no special handling here — it rides the ordinary save path.
-     */
-    private async createReversal(
-        provider: IMetadataProvider,
-        user: UserInfo,
-        original: PaymentRow,
-        amount: number,
-        input: RefundPaymentInput,
-        lines: BaseEntity[],
-    ): Promise<{ ID: string; Number: string; JournalEntryID?: string }> {
-        const refund = await provider.GetEntityObject<BaseEntity>(PAYMENT_HEADER_ENTITY, user);
-        refund.NewRecord();
-        refund.Set('PaymentNumber', await this.nextPaymentNumber(provider));
-        refund.Set('ReceivingCompanyID', original.ReceivingCompanyID);
-        refund.Set('BillToOrganizationID', original.BillToOrganizationID);
-        refund.Set('BillToPersonID', original.BillToPersonID);
-        refund.Set('PaymentDate', new Date());
-        refund.Set('PaymentTypeID', original.PaymentTypeID);
-        refund.Set('Amount', amount);
-        // The provider's fee is NOT returned on a refund, so the reversal carries none. Mirroring the
-        // fee would credit back money the processor kept.
-        refund.Set('ProcessingFeeAmount', 0);
-        refund.Set('ReversesPaymentHeaderID', original.ID);
-        refund.Set('ReversalReason', input.Reason ?? null);
-        refund.Set('ProviderRefundID', input.ProviderRefundID ?? null);
-        refund.Set('Status', 'Refunded');
-        refund.Set('Description', `Refund of ${original.PaymentNumber}`);
-
-        // A fresh instrument snapshot, never the original's row (D39).
-        if (original.PaymentDetailID) {
-            refund.Set('PaymentDetailID', await this.copyDetail(provider, user, original.PaymentDetailID));
-        }
-
-        // Header + un-apply lines in ONE save (D68): the invariant is checked across the pair, and
-        // the mirrored entries book as the lines go down.
-        (refund as unknown as { Lines: BaseEntity[] }).Lines = lines;
-
-        if (!(await refund.Save())) {
-            throw new Error(
-                `Failed to create the refund for ${original.PaymentNumber}: ` +
-                    `${refund.LatestResult?.CompleteMessage ?? 'unknown error'}`,
-            );
-        }
-
-        return {
-            ID: refund.Get('ID') as string,
-            Number: refund.Get('PaymentNumber') as string,
-            JournalEntryID: (refund.Get('JournalEntryID') as string) ?? undefined,
-        };
-    }
-
-    /**
-     * Un-apply the refunded cash from the orders the original settled.
-     *
-     * Proportional to how the original was applied, so a payment split across three orders refunds
-     * across the same three rather than dumping the whole reversal on whichever happened to be
-     * first. The final line absorbs the rounding remainder so the un-applied total is exact.
-     */
-    private async buildUnapplyLines(
-        provider: IMetadataProvider,
-        user: UserInfo,
-        original: PaymentRow,
-        applications: AppliedRow[],
-        refundAmount: number,
-    ): Promise<BaseEntity[]> {
-        const built: BaseEntity[] = [];
-        const appliedTotal = applications.reduce((s, a) => s + Number(a.Amount), 0);
-        let allocated = 0;
-
-        for (let i = 0; i < applications.length; i++) {
-            const app = applications[i];
-            const isLast = i === applications.length - 1;
-            const share = isLast
-                ? money(refundAmount - allocated)
-                : money((Number(app.Amount) / appliedTotal) * refundAmount);
-            allocated = money(allocated + share);
-            if (share <= 0) continue;
-
-            const line = await provider.GetEntityObject<BaseEntity>(PAYMENT_LINE_ENTITY, user);
-            line.NewRecord();
-            line.Set('OrderHeaderID', app.OrderHeaderID);
-            // NEGATIVE: this removes cash from the order, which is what moves Balance back up.
-            line.Set('Amount', -share);
-            line.Set('AllocatedAt', new Date());
-            line.Set('AllocatedByUserID', user?.ID ?? null);
-            built.push(line);
-        }
-        void original;
-        return built;
-    }
-
-    private async copyDetail(provider: IMetadataProvider, user: UserInfo, sourceID: string): Promise<string> {
-        const source = await provider.GetEntityObject<BaseEntity>(
-            PAYMENT_DETAIL_ENTITY,
-            CompositeKey.FromID(sourceID),
-            user,
-        );
-        const copy = await provider.GetEntityObject<BaseEntity>(PAYMENT_DETAIL_ENTITY, user);
-        copy.NewRecord();
-        for (const field of source.Fields) {
-            if (field.Name === 'ID' || field.Name.startsWith('__mj_')) continue;
-            copy.Set(field.Name, field.Value);
-        }
-        if (!(await copy.Save())) {
-            throw new Error(
-                `Failed to copy the payment instrument: ${copy.LatestResult?.CompleteMessage ?? 'unknown error'}`,
-            );
-        }
-        return copy.Get('ID') as string;
-    }
-
-    /** Same singleton counter the order path uses, so refunds sit in the same number series. */
-    private async nextPaymentNumber(provider: IMetadataProvider): Promise<string> {
-        const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
-        const rows = (await db.ExecuteSQL(`
-            DECLARE @seq TABLE (Seq INT);
-            UPDATE __mj_BizAppsOrders.PaymentSequence WITH (UPDLOCK, HOLDLOCK)
-            SET NextSequenceNumber = NextSequenceNumber + 1
-            OUTPUT deleted.NextSequenceNumber INTO @seq(Seq)
-            WHERE ID = 1;
-            SELECT Seq FROM @seq;`)) as Array<{ Seq: number }>;
-
-        const seq = rows?.[0]?.Seq;
-        if (!seq) {
-            throw new Error('Could not obtain the next payment number — PaymentSequence (ID=1) is missing.');
-        }
-        return `PAY-${String(seq).padStart(6, '0')}`;
     }
 }
 

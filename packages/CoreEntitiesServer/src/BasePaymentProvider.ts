@@ -185,6 +185,29 @@ export class BasePaymentProvider {
         return [];
     }
 
+    /**
+     * Whether money moves on a DELAY this driver cannot observe synchronously.
+     *
+     * FALSE for a card: `Capture` returns and the money has moved, so the caller books cash in the
+     * same breath and a later event only confirms what we already recorded. TRUE for a bank debit:
+     * `Capture` returns "submitted", the bank answers days later, and the only honest thing to record
+     * in the meantime is that we are waiting.
+     *
+     * The flag exists because it changes WHO BOOKS THE CASH. When false, `PaymentHeaderEntityServer`
+     * books at the moment the caller asks — the existing path, untouched. When true, the caller leaves
+     * the payment `Pending` and the WEBHOOK promotes it, which means `PaymentWebhookHandler` has to do
+     * something it deliberately never did before (see its `applyEvent` note). Gating that on a driver's
+     * own declaration is what keeps the card path exactly as it was: a driver that does not opt in
+     * cannot have its payments promoted behind its back.
+     *
+     * It is a capability of the DRIVER rather than a column on `PaymentProviderType` because it is not
+     * configuration — an operator cannot make ACH settle instantly by editing a row, and offering the
+     * switch would invite exactly that.
+     */
+    public get SettlesAsynchronously(): boolean {
+        return false;
+    }
+
     public async CreateIntent(_request: CreateIntentRequest): Promise<CreateIntentResult> {
         return { Success: false, Reason: this.notImplemented('creating a payment intent') };
     }

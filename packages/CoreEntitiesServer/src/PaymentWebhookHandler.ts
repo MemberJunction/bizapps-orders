@@ -42,6 +42,7 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { DecideWebhookAction, type WebhookAction } from './PaymentProviderBehavior.js';
+import { SettlePaymentForEvent } from './PaymentSettlement.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import type { WebhookEvent } from './BasePaymentProvider.js';
 
@@ -132,6 +133,18 @@ export async function HandlePaymentWebhook(
 
     // ── 5. Apply it. ───────────────────────────────────────────────────────
     try {
+        // SETTLEMENT RUNS FIRST, AND THE ORDER IS LOAD-BEARING. `applyEvent` stamps
+        // `ProviderEventID`, which is the idempotency key — so an event recorded BEFORE settlement
+        // that then failed to settle would be judged `AlreadyApplied` on every retry, and a payment
+        // the bank confirmed would sit `Pending` for ever with nothing left to move it. Settling
+        // first means a failure returns 500 with nothing stamped and the gateway asks again.
+        //
+        // Only for drivers that have SAID they settle late. A card driver never reaches this line, so
+        // the guarantee in `applyEvent`'s note — that a webhook cannot reach the ledger — still holds
+        // everywhere it held before.
+        if (driver.SettlesAsynchronously) {
+            await SettlePaymentForEvent(event, existing!.ID, provider, user);
+        }
         await applyEvent(event, existing!.ID, provider, user);
         return { Status: 200, Body: { received: true, outcome: 'Apply' } };
     } catch (err) {

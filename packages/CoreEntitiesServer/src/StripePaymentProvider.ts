@@ -43,6 +43,7 @@ import {
     MapStripeIntentStatus,
     ToMinorUnits,
     VerifyWebhookSignature,
+    type IntentStatus,
 } from './PaymentProviderBehavior.js';
 
 const STRIPE_API = 'https://api.stripe.com/v1';
@@ -62,8 +63,45 @@ export class StripePaymentProvider extends BasePaymentProvider {
     }
 
     /** The stub stands in whenever the configured account is not live. */
-    private get useStub(): boolean {
+    protected get useStub(): boolean {
         return !this.Config?.IsLiveMode;
+    }
+
+    // ─── Extension points ──────────────────────────────────────────────────────
+    //
+    // Three small seams, added so a SIBLING Stripe rail (bank debits, and whatever comes after) can
+    // change the parts that differ without reimplementing the parts that do not. The alternative was a
+    // second class copying `CreateIntent`, `call`, `ToFormBody` and the error handling — four places to
+    // fix the next time Stripe changes a response shape, three of which nobody would remember to look
+    // at. Everything genuinely shared stays here; a subclass overrides only what its rail changes.
+
+    /**
+     * The intent status the STUB reports on creation.
+     *
+     * A card intent opens waiting for an instrument. A bank debit opens already submitted, and a stub
+     * that claimed otherwise would exercise a state the real rail never passes through.
+     */
+    protected get StubIntentStatus(): IntentStatus {
+        return 'RequiresPayment';
+    }
+
+    /**
+     * The fee the STUB reports on capture — 2.9% + 30c, Stripe's standard US card rate.
+     *
+     * See the note at the call site for why a stub must not report zero.
+     */
+    protected StubFeeFor(amount: number, _currencyCode: string): number {
+        return amount > 0 ? Math.round((amount * 0.029 + 0.3) * 100) / 100 : 0;
+    }
+
+    /**
+     * Last chance to add rail-specific fields to a `POST /payment_intents` body.
+     *
+     * Mutates rather than returns, so a subclass that forgets to call `super` cannot silently discard
+     * everything the base assembled — there is nothing to discard.
+     */
+    protected DecorateIntentBody(_body: Record<string, string>, _request: CreateIntentRequest): void {
+        // Cards need nothing beyond what CreateIntent already builds.
     }
 
     // ─── Intent ────────────────────────────────────────────────────────────────
@@ -80,7 +118,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
             return {
                 Success: true,
                 ProviderIntentID: `pi_stub_${seed.replace(/-/g, '').slice(0, 24)}`,
-                Status: 'RequiresPayment',
+                Status: this.StubIntentStatus,
                 ClientSecret: `pi_stub_${seed.slice(0, 8)}_secret_stub`,
             };
         }
@@ -100,6 +138,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         }
         for (const [k, v] of Object.entries(request.Metadata ?? {})) body[`metadata[${k}]`] = v;
         if (request.OrderHeaderID) body['metadata[OrderHeaderID]'] = request.OrderHeaderID;
+        this.DecorateIntentBody(body, request);
 
         const result = await this.call('POST', '/payment_intents', body, request.IdempotencyKey);
         if (!result.Ok) return { Success: false, Reason: result.Reason };
@@ -123,7 +162,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
                 // 2.9% + 30c, Stripe's standard US card rate. A stub that reported ZERO fee would make
                 // the fee leg of the capture entry (D18) unreachable in every test, so the one thing
                 // that must be exercised would be the one thing never exercised.
-                FeeAmount: amount > 0 ? Math.round((amount * 0.029 + 0.3) * 100) / 100 : 0,
+                FeeAmount: this.StubFeeFor(amount, request.CurrencyCode),
                 ProviderChargeID: `ch_stub_${request.ProviderIntentID.slice(-12)}`,
                 Status: 'Succeeded',
             };
@@ -255,7 +294,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
      *
      * Only transport failures and 5xx throw. Those are faults; the rest are answers.
      */
-    private async call(
+    protected async call(
         method: 'POST' | 'GET',
         path: string,
         body?: Record<string, string>,
@@ -316,7 +355,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
     }
 
     /** `latest_charge` is a string on modern API versions and an object on older expanded responses. */
-    private latestCharge(object: Record<string, unknown>): string | null {
+    protected latestCharge(object: Record<string, unknown>): string | null {
         const latest = object.latest_charge;
         if (typeof latest === 'string') return latest;
         if (latest && typeof latest === 'object') return ((latest as Record<string, unknown>).id as string) ?? null;
@@ -333,7 +372,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
      * capture either: the money HAS moved by this point, and refusing now would leave the ledger
      * disagreeing with the gateway.
      */
-    private async feeFor(chargeID: string | null, currency: string): Promise<number | undefined> {
+    protected async feeFor(chargeID: string | null, currency: string): Promise<number | undefined> {
         if (!chargeID) return undefined;
         try {
             const charge = await this.call('GET', `/charges/${encodeURIComponent(chargeID)}?expand[]=balance_transaction`);

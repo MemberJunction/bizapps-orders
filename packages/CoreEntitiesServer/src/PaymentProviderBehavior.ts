@@ -293,3 +293,134 @@ export function SplitCapturedAmount(
     }
     return { Gross: gross, Fee: fee, Net: Math.round((gross - fee) * 100) / 100 };
 }
+
+// ─── Bank debits (ACH) ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Stripe's published US bank-debit price: 0.8% of the amount, capped at $5.
+ *
+ * FOR THE STUB ONLY, and the name says so deliberately. The live path reads the fee off the charge's
+ * balance transaction like every other capture — what Stripe actually charged is a fact, and computing
+ * it here would be this file's opinion competing with the gateway's record. A stub that reported a
+ * ZERO fee would be worse still: it would make the fee leg of the capture entry (D18) unreachable in
+ * every test, so the arithmetic most worth exercising would be the arithmetic never exercised. That is
+ * the same reasoning behind the card stub's 2.9% + 30c, and the same reason this constant will drift
+ * from Stripe's price list one day without breaking anything real.
+ *
+ * The cap is a MAJOR-UNIT USD figure. A bank debit is a US rail, so the currency is USD in practice;
+ * a caller passing anything else gets the percentage without the cap rather than a cap converted at a
+ * rate this module has no business knowing.
+ */
+export function AchFeeEstimate(grossAmount: number, currencyCode: string = 'USD'): number {
+    const gross = Math.round(Math.abs(grossAmount ?? 0) * 100) / 100;
+    if (!Number.isFinite(gross) || gross <= 0) return 0;
+    const raw = gross * 0.008;
+    const capped = currencyCode.toUpperCase() === 'USD' ? Math.min(raw, 5) : raw;
+    return Math.round(capped * 100) / 100;
+}
+
+// ─── Settlement ────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What a settlement event should do to the payment we opened for it.
+ *
+ * `Hold` is the important one and the reason this is a decision table rather than an `if`. It means
+ * the event and the payment disagree in a way this code was not written for — a success against a
+ * refunded payment, a capture with no ledger entry behind it — and the honest response is to record
+ * nothing and say so. Both confident answers are worse: acting books or unbooks real money on a
+ * reading we have already admitted we do not understand.
+ */
+export type SettlementAction = 'Promote' | 'Fail' | 'Reverse' | 'Hold' | 'None';
+
+export interface SettlementDecision {
+    Action: SettlementAction;
+    Reason: string;
+}
+
+/**
+ * Decide what a bank-debit event does to its payment.
+ *
+ * THE ASYMMETRY IS THE WHOLE DESIGN. A card tells you at the till; a bank debit tells you up to four
+ * business days later, and it can tell you TWICE — "taken" and then, a week after that, "returned"
+ * (insufficient funds, account closed, unauthorised). So there is no single moment where the answer is
+ * known, and a payment has to be able to move forward AND backward:
+ *
+ *   Pending  + succeeded → `Promote`  the payment becomes Captured, which is what books the cash
+ *   Pending  + failed    → `Fail`     nothing was ever booked, so nothing needs reversing
+ *   Captured + failed    → `Reverse`  the money left again; a REVERSING payment says so in the ledger
+ *
+ * WHY `Reverse` AND NOT AN UPDATE. A returned debit is not "the payment never happened" — it happened,
+ * the ledger recorded it, a period may have closed over it. Editing the original would erase a true
+ * fact about a past date. A reversing payment is the same answer the rest of this application already
+ * gives (`ReversesPaymentHeaderID`, D53), and it leaves both facts standing.
+ *
+ * `None` covers the ordinary quiet cases — an event that changes nothing, a promotion that already
+ * happened — and is a SUCCESS. A gateway that does not get a 2xx retries forever.
+ */
+export function DecideSettlement(input: {
+    /** How the driver read the intent after this event. */
+    EventStatus: IntentStatus | null | undefined;
+    /** `PaymentHeader.Status`, or null when no payment was opened for this intent. */
+    HeaderStatus: string | null | undefined;
+    /** True when the header carries a `JournalEntryID` — the cash is in the ledger. */
+    HeaderBooked: boolean;
+    /** True when a reversing payment already points at this one. */
+    AlreadyReversed: boolean;
+}): SettlementDecision {
+    const header = (input.HeaderStatus ?? '').trim();
+    if (!header) {
+        // NOT an error. An intent can exist without a payment — a checkout the customer abandoned, or
+        // one whose payment has not been captured yet. There is simply nothing to settle.
+        return { Action: 'None', Reason: 'the intent has no payment to settle' };
+    }
+
+    switch (input.EventStatus) {
+        case 'Succeeded':
+            if (header === 'Pending') {
+                return { Action: 'Promote', Reason: 'the bank confirmed the debit, so the payment becomes Captured' };
+            }
+            if (header === 'Captured') {
+                return { Action: 'None', Reason: 'the payment is already Captured' };
+            }
+            // Succeeded against Failed / Refunded / Disputed. A bank does not un-return a debit, so
+            // this is either a gateway we have misread or an event arriving wildly out of order.
+            return {
+                Action: 'Hold',
+                Reason: `the bank reported success against a payment that is ${header} — this needs a person`,
+            };
+
+        case 'Failed':
+        case 'Canceled':
+            if (header === 'Pending') {
+                return { Action: 'Fail', Reason: 'the debit did not clear and nothing was booked' };
+            }
+            if (header === 'Captured') {
+                if (input.AlreadyReversed) {
+                    return { Action: 'None', Reason: 'this payment has already been reversed' };
+                }
+                if (!input.HeaderBooked) {
+                    // Captured without a journal entry should be impossible — booking is part of the
+                    // same transaction as the transition. If it happened, the two records disagree
+                    // about whether cash exists, and guessing which is right is how the disagreement
+                    // becomes permanent.
+                    return {
+                        Action: 'Hold',
+                        Reason: 'the payment is Captured but carries no journal entry, so what to reverse is unclear',
+                    };
+                }
+                return { Action: 'Reverse', Reason: 'the debit was returned after being booked, so the cash comes back out' };
+            }
+            if (header === 'Failed') {
+                return { Action: 'None', Reason: 'the payment is already Failed' };
+            }
+            return {
+                Action: 'Hold',
+                Reason: `the bank reported a failure against a payment that is ${header} — this needs a person`,
+            };
+
+        // Processing / RequiresPayment / unknown. The gateway is telling us it is still working, which
+        // is exactly the state a Pending payment already records.
+        default:
+            return { Action: 'None', Reason: `nothing to settle while the intent reads ${input.EventStatus ?? 'unknown'}` };
+    }
+}

@@ -31,31 +31,20 @@
 
 import { BaseAction } from '@memberjunction/actions';
 import type { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
-import { Metadata, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
+import { Metadata, type IMetadataProvider } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { BuildInvoiceDocuments, DecorateInvoice, type DisplayInvoice } from '@mj-biz-apps/orders-core-entities-server';
-import { TemplateEngineServer } from '@memberjunction/templates';
+import {
+    DEFAULT_INVOICE_TEMPLATE,
+    RenderInvoiceDocuments,
+    type RenderedInvoice,
+} from '../services/invoice-renderer.js';
 
-/** The template rendered when a caller does not name one. */
-export const DEFAULT_INVOICE_TEMPLATE = 'Orders: Standard Invoice';
+// Re-exported for the callers that imported it from here before the render orchestration moved into
+// the shared service. The constant itself now lives with the code that uses it.
+export { DEFAULT_INVOICE_TEMPLATE } from '../services/invoice-renderer.js';
+export type { RenderedInvoice } from '../services/invoice-renderer.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** One rendered document, as it comes back on the `Invoices` output parameter. */
-export interface RenderedInvoice {
-    DocumentNumber: string;
-    Kind: string;
-    CompanyID: string;
-    CompanyName: string;
-    Gross: number;
-    AmountDue: number;
-    /** Null when `Format` asked for data only. */
-    HTML: string | null;
-    /** The full decorated document, so a caller can reconcile without parsing markup. */
-    Data: DisplayInvoice;
-    /** Anything the builder had to decide rather than read. Empty is the expected state. */
-    Notes: string[];
-}
 
 /** Read a parameter case-insensitively — action callers are not consistent about casing. */
 function param(params: RunActionParams, name: string): unknown {
@@ -177,68 +166,25 @@ export class GenerateInvoiceAction extends BaseAction {
             };
         }
 
-        const asOf = strParam(params, 'AsOfDate');
-        const built = await BuildInvoiceDocuments(orderID, provider, user, { AsOf: asOf, OnlyCompanyID: companyID });
+        const rendered = await RenderInvoiceDocuments(orderID, provider, user, {
+            CompanyID: companyID,
+            AsOfDate: strParam(params, 'AsOfDate'),
+            TemplateName: strParam(params, 'TemplateName') ?? DEFAULT_INVOICE_TEMPLATE,
+            Locale: strParam(params, 'Locale') ?? 'en-US',
+            CurrencyCode: strParam(params, 'CurrencyCode'),
+            Format: format as 'HTML' | 'DATA',
+            ShowDiagnostics: boolParam(params, 'ShowDiagnostics', false),
+        });
 
-        if (!built.Success) {
-            // A refusal is reported as a refusal, not as an empty success. An action that returns
-            // zero documents and Success=true reads to a workflow as "this order needed no invoice".
+        if (!rendered.Success) {
             return {
                 Success: false,
-                ResultCode: built.Message?.includes('voided') ? 'NOT_INVOICEABLE' : 'ORDER_NOT_FOUND',
-                Message: built.Message,
+                ResultCode: rendered.Code ?? 'RENDER_FAILED',
+                Message: rendered.Message ?? 'The order could not be rendered.',
             };
         }
 
-        const locale = strParam(params, 'Locale') ?? 'en-US';
-        const currencyOverride = strParam(params, 'CurrencyCode');
-        const showDiagnostics = boolParam(params, 'ShowDiagnostics', false);
-        const generatedOn = asOf ?? new Date().toISOString().slice(0, 10);
-
-        const templateName = strParam(params, 'TemplateName') ?? DEFAULT_INVOICE_TEMPLATE;
-        let render: ((doc: DisplayInvoice) => Promise<{ html: string | null; error?: string }>) | null = null;
-
-        if (format === 'HTML') {
-            const prepared = await this.prepareTemplate(templateName, user, provider, showDiagnostics);
-            if ('error' in prepared) {
-                return { Success: false, ResultCode: 'TEMPLATE_NOT_FOUND', Message: prepared.error };
-            }
-            render = prepared.render;
-        }
-
-        const invoices: RenderedInvoice[] = [];
-        for (const doc of built.Documents) {
-            // Currency comes from the SELLING COMPANY's accounting profile, because it is a property
-            // of the seller and not of the sale. An explicit parameter overrides it for the caller
-            // who genuinely knows better; nothing else does.
-            const currency = currencyOverride ?? doc.Issuer.CurrencyCode ?? 'USD';
-            const decorated = DecorateInvoice(doc, { Locale: locale, Currency: currency, GeneratedOn: generatedOn });
-
-            let html: string | null = null;
-            if (render) {
-                const rendered = await render(decorated);
-                if (rendered.error) {
-                    return {
-                        Success: false,
-                        ResultCode: 'RENDER_FAILED',
-                        Message: `Could not render ${doc.DocumentNumber}: ${rendered.error}`,
-                    };
-                }
-                html = rendered.html;
-            }
-
-            invoices.push({
-                DocumentNumber: doc.DocumentNumber,
-                Kind: doc.Kind,
-                CompanyID: doc.CompanyID,
-                CompanyName: doc.CompanyName,
-                Gross: doc.Gross,
-                AmountDue: doc.AmountDue,
-                HTML: html,
-                Data: decorated,
-                Notes: doc.Notes,
-            });
-        }
+        const invoices: RenderedInvoice[] = rendered.Documents;
 
         setOutput(params, 'Invoices', invoices);
         // The scalar HTML is a convenience for the overwhelmingly common single-company order. It is
@@ -259,49 +205,6 @@ export class GenerateInvoiceAction extends BaseAction {
                 invoices.length > 1
                     ? `This order is sold by ${invoices.length} companies, so it produces ${invoices.length} documents: ${invoices.map((i) => i.DocumentNumber).join(', ')}. Each one bills only what its company is owed.`
                     : `${kind} ${invoices[0]?.DocumentNumber ?? ''} rendered.`,
-        };
-    }
-
-    /**
-     * Find the template and its HTML content, and return a render function bound to them.
-     *
-     * The lookup happens ONCE for the whole run rather than per document: a two-company order should
-     * not resolve the same template twice, and a month-end job rendering four hundred invoices
-     * should not resolve it four hundred times.
-     */
-    private async prepareTemplate(
-        templateName: string,
-        user: UserInfo,
-        provider: IMetadataProvider,
-        showDiagnostics: boolean,
-    ): Promise<{ render: (doc: DisplayInvoice) => Promise<{ html: string | null; error?: string }> } | { error: string }> {
-        const engine = TemplateEngineServer.Instance;
-        await engine.Config(false, user, provider);
-
-        const template = engine.FindTemplate(templateName);
-        if (!template) {
-            return {
-                error: `No template named '${templateName}'. The standard one is '${DEFAULT_INVOICE_TEMPLATE}'; if it is missing, the app's metadata has not been pushed.`,
-            };
-        }
-
-        // Ask for HTML first, then whatever the template does have. A deployment that overrode this
-        // template with a text version should still render rather than refuse.
-        const content = template.GetHighestPriorityContent('HTML') ?? template.GetHighestPriorityContent();
-
-        if (!content) {
-            return { error: `Template '${templateName}' has no content rows — there is nothing to render.` };
-        }
-
-        return {
-            render: async (doc: DisplayInvoice) => {
-                // Validation is skipped rather than declaring one template param per field: the
-                // context is a single nested document, and a param list mirroring it would be a
-                // second schema to keep in step with the first.
-                const result = await engine.RenderTemplate(template, content, { doc, options: { ShowDiagnostics: showDiagnostics } }, true, true);
-                if (!result.Success) return { html: null, error: result.Message ?? 'unknown template error' };
-                return { html: result.Output ?? '' };
-            },
         };
     }
 }

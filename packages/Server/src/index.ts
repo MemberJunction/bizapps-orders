@@ -9,7 +9,7 @@
 // Import entity and action packages to trigger @RegisterClass decorators
 import '@mj-biz-apps/orders-entities';
 import '@mj-biz-apps/orders-actions';
-import { LoadGenerateInvoiceAction } from '@mj-biz-apps/orders-actions';
+import { LoadGenerateInvoiceAction, LoadSendDocumentAction } from '@mj-biz-apps/orders-actions';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -39,10 +39,16 @@ import {
     LoadTaxResolver,
     LoadRevenueRecognitionDrivers,
     LoadSpawnRenewalsOperation,
+    LoadEmailDeliveryChannel,
     LoadStoredValuePaymentProvider,
+    LoadStripeACHPaymentProvider,
     LoadStripePaymentProvider,
     LoadSubscriptionBehavior,
 } from '@mj-biz-apps/orders-core-entities-server';
+
+// The unauthenticated webhook route. Registered as a server EXTENSION rather than mounted here,
+// because it must be installed before MJServer's auth middleware — see the file for why.
+import { LoadPaymentWebhookExtension } from './PaymentWebhookExtension.js';
 
 // Import generated GraphQL resolvers
 import './generated/generated.js';
@@ -52,6 +58,7 @@ import { CLASS_REGISTRATIONS } from './generated/class-registrations-manifest.js
 
 // Re-export the manifest for consumers
 export { CLASS_REGISTRATIONS } from './generated/class-registrations-manifest.js';
+export { PaymentWebhookExtension, LoadPaymentWebhookExtension } from './PaymentWebhookExtension.js';
 
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -104,7 +111,8 @@ export function LoadBizAppsOrdersServer(): void {
     // anchors the @RegisterClass decorators are tree-shaken away — the ClassFactory then falls back to
     // the base driver, which declines every operation. `PaymentProviderResolver` refuses that fallback
     // explicitly rather than letting "nobody registered a driver" read as "the gateway said no".
-    LoadStripePaymentProvider();       // cards and ACH; stub when the provider row is not live
+    LoadStripePaymentProvider();       // cards; stub when the provider row is not live
+    LoadStripeACHPaymentProvider();    // US bank debits — settles LATE, so the webhook books the cash
     LoadManualPaymentProvider();       // cheque, wire, cash — no gateway to call
     LoadStoredValuePaymentProvider();  // gift cards and account credit, one driver (D38/D68)
     LoadEnvironmentSecretResolver();   // the default CredentialsRef -> env lookup; replaceable
@@ -112,4 +120,15 @@ export function LoadBizAppsOrdersServer(): void {
     // Actions. Same tree-shaking hazard as the operations above: without the anchor the action row
     // exists in metadata and `ActionEngine` finds nothing registered under its DriverClass.
     LoadGenerateInvoiceAction();       // 'Orders.GenerateInvoice' — an order, rendered (D-INV)
+    LoadSendDocumentAction();          // 'Orders.SendDocument' — an order, rendered AND sent (§4.4)
+
+    // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
+    // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class
+    // fallback rather than letting "nobody registered a channel" read as "the channel refused to send".
+    LoadEmailDeliveryChannel();        // 'Email' — over MJ's communication framework
+
+    // Server extensions. Same tree-shaking hazard again: without the anchor the class is absent from
+    // the ClassFactory and MJServer's extension loader silently finds nothing for the DriverClass named
+    // in mj.config.cjs — so the webhook route is never mounted and no bank debit ever captures.
+    LoadPaymentWebhookExtension();     // POST /webhooks/payments/:providerId, mounted before auth
 }

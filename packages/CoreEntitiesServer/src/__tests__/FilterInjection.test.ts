@@ -100,6 +100,10 @@ describe('operation boundaries', () => {
     it.each(operationFiles)('%s validates the ids it accepts', (file) => {
         const source = readFileSync(join(SRC, file), 'utf8');
         const accepted = [...source.matchAll(/\binput[?]?\.([A-Za-z]+ID)\b/g)].map((m) => m[1]);
+        // A file that hands its reversal fields to the shared factory writes them through
+        // `PaymentReversalFactory`, whose every assignment is a `.Set()` — see the exemption below.
+        const viaReversalFactory = source.includes('CreateReversingPayment(');
+
         const unique = [...new Set(accepted)].filter((field) => {
             // A value whose every use is `entity.Set('Field', input.Field)` is
             // written through the parameterised entity layer and never becomes SQL
@@ -107,7 +111,19 @@ describe('operation boundaries', () => {
             // string ("re_1AbC…"), which is not a UUID and must not be forced into
             // one. Requiring a shape it never had would reject valid refunds.
             const uses = [...source.matchAll(new RegExp(`.{0,40}\\binput[?]?\\.${field}\\b`, 'g'))];
-            return !uses.every((u) => u[0].includes('.Set('));
+            return !uses.every(
+                (u) =>
+                    u[0].includes('.Set(') ||
+                    // SAME EXEMPTION, ONE FRAME FURTHER OUT. When the reversal mechanics moved into
+                    // `PaymentReversalFactory` (so a bank RETURN and a deliberate refund could not
+                    // drift apart), the `.Set()` moved with them — the value now reaches the entity
+                    // layer as a named property of the request literal rather than at this call site.
+                    // The guarantee is unchanged and still textually checkable: the factory assigns
+                    // every field of that literal with `.Set()` and composes no filters at all.
+                    // Deliberately narrow — it applies only in a file that calls the factory, so it
+                    // cannot excuse an object literal handed to something that DOES build SQL.
+                    (viaReversalFactory && new RegExp(`\\b${field}\\s*:`).test(u[0])),
+            );
         });
         if (!unique.length) return;
 

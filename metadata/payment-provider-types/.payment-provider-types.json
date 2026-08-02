@@ -20,6 +20,40 @@
     }
   },
   {
+    "_comments": [
+      "Stripe ACH (US bank debit) — a SEPARATE type from 'Stripe', deliberately.",
+      "",
+      "The two rails are different money. They settle on different timescales (instant against up to",
+      "four business days), cost different amounts (2.9% + 30c against 0.8% capped at $5), and — the",
+      "one that actually shapes the code — a bank debit can be TAKEN BACK after it has been booked.",
+      "Folding them into one provider row would mean an operator could not enable one without the",
+      "other, and every fee expectation in the system would have to branch on the instrument rather",
+      "than on the configured account.",
+      "",
+      "SupportsTokenization is 1 because the instrument a debit charges IS a saved payment method —",
+      "collected once through a Stripe SetupIntent, along with the NACHA authorisation Stripe retains",
+      "against it. This driver never collects one; it charges one that already exists.",
+      "",
+      "SupportsRefund is 1 for a DELIBERATE refund (Orders.RefundPayment). A bank RETURN is a",
+      "different thing and does not go through the refund path — it arrives as a webhook and",
+      "PaymentSettlement writes the reversal."
+    ],
+    "fields": {
+      "Code": "StripeACH",
+      "Name": "Stripe ACH",
+      "Description": "Stripe US bank debits (ACH). Settles on the bank's schedule rather than at the till: a payment is captured by the webhook when the debit clears, and a debit RETURNED after settlement is reversed by a new payment rather than by editing the original. 0.8% capped at $5.",
+      "DriverClass": "StripeACHPaymentProvider",
+      "SupportsTokenization": 1,
+      "SupportsRefund": 1,
+      "SupportsWebhooks": 1,
+      "Sequence": 15,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C05"
+    }
+  },
+  {
     "fields": {
       "Code": "Manual",
       "Name": "Manual",
