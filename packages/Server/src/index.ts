@@ -9,7 +9,11 @@
 // Import entity and action packages to trigger @RegisterClass decorators
 import '@mj-biz-apps/orders-entities';
 import '@mj-biz-apps/orders-actions';
-import { LoadGenerateInvoiceAction, LoadSendDocumentAction } from '@mj-biz-apps/orders-actions';
+import {
+    LoadGenerateInvoiceAction,
+    LoadOpenPaymentIntentAction,
+    LoadSendDocumentAction,
+} from '@mj-biz-apps/orders-actions';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -121,6 +125,7 @@ export function LoadBizAppsOrdersServer(): void {
     // exists in metadata and `ActionEngine` finds nothing registered under its DriverClass.
     LoadGenerateInvoiceAction();       // 'Orders.GenerateInvoice' — an order, rendered (D-INV)
     LoadSendDocumentAction();          // 'Orders.SendDocument' — an order, rendered AND sent (§4.4)
+    LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class

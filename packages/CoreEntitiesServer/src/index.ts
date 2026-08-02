@@ -286,6 +286,8 @@ export { ResolveDeliveryChannel, DeliveryChannelNotConfiguredError } from './Del
 export { LoadOrderDeliveryContacts, LoadOrderStatus } from './DeliveryRecipientResolver.js';
 
 export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
+export { OpenPaymentIntent } from './PaymentIntentService.js';
+export type { OpenIntentRequest, OpenIntentResult } from './PaymentIntentService.js';
 export { SettlePaymentForEvent } from './PaymentSettlement.js';
 export type { SettlementOutcome } from './PaymentSettlement.js';
 export {

@@ -38,17 +38,6 @@
     "@mj-biz-apps/accounting-entities": ">=0.1.0",
     "@mj-biz-apps/accounting-server": ">=0.1.0"
   },
-  "peerDependenciesMeta": {
-    "@mj-biz-apps/accounting-server": {
-      "optional": true
-    },
-    "@mj-biz-apps/accounting-entities": {
-      "optional": true
-    },
-    "@mj-biz-apps/accounting-engine-base": {
-      "optional": true
-    }
-  },
   "repository": {
     "type": "git",
     "url": "https://github.com/MemberJunction/bizapps-orders"

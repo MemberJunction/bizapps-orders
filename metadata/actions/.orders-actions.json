@@ -506,5 +506,252 @@
         }
       ]
     }
+  },
+  {
+    "_comments": [
+      "Orders: Open Payment Intent — the FIRST half of a gateway-collected payment.",
+      "",
+      "WHY IT HAD TO EXIST. Every payment driver has implemented CreateIntent since the payment seam",
+      "landed, and nothing called it but unit tests. PaymentHeaderEntityServer refuses a provider-backed",
+      "capture without an intent — 'there is nothing for the gateway to capture. Open an intent first' —",
+      "and there was no way to open one. The gateway path was complete at both ends with no beginning.",
+      "",
+      "IT MOVES NO MONEY AND WRITES NO PAYMENT. An intent is the gateway agreeing to stand ready. An",
+      "intent nobody completes simply expires; nothing is owed differently because of it. The payment is",
+      "written by Orders.CapturePayment, which takes the PaymentIntentID this returns.",
+      "",
+      "WHY AN INTENT IS ITS OWN ROW rather than a status on PaymentHeader: retries are 1:N (a second ACH",
+      "attempt is its own gateway intent), an intent can exist with NO payment (abandoned checkout), and",
+      "ProviderEventID — the webhook idempotency key — lives on the intent because events can arrive",
+      "before any payment exists."
+    ],
+    "fields": {
+      "Name": "Open Payment Intent",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Ask a payment gateway to stand ready to collect an amount, and record the resulting PaymentIntent. Moves no money and writes no payment. Returns the PaymentIntentID that Orders.CapturePayment needs, plus a client secret for a browser-side confirmation flow. Supply an IdempotencyKey so a retry reuses the open intent instead of charging twice.",
+      "Type": "Custom",
+      "DriverClass": "Orders.OpenPaymentIntent",
+      "IconClass": "fa-regular fa-hourglass-start",
+      "UserPrompt": "Open a payment intent with the configured gateway for a given amount and order.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "9F3C1D82-6A47-4B59-BE28-7C51D0A9E3F4"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PaymentProviderID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "Which configured PaymentProvider account to ask. Decides the driver and the credentials. This is the PaymentProvider row's ID, not the type code."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C01"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Amount",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "Gross amount to collect, in major units. Must be positive — a gateway has nothing to stand ready for otherwise."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C02"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CurrencyCode",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "ISO currency. Defaults to USD. The driver converts to the gateway's minor units at its own edge."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C03"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "OrderHeaderID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The order this intent collects for. Omit for a payment on account. Several intents may point at one order — a retried bank debit is the ordinary case."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C04"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "BillToPersonID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Who we are collecting from, so the gateway's record matches ours (D65)."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C05"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "BillToOrganizationID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The paying organization, so the gateway's record matches ours (D65)."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C06"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ProviderCustomerRef",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The gateway's customer id, when one exists. Required alongside a saved instrument."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C07"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ProviderInstrumentRef",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "A saved payment method to charge — the recurring-renewal path, where the mandate was captured once and is being debited on our schedule."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C08"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "IdempotencyKey",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Sent to the gateway so a retried call does not open a SECOND intent — which, against a saved instrument, would charge the customer twice. A repeat returns the intent already opened."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C09"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PaymentIntentID",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "OUR PaymentIntent row's ID. Pass this to Orders.CapturePayment when the money is confirmed — without it a provider-backed capture is refused."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0A"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ProviderIntentID",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The GATEWAY's id for the same intent. Appears on every webhook about it."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0B"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Status",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The intent as the gateway reads it: RequiresPayment, Processing, Succeeded, Canceled or Failed. A bank debit opens as Processing; a card checkout opens as RequiresPayment."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0C"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ClientSecret",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Authorises a browser to confirm THIS intent. Never persisted and never logged — hand it straight to the gateway's client SDK."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0D"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "HostedUrl",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Where to send the customer for a hosted-checkout flow, when the gateway returns one."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0E"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "WasExisting",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when this call found an intent already open rather than opening a new one — the idempotent-retry case."
+          },
+          "primaryKey": {
+            "ID": "0A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C0F"
+          }
+        }
+      ]
+    }
   }
 ]

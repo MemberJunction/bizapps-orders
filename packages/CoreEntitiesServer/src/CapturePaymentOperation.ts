@@ -36,7 +36,7 @@ import {
     type OrdersCapturePaymentOutput,
 } from '@mj-biz-apps/orders-entities';
 
-import { RequireUUID } from './sql-guards.js';
+import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
@@ -69,6 +69,15 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             receivingCompanyID = RequireUUID(input?.ReceivingCompanyID, 'ReceivingCompanyID');
         } catch (e) {
             return this.refuse([this.blocker('BadCompanyID', String((e as Error).message))]);
+        }
+
+        // Validated at the boundary like every other caller-supplied id, even though this one reaches
+        // an entity Set() rather than a filter: the FilterInjection guard is a floor, not a ceiling,
+        // and an id that is not an id should be refused where the caller can still read the reason.
+        try {
+            RequireOptionalUUID(input?.PaymentIntentID, 'PaymentIntentID');
+        } catch (e) {
+            return this.refuse([this.blocker('BadPaymentIntentID', String((e as Error).message))]);
         }
 
         const allocations = input?.Allocations ?? [];
@@ -329,6 +338,14 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             if (input.PaymentDetail.PaymentProviderID) {
                 header.Set('PaymentProviderID', input.PaymentDetail.PaymentProviderID);
             }
+        }
+
+        // THE LINK THAT MAKES A GATEWAY CAPTURE POSSIBLE. `settleWithProvider` reads the gateway's own
+        // intent string through this row; without it a provider-backed payment is refused with
+        // "there is nothing for the gateway to capture", which is precisely the state this whole path
+        // sat in before `Orders.OpenPaymentIntent` existed.
+        if (input?.PaymentIntentID) {
+            header.Set('PaymentIntentID', input.PaymentIntentID);
         }
 
         const lines: BaseEntity[] = [];
