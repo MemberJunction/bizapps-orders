@@ -41,14 +41,6 @@ export const ORDERS_SETTING = {
      * without a schema change on either side.
      */
     OrganizationAffiliationRelationshipTypes: 'OrganizationAffiliationRelationshipTypes',
-    /**
-     * `PaymentType` CODES whose processor fee is booked as its own ledger leg at capture, rather
-     * than accrued in the accounting system at month end (D82).
-     *
-     * DEFAULT EMPTY — no tender books a fee inline. See {@link DEFAULTS} for why that is the safe
-     * default rather than a conservative one.
-     */
-    BookProcessingFeeInlineForPaymentTypes: 'BookProcessingFeeInlineForPaymentTypes',
 } as const;
 
 /**
@@ -61,25 +53,6 @@ export const ORDERS_SETTING = {
 const DEFAULTS = {
     AutoPopulateOrganizationFromPerson: true,
     OrganizationAffiliationRelationshipTypes: ['Employee'],
-    /**
-     * EMPTY — no tender books its processor fee inline (D82).
-     *
-     * WHY OFF IS THE CORRECT DEFAULT RATHER THAN THE TIMID ONE. A per-payment fee leg cannot
-     * reconcile to a bank statement, because the bank does not move money per payment: a processor
-     * BATCHES into payouts, and deducts fees that never attach to any payment at all — a failed-debit
-     * charge, a dispute fee, a monthly platform charge. Booking one fee category per transaction
-     * therefore produces a Cash figure that is right in aggregate only if every OTHER category is
-     * also captured, and never right on any given day.
-     *
-     * Accruing the whole processor cost once at month end, from the statement Finance actually
-     * reconciles against, is both simpler and more correct. The old behaviour is still reachable —
-     * list the tender codes here — because per-payment attribution is the one thing an accrual
-     * cannot give you, and a deployment that needs it should not have to fork.
-     *
-     * The fee is still READ from the gateway and still stored on `ProcessingFeeAmount` /
-     * `NetAmount`; this setting decides only whether it becomes a JOURNAL ENTRY.
-     */
-    BookProcessingFeeInlineForPaymentTypes: [] as readonly string[],
 } as const;
 
 /** Anything other than an explicit falsey string is true — an unparseable value should not disable a feature silently. */
@@ -101,22 +74,6 @@ function asList(raw: string | undefined, fallback: readonly string[]): string[] 
     // surely as the boolean does. That is a legitimate way to configure it, so it is honoured
     // rather than being treated as "unset" and silently replaced by the default.
     return parts;
-}
-
-/**
- * Whether THIS tender books its processor fee inline.
- *
- * Pure, and separated from the accessor so the decision can be proven without a settings engine. Case-
- * and whitespace-insensitive because the configured value is hand-typed by an administrator, and
- * `creditcard` failing to match `CreditCard` would silently change how money is booked.
- */
-export function ShouldBookFeeInline(
-    paymentTypeCode: string | null | undefined,
-    configuredCodes: readonly string[],
-): boolean {
-    const code = (paymentTypeCode ?? '').trim().toLowerCase();
-    if (!code) return false;
-    return configuredCodes.some((c) => c.trim().toLowerCase() === code);
 }
 
 export class OrdersSettings {
@@ -157,11 +114,4 @@ export class OrdersSettings {
         );
     }
 
-    /** `PaymentType` codes whose processor fee is booked inline at capture (D82). Empty by default. */
-    public static get BookProcessingFeeInlineForPaymentTypes(): string[] {
-        return asList(
-            this.raw(ORDERS_SETTING.BookProcessingFeeInlineForPaymentTypes),
-            DEFAULTS.BookProcessingFeeInlineForPaymentTypes,
-        );
-    }
 }

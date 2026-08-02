@@ -69,7 +69,6 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
-import { OrdersSettings, ShouldBookFeeInline } from './OrdersSettings.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -458,28 +457,46 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
     /**
      * Whether this payment's TENDER books its processor fee as its own ledger leg (D82).
      *
-     * SHORT-CIRCUITS ON THE DEFAULT. When no tender is configured — which is every deployment until
-     * somebody opts in — this answers false without reading anything, so the common path costs
-     * nothing. Only a deployment that has asked for inline fees pays for the lookup.
+     * READ FROM `PaymentType.BookProcessingFeeInline`, which defaults to 0 for every tender. The fee
+     * is still read from the gateway and still stored on this row; this decides only whether it
+     * becomes a journal entry. See the migration for why off is the correct default rather than the
+     * timid one — a per-payment fee leg cannot reconcile to a statement, because the processor
+     * batches into payouts and deducts costs that never attach to any payment.
      *
-     * The tender's CODE is read rather than its name: `PaymentType.Name` is display text a deployment
-     * may localise or reword, and a setting keyed on it would stop matching the day somebody does.
+     * A FAILED READ ANSWERS FALSE, LOUDLY. Booking a fee we could not justify is worse than omitting
+     * one the month-end accrual will pick up anyway, and refusing the whole capture over it would
+     * hold up real money for a reporting detail. This is the same posture `bookProcessingFee` already
+     * takes when no Processing Fee account is linked: say so plainly, book the payment, move on.
+     *
+     * Typed against a LOCAL interface rather than the generated entity because the read is
+     * `ResultType: 'simple'` — the shape is this query's, not the ORM's.
      */
     private async feeBooksInline(): Promise<boolean> {
-        const configured = OrdersSettings.BookProcessingFeeInlineForPaymentTypes;
-        if (!configured.length) return false;
-
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const result = await rv.RunView<{ Code: string }>(
+        const result = await rv.RunView<{ BookProcessingFeeInline: boolean }>(
             {
                 EntityName: PAYMENT_TYPE_ENTITY,
                 ExtraFilter: `ID='${this.PaymentTypeID}'`,
-                Fields: ['Code'],
+                Fields: ['BookProcessingFeeInline'],
                 ResultType: 'simple',
             },
             this.ContextCurrentUser,
         );
-        return ShouldBookFeeInline(result?.Results?.[0]?.Code, configured);
+
+        if (!result?.Success) {
+            LogError(
+                `Payment ${this.PaymentNumber}: could not read BookProcessingFeeInline for payment type ` +
+                    `${this.PaymentTypeID} (${result?.ErrorMessage ?? 'no reason given'}). No fee entry will be ` +
+                    `booked; the processor cost is accrued at month end. If this column is new, run ` +
+                    `\`mj codegen\` so it reaches the view.`,
+            );
+            return false;
+        }
+
+        // Explicit === true: a simple read can hand back 0/1 from SQL Server rather than a boolean,
+        // and `Boolean(0)` and `Boolean('0')` disagree.
+        const row = result.Results?.[0]?.BookProcessingFeeInline;
+        return row === true || Number(row) === 1;
     }
 
     private async bookProcessingFee(options?: EntitySaveOptions): Promise<void> {

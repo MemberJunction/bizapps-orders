@@ -720,8 +720,7 @@ export const AchSettlementChecks: NamedCheck[] = [
         // processor batches into payouts and deducts costs that never attach to any payment — so the
         // whole processor cost is accrued at month end instead. The fee is still READ from the
         // gateway and still stored, because per-payment attribution is useful information; it simply
-        // does not become an entry unless a deployment lists the tender in
-        // BookProcessingFeeInlineForPaymentTypes.
+        // does not become an entry unless the tender's PaymentType.BookProcessingFeeInline is 1.
         const providerID = await makeAchProvider(ctx);
         const order = await sellSomething(ctx, 300);
         const { Intent, Payment } = await openAndCapture(ctx, { providerID, orderID: order.Order.ID as string, amount: 300 });
