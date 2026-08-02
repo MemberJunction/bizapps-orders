@@ -41,5 +41,16 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/MemberJunction/bizapps-orders"
+  },
+  "peerDependenciesMeta": {
+    "@mj-biz-apps/accounting-server": {
+      "optional": true
+    },
+    "@mj-biz-apps/accounting-entities": {
+      "optional": true
+    },
+    "@mj-biz-apps/accounting-engine-base": {
+      "optional": true
+    }
   }
 }
