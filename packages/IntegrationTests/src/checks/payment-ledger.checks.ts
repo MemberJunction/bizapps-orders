@@ -258,10 +258,29 @@ async function PL4Body(ctx: IntegrationCheckContext): Promise<void> {
     });
     await ReloadAccountingEngine(ctx);
 
+    // OPT THIS TENDER IN. Since D82 the fee leg is OFF for every tender by default, because a
+    // per-payment fee entry cannot reconcile to a bank statement — the processor batches into payouts
+    // and deducts costs that attach to no payment at all. The path below is what a deployment gets
+    // when it deliberately turns per-payment fee attribution back on, so the check has to turn it on
+    // too. Without this the fee never books, `JournalEntryID` is null, and the whole check dies on a
+    // null id rather than on an assertion — which is how it read before this line existed.
+    //
+    // Rolled back with everything else; AS17 covers the default-off behaviour on the other side.
+    const cashTypeID = Fx().PaymentTypeIDs.get("Cash");
+    await TxQuery(
+      ctx,
+      `UPDATE ${ORDERS_SCHEMA}.PaymentType SET BookProcessingFeeInline = 1 WHERE ID = '${cashTypeID}'`,
+    );
+
     const order = await confirmOrder(ctx);
     const payment = await capturePayment(ctx, order.Order.ID as string, 250, {
       fee: 7.25,
     });
+
+    Assert(
+      payment.JournalEntryID != null,
+      "the tender books its fee inline, so the header carries an entry",
+    );
 
     // The fee is a HEADER fact — the processor takes its cut from the payment as a whole, not
     // from any one order — so it books its own entry at capture: Dr Fee / Cr Cash.

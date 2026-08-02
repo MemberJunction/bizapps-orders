@@ -20,7 +20,7 @@
  *   in-flight debit would book as cash on the day it was submitted.
  */
 import { describe, it, expect } from 'vitest';
-import { AchFeeEstimate, DecideSettlement } from '../PaymentProviderBehavior.js';
+import { AchFeeEstimate, DecideSettlement, ShouldHoldForLateSettlement, type CaptureTimingFacts } from '../PaymentProviderBehavior.js';
 import { StripeACHPaymentProvider } from '../StripeACHPaymentProvider.js';
 import type { PaymentProviderConfig } from '../BasePaymentProvider.js';
 
@@ -360,5 +360,47 @@ describe('StripeACHPaymentProvider — reading a return', () => {
 
     it('returns null for something that is not JSON', () => {
         expect(ach().ParseWebhookEvent('not json at all')).toBeNull();
+    });
+});
+
+describe('holding a capture for late settlement', () => {
+    const facts = (over: Partial<CaptureTimingFacts> = {}): CaptureTimingFacts => ({
+        RequestedStatus: 'Captured',
+        PersistedStatus: undefined,
+        IsSaved: false,
+        HasProvider: true,
+        SettlesAsynchronously: true,
+        ...over,
+    });
+
+    it('holds a NEW payment on an asynchronously-settling rail', () => {
+        // The whole point: whoever wrote `Captured`, the bank has not moved the money yet, and
+        // booking Dr Cash now puts it in the ledger four days early.
+        expect(ShouldHoldForLateSettlement(facts())).toBe(true);
+    });
+
+    it('lets the webhook promote a payment that was already Pending', () => {
+        // This IS the bank answering. Holding it again would mean a bank debit could never book.
+        expect(ShouldHoldForLateSettlement(facts({ IsSaved: true, PersistedStatus: 'Pending' }))).toBe(false);
+    });
+
+    it('does not hold a rail that settles immediately', () => {
+        expect(ShouldHoldForLateSettlement(facts({ SettlesAsynchronously: false }))).toBe(false);
+    });
+
+    it('does not hold a RECORDED payment', () => {
+        // A cheque or cash has no gateway to wait for — there is nothing settling late.
+        expect(ShouldHoldForLateSettlement(facts({ HasProvider: false }))).toBe(false);
+    });
+
+    it('ignores any status other than Captured', () => {
+        for (const status of ['Pending', 'Failed', 'Refunded', 'Disputed'])
+            expect(ShouldHoldForLateSettlement(facts({ RequestedStatus: status }))).toBe(false);
+    });
+
+    it('holds a payment arriving at Captured from a state that is NOT Pending', () => {
+        // Only Pending → Captured is the promotion. Anything else reaching Captured on a late rail is
+        // a caller declaring cash that has not moved, whatever it was before.
+        expect(ShouldHoldForLateSettlement(facts({ IsSaved: true, PersistedStatus: 'Failed' }))).toBe(true);
     });
 });

@@ -54,6 +54,7 @@ import {
 } from './PaymentReversalFactory.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
+const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 
 /** The payment a settlement event is about, as far as the decision needs. */
 interface SettlingPayment extends ReversiblePayment {
@@ -88,10 +89,24 @@ export async function SettlePaymentForEvent(
     const payment = await loadPaymentForIntent(provider, user, paymentIntentID);
     const alreadyReversed = payment ? await hasReversal(provider, user, payment.ID) : false;
 
+    // WHETHER THIS PAYMENT PUT CASH IN THE LEDGER IS A QUESTION ABOUT ITS ALLOCATIONS, NOT ITS HEADER.
+    //
+    // This read used to be `Boolean(payment.JournalEntryID)`, and that stopped being the same question
+    // twice over. The cash leg moved to the allocation (D13), so the header's journal entry is only
+    // ever the PROCESSING FEE — and D82 turned the fee entry off for every tender by default. Between
+    // them, `JournalEntryID` is now null on essentially every payment that ever books.
+    //
+    // The decision table reads `HeaderBooked` to choose between reversing a returned debit and holding
+    // it for a person ("Captured but carries no journal entry, so what to reverse is unclear"). With
+    // the old signal every returned ACH debit took the Hold branch: the cash stayed in the ledger, the
+    // order stayed marked paid, and the only outward sign was a settlement waiting on a human who was
+    // never told. Asking the allocations restores the question the table was written to ask.
+    const booked = payment ? await hasBookedAllocations(provider, user, payment.ID) : false;
+
     const decision = DecideSettlement({
         EventStatus: event.Status,
         HeaderStatus: payment?.Status,
-        HeaderBooked: Boolean(payment?.JournalEntryID),
+        HeaderBooked: booked,
         AlreadyReversed: alreadyReversed,
     });
 
@@ -172,6 +187,36 @@ async function loadPaymentForIntent(
         user,
     );
     return result?.Results?.[0] ?? null;
+}
+
+/**
+ * True when any of this payment's allocations has booked — i.e. the cash is in the ledger.
+ *
+ * `PaymentLine.BookedAt` is the allocation's own idempotency key, set in the same transaction that
+ * writes its journal entry, so it is the authority on whether the money exists. Reading one booked
+ * row is enough: allocations book together with the capture.
+ *
+ * `BypassCache` for the same reason the header read has it — the promotion that booked these lines
+ * may have happened moments ago, on a previous delivery of a related event.
+ */
+async function hasBookedAllocations(
+    provider: IMetadataProvider,
+    user: UserInfo,
+    paymentID: string,
+): Promise<boolean> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const result = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: PAYMENT_LINE_ENTITY,
+            ExtraFilter: `PaymentHeaderID='${paymentID}' AND BookedAt IS NOT NULL`,
+            Fields: ['ID'],
+            MaxRows: 1,
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    return (result?.Results?.length ?? 0) > 0;
 }
 
 /** True when a reversing payment already points at this one. */

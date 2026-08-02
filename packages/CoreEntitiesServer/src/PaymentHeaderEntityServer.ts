@@ -57,6 +57,7 @@ import {
     IMetadataProvider,
     IRunViewProvider,
     LogError,
+    LogStatus,
     RunView,
     UserInfo,
     ValidationErrorInfo,
@@ -67,12 +68,12 @@ import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
-import { SplitCapturedAmount } from './PaymentProviderBehavior.js';
+import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
+import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
-const PAYMENT_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Types';
 
 /** Statuses whose entry belongs in the ledger. */
 const BOOKED_STATUSES = new Set(['Captured', 'Refunded']);
@@ -122,6 +123,9 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
     }
 
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+        // A rail that settles on somebody else's schedule may not reach Captured here, whoever asked.
+        await this.deferCaptureWhenSettlementIsLate();
+
         const capturing = this.willBookOnThisSave();
 
         // A Pending payment with no new lines is an ordinary row save — nothing to co-ordinate.
@@ -210,6 +214,78 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
         if (!BOOKED_STATUSES.has(this.Status)) return false;
         if (this.JournalEntryID) return false;
         return true;
+    }
+
+    /**
+     * A payment on an asynchronously-settling rail lands `Pending`, whatever the caller wrote.
+     *
+     * WHY THIS IS HERE AND NOT ONLY IN `Orders.CapturePayment`. The operation already asks the driver
+     * this question and sets the status accordingly, and that was the whole of the rule — which made
+     * it a rule the OPERATION follows rather than one the system enforces. Every other way of writing
+     * a payment went straight past it: a workflow saving a `PaymentHeader`, a UI form, a migration, a
+     * test builder that defaults `Status` to `'Captured'`. Each of those books `Dr Cash` for a bank
+     * debit that has not cleared, and the entry is perfectly balanced, so nothing downstream can tell.
+     * Finance sees cash four days before the bank does, and the only symptom is a reconciliation that
+     * is off by whatever ACH ran that week.
+     *
+     * This is the last shared point before booking, so it is the honest place for the invariant. The
+     * operation's copy stays — it needs the answer BEFORE the save so it can report the status it is
+     * about to produce — and the two now agree by construction rather than by both remembering.
+     *
+     * THE PROMOTION MUST STILL PASS. When the webhook moves a `Pending` payment to `Captured`, that IS
+     * the bank answering, and deferring it again would mean a bank debit could never book at all. The
+     * signal is the PERSISTED status: a row that was already `Pending` is being promoted; a new row,
+     * or one arriving from any other state, is a caller declaring cash that has not moved.
+     *
+     * SILENT ON PURPOSE, AND ONLY HERE. It changes the status rather than refusing the save, because
+     * `Pending` is what the caller should have written and refusing would strand a payment the gateway
+     * has already been told about. `Orders.CapturePayment` reports the resulting status back, so a
+     * caller going through the front door is told plainly what happened.
+     */
+    private async deferCaptureWhenSettlementIsLate(): Promise<void> {
+        if (this.Status !== 'Captured') return;
+
+        // The webhook promoting a Pending payment — the bank has answered, so this one books.
+        const previousStatus = this.GetFieldByName('Status')?.OldValue as string | undefined;
+        if (this.IsSaved && previousStatus === 'Pending') return;
+
+        const providerID = (this as unknown as { PaymentProviderID?: string | null }).PaymentProviderID;
+        // No gateway means a RECORDED payment — cheque, cash, wire. Nothing settles late.
+        if (!providerID) return;
+
+        let settlesLate = false;
+        try {
+            const driver = await ResolvePaymentProvider(
+                providerID,
+                this.ProviderToUse as unknown as IMetadataProvider,
+                this.ContextCurrentUser as UserInfo,
+            );
+            settlesLate = driver.SettlesAsynchronously === true;
+        } catch {
+            // A provider that will not resolve is a configuration fault, and `settleWithProvider` is
+            // about to report it far more precisely than a status guess here would. Leaving the
+            // status alone keeps every rail that worked before working unchanged.
+            return;
+        }
+
+        if (
+            !ShouldHoldForLateSettlement({
+                RequestedStatus: this.Status,
+                PersistedStatus: previousStatus,
+                IsSaved: this.IsSaved,
+                HasProvider: true,
+                SettlesAsynchronously: settlesLate,
+            })
+        ) {
+            return;
+        }
+
+        LogStatus(
+            `Payment ${this.PaymentNumber}: this provider settles asynchronously, so the payment is ` +
+                `held at Pending and its allocations persist unbooked. The webhook books the cash leg ` +
+                `when the bank confirms.`,
+        );
+        this.Status = 'Pending';
     }
 
     /**
@@ -463,40 +539,36 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
      * timid one — a per-payment fee leg cannot reconcile to a statement, because the processor
      * batches into payouts and deducts costs that never attach to any payment.
      *
-     * A FAILED READ ANSWERS FALSE, LOUDLY. Booking a fee we could not justify is worse than omitting
-     * one the month-end accrual will pick up anyway, and refusing the whole capture over it would
-     * hold up real money for a reporting detail. This is the same posture `bookProcessingFee` already
-     * takes when no Processing Fee account is linked: say so plainly, book the payment, move on.
+     * A MISSING TENDER ANSWERS FALSE, LOUDLY. Booking a fee we could not justify is worse than
+     * omitting one the month-end accrual will pick up anyway, and refusing the whole capture over it
+     * would hold up real money for a reporting detail. This is the same posture `bookProcessingFee`
+     * already takes when no Processing Fee account is linked: say so plainly, book the payment, move on.
      *
-     * Typed against a LOCAL interface rather than the generated entity because the read is
-     * `ResultType: 'simple'` — the shape is this query's, not the ORM's.
+     * READ FROM THE ENGINE CACHE, NOT A PER-CALL QUERY. This used to be a `RunView` naming the single
+     * column, which reads as a careful minimal query and is really a hidden dependency on CodeGen
+     * having run: `Fields` names a column that must exist in the base view and be registered as an
+     * `EntityField`, and when it is not, `RunView` does not throw — it returns unsuccessfully, this
+     * method takes its defensive branch, and the switch is silently stuck off. Payment types are a
+     * lookup of eleven rows read on every capture; they belong in {@link OrdersEngine}, where a
+     * missing field fails the load once at startup instead of every call site guessing a default.
      */
     private async feeBooksInline(): Promise<boolean> {
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const result = await rv.RunView<{ BookProcessingFeeInline: boolean }>(
-            {
-                EntityName: PAYMENT_TYPE_ENTITY,
-                ExtraFilter: `ID='${this.PaymentTypeID}'`,
-                Fields: ['BookProcessingFeeInline'],
-                ResultType: 'simple',
-            },
-            this.ContextCurrentUser,
+        await LoadOrdersEngine(
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
         );
 
-        if (!result?.Success) {
+        const tender = OrdersEngine.Instance.PaymentTypeByID(this.PaymentTypeID);
+        if (!tender) {
             LogError(
-                `Payment ${this.PaymentNumber}: could not read BookProcessingFeeInline for payment type ` +
-                    `${this.PaymentTypeID} (${result?.ErrorMessage ?? 'no reason given'}). No fee entry will be ` +
-                    `booked; the processor cost is accrued at month end. If this column is new, run ` +
-                    `\`mj codegen\` so it reaches the view.`,
+                `Payment ${this.PaymentNumber}: payment type ${this.PaymentTypeID} is not in the orders ` +
+                    `lookup cache, so whether this tender books its fee inline is unknown. No fee entry ` +
+                    `will be booked; the processor cost is accrued at month end.`,
             );
             return false;
         }
 
-        // Explicit === true: a simple read can hand back 0/1 from SQL Server rather than a boolean,
-        // and `Boolean(0)` and `Boolean('0')` disagree.
-        const row = result.Results?.[0]?.BookProcessingFeeInline;
-        return row === true || Number(row) === 1;
+        return tender.BookProcessingFeeInline === true;
     }
 
     private async bookProcessingFee(options?: EntitySaveOptions): Promise<void> {
