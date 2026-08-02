@@ -710,6 +710,45 @@ export const AchSettlementChecks: NamedCheck[] = [
         Assert(found != null, "and that intent is a real row");
       }),
   },
+  {
+    Id: "ach-settlement.AS17",
+    Name: "AS17: the fee is RECORDED but NOT booked as a journal entry (D82, default off)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // The proof of D82. A per-payment fee leg cannot reconcile to a bank statement — the
+        // processor batches into payouts and deducts costs that never attach to any payment — so the
+        // whole processor cost is accrued at month end instead. The fee is still READ from the
+        // gateway and still stored, because per-payment attribution is useful information; it simply
+        // does not become an entry unless a deployment lists the tender in
+        // BookProcessingFeeInlineForPaymentTypes.
+        const providerID = await makeAchProvider(ctx);
+        const order = await sellSomething(ctx, 300);
+        const { Intent, Payment } = await openAndCapture(ctx, { providerID, orderID: order.Order.ID as string, amount: 300 });
+        const paymentID = Payment.Payment.ID as string;
+
+        await SettlePaymentForEvent(
+          event({ ProviderIntentID: Intent.ProviderIntentID }),
+          Intent.PaymentIntentID!,
+          ctx.Provider,
+          ctx.User,
+        );
+
+        const header = await headerRow(ctx, paymentID);
+        AssertEqual(header.Status, "Captured", "the payment captured");
+        Assert(Number(header.Fee) > 0, "the gateway's fee IS recorded on the row");
+        Assert(
+          header.JournalEntryID == null,
+          "and produced NO fee journal entry — the header's JournalEntryID is the fee entry's stamp, " +
+            "so a value here would mean the accrual model is not actually the default",
+        );
+
+        // The ALLOCATION entries still exist: cash and receivable are per-payment, only the fee moved.
+        const ledger = await ledgerFor(ctx, paymentID);
+        Assert(Number(ledger.Entries) > 0, "the cash leg still books, as it always did");
+        AssertEqual(Number(ledger.Unbalanced), 0, "and balances");
+      }),
+  },
 ];
 
 for (const check of AchSettlementChecks) {

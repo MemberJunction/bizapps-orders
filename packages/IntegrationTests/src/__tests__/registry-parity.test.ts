@@ -98,7 +98,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     volume: 13,
     entitlements: 15,
     'payment-providers': 12,
-    'ach-settlement': 16,
+    'ach-settlement': 17,
 };
 
 /**

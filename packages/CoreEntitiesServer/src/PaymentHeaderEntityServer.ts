@@ -69,9 +69,11 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
+import { OrdersSettings, ShouldBookFeeInline } from './OrdersSettings.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
+const PAYMENT_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Types';
 
 /** Statuses whose entry belongs in the ledger. */
 const BOOKED_STATUSES = new Set(['Captured', 'Refunded']);
@@ -168,11 +170,17 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
                 // line booked on its own save is skipped here rather than credited twice.
                 await this.bookPersistedLines(options);
                 await this.assertAllocationInvariant();
-                // Only reach the fee builder when there IS a fee. Since the cash leg moved to the
-                // allocation (D13), this is the header's ONLY entry — so a payment without a fee has
-                // nothing to book here, and an account-credit transfer (Amount 0, D68) would
-                // otherwise trip the builder's zero-gross guard even though it is perfectly valid.
-                if (Number(this.ProcessingFeeAmount ?? 0) > 0) {
+                // Only reach the fee builder when there IS a fee AND this tender books one inline.
+                // Since the cash leg moved to the allocation (D13), this is the header's ONLY entry —
+                // so a payment without a fee has nothing to book here, and an account-credit transfer
+                // (Amount 0, D68) would otherwise trip the builder's zero-gross guard even though it
+                // is perfectly valid.
+                //
+                // OFF BY DEFAULT (D82). A per-payment fee leg cannot reconcile to a bank statement,
+                // because the processor batches into payouts and deducts costs that never attach to
+                // any payment. The fee is still READ from the gateway and still stored on this row;
+                // it simply does not become a journal entry unless a deployment asks for it.
+                if (Number(this.ProcessingFeeAmount ?? 0) > 0 && (await this.feeBooksInline())) {
                     await this.bookProcessingFee(options);
                 }
             }
@@ -445,6 +453,33 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
             this.ContextCurrentUser,
         );
         return result?.Results?.[0]?.FunctionalCurrencyCode ?? 'USD';
+    }
+
+    /**
+     * Whether this payment's TENDER books its processor fee as its own ledger leg (D82).
+     *
+     * SHORT-CIRCUITS ON THE DEFAULT. When no tender is configured — which is every deployment until
+     * somebody opts in — this answers false without reading anything, so the common path costs
+     * nothing. Only a deployment that has asked for inline fees pays for the lookup.
+     *
+     * The tender's CODE is read rather than its name: `PaymentType.Name` is display text a deployment
+     * may localise or reword, and a setting keyed on it would stop matching the day somebody does.
+     */
+    private async feeBooksInline(): Promise<boolean> {
+        const configured = OrdersSettings.BookProcessingFeeInlineForPaymentTypes;
+        if (!configured.length) return false;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<{ Code: string }>(
+            {
+                EntityName: PAYMENT_TYPE_ENTITY,
+                ExtraFilter: `ID='${this.PaymentTypeID}'`,
+                Fields: ['Code'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        return ShouldBookFeeInline(result?.Results?.[0]?.Code, configured);
     }
 
     private async bookProcessingFee(options?: EntitySaveOptions): Promise<void> {

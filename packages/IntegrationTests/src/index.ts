@@ -33,7 +33,7 @@
  *   volume               VL1–VL13  populations, repeated purchases, and a SECOND MJ session
  *   entitlements         EN1–EN15  what a purchase confers, and for how long (D27/D76)
  *   payment-providers    PV1–PV12  the gateway seam against a real database (D19/D37)
- *   ach-settlement       AS1–AS16  money that arrives days late, and can leave again (D77/D78/D80)
+ *   ach-settlement       AS1–AS17  money that arrives days late, and can leave again (D77/D78/D80)
  *
  * Note that `events` and `line-subscriber` are listed out of order above because that is the order
  * they were written in; the runner's order is presentational — each bundle owns its own fixture.

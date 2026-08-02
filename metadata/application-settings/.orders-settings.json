@@ -28,5 +28,16 @@
       "lastModified": "2026-07-31T15:37:48.850Z",
       "checksum": "04d6ea30a0a2aae4816a7a7331db37a5d0ec670bd6c2fd08eb92cc1c8277c392"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "BookProcessingFeeInlineForPaymentTypes",
+      "Value": "",
+      "Comments": "Comma-separated PaymentType CODES (e.g. 'CreditCard,ACH') whose processor fee is booked as its own journal entry at capture — Dr Processing Fee / Cr Cash. EMPTY BY DEFAULT, which means no tender books a fee inline and the whole processor cost is accrued in the accounting system at month end instead (D82). Off is the correct default rather than the timid one: a per-payment fee leg cannot reconcile to a bank statement, because the processor batches into payouts and deducts costs that never attach to any payment at all - a failed-debit charge, a dispute fee, a monthly platform charge. Booking one category per transaction gives a Cash figure that is right in aggregate only if every other category is also captured, and never right on any given day. The fee is still READ from the gateway and still stored on PaymentHeader.ProcessingFeeAmount and NetAmount; this setting decides only whether it becomes a journal entry. Turn it on only where per-payment fee attribution is genuinely needed, and expect to reconcile the difference. Codes are matched case-insensitively."
+    },
+    "primaryKey": {
+      "ID": "7C3A5E81-2B94-4F60-8D17-A0E6B45C9D23"
+    }
   }
 ]
