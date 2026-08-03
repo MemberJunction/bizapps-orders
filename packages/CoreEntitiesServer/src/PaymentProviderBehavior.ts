@@ -424,3 +424,42 @@ export function DecideSettlement(input: {
             return { Action: 'None', Reason: `nothing to settle while the intent reads ${input.EventStatus ?? 'unknown'}` };
     }
 }
+
+/** What the save path knows about a payment that is asking to become `Captured`. */
+export interface CaptureTimingFacts {
+    /** The status the caller wrote. */
+    RequestedStatus: string;
+    /** The status already on disk, or undefined for a new payment. */
+    PersistedStatus?: string | null;
+    /** False for a payment being inserted. */
+    IsSaved: boolean;
+    /** False for a RECORDED payment — cheque, cash, wire — which has no gateway to wait for. */
+    HasProvider: boolean;
+    /** The driver's own declaration. See `BasePaymentProvider.SettlesAsynchronously`. */
+    SettlesAsynchronously: boolean;
+}
+
+/**
+ * Whether a payment asking to be `Captured` must be held at `Pending` because its rail settles on
+ * somebody else's schedule.
+ *
+ * WHY THIS IS A FUNCTION AND NOT AN `IF` IN THE SAVE PATH. The rule used to live only in
+ * `Orders.CapturePayment`, which made it a rule that ONE CALLER followed rather than one the system
+ * enforced — a workflow, a UI form or a test builder writing `Status: 'Captured'` went straight past
+ * it and booked `Dr Cash` for a bank debit that had not cleared. Balanced, posted, and undetectable
+ * downstream. Stating it here means the entity server and the operation ask the same question of the
+ * same code instead of both remembering.
+ *
+ * THE PROMOTION MUST PASS. When the webhook moves a `Pending` payment to `Captured`, that IS the
+ * bank answering; holding it again would mean a bank debit could never book at all. The persisted
+ * status is the signal — already `Pending` means promotion, anything else means a caller declaring
+ * cash that has not moved.
+ */
+export function ShouldHoldForLateSettlement(facts: CaptureTimingFacts): boolean {
+    if (facts.RequestedStatus !== 'Captured') return false;
+    if (!facts.HasProvider) return false;
+    if (!facts.SettlesAsynchronously) return false;
+    // The webhook promoting a payment that was already waiting — let it book.
+    if (facts.IsSaved && facts.PersistedStatus === 'Pending') return false;
+    return true;
+}

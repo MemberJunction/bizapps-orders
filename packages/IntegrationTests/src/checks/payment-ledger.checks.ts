@@ -40,6 +40,7 @@ import {
   ACCT_SCHEMA,
   CreateOrdersFixture,
   createViaEntity,
+  upsertViaEntity,
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
@@ -53,6 +54,7 @@ import {
   GL_ACCOUNT_LINK_ENTITY,
   GL_ACCOUNT_ROLE_ENTITY,
   PAYMENT_HEADER_ENTITY,
+  PAYMENT_TYPE_ENTITY,
 } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
 import {
@@ -258,10 +260,33 @@ async function PL4Body(ctx: IntegrationCheckContext): Promise<void> {
     });
     await ReloadAccountingEngine(ctx);
 
+    // OPT THIS TENDER IN. Since D82 the fee leg is OFF for every tender by default, because a
+    // per-payment fee entry cannot reconcile to a bank statement — the processor batches into payouts
+    // and deducts costs that attach to no payment at all. The path below is what a deployment gets
+    // when it deliberately turns per-payment fee attribution back on, so the check has to turn it on
+    // too. Without this the fee never books, `JournalEntryID` is null, and the whole check dies on a
+    // null id rather than on an assertion — which is how it read before this line existed.
+    //
+    // Rolled back with everything else; AS17 covers the default-off behaviour on the other side.
+    // THROUGH THE OBJECT MODEL, NOT AN UPDATE STATEMENT. The entity server reads this flag from the
+    // `OrdersEngine` lookup cache, which refreshes on entity save events — a raw UPDATE fires none, so
+    // the cache would keep answering with the seeded value and the fee would silently not book. Same
+    // reason the GL account and its link above are built this way: setup that bypasses the
+    // application layer exercises the walk against data no application ever validated.
+    const cashTypeID = Fx().PaymentTypeIDs.get("Cash")!;
+    await upsertViaEntity(ctx, PAYMENT_TYPE_ENTITY, cashTypeID, {
+      BookProcessingFeeInline: true,
+    });
+
     const order = await confirmOrder(ctx);
     const payment = await capturePayment(ctx, order.Order.ID as string, 250, {
       fee: 7.25,
     });
+
+    Assert(
+      payment.JournalEntryID != null,
+      "the tender books its fee inline, so the header carries an entry",
+    );
 
     // The fee is a HEADER fact — the processor takes its cut from the payment as a whole, not
     // from any one order — so it books its own entry at capture: Dr Fee / Cr Cash.

@@ -19,6 +19,7 @@
  *   DOC:    plans/pricing-charges-and-promotions.md §5
  */
 import { BaseEntity, IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
+import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 import {
     ComputeCharges,
     type ChargeableLine,
@@ -75,6 +76,16 @@ export async function RunCharges(
         return { Charges: [], PerLine: new Map(), TotalCharges: 0 };
     }
 
+    // DELIBERATELY NOT SERVED FROM `OrdersEngine`, and the `BypassCache` is not superstition.
+    //
+    // Charge types are a seeded lookup and look like an obvious cache candidate. `Basis` is the
+    // exception that rules them out: whether tax computes on the goods alone or on the goods plus
+    // shipping is JURISDICTION-DEPENDENT CONFIGURATION that a caller may set for the order it is
+    // about to price, inside the same transaction. A process-wide cache cannot see that write, so it
+    // would price the order on the previous basis — a tax figure that is plausible, balanced, and
+    // wrong by the shipping.
+    //
+    // This is the boundary of what the engine cache is for: rows nobody changes mid-transaction.
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const codes = [...new Set(requested.map((r) => r.Code))].map((c) => `'${c.replace(/'/g, "''")}'`).join(',');
     const res = await rv.RunView<ChargeTypeRow>(

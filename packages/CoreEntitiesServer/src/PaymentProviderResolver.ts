@@ -30,6 +30,7 @@
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 import {
     BasePaymentProvider,
     type PaymentCredentials,
@@ -236,24 +237,49 @@ async function resolveTypeCode(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<{ Code: string; SupportsTokenization: boolean; SupportsRefund: boolean; SupportsWebhooks: boolean }> {
-    const rv = new RunView(provider as unknown as IRunViewProvider);
-    const result = await rv.RunView<{
-        ID: string;
-        Code: string;
-        SupportsTokenization: boolean;
-        SupportsRefund: boolean;
-        SupportsWebhooks: boolean;
-        IsActive: boolean;
-    }>(
-        {
-            EntityName: 'MJ_BizApps_Orders: Payment Provider Types',
-            ExtraFilter: `ID = '${typeID}'`,
-            ResultType: 'simple',
-        },
-        user,
-    );
+    // CACHE FIRST, THEN THE QUERY — and the fallback is not belt-and-braces.
+    //
+    // Provider types are seeded metadata and belong in {@link OrdersEngine} like every other lookup,
+    // so the common path is a property read. But unlike the other lookups, a provider type is also
+    // created at RUN TIME: a deployment adding a gateway, and the integration fixture creating one
+    // inside a rolled-back transaction. A cache loaded before that row existed cannot see it, and a
+    // miss here does not degrade gracefully — it throws `PaymentProviderNotConfiguredError`, which
+    // reads as "this gateway is not set up" for a gateway that plainly is.
+    //
+    // So a miss falls through to the query it always did. Same behaviour, same errors; the reads
+    // that hit the cache simply stop costing a round trip.
+    await LoadOrdersEngine(provider, user);
+    const cached = OrdersEngine.Instance.PaymentProviderTypeByID(typeID);
 
-    const type = result?.Results?.[0];
+    let type: { Code: string; SupportsTokenization: boolean; SupportsRefund: boolean; SupportsWebhooks: boolean } | undefined =
+        cached
+            ? {
+                  Code: cached.Code,
+                  SupportsTokenization: cached.SupportsTokenization,
+                  SupportsRefund: cached.SupportsRefund,
+                  SupportsWebhooks: cached.SupportsWebhooks,
+              }
+            : undefined;
+
+    if (!type) {
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const result = await rv.RunView<{
+            ID: string;
+            Code: string;
+            SupportsTokenization: boolean;
+            SupportsRefund: boolean;
+            SupportsWebhooks: boolean;
+            IsActive: boolean;
+        }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Payment Provider Types',
+                ExtraFilter: `ID = '${typeID}'`,
+                ResultType: 'simple',
+            },
+            user,
+        );
+        type = result?.Results?.[0];
+    }
     if (!type) {
         throw new PaymentProviderNotConfiguredError(
             `Payment provider type ${typeID}${relatedName ? ` ('${relatedName}')` : ''} was not found.`,

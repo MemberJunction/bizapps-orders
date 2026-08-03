@@ -38,10 +38,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Pricing Logic Section -->
+    <!-- Pricing Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="pricingLogic"
-        SectionName="Pricing Logic"
+        SectionKey="pricingConfiguration"
+        SectionName="Pricing Configuration"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -130,10 +130,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Scheduling and Recurrence Section -->
+    <!-- Scheduling Rules Section -->
     <mj-collapsible-panel
-        SectionKey="schedulingAndRecurrence"
-        SectionName="Scheduling and Recurrence"
+        SectionKey="schedulingRules"
+        SectionName="Scheduling Rules"
         Icon="fa fa-clock"
         [Form]="this"
         [FormContext]="formContext">
@@ -188,11 +188,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Rule Configuration Section -->
+    <!-- Status and Metadata Section -->
     <mj-collapsible-panel
-        SectionKey="ruleConfiguration"
-        SectionName="Rule Configuration"
-        Icon="fa fa-sliders-h"
+        SectionKey="statusAndMetadata"
+        SectionName="Status and Metadata"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -283,7 +283,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderLines"
         SectionName="Order Lines"
-        Icon="fa fa-list-ol"
+        Icon="fa fa-list-ul"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Subscription Definition Section -->
+    <!-- General Information Section -->
     <mj-collapsible-panel
-        SectionKey="subscriptionDefinition"
-        SectionName="Subscription Definition"
+        SectionKey="generalInformation"
+        SectionName="General Information"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -84,11 +84,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Lifecycle Management Section -->
+    <!-- Lifecycle Settings Section -->
     <mj-collapsible-panel
-        SectionKey="lifecycleManagement"
-        SectionName="Lifecycle Management"
-        Icon="fa fa-sync-alt"
+        SectionKey="lifecycleSettings"
+        SectionName="Lifecycle Settings"
+        Icon="fa fa-hourglass-half"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -128,30 +128,6 @@
             [ShowLabel]="true"
             FieldName="PartialPeriodMode"
             Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ConcurrencyMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReactivationMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReactivationWindowDays"
-            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -212,9 +188,33 @@
     <mj-collapsible-panel
         SectionKey="renewalAndCancellation"
         SectionName="Renewal and Cancellation"
-        Icon="fa fa-times-circle"
+        Icon="fa fa-undo"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ConcurrencyMode"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ReactivationMode"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ReactivationWindowDays"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -302,7 +302,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersSubscriptions"
         SectionName="Subscriptions"
-        Icon="fa fa-sync-alt"
+        Icon="fa fa-sync"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

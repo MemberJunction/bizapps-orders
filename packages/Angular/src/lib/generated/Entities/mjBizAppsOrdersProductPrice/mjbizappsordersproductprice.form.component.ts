@@ -17,10 +17,10 @@ export class mjBizAppsOrdersProductPriceFormComponent extends BaseFormComponent 
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'productAssociation', sectionName: 'Product Association', isExpanded: true },
-            { sectionKey: 'pricingLogic', sectionName: 'Pricing Logic', isExpanded: true },
+            { sectionKey: 'pricingConfiguration', sectionName: 'Pricing Configuration', isExpanded: true },
             { sectionKey: 'quantityAndValidity', sectionName: 'Quantity and Validity', isExpanded: true },
-            { sectionKey: 'schedulingAndRecurrence', sectionName: 'Scheduling and Recurrence', isExpanded: true },
-            { sectionKey: 'ruleConfiguration', sectionName: 'Rule Configuration', isExpanded: true },
+            { sectionKey: 'schedulingRules', sectionName: 'Scheduling Rules', isExpanded: true },
+            { sectionKey: 'statusAndMetadata', sectionName: 'Status and Metadata', isExpanded: false },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPriceTiers', sectionName: 'Price Tiers', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false }

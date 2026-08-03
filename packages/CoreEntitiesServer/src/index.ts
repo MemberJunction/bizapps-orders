@@ -407,3 +407,8 @@ export type { InvoiceBuildResult } from './InvoiceBuilder.js';
 export { DecorateInvoice, DuePhrase, FormatDate, FormatMoney, FormatQuantity } from './InvoiceDisplay.js';
 export type { DisplayInvoice, DisplayLadderRow, DisplayOptions, DisplayRow } from './InvoiceDisplay.js';
 export { ToISODate } from './InvoiceBuilder.js';
+
+// The app's lookup cache (D36/D37). Payment types, provider types, terms and charge types are read
+// on nearly every write path and change a few times a year — a per-call RunView naming one column
+// looks careful and is really a silent dependency on CodeGen having run.
+export { OrdersEngine, LoadOrdersEngine } from './OrdersEngine.js';

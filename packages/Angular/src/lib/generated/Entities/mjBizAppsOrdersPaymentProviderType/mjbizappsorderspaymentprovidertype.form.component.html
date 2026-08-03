@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- General Information Section -->
+    <!-- Provider Identification Section -->
     <mj-collapsible-panel
-        SectionKey="generalInformation"
-        SectionName="General Information"
+        SectionKey="providerIdentification"
+        SectionName="Provider Identification"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -49,14 +49,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -82,7 +74,7 @@
     <mj-collapsible-panel
         SectionKey="capabilities"
         SectionName="Capabilities"
-        Icon="fa fa-check-circle"
+        Icon="fa fa-check-square"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -105,6 +97,14 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="SupportsWebhooks"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
             Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"

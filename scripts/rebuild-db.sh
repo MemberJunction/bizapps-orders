@@ -78,8 +78,21 @@ if [[ -n "$ORDERS_MIGRATION" ]]; then
         printf '  trimming %s lines of generated output (CodeGen will regenerate them)\n' "$GENERATED_LINES"
         head -n "$BANNER_END" "$ORDERS_MIGRATION" > "$ORDERS_MIGRATION.tmp"
         mv "$ORDERS_MIGRATION.tmp" "$ORDERS_MIGRATION"
+        # RECORD WHAT WE TRIMMED, so append-codegen.sh has something to compare against.
+        # Its shrink guard exists to catch a partial/incremental CodeGen run being appended over a
+        # full one — but it compares the incoming output against what is CURRENTLY below the banner,
+        # and by this point that is zero. In the normal flow (rebuild → codegen → append) the guard
+        # could therefore never fire, which is the one flow it was written for.
+        printf '%s\n' "$GENERATED_LINES" > "$ROOT/migrations/codegen/.previous-generated-lines"
     fi
 fi
+
+# STALE EMITS ARE DEBRIS, AND THEY ACCUMULATE INTO THE BASELINE. append-codegen.sh concatenates
+# EVERY file in migrations/codegen/, so runs left over from previous rebuilds are appended again on
+# the next one. That is not hypothetical: the baseline reached 309k lines carrying EIGHT stacked
+# copies of every view and procedure before anyone noticed, because each copy is valid SQL and the
+# last one wins. Clearing here means the emits appended are exactly the ones this rebuild produced.
+find "$ROOT/migrations/codegen" -maxdepth 1 -name '*.sql' -delete 2>/dev/null || true
 
 # --schema is REQUIRED, not optional. Without it `mj migrate` uses the CORE schema's flyway history,
 # which already carries a SQL_BASELINE from step 2 — so flyway skips this app's `B` baseline

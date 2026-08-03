@@ -16,18 +16,17 @@ export class mjBizAppsOrdersPaymentHeaderFormComponent extends BaseFormComponent
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'paymentDetails', sectionName: 'Payment Details', isExpanded: true },
-            { sectionKey: 'customerInformation', sectionName: 'Customer Information', isExpanded: true },
+            { sectionKey: 'paymentInformation', sectionName: 'Payment Information', isExpanded: true },
+            { sectionKey: 'relationships', sectionName: 'Relationships', isExpanded: true },
             { sectionKey: 'financials', sectionName: 'Financials', isExpanded: true },
-            { sectionKey: 'providerInformation', sectionName: 'Provider Information', isExpanded: true },
+            { sectionKey: 'transactionDetails', sectionName: 'Transaction Details', isExpanded: true },
             { sectionKey: 'reversalDetails', sectionName: 'Reversal Details', isExpanded: true },
-            { sectionKey: 'accounting', sectionName: 'Accounting', isExpanded: true },
-            { sectionKey: 'notesAndMetadata', sectionName: 'Notes and Metadata', isExpanded: false },
+            { sectionKey: 'notesAndMemo', sectionName: 'Notes and Memo', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersStoredValueTransactions', sectionName: 'Stored Value Transactions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersStoredValueTransactions', sectionName: 'Stored Value Transactions', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false }
         ]);
     }
 }

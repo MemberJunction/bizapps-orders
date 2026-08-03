@@ -10,32 +10,22 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Schedule Details Section -->
+    <!-- Recognition Details Section -->
     <mj-collapsible-panel
-        SectionKey="scheduleDetails"
-        SectionName="Schedule Details"
-        Icon="fa fa-link"
+        SectionKey="recognitionDetails"
+        SectionName="Recognition Details"
+        Icon="fa fa-clock"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="ScheduleID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Recognition Period Section -->
-    <mj-collapsible-panel
-        SectionKey="recognitionPeriod"
-        SectionName="Recognition Period"
-        Icon="fa fa-calendar"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -55,11 +45,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Financial Details Section -->
+    <!-- Financials Section -->
     <mj-collapsible-panel
-        SectionKey="financialDetails"
-        SectionName="Financial Details"
-        Icon="fa fa-money-bill"
+        SectionKey="financials"
+        SectionName="Financials"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

@@ -38,6 +38,7 @@ import {
 
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
+import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -186,16 +187,14 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
         // By code, so the client does not have to resolve a lookup to take money. An unknown code is
         // refused by NAME rather than falling back to a default: a payment silently recorded as the
         // wrong kind is invisible until somebody reconciles.
+        //
+        // Read from the lookup cache rather than queried per capture: payment types are eleven rows
+        // of seeded metadata read on every payment, and `Code` is unique, so the `IsActive` filter
+        // that used to live in the SQL is the same test applied here.
         const code = (input?.TenderCode ?? '').trim();
-        const tender = await rv.RunView<{ ID: string; Code: string; IsReversal: boolean }>(
-            {
-                EntityName: PAYMENT_TYPE_ENTITY,
-                ExtraFilter: `Code = '${code.replace(/'/g, "''")}' AND IsActive = 1`,
-                ResultType: 'simple',
-            },
-            user,
-        );
-        const tenderRow = tender.Results?.[0];
+        await LoadOrdersEngine(provider, user);
+        const cachedTender = OrdersEngine.Instance.PaymentTypeByCode(code);
+        const tenderRow = cachedTender?.IsActive ? cachedTender : undefined;
         if (!tenderRow) {
             return this.refuse([
                 this.blocker(
