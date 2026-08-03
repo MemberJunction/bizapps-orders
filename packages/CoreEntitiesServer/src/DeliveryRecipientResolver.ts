@@ -27,8 +27,8 @@ import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo }
 import type { DeliveryContact } from './DeliveryBehavior.js';
 
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
-const PERSON_ENTITY = 'MJ.BizApps.Common: People';
-const ORGANIZATION_ENTITY = 'MJ.BizApps.Common: Organizations';
+const PERSON_ENTITY = 'MJ_BizApps_Common: People';
+const ORGANIZATION_ENTITY = 'MJ_BizApps_Common: Organizations';
 
 /** The bill-to parties an order names. */
 interface BillToRow {

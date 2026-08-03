@@ -246,13 +246,32 @@ const catalogCatID = randomUUID();
 await q(`INSERT INTO ${ORDERS}.ProductCategory (ID, CompanyID, Name, IsActive)
          VALUES ('${catalogCatID}','${companyID}','${DEMO_TAG} Catalog',1)`);
 
-async function product(name, revRecCode, subTypeCode = null, typeID = servicesTypeID) {
+/**
+ * Create a product, and — when a list price is given — the ProductPrice rule that lets the
+ * ENGINE price it.
+ *
+ * WHY THE PRICE MATTERS: every order below states its own `line.UnitPrice`, so this seed used to
+ * create no ProductPrice rows at all. That is fine for the seeded orders and useless for anything
+ * driven by hand: Fast entry adds a line WITHOUT a price and asks `Orders.PreviewOrder` to resolve
+ * one, which fails with "no price rule was found for this product, and no UnitPrice was supplied".
+ * The line then sits on "— resolving…" and `Confirm order` never enables, because CanConfirm
+ * requires a preview result. So the catalog looked complete and could not be sold from.
+ *
+ * Pass `listPrice: null` to leave a product deliberately unpriced — that is the manual-entry case,
+ * and it is worth keeping one so both paths are demonstrable.
+ */
+async function product(name, revRecCode, subTypeCode = null, typeID = servicesTypeID, listPrice = null) {
     const id = randomUUID();
     await q(`INSERT INTO ${ORDERS}.Product
                 (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, SubscriptionTypeID, IsTaxable)
              VALUES ('${id}','${companyID}','${typeID}','${catalogCatID}','${name}','Active',
                      '${revRec.get(revRecCode)}',${subTypeCode ? `'${subTypes.get(subTypeCode)}'` : 'NULL'},0)`);
-    say(`  ${name}  (${revRecCode}${subTypeCode ? `, ${subTypeCode}` : ''})`);
+    if (listPrice !== null) {
+        await q(`INSERT INTO ${ORDERS}.ProductPrice
+                    (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
+                 VALUES ('${randomUUID()}','${id}','PerUnit','Standard',${listPrice},'2020-01-01',100,'Active')`);
+    }
+    say(`  ${name}  (${revRecCode}${subTypeCode ? `, ${subTypeCode}` : ''})${listPrice !== null ? `  list ${listPrice}` : '  — no list price (priced by hand)'}`);
     return id;
 }
 
@@ -264,12 +283,15 @@ await q(`INSERT INTO ${ORDERS}.ProductType
          VALUES ('${eventTypeID}','${DEMO_TAG} Event',0,1,
                  'MJ_BizApps_Orders: Event Products','MJ_BizApps_Orders: Event Order Lines','${revRec.get('AllBackEnd')}')`);
 
+// List prices match the amounts the orders below state, so a hand-built order prices the same as
+// a seeded one. `consulting` is deliberately left UNPRICED — the price-it-by-hand case.
 const products = {
-    handbook: await product(`${DEMO_TAG} Style Handbook`, 'UpFront', null, goodsTypeID),
-    workshop: await product(`${DEMO_TAG} Editing Workshop Seat`, 'UpFront'),
-    conference: await product(`${DEMO_TAG} Annual Conference Ticket`, 'AllBackEnd', null, eventTypeID),
-    membership: await product(`${DEMO_TAG} Individual Membership`, 'EvenOverTime', 'AnnualRolling'),
-    calendarMembership: await product(`${DEMO_TAG} Institutional Membership`, 'EvenOverTime', 'CalendarYear'),
+    handbook: await product(`${DEMO_TAG} Style Handbook`, 'UpFront', null, goodsTypeID, 45),
+    workshop: await product(`${DEMO_TAG} Editing Workshop Seat`, 'UpFront', null, servicesTypeID, 150),
+    conference: await product(`${DEMO_TAG} Annual Conference Ticket`, 'AllBackEnd', null, eventTypeID, 275),
+    membership: await product(`${DEMO_TAG} Individual Membership`, 'EvenOverTime', 'AnnualRolling', servicesTypeID, 240),
+    calendarMembership: await product(`${DEMO_TAG} Institutional Membership`, 'EvenOverTime', 'CalendarYear', servicesTypeID, 1200),
+    consulting: await product(`${DEMO_TAG} Editorial Consulting (hourly)`, 'UpFront', null, servicesTypeID, null),
 };
 
 // The conference is a REAL event: its dates live on the EventProduct row, so a ticket line needs

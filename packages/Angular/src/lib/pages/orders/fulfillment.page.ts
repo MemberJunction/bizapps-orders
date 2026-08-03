@@ -391,6 +391,7 @@ export class MJOFulfillmentPageComponent implements OnInit {
             }
         });
         this.pruneSelection();
+        this.cdr.detectChanges();
     }
 
     /**

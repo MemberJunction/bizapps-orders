@@ -250,6 +250,7 @@ export class MJOOrdersListPageComponent implements OnInit {
             ...preset,
             Count: this.Summary?.Counts[preset.Key] ?? null,
         }));
+        this.cdr.detectChanges();
     }
 
     public async OnPreset(preset: string): Promise<void> {

@@ -18,7 +18,7 @@
   "author": "MemberJunction.com",
   "license": "ISC",
   "devDependencies": {
-    "@types/express": "^5.0.0",
+    "@types/express": "^4.17.25",
     "typescript": "^5.9.3"
   },
   "dependencies": {
@@ -29,11 +29,15 @@
     "class-validator": "^0.14.3"
   },
   "peerDependencies": {
+    "@memberjunction/actions": "^5.50.0",
+    "@memberjunction/actions-base": "^5.50.0",
     "@memberjunction/core": "^5.50.0",
+    "@memberjunction/core-entities": "^5.50.0",
     "@memberjunction/global": "^5.50.0",
     "@memberjunction/server": "^5.50.0",
     "@memberjunction/server-extensions-core": "^5.50.0",
     "@memberjunction/sqlserver-dataprovider": "^5.50.0",
+    "@memberjunction/templates": "^5.50.0",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-entities": ">=0.1.0",
     "@mj-biz-apps/accounting-server": ">=0.1.0"

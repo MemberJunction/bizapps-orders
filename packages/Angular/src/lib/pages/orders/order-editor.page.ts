@@ -1,4 +1,5 @@
 import {
+    ChangeDetectorRef,
     Component,
     EventEmitter,
     Input,
@@ -97,6 +98,9 @@ export interface MJOEditorTabDef {
 export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     private readonly orders = inject(MJOOrderEntryService);
     private readonly data = inject(MJOOrdersDataService);
+    // Required: this page is created imperatively and runs zoneless, so every assignment that
+    // lands after an await or from a preview callback has to tick explicitly.
+    private readonly cdr = inject(ChangeDetectorRef);
 
     /**
      * The order being edited. Supplied by the host — often the SAME instance fast
@@ -156,10 +160,20 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         // editor is recoverable, a crashed tab is not.
         if (!this.Draft) this.Draft = new OrderDraft({ CompanyID: '' });
 
+        // Both callbacks MUST tick — they land from a debounced timer and an awaited network
+        // round-trip, outside anything Angular is watching on an imperatively-created, zoneless
+        // page. Assigning alone repaints nothing, so the decomposition stays on "— resolving…"
+        // and CanConfirm never turns true. Same defect as fast-entry.page.ts.
         this.stopWatching = this.Draft.Subscribe(() => {
-            this.orders.SchedulePreview(this.Draft, (state) => (this.Preview = state));
+            this.orders.SchedulePreview(this.Draft, (state) => {
+                this.Preview = state;
+                this.cdr.detectChanges();
+            });
         });
-        void this.orders.PreviewNow(this.Draft, (state) => (this.Preview = state));
+        void this.orders.PreviewNow(this.Draft, (state) => {
+            this.Preview = state;
+            this.cdr.detectChanges();
+        });
 
         // Payments and dimension tags exist only against a SAVED order, so this
         // resolves to empty for a fresh draft rather than querying for nothing.
@@ -227,6 +241,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         );
         this.AppliedPayments = payments;
         this.Dimensions = dimensions;
+        this.cdr.detectChanges();
     }
 
     /** What has actually reached this order, summed from its allocations. */

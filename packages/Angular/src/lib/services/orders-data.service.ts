@@ -73,8 +73,8 @@ export const MJO_ENTITIES = {
  * underscores. It reads like a typo every time and is not one.
  */
 export const MJO_COMMON_ENTITIES = {
-    Organization: 'MJ.BizApps.Common: Organizations',
-    Person: 'MJ.BizApps.Common: People',
+    Organization: 'MJ_BizApps_Common: Organizations',
+    Person: 'MJ_BizApps_Common: People',
 } as const;
 
 export const MJO_ACCOUNTING_ENTITIES = {

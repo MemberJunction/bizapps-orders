@@ -402,6 +402,7 @@ export class MJOCustomerARPageComponent implements OnInit {
         ]);
         this.Payments = payments;
         this.Subscriptions = subscriptions;
+        this.cdr.detectChanges();
     }
 
     /**

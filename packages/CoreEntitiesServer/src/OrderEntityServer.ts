@@ -103,7 +103,7 @@ interface SubscriptionMaterialization {
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
 // bizapps-common names its entities with DOTS, not the underscores the other apps use.
-const COMMON_ADDRESS_ENTITY = 'MJ.BizApps.Common: Addresses';
+const COMMON_ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
@@ -115,7 +115,7 @@ const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
-const RELATIONSHIP_ENTITY = 'MJ.BizApps.Common: Relationships';
+const RELATIONSHIP_ENTITY = 'MJ_BizApps_Common: Relationships';
 const COMMON_SCHEMA = '__mj_BizAppsCommon';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';

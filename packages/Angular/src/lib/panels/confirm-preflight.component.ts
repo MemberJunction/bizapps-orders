@@ -305,9 +305,38 @@ export interface MJOPreflight {
                 Working out what this will do…
             </div>
         }
+
+        <!--
+          The commit. This panel declared \`Confirmed\`, the host wires it to
+          ConfirmFromPreflight(), and CanConfirm exists to gate exactly this control — but
+          nothing ever emitted it, so the pre-flight could say "nothing is blocking this
+          confirm" and offer no way to proceed. Confirm → journal entries was therefore
+          unreachable from the UI. Added 2026-08-03.
+
+          The button is UNAVAILABLE rather than merely discouraged when the pre-flight says
+          so (see the header note): booking journal entries is not undoable.
+        -->
+        <div class="mjo-preflight__actions">
+            <button type="button" class="mj-btn mj-btn--outline" [disabled]="Busy" (click)="Cancelled.emit()">
+                Cancel
+            </button>
+            <button type="button" class="mj-btn mj-btn--primary" [disabled]="!CanConfirm" (click)="Confirmed.emit()">
+                @if (Busy) {
+                    <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Confirming…
+                } @else {
+                    <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm and book
+                }
+            </button>
+        </div>
     `,
     styles: [
         `
+            .mjo-preflight__actions {
+                display: flex;
+                justify-content: flex-end;
+                gap: var(--mj-space-2);
+                margin-top: var(--mj-space-4);
+            }
             .mjo-preflight__banner {
                 margin-bottom: var(--mj-space-4);
             }

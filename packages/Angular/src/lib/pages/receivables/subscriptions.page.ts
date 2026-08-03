@@ -371,6 +371,7 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         ]);
         this.Terms = terms;
         this.Events = events;
+        this.cdr.detectChanges();
     }
 
     /**

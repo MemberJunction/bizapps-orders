@@ -2,7 +2,7 @@
   "name": "@mj-biz-apps/orders-actions",
   "type": "module",
   "version": "5.0.0",
-  "description": "Action subclasses for BizApps Orders \u2014 the CodeGen-maintained generated set, plus hand-authored actions such as Generate Invoice.",
+  "description": "Action subclasses for BizApps Orders \u2014 the CodeGen-maintained generated set. Hand-authored server-side actions live in @mj-biz-apps/orders-server; this package is `shared` and must stay browser-safe.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "publishConfig": {
@@ -23,7 +23,6 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-core-entities-server": "5.0.0",
     "zod": "~3.24.4"
   },
   "peerDependencies": {

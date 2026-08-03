@@ -298,6 +298,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
         this.TargetID = this.Targets[0]?.ID ?? null;
         // Default to the most that both sides allow — the common intent.
         this.Amount = Math.min(this.Available, this.Targets[0]?.Balance ?? 0);
+        this.cdr.detectChanges();
     }
 
     public SetAmount(raw: string): void {

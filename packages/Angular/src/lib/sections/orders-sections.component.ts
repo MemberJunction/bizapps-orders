@@ -218,6 +218,10 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // A page that fails to construct must not take the section down with
             // it — the rail has to stay usable so the user can go somewhere else.
             this.LoadError = `That page could not be opened: ${e instanceof Error ? e.message : String(e)}`;
+            // …and the banner has to actually appear. This assignment lands after an await on an
+            // imperatively-created, zoneless component, so without a tick the user gets a blank
+            // pane and no explanation — the failure state was itself invisible.
+            this.cdr.detectChanges();
         }
     }
 
@@ -457,6 +461,12 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             this.PreflightError = e instanceof Error ? e.message : String(e);
         } finally {
             this.PreflightBusy = false;
+            // MUST tick. Everything above lands after an `await`, and this component is created
+            // imperatively (no host template, zoneless), so assigning `Preflight` repaints
+            // nothing on its own. Without this the dialog sits on "Working out what this will
+            // do…" for ever — the pre-flight HAS run and its answer is in memory, but the commit
+            // button never appears, so an order can be built and priced and never confirmed.
+            this.cdr.detectChanges();
         }
     }
 
@@ -474,6 +484,11 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             this.OnPageSelected('list');
         } finally {
             this.PreflightBusy = false;
+            // Same reason as OpenPreflight: post-`await` state on an imperatively-created,
+            // zoneless component. Without this the order really IS confirmed and booked, but the
+            // dialog stays open showing a spinner — which reads as "it failed" and invites the
+            // user to confirm a second time.
+            this.cdr.detectChanges();
         }
     }
 

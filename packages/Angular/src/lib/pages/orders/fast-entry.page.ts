@@ -131,7 +131,16 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         // Every mutation reschedules the preview. The service owns the debounce and
         // the out-of-order guard, so this stays a one-liner.
         this.stopWatching = this.Draft.Subscribe(() => {
-            this.orders.SchedulePreview(this.Draft, (state) => (this.Preview = state));
+            this.orders.SchedulePreview(this.Draft, (state) => {
+                this.Preview = state;
+                // MUST tick. This callback fires from a debounced timer + an awaited network
+                // round-trip, so it is outside anything Angular is watching: the page is created
+                // imperatively via ViewContainerRef.createComponent and runs zoneless, which means
+                // an assignment alone repaints nothing. Without this the preview lands, the line
+                // stays on "— resolving…" forever, and CanConfirm never turns true because it
+                // requires Preview.Result — a completed order that cannot be confirmed.
+                this.cdr.detectChanges();
+            });
         });
     }
 
