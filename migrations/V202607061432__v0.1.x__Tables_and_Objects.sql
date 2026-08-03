@@ -469,7 +469,6 @@ CREATE TABLE __mj_BizAppsOrders.OrderLine (
     -- data loss that looks like arithmetic.
     IsQuantityOverridden BIT NOT NULL DEFAULT 0,
     SubscriptionID UNIQUEIDENTIFIER NULL,
-    RevenueRecognitionScheduleID UNIQUEIDENTIFIER NULL,
     Description NVARCHAR(500) NULL,
     -- MOD-15 (Amith 2026-07-21): each line books its OWN journal entry; this is the per-line link.
     -- Real cross-app FK to __mj_BizAppsAccounting.JournalEntry (§4.A); nullable until booked.
@@ -965,45 +964,7 @@ CREATE UNIQUE NONCLUSTERED INDEX UQ_SubscriptionEvent_ProviderEventID
 GO
 
 ---------------------------------------------------------------------------
--- 3.17 RevenueRecognitionSchedule — lightweight computation source + MRR/ARR
---      display (BO-D11). 'SingleDate' = UPD-2 shape (a): 100% on the event
---      date; 'StraightLine' = shape (b): spread over the line's service period.
----------------------------------------------------------------------------
-CREATE TABLE __mj_BizAppsOrders.RevenueRecognitionSchedule (
-    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
-    RevenueRecognitionTypeID UNIQUEIDENTIFIER NOT NULL,
-    StartDate DATE NOT NULL,
-    EndDate DATE NOT NULL,
-    TotalAmount DECIMAL(18,2) NOT NULL,
-    TotalRecognized DECIMAL(18,2) NOT NULL DEFAULT 0,
-    IsComplete BIT NOT NULL DEFAULT 0,
-    CONSTRAINT PK_RevenueRecognitionSchedule PRIMARY KEY (ID),
-    CONSTRAINT CK_RevRecSchedule_Dates CHECK (EndDate >= StartDate)
-);
-GO
-
----------------------------------------------------------------------------
--- 3.18 RevRecScheduleLine — one row per recognition period; line 1 carries the
---      rounding remainder. D14: at booking-lock a REAL forward-dated JE (Dr
---      Deferred Revenue / Cr Revenue, EffectiveDate = this period's date) is
---      written per period; JournalEntryID is the soft ref to it. The LEDGER is
---      the truth — no recognition-state tracking here (no materializer, no
---      wake-up job; the ScheduledJournalEntry bridge is retired).
----------------------------------------------------------------------------
-CREATE TABLE __mj_BizAppsOrders.RevRecScheduleLine (
-    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
-    ScheduleID UNIQUEIDENTIFIER NOT NULL,
-    PeriodStart DATE NOT NULL,
-    PeriodEnd DATE NOT NULL,
-    Amount DECIMAL(18,2) NOT NULL,
-    JournalEntryID UNIQUEIDENTIFIER NULL,
-    CONSTRAINT PK_RevRecScheduleLine PRIMARY KEY (ID),
-    CONSTRAINT CK_RevRecScheduleLine_Period CHECK (PeriodEnd >= PeriodStart)
-);
-GO
-
----------------------------------------------------------------------------
--- 3.19 ProductBundleItem — composite products (BO-D32/D41). One structure,
+ ProductBundleItem — composite products (BO-D32/D41). One structure,
 --      two order modes: bundle-line (single line, SSP allocation later) and
 --      fast-path expansion (components explode into normal lines with
 --      OrderLine.SourceBundleProductID provenance).
@@ -1034,12 +995,24 @@ GO
 --      it — bizapps-contracts will own obligations and join to orders from
 --      its own schema.
 --
---      What STAYS here is revenue recognition itself: RevenueRecognitionType,
---      RevenueRecognitionSchedule and RevRecScheduleLine. Deferring revenue
---      over a subscription term is genuinely an order-entry concern and is
---      driven from OrderJournalEntryFactory for any line whose product
---      carries a deferred type. That is a different problem from splitting
---      a price across obligations, and it works today.
+--      What STAYS here is revenue recognition itself: RevenueRecognitionType
+--      and the FORWARD-DATED JOURNAL ENTRIES. Deferring revenue over a
+--      subscription term is genuinely an order-entry concern, driven from
+--      OrderJournalEntryFactory for any line whose product carries a deferred
+--      type. That is a different problem from splitting a price across
+--      obligations, and it works today.
+--
+--      RETIRED (D84, Amith 2026-08-02): RevenueRecognitionSchedule,
+--      RevRecScheduleLine and OrderLine.RevenueRecognitionScheduleID. They
+--      were the "computed envelope" for MRR/ARR display and the computation
+--      trail — and nothing ever wrote them. Both purposes are already served
+--      by what recognition actually produces: the releases ARE a schedule,
+--      dated, balanced and queryable in JournalEntry/JournalEntryLine, and the
+--      trail is those entries plus OrderLinePriceComponent. A second copy of
+--      the same facts is free to drift from the ledger, and empty tables that
+--      look authoritative are worse than absent ones — a report writer finds
+--      them and assumes they are the source of truth. Forecasting, if it is
+--      ever wanted, belongs in an FP&A layer rather than beside the ledger.
 ---------------------------------------------------------------------------
 
 ---------------------------------------------------------------------------
@@ -1733,6 +1706,60 @@ CREATE TABLE __mj_BizAppsOrders.CustomerTaxExemption (
 GO
 
 ---------------------------------------------------------------------------
+-- 3.30e CustomerPaymentTerms — the terms a particular BUYER has negotiated.
+--
+--       ONE RUNG OF THE TERMS WALK (D83). An order's due date resolves:
+--         stated DueDate -> stated PaymentTermsTypeID -> THIS -> the selling
+--         company's AccountingCompanyProfile.DefaultPaymentTermsTypeID -> due
+--         on receipt.
+--
+--       WHY AN ORDERS-SIDE TABLE AND NOT AN IS-A. The obvious instinct is to
+--       extend AccountingCompanyProfile the way OrderCompanyPolicy extends
+--       Company. It does not fit: that profile IS-A __mj.Company and describes
+--       the SELLING company, whereas a customer here is an Organization or a
+--       Person from bizapps-common. There is nothing to extend — the buyer is
+--       not a Company — so this keys on the party the way CustomerTaxExemption
+--       and CustomerPaymentMethod already do.
+--
+--       TERMS ARE NOT PER PRODUCT, deliberately. They are a property of the
+--       deal, not of the item: an order carrying a Net 30 product and a Net 60
+--       product has no coherent answer, and inventing one (longest? shortest?)
+--       would be arbitrary. Per-line due dates would mean splitting the
+--       receivable, which changes what an invoice is. Same reasoning
+--       OrderCompanyPolicy.StackingMode uses for being per-company.
+--
+--       DATE-EFFECTIVE, because renegotiated terms must not silently restate
+--       what an old order was due on. The window is evaluated at resolution.
+---------------------------------------------------------------------------
+CREATE TABLE __mj_BizAppsOrders.CustomerPaymentTerms (
+    ID UNIQUEIDENTIFIER NOT NULL DEFAULT NEWSEQUENTIALID(),
+    OrganizationID UNIQUEIDENTIFIER NULL,
+    PersonID UNIQUEIDENTIFIER NULL,
+    PaymentTermsTypeID UNIQUEIDENTIFIER NOT NULL,
+    -- Scopes the terms to one selling company. NULL = whoever is selling, which is the common case;
+    -- a group whose subsidiaries negotiated separately sets it.
+    CompanyID UNIQUEIDENTIFIER NULL,
+    StartedAt DATETIMEOFFSET NULL,
+    EndedAt DATETIMEOFFSET NULL,
+    Status NVARCHAR(10) NOT NULL DEFAULT 'Active',
+    Comments NVARCHAR(MAX) NULL,
+    CONSTRAINT PK_CustomerPaymentTerms PRIMARY KEY (ID),
+    -- Explicit AND/OR for the same reason CustomerTaxExemption spells it out: SQL Server has no
+    -- boolean VALUE type, so `(a IS NULL) <> (b IS NULL)` is a syntax error here.
+    CONSTRAINT CK_CustomerPaymentTerms_Party CHECK (
+        (OrganizationID IS NOT NULL AND PersonID IS NULL)
+     OR (OrganizationID IS NULL AND PersonID IS NOT NULL)),
+    CONSTRAINT CK_CustomerPaymentTerms_Status CHECK (Status IN ('Active','Inactive')),
+    CONSTRAINT CK_CustomerPaymentTerms_Window CHECK (StartedAt IS NULL OR EndedAt IS NULL OR EndedAt > StartedAt)
+);
+GO
+
+ALTER TABLE __mj_BizAppsOrders.CustomerPaymentTerms
+    ADD CONSTRAINT FK_CustomerPaymentTerms_PaymentTermsType
+    FOREIGN KEY (PaymentTermsTypeID) REFERENCES __mj_BizAppsOrders.PaymentTermsType(ID);
+GO
+
+---------------------------------------------------------------------------
 -- 3.31 SalesRule — metadata-driven sales constraints evaluated at Confirm
 --      (§4.8, BO-D17/D18): discount limits, required terms, product
 --      authorization, credit limits. Violations raise an Approval Request
@@ -2023,20 +2050,11 @@ ALTER TABLE __mj_BizAppsOrders.SubscriptionEvent
     FOREIGN KEY (RelatedOrderHeaderID) REFERENCES __mj_BizAppsOrders.OrderHeader(ID);
 GO
 
-ALTER TABLE __mj_BizAppsOrders.RevRecScheduleLine
-    ADD CONSTRAINT FK_RevRecScheduleLine_Schedule
-    FOREIGN KEY (ScheduleID) REFERENCES __mj_BizAppsOrders.RevenueRecognitionSchedule(ID);
-GO
 
 -- The deliberate OrderLine ↔ Subscription pair (deferred from S1 so both are real FKs)
 ALTER TABLE __mj_BizAppsOrders.OrderLine
     ADD CONSTRAINT FK_OrderLine_Subscription
     FOREIGN KEY (SubscriptionID) REFERENCES __mj_BizAppsOrders.Subscription(ID);
-GO
-
-ALTER TABLE __mj_BizAppsOrders.OrderLine
-    ADD CONSTRAINT FK_OrderLine_RevRecSchedule
-    FOREIGN KEY (RevenueRecognitionScheduleID) REFERENCES __mj_BizAppsOrders.RevenueRecognitionSchedule(ID);
 GO
 
 -- Catalog depth wave
@@ -2381,11 +2399,6 @@ ALTER TABLE __mj_BizAppsOrders.ProductType
     FOREIGN KEY (DefaultRevenueRecognitionTypeID) REFERENCES __mj_BizAppsOrders.RevenueRecognitionType(ID);
 GO
 
-ALTER TABLE __mj_BizAppsOrders.RevenueRecognitionSchedule
-    ADD CONSTRAINT FK_RevRecSchedule_RevenueRecognitionType
-    FOREIGN KEY (RevenueRecognitionTypeID) REFERENCES __mj_BizAppsOrders.RevenueRecognitionType(ID);
-GO
-
 -- Subscription rules + terms (plan D45/D46).
 ALTER TABLE __mj_BizAppsOrders.Product
     ADD CONSTRAINT FK_Product_SubscriptionType
@@ -2529,11 +2542,6 @@ GO
 
 ALTER TABLE __mj_BizAppsOrders.PaymentHeader
     ADD CONSTRAINT FK_PaymentHeader_JournalEntry
-    FOREIGN KEY (JournalEntryID) REFERENCES __mj_BizAppsAccounting.JournalEntry(ID);
-GO
-
-ALTER TABLE __mj_BizAppsOrders.RevRecScheduleLine
-    ADD CONSTRAINT FK_RevRecScheduleLine_JournalEntry
     FOREIGN KEY (JournalEntryID) REFERENCES __mj_BizAppsAccounting.JournalEntry(ID);
 GO
 
@@ -3114,7 +3122,6 @@ GO
 GO
 
 -- OrderLine (S3 additions)
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The revenue recognition schedule this line carries (Deferred products). Each renewal order line carries its own schedule.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderLine', @level2type=N'COLUMN', @level2name=N'RevenueRecognitionScheduleID';
 GO
 
 -- SubscriptionType / SubscriptionTerm
@@ -3144,13 +3151,6 @@ EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'JSON event payload
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Provider webhook event id — the idempotency key (unique when present).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SubscriptionEvent', @level2type=N'COLUMN', @level2name=N'ProviderEventID';
 GO
 
--- RevenueRecognitionSchedule
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'The COMPUTED recognition envelope (method, dates, totals) — kept for MRR/ARR display and as the computation source (D14). Owned by an order line. The ledger truth is the real forward-dated JournalEntry rows written at booking-lock; changes net via correcting orders, never edits.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'First recognition date.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'StartDate';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Last recognition date.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'EndDate';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Total amount to recognize across all schedule lines.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'TotalAmount';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Amount recognized so far (engine-maintained).', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'TotalRecognized';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether every line has been recognized.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevenueRecognitionSchedule', @level2type=N'COLUMN', @level2name=N'IsComplete';
 GO
 
 -- ProductType (S5 behavior fields)
@@ -3279,12 +3279,6 @@ EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'JSON array of Prod
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Whether this authority row is in force.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'SalesAuthority', @level2type=N'COLUMN', @level2name=N'IsActive';
 GO
 
--- RevRecScheduleLine
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'One recognition period of a schedule (D14). Line 1 carries the rounding remainder. A real forward-dated JournalEntry is written per period at booking-lock; the ledger is the truth — no recognition-state tracking here.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Start of this recognition period.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine', @level2type=N'COLUMN', @level2name=N'PeriodStart';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'End of this recognition period.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine', @level2type=N'COLUMN', @level2name=N'PeriodEnd';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Amount recognized in this period.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine', @level2type=N'COLUMN', @level2name=N'Amount';
-EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'FK to the FORWARD-DATED __mj_BizAppsAccounting.JournalEntry staged for this period at booking-lock (D14): Dr Deferred Revenue / Cr Revenue, EffectiveDate = this period''s recognition date, Status=Pending until swept into a batch.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'RevRecScheduleLine', @level2type=N'COLUMN', @level2name=N'JournalEntryID';
 GO
 
 

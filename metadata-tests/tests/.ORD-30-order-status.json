@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-30 - Order Status Transitions",
+    "Description": "The order lifecycle, enforced on the real save path (OS1-OS8). CK_OrderHeader_Status enforced the legal SET of statuses and nothing enforced the legal MOVES: Fulfilled to Draft saved, and Voided to Confirmed saved - a voided order could come back to life, keep the journal entries its reversal had already unwound, and be shipped, with every row individually valid and the CHECK constraint satisfied. OrderStatusBehavior owns the transition table and its unit tests walk all thirty-six ordered pairs; this bundle proves the table is WIRED - that the refusal happens inside OrderEntityServer.Save, which is the one path a workflow, a form, an operation and a fixture all go through, and that a refused save leaves the row exactly as it was.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Every legal forward move is accepted through the real entity server; a booked order cannot be returned to Draft or Quoted, because the journal entries would stand against an order being edited underneath them; any live order can be voided; a refused move leaves the persisted status unchanged and books no second entry, because the refusal happens before the save opens a transaction; Voided is terminal on the real path, so re-confirming cannot book against a reversal that already stands; a NEW order may still be created directly in a booked status for back-office entry (D17), because a new row has no previous status to move from; the refusal reaches the caller as a readable message naming the state, the target and the way out rather than a bare false; and an unknown status is refused by name before the CHECK constraint reports a violation nobody can act on."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "order-status"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "1D8A47C2-6E39-4B15-9C74-2F5E8B0A3D91"
+  }
+}

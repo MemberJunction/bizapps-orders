@@ -444,12 +444,19 @@
             "lastModified": "2026-08-02T18:32:47.643Z",
             "checksum": "48ff69a4440d07231e1242122948be57d67d6481a00ab9cd00f00061d6951495"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-30 - Order Status Transitions",
+            "Sequence": 30,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "5E2C9A17-8B04-4D63-A1F8-7C36D9E402BB"
+          }
         }
       ]
-    },
-    "sync": {
-      "lastModified": "2026-08-02T18:32:47.278Z",
-      "checksum": "d6b470323cd54e28680d18f6e3993cdbe4d8b7b15c08fcdfbcc08ae29796c3b2"
     }
   }
 ]

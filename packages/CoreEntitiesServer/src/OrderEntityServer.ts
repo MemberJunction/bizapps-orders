@@ -79,6 +79,13 @@ import {
 } from './PromotionEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
+import { CanTransition } from './OrderStatusBehavior.js';
+import { RequireUUID } from './sql-guards.js';
+import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
+import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
+
+const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
+const ACCOUNTING_COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Company Profiles';
 import {
     SubscriptionBehavior,
     type SubscriberIdentity,
@@ -268,6 +275,19 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     // ─── Save Override ─────────────────────────────────────────────────────────
 
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+        // REFUSE AN ILLEGAL STATUS MOVE BEFORE ANYTHING ELSE HAPPENS.
+        //
+        // The CHECK constraint enforces the legal SET and never enforced the legal MOVES, so
+        // `Fulfilled -> Draft` and `Voided -> Confirmed` both saved: a voided order could come back
+        // to life, keep the journal entries its reversal had already unwound, and be shipped. Every
+        // row valid, the constraint satisfied, nothing looking.
+        //
+        // Checked HERE rather than in the operations because this is the one path every write goes
+        // through — the operations, a workflow, a form, a fixture. A rule enforced anywhere else is a
+        // rule that holds until somebody saves an entity directly, which is the failure this codebase
+        // has now found three times.
+        if (!this.passesStatusTransition()) return false;
+
         const booking = this.willBookOnThisSave();
 
         // Not a booking save — ordinary path, no transaction needed beyond the base save.
@@ -282,6 +302,12 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
             if (booking) {
                 this.ConfirmedAt = new Date();
+                // WHEN IT IS DUE, DECIDED ONCE AND STORED (D83). Resolved at confirm rather than at
+                // read time because `DueDate` is what the aging report ages, what the collections
+                // worklist filters on and what the invoice prints — deriving it separately in each
+                // place is how three surfaces end up disagreeing about one date. Before this, nothing
+                // populated the column at all and `GetOverdueWorklist` returned nothing, ever.
+                await this.resolveDueDate();
             }
 
             // The order IS the receivable, so its number is an A/R document number — assigned
@@ -380,6 +406,158 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         result.StartedAt = new Date();
         result.EndedAt = new Date();
         return result;
+    }
+
+    /**
+     * Resolve and store this order's due date, walking the terms rungs (D83).
+     *
+     * A STATED DUE DATE IS LEFT ALONE. `PaymentTermsBehavior` reports whether the answer came from
+     * the caller, and a stated date is never recomputed — that is how a contracts app supplies terms
+     * Orders has no way to derive, and how a negotiated date survives the next save.
+     *
+     * The resolved TERMS are recorded alongside the date when the order did not name them, so the
+     * invoice can print "Net 30" rather than inferring it back out of an interval.
+     *
+     * A failure here does not fail the confirm. Booking is the irreversible step and money has
+     * already moved in the ledger; refusing it because a lookup could not be read would be a far
+     * worse outcome than an order that falls back to due-on-receipt and says so in the log.
+     */
+    private async resolveDueDate(): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const orderDate = this.OrderDate ? new Date(this.OrderDate).toISOString().slice(0, 10) : null;
+        if (!orderDate) return;
+
+        try {
+            await LoadOrdersEngine(provider, user);
+            const terms = new Map(
+                OrdersEngine.Instance.PaymentTermsTypes.map((t) => [
+                    String(t.ID).toLowerCase(),
+                    { PaymentTermsTypeID: String(t.ID), NetDays: t.NetDays ?? null },
+                ]),
+            );
+
+            const [customerTerms, companyDefault] = await Promise.all([
+                this.customerPaymentTerms(provider, user),
+                this.companyDefaultTerms(provider, user, terms),
+            ]);
+
+            const resolution = ResolveDueDate({
+                // `OldValue` is what is on disk. On the confirm save the caller may have set a date
+                // moments ago, so the CURRENT value is what "stated" means here.
+                StatedDueDate: this.DueDate ? new Date(this.DueDate).toISOString().slice(0, 10) : null,
+                StatedPaymentTermsTypeID: (this as unknown as { PaymentTermsTypeID?: string | null }).PaymentTermsTypeID ?? null,
+                OrderDate: orderDate,
+                CompanyID: this.CompanyID ?? null,
+                CustomerTerms: customerTerms,
+                CompanyDefault: companyDefault,
+                TermsByID: terms,
+            });
+
+            if (resolution.WasStated) return;
+            if (resolution.DueDate) this.DueDate = new Date(resolution.DueDate);
+            if (resolution.PaymentTermsTypeID) {
+                (this as unknown as { PaymentTermsTypeID: string }).PaymentTermsTypeID = resolution.PaymentTermsTypeID;
+            }
+        } catch (err) {
+            LogError(
+                `Order ${this.OrderNumber ?? this.ID}: could not resolve payment terms (${err}). ` +
+                    `The order is due on receipt; configure CustomerPaymentTerms or the selling company's ` +
+                    `default terms to change that.`,
+            );
+            if (!this.DueDate) this.DueDate = new Date(orderDate);
+        }
+    }
+
+    /** This buyer's negotiated terms, joined to their net days. */
+    private async customerPaymentTerms(provider: IMetadataProvider, user: UserInfo): Promise<CustomerTermsFacts[]> {
+        const orgID = this.BillToOrganizationID;
+        const personID = this.BillToPersonID;
+        if (!orgID && !personID) return [];
+
+        const clause = orgID
+            ? `OrganizationID = '${RequireUUID(orgID, 'BillToOrganizationID')}'`
+            : `PersonID = '${RequireUUID(personID as string, 'BillToPersonID')}'`;
+
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const result = await rv.RunView<{
+            PaymentTermsTypeID: string;
+            CompanyID: string | null;
+            StartedAt: string | null;
+            EndedAt: string | null;
+            Status: string;
+        }>(
+            {
+                EntityName: CUSTOMER_PAYMENT_TERMS_ENTITY,
+                ExtraFilter: `${clause} AND Status = 'Active'`,
+                ResultType: 'simple',
+            },
+            user,
+        );
+        if (!result?.Success) return [];
+
+        const byID = new Map(OrdersEngine.Instance.PaymentTermsTypes.map((t) => [String(t.ID).toLowerCase(), t]));
+        return (result.Results ?? []).map((row) => ({
+            PaymentTermsTypeID: row.PaymentTermsTypeID,
+            NetDays: byID.get(String(row.PaymentTermsTypeID).toLowerCase())?.NetDays ?? null,
+            CompanyID: row.CompanyID ?? null,
+            StartedAt: row.StartedAt ? new Date(row.StartedAt).toISOString() : null,
+            EndedAt: row.EndedAt ? new Date(row.EndedAt).toISOString() : null,
+            Status: row.Status,
+        }));
+    }
+
+    /**
+     * The selling company's default terms.
+     *
+     * From `AccountingCompanyProfile.DefaultPaymentTermsTypeID`, which has existed since the
+     * accounting schema was written and which nothing read until now.
+     */
+    private async companyDefaultTerms(
+        provider: IMetadataProvider,
+        user: UserInfo,
+        terms: Map<string, { PaymentTermsTypeID: string; NetDays: number | null }>,
+    ): Promise<{ PaymentTermsTypeID: string; NetDays: number | null } | null> {
+        if (!this.CompanyID) return null;
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const result = await rv.RunView<{ DefaultPaymentTermsTypeID: string | null }>(
+            {
+                EntityName: ACCOUNTING_COMPANY_PROFILE_ENTITY,
+                ExtraFilter: `ID = '${RequireUUID(this.CompanyID, 'CompanyID')}'`,
+                ResultType: 'simple',
+            },
+            user,
+        );
+        const id = result?.Results?.[0]?.DefaultPaymentTermsTypeID;
+        return id ? (terms.get(String(id).toLowerCase()) ?? null) : null;
+    }
+
+    /**
+     * Refuse a status move the lifecycle does not permit.
+     *
+     * Reports through `LatestResult` and returns false, the same shape every other refusal on this
+     * path uses — a caller gets the reason rather than a bare `false`, and `Orders.SaveOrder` and
+     * friends surface it unchanged.
+     *
+     * The PERSISTED status is the `from`: `OldValue` is what is on disk, so re-saving an unchanged
+     * row is a no-op transition and a genuine move is measured against what was really there rather
+     * than against whatever this object was last set to.
+     */
+    private passesStatusTransition(): boolean {
+        const from = this.IsSaved ? (this.GetFieldByName('Status')?.OldValue as string | undefined) : null;
+        const verdict = CanTransition(from ?? null, this.Status);
+        if (verdict.Allowed) return true;
+
+        this.RegisterResultHistoryEntry(
+            this.buildFailureResult(
+            new Error(
+                `${verdict.Reason} ` +
+                    `(order ${this.OrderNumber ?? 'not yet numbered'}). Voiding is how a booked order is ` +
+                    `undone; a reversal is its own record rather than an edit of the original (D53).`,
+                ),
+            ),
+        );
+        return false;
     }
 
     // ─── Booking ───────────────────────────────────────────────────────────────

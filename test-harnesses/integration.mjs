@@ -109,6 +109,7 @@ const ALL_BUNDLES = [
     'capture-payment',
     'create-in-state',
     'invoicing',
+    'order-status',
     'arithmetic-edges',
     'concurrency',
     'events',

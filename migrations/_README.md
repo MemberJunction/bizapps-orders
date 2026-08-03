@@ -13,7 +13,10 @@ applied file; add a new one (see PUBLISH_NO_BREAK policy in docs/publishing.md).
 - Timestamps must be strictly increasing (CI enforces this on PRs).
 - Use `${flyway:defaultSchema}` for YOUR schema; literal `__mj` for MJ core rows.
 - Do NOT add `__mj_CreatedAt`/`__mj_UpdatedAt` columns or FK indexes — CodeGen does.
-- A PR that adds a migration MUST carry a changeset with at least a `minor` bump (CI enforces).
+- A PR that adds or edits a migration MUST carry a changeset with at least a `minor` bump.
+  Create one with `npx changeset`. This is NOT enforced by CI — the claim that it was sat here
+  unenforced through several schema changes, which is worse than no rule at all. It is a review
+  item until somebody wires `changeset status --since=origin/next` into the workflow.
 
 This folder starts EMPTY on purpose — the template ships no schema, so your
 first migration is genuinely yours. `EXAMPLE_*.sql.example` is an inert

@@ -73,7 +73,7 @@ export interface OrderLineDraft {
     IsBooking: boolean;
     /** The term a recognition draft belongs to, when the line created one (D46). */
     SubscriptionTermID?: string;
-    /** Set on recognition drafts — carries the period bounds through for RevRecScheduleLine. */
+    /** Set on recognition drafts — the period this release covers, carried onto the entry itself. */
     RecognitionEntry?: RevRecEntry;
     Draft: JEDraft;
 }
