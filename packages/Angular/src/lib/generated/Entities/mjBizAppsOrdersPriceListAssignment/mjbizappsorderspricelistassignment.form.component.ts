@@ -18,6 +18,7 @@ export class mjBizAppsOrdersPriceListAssignmentFormComponent extends BaseFormCom
             { sectionKey: 'assignmentDetails', sectionName: 'Assignment Details', isExpanded: true },
             { sectionKey: 'targetEntity', sectionName: 'Target Entity', isExpanded: true },
             { sectionKey: 'validityPeriod', sectionName: 'Validity Period', isExpanded: true },
+            { sectionKey: 'additionalInformation', sectionName: 'Additional Information', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

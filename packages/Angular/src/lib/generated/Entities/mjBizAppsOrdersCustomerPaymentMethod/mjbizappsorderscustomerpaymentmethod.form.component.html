@@ -38,10 +38,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Payment Method Details Section -->
+    <!-- Payment Details Section -->
     <mj-collapsible-panel
-        SectionKey="paymentMethodDetails"
-        SectionName="Payment Method Details"
+        SectionKey="paymentDetails"
+        SectionName="Payment Details"
         Icon="fa fa-credit-card"
         [Form]="this"
         [FormContext]="formContext">
@@ -62,6 +62,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Payment Preferences Section -->
+    <mj-collapsible-panel
+        SectionKey="paymentPreferences"
+        SectionName="Payment Preferences"
+        Icon="fa fa-sliders-h"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

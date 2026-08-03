@@ -52,6 +52,13 @@ export interface OrderSpec {
     Lines: LineSpec[];
     /** Defaults to today; set explicitly whenever a check asserts dates. */
     OrderDate?: Date;
+    /**
+     * State the due date outright (D83). The terms walk treats a stated date as final and never
+     * recomputes it — this is the seam a contracts app supplies an answer Orders cannot derive.
+     */
+    DueDate?: string;
+    /** State the terms and let the walk derive the date from `NetDays` (D83). */
+    PaymentTermsTypeID?: string;
     /** WHO PAYS (D65). Either side, or both. Falls through as the last tier of subscriber resolution. */
     BillToOrganizationID?: string;
     BillToPersonID?: string;
@@ -102,6 +109,8 @@ export async function BuildOrder(
     order.OrderDate = spec.OrderDate ?? new Date();
     order.Status = 'Draft';
     order.CompanyID = spec.CompanyID;
+    if (spec.DueDate) order.DueDate = new Date(spec.DueDate);
+    if (spec.PaymentTermsTypeID) order.PaymentTermsTypeID = spec.PaymentTermsTypeID;
     if (spec.BillToOrganizationID) order.BillToOrganizationID = spec.BillToOrganizationID;
     if (spec.BillToPersonID) order.BillToPersonID = spec.BillToPersonID;
     if (spec.ShipToOrganizationID) order.ShipToOrganizationID = spec.ShipToOrganizationID;

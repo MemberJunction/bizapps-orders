@@ -10,10 +10,10 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Subscription Details Section -->
+    <!-- Subscription Context Section -->
     <mj-collapsible-panel
-        SectionKey="subscriptionDetails"
-        SectionName="Subscription Details"
+        SectionKey="subscriptionContext"
+        SectionName="Subscription Context"
         Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
@@ -43,14 +43,22 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Timeline and Status Section -->
+    <!-- Term Timeline Section -->
     <mj-collapsible-panel
-        SectionKey="timelineAndStatus"
-        SectionName="Timeline and Status"
-        Icon="fa fa-clock"
+        SectionKey="termTimeline"
+        SectionName="Term Timeline"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -66,14 +74,6 @@
             [ShowLabel]="true"
             FieldName="EndDate"
             Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -100,7 +100,7 @@
     <mj-collapsible-panel
         SectionKey="financials"
         SectionName="Financials"
-        Icon="fa fa-dollar-sign"
+        Icon="fa fa-money-bill"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -175,7 +175,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersEntitlementGrants"
         SectionName="Entitlement Grants"
-        Icon="fa fa-gift"
+        Icon="fa fa-shield-alt"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

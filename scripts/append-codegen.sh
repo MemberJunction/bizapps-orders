@@ -61,6 +61,38 @@ EOF
     echo "  (--force given; proceeding anyway)" >&2
 fi
 
+# GUARD: A PARTIAL CODEGEN RUN PRODUCES A BASELINE THAT INSTALLS A BROKEN DATABASE.
+#
+# CodeGen creates entity metadata, base views, CRUD procs AND permissions per entity. A run that dies
+# partway — a request timeout on one entity is enough — leaves the rest without permission rows, and
+# the NEXT run has nothing to do for the entities that already exist, so it never emits them. The
+# appended SQL is then silently short: every table is there, every view is there, and two entities
+# refuse every read with "does not have read permissions" the first time anybody touches them.
+#
+# That has happened once (Price List Assignments and Stored Value Transactions, after a 120s timeout
+# creating StoredValueTransaction). The suite caught it, but only because those two entities happened
+# to be on a covered path. Asking the database directly is cheap and catches it every time.
+if [[ -f .env ]]; then
+    set -a; . ./.env; set +a
+    ORPHANS=$(sqlcmd -S "${DB_HOST},${DB_PORT:-1433}" -U "${DB_USERNAME}" -P "${DB_PASSWORD}" -C -N o -b \
+        -d "${DB_DATABASE}" -h -1 -W -Q "SET NOCOUNT ON;
+        SELECT COUNT(*) FROM __mj.Entity e
+        WHERE e.SchemaName = '__mj_BizAppsOrders'
+          AND NOT EXISTS (SELECT 1 FROM __mj.EntityPermission p WHERE p.EntityID = e.ID);" 2>/dev/null | tr -d ' \r\n')
+    if [[ -n "$ORPHANS" && "$ORPHANS" != "0" ]]; then
+        cat >&2 <<EOF
+REFUSING: $ORPHANS entity/entities in __mj_BizAppsOrders have NO EntityPermission rows.
+
+That is what a CodeGen run that died partway looks like. Appending now would bake a baseline that
+installs a database whose reads fail for those entities. Re-run the whole cycle so CodeGen
+regenerates from zero:
+
+    scripts/rebuild-db.sh && npm run mj:codegen && scripts/append-codegen.sh
+EOF
+        exit 1
+    fi
+fi
+
 TMP=$(mktemp)
 head -n "$BANNER_END" "$MIGRATION" > "$TMP"
 printf '\n\n' >> "$TMP"

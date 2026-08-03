@@ -34,14 +34,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="SortOrder"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -49,7 +41,7 @@
     <mj-collapsible-panel
         SectionKey="quantityTiers"
         SectionName="Quantity Tiers"
-        Icon="fa fa-layer-group"
+        Icon="fa fa-sort-numeric-down"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -64,6 +56,14 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="MaxQuantity"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="SortOrder"
             Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"

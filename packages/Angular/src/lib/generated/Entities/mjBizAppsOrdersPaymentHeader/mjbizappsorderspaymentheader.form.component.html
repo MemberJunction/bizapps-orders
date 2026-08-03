@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="paymentInformation"
         SectionName="Payment Information"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-credit-card"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -87,22 +87,13 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PaymentProviderID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financials Section -->
+    <!-- Financial Details Section -->
     <mj-collapsible-panel
-        SectionKey="financials"
-        SectionName="Financials"
+        SectionKey="financialDetails"
+        SectionName="Financial Details"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -142,13 +133,22 @@
 
     </mj-collapsible-panel>
 
-    <!-- Transaction Details Section -->
+    <!-- Provider Information Section -->
     <mj-collapsible-panel
-        SectionKey="transactionDetails"
-        SectionName="Transaction Details"
-        Icon="fa fa-exchange-alt"
+        SectionKey="providerInformation"
+        SectionName="Provider Information"
+        Icon="fa fa-server"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="PaymentProviderID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -183,22 +183,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IdempotencyKey"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Reversal Details Section -->
+    <!-- Transaction History Section -->
     <mj-collapsible-panel
-        SectionKey="reversalDetails"
-        SectionName="Reversal Details"
-        Icon="fa fa-undo"
+        SectionKey="transactionHistory"
+        SectionName="Transaction History"
+        Icon="fa fa-history"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -229,11 +221,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Notes and Memo Section -->
+    <!-- Notes and Metadata Section -->
     <mj-collapsible-panel
-        SectionKey="notesAndMemo"
-        SectionName="Notes and Memo"
-        Icon="fa fa-sticky-note"
+        SectionKey="notesAndMetadata"
+        SectionName="Notes and Metadata"
+        Icon="fa fa-file-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -262,6 +254,14 @@
         Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IdempotencyKey"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

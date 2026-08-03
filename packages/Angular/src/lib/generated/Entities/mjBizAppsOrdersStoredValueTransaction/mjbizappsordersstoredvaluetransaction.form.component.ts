@@ -16,8 +16,8 @@ export class mjBizAppsOrdersStoredValueTransactionFormComponent extends BaseForm
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'transactionDetails', sectionName: 'Transaction Details', isExpanded: true },
-            { sectionKey: 'financialLedger', sectionName: 'Financial Ledger', isExpanded: true },
-            { sectionKey: 'relatedEntities', sectionName: 'Related Entities', isExpanded: true },
+            { sectionKey: 'financialSummary', sectionName: 'Financial Summary', isExpanded: true },
+            { sectionKey: 'relatedRecords', sectionName: 'Related Records', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

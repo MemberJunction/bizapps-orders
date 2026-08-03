@@ -47,7 +47,7 @@ export interface RevRecEntry {
     /** The date this slice is earned — becomes the JE's EffectiveDate. */
     RecognitionDate: Date;
     Amount: number;
-    /** Period bounds, carried through to RevRecScheduleLine for MRR/ARR reporting. */
+    /** Period bounds. They land on the forward-dated journal entry, which IS the schedule (D84). */
     PeriodStart: Date;
     PeriodEnd: Date;
 }
