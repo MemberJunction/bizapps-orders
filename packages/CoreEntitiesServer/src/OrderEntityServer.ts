@@ -295,6 +295,22 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             return super.Save(options);
         }
 
+        // WHEN IT IS DUE, DECIDED ONCE AND STORED (D83) — AND RESOLVED BEFORE THE TRANSACTION OPENS.
+        //
+        // `DueDate` is what the aging report ages, what the collections worklist filters on and what
+        // the invoice prints, so it is settled at confirm rather than derived per reader; three
+        // surfaces deriving it independently is how they end up disagreeing about one date.
+        //
+        // It runs OUTSIDE the transaction because it is three reads of seeded lookups and nothing
+        // more. Inside, those round trips sat in the critical section of every confirm, and the
+        // volume bundle — eighty orders back to back — started losing one or two to request
+        // timeouts. Booking already holds locks across the ledger; lengthening it to look up terms
+        // that cannot change mid-save was avoidable load for no gain.
+        //
+        // The values land on `this`, so they are persisted by the same `super.Save()` as everything
+        // else and remain atomic with the booking.
+        if (booking) await this.resolveDueDate();
+
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
 
         try {
@@ -302,12 +318,6 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
             if (booking) {
                 this.ConfirmedAt = new Date();
-                // WHEN IT IS DUE, DECIDED ONCE AND STORED (D83). Resolved at confirm rather than at
-                // read time because `DueDate` is what the aging report ages, what the collections
-                // worklist filters on and what the invoice prints — deriving it separately in each
-                // place is how three surfaces end up disagreeing about one date. Before this, nothing
-                // populated the column at all and `GetOverdueWorklist` returned nothing, ever.
-                await this.resolveDueDate();
             }
 
             // The order IS the receivable, so its number is an A/R document number — assigned

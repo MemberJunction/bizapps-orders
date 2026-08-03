@@ -2,7 +2,7 @@ name: CI
 
 # UNIT TESTS ONLY, DELIBERATELY.
 #
-# The 358 integration checks need a SQL Server, checkouts of two sibling private repos, an MJ core
+# The 366 integration checks need a SQL Server, checkouts of two sibling private repos, an MJ core
 # migration and a metadata push. That is a local development environment, not a CI runner, and it is
 # not worth pretending otherwise: the first version of this file tried, described itself as working,
 # and failed on its third step having proved nothing (`actions/checkout` rejects a `path:` outside
@@ -75,4 +75,4 @@ jobs:
       - name: State plainly what this gate does not cover
         if: always()
         run: |
-          echo "::notice title=Integration checks are not run here::The 358 database checks need a local environment. Run 'RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs' before merging — see .github/workflows/ci.yml for why."
+          echo "::notice title=Integration checks are not run here::The 366 database checks need a local environment. Run 'RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs' before merging — see .github/workflows/ci.yml for why."

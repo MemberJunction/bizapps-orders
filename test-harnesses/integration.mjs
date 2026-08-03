@@ -135,6 +135,20 @@ const pool = await new sql.ConnectionPool({
     password: DB_PASSWORD,
     options: { trustServerCertificate: true, encrypt: false },
     pool: { max: 10, min: 1 },
+    // GIVE A CONFIRM LONGER THAN THE LIBRARY DEFAULT.
+    //
+    // `mssql` defaults `requestTimeout` to 15s. Confirming an order writes one journal entry PER
+    // LINE through accounting's remote operation, inside one transaction — and the volume bundle
+    // runs eighty of those back to back. Under sustained load a single request occasionally crossed
+    // 15s and the confirm failed with `Timeout: Request failed to complete in 15000ms`, surfacing as
+    // "journal entry save failed (rolled back): unknown error" in a DIFFERENT check on every run.
+    //
+    // That reads exactly like a real intermittent defect, and it cost several full-suite runs to
+    // characterise. The operations are not slow because anything is wrong; they are slow because
+    // this is a laptop running SQL Server in Docker alongside everything else. 60s is a budget that
+    // reflects what booking actually costs here, and it still fails loudly on anything genuinely
+    // hung rather than waiting forever.
+    requestTimeout: 60_000,
 }).connect();
 
 const { setupSQLServerClient, SQLServerProviderConfigData, UserCache } = await import(
