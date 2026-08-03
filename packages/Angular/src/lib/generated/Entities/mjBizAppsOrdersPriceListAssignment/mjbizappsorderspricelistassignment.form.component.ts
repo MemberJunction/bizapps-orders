@@ -15,10 +15,7 @@ export class mjBizAppsOrdersPriceListAssignmentFormComponent extends BaseFormCom
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'assignmentDetails', sectionName: 'Assignment Details', isExpanded: true },
-            { sectionKey: 'targetEntity', sectionName: 'Target Entity', isExpanded: true },
-            { sectionKey: 'validityPeriod', sectionName: 'Validity Period', isExpanded: true },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true }
         ]);
     }
 }
