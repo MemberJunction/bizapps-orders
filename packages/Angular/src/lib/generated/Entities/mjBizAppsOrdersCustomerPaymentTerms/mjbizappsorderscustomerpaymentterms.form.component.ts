@@ -15,8 +15,8 @@ export class mjBizAppsOrdersCustomerPaymentTermsFormComponent extends BaseFormCo
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'entityRelationships', sectionName: 'Entity Relationships', isExpanded: true },
-            { sectionKey: 'paymentTermsDetails', sectionName: 'Payment Terms Details', isExpanded: true },
+            { sectionKey: 'relationships', sectionName: 'Relationships', isExpanded: true },
+            { sectionKey: 'paymentTermsConfiguration', sectionName: 'Payment Terms Configuration', isExpanded: true },
             { sectionKey: 'timeline', sectionName: 'Timeline', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);

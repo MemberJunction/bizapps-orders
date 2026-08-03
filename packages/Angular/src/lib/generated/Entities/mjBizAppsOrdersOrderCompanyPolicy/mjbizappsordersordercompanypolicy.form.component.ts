@@ -15,7 +15,7 @@ export class mjBizAppsOrdersOrderCompanyPolicyFormComponent extends BaseFormComp
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'pricingPolicy', sectionName: 'Pricing Policy', isExpanded: true },
+            { sectionKey: 'pricingPolicies', sectionName: 'Pricing Policies', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

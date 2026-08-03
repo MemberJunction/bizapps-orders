@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Pricing Configuration Section -->
+    <!-- Product Association Section -->
     <mj-collapsible-panel
-        SectionKey="pricingConfiguration"
-        SectionName="Pricing Configuration"
-        Icon="fa fa-money-bill"
+        SectionKey="productAssociation"
+        SectionName="Product Association"
+        Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -35,6 +35,16 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Pricing Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="pricingConfiguration"
+        SectionName="Pricing Configuration"
+        Icon="fa fa-dollar-sign"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -78,11 +88,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Quantity and Validity Section -->
+    <!-- Quantity and Time Constraints Section -->
     <mj-collapsible-panel
-        SectionKey="quantityAndValidity"
-        SectionName="Quantity and Validity"
-        Icon="fa fa-calendar"
+        SectionKey="quantityAndTimeConstraints"
+        SectionName="Quantity and Time Constraints"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -117,16 +127,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Recurrence and Timing Section -->
-    <mj-collapsible-panel
-        SectionKey="recurrenceAndTiming"
-        SectionName="Recurrence and Timing"
-        Icon="fa fa-clock"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -244,36 +244,11 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
-    <!-- Price Tiers Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPriceTiers"
-        SectionName="Price Tiers"
-        Icon="fa fa-tags"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPriceTiers')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Price Tiers','ProductPriceID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Price Tiers')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPriceTiers')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPriceTiers', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Order Lines Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderLines"
         SectionName="Order Lines"
-        Icon="fa fa-list-ol"
+        Icon="fa fa-list-ul"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
@@ -288,6 +263,31 @@
                 [ShowToolbar]="false"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Price Tiers Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPriceTiers"
+        SectionName="Price Tiers"
+        Icon="fa fa-layer-group"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPriceTiers')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Price Tiers','ProductPriceID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Price Tiers')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPriceTiers')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPriceTiers', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

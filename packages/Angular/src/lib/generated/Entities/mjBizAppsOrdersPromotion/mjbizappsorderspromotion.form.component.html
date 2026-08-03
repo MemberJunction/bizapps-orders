@@ -59,14 +59,22 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Terms and Conditions Section -->
+    <!-- Rules and Constraints Section -->
     <mj-collapsible-panel
-        SectionKey="termsAndConditions"
-        SectionName="Terms and Conditions"
-        Icon="fa fa-file-contract"
+        SectionKey="rulesAndConstraints"
+        SectionName="Rules and Constraints"
+        Icon="fa fa-balance-scale"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -101,16 +109,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Limits and Eligibility Section -->
-    <mj-collapsible-panel
-        SectionKey="limitsAndEligibility"
-        SectionName="Limits and Eligibility"
-        Icon="fa fa-user-check"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -154,10 +152,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Schedule and Status Section -->
+    <!-- Schedule Section -->
     <mj-collapsible-panel
-        SectionKey="scheduleAndStatus"
-        SectionName="Schedule and Status"
+        SectionKey="schedule"
+        SectionName="Schedule"
         Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
@@ -209,14 +207,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -256,7 +246,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderAdjustments"
         SectionName="Order Adjustments"
-        Icon="fa fa-money-bill-wave"
+        Icon="fa fa-percentage"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

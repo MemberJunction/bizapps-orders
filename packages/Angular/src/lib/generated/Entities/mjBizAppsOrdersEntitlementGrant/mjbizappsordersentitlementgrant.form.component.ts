@@ -15,10 +15,10 @@ export class mjBizAppsOrdersEntitlementGrantFormComponent extends BaseFormCompon
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'grantDetails', sectionName: 'Grant Details', isExpanded: true },
-            { sectionKey: 'contextualInformation', sectionName: 'Contextual Information', isExpanded: true },
+            { sectionKey: 'entitlementDetails', sectionName: 'Entitlement Details', isExpanded: true },
             { sectionKey: 'beneficiaryInformation', sectionName: 'Beneficiary Information', isExpanded: true },
-            { sectionKey: 'validityAndStatus', sectionName: 'Validity and Status', isExpanded: true },
+            { sectionKey: 'grantConfiguration', sectionName: 'Grant Configuration', isExpanded: true },
+            { sectionKey: 'statusAndProvisioning', sectionName: 'Status and Provisioning', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

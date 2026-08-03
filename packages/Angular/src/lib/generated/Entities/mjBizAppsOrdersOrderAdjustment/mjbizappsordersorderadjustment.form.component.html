@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Order Context Section -->
+    <!-- Order Association Section -->
     <mj-collapsible-panel
-        SectionKey="orderContext"
-        SectionName="Order Context"
-        Icon="fa fa-shopping-cart"
+        SectionKey="orderAssociation"
+        SectionName="Order Association"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -38,10 +38,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Promotion and Discount Section -->
+    <!-- Promotion Details Section -->
     <mj-collapsible-panel
-        SectionKey="promotionAndDiscount"
-        SectionName="Promotion and Discount"
+        SectionKey="promotionDetails"
+        SectionName="Promotion Details"
         Icon="fa fa-tags"
         [Form]="this"
         [FormContext]="formContext">
@@ -66,10 +66,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Pricing and Adjustment Section -->
+    <!-- Financial Details Section -->
     <mj-collapsible-panel
-        SectionKey="pricingAndAdjustment"
-        SectionName="Pricing and Adjustment"
+        SectionKey="financialDetails"
+        SectionName="Financial Details"
         Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
@@ -89,6 +89,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Approval and Audit Section -->
+    <mj-collapsible-panel
+        SectionKey="approvalAndAudit"
+        SectionName="Approval and Audit"
+        Icon="fa fa-check-circle"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -97,16 +107,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Authorization and Audit Section -->
-    <mj-collapsible-panel
-        SectionKey="authorizationAndAudit"
-        SectionName="Authorization and Audit"
-        Icon="fa fa-user-shield"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
