@@ -10,64 +10,97 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Recognition Details Section -->
+    <!-- Entity Relationships Section -->
     <mj-collapsible-panel
-        SectionKey="recognitionDetails"
-        SectionName="Recognition Details"
-        Icon="fa fa-clock"
+        SectionKey="entityRelationships"
+        SectionName="Entity Relationships"
+        Icon="fa fa-link"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="ScheduleID"
+            FieldName="OrganizationID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
-            LinkType="Record"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="PeriodStart"
-            Type="datepicker"
+            FieldName="PersonID"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="PeriodEnd"
-            Type="datepicker"
+            FieldName="CompanyID"
+            Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
 
-    <!-- Financials Section -->
+    <!-- Payment Terms Details Section -->
     <mj-collapsible-panel
-        SectionKey="financials"
-        SectionName="Financials"
-        Icon="fa fa-dollar-sign"
+        SectionKey="paymentTermsDetails"
+        SectionName="Payment Terms Details"
+        Icon="fa fa-money-check-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="Amount"
-            Type="number"
+            FieldName="PaymentTermsTypeID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Status"
+            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="JournalEntryID"
-            Type="textbox"
+            FieldName="Comments"
+            Type="textarea"
             [EditMode]="EditMode"
             [FormContext]="formContext"
-            LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Timeline Section -->
+    <mj-collapsible-panel
+        SectionKey="timeline"
+        SectionName="Timeline"
+        Icon="fa fa-calendar-alt"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="StartedAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="EndedAt"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>

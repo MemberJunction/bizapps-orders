@@ -18,7 +18,7 @@ export class mjBizAppsOrdersSubscriptionTermFormComponent extends BaseFormCompon
         this.initSections([
             { sectionKey: 'subscriptionDetails', sectionName: 'Subscription Details', isExpanded: true },
             { sectionKey: 'timelineAndStatus', sectionName: 'Timeline and Status', isExpanded: true },
-            { sectionKey: 'financials', sectionName: 'Financials', isExpanded: true },
+            { sectionKey: 'financialDetails', sectionName: 'Financial Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false }
         ]);

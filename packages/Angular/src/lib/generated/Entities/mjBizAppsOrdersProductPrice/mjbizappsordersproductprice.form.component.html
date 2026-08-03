@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Product Association Section -->
+    <!-- Pricing Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="productAssociation"
-        SectionName="Product Association"
-        Icon="fa fa-box"
+        SectionKey="pricingConfiguration"
+        SectionName="Pricing Configuration"
+        Icon="fa fa-money-bill"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -35,16 +35,6 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Pricing Configuration Section -->
-    <mj-collapsible-panel
-        SectionKey="pricingConfiguration"
-        SectionName="Pricing Configuration"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -92,7 +82,7 @@
     <mj-collapsible-panel
         SectionKey="quantityAndValidity"
         SectionName="Quantity and Validity"
-        Icon="fa fa-calendar-alt"
+        Icon="fa fa-calendar"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -130,10 +120,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Scheduling Rules Section -->
+    <!-- Recurrence and Timing Section -->
     <mj-collapsible-panel
-        SectionKey="schedulingRules"
-        SectionName="Scheduling Rules"
+        SectionKey="recurrenceAndTiming"
+        SectionName="Recurrence and Timing"
         Icon="fa fa-clock"
         [Form]="this"
         [FormContext]="formContext">
@@ -188,11 +178,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Status and Metadata Section -->
+    <!-- Rule Management Section -->
     <mj-collapsible-panel
-        SectionKey="statusAndMetadata"
-        SectionName="Status and Metadata"
-        Icon="fa fa-info-circle"
+        SectionKey="ruleManagement"
+        SectionName="Rule Management"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -283,7 +273,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderLines"
         SectionName="Order Lines"
-        Icon="fa fa-list-ul"
+        Icon="fa fa-list-ol"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

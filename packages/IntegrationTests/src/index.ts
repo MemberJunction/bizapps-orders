@@ -84,6 +84,7 @@ export * from './checks/fulfillment.checks.js';
 export * from './checks/capture-payment.checks.js';
 export * from './checks/invoicing.checks.js';
 export * from './checks/order-status.checks.js';
+export * from './checks/payment-terms.checks.js';
 export * from './checks/create-in-state.checks.js';
 export * from './checks/arithmetic-edges.checks.js';
 export * from './checks/concurrency.checks.js';

@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="ruleDefinition"
         SectionName="Rule Definition"
-        Icon="fa fa-cog"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -36,6 +36,24 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Rule Scope Section -->
+    <mj-collapsible-panel
+        SectionKey="ruleScope"
+        SectionName="Rule Scope"
+        Icon="fa fa-crosshairs"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="Scope"
             Type="select"
             [EditMode]="EditMode"
@@ -46,14 +64,6 @@
             [ShowLabel]="true"
             FieldName="ScopeReferenceID"
             Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -82,7 +92,7 @@
     <mj-collapsible-panel
         SectionKey="approvalWorkflow"
         SectionName="Approval Workflow"
-        Icon="fa fa-check-circle"
+        Icon="fa fa-check-double"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -101,7 +111,7 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

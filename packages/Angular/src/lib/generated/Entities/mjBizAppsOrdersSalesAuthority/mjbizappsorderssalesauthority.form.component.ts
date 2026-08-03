@@ -18,7 +18,7 @@ export class mjBizAppsOrdersSalesAuthorityFormComponent extends BaseFormComponen
         this.initSections([
             { sectionKey: 'assignment', sectionName: 'Assignment', isExpanded: true },
             { sectionKey: 'authorityLimits', sectionName: 'Authority Limits', isExpanded: true },
-            { sectionKey: 'statusAndMetadata', sectionName: 'Status and Metadata', isExpanded: false },
+            { sectionKey: 'configuration', sectionName: 'Configuration', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderAdjustments', sectionName: 'Order Adjustments', isExpanded: false }
         ]);

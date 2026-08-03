@@ -10,32 +10,22 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Line Item Reference Section -->
+    <!-- Pricing Context Section -->
     <mj-collapsible-panel
-        SectionKey="lineItemReference"
-        SectionName="Line Item Reference"
-        Icon="fa fa-list-ol"
+        SectionKey="pricingContext"
+        SectionName="Pricing Context"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="OrderLineID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Pricing Logic Section -->
-    <mj-collapsible-panel
-        SectionKey="pricingLogic"
-        SectionName="Pricing Logic"
-        Icon="fa fa-cogs"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -89,10 +79,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Source Provenance Section -->
+    <!-- Provenance Tracking Section -->
     <mj-collapsible-panel
-        SectionKey="sourceProvenance"
-        SectionName="Source Provenance"
+        SectionKey="provenanceTracking"
+        SectionName="Provenance Tracking"
         Icon="fa fa-history"
         [Form]="this"
         [FormContext]="formContext">

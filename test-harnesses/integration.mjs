@@ -110,6 +110,7 @@ const ALL_BUNDLES = [
     'create-in-state',
     'invoicing',
     'order-status',
+    'payment-terms',
     'arithmetic-edges',
     'concurrency',
     'events',

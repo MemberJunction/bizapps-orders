@@ -1,12 +1,12 @@
 [
   {
     "_comments": [
-      "Payment terms \u2014 the lookup the due-date walk resolves against (D83).",
+      "Payment terms — the lookup the due-date walk resolves against (D83).",
       "",
       "THIS TABLE WAS EMPTY, and that was not a cosmetic gap. `OrderHeader.DueDate` is what the aging",
       "report ages, what `Orders.GetOverdueWorklist` filters on, and what an invoice prints. With no",
       "terms to resolve and nothing deriving a date, the column was null on every order and the",
-      "collections worklist returned zero rows against 67 orders carrying an unpaid balance \u2014 a screen",
+      "collections worklist returned zero rows against 67 orders carrying an unpaid balance — a screen",
       "reporting a quiet afternoon because its only input never existed.",
       "",
       "NetDays is the whole of the arithmetic: DueDate = OrderDate + NetDays. `DueOnReceipt` is 0 and is",
@@ -16,21 +16,25 @@
       "Code": "DueOnReceipt",
       "Name": "Due on Receipt",
       "NetDays": 0,
-      "Description": "Payable when the invoice arrives. The terminal default of the terms walk (D83) \u2014 an order that resolves to nothing lands here rather than on a null due date.",
+      "Description": "Payable when the invoice arrives. The terminal default of the terms walk (D83) — an order that resolves to nothing lands here rather than on a null due date.",
       "IsActive": true
     },
     "primaryKey": {
       "ID": "7B1F5A20-0C4E-4E1A-9E9A-0D2C6F3A1001"
+    },
+    "sync": {
+      "lastModified": "2026-08-03T03:04:52.979Z",
+      "checksum": "3a6d2666299e623230b74fab534d55d243624b33dc283719ccc7a62f010f877a"
     }
   },
   {
     "_comments": [
-      "Payment terms \u2014 the lookup the due-date walk resolves against (D83).",
+      "Payment terms — the lookup the due-date walk resolves against (D83).",
       "",
       "THIS TABLE WAS EMPTY, and that was not a cosmetic gap. `OrderHeader.DueDate` is what the aging",
       "report ages, what `Orders.GetOverdueWorklist` filters on, and what an invoice prints. With no",
       "terms to resolve and nothing deriving a date, the column was null on every order and the",
-      "collections worklist returned zero rows against 67 orders carrying an unpaid balance \u2014 a screen",
+      "collections worklist returned zero rows against 67 orders carrying an unpaid balance — a screen",
       "reporting a quiet afternoon because its only input never existed.",
       "",
       "NetDays is the whole of the arithmetic: DueDate = OrderDate + NetDays. `DueOnReceipt` is 0 and is",
@@ -45,16 +49,20 @@
     },
     "primaryKey": {
       "ID": "7B1F5A20-0C4E-4E1A-9E9A-0D2C6F3A1002"
+    },
+    "sync": {
+      "lastModified": "2026-08-03T03:04:52.989Z",
+      "checksum": "fc94393ae81376b64ccb01e0c229a0eaedd90c3ebd58286a4607b01e7c6e255d"
     }
   },
   {
     "_comments": [
-      "Payment terms \u2014 the lookup the due-date walk resolves against (D83).",
+      "Payment terms — the lookup the due-date walk resolves against (D83).",
       "",
       "THIS TABLE WAS EMPTY, and that was not a cosmetic gap. `OrderHeader.DueDate` is what the aging",
       "report ages, what `Orders.GetOverdueWorklist` filters on, and what an invoice prints. With no",
       "terms to resolve and nothing deriving a date, the column was null on every order and the",
-      "collections worklist returned zero rows against 67 orders carrying an unpaid balance \u2014 a screen",
+      "collections worklist returned zero rows against 67 orders carrying an unpaid balance — a screen",
       "reporting a quiet afternoon because its only input never existed.",
       "",
       "NetDays is the whole of the arithmetic: DueDate = OrderDate + NetDays. `DueOnReceipt` is 0 and is",
@@ -69,16 +77,20 @@
     },
     "primaryKey": {
       "ID": "7B1F5A20-0C4E-4E1A-9E9A-0D2C6F3A1003"
+    },
+    "sync": {
+      "lastModified": "2026-08-03T03:04:52.999Z",
+      "checksum": "22946f63635912872be0d43bd6916d9b26838874cdce18103053e1c572c0d397"
     }
   },
   {
     "_comments": [
-      "Payment terms \u2014 the lookup the due-date walk resolves against (D83).",
+      "Payment terms — the lookup the due-date walk resolves against (D83).",
       "",
       "THIS TABLE WAS EMPTY, and that was not a cosmetic gap. `OrderHeader.DueDate` is what the aging",
       "report ages, what `Orders.GetOverdueWorklist` filters on, and what an invoice prints. With no",
       "terms to resolve and nothing deriving a date, the column was null on every order and the",
-      "collections worklist returned zero rows against 67 orders carrying an unpaid balance \u2014 a screen",
+      "collections worklist returned zero rows against 67 orders carrying an unpaid balance — a screen",
       "reporting a quiet afternoon because its only input never existed.",
       "",
       "NetDays is the whole of the arithmetic: DueDate = OrderDate + NetDays. `DueOnReceipt` is 0 and is",
@@ -93,16 +105,20 @@
     },
     "primaryKey": {
       "ID": "7B1F5A20-0C4E-4E1A-9E9A-0D2C6F3A1004"
+    },
+    "sync": {
+      "lastModified": "2026-08-03T03:04:53.008Z",
+      "checksum": "9bcbeb29ba99e78ee7fa8ec59207d8890ae9828d2c9314048b6c700e8ad00bf1"
     }
   },
   {
     "_comments": [
-      "Payment terms \u2014 the lookup the due-date walk resolves against (D83).",
+      "Payment terms — the lookup the due-date walk resolves against (D83).",
       "",
       "THIS TABLE WAS EMPTY, and that was not a cosmetic gap. `OrderHeader.DueDate` is what the aging",
       "report ages, what `Orders.GetOverdueWorklist` filters on, and what an invoice prints. With no",
       "terms to resolve and nothing deriving a date, the column was null on every order and the",
-      "collections worklist returned zero rows against 67 orders carrying an unpaid balance \u2014 a screen",
+      "collections worklist returned zero rows against 67 orders carrying an unpaid balance — a screen",
       "reporting a quiet afternoon because its only input never existed.",
       "",
       "NetDays is the whole of the arithmetic: DueDate = OrderDate + NetDays. `DueOnReceipt` is 0 and is",
@@ -117,16 +133,20 @@
     },
     "primaryKey": {
       "ID": "7B1F5A20-0C4E-4E1A-9E9A-0D2C6F3A1005"
+    },
+    "sync": {
+      "lastModified": "2026-08-03T03:04:53.018Z",
+      "checksum": "3b2e5c51c1acb46aa22d2b691b7ccb9530fb4ef8d3042b3bf8d46cccef5ead59"
     }
   },
   {
     "_comments": [
-      "Payment terms \u2014 the lookup the due-date walk resolves against (D83).",
+      "Payment terms — the lookup the due-date walk resolves against (D83).",
       "",
       "THIS TABLE WAS EMPTY, and that was not a cosmetic gap. `OrderHeader.DueDate` is what the aging",
       "report ages, what `Orders.GetOverdueWorklist` filters on, and what an invoice prints. With no",
       "terms to resolve and nothing deriving a date, the column was null on every order and the",
-      "collections worklist returned zero rows against 67 orders carrying an unpaid balance \u2014 a screen",
+      "collections worklist returned zero rows against 67 orders carrying an unpaid balance — a screen",
       "reporting a quiet afternoon because its only input never existed.",
       "",
       "NetDays is the whole of the arithmetic: DueDate = OrderDate + NetDays. `DueOnReceipt` is 0 and is",
@@ -141,6 +161,10 @@
     },
     "primaryKey": {
       "ID": "7B1F5A20-0C4E-4E1A-9E9A-0D2C6F3A1006"
+    },
+    "sync": {
+      "lastModified": "2026-08-03T03:04:53.027Z",
+      "checksum": "b12273f17a19c1e64adfb2a77c028aaba5794554eeb98dace17892713bab65cd"
     }
   }
 ]

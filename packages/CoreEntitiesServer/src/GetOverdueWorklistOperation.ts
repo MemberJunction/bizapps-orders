@@ -34,6 +34,31 @@ import { RequireDate, RequireUUID } from './sql-guards.js';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
+/**
+ * A calendar date as `YYYY-MM-DD`, whatever the data layer handed over.
+ *
+ * `RunView` returns SQL `date` columns as **Date objects**, not strings. Everything here used to
+ * assume a string and split on `-`, which turns `Thu Jul 31 2026 00:00:00 GMT-0400` into a year of
+ * `NaN` and a day count measured from the epoch — an order one month overdue was reported as 46,264
+ * days overdue, and the aging buckets put it in `Days61Plus`.
+ *
+ * Nothing caught it because `DueDate` was null on every order until D83 landed, so this function
+ * never ran on real data. The same bug was found and fixed in `InvoiceBuilder`; this is its twin.
+ */
+function toISODate(value: unknown): string | null {
+    if (value == null || value === '') return null;
+    if (value instanceof Date) {
+        if (Number.isNaN(value.getTime())) return null;
+        // UTC components: a `date` column has no time and the driver materialises it at midnight UTC,
+        // so reading the local ones gives the day before anywhere west of Greenwich.
+        return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(value.getUTCDate()).padStart(2, '0')}`;
+    }
+    const text = String(value);
+    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+}
+
 /** Whole days between two ISO dates, rounded so a DST transition does not drift it. */
 function daysBetween(from: string, to: string): number {
     const parse = (s: string): number => {
@@ -128,7 +153,7 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
         // per row is less clear than one comparison.
         const minDays = input?.MinDaysOverdue ?? 0;
         const aged = rows
-            .map((row) => ({ row, days: daysBetween(String(row.DueDate), asOf) }))
+            .map((row) => ({ row, days: daysBetween(toISODate(row.DueDate) ?? asOf, asOf) }))
             .filter(({ days }) => days >= minDays);
 
         const credits = await this.creditsByCustomer(aged.map((a) => a.row), provider, user);
@@ -138,8 +163,8 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
             return {
                 OrderHeaderID: row.ID,
                 OrderNumber: row.OrderNumber,
-                OrderDate: String(row.OrderDate).slice(0, 10),
-                DueDate: String(row.DueDate).slice(0, 10),
+                OrderDate: toISODate(row.OrderDate) ?? '',
+                DueDate: toISODate(row.DueDate) ?? '',
                 DaysOverdue: days,
                 CompanyID: row.CompanyID,
                 CompanyName: row.Company ?? '',

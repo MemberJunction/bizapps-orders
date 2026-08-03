@@ -10,22 +10,32 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Entitlement Definition Section -->
+    <!-- Product Association Section -->
     <mj-collapsible-panel
-        SectionKey="entitlementDefinition"
-        SectionName="Entitlement Definition"
-        Icon="fa fa-info-circle"
+        SectionKey="productAssociation"
+        SectionName="Product Association"
+        Icon="fa fa-box"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="ProductID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Entitlement Configuration Section -->
+    <mj-collapsible-panel
+        SectionKey="entitlementConfiguration"
+        SectionName="Entitlement Configuration"
+        Icon="fa fa-sliders-h"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -87,10 +97,10 @@
 
     </mj-collapsible-panel>
 
-    <!-- Validity and Access Section -->
+    <!-- Access and Validity Section -->
     <mj-collapsible-panel
-        SectionKey="validityAndAccess"
-        SectionName="Validity and Access"
+        SectionKey="accessAndValidity"
+        SectionName="Access and Validity"
         Icon="fa fa-clock"
         [Form]="this"
         [FormContext]="formContext">

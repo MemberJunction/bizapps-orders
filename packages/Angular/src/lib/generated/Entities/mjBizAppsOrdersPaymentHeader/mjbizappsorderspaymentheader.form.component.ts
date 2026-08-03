@@ -18,15 +18,15 @@ export class mjBizAppsOrdersPaymentHeaderFormComponent extends BaseFormComponent
         this.initSections([
             { sectionKey: 'paymentInformation', sectionName: 'Payment Information', isExpanded: true },
             { sectionKey: 'relationships', sectionName: 'Relationships', isExpanded: true },
-            { sectionKey: 'financials', sectionName: 'Financials', isExpanded: true },
-            { sectionKey: 'transactionDetails', sectionName: 'Transaction Details', isExpanded: true },
+            { sectionKey: 'financialDetails', sectionName: 'Financial Details', isExpanded: true },
+            { sectionKey: 'integrationDetails', sectionName: 'Integration Details', isExpanded: true },
             { sectionKey: 'reversalDetails', sectionName: 'Reversal Details', isExpanded: true },
             { sectionKey: 'notesAndMemo', sectionName: 'Notes and Memo', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersStoredValueTransactions', sectionName: 'Stored Value Transactions', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false }
         ]);
     }
 }

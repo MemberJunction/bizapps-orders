@@ -414,7 +414,6 @@ __mj_BizAppsOrders.OrderLine
   FulfillmentStatus NULL,                      -- Pending | Fulfilled | Returned (seam, D15)
   ReversesOrderLineID NULL,
   SubscriptionID NULL,                         -- if this line births/extends a sub
-  RevenueRecognitionScheduleID NULL,           -- the computed envelope (§4.6)
   JournalEntryID NULL,                         -- ★ D10: this line's booked JE (SOFT ref → hard FK
                                                --   when CodeGen include-mode lands)
   Description NULL
@@ -453,7 +452,7 @@ __mj_BizAppsOrders.SubscriptionPlan     -- optional elaboration: billing cycle, 
 __mj_BizAppsOrders.Subscription         -- continuity record: OrderLineID (birth), CustomerOrganizationID,
                                         -- CompanyID [S1 rename], Status (Active|Paused|Canceled|Migrated|Trialing),
                                         -- period bounds, provider linkage (ProviderSubscriptionID),
-                                        -- RevenueRecognitionScheduleID, migration trail (MigratesFrom/To)
+                                        -- migration trail (MigratesFrom/To)
 __mj_BizAppsOrders.SubscriptionEvent    -- immutable log; ProviderEventID UNIQUE (webhook idempotency)
 ```
 
@@ -472,12 +471,9 @@ behavior and the renewal-spawn job are the deferred remainder of the subscriptio
 
 ### 4.6 Revenue-recognition envelope
 
-```sql
-__mj_BizAppsOrders.RevenueRecognitionSchedule  -- the COMPUTED envelope (method, dates, totals) —
-__mj_BizAppsOrders.RevRecScheduleLine          -- kept for MRR/ARR display + as the computation
-                                               -- source; the LEDGER truth is the forward-dated
-                                               -- JEs themselves (D14)
-```
+RETIRED (D84). There is no envelope table. The forward-dated journal entries ARE the schedule —
+dated, balanced and queryable — and the computation trail is those entries plus
+`OrderLinePriceComponent`. See D84 for why a second copy was worse than none.
 
 The waterfall math stands (per-period amounts, front-loaded rounding remainder in entry 1,
 anniversary dating); what gets WRITTEN is real future-dated JEs at booking-lock. The as-built
@@ -642,8 +638,9 @@ Per D14 — the whole model in four sentences:
    accounting batches sweep entries by date window (default cutoff = today).
 3. **Changes and cancellations are correcting Orders** whose new entries net against the staged
    ones; staged entries are never edited or deleted.
-4. `RevenueRecognitionSchedule`(+lines) remains as the **computed envelope** for MRR/ARR display and
-   as the computation source — never the ledger truth.
+4. MRR/ARR and the computation trail come from the LEDGER — the forward-dated entries themselves,
+   plus `OrderLinePriceComponent` for how a line's price was arrived at. There is no separate
+   envelope table (D84).
 
 Fulfillment never recognizes revenue (D15). Bundle SSP allocation across performance obligations is
 future (fields ship now, D21).
@@ -1013,6 +1010,8 @@ Not architecture tensions — rulings owed by named people, with our default not
 ---
 
 ## 21. Out of scope and future-app boundaries
+| D83 | **An order's due date is RESOLVED at confirm and STORED, through a terms walk.** Nothing derived it: `DueDate` was only ever what a caller passed, `PaymentTermsType` had no rows, and the schema comment promising that `NetDays` derives the due date was aspirational. The consequence did not look like a missing feature — `Orders.GetOverdueWorklist` returned **zero rows as of any date**, against 67 orders carrying an unpaid balance, because aging, the worklist and the invoice all read that one null column. The walk is the third of this shape after D5 (GL accounts) and D69 (price): **stated `DueDate` → stated `PaymentTermsTypeID` → the buyer's `CustomerPaymentTerms` → the selling company's `AccountingCompanyProfile.DefaultPaymentTermsTypeID` → due on receipt.** Resolved ONCE at confirm and persisted, so three surfaces read one date instead of deriving three that can disagree. A **stated** date is recorded as stated and never recomputed — that is the entire interface a contracts app needs, and Orders grows no knowledge of contracts. Terms are deliberately **not per product**: they belong to the deal, an order carrying a Net 30 and a Net 60 product has no coherent answer, and per-line due dates would mean splitting the receivable. Unlike D5 this walk does **not** fail loudly — missing terms have a sane answer, and refusing a sale over an unconfigured lookup would be hostile. | Amith 2026-08-02: "we should have a default terms at the company level… then the ability to override that at various levels," and on products: "agree about product pushback, not a factor on a product." |
+| D84 | **RETIRED: `RevenueRecognitionSchedule`, `RevRecScheduleLine` and `OrderLine.RevenueRecognitionScheduleID`.** Kept as "the computed envelope for MRR/ARR display and the computation source", and **nothing ever wrote them** — 14 lines in the review seed carry a deferred recognition type and not one had a schedule. Both stated purposes are already served by what recognition produces: the releases ARE a schedule (forward-dated, balanced, queryable in `JournalEntry`/`JournalEntryLine`), and the trail is those entries plus `OrderLinePriceComponent`. A second copy of the same facts is free to drift from the ledger, and **empty tables that look authoritative are worse than absent ones** — a report writer finds them and assumes they are the source of truth. Not redundant with Subscriptions, which was the first guess: the deferred lines in the seed carry no subscription at all. Redundant with the LEDGER. Forecasting, if it is ever wanted, belongs in an FP&A layer rather than beside the ledger. Revenue recognition itself is untouched — `RevenueRecognitionType` and the forward-dated entries stay. | Amith 2026-08-02: "I think the tables… are all redundant with what Subs does, why do we need it? I lean towards killing this," and "I don't need the forecast concept here, we'd model that later in the FP&A layer." |
 
 **Deferred, design standing** (each has a revisit trigger; nothing here is a contradiction):
 currency/FX (D24) · product variants (SKU matrix) · metered-billing engine (pricing fields ship) ·
@@ -1128,8 +1127,12 @@ executes nothing and reports success; the parity floor exists because of that.
 - Sales-rule evaluation beyond `DiscountLimit`, and approval routing (deferred to v-next; see §21
   for exactly which slice is live and which is decorative).
 - Statements and consolidated bill packages · ORDER SPLITTING (the queue ships; splitting one order
-  into several shipments does not) · `create-into-Fulfilled` (`Orders.CreateOrderInState`, D17) ·
-  CDP migration tooling. (Orders-side RLS and role seeding are REMOVED, not deferred — MJ's own
+  into several shipments does not) · CDP migration tooling.
+- **The review seed exercises one status.** All 75 orders are `Confirmed`; no line requires
+  fulfilment, so `GetFulfillmentQueue` is empty the same way the overdue worklist was, and
+  `PaymentProvider`, `PaymentIntent`, `PriceList`, `PriceTier` and `CustomerTaxExemption` have no
+  rows. The back end has integration coverage for all of it — it just never reaches a screen. Worth
+  fixing in `seed-review-data.mjs` before anyone demos this. (Orders-side RLS and role seeding are REMOVED, not deferred — MJ's own
   row-level security covers it; see §14.)
 - Stripe against a real sandbox — the stub covers the path; the live run is a separate exercise.
 

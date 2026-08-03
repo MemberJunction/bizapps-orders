@@ -16,7 +16,7 @@ export class mjBizAppsOrdersOrderLineDimensionFormComponent extends BaseFormComp
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'orderLineContext', sectionName: 'Order Line Context', isExpanded: true },
-            { sectionKey: 'dimensionMapping', sectionName: 'Dimension Mapping', isExpanded: true },
+            { sectionKey: 'dimensionDefinition', sectionName: 'Dimension Definition', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

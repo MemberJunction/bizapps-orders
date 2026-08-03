@@ -51,6 +51,7 @@ import '../checks/fulfillment.checks.js';
 import '../checks/capture-payment.checks.js';
 import '../checks/invoicing.checks.js';
 import '../checks/order-status.checks.js';
+import '../checks/payment-terms.checks.js';
 import '../checks/create-in-state.checks.js';
 import '../checks/arithmetic-edges.checks.js';
 import '../checks/concurrency.checks.js';
@@ -95,6 +96,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'create-in-state': 12,
     invoicing: 15,
     'order-status': 8,
+    'payment-terms': 8,
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,
