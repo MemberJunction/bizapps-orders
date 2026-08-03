@@ -500,6 +500,13 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             {
                 EntityName: CUSTOMER_PAYMENT_TERMS_ENTITY,
                 ExtraFilter: `${clause} AND Status = 'Active'`,
+                // ORDER IS PART OF THE CONTRACT, not a convenience. `BestCustomerTerms` picks the
+                // most recently started row, and without an ORDER BY the rows arrive in whatever
+                // order the engine chooses — so a bug that simply kept the FIRST row would give the
+                // right answer or the wrong one depending on the plan, and a test could pass twice
+                // and fail on the third run. Oldest first makes "keep the first" always wrong, which
+                // is what makes the guard against it meaningful.
+                OrderBy: 'StartedAt',
                 ResultType: 'simple',
             },
             user,

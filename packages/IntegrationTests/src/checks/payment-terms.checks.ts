@@ -33,6 +33,10 @@
  *   PT6   a confirmed order past its due date reaches Orders.GetOverdueWorklist
  *   PT7   customer terms are effective on the ORDER date, not on today
  *   PT8   company-scoped customer terms beat unscoped ones
+ *   PT9   terms keyed to a PERSON are found — a different SQL branch from the organization one
+ *   PT10  expired terms stop applying and the walk falls through to the next rung
+ *   PT11  inactive terms are ignored
+ *   PT12  the most recently started terms win among equally specific ones
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -253,6 +257,122 @@ export const PaymentTermsChecks: NamedCheck[] = [
         const order = await sell(ctx);
         const stored = await headerTerms(ctx, order.Order.ID as string);
         AssertEqual(stored.DueDate, "2026-07-16", "the company-scoped fifteen days won");
+      }),
+  },
+  {
+    Id: "payment-terms.PT9",
+    Name: "PT9: terms keyed to a PERSON are found, not just to an organization",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // A DIFFERENT SQL BRANCH. `customerPaymentTerms` filters on `OrganizationID` or on `PersonID`
+        // depending on who the order bills, and every other check here bills an organization — so the
+        // person branch had no coverage at all. An individual buyer's negotiated terms silently not
+        // applying is exactly the shape that ships: the order still gets a date, just the wrong one.
+        const f = Fx();
+        await setCompanyDefault(ctx, f.CoA.ID, await termsID(ctx, "Net30"));
+        const net90 = await termsID(ctx, "Net90");
+        await createViaEntity(ctx, CUSTOMER_PAYMENT_TERMS_ENTITY, {
+          PersonID: f.Customers.PersonID,
+          PaymentTermsTypeID: net90,
+          Status: "Active",
+        });
+
+        const order = await sell(ctx, {
+          BillToOrganizationID: undefined,
+          BillToPersonID: f.Customers.PersonID,
+        } as Partial<OrderSpec>);
+        const stored = await headerTerms(ctx, order.Order.ID as string);
+        AssertEqual(stored.DueDate, "2026-09-29", "ninety days from the person's own terms");
+        AssertEqual(
+          String(stored.PaymentTermsTypeID).toLowerCase(),
+          net90.toLowerCase(),
+          "and not the company default of thirty",
+        );
+      }),
+  },
+  {
+    Id: "payment-terms.PT10",
+    Name: "PT10: EXPIRED customer terms do not apply, and the walk falls through",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // PT7 covers terms that have not STARTED. This is the other end: terms that have ended must
+        // stop applying, and the order must land on the next rung rather than on nothing.
+        const f = Fx();
+        await setCompanyDefault(ctx, f.CoA.ID, await termsID(ctx, "Net15"));
+        await createViaEntity(ctx, CUSTOMER_PAYMENT_TERMS_ENTITY, {
+          OrganizationID: f.Customers.OrganizationID,
+          PaymentTermsTypeID: await termsID(ctx, "Net90"),
+          StartedAt: new Date("2025-01-01T00:00:00Z"),
+          EndedAt: new Date("2026-06-01T00:00:00Z"),
+          Status: "Active",
+        });
+
+        const order = await sell(ctx);
+        const stored = await headerTerms(ctx, order.Order.ID as string);
+        AssertEqual(stored.DueDate, "2026-07-16", "the company's fifteen days, not the expired ninety");
+      }),
+  },
+  {
+    Id: "payment-terms.PT11",
+    Name: "PT11: INACTIVE customer terms are ignored",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // Deactivating is how somebody withdraws terms without deleting the record. If the walk read
+        // it anyway, the withdrawal would be silent and the customer would keep the old terms.
+        //
+        // NOTE ON WHERE THIS BITES. `Status` is filtered in the SQL as well as in
+        // `CustomerTermsApply`, so this check guards the QUERY — breaking the behaviour predicate
+        // alone leaves it green, and breaking the filter alone fails it. That is deliberate
+        // defence in depth; the unit tests cover the predicate on its own.
+        const f = Fx();
+        await setCompanyDefault(ctx, f.CoA.ID, await termsID(ctx, "Net15"));
+        await createViaEntity(ctx, CUSTOMER_PAYMENT_TERMS_ENTITY, {
+          OrganizationID: f.Customers.OrganizationID,
+          PaymentTermsTypeID: await termsID(ctx, "Net90"),
+          Status: "Inactive",
+        });
+
+        const order = await sell(ctx);
+        const stored = await headerTerms(ctx, order.Order.ID as string);
+        AssertEqual(stored.DueDate, "2026-07-16", "the inactive ninety-day terms were not used");
+      }),
+  },
+  {
+    Id: "payment-terms.PT12",
+    Name: "PT12: the most recently started terms win among equally specific ones",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // Terms get renegotiated, and the old row is often left in place rather than deleted. The
+        // later negotiation has to supersede the earlier one, or a customer keeps terms they moved off.
+        //
+        // The OLDER row is created first and the query reads `ORDER BY StartedAt`, so the superseded
+        // terms arrive first. Without that ordering this check passed against a "keep the first row"
+        // bug purely because the engine happened to return the newer one first — it asserted nothing
+        // and would have flipped on a different query plan.
+        const f = Fx();
+        const net90 = await termsID(ctx, "Net90");
+        const net45 = await termsID(ctx, "Net45");
+        await createViaEntity(ctx, CUSTOMER_PAYMENT_TERMS_ENTITY, {
+          OrganizationID: f.Customers.OrganizationID,
+          PaymentTermsTypeID: net90,
+          StartedAt: new Date("2025-01-01T00:00:00Z"),
+          Status: "Active",
+        });
+        await createViaEntity(ctx, CUSTOMER_PAYMENT_TERMS_ENTITY, {
+          OrganizationID: f.Customers.OrganizationID,
+          PaymentTermsTypeID: net45,
+          StartedAt: new Date("2026-06-01T00:00:00Z"),
+          Status: "Active",
+        });
+
+        const order = await sell(ctx);
+        const stored = await headerTerms(ctx, order.Order.ID as string);
+        AssertEqual(stored.DueDate, "2026-08-15", "forty-five days from the later negotiation");
+        AssertEqual(String(stored.PaymentTermsTypeID).toLowerCase(), net45.toLowerCase(), "the newer terms");
       }),
   },
 ];

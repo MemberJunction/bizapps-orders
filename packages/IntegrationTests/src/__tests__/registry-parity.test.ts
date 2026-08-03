@@ -96,7 +96,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'create-in-state': 12,
     invoicing: 15,
     'order-status': 8,
-    'payment-terms': 8,
+    'payment-terms': 12,
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,
