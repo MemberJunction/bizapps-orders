@@ -8,6 +8,7 @@ import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../..
 import { MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
 import { MJOStatTileComponent } from '../../panels/stat-tile.component';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
+import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 
 /** What to do next with a row. */
 interface MJONextAction {
@@ -42,7 +43,7 @@ interface MJONextAction {
 @Component({
     selector: 'mjo-overdue-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent, MJOAgingBarComponent, MJOStatTileComponent],
+    imports: [CommonModule, MJOWorklistTableComponent, MJOAgingBarComponent, MJOStatTileComponent, MJAlertComponent],
     template: `
         <div class="mj-stat-grid mjo-ov__tiles">
             <mjo-stat-tile
@@ -72,24 +73,18 @@ interface MJONextAction {
         </div>
 
         @if (LoadError) {
-            <div class="mj-banner mj-banner--error mjo-ov__error">
-                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                <div class="body">
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-ov__error">
                     <strong>The worklist did not load.</strong>
                     {{ LoadError }}
-                </div>
-            </div>
+            </mj-alert>
         }
 
-        <div class="mj-banner mj-banner--neutral mjo-ov__error">
-            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-ov__error">
                 <strong>Dunning notifies a person; nothing here auto-cancels.</strong>
                 A failed card is usually an expired card, not a lost customer. Escalation is a
                 sequence of reminders with a human at the end of it — cancelling access on a missed
                 payment turns a billing problem into a churn problem.
-            </div>
-        </div>
+        </mj-alert>
 
         <div class="mj-card mjo-ov__aging">
             <div class="mj-card-head">
@@ -102,14 +97,11 @@ interface MJONextAction {
         </div>
 
         @if (Truncated) {
-            <div class="mj-banner mj-banner--warning mjo-ov__truncated">
-                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                <div class="body">
+            <mj-alert Variant="warning" Icon="fa-solid fa-triangle-exclamation" class="mjo-ov__truncated">
                     <strong>This list was capped.</strong>
                     More rows are overdue than are shown. Narrow it with a filter rather than working from a
                     partial list that looks complete.
-                </div>
-            </div>
+            </mj-alert>
         }
 
         <mjo-worklist-table

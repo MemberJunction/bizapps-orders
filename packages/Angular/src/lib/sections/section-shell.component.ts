@@ -1,9 +1,10 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ViewEncapsulation } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     MJLeftNavComponent,
     MJLeftNavContentComponent,
     MJPageBodyComponent,
+    MJPageBodyInteriorComponent,
     MJPageHeaderComponent,
     MJPageLayoutComponent,
     type MJLeftNavItem,
@@ -50,6 +51,20 @@ import {
 @Component({
     selector: 'mjo-section-shell',
     standalone: true,
+    // The component kit ships WITH the component, via ngc.
+    //
+    // It used to be a standalone stylesheet that nothing imported: `ngc` only compiles what a
+    // component references, so the kit was built into dist and then never loaded by any real
+    // Explorer. The app rendered as unstyled text — no cards, overlapping footers — while the
+    // mockups and this repo's own apps/MJExplorer harness looked perfect, because both @import
+    // it by hand. That is also why `stylesheet-wiring` passed: it checks the harness, not the app.
+    //
+    // Referencing it from the shell that every section renders inside means Angular carries it
+    // wherever the app is mounted, with no host-app wiring to forget. `ViewEncapsulation.None`
+    // is required and deliberate: these are shared classes used by descendant components, so
+    // they must NOT be scoped to this component's own DOM.
+    encapsulation: ViewEncapsulation.None,
+    styleUrls: ['../styles/orders-kit.css'],
     imports: [
         CommonModule,
         MJPageLayoutComponent,
@@ -57,6 +72,7 @@ import {
         MJPageBodyComponent,
         MJLeftNavComponent,
         MJLeftNavContentComponent,
+        MJPageBodyInteriorComponent,
     ],
     template: `
         <mj-page-layout>
@@ -74,8 +90,26 @@ import {
                     [MobileTitle]="Title"
                     (ItemClicked)="onItemClicked($event)" />
 
+                <!--
+                  The interior is what makes the sub-pages SCROLL, and it is required.
+
+                  mj-left-nav-content deliberately forces every DIRECT child to
+                  flex + height:100% + overflow:hidden via a ::ng-deep child rule, and that
+                  rule outranks a sub-page's own :host overflow:auto. Projected straight in,
+                  every page became a fixed-height box with its overflow hidden: anything past
+                  the fold — the lower card headings on Catalog and Receivables — was clipped
+                  and unreachable, because a mouse wheel cannot scroll overflow:hidden.
+
+                  mj-page-body-interior is MJ's own answer to exactly this: it is named in
+                  that rule's :not() exemption list and self-declares flex:1 1 auto plus
+                  overflow-y:auto. Wrapping here restores scrolling for every section at once
+                  and keeps the sub-pages as grandchildren, so their own :host layout applies
+                  as written. Padding stays off because each page supplies its own.
+                -->
                 <mj-left-nav-content [Loading]="Loading" [Error]="Error">
-                    <ng-content></ng-content>
+                    <mj-page-body-interior [Padding]="false">
+                        <ng-content></ng-content>
+                    </mj-page-body-interior>
                 </mj-left-nav-content>
             </mj-page-body>
         </mj-page-layout>

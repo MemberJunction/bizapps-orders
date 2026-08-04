@@ -196,6 +196,12 @@
 .ed-footer {
   position: sticky;
   bottom: 0;
+  /* Sits ABOVE the content it covers. A sticky bar legitimately overlays whatever
+     scrolls beneath it, but with no elevation and no stacking context the card
+     underneath bled through and the bar looked like a half-drawn panel slicing the
+     Promotions card in two. The shadow and z-index make it read as a toolbar. */
+  z-index: var(--mj-z-sticky);
+  box-shadow: var(--mj-shadow-md);
   margin: var(--mj-space-6) calc(-1 * var(--mj-space-6)) 0;
   padding: var(--mj-space-3) var(--mj-space-6);
   background: var(--mj-bg-surface);
@@ -207,12 +213,6 @@
 }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
-
-@media (max-width: 1000px) {
-  .ed-stage-note {
-    display: none;
-  }
-}
 
 @media (max-width: 760px) {
   :host {

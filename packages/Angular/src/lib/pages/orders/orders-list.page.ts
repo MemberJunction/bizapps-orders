@@ -31,9 +31,7 @@ import { FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
     standalone: true,
     imports: [CommonModule, MJOWorklistTableComponent, MJOSummaryStripComponent],
     template: `
-        <mjo-summary-strip
-            [Figures]="SummaryFigures"
-            Note="Counts are read once over the whole population, not per chip — six presets partition the same orders." />
+        <mjo-summary-strip [Figures]="SummaryFigures" />
 
         <mjo-worklist-table
             [Columns]="Columns"

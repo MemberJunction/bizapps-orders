@@ -6,6 +6,7 @@ import { MJOMoneyPipe } from '../../panels/money-format';
 import { OrderDraft } from '@mj-biz-apps/orders-entities';
 import { MJOOrderEntryService } from '../../services/order-entry.service';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** A line being returned, with the cap the origin imposes. */
 interface MJOReturnLine {
@@ -47,16 +48,13 @@ interface MJOReturnLine {
 @Component({
     selector: 'mjo-return-page',
     standalone: true,
-    imports: [CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe],
+    imports: [MJButtonDirective, CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
-        <div class="mj-banner mj-banner--neutral mjo-rt__note">
-            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="info" Icon="fa-solid fa-rotate-left" class="mjo-rt__note">
                 <strong>A return is a new order that mirrors the original.</strong>
                 Same accounts, sides swapped, positive amounts — a ledger line with a negative debit is not
                 a thing. The booked order is never edited.
-            </div>
-        </div>
+        </mj-alert>
 
         @if (Origin) {
             <div class="mj-card mjo-rt__origin">
@@ -177,32 +175,26 @@ interface MJOReturnLine {
                         </div>
                     </div>
 
-                    <div class="mj-banner mj-banner--info mjo-rt__note">
-                        <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
-                        <div class="body">
+                    <mj-alert Variant="info" Icon="fa-solid fa-scale-balanced" class="mjo-rt__note">
                             <strong>Mirrored entry.</strong>
                             The return books the origin's entry with debit and credit swapped and
                             positive amounts — same accounts, opposite direction. It is never an
                             edit of the booked order, because that order genuinely happened and
                             rewriting it would destroy the trail of money that moved.
-                        </div>
-                    </div>
+                    </mj-alert>
 
-                    <div class="mj-banner mj-banner--neutral mjo-rt__note">
-                        <i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i>
-                        <div class="body">
+                    <mj-alert Variant="info" Icon="fa-solid fa-hand-holding-dollar" class="mjo-rt__note">
                             <strong>How to settle it.</strong>
                             A return creates a credit — an order with a negative balance. It can be
                             spent on the customer's next order or refunded as cash. Nothing is
                             refunded automatically: which one happens is a decision, and the system
                             should not make it silently.
-                        </div>
-                    </div>
+                    </mj-alert>
 
                     <div class="mjo-rt__actions">
                         <button
                             type="button"
-                            class="mj-btn mj-btn--primary"
+                            mjButton variant="primary"
                             [disabled]="!CanReturn"
                             (click)="ConfirmReturn()">
                             <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm return

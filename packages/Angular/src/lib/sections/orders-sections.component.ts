@@ -58,6 +58,7 @@ import { MJOSubscriptionsPageComponent } from '../pages/receivables/subscription
 import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/catalog/products.page';
 import { MJOPricingPageComponent, MJOPromotionsPageComponent } from '../pages/catalog/pricing.page';
 import { MJOReturnPageComponent } from '../pages/orders/return.page';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -562,7 +563,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 @Component({
     selector: 'mjo-orders-section',
     standalone: true,
-    imports: [CommonModule, MJOSectionShellComponent, MJOConfirmPreflightComponent],
+    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent, MJOConfirmPreflightComponent, MJAlertComponent],
     template: `
         <mjo-section-shell
             Title="Orders"
@@ -585,13 +586,13 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             <div actions>
                 <button
                     type="button"
-                    class="mj-btn mj-btn--outline"
+                    mjButton variant="outline"
                     (click)="RefreshActivePage()"
                     aria-label="Refresh this page">
                     <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
                 </button>
                 @if (primaryAction; as action) {
-                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                    <button type="button" mjButton variant="primary" (click)="StartPrimary()">
                         <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
                     </button>
                 }
@@ -612,10 +613,9 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
                 (Cancelled)="ClosePreflight()" />
         }
         @if (PreflightError) {
-            <div class="mj-banner mj-banner--error mjo-section__preflight-error" role="alert">
-                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                <div class="body"><strong>Nothing was confirmed.</strong> {{ PreflightError }}</div>
-            </div>
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-section__preflight-error" role="alert">
+<strong>Nothing was confirmed.</strong> {{ PreflightError }}
+            </mj-alert>
         }
     `,
     styles: [
@@ -679,7 +679,7 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
 @Component({
     selector: 'mjo-payments-section',
     standalone: true,
-    imports: [CommonModule, MJOSectionShellComponent],
+    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent],
     template: `
         <mjo-section-shell
             Title="Payments"
@@ -702,13 +702,13 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
             <div actions>
                 <button
                     type="button"
-                    class="mj-btn mj-btn--outline"
+                    mjButton variant="outline"
                     (click)="RefreshActivePage()"
                     aria-label="Refresh this page">
                     <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
                 </button>
                 @if (primaryAction; as action) {
-                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                    <button type="button" mjButton variant="primary" (click)="StartPrimary()">
                         <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
                     </button>
                 }
@@ -767,7 +767,7 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
 @Component({
     selector: 'mjo-receivables-section',
     standalone: true,
-    imports: [CommonModule, MJOSectionShellComponent],
+    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent],
     template: `
         <mjo-section-shell
             Title="Receivables"
@@ -790,13 +790,13 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
             <div actions>
                 <button
                     type="button"
-                    class="mj-btn mj-btn--outline"
+                    mjButton variant="outline"
                     (click)="RefreshActivePage()"
                     aria-label="Refresh this page">
                     <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
                 </button>
                 @if (primaryAction; as action) {
-                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                    <button type="button" mjButton variant="primary" (click)="StartPrimary()">
                         <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
                     </button>
                 }
@@ -847,7 +847,7 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
 @Component({
     selector: 'mjo-catalog-section',
     standalone: true,
-    imports: [CommonModule, MJOSectionShellComponent],
+    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent],
     template: `
         <mjo-section-shell
             Title="Catalog"
@@ -870,13 +870,13 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
             <div actions>
                 <button
                     type="button"
-                    class="mj-btn mj-btn--outline"
+                    mjButton variant="outline"
                     (click)="RefreshActivePage()"
                     aria-label="Refresh this page">
                     <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
                 </button>
                 @if (primaryAction; as action) {
-                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                    <button type="button" mjButton variant="primary" (click)="StartPrimary()">
                         <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
                     </button>
                 }

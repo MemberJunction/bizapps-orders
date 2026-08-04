@@ -152,6 +152,22 @@ export interface MJOPaymentRow extends Record<string, unknown> {
 @Injectable({ providedIn: 'root' })
 export class MJOOrdersDataService {
     /**
+     * Entities whose last read came back capped.
+     *
+     * Deliberately NOT a UI element — the fix for a truncated total is a
+     * server-side aggregate, not a disclaimer next to a wrong number. This exists
+     * so the condition is *detectable* (by a test, by a caller that wants to
+     * refuse to render a total, or by anyone reading the console) instead of
+     * being invisible until someone reconciles by hand.
+     */
+    private readonly truncated = new Set<string>();
+
+    /** True when the last read of `entityName` was capped by `MaxRows`. */
+    public WasTruncated(entityName: string): boolean {
+        return this.truncated.has(entityName);
+    }
+
+    /**
      * Orders matching a preset.
      *
      * The presets are the business rules, and each is a filter rather than a
@@ -750,6 +766,35 @@ export class MJOOrdersDataService {
                     `  Reason: ${result.ErrorMessage ?? 'no error message supplied'}`,
             );
             return [];
+        }
+
+        // A TRUNCATED read is not an error, so nothing above catches it — and a
+        // truncated read that feeds a TOTAL is a wrong number rather than a short
+        // list. `TotalOpen` on Customer A/R reduces over these rows, so past the
+        // cap the headline A/R figure silently understates with nothing on screen
+        // to say so. That is the same class of failure as the empty-state case
+        // above: a plausible number is more dangerous than an obvious blank.
+        //
+        // MJ hands us the signal for free — `TotalRowCount` is "total rows that
+        // match the view criteria, not just the number returned" — so detecting
+        // this costs nothing. We were discarding both counts.
+        //
+        // ONLY the implicit default is reported. A caller that passed its own
+        // `maxRows` chose a short list on purpose — the typeahead asks for a
+        // handful of products out of hundreds and is right to. Flagging those
+        // buried the real signal under noise the first time this ran (Products,
+        // 1 of 22, entirely deliberate). The accidental case is precisely the one
+        // where nobody chose a number.
+        if (maxRows === undefined && result.TotalRowCount > result.RowCount) {
+            this.truncated.add(entityName);
+            console.error(
+                `[MJOOrdersDataService] TRUNCATED read of "${entityName}" — returned ` +
+                    `${result.RowCount} of ${result.TotalRowCount} matching rows.\n` +
+                    `  Any TOTAL derived from this read is UNDERSTATED by the remainder.\n` +
+                    `  Filter: ${filters.filter(Boolean).join(' AND ') || '(none)'}\n` +
+                    `  Fix: pass an explicit MaxRows for a worklist, or aggregate server-side ` +
+                    `(RunQuery) for a figure. See BACKLOG.md task 11d.`,
+            );
         }
         return result.Results ?? [];
     }

@@ -40,10 +40,6 @@
       [Stages]="Stages"
       [ReadOnly]="!IsEditable"
       (BeforeStageChange)="OnBeforeStageChange($event)" />
-    <span class="small muted spacer ed-stage-note">
-      Stage order is fixed; skipping <i>forward</i> is legal. After confirming, corrections are
-      reversing orders.
-    </span>
   </div>
 
   <mjo-money-strip
@@ -52,8 +48,7 @@
     [Paid]="0"
     [Balance]="Totals?.GrossTotal ?? null"
     [ShowPaid]="Status !== 'Draft'"
-    [PaymentStatus]="Status === 'Draft' ? null : 'Unpaid'"
-    Note="Rollups are trigger-maintained from the lines — never authored." />
+    [PaymentStatus]="Status === 'Draft' ? null : 'Unpaid'" />
 
   <!-- Issues above the tabs: a red dot alone leaves the user hunting. -->
   @if (Issues.length) {
@@ -604,7 +599,7 @@
     </div>
 
     <div class="mj-slide-in-foot">
-      <button type="button" class="mj-btn mj-btn--primary mj-btn--sm" (click)="CloseDrawer()">Done</button>
+      <button type="button" mjButton variant="primary" size="sm" (click)="CloseDrawer()">Done</button>
       <span class="small muted spacer">Every field here defaults from something. Nothing is required.</span>
     </div>
   </aside>
@@ -613,18 +608,18 @@
 <!-- ═══════ FOOTER ═══════ -->
 <div class="ed-footer">
   @if (IsEditable) {
-    <button type="button" class="mj-btn mj-btn--outline" (click)="SaveDraft()">
+    <button type="button" mjButton variant="outline" (click)="SaveDraft()">
       <i class="fa-regular fa-floppy-disk" aria-hidden="true"></i> Save draft
     </button>
-    <button type="button" class="mj-btn mj-btn--primary" [disabled]="!CanConfirm" (click)="RequestConfirm()">
+    <button type="button" mjButton variant="primary" [disabled]="!CanConfirm" (click)="RequestConfirm()">
       <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm order
     </button>
   } @else {
     <!-- Edit gating shows the state's REAL verbs rather than a greyed-out Save. -->
-    <button type="button" class="mj-btn mj-btn--outline">
+    <button type="button" mjButton variant="outline">
       <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Create reversal…
     </button>
-    <button type="button" class="mj-btn mj-btn--outline">
+    <button type="button" mjButton variant="outline">
       <i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Take payment
     </button>
     <span class="small muted">

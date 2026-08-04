@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
+import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 
 /**
  * `mjo-pricing-page` — price rules, and the dates that switch them over.
@@ -30,17 +31,14 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
 @Component({
     selector: 'mjo-pricing-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent],
+    imports: [CommonModule, MJOWorklistTableComponent, MJAlertComponent],
     template: `
-        <div class="mj-banner mj-banner--neutral mjo-pr__note">
-            <i class="fa-solid fa-tags" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="info" Icon="fa-solid fa-tags" class="mjo-pr__note">
                 <strong>One row is one price rule.</strong>
                 Bands and seasons are several rows rather than one row with more columns, and priority
                 disambiguates. Ties between equal-priority rules are refused when the rule is
                 <b>saved</b> — a price that depends on row order is a price nobody can explain.
-            </div>
-        </div>
+        </mj-alert>
 
         <mjo-worklist-table
             [Columns]="Columns"
@@ -194,17 +192,14 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
             </div>
         </div>
 
-        <div class="mj-banner mj-banner--warning mjo-pr__block">
-            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="warning" Icon="fa-solid fa-triangle-exclamation" class="mjo-pr__block">
                 <strong>Ambiguity is refused at write time.</strong>
                 Two rules with the same priority that could both match are rejected when the rule is
                 SAVED, not resolved when a price is asked for. A price that depends on which row the
                 database returned first is a price nobody can explain — and the person who created
                 the ambiguity is the one who should resolve it, while they still remember what they
                 meant.
-            </div>
-        </div>
+        </mj-alert>
     `,
     styles: [
         `
@@ -385,16 +380,13 @@ export class MJOPricingPageComponent implements OnInit {
 @Component({
     selector: 'mjo-promotions-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent],
+    imports: [CommonModule, MJOWorklistTableComponent, MJAlertComponent],
     template: `
-        <div class="mj-banner mj-banner--neutral mjo-pr__note">
-            <i class="fa-solid fa-percent" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="info" Icon="fa-solid fa-percent" class="mjo-pr__note">
                 <strong>A promotion is the offer; a code is a string pointing at it.</strong>
                 One offer can carry several codes — partner, conference, win-back — all reporting into the
                 same promotion rather than into three whose numbers have to be added up by hand.
-            </div>
-        </div>
+        </mj-alert>
 
         <mjo-worklist-table
             [Columns]="Columns"

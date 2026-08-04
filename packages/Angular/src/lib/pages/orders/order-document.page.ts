@@ -2,6 +2,7 @@ import { ChangeDetectorRef, Component, Input, OnInit, inject } from '@angular/co
 import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
+import { MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** Who issued the bill. */
 export interface MJOIssuer {
@@ -37,10 +38,10 @@ export interface MJOIssuer {
 @Component({
     selector: 'mjo-order-document-page',
     standalone: true,
-    imports: [CommonModule, MJOMoneyPipe],
+    imports: [MJButtonDirective, CommonModule, MJOMoneyPipe],
     template: `
         <div class="mjo-doc__toolbar no-print">
-            <button type="button" class="mj-btn mj-btn--outline" (click)="print()">
+            <button type="button" mjButton variant="outline" (click)="print()">
                 <i class="fa-solid fa-print" aria-hidden="true"></i> Print
             </button>
             <span class="small muted spacer">

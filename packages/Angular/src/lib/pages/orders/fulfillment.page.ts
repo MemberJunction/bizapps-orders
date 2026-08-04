@@ -7,6 +7,7 @@ import {
     type FulfillmentQueueOrder,
 } from '@mj-biz-apps/orders-entities';
 import { DaysSince, FormatDate } from '../../panels/money-format';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /**
  * One pickable line, flattened from the queue's order/line nesting.
@@ -55,61 +56,51 @@ interface MJOFulfillmentRow extends Record<string, unknown> {
 @Component({
     selector: 'mjo-fulfillment-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent],
+    imports: [MJButtonDirective, CommonModule, MJOWorklistTableComponent, MJAlertComponent],
     template: `
-        <div class="mj-banner mj-banner--neutral mjo-fq__note">
-            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-fq__note">
                 <strong>Marking a line fulfilled writes no journal entry.</strong>
                 Revenue was settled by the product's recognition shape when the order booked. What this
                 queue controls is the order's stage — an order with nothing to ship auto-advances past
                 Posted, and one with a physical line waits here.
-            </div>
-        </div>
+        </mj-alert>
 
         @if (Result) {
-            <div
-                class="mj-banner mjo-fq__note"
-                [class.mj-banner--success]="!Result.RefusedCount"
-                [class.mj-banner--warning]="Result.RefusedCount"
-                role="status">
-                <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
-                <div class="body">
-                    <strong>{{ Result.FulfilledCount }} marked fulfilled.</strong>
-                    @if (Result.AdvancedCount) {
-                        {{ Result.AdvancedCount }}
-                        {{ Result.AdvancedCount === 1 ? 'order' : 'orders' }} advanced to Fulfilled.
-                    }
-                    @if (Result.RefusedCount) {
-                        {{ Result.RefusedCount }} refused — those lines were already shipped or are
-                        not fulfillable. The rest went through, so a picker who scans one
-                        already-shipped item does not lose the other nine scans.
-                    }
-                </div>
-            </div>
+            <mj-alert
+                class="mjo-fq__note"
+                [Variant]="Result.RefusedCount ? 'warning' : 'success'"
+                Icon="fa-solid fa-truck-fast"
+                Role="status">
+                <strong>{{ Result.FulfilledCount }} marked fulfilled.</strong>
+                @if (Result.AdvancedCount) {
+                    {{ Result.AdvancedCount }}
+                    {{ Result.AdvancedCount === 1 ? 'order' : 'orders' }} advanced to Fulfilled.
+                }
+                @if (Result.RefusedCount) {
+                    {{ Result.RefusedCount }} refused — those lines were already shipped or are
+                    not fulfillable. The rest went through, so a picker who scans one
+                    already-shipped item does not lose the other nine scans.
+                }
+            </mj-alert>
         }
 
         @if (Error) {
-            <div class="mj-banner mj-banner--error mjo-fq__note" role="alert">
-                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                <div class="body"><strong>Nothing was marked.</strong> {{ Error }}</div>
-            </div>
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-fq__note" role="alert">
+<strong>Nothing was marked.</strong> {{ Error }}
+            </mj-alert>
         }
 
-        <div class="mj-banner mj-banner--neutral mjo-fq__note">
-            <i class="fa-solid fa-box-open" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="info" Icon="fa-solid fa-box-open" class="mjo-fq__note">
                 <strong>Orders held only by fulfillment.</strong>
                 Everything here has already been paid for and booked — the money and the revenue
                 moved when the order confirmed. What is outstanding is the goods, which is why
                 nothing on this screen writes a journal entry.
-            </div>
-        </div>
+        </mj-alert>
 
         <div class="mjo-fq__actions">
             <button
                 type="button"
-                class="mj-btn mj-btn--primary"
+                mjButton variant="primary"
                 [disabled]="!SelectedCount || Busy"
                 (click)="FulfillSelected()">
                 <i class="fa-solid fa-check" aria-hidden="true"></i>
@@ -117,7 +108,7 @@ interface MJOFulfillmentRow extends Record<string, unknown> {
             </button>
             <button
                 type="button"
-                class="mj-btn mj-btn--outline"
+                mjButton variant="outline"
                 [disabled]="!Rows.length"
                 (click)="ToggleAll()">
                 <!-- Guarded on a NON-EMPTY selection: with no rows, 0 === 0 read

@@ -15,6 +15,7 @@ import { AllocateOldestFirst, UnallocatedRemainder } from '../../panels/allocati
 import { MJOMoneyPipe, DaysSince } from '../../panels/money-format';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** A tender the customer can pay with. */
 export interface MJOTenderOption {
@@ -55,7 +56,7 @@ export interface MJOTenderOption {
 @Component({
     selector: 'mjo-payment-entry-page',
     standalone: true,
-    imports: [CommonModule, FormsModule, MJOAllocationGridComponent, MJOStatedValueComponent, MJOMoneyPipe],
+    imports: [MJButtonDirective, CommonModule, FormsModule, MJOAllocationGridComponent, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <div class="mjo-pe__split">
             <!-- ── Left: the money ── -->
@@ -187,14 +188,11 @@ export interface MJOTenderOption {
                 }
 
                 @if (!Payer) {
-                    <div class="mj-banner mj-banner--neutral mjo-pe__note">
-                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-                        <div class="body">
+                    <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-pe__note">
                             Showing every open order across all customers. Choose who is paying to
                             narrow it — a payment belongs to one payer, and allocating across
                             customers is almost always a mistake rather than an intention.
-                        </div>
-                    </div>
+                    </mj-alert>
                 }
 
                 <mjo-allocation-grid
@@ -207,13 +205,13 @@ export interface MJOTenderOption {
                 <div class="mjo-pe__actions">
                     <button
                         type="button"
-                        class="mj-btn mj-btn--primary"
+                        mjButton variant="primary"
                         [disabled]="!CanCapture || Busy"
                         (click)="Capture()">
                         <i class="fa-solid fa-check" aria-hidden="true"></i>
                         {{ Busy ? 'Capturing…' : 'Capture payment' }}
                     </button>
-                    <button type="button" class="mj-btn mj-btn--outline">Save as pending</button>
+                    <button type="button" mjButton variant="outline">Save as pending</button>
                     <span class="small muted spacer">
                         Allocations freeze at capture. A pending payment is still a draft.
                     </span>
@@ -222,20 +220,17 @@ export interface MJOTenderOption {
         </div>
 
         @if (Error) {
-            <div class="mj-banner mj-banner--error mjo-pe__result" role="alert">
-                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                <div class="body"><strong>Nothing was captured.</strong> {{ Error }}</div>
-            </div>
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-pe__result" role="alert">
+<strong>Nothing was captured.</strong> {{ Error }}
+            </mj-alert>
         }
 
         @if (Result) {
-            <div
-                class="mj-banner mjo-pe__result"
-                [class.mj-banner--success]="!Result.WasRetry"
-                [class.mj-banner--info]="Result.WasRetry"
-                role="status">
-                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-                <div class="body">
+            <mj-alert
+                class="mjo-pe__result"
+                [Variant]="Result.WasRetry ? 'info' : 'success'"
+                Icon="fa-solid fa-circle-check"
+                Role="status">
                     @if (Result.WasRetry) {
                         <strong>Already captured — no money moved.</strong>
                         {{ Result.PaymentNumber }} was taken by an earlier attempt carrying the same
@@ -256,8 +251,7 @@ export interface MJOTenderOption {
                             }
                         </div>
                     }
-                </div>
-            </div>
+            </mj-alert>
         }
     `,
     styles: [

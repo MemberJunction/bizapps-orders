@@ -2,6 +2,7 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe } from './money-format';
 import { MJOJournalEntryPreviewComponent, type MJOJournalEntry } from './journal-entry-preview.component';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** Something that makes confirming impossible, in the words of the rule that failed. */
 export interface MJOBlocker {
@@ -104,7 +105,7 @@ export interface MJOPreflight {
 @Component({
     selector: 'mjo-confirm-preflight',
     standalone: true,
-    imports: [CommonModule, MJOMoneyPipe, MJOJournalEntryPreviewComponent],
+    imports: [MJButtonDirective, CommonModule, MJOMoneyPipe, MJOJournalEntryPreviewComponent, MJAlertComponent],
     template: `
         @if (Preflight) {
             <div class="mjo-preflight">
@@ -112,9 +113,7 @@ export interface MJOPreflight {
                      everything that assumes the answer is yes. -->
                 @if (Preflight.Blockers.length) {
                     @for (blocker of Preflight.Blockers; track blocker.Code) {
-                        <div class="mj-banner mj-banner--error mjo-preflight__banner">
-                            <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
-                            <div class="body">
+                        <mj-alert Variant="error" Icon="fa-solid fa-circle-exclamation" class="mjo-preflight__banner">
                                 <strong>{{ blocker.Message }}</strong>
                                 @if (blocker.LineNumber != null) {
                                     <span class="muted"> (line {{ blocker.LineNumber }})</span>
@@ -127,17 +126,13 @@ export interface MJOPreflight {
                                         </a>
                                     </div>
                                 }
-                            </div>
-                        </div>
+                        </mj-alert>
                     }
                 } @else {
-                    <div class="mj-banner mj-banner--success mjo-preflight__banner">
-                        <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-                        <div class="body">
+                    <mj-alert Variant="success" Icon="fa-solid fa-circle-check" class="mjo-preflight__banner">
                             <strong>Nothing is blocking this confirm.</strong>
                             Every line resolved an account for each role it needs.
-                        </div>
-                    </div>
+                    </mj-alert>
                 }
 
                 <!-- Journal entries -->
@@ -317,10 +312,10 @@ export interface MJOPreflight {
           so (see the header note): booking journal entries is not undoable.
         -->
         <div class="mjo-preflight__actions">
-            <button type="button" class="mj-btn mj-btn--outline" [disabled]="Busy" (click)="Cancelled.emit()">
+            <button type="button" mjButton variant="outline" [disabled]="Busy" (click)="Cancelled.emit()">
                 Cancel
             </button>
-            <button type="button" class="mj-btn mj-btn--primary" [disabled]="!CanConfirm" (click)="Confirmed.emit()">
+            <button type="button" mjButton variant="primary" [disabled]="!CanConfirm" (click)="Confirmed.emit()">
                 @if (Busy) {
                     <i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Confirming…
                 } @else {

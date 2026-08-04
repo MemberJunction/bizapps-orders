@@ -270,7 +270,7 @@
             (keydown.enter)="AddCode()"
             placeholder="e.g. MEMBER40"
             aria-label="Promotion code">
-          <button type="button" class="mj-btn mj-btn--outline" (click)="AddCode()">Apply</button>
+          <button type="button" mjButton variant="outline" (click)="AddCode()">Apply</button>
         </div>
 
         <div class="row wrap fe-codes">
@@ -410,15 +410,15 @@
     </div>
   }
 
-  <button type="button" class="mj-btn mj-btn--outline" (click)="SaveDraft()">
+  <button type="button" mjButton variant="outline" (click)="SaveDraft()">
     <i class="fa-regular fa-floppy-disk" aria-hidden="true"></i> Save draft
   </button>
-  <button type="button" class="mj-btn mj-btn--flat" (click)="Escalate()">
+  <button type="button" mjButton variant="flat" (click)="Escalate()">
     <i class="fa-solid fa-pen-ruler" aria-hidden="true"></i> Open in full editor
   </button>
   <button
     type="button"
-    class="mj-btn mj-btn--primary"
+    mjButton variant="primary"
     [disabled]="!CanConfirm"
     (click)="RequestConfirm()">
     <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm order

@@ -5,6 +5,7 @@ import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
 import { MJOOrdersDataService, MJO_ENTITIES } from '../../services/orders-data.service';
 import { RunView, Metadata } from '@memberjunction/core';
+import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 
 /** A subscription row. */
 interface MJOSubscriptionRow extends Record<string, unknown> {
@@ -53,20 +54,17 @@ interface MJORecognitionPeriod {
 @Component({
     selector: 'mjo-subscriptions-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent, MJOStatedValueComponent, MJOMoneyPipe],
+    imports: [CommonModule, MJOWorklistTableComponent, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <div class="mjo-sub__split">
             <div class="mjo-sub__left">
-                <div class="mj-banner mj-banner--neutral mjo-sub__note">
-                    <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-                    <div class="body">
+                <mj-alert Variant="info" Icon="fa-solid fa-shield-halved" class="mjo-sub__note">
                         <strong>Why this cannot double-bill.</strong>
                         A renewal is refused when a term already covers the period it would create.
                         The check is against COVERAGE, not against whether a job has run — so a
                         retried batch, a manual nudge and a scheduled sweep all reach the same
                         answer.
-                    </div>
-                </div>
+                </mj-alert>
 
                 <mjo-worklist-table
                     [Columns]="Columns"
@@ -108,24 +106,18 @@ interface MJORecognitionPeriod {
                                 {{ Selected.AutoRenew ? 'On' : 'Off — it simply ends' }}
                             </mjo-stated-value>
 
-                            <div class="mj-banner mj-banner--info mjo-sub__note">
-                                <i class="fa-solid fa-user-group" aria-hidden="true"></i>
-                                <div class="body">
+                            <mj-alert Variant="info" Icon="fa-solid fa-user-group" class="mjo-sub__note">
                                     Holder and beneficiary are separate on purpose, and it decides what counts
                                     as a duplicate — which is why ten seats for ten staff are ten subscriptions
                                     rather than ten collisions.
-                                </div>
-                            </div>
+                            </mj-alert>
 
                             @if (RenewalDue) {
-                                <div class="mj-banner mj-banner--warning mjo-sub__note">
-                                    <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
-                                    <div class="body">
+                                <mj-alert Variant="warning" Icon="fa-solid fa-hourglass-half" class="mjo-sub__note">
                                         <strong>Renews in {{ DaysToRenewal }} days.</strong>
                                         With auto-renew on, the system places a confirmed order at lead time —
                                         invoicing ahead of the period, which is how subscription billing works.
-                                    </div>
-                                </div>
+                                </mj-alert>
                             }
                         </div>
                     </div>

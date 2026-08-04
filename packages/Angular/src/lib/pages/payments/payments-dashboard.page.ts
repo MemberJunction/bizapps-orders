@@ -4,6 +4,7 @@ import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../..
 import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.component';
 import { MJOOrdersDataService, type MJOPaymentRow } from '../../services/orders-data.service';
 import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
+import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 
 /**
  * `mjo-payments-dashboard-page` — what came in, and does it tie?
@@ -22,7 +23,7 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 @Component({
     selector: 'mjo-payments-dashboard-page',
     standalone: true,
-    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent, MJOMoneyPipe],
+    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <div class="mj-stat-grid">
             <mjo-stat-tile
@@ -58,10 +59,7 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
                 </div>
                 <div class="mj-card-pad">
                     <mjo-day-bars [Bars]="CashPerDay" Unit="received" />
-                    <div class="small muted mjo-pd__note">
-                        Amounts, not counts — one large wire and thirty small cards are the same
-                        number of payments and nothing like the same day.
-                    </div>
+                    <div class="small muted mjo-pd__note">Amounts received, not payment counts.</div>
                 </div>
             </div>
 
@@ -72,10 +70,6 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
                 </div>
                 <div class="mj-card-pad">
                     <mjo-bar-list [Rows]="TenderMix" EmptyText="No payments yet." />
-                    <div class="small muted mjo-pd__note">
-                        One hue and a label per row. Four tenders in four colours would look like an encoding
-                        while encoding nothing — the label already carries the identity.
-                    </div>
                 </div>
             </div>
 
@@ -85,21 +79,15 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
                     <h3>Reconciliation</h3>
                 </div>
                 <div class="mj-card-pad">
-                    <div class="mj-banner mj-banner--success">
-                        <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-                        <div class="body">
+                    <mj-alert Variant="success" Icon="fa-solid fa-circle-check">
                             <strong>Every captured payment balances.</strong>
                             The amount-equals-allocations rule is enforced at the capture transition, so an
                             unbalanced payment cannot exist to be found later.
-                        </div>
-                    </div>
-                    <div class="mj-banner mj-banner--neutral mjo-pd__note">
-                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-                        <div class="body">
+                    </mj-alert>
+                    <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-pd__note">
                             A refund is a <b>new payment</b>, never an edit of the capture — so chargebacks and
                             reversals show in the refunds list rather than as a mutated original.
-                        </div>
-                    </div>
+                    </mj-alert>
                 </div>
             </div>
         </div>

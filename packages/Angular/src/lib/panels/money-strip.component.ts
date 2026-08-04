@@ -64,8 +64,13 @@ export type MJOPaymentStatus = 'Unpaid' | 'PartiallyPaid' | 'Paid' | 'Overdue' |
                 </span>
             </div>
 
-            @if (ShowStatus) {
-                <div>
+            <!-- statusLabel is required as well as ShowStatus: a draft has no PaymentStatus,
+                 so the cell rendered an EMPTY chip in its own bordered column. Beside TOTAL and
+                 BALANCE that reads as a third figure that failed to load rather than one that
+                 does not apply yet. ShowStatus stays the explicit opt-out; this is the
+                 nothing-to-say case. -->
+            @if (ShowStatus && statusLabel) {
+                <div class="mj-money-strip__status">
                     <span class="mj-chip" [class]="statusChipClass">{{ statusLabel }}</span>
                     @if (Note) {
                         <span class="small muted mjo-money-strip__note">{{ Note }}</span>
