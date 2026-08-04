@@ -1059,6 +1059,27 @@ accounting as just another upstream emitter) · CRM / customer master (BizApps C
 
 ---
 
+## 21a. Zero-value lines book nothing (and what must not assume otherwise)
+
+Recorded 2026-08-04, verified against the running system through the UI.
+
+A line whose value is zero — a freebie, a fully-discounted item, a zero-priced sample — **books no
+journal entry**, and that is the correct behaviour: there are no economic legs to record, and a
+Dr 0 / Cr 0 entry would be noise in the ledger. **The order line itself is kept**, because it is
+what the customer ordered and what fulfilment has to ship.
+
+So the invariant is **one JE per line THAT HAS VALUE**, never one JE per line.
+
+**The trap this creates, which is the reason it is written down:** `OrderLine.JournalEntryID IS NOT
+NULL` is *not* a test for "booked". A correctly-booked order containing a freebie has a line where
+that column is permanently NULL, so any posted/unposted check written that way reports the whole
+order as forever unbooked. Check the valued lines, or check the order's status.
+
+This is easy to get wrong in good faith rather than through carelessness: the first version of
+`test-harnesses/check-order.mjs` asserted `#JEs == #lines` and failed a perfectly correct order.
+The same note is in the accounting master plan §14, since the ledger side is where the wrong
+assumption does damage.
+
 ## 22. Build inventory (state as of 2026-07-31)
 
 For orientation only — the plan above is the authority. This section previously described a donor
