@@ -62,25 +62,11 @@
     </mj-alert>
   }
 
-  <div class="mj-tabs ed-tabs" role="tablist">
-    @for (tab of Tabs; track tab.Key) {
-      <button
-        type="button"
-        class="mj-tab"
-        role="tab"
-        [class.is-active]="ActiveTab === tab.Key"
-        [attr.aria-selected]="ActiveTab === tab.Key"
-        (click)="SelectTab(tab.Key)">
-        {{ tab.Label }}
-        @if (tab.Count != null) {
-          <span class="n">{{ tab.Count }}</span>
-        }
-        @if (tab.HasError) {
-          <span class="dot" [attr.aria-label]="tab.Label + ' has something required and missing'"></span>
-        }
-      </button>
-    }
-  </div>
+  <mj-tab-nav
+    class="ed-tabs"
+    [Tabs]="TabNav"
+    [ActiveKey]="ActiveTab"
+    (TabChange)="SelectTabKey($event)" />
 </div>
 
 <!-- ═══════ LINES ═══════ -->

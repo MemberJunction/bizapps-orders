@@ -31,7 +31,7 @@ import {
 import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format';
 import { BuildOrderStages, type MJOOrderStage, type MJOStageChangeRequestEventArgs } from '../../panels/order-stages';
 import type { MJOProductOption } from './fast-entry.page';
-import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective, MJTabNavComponent, type TabConfig } from '@memberjunction/ng-ui-components';
 
 /** Which tab is showing. */
 export type MJOEditorTab = 'lines' | 'parties' | 'charges' | 'payment' | 'accounting';
@@ -80,7 +80,7 @@ export interface MJOEditorTabDef {
 @Component({
     selector: 'mjo-order-editor-page',
     standalone: true,
-    imports: [MJAlertComponent, MJButtonDirective, 
+    imports: [MJAlertComponent, MJButtonDirective, MJTabNavComponent,
         CommonModule,
         FormsModule,
         MJOMoneyStripComponent,
@@ -215,6 +215,35 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     }
 
     /**
+     * The same five tabs, shaped for MJ's own tab component.
+     *
+     * WHY mj-tab-nav AND NOT accounting's mj-workspace-card. The workspace card
+     * models OPEN DOCUMENTS — its strip closes, reorders and adds tabs, and it
+     * carries a New button. These five are PANES OF ONE ORDER: you cannot close
+     * Parties or add a sixth, so those affordances would be lies. It also lives in
+     * accounting's transfer-pending/ folder, which is explicitly parked code owed
+     * to another home, so depending on it now would buy a migration later.
+     * mj-tab-nav is the shared, shipped component whose semantics actually match.
+     *
+     * The red dot becomes an error-variant badge. A bare dot is a signifier with
+     * no meaning attached — only the aria-label said what it meant, so a sighted
+     * user saw a dot and had to guess. "!" in the same badge slot the count uses
+     * reads as attention-needed on sight, and severity is carried by colour rather
+     * than by a second element competing with the count.
+     */
+    public get TabNav(): TabConfig[] {
+        return this.Tabs.map((tab) => ({
+            key: tab.Key,
+            label: tab.Label,
+            // A tab can need attention without having a count (Parties has no
+            // number), so the badge falls back to "!" rather than rendering
+            // nothing and losing the signal entirely.
+            badge: tab.Count ?? (tab.HasError ? '!' : null),
+            badgeVariant: tab.HasError ? ('error' as const) : ('default' as const),
+        }));
+    }
+
+    /**
      * Load what only a SAVED order can have.
      *
      * Payments and dimension tags exist against persisted rows, so a draft that
@@ -270,6 +299,20 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
 
     public SelectTab(tab: MJOEditorTab): void {
         this.ActiveTab = tab;
+    }
+
+    /**
+     * Narrowing entry point for MJ's tab component, whose (TabChange) is a plain
+     * string — it cannot know our union.
+     *
+     * Checked against the real tab list rather than cast. A cast would compile and
+     * then quietly set ActiveTab to a key that matches no pane, leaving the editor
+     * showing nothing with no error to explain it; this simply ignores a key that
+     * is not ours, and the current tab stays put.
+     */
+    public SelectTabKey(key: string): void {
+        const match = this.Tabs.find((tab) => tab.Key === key);
+        if (match) this.SelectTab(match.Key);
     }
 
     /**

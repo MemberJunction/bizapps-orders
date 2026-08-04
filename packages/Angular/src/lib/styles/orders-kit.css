@@ -734,29 +734,20 @@ kbd {
   background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
   border-radius: var(--mj-radius-md); overflow: auto;
 }
-.mj-tabs {
-  display: flex; gap: 2px; border-bottom: 1px solid var(--mj-border-default);
-}
-.mj-tab {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 14px; font-size: 13px; font-weight: var(--mj-font-medium);
-  color: var(--mj-text-secondary); border-bottom: 2px solid transparent;
-  cursor: pointer; background: none; border-top: none; border-left: none; border-right: none;
-  font-family: inherit;
-}
-.mj-tab:hover { color: var(--mj-text-primary); }
-.mj-tab.is-active {
-  color: var(--mj-brand-primary); border-bottom-color: var(--mj-brand-primary);
-  font-weight: var(--mj-font-semibold);
-}
-.mj-tab .dot {
-  width: 6px; height: 6px; border-radius: var(--mj-radius-full);
-  background: var(--mj-status-error); flex: none;
-}
-.mj-tab .n {
-  font-size: 10.5px; color: var(--mj-text-muted); font-variant-numeric: tabular-nums;
-  background: var(--mj-bg-surface-sunken); border-radius: var(--mj-radius-full); padding: 0 5px;
-}
+/* The hand-rolled .mj-tabs / .mj-tab block lived here and is gone. The order
+   editor's five tabs now use MJ's own <mj-tab-nav>, which is the shipped,
+   tokenized component for exactly this job — a pane switcher over one record.
+
+   Not accounting's mj-workspace-card, despite the surface similarity: that models
+   OPEN DOCUMENTS, so its strip closes, reorders and adds tabs and carries a New
+   button — affordances that would be lies over five fixed panes of one order. It
+   also lives in accounting's transfer-pending/ folder, code explicitly parked for
+   another home, so depending on it would have bought a migration later.
+
+   The old red dot became an error-variant badge in the same slot the count uses.
+   A bare dot was a signifier with no meaning attached; only its aria-label said
+   what it meant, so a sighted user saw a dot and guessed. */
+
 .mj-slide-in {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: var(--mj-z-modal);
   width: min(560px, 100vw); display: flex; flex-direction: column;
