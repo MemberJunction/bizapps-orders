@@ -501,6 +501,56 @@ export class MJOOrdersDataService {
     }
 
     /**
+     * The customers this desk has billed most recently, newest first.
+     *
+     * WHY THIS EXISTS. The customer field only searched, and only from two
+     * characters in — so an order taker facing an empty box had to already know a
+     * name to type. On seeded data that is close to unusable (you have to guess
+     * something like "IT-ORD-13242799 Buyer Org"), and even on real data it makes
+     * the commonest case — the customer you billed an hour ago — the slowest one.
+     *
+     * RECENCY, not alphabetical: a desk bills the same handful of accounts over
+     * and over, so the last few orders predict the next one far better than the
+     * top of the alphabet does. Derived from recent orders rather than stored,
+     * because "who we deal with" is already recorded there and a second list
+     * would be one more thing to keep true.
+     *
+     * Returns the same shape as {@link SearchCustomers} so the picker renders
+     * both through one template and selection behaves identically.
+     */
+    public async RecentCustomers(
+        limit = 8,
+        user?: UserInfo,
+    ): Promise<Array<{ ID: string; Name: string; IsOrganization: boolean; Email: string | null }>> {
+        const orders = await this.run<Record<string, unknown>>(
+            MJO_ENTITIES.OrderHeader,
+            [],
+            'OrderDate DESC',
+            80,
+            user,
+        );
+
+        const seen = new Set<string>();
+        const out: Array<{ ID: string; Name: string; IsOrganization: boolean; Email: string | null }> = [];
+        for (const order of orders) {
+            // An order can carry BOTH a bill-to organization and a bill-to person
+            // (an employee ordering against their employer's account), and either
+            // is a legitimate thing to start the next order from — so consider both.
+            const candidates: Array<{ id: string; name: string; isOrg: boolean }> = [
+                { id: String(order['BillToOrganizationID'] ?? ''), name: String(order['BillToOrganization'] ?? ''), isOrg: true },
+                { id: String(order['BillToPersonID'] ?? ''), name: String(order['BillToPerson'] ?? ''), isOrg: false },
+            ];
+            for (const c of candidates) {
+                if (!c.id || !c.name || seen.has(c.id)) continue;
+                seen.add(c.id);
+                out.push({ ID: c.id, Name: c.name, IsOrganization: c.isOrg, Email: null });
+                if (out.length >= limit) return out;
+            }
+        }
+        return out;
+    }
+
+    /**
      * Tenders a payment can be taken on, in the order they should be offered.
      *
      * Reversal types are excluded because they are not something a person CHOOSES

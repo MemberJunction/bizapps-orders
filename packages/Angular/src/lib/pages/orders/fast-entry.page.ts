@@ -192,14 +192,43 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
      * looked complete and could not start an order, because nothing could ever be
      * chosen. The order draft needs a bill-to before it can price anything.
      */
+    /** True while the list is showing recents rather than search hits. */
+    public ShowingRecents = false;
+
+    /**
+     * Offer the recently-billed customers the moment the field is focused.
+     *
+     * Search-only meant an empty box taught you nothing: you had to already know a
+     * name, and on seeded data you had to guess one. Showing the last few accounts
+     * on focus turns the commonest case — the customer billed an hour ago — into
+     * one click, and makes the field self-explanatory for anyone who has never
+     * seen it. Typing still searches; these only fill the empty state.
+     */
+    public async OnCustomerFocus(): Promise<void> {
+        if (this.CustomerQuery.trim().length >= 2 || this.CustomerResults.length) return;
+        const recents = await this.data.RecentCustomers();
+        // Assign only AFTER the await, never across it — an assignment that
+        // straddles the boundary produces an NG0100 that aborts the DOM write and
+        // freezes the view on its pre-load render.
+        if (this.CustomerQuery.trim().length >= 2) return;
+        this.ShowingRecents = true;
+        this.CustomerResults = recents;
+        this.cdr.detectChanges();
+    }
+
     public OnCustomerQuery(): void {
         if (this.customerTimer) clearTimeout(this.customerTimer);
         const query = this.CustomerQuery;
         if (query.trim().length < 2) {
+            // Falling back below the search threshold returns to the recents, so
+            // clearing the box does not leave a dead panel behind.
             this.CustomerResults = [];
             this.CustomerSearching = false;
+            this.ShowingRecents = false;
+            void this.OnCustomerFocus();
             return;
         }
+        this.ShowingRecents = false;
         this.CustomerSearching = true;
         this.customerTimer = setTimeout(async () => {
             const results = await this.data.SearchCustomers(query);

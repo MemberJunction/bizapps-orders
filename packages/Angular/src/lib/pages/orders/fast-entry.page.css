@@ -375,3 +375,10 @@
 .fe-save-error {
   margin-top: var(--mj-space-3);
 }
+
+/* Header on the recents list, so "Recently billed" reads as a section label and
+   not as a selectable customer. */
+.fe-cust__recents-label {
+  padding: var(--mj-space-2) var(--mj-space-3) 0;
+  margin-bottom: 0;
+}

@@ -94,6 +94,7 @@
               id="mjo-customer-search"
               [(ngModel)]="CustomerQuery"
               (ngModelChange)="OnCustomerQuery()"
+              (focus)="OnCustomerFocus()"
               placeholder="Find a person or organization…"
               autocomplete="off"
               role="combobox"
@@ -107,6 +108,9 @@
 
           @if (CustomerResults.length) {
             <div class="mj-typeahead-list is-open" role="listbox">
+              @if (ShowingRecents) {
+                <div class="sec-label fe-cust__recents-label">Recently billed</div>
+              }
               @for (option of CustomerResults; track option.ID) {
                 <div
                   class="mj-typeahead-item"
@@ -210,7 +214,11 @@
       }
 
       <div class="mj-typeahead fe-picker">
-        <div class="mj-search">
+        <!-- mjo-search, not mj-search: the kit's class carries the mjo- prefix, and
+             the typo'd form is styled by nobody (MJ ships no .mj-search either), so
+             the product box rendered as a bare ~150px inline input beside its icon
+             instead of the full-width search field the customer box uses. -->
+        <div class="mjo-search">
           <i class="fa-solid fa-plus" aria-hidden="true"></i>
           <input
             id="mjo-product-search"

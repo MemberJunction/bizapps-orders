@@ -35,7 +35,24 @@ const LIB = fileURLToPath(new URL('../..', import.meta.url));
  * (`mj-*` also covers this app's kit, which is checked by the same sweep because
  * the kit lives in `src/lib/styles`), Kendo, and Angular's own state classes.
  */
-const EXTERNALLY_OWNED = /^(fa[srlbd]?-|fas$|far$|mj-|k-|ng-)/;
+const EXTERNALLY_OWNED = /^(fa[srlbd]?-|fas$|far$|k-|ng-)/;
+
+/**
+ * `mj-` is deliberately NOT exempt.
+ *
+ * It covers both MemberJunction's classes and this app's kit, which shares the
+ * prefix on purpose — so blanket-exempting it let a real typo through:
+ * `class="mj-search"` where the kit defines `.mjo-search`. Nobody styles
+ * `.mj-search` (MJ does not ship it either), so the product picker rendered as a
+ * bare ~150px input for the life of the app.
+ *
+ * Not exempting it is safe, and measurably so: all 63 `mj-*` classes these
+ * templates use are defined in this app's own CSS. MJ's components are consumed
+ * as ELEMENTS (`<mj-alert>`), not as bare classes, so a `mj-` class with no rule
+ * here is a typo rather than a framework class. An earlier attempt scanned MJ's
+ * source to decide this; it walked into node_modules, threw, and failed OPEN —
+ * silently forgiving the very typo it was added to catch.
+ */
 
 /**
  * Classes that are deliberately markup hooks with no styling of their own —
@@ -43,6 +60,15 @@ const EXTERNALLY_OWNED = /^(fa[srlbd]?-|fas$|far$|mj-|k-|ng-)/;
  * SHORT and justify every entry; it is the escape hatch that could hide the very
  * bug this test exists to catch.
  */
+const MJ_OWNED = new Set<string>([
+    // MJ ships this globally in ui-components/input/input.scss (`.mj-input,
+    // .mj-textarea`). The kit used to redefine it with different metrics — two
+    // global rules of equal specificity with load order picking the winner — so
+    // ours was deleted. Verified in the running app: MJ's rules are present and
+    // winning (min-height 38px), so the class IS styled, just not by us.
+    'mj-input',
+]);
+
 const HOOK_ONLY = new Set<string>([
     'mjo-preflight', // panel root; every child is styled, the root needs nothing
 ]);
@@ -92,18 +118,26 @@ const collect = () => {
         }
     }
 
+    // COMMENTS FIRST. Class names get MENTIONED in prose all the time — the kit
+    // has a comment reading "MJ defines its own `.mj-search`" — and scanning raw
+    // text counted every one of those as a definition. That is not a niche edge:
+    // it silently forgave `class="mj-search"` (a typo for the kit's `.mjo-search`,
+    // styled by nobody) purely because a comment said the words, and it would mask
+    // any gap whose class name appears in prose anywhere in the file.
+    const rules = stylesheets.replace(/\/\*[\s\S]*?\*\//g, '');
+
     const defined = new Set<string>();
-    for (const match of stylesheets.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) defined.add(match[1]);
+    for (const match of rules.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) defined.add(match[1]);
     // Attribute selectors style whole families at once (e.g. the shared
     // `[class*="mjo-"][class*="__note"]` note rule), so a literal `.mjo-ar__note`
     // never appears. Treat the substrings they match as defined.
-    for (const match of stylesheets.matchAll(/\[class\*=["']([^"']+)["']\]/g)) defined.add(`*${match[1]}`);
+    for (const match of rules.matchAll(/\[class\*=["']([^"']+)["']\]/g)) defined.add(`*${match[1]}`);
 
     const isDefined = (cls: string) =>
         defined.has(cls) || [...defined].some((d) => d.startsWith('*') && cls.includes(d.slice(1)));
 
     return [...used.entries()]
-        .filter(([cls]) => !EXTERNALLY_OWNED.test(cls) && !HOOK_ONLY.has(cls) && !isDefined(cls))
+        .filter(([cls]) => !EXTERNALLY_OWNED.test(cls) && !HOOK_ONLY.has(cls) && !MJ_OWNED.has(cls) && !isDefined(cls))
         .map(([cls, where]) => `.${cls} — used in ${[...where].sort().join(', ')}`)
         .sort();
 };
