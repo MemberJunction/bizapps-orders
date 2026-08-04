@@ -1611,6 +1611,13 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             // The line's stored service period reflects the TERM, not what a user typed.
             line.ServicePeriodStart = term.StartDate;
             line.ServicePeriodEnd = term.EndDate;
+            // The forward link, which nothing was writing. Subscription.OrderLineID
+            // recorded the reverse, so the subscription knew its line while the line
+            // did not know its subscription — and PreviewConfirmOperation reads
+            // exactly this field to show what a confirm will create, so the pre-flight
+            // could never show subscription detail for a line. Set here because the
+            // line is already being saved on the next statement; it costs no extra write.
+            line.SubscriptionID = subscriptionID;
             await line.Save(options);
         }
 
@@ -1923,7 +1930,16 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const sub = await provider.GetEntityObject<BaseEntity>(SUBSCRIPTION_ENTITY, this.ContextCurrentUser);
         sub.NewRecord();
         sub.Set('SubscriptionNumber', await this.assignSubscriptionNumber());
-        sub.Set('CompanyID', this.CompanyID);
+        // The LINE's company, not the order's. A subscription is recurring revenue
+        // for whoever sells it, and on a mixed order that is not the order's owner:
+        // an order carrying a membership from each of two companies produced two
+        // subscriptions that BOTH landed in the header's ledger, so one company held
+        // the other's subscriber. The journal entries in this same transaction are
+        // already per-line and single-company (D10) — this brings subscriptions onto
+        // the same footing rather than leaving the two records disagreeing about who
+        // sold what. Falls back to the order's company only if a line somehow has
+        // none, which savePendingLines does not allow.
+        sub.Set('CompanyID', line.CompanyID ?? this.CompanyID);
         // The BIRTH line (D39/D40) — which purchase brought this subscription into existence.
         // Renewals append terms that carry their own OrderLineID; this one never changes.
         sub.Set('OrderLineID', line.ID);

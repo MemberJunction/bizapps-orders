@@ -312,6 +312,27 @@ await q(`INSERT INTO ${ORDERS}.Product
             (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, IsTaxable)
          VALUES ('${products.pressAnthology}','${press.ID}','${goodsTypeID}','${pressCatID}',
                  '${DEMO_TAG} Partner Press Anthology','Active','${revRec.get('UpFront')}',0)`);
+
+// A SUBSCRIPTION on the other company too, not just a one-off good.
+//
+// Without this the catalog could not express the case the per-line booking rule
+// exists for: an order carrying recurring revenue for TWO different companies at
+// once. Every subscription sat on the primary company, so a mixed order proved
+// only that a one-off good could belong elsewhere — the harder question, whether
+// two subscriptions land in two different companies' ledgers with their own
+// terms, was unaskable. (The BOOK-MSCV* products named "Sub A" are integration
+// fixtures with a null SubscriptionTypeID; they are not subscriptions and their
+// names mislead.)
+products.pressMembership = randomUUID();
+await q(`INSERT INTO ${ORDERS}.Product
+            (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, SubscriptionTypeID, IsTaxable)
+         VALUES ('${products.pressMembership}','${press.ID}','${servicesTypeID}','${pressCatID}',
+                 '${DEMO_TAG} Partner Press Membership','Active','${revRec.get('EvenOverTime')}',
+                 '${subTypes.get('AnnualRolling')}',0)`);
+await q(`INSERT INTO ${ORDERS}.ProductPrice
+            (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
+         VALUES ('${randomUUID()}','${products.pressMembership}','PerUnit','Standard',180,'2020-01-01',100,'Active')`);
+say(`  ${DEMO_TAG} Partner Press Membership  (EvenOverTime, AnnualRolling)  list 180  — on the OTHER company`);
 say(`  ${DEMO_TAG} Partner Press Anthology  (UpFront, owned by ${press.Name})`);
 
 // ─── Orders ────────────────────────────────────────────────────────────────────
