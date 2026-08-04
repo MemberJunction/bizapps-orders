@@ -122,8 +122,17 @@ const subLines = await q(`
   SELECT l.LineNumber Ln, p.Name Product FROM __mj_BizAppsOrders.OrderLine l
   JOIN __mj_BizAppsOrders.Product p ON p.ID=l.ProductID
   WHERE l.OrderHeaderID='${o.ID}' AND p.SubscriptionTypeID IS NOT NULL`);
-for (const sl of subLines) if (!subs.some((s) => s.Ln === sl.Ln)) {
-    fails.push(`line ${sl.Ln} (${sl.Product}) is a subscription product but produced NO subscription`);
+// "Produced" means BIRTHED ONE **or** EXTENDED ONE. A second line for the same
+// subscription legitimately appends a term rather than creating a rival — that is
+// what ConcurrencyMode=ExtendExisting means — so it is not the birth line and does
+// not appear in `subs`. Requiring a birth per line called the CORRECT behaviour a
+// failure the moment the extend-within-one-order fix landed.
+const linkedLines = await q(`
+  SELECT l.LineNumber Ln FROM __mj_BizAppsOrders.OrderLine l
+  WHERE l.OrderHeaderID='${o.ID}' AND l.SubscriptionID IS NOT NULL`);
+const linked = new Set(linkedLines.map((r) => r.Ln));
+for (const sl of subLines) if (!subs.some((s) => s.Ln === sl.Ln) && !linked.has(sl.Ln)) {
+    fails.push(`line ${sl.Ln} (${sl.Product}) is a subscription product but neither created nor joined a subscription`);
 }
 // debits across every entry must equal the order gross
 const totalDr = round(jes.reduce((a, j) => a + Number(j.Dr), 0));

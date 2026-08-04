@@ -160,7 +160,28 @@ interface SubscriptionDecisionForLine {
     Subscriber: SubscriberIdentity;
     /** The resolved behaviour — reused for RecognitionMonths so a driver's override still applies. */
     Behavior: SubscriptionBehavior;
+    /**
+     * Product + subscriber identity, as the type's BenefitModel defines a duplicate.
+     *
+     * Carried from the decision pass so persistence can tell that two lines of the
+     * SAME order are the same subscription — the decision pass can only synthesise
+     * a placeholder for the second one, because the first is not written yet.
+     */
+    DedupeKey: string;
 }
+
+/**
+ * Stands in for a subscription an EARLIER LINE OF THIS ORDER is about to create.
+ *
+ * The concurrency rules are evaluated against `ExistingSubscription`, which is a
+ * database row — so with two lines for the same subscription in one order, the
+ * second line saw nothing and decided `CreateNew` too. That silently produced two
+ * concurrent subscriptions with identical terms under `ExtendExisting`, and
+ * bypassed `RejectDuplicate` entirely. Feeding the sibling's pending decision back
+ * in as `Existing` lets the SAME rule code handle the within-order case as the
+ * across-order one, rather than duplicating the concurrency logic.
+ */
+const PENDING_SIBLING_ID = '__pending-sibling__';
 
 interface CreateJournalEntriesResult {
     Success: boolean;
@@ -1558,15 +1579,36 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             if (pending.ID) byLineID.set(uuidKey(pending.ID), decided);
         }
 
+        // Subscriptions created during THIS pass, so a later line extending a sibling's
+        // subscription can resolve the placeholder to the id that now exists.
+        const createdByDedupeKey = new Map<string, string>();
+
         for (const line of lines) {
             const decided = byLineID.get(uuidKey(line.ID));
             if (!decided) continue;
             const { Product: product, Rules: rules, Decision: decision } = decided;
 
+            // A line extending a subscription an EARLIER LINE of this order is creating
+            // carries a placeholder, because that subscription did not exist when the
+            // decision was made. Swap in the real ID now that the sibling has written it.
+            if (decision.SubscriptionID === PENDING_SIBLING_ID) {
+                const sibling = createdByDedupeKey.get(decided.DedupeKey);
+                if (!sibling) {
+                    throw new Error(
+                        `Order line ${line.LineNumber} (${product.Name}) extends a subscription from an ` +
+                            `earlier line of this order, but that line did not create one.`,
+                    );
+                }
+                decision.SubscriptionID = sibling;
+            }
+
             const subscriptionID =
                 decision.Action === 'CreateNew'
                     ? await this.createSubscription(line, product, rules, decision, decided.Subscriber, options)
                     : await this.touchExistingSubscription(decision, !!line.RenewsSubscriptionID, options);
+
+            // Remember it so a later line for the same subscription resolves above.
+            if (decision.Action === 'CreateNew') createdByDedupeKey.set(decided.DedupeKey, subscriptionID);
 
             const term = decision.Term!;
 
@@ -1640,14 +1682,23 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // rather than per line.
         await OrdersSettings.Load(this.ProviderToUse as unknown as IMetadataProvider, this.ContextCurrentUser);
 
+        // What an EARLIER line of this same order has already decided to create,
+        // keyed the way the type defines a duplicate. Without this the rules only
+        // ever see the database, so two lines for one subscription both decide
+        // "create" — see PENDING_SIBLING_ID.
+        const pendingSiblings = new Map<string, ExistingSubscription>();
+
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
             let subscriber = await this.withInferredOrganization(this.resolveSubscriber(line));
-            // An explicitly named subscription wins; otherwise find one for this subscriber and
-            // product, scoped by the type's BenefitModel (D62).
+            const identity = behavior.DedupeIdentity(rules, subscriber);
+            const dedupeKey = `${product.ID}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
+            // An explicitly named subscription wins; then a sibling line of THIS order;
+            // then one already in the database for this subscriber and product (D62).
             const existing = line.RenewsSubscriptionID
                 ? await this.loadSubscriptionState(`ID='${line.RenewsSubscriptionID}'`)
-                : await this.findExistingSubscription(product.ID, behavior.DedupeIdentity(rules, subscriber));
+                : (pendingSiblings.get(dedupeKey) ??
+                   (await this.findExistingSubscription(product.ID, identity)));
 
             // NAMING a subscription IS the statement of who the subscriber is. Requiring the line to
             // restate it would make renewing a seat impossible without repeating the person, and any
@@ -1680,7 +1731,29 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 );
             }
 
-            out.set(line, { Product: product, Rules: rules, Decision: decision, Behavior: behavior, Subscriber: subscriber });
+            // Record what this line will produce, so a LATER line covering the same
+            // subscription extends it (or is refused) instead of creating a second.
+            // A real renewal target is left alone: it is already in the database, so
+            // the ordinary lookup finds it.
+            if (decision.Term && !line.RenewsSubscriptionID) {
+                pendingSiblings.set(dedupeKey, {
+                    ID: existing?.ID ?? PENDING_SIBLING_ID,
+                    Status: 'Active',
+                    HolderOrganizationID: subscriber.OrganizationID,
+                    BeneficiaryPersonID: subscriber.PersonID,
+                    LatestTermEnd: decision.Term.EndDate,
+                    LatestTermNumber: decision.Term.TermNumber,
+                });
+            }
+
+            out.set(line, {
+                Product: product,
+                Rules: rules,
+                Decision: decision,
+                Behavior: behavior,
+                Subscriber: subscriber,
+                DedupeKey: dedupeKey,
+            });
         }
         return out;
     }
