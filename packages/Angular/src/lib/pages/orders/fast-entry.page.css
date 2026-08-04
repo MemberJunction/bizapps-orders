@@ -279,7 +279,11 @@
 
 .fe-footer {
   position: sticky;
-  bottom: 0;
+  /* Cancels the host's `padding: var(--mj-space-6)`, which sits inside the
+     scrollport — `bottom: 0` left the bar floating 24px above the viewport
+     instead of sitting flush like a toolbar. Mirrors the top-edge correction
+     the sticky header in this file already makes. */
+  bottom: calc(-1 * var(--mj-space-6));
   margin: var(--mj-space-6) calc(-1 * var(--mj-space-6)) 0;
   padding: var(--mj-space-3) var(--mj-space-6);
   background: var(--mj-bg-surface);
@@ -350,4 +354,24 @@
   .fe-footer .mj-keys {
     display: none;
   }
+}
+
+/* ── Hooks that lived only in the .html template ──────────────────────────
+   Referenced by fast-entry.page.html and defined nowhere; the guard scanned
+   only .ts templates until the .html files were added to its sweep. */
+
+/* The customer typeahead's search box — matches the product picker's. */
+.fe-cust__search {
+  width: 100%;
+}
+
+/* "Searching…" under the customer box. Reserves its own line so the list
+   does not jump when the hint is replaced by results. */
+.fe-cust__hint {
+  padding: var(--mj-space-1) 0;
+}
+
+/* Save failure, above the footer. Needs to clear the content it follows. */
+.fe-save-error {
+  margin-top: var(--mj-space-3);
 }

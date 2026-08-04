@@ -58,7 +58,15 @@ const walk = (dir: string, out: string[] = []): string[] => {
 
 const collect = () => {
     const files = walk(LIB);
-    const templates = files.filter((f) => f.endsWith('.ts') && !f.includes('__tests__'));
+    // BOTH inline templates (.ts) and separate template files (.html). Scanning
+    // only .ts is how four `.mj-banner` blocks in order-editor.page.html and
+    // fast-entry.page.html survived a sweep that converted every other banner to
+    // <mj-alert> — and then rendered completely unstyled once the now-dead
+    // `.mj-banner` rules were deleted from the kit. The guard has to see every
+    // surface that can carry a class attribute, not just the common one.
+    const templates = files.filter(
+        (f) => (f.endsWith('.ts') || f.endsWith('.html')) && !f.includes('__tests__') && !f.includes('/generated/'),
+    );
 
     // Static class attributes only. `[class]` / `[ngClass]` bindings are computed
     // at runtime and cannot be resolved by reading source.

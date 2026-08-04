@@ -79,7 +79,18 @@ import {
             <mj-page-header [Title]="Title" [Icon]="Icon" [Subtitle]="Subtitle">
                 <div meta><ng-content select="[meta]"></ng-content></div>
                 <div actions><ng-content select="[actions]"></ng-content></div>
-                <div toolbar><ng-content select="[toolbar]"></ng-content></div>
+                <!--
+                  NO toolbar slot, deliberately. MJ hides its toolbar row when empty
+                  (the :empty rule on mj-page-header-row--toolbar), but a wrapper div
+                  carrying the toolbar attribute is itself a child node, so the row
+                  stopped counting as empty and rendered its border plus 28px of padding
+                  on every section — a measured 29px of dead space under the header, on
+                  all four, forever. No section projects a toolbar, so the slot only ever
+                  cost height.
+
+                  A section that needs one should add the wrapper back AND guard it with
+                  an @if, or the same dead row returns for everyone.
+                -->
             </mj-page-header>
 
             <mj-page-body [Flex]="true" [Padding]="false" Direction="row">

@@ -31,7 +31,7 @@ import {
 import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format';
 import { BuildOrderStages, type MJOOrderStage, type MJOStageChangeRequestEventArgs } from '../../panels/order-stages';
 import type { MJOProductOption } from './fast-entry.page';
-import { MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** Which tab is showing. */
 export type MJOEditorTab = 'lines' | 'parties' | 'charges' | 'payment' | 'accounting';
@@ -80,7 +80,7 @@ export interface MJOEditorTabDef {
 @Component({
     selector: 'mjo-order-editor-page',
     standalone: true,
-    imports: [MJButtonDirective, 
+    imports: [MJAlertComponent, MJButtonDirective, 
         CommonModule,
         FormsModule,
         MJOMoneyStripComponent,

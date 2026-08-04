@@ -195,7 +195,11 @@
 
 .ed-footer {
   position: sticky;
-  bottom: 0;
+  /* Cancels the host's own `padding: var(--mj-space-6)`, which is inside the
+     scrollport — with `bottom: 0` the bar stopped 24px short of the viewport
+     and floated, instead of sitting flush like a toolbar. This is the same
+     correction `.ed-sticky` already makes at the top edge, just mirrored. */
+  bottom: calc(-1 * var(--mj-space-6));
   /* Sits ABOVE the content it covers. A sticky bar legitimately overlays whatever
      scrolls beneath it, but with no elevation and no stacking context the card
      underneath bled through and the bar looked like a half-drawn panel slicing the
@@ -246,4 +250,24 @@
     margin: var(--mj-space-4) calc(-1 * var(--mj-space-4)) 0;
     padding: var(--mj-space-3) var(--mj-space-4);
   }
+}
+
+/* ── Hooks that lived only in the .html template ──────────────────────────
+   Both were referenced by order-editor.page.html and defined nowhere, so a
+   card meant to sit apart from the one above it butted against it, and the
+   dimension rows ran their chip and value together as one string. The
+   kit-classes guard missed them because it scanned only .ts templates until
+   the separate .html files were added to its sweep. */
+
+/* A standalone card below the tab pane, not part of the pane's own flow. */
+.ed-block {
+  margin-top: var(--mj-space-4);
+}
+
+/* Dimension tag + its value, side by side rather than run together. */
+.ed-dim {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mj-space-2);
+  padding: var(--mj-space-1) 0;
 }

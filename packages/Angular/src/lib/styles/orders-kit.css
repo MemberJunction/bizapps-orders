@@ -116,6 +116,44 @@
 }
 
 /* ============================================================================
+   PAGE HEADER — three stacked rows compressed into two
+   ============================================================================
+   MJ stacks the identity column title -> subtitle -> meta, so our "as of 2:31 PM"
+   capsule landed on a third line of its own and the header stood 138px tall on
+   every section. The capsule is a timestamp for the subtitle, not a peer of it,
+   so it belongs BESIDE the subtitle rather than under it.
+
+   Done without restructuring MJ's template, so a future MJ header fix still
+   lands for us. Scoped to our shell — this is our editorial choice about our own
+   capsule, not an opinion about how every MJ header should read.
+
+   GRID, not flex-wrap. The first attempt used a wrapping flex row with order to
+   reseat the capsule; every child claimed its own line and the whole block
+   centred, because a full-width flex item forces a line break and the remaining
+   items had nothing to sit beside. Grid with EXPLICIT row and column placement
+   is deterministic — and it makes MJ's DOM order (title, subtitle, meta)
+   irrelevant, so the capsule renders to the LEFT of a subtitle that precedes it
+   in the markup, without touching the template. */
+mjo-section-shell .mj-page-header .mj-page-header-text {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  justify-items: start;
+  column-gap: var(--mj-space-2);
+  row-gap: 2px;
+}
+mjo-section-shell .mj-page-header .mj-page-header-title    { grid-row: 1; grid-column: 1 / -1; }
+mjo-section-shell .mj-page-header .mj-page-header-meta     { grid-row: 2; grid-column: 1; margin-top: 0; }
+mjo-section-shell .mj-page-header .mj-page-header-subtitle { grid-row: 2; grid-column: 2; margin-top: 0; }
+
+/* Reclaim the rest vertically. space-3 still clears the 40px icon tile with
+   room to spare; going tighter starts to crowd it. */
+mjo-section-shell .mj-page-header .mj-page-header-row--primary {
+  padding-top: var(--mj-space-3);
+  padding-bottom: var(--mj-space-3);
+}
+
+/* ============================================================================
    CARD HOVER — undo MJ's ungated lift on cards that do nothing
    ============================================================================
    MJ lifts EVERY `.mj-card` on hover — `transform: translateY(-4px)` plus a

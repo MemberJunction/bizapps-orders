@@ -12,7 +12,7 @@ import { MJOOrderEntryService, type MJOPreviewState } from '../../services/order
 import { MJODecompositionLadderComponent, type MJOLadderRow } from '../../panels/decomposition-ladder.component';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney, Initials } from '../../panels/money-format';
-import { MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** A catalog row as the product picker shows it. */
 export interface MJOProductOption {
@@ -66,7 +66,7 @@ export interface MJOCustomerContext {
 @Component({
     selector: 'mjo-fast-entry-page',
     standalone: true,
-    imports: [MJButtonDirective, 
+    imports: [MJAlertComponent, MJButtonDirective, 
         CommonModule,
         FormsModule,
         MJODecompositionLadderComponent,

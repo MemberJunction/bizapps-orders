@@ -298,7 +298,10 @@ export interface MJOTenderOption {
              */
             .mjo-pe__actions {
                 position: sticky;
-                bottom: 0;
+                /* Negative offset cancels the host's own space-6 padding, which is
+                   inside the scrollport; a plain bottom:0 left the bar floating 24px
+                   clear of the viewport edge instead of flush against it. */
+                bottom: calc(-1 * var(--mj-space-6));
                 z-index: 5;
                 display: flex;
                 align-items: center;

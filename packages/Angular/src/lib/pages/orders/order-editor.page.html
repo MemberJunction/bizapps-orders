@@ -52,17 +52,14 @@
 
   <!-- Issues above the tabs: a red dot alone leaves the user hunting. -->
   @if (Issues.length) {
-    <div class="mj-banner mj-banner--warning ed-issues">
-      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-      <div class="body">
+    <mj-alert Variant="warning" Icon="fa-solid fa-triangle-exclamation" class="ed-issues">
         <strong>{{ Issues.length }} thing{{ Issues.length === 1 ? '' : 's' }} to sort out before this can confirm.</strong>
         <ul class="ed-issues__list">
           @for (issue of Issues; track issue.Code) {
             <li>{{ issue.Message }}</li>
           }
         </ul>
-      </div>
-    </div>
+    </mj-alert>
   }
 
   <div class="mj-tabs ed-tabs" role="tablist">
@@ -366,14 +363,11 @@
               <span class="tot">Taxable base</span><span class="amt tot">{{ base.Base | mjoMoney }}</span>
             </div>
 
-            <div class="mj-banner mj-banner--success ed-note">
-              <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-              <div class="body">
+            <mj-alert Variant="success" Icon="fa-solid fa-circle-check" class="ed-note">
                 <strong>Tax layers never compound.</strong> Every jurisdiction computes on the same
                 {{ base.Base | mjoMoney }}. A non-tax charge enlarges the taxable base; a tax charge
                 does not — so county tax is not charged on state tax.
-              </div>
-            </div>
+            </mj-alert>
           } @else {
             <div class="small muted">No taxable base — nothing on this order is taxable.</div>
           }
