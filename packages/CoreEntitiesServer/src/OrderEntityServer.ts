@@ -1465,11 +1465,11 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         if (!line.ProductID) return;
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ EventStartsAt: string; EventEndsAt: string | null; Capacity: number | null }>(
+        const res = await rv.RunView<{ EventStartsAt: string; EventEndsAt: string | null }>(
             {
                 EntityName: EVENT_PRODUCT_ENTITY,
                 ExtraFilter: `ID='${line.ProductID}'`,
-                Fields: ['EventStartsAt', 'EventEndsAt', 'Capacity'],
+                Fields: ['EventStartsAt', 'EventEndsAt'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -1478,13 +1478,9 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const event = res?.Results?.[0];
         if (!event) return;
 
-        // CAPACITY IS A REAL LIMIT, and nothing was enforcing it: an event with
-        // Capacity 1 sold five seats. A venue that holds one person cannot seat five,
-        // so overselling is not a pricing question to reconcile later — it is a
-        // promise that cannot be kept, and the ledger records it as revenue either
-        // way. Checked before the service period is applied so an oversold line is
-        // refused whether or not it carries explicit dates.
-        await this.assertEventCapacity(line, event.Capacity ?? null);
+        // NOTE: EventProduct.Capacity is deliberately NOT enforced here — see
+        // plans/bizapps-orders-master.md §21b. A correct check cannot be written
+        // against these tables alone.
 
         // Dates only when the line does not state its own — an explicitly-set period WINS.
         if (line.ServicePeriodStart || line.ServicePeriodEnd) return;
@@ -1496,74 +1492,6 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const end = event.EventEndsAt ? new Date(event.EventEndsAt) : start;
         line.ServicePeriodStart = start;
         line.ServicePeriodEnd = end;
-    }
-
-    /**
-     * Refuse a ticket line that would take an event past its capacity.
-     *
-     * Counts seats already sold on OTHER confirmed orders plus every line for this
-     * event on THIS order, because both directions are real: a second customer
-     * booking the last seat, and one customer adding the same ticket twice. The
-     * sibling half is the same blindness the subscription rules had — a check that
-     * only queries the database cannot see the order it is part of.
-     *
-     * A null Capacity means unlimited, which is the sane reading of "no limit
-     * recorded" and keeps every existing event unaffected.
-     *
-     * COST, stated plainly because it is the weak part: this sums quantities by
-     * reading the rows, so it is O(lines ever sold for that event) — a conference
-     * with 10,000 tickets reads 10,000 rows to add them up. It is memoized per save
-     * and skipped entirely when Capacity is null (every non-event product, and every
-     * event that has not set a limit), so today it runs at most once per capacity-
-     * bearing event on the order. The right shape is a server-side SUM via RunQuery
-     * rather than client-side addition; that is tracked with the other RunQuery work
-     * and deliberately not done here, because adopting RunQuery is its own change.
-     *
-     * NOT a reservation system: two simultaneous confirms can still both pass this
-     * check and jointly oversell by one. Holding seats properly needs a booking model
-     * with expiry, which is a larger design; this closes the case where a single
-     * order oversells against a limit already visible to it.
-     */
-    /** Seats already sold per event product, memoized for the life of one save. */
-    private readonly _seatsSoldElsewhere = new Map<string, number>();
-
-    private async assertEventCapacity(
-        line: mjBizAppsOrdersOrderLineEntity,
-        capacity: number | null,
-    ): Promise<void> {
-        if (capacity === null || capacity === undefined) return;
-
-        // ONCE PER PRODUCT PER SAVE. This runs from applyEventServicePeriod, which is
-        // called per LINE, so an order with three tickets to one event would otherwise
-        // ask the same question three times.
-        const productID = String(line.ProductID);
-        let elsewhere = this._seatsSoldElsewhere.get(productID);
-        if (elsewhere === undefined) {
-            const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-            const sold = await rv.RunView<{ Quantity: number }>(
-                {
-                    EntityName: ORDER_LINE_ENTITY,
-                    ExtraFilter: `ProductID='${productID}' AND OrderHeaderID <> '${this.ID}'`,
-                    Fields: ['Quantity'],
-                    ResultType: 'simple',
-                },
-                this.ContextCurrentUser,
-            );
-            elsewhere = (sold?.Results ?? []).reduce((sum, r) => sum + Number(r.Quantity ?? 0), 0);
-            this._seatsSoldElsewhere.set(productID, elsewhere);
-        }
-        const onThisOrder = this._lines
-            .filter((l) => l.ProductID === line.ProductID)
-            .reduce((sum, l) => sum + Number(l.Quantity ?? 0), 0);
-
-        const total = elsewhere + onThisOrder;
-        if (total > capacity) {
-            throw new Error(
-                `Order line ${line.LineNumber} cannot be sold: the event holds ${capacity}, ` +
-                    `${elsewhere} ${elsewhere === 1 ? 'seat is' : 'seats are'} already sold, and this order asks ` +
-                    `for ${onThisOrder} more.`,
-            );
-        }
     }
 
     /**

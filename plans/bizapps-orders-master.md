@@ -1160,45 +1160,63 @@ executes nothing and reports success; the parity floor exists because of that.
   D44. Revenue recognition itself stays here.
 - `Order.ContractID` — removed by D44 for the same reason.
 
-## 21b. Seat reservation — the gap above the capacity check (NOT built)
+## 21b. Event capacity is NOT enforced — and why the simple fix was rejected
 
-Raised 2026-08-04 alongside the capacity fix, and deliberately left unbuilt so the
-shape can be agreed before anything is written.
+Found 2026-08-04 by adversarial testing: an event with `Capacity = 1` sold **5 seats**,
+with `RequiresAttendeeInfo = true` and no attendee rows. **Still unfixed, deliberately.**
 
-**What exists now.** Confirm refuses a line that would take an event past its
-`EventProduct.Capacity`, counting seats already sold on other orders plus every line
-for that event on the order being confirmed.
+A check was written, tested, and then **reverted** — the reasoning is the useful part,
+because the obvious fix is wrong in a way that is worse than the bug.
 
-**What that does not do.** It is a *check at confirm*, not a *hold*. Two consequences,
-both real:
+### Why counting sold seats cannot be done correctly against these tables
+
+The natural implementation sums `OrderLine.Quantity` for the event product. It fails on
+the first question you ask of it: **which lines count?**
+
+- **`vwOrderLines` does not expose the ORDER's status** — only the line-level
+  `FulfillmentStatus`. So a single query cannot restrict the sum to confirmed orders.
+  Doing it in two queries means fetching confirmed order IDs and passing them as an
+  `IN (...)` list that grows with every order ever placed for that event.
+- Without that restriction the sum **counts drafts and cancelled orders**, so an
+  abandoned draft consumes a seat permanently. That is worse than the bug it fixes:
+  overselling is currently theoretical (no real events are in use), while phantom
+  capacity would block *legitimate* sales, and support cannot see why.
+- `JournalEntryID IS NOT NULL` looks like a line-level proxy for "sold" and nearly works
+  — but a **zero-value line books no journal entry at all** (§21a), so free tickets would
+  not consume capacity, while a cancelled order's booked lines still would.
+- Summing by reading rows is also O(lines ever sold for that event): a conference with
+  10,000 tickets reads 10,000 rows to add them up, per confirm.
+
+Every variant has a wrong edge. That is the signal that the data model, not the query, is
+the problem.
+
+### What doing it right needs (schema)
+
+**Either** a denormalised seat count on `EventProduct` maintained transactionally as
+orders confirm and cancel — one number to read, correct by construction, and lockable so
+concurrent confirms serialise — **or** the full reservation model below, which subsumes it.
+
+### Reservations, the larger want
+
+The capacity check above, even done right, is a *check at confirm*, not a *hold*:
 
 1. **Concurrent confirms can jointly oversell.** Two orders each reading "1 of 1 sold"
-   before either commits will both pass and both book. The window is small and the
-   overshoot is bounded by the number of simultaneous confirms — but it is not zero,
-   and for a venue that means a person with a ticket and no seat.
-2. **Nothing is held while a customer is deciding.** A seat is available until the
-   instant someone else confirms, so a half-completed order competes with every other
-   one. For a popular event that is the normal case, not the edge case.
+   before either commits both pass and both book.
+2. **Nothing is held while a customer decides.** A seat is available until someone else
+   confirms, so a half-completed order competes with every other one — the normal case
+   for a popular event, not the edge case.
 
-**What a reservation system needs, minimally:**
+Minimally it needs: a **hold** record (event, quantity, holder, **expiry** — the
+load-bearing part, since a hold that never expires is an inventory leak and abandoned
+carts are the majority); **availability = capacity − sold − live holds** as one derived
+number rather than two sources that can disagree; a hold taken when the line is added,
+converted on confirm and released on cancel/timeout/removal; **atomic decrement at the
+point of truth**, because application-level counting cannot close the concurrency window;
+and a sweeper for expired holds.
 
-- A **hold** record — event product, quantity, who holds it, and an **expiry**. Expiry is
-  the load-bearing part: a hold that never expires is an inventory leak, and abandoned
-  carts are the majority.
-- **Availability = capacity − sold − live holds**, so the capacity check reads one number
-  rather than deriving it from two sources that can disagree.
-- **A hold taken when the line is added**, converted on confirm and released on cancel,
-  timeout, or line removal.
-- **Serialization at the point of truth.** Application-level counting cannot close the
-  concurrent-confirm window; the decrement has to be atomic — a constrained update, or
-  the seat count held in a row the confirm locks.
-- **A sweeper** for expired holds, and a decision on whether expiry is enforced lazily
-  (at read) or actively (scheduled) — lazily is simpler and usually enough.
-
-**Open questions for Amith:** should a hold survive a session (a saved draft holding
-seats for a day) or die with it? Does an oversold event fail the confirm outright, or
-waitlist? Is capacity per event, or per ticket type within an event? The answers change
-the schema, so they are worth settling before it is written.
+**Questions for Amith, whose answers change the schema:** does a hold survive a session (a
+saved draft holding seats for a day) or die with it? Does an oversold event fail the
+confirm outright, or waitlist? Is capacity per event, or per ticket type within an event?
 
 ## 21c. A subscription records no quantity (KNOWN GAP, not fixed)
 
