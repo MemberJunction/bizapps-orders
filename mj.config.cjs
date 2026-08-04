@@ -39,7 +39,8 @@ module.exports = {
    * generation" (CodeGenLib getExternalEntitySchemas), which is for pure OpenApp
    * consumers. This repo is the app under DEVELOPMENT: it generates the
    * __mj_BizAppsOrders schema locally and pulls its dependencies (common,
-   * accounting, tasks) from their installed npm packages / soft UUID refs.
+   * accounting, tasks) from their installed npm packages. Cross-app references into
+   * those schemas are hard, nullable FKs (master plan §2).
    * Those dependency schemas are kept out of CodeGen via excludeSchemas below.
    */
   entityPackageName: '@mj-biz-apps/orders-entities',

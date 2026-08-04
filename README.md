@@ -161,8 +161,8 @@ Product is the root of the app: it defines **how an item is billed** (one-time /
  BizAppsCommon          __mj.Company                BizAppsAccounting
  Org / Person       owning (Order) · product        GLAccountRole/Link · JournalEntry
       │ customer    owner (Product) · stamp (Line)  Dimension · Currency
-      ▼                      │                            ▲ soft refs (→ hard FKs
- ┌──────────────┐ 1 → N ┌──────────────┐                  │  when include-mode lands)
+      ▼                      │                            ▲ hard, nullable FKs
+ ┌──────────────┐ 1 → N ┌──────────────┐                  │  (up-references only)
  │    Order     │──────►│  OrderLine   │────────────────► │
  │ the deal AND │       │ Product, Qty │  JournalEntryID  │
  │ the A/R doc  │       │ CompanyID    │  (ONE JE PER     ┌───────────────────────────────┐
@@ -181,7 +181,7 @@ Product is the root of the app: it defines **how an item is billed** (one-time /
  │ refund /     │── PaymentMethodID ─► CustomerPaymentMethod (token vault)
  │ chargeback   │── StoredValueAccount → StoredValueTransaction (schema; flows later)
  └──────┬───────┘
-        │ JournalEntryID (soft ref); JE origin = LinkedEntityID/LinkedRecordID
+        │ JournalEntryID (hard FK); JE origin = LinkedEntityID/LinkedRecordID
         ▼
  BizAppsAccounting.JournalEntry   (Pending → batched to the ERP)
 ```
@@ -193,8 +193,8 @@ Product is the root of the app: it defines **how an item is billed** (one-time /
 | `Order.CustomerOrganizationID` | `Organization.ID` | `bizapps-common` |
 | `Order.CustomerPersonID`, `SalesRepUserID` | `Person.ID`, `__mj.User` | `bizapps-common`, `__mj` |
 | `Order.CompanyID`, `OrderLine.CompanyID`, `Product.CompanyID` | `Company.ID` | `__mj` |
-| `OrderLine.JournalEntryID` | `JournalEntry.ID` — **soft ref** until CodeGen include-mode FK hardening lands (§2 FK standard) | `bizapps-accounting` |
-| `Payment.JournalEntryID` | `JournalEntry.ID` (soft ref, same standard) | `bizapps-accounting` |
+| `OrderLine.JournalEntryID` | `JournalEntry.ID` — **hard, nullable FK** (§2 FK standard) | `bizapps-accounting` |
+| `Payment.JournalEntryID` | `JournalEntry.ID` (hard, nullable FK, same standard) | `bizapps-accounting` |
 | `OrderLineDimension` | `Dimension` / `DimensionValue` | `bizapps-accounting` |
 | `OrderLineTaxLine` tax refs *(lands with the tax build, D23)* | tax snapshot entities | `bizapps-accounting` |
 | `PaymentProvider.CredentialsRef` | `MJ: Credentials` | `__mj` |

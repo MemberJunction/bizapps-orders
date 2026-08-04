@@ -150,13 +150,35 @@ JE, never GL-post.
 **Orders does NOT:** generate intercompany legs at booking (payment-side, §9); compute FX (§21
 deferred); calculate tax (§11); maintain GL balances; know about batching/dispatch.
 
-**Cross-app reference hardness (go-forward standard, Marcelo):** references from Orders into
-accounting (`OrderLine.JournalEntryID`, `PaymentHeader.JournalEntryID`) are **SOFT refs for now** —
-they become **hard, nullable FKs** once the MJ CodeGen include-mode work lands (Marcelo owns that
-PR; MJ's own OpenApp publish policy expects downstream→upstream cross-app FKs — dependency-order
-install makes them safe; the current blocker is a CodeGen bug where a foreign FK into a schema
-pollutes that app's codegen). Accounting takes no dependency on Orders: JEs reference their origin
-via soft columns (`OrderID`/`OrderLineID`/`SubscriptionID`/`PaymentID`) only.
+**Cross-app reference hardness (standard, Amith 2026-08-03 — supersedes the prior soft-ref
+ruling):** a reference from a downstream app into an upstream one is a **hard, nullable FK**.
+`OrderLine.JournalEntryID` and `PaymentHeader.JournalEntryID` into accounting are hard FKs, the same
+way orders' references into common (`Person`, `Organization`, `Address`) and `__mj` (`Company`,
+`User`) already are.
+
+**The prior ruling — that these stay SOFT refs until CodeGen include-mode lands — is withdrawn.** It
+inverted the cost: a soft ref buys a workaround for a *tooling* defect by permanently surrendering
+*referential integrity* on the link between a booked line and its journal entry. That is the one link
+in this app where a dangling value is unrecoverable — an order line pointing at a JE that does not
+exist reconciles against itself and cannot be detected by the ledger. Tooling gets fixed; orphaned
+financial provenance does not.
+
+The two facts the prior ruling already conceded are the whole argument: **MJ's own OpenApp publish
+policy expects downstream→upstream cross-app FKs, and dependency-order install makes them safe.**
+The CodeGen "pollution" symptom is a package-linking problem being fixed on the infra side; it is not
+a reason to design the schema around it. Orders' 12 hard FKs into `common.Person` and 12 into
+`common.Organization` are the existing proof that the shape works.
+
+**Direction is unchanged and still absolute:** references point **up** the dependency graph only.
+Accounting takes no dependency on Orders — JEs reference their origin via the polymorphic
+`LinkedEntityID`/`LinkedRecordID` pair, never a hard FK downward. What changed is *hardness* on
+up-references, not *direction*.
+
+> **Follow-on work this creates.** `OrderLine.JournalEntryID` and `PaymentHeader.JournalEntryID` are
+> still soft columns in the baseline; hardening them is a schema change to be made under the standing
+> edit-the-baseline-in-place practice. Accounting's master plan (§ cross-app reference hardness, and
+> the `ApprovalTaskID … -- NO FK (cross-app)` comment in its schema) restates the withdrawn ruling and
+> needs the same correction — that repo is Marcelo's.
 
 ### Standing migration practice (pre-production)
 
@@ -181,7 +203,7 @@ The current decision set. Each is the standing ruling — superseded ancestors l
 | D7 | **Product categories are per-company rows** (`ProductCategory.CompanyID NOT NULL`) with **identical-name display-collapse** in the UI — no shared registry object; naming consistency via soft autocomplete suggestion. | Robert 2026-07-21, unambiguous: "five companies, 5 t-shirt categories… crossing them, no." Permissions decide it: company-scoped rows RLS-scope cleanly. |
 | D8 | **Booking fires exactly once, on the FIRST transition to `Confirmed`;** failure **blocks** the Confirm (never silently unbooked). `Posted` = "the JEs are in the subledger" — near-instant after Confirm. **The two-step `Confirmed → Posted` status model stays as-is** (Marcelo 2026-07-22, final — Amith: "there was a reason for it"; a collapse can be revisited with Amith directly). | 07-02 engine amendment; Robert 2026-07-08. Idempotency = line-already-booked. |
 | D9 | **Forward status skipping is allowed; the ORDER of stages is fixed.** Draft → Confirmed without Quoted is legal; you can't reach a later stage without its prerequisites' effects (booking on first Confirmed; can't Fulfill before Posted). `Voided` is reachable **only from Draft/Quoted** — after Confirm, corrections are reversing/credit orders. | Robert 2026-07-08/2026-07-10. |
-| D10 | **ONE JE PER ORDER LINE — always** (even multiple lines of the same company). The order's journal entry is a **virtual concept** — a UI aggregation of the line JEs; batching nets them later anyway. Linkage = **`OrderLine.JournalEntryID`** (nullable, soft ref until include-mode; the Order header carries NO JE ref; no junction table). | Amith 2026-07-21 ("always separate journal entries per order line — it's just simpler"); supersedes the one-JE-per-company split and the junction idea. |
+| D10 | **ONE JE PER ORDER LINE — always** (even multiple lines of the same company). The order's journal entry is a **virtual concept** — a UI aggregation of the line JEs; batching nets them later anyway. Linkage = **`OrderLine.JournalEntryID`** (nullable, **hard FK** per the §2 standard; the Order header carries NO JE ref; no junction table). | Amith 2026-07-21 ("always separate journal entries per order line — it's just simpler"); supersedes the one-JE-per-company split and the junction idea. |
 | D11 | **Line JE shape (single-company by construction):** Dr the line company's **AR (net)** · Cr its **Sales (gross)** at the resolved role accounts · **discounts via the contra-account pattern** — Dr Sales-Discounts for the discount; absent a linked discounts account, net into the sales credit. Deferred-revenue-typed products credit the **Deferred Revenue** role instead of Sales (recognition staged per D14). Returns & Allowances role exists alongside. | Amith 2026-07-21. Coupon/campaign-code dimensions acknowledged as coming — deferred. |
 | D12 | **Booking encapsulation:** an **`OrderJournalEntryFactory`** (orders server package) iterates the order's lines (parallelizable) and books each line's JE via the accounting engine; the **server-only Order entity subclass overrides `Save()`** — on transition into the locked status: outer transaction → `super.Save()` → factory books per-line JEs → stamp each `OrderLine.JournalEntryID` → commit; **any failure rolls back everything** (a locked order without its JEs is invalid state). The order object carries a **`Lines` array of unsaved OrderLine entities + a `Validate()` override** (≥1 line; children validate) so the entity guards its own invariants. Provider discipline: the entity's own provider throughout — never a fresh global `Metadata` in the transaction path. The JE-side encapsulation is now BUILT: accounting ships a first-class **`JournalEntryServerExtended`** (a `Lines` getter + properly scoped transactions for the full JE + lines persistence), so the factory composes with it — direct object manipulation server-side; the remote operations remain the client-facing atomic boundary. | Amith 2026-07-21 — the build basis; built and harness-proven on the donor branch (§22). JE-entity encapsulation un-deferred: built, Amith 2026-07-23. |
 | D13 | **Intercompany: orders create NO due-to/due-from at booking.** "You don't know about intercompany anything until you get cash" — each line's AR sits with the LINE's company; IC legs and settlement mechanics arise on the **payment side** when built. No `IntercompanyFlow` table exists. Each line's JE stands alone as a complete single-company story (AR, Sales, Discounts, DefRev, …); when cash received by one entity is applied to an order carrying other companies' products, the payment-application step books the IC balancing entries. Amith re-affirmed this as the right design 2026-07-23 and **settled the AR grain 2026-07-26: A/R is per company, per line** — the seller-of-record alternative is withdrawn, not deferred. | Amith 2026-07-21, re-affirmed 2026-07-23, AR grain settled 2026-07-26; accounting D18 is the mirror. |
@@ -416,8 +438,8 @@ __mj_BizAppsOrders.OrderLine
   FulfillmentStatus NULL,                      -- Pending | Fulfilled | Returned (seam, D15)
   ReversesOrderLineID NULL,
   SubscriptionID NULL,                         -- if this line births/extends a sub
-  JournalEntryID NULL,                         -- ★ D10: this line's booked JE (SOFT ref → hard FK
-                                               --   when CodeGen include-mode lands)
+  JournalEntryID NULL,                         -- ★ D10: this line's booked JE (hard, nullable FK
+                                               --   into accounting — §2 standard)
   Description NULL
 
 __mj_BizAppsOrders.OrderLineDimension          -- accounting Dimension/DimensionValue tags per line (D31)
