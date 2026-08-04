@@ -116,6 +116,37 @@
 }
 
 /* ============================================================================
+   CARD HOVER — undo MJ's ungated lift on cards that do nothing
+   ============================================================================
+   MJ lifts EVERY `.mj-card` on hover — `transform: translateY(-4px)` plus a
+   large shadow — from `explorer-app/src/lib/styles/_common.scss`. The selector
+   there is bare `.mj-card:hover`, with no gate on whether the card is
+   interactive, so a read-only dashboard panel rises under the cursor and
+   promises a click it will not accept.
+
+   This is not MJ's intent. `_shared-patterns.scss`, in the same package, heads
+   its own card-hover block "for clickable cards" and gates it properly on
+   `a.mj-card` / `.mj-card.clickable` — then weakens it with an ungated
+   `.mj-card:hover` of its own. Two competing rules, both ungated in practice.
+   Filed upstream; DELETE this block once MJ gates its own.
+
+   Scoped to the orders shell so it cannot alter any other app, and written the
+   way MJ says it means it: keep the lift where the card is genuinely a link or
+   is marked clickable, drop it everywhere else.
+
+   The values re-assert MJ's own RESTING state for `.mj-card` so that hovering a
+   non-interactive card is a true NO-OP rather than a different effect — an
+   earlier pass set a smaller shadow here, which only traded a card that rises
+   for one that flattens. `--mj-shadow-sm` is used rather than `_common.scss`'s
+   `var(--shadow)`: that variable is private to explorer-app and does not resolve
+   from here, so the declaration was silently dropped. */
+mjo-section-shell .mj-card:not(.clickable):not(a):hover {
+  transform: none;
+  box-shadow: var(--mj-shadow-sm);
+  border-color: transparent;
+}
+
+/* ============================================================================
    7. MONEY  (U7)
    ============================================================================ */
 
