@@ -382,3 +382,57 @@ SELECT l.* FROM __mj_BizAppsAccounting.GLAccountLink l
 JOIN __mj_BizAppsOrders.ProductCategory c ON CAST(c.ID AS nvarchar(50)) = l.RecordID WHERE c.Name = 'ADV Cross-Co Category';
 ```
 Delete order: `GLAccountLink` (the cross-co one) → `EventProduct` → `ProductPrice` → `Product` → `ProductCategory`. Orders/JEs/subscriptions created by the test runs must be cleaned before the products they reference.
+
+---
+
+# RESULTS — all 25 cases run through the UI, 2026-08-04
+
+Built with the real fast-entry screen and validated from the database with
+`test-harnesses/check-order.mjs`. **Every one of the 16 orders that confirmed passed
+the accounting invariants** — one JE per valued line, each balanced, each
+single-company, each in its line's company, debits equal to order gross. The ledger
+held up under all of it. Everything below is a DOMAIN failure the ledger cannot see.
+
+## Confirmed bugs
+
+| # | What happens | Evidence |
+|---|---|---|
+| C8 | **Flat pricing bills the wrong amount at qty > 1.** Under-bills at qty 3 (99.99), **over**-bills at qty 7 (**100.03**) for a flat-100 item. `ComputeAmount` returns 100.00 correctly; `PriceResolver` then stores a rounded unit price and the line rebuilds `qty × unit`, discarding the correct `ExtendedAmount`. | ORD-000029 (99.99), ORD-000040 (100.03) |
+| C24b | **A product available from 2030-01-01 sold today**, at 85.00. | ORD-000052 |
+| C26 | **A product whose availability window closed 2021-12-31 sold today**, at 80.00. | ORD-000054 |
+| C25 | **An event with `Capacity = 1` sold 5 seats** — and `RequiresAttendeeInfo` is true with no attendee rows. | ORD-000053 |
+| C18 | **A subscription bought with quantity 10 records no seat count.** The line says 10 and bills 10,000; the subscription is one coverage window with no notion of how many seats it covers. | ORD-000049 → SUB-000007 |
+
+The availability pair (C24b/C26) is one gap, not two: `Status = 'Discontinued'` **is**
+enforced (C24 was correctly refused), but `AvailableFrom` / `AvailableTo` are not
+checked at all. So the field that reads as the deliberate control works, and the dates
+beside it are decoration.
+
+## Where the app was right — and the predictions that were wrong
+
+Nine cases were **correctly refused**, several with better messages than expected:
+
+- **C1–C6** (unpriced · ambiguous rules · quantity outside every band · expired price ·
+  `Usage` metering · deferred with no service period) — all refused at the pre-flight
+  with **Confirm and book disabled**, not by failing mid-write. C3: *"No price rule
+  applies to quantity 7 on 2026-08-04."* C5: *"must not silently resolve to a price."*
+- **C22** — a category GL-linked to another company's Sales account is refused with
+  *"the journal entry would book revenue to the wrong legal entity."* The prediction was
+  that it would quietly book to the wrong company.
+- **C23** — a product whose company has no chart of accounts is refused, not booked.
+- **C24** — a `Discontinued` product cannot even reach Confirm.
+- **C16** — predicted that `RejectDuplicate` would be bypassed like `ExtendExisting`. It
+  is not: the subscriber-scope guard fires first with a precise message. Re-tested in
+  isolation on a type with no person requirement (`ADV Reject Dup Org`, FiscalYearJul)
+  **after the C15 fix**: *"This subscription type (FiscalYearJul) does not allow a second
+  concurrent subscription for the same subscriber, and an active one already exists."*
+  Nothing written — zero subscriptions, no order. The fix covers both concurrency modes.
+- **C9** — package pricing is correct: 13 units = 130.00 (one pack + one unit), 6 = 60.00.
+  Whether half a case *should* cost half is a business question, not a defect.
+
+## Note on the harness, since it produced a false signal first
+
+Round 1 initially reported six Playwright timeouts. That was the runner, not the app: it
+clicked a correctly-**disabled** "Confirm and book" instead of reading the refusal, so
+six correct behaviours looked like crashes. It now checks `isEnabled()` and reports
+`REFUSED — <reason>`, which is the thing those cases exist to capture.
