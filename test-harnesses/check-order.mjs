@@ -85,8 +85,21 @@ if (subs.length) console.table(subs); else console.log('(no subscriptions on thi
 const fails = [];
 const round = (n) => Math.round(Number(n) * 100) / 100;
 
-for (const l of lines) if (!l.JournalEntryID) fails.push(`line ${l.Ln} (${l.Product}) has NO journal entry`);
-if (jes.length !== lines.length) fails.push(`expected one JE per line: ${lines.length} lines but ${jes.length} entries`);
+// A ZERO-VALUE line legitimately books nothing — there are no economic legs to
+// record, and a Dr 0 / Cr 0 entry would be noise. So the rule is "one entry per
+// line THAT HAS VALUE", not "per line".
+//
+// Worth stating because the naive form is the trap: this checker originally
+// asserted #JEs == #lines and failed a perfectly correct order carrying a
+// freebie. Any downstream code testing `JournalEntryID IS NOT NULL` to mean
+// "booked" will call such an order unbooked forever, which is the actual risk a
+// zero-value line introduces.
+const valued = lines.filter((l) => Number(l.Gross) !== 0);
+const zeroed = lines.filter((l) => Number(l.Gross) === 0);
+for (const l of valued) if (!l.JournalEntryID) fails.push(`line ${l.Ln} (${l.Product}) has value ${l.Gross} but NO journal entry`);
+for (const l of zeroed) if (l.JournalEntryID) fails.push(`line ${l.Ln} (${l.Product}) is zero-value but booked an entry`);
+if (jes.length !== valued.length) fails.push(`expected one JE per VALUED line: ${valued.length} valued lines but ${jes.length} entries`);
+if (zeroed.length) console.log(`note: ${zeroed.length} zero-value line(s) correctly booked nothing`);
 for (const j of jes) {
     if (round(j.Dr) !== round(j.Cr)) fails.push(`JE ${j.EntryNumber} does not balance: Dr ${j.Dr} vs Cr ${j.Cr}`);
     if (j.Companies !== 1) fails.push(`JE ${j.EntryNumber} spans ${j.Companies} companies — must be single-company (D10)`);
