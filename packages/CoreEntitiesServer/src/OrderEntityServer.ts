@@ -1078,6 +1078,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const user = this.ContextCurrentUser as UserInfo;
 
         const product = await this.loadProductForPricing(line.ProductID);
+        // Before pricing it, establish that it may be sold at all — a retired or
+        // out-of-window product should not reach the ledger, and refusing here aborts
+        // the confirm before any line is written.
+        if (product) this.assertProductSellable(line, product);
         const resolved = await ResolvePrice(
             {
                 ProductID: line.ProductID,
@@ -1112,21 +1116,82 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         this._priceComponents.set(line, resolved);
     }
 
-    /** Product facts pricing needs: its category (for the walk) and its company. */
+    /** Product facts pricing needs: its category (for the walk), its company, and whether it may be sold at all. */
     private async loadProductForPricing(
         productID: string,
-    ): Promise<{ ProductCategoryID: string | null; CompanyID: string; Name: string } | null> {
+    ): Promise<{
+        ProductCategoryID: string | null;
+        CompanyID: string;
+        Name: string;
+        Status: string;
+        AvailableFrom: Date | null;
+        AvailableTo: Date | null;
+    } | null> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ ProductCategoryID: string | null; CompanyID: string; Name: string }>(
+        const res = await rv.RunView<{
+            ProductCategoryID: string | null;
+            CompanyID: string;
+            Name: string;
+            Status: string;
+            AvailableFrom: Date | null;
+            AvailableTo: Date | null;
+        }>(
             {
                 EntityName: 'MJ_BizApps_Orders: Products',
                 ExtraFilter: `ID = '${productID}'`,
-                Fields: ['ProductCategoryID', 'CompanyID', 'Name'],
+                Fields: ['ProductCategoryID', 'CompanyID', 'Name', 'Status', 'AvailableFrom', 'AvailableTo'],
                 ResultType: 'simple',
             },
             this.ContextCurrentUser,
         );
         return res?.Results?.[0] ?? null;
+    }
+
+    /**
+     * Refuse a product that is not on sale — by STATUS or by its availability WINDOW.
+     *
+     * Neither was checked anywhere on the server. The product picker filters
+     * `Status = 'Active'`, which made the status look enforced while being purely
+     * presentational: anything reaching the API another way — a saved draft whose
+     * product was later retired, an import, a remote operation, a second UI — booked
+     * without complaint. `AvailableFrom` / `AvailableTo` were not consulted at all, so
+     * a product available from 2030 and one whose window closed in 2021 both sold
+     * today. The field that reads as the deliberate control worked; the dates beside
+     * it were decoration.
+     *
+     * Checked here because pricing already loads the product per line, so this costs
+     * no extra query, and because refusing during pricing aborts the confirm BEFORE
+     * any line is written — the same all-or-none point the subscription rules use.
+     *
+     * The order's own date is the test, not today: back-dating an order to when the
+     * product WAS on sale is legitimate, and re-pricing an old order must not start
+     * failing because the catalogue moved on.
+     */
+    private assertProductSellable(
+        line: mjBizAppsOrdersOrderLineEntity,
+        product: { Name: string; Status: string; AvailableFrom: Date | null; AvailableTo: Date | null },
+    ): void {
+        const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();
+        const day = (d: Date) => d.toISOString().slice(0, 10);
+
+        if (product.Status !== 'Active') {
+            throw new Error(
+                `Order line ${line.LineNumber} (${product.Name}) cannot be sold: the product's status is ` +
+                    `'${product.Status}', not 'Active'.`,
+            );
+        }
+        if (product.AvailableFrom && asOf < new Date(product.AvailableFrom)) {
+            throw new Error(
+                `Order line ${line.LineNumber} (${product.Name}) cannot be sold: it is not available until ` +
+                    `${day(new Date(product.AvailableFrom))}, and this order is dated ${day(asOf)}.`,
+            );
+        }
+        if (product.AvailableTo && asOf > new Date(product.AvailableTo)) {
+            throw new Error(
+                `Order line ${line.LineNumber} (${product.Name}) cannot be sold: it was available until ` +
+                    `${day(new Date(product.AvailableTo))}, and this order is dated ${day(asOf)}.`,
+            );
+        }
     }
 
     /** Company policy, defaulting to REFUSE when no policy row exists. */
@@ -1397,22 +1462,33 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      * A product with no `EventProduct` row is simply not an event; nothing happens.
      */
     private async applyEventServicePeriod(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
-        if (line.ServicePeriodStart || line.ServicePeriodEnd) return;
         if (!line.ProductID) return;
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ EventStartsAt: string; EventEndsAt: string | null }>(
+        const res = await rv.RunView<{ EventStartsAt: string; EventEndsAt: string | null; Capacity: number | null }>(
             {
                 EntityName: EVENT_PRODUCT_ENTITY,
                 ExtraFilter: `ID='${line.ProductID}'`,
-                Fields: ['EventStartsAt', 'EventEndsAt'],
+                Fields: ['EventStartsAt', 'EventEndsAt', 'Capacity'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
             this.ContextCurrentUser,
         );
         const event = res?.Results?.[0];
-        if (!event?.EventStartsAt) return;
+        if (!event) return;
+
+        // CAPACITY IS A REAL LIMIT, and nothing was enforcing it: an event with
+        // Capacity 1 sold five seats. A venue that holds one person cannot seat five,
+        // so overselling is not a pricing question to reconcile later — it is a
+        // promise that cannot be kept, and the ledger records it as revenue either
+        // way. Checked before the service period is applied so an oversold line is
+        // refused whether or not it carries explicit dates.
+        await this.assertEventCapacity(line, event.Capacity ?? null);
+
+        // Dates only when the line does not state its own — an explicitly-set period WINS.
+        if (line.ServicePeriodStart || line.ServicePeriodEnd) return;
+        if (!event.EventStartsAt) return;
 
         const start = new Date(event.EventStartsAt);
         // A single-day event has no end date; the period is that one day, so recognition lands on
@@ -1420,6 +1496,54 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const end = event.EventEndsAt ? new Date(event.EventEndsAt) : start;
         line.ServicePeriodStart = start;
         line.ServicePeriodEnd = end;
+    }
+
+    /**
+     * Refuse a ticket line that would take an event past its capacity.
+     *
+     * Counts seats already sold on OTHER confirmed orders plus every line for this
+     * event on THIS order, because both directions are real: a second customer
+     * booking the last seat, and one customer adding the same ticket twice. The
+     * sibling half is the same blindness the subscription rules had — a check that
+     * only queries the database cannot see the order it is part of.
+     *
+     * A null Capacity means unlimited, which is the sane reading of "no limit
+     * recorded" and keeps every existing event unaffected.
+     *
+     * NOT a reservation system: two simultaneous confirms can still both pass this
+     * check and jointly oversell by one. Holding seats properly needs a booking model
+     * with expiry, which is a larger design; this closes the case where a single
+     * order oversells against a limit already visible to it.
+     */
+    private async assertEventCapacity(
+        line: mjBizAppsOrdersOrderLineEntity,
+        capacity: number | null,
+    ): Promise<void> {
+        if (capacity === null || capacity === undefined) return;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const sold = await rv.RunView<{ Quantity: number; OrderHeaderID: string }>(
+            {
+                EntityName: ORDER_LINE_ENTITY,
+                ExtraFilter: `ProductID='${line.ProductID}' AND OrderHeaderID <> '${this.ID}'`,
+                Fields: ['Quantity', 'OrderHeaderID'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        const elsewhere = (sold?.Results ?? []).reduce((sum, r) => sum + Number(r.Quantity ?? 0), 0);
+        const onThisOrder = this._lines
+            .filter((l) => l.ProductID === line.ProductID)
+            .reduce((sum, l) => sum + Number(l.Quantity ?? 0), 0);
+
+        const total = elsewhere + onThisOrder;
+        if (total > capacity) {
+            throw new Error(
+                `Order line ${line.LineNumber} cannot be sold: the event holds ${capacity}, ` +
+                    `${elsewhere} ${elsewhere === 1 ? 'seat is' : 'seats are'} already sold, and this order asks ` +
+                    `for ${onThisOrder} more.`,
+            );
+        }
     }
 
     /**
