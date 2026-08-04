@@ -7,6 +7,7 @@ import {
     type OrdersPreviewOrderOutput,
 } from '@mj-biz-apps/orders-entities';
 
+import { ReadableSaveError } from '../../services/save-error';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
 import { MJOOrderEntryService, type MJOPreviewState } from '../../services/order-entry.service';
 import { MJODecompositionLadderComponent, type MJOLadderRow } from '../../panels/decomposition-ladder.component';
@@ -132,6 +133,11 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         // Every mutation reschedules the preview. The service owns the debounce and
         // the out-of-order guard, so this stays a one-liner.
         this.stopWatching = this.Draft.Subscribe(() => {
+            // Changing anything retires the last save failure. It described a draft
+            // that no longer exists, and leaving it up means an error about the old
+            // state sits over the new one until the user saves again — which is
+            // exactly when they least want to be reading stale bad news.
+            this.SaveError = null;
             this.orders.SchedulePreview(this.Draft, (state) => {
                 this.Preview = state;
                 // MUST tick. This callback fires from a debounced timer + an awaited network
@@ -537,6 +543,21 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     public SaveError: string | null = null;
     public Saving = false;
 
+    /**
+     * Drop the save failure.
+     *
+     * Cleared from OUR state rather than left to the alert's own dismiss: the
+     * banner is inside an `@if (SaveError)`, so hiding it internally would leave
+     * the same component instance alive and already-dismissed — and the NEXT
+     * failure would then set SaveError, re-enter the @if with that same instance,
+     * and render nothing at all. A save could fail silently because the user had
+     * dismissed an earlier one.
+     */
+    public ClearSaveError(): void {
+        this.SaveError = null;
+        this.cdr.detectChanges();
+    }
+
     public async SaveDraft(): Promise<void> {
         this.Saving = true;
         this.SaveError = null;
@@ -544,7 +565,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
             const saved = await this.orders.Save(this.Draft);
             if (saved) this.Saved.emit(this.Draft);
         } catch (e) {
-            this.SaveError = e instanceof Error ? e.message : String(e);
+            this.SaveError = ReadableSaveError(e);
         } finally {
             this.Saving = false;
             this.cdr.detectChanges();

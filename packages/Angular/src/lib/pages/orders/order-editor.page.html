@@ -6,6 +6,10 @@
 -->
 
 <!-- ═══════ Persistent chrome: identity, stage, money ═══════ -->
+<!-- Everything that scrolls. The host is a flex frame so the footer can be a
+     real bottom row rather than a sticky element that only holds when the
+     content happens to overflow — see order-editor.page.css. -->
+<div class="ed-scroll">
 <div class="ed-sticky">
   <div class="ed-identity">
     <div>
@@ -519,6 +523,7 @@
     </div>
   </div>
 }
+</div>
 
 <!-- ═══════ LINE DRAWER ═══════ -->
 @if (OpenLine) {

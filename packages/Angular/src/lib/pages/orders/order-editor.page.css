@@ -8,10 +8,27 @@
              horizontally scrolling a nine-column grid on a phone
 */
 
+/* FLEX FRAME. Same correction as fast entry, and for the same reason: a sticky
+   footer is not pinned to the bottom, it is only prevented from scrolling out of
+   view. This page read correctly at 900px tall purely because its content (856px)
+   happened to exceed the 769px pane — on a taller screen the content fits, sticky
+   has nothing to hold against, and the action bar floats up to sit under the last
+   card. The host is the frame; .ed-scroll is the scroll region and carries the
+   padding; the footer is always the bottom row. */
 :host {
-  display: block;
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
+  padding: 0;
+}
+
+.ed-scroll {
+  flex: 1 1 auto;
+  /* Without this the item will not shrink below its content height, so the frame
+     grows instead of the region scrolling. */
+  min-height: 0;
+  overflow-y: auto;
   padding: var(--mj-space-6);
 }
 
@@ -194,19 +211,13 @@
 /* ── Footer ───────────────────────────────────────────────────────────── */
 
 .ed-footer {
-  position: sticky;
-  /* Cancels the host's own `padding: var(--mj-space-6)`, which is inside the
-     scrollport — with `bottom: 0` the bar stopped 24px short of the viewport
-     and floated, instead of sitting flush like a toolbar. This is the same
-     correction `.ed-sticky` already makes at the top edge, just mirrored. */
-  bottom: calc(-1 * var(--mj-space-6));
-  /* Sits ABOVE the content it covers. A sticky bar legitimately overlays whatever
-     scrolls beneath it, but with no elevation and no stacking context the card
-     underneath bled through and the bar looked like a half-drawn panel slicing the
-     Promotions card in two. The shadow and z-index make it read as a toolbar. */
-  z-index: var(--mj-z-sticky);
+  /* A flex row on the frame, not sticky — see the :host note. It no longer
+     overlays scrolling content, so it needs no z-index and no negative margins to
+     bleed full width; it already spans the frame. The shadow stays, to separate
+     the bar from the region that now scrolls beneath its top edge. */
+  flex: none;
   box-shadow: var(--mj-shadow-md);
-  margin: var(--mj-space-6) calc(-1 * var(--mj-space-6)) 0;
+  margin: 0;
   padding: var(--mj-space-3) var(--mj-space-6);
   background: var(--mj-bg-surface);
   border-top: 1px solid var(--mj-border-default);
@@ -219,7 +230,8 @@
 /* ── Responsive ───────────────────────────────────────────────────────── */
 
 @media (max-width: 760px) {
-  :host {
+  /* The padding is on the scroll region now — the host is the frame and has none. */
+  .ed-scroll {
     padding: var(--mj-space-4);
   }
 
@@ -247,7 +259,7 @@
   }
 
   .ed-footer {
-    margin: var(--mj-space-4) calc(-1 * var(--mj-space-4)) 0;
+    /* No negative margins: as a flex row it already spans the frame. */
     padding: var(--mj-space-3) var(--mj-space-4);
   }
 }
