@@ -79,7 +79,13 @@ export function ComputeLinesAndTotals(hydrated: HydratedOrder): {
         const unit = money(field(line, 'UnitPrice', 0));
         const discountAmount = money(field(line, 'DiscountAmount', 0));
         const discountPct = Number(field(line, 'DiscountPct', 0));
-        const listAmount = money(qty * unit);
+        // LIST IS DERIVED FROM THE AUTHORITATIVE NET, not re-multiplied from the rate.
+        // `qty * unit` is a sixth copy of a formula that is only correct for PerUnit
+        // pricing: on a Flat rule it produced "Subtotal 99.99 − discounts 0.00 = 100.00"
+        // on screen, arithmetic that visibly does not add up. Deriving list as
+        // net + its own discounts makes the displayed ladder true by construction.
+        const rateGross = money(qty * unit);
+        const listAmount = money(net + discountAmount + money(rateGross * discountPct));
         const companyID = field(line, 'CompanyID', '');
         const taxable = tax !== 0;
 

@@ -48,7 +48,8 @@ import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePrice, type ResolvedPrice } from './PriceResolver.js';
-import { AllocateProRata, NetAfterDiscount } from './PricingBehavior.js';
+import { AllocateProRata, LineGross, NetAfterDiscount } from './PricingBehavior.js';
+import { OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
@@ -507,7 +508,9 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const chargeable = this._lines.map((line, i) => ({
             ID: String(i),
             Net: NetAfterDiscount(
-                Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0),
+                // Same LineGross the line itself uses — a Flat line's base must be the
+                // flat amount, or tax is computed on a number the line does not have.
+                LineGross(Number(line.Quantity ?? 0), Number(line.UnitPrice ?? 0), this.resolvedExtendedFor(line)),
                 // 4dp, matching `DiscountPct DECIMAL(7,4)`. The charge and tax base must agree with
                 // the line total to the penny, and the line rounds — so this has to round the same
                 // way or tax is computed on a base the line does not have.
@@ -1102,6 +1105,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
         line.UnitPrice = resolved.UnitPrice;
         line.ProductPriceID = resolved.ProductPriceID;
+        // The line computes its own totals in a hook outside this class, so it needs the
+        // exact figure too — otherwise it would re-derive quantity × a rounded unit rate
+        // and disagree with the base computed here.
+        (line as OrderLineEntityServer).ResolvedExtendedAmount = resolved.ExtendedAmount;
         this._priceComponents.set(line, resolved);
     }
 
@@ -1850,9 +1857,26 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
     /** Net for a line that has not been saved yet — mirrors OrderLineEntityServer's own formula. */
     private pendingLineNet(line: mjBizAppsOrdersOrderLineEntity): number {
-        const gross = (line.Quantity ?? 0) * (line.UnitPrice ?? 0);
-        const net = gross * (1 - (line.DiscountPct ?? 0));
-        return Math.round((net + Number.EPSILON) * 100) / 100;
+        // Via LineGross for the same reason the other two sites do: a subscription sold
+        // on a Flat rule must price its TERM at the flat amount, not at a re-multiplied
+        // unit rate, or the term, the line and the journal entry disagree by pennies and
+        // deferred revenue never clears to zero.
+        return NetAfterDiscount(
+            LineGross(Number(line.Quantity ?? 0), Number(line.UnitPrice ?? 0), this.resolvedExtendedFor(line)),
+            Math.round(Number(line.DiscountPct ?? 0) * 1e4) / 1e4,
+            Number(line.DiscountAmount ?? 0),
+        );
+    }
+
+    /**
+     * The exact extended amount a price rule computed for this line, if one did.
+     *
+     * `_priceComponents` is populated by the pricing pass in this same save, so this
+     * is the authority while the line is still in flight; the line itself carries the
+     * same figure for its own totals hook, which runs outside this class.
+     */
+    private resolvedExtendedFor(line: mjBizAppsOrdersOrderLineEntity): number | null {
+        return this._priceComponents.get(line)?.ExtendedAmount ?? null;
     }
 
     /** Lines whose product carries a subscription type, joined to their rules. */

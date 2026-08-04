@@ -239,6 +239,40 @@ export function Money(v: number): number {
  * runs toward zero in whichever direction the line already points: a sale cannot be discounted below
  * zero, and a credit cannot be discounted above it.
  */
+/**
+ * What a line is worth BEFORE its discounts — the ONE definition, for the same
+ * reason {@link NetAfterDiscount} is.
+ *
+ * `quantity × unitPrice` is correct ONLY for `PerUnit` pricing. Every other model
+ * computes a total that is not a multiple of a unit rate — `Flat` is a single
+ * amount however many units the line names, `Package` is whole packs plus a
+ * remainder — and the "unit price" for those is a DERIVED DISPLAY VALUE obtained by
+ * dividing that total. Re-multiplying it does not return the original:
+ *
+ *     Flat 100.00 at qty 3 → unit 33.33 → 3 × 33.33 = 99.99   (a penny short)
+ *     Flat 100.00 at qty 7 → unit 14.29 → 7 × 14.29 = 100.03  (three pence over)
+ *
+ * The resolver already computes the exact figure ({@link PriceResolution.ExtendedAmount})
+ * and it was simply being discarded, so this is not a rounding policy to choose —
+ * it is a correct number to stop throwing away. Pass it and it is used verbatim;
+ * omit it (a hand-typed unit price, where there is no rule and the unit rate IS the
+ * authority) and the classic formula applies.
+ *
+ * Consolidated here because that formula had been written out in three places —
+ * the line's own total, the charge/tax base, and the subscription term amount — so
+ * a Flat line disagreed with itself three ways at once. Exactly the shape of the
+ * bug `NetAfterDiscount` was consolidated to end.
+ */
+export function LineGross(
+    quantity: number,
+    unitPrice: number,
+    extendedAmount?: number | null,
+): number {
+    return extendedAmount === null || extendedAmount === undefined
+        ? Money(quantity * unitPrice)
+        : Money(extendedAmount);
+}
+
 export function NetAfterDiscount(gross: number, discountPct: number, discountAmount: number): number {
     const g = Money(gross);
     const afterPct = Money(g * (1 - (discountPct || 0)));

@@ -41,7 +41,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
-import { NetAfterDiscount } from './PricingBehavior.js';
+import { LineGross, NetAfterDiscount } from './PricingBehavior.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
@@ -52,6 +52,21 @@ function money(value: number): number {
 
 @RegisterClass(BaseEntity, ORDER_LINE_ENTITY)
 export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
+    /**
+     * The exact extended amount the price rule computed, when a rule priced this line.
+     *
+     * TRANSIENT — not a column, and deliberately so. It is the pricing pass handing
+     * this line the figure it already computed exactly, rather than the line
+     * re-deriving it from a unit rate that cannot always represent it (see
+     * {@link LineGross}). Persisting it would add a column whose only job is to
+     * restate `LineTotalNet` before discount, and a second stored number that can
+     * disagree with the first is the thing worth avoiding.
+     *
+     * Null means "no rule priced this" — a hand-typed unit price, where the unit
+     * rate genuinely IS the authority — and the classic quantity × price applies.
+     */
+    public ResolvedExtendedAmount: number | null = null;
+
     public override async ValidateAsync(): Promise<ValidationResult> {
         const result = await super.ValidateAsync();
 
@@ -117,6 +132,24 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
         // `savePendingLines` already does exactly this for `Quantity` and for exactly this reason;
         // the discount never got the same treatment. Assigning the rounded value here means the two
         // can never diverge again, whichever path set it.
+        // A BOOKED LINE'S MONEY IS FROZEN — so do not recompute it.
+        //
+        // Trigger 51003 already enforces this at the database, and that is precisely
+        // the problem: the line is saved a SECOND time to stamp JournalEntryID after
+        // booking, computeTotals runs again, and any figure it cannot reproduce from
+        // stored state alone comes out different. The trigger then correctly refuses
+        // the change and the whole confirm rolls back, reported as a stamping failure
+        // that names neither the total nor the cause.
+        //
+        // That is not hypothetical — it is how a flat-priced line failed: the exact
+        // extended amount is known while pricing is in flight, but the reloaded line
+        // has only quantity and a derived unit rate, which for a Flat rule cannot
+        // reproduce the total (3 × 33.33 = 99.99, not 100.00). Rather than make the
+        // arithmetic reproducible from a rate that provably cannot represent every
+        // total, respect the rule the trigger already states: once booked, these
+        // columns are history, not a derivation.
+        if (this.JournalEntryID) return;
+
         const pct = Math.round((this.DiscountPct ?? 0) * 1e4) / 1e4;
         if (pct !== (this.DiscountPct ?? 0)) this.DiscountPct = pct;
 
@@ -141,7 +174,7 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
         // computed independently in both places, and both clamped a reversal line to zero — see
         // PricingBehavior for what that cost.
         const net = NetAfterDiscount(
-            this.Quantity * this.UnitPrice,
+            LineGross(this.Quantity, this.UnitPrice, this.ResolvedExtendedAmount),
             pct,
             this.DiscountAmount ?? 0,
         );
