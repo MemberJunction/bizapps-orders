@@ -1510,28 +1510,48 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      * A null Capacity means unlimited, which is the sane reading of "no limit
      * recorded" and keeps every existing event unaffected.
      *
+     * COST, stated plainly because it is the weak part: this sums quantities by
+     * reading the rows, so it is O(lines ever sold for that event) — a conference
+     * with 10,000 tickets reads 10,000 rows to add them up. It is memoized per save
+     * and skipped entirely when Capacity is null (every non-event product, and every
+     * event that has not set a limit), so today it runs at most once per capacity-
+     * bearing event on the order. The right shape is a server-side SUM via RunQuery
+     * rather than client-side addition; that is tracked with the other RunQuery work
+     * and deliberately not done here, because adopting RunQuery is its own change.
+     *
      * NOT a reservation system: two simultaneous confirms can still both pass this
      * check and jointly oversell by one. Holding seats properly needs a booking model
      * with expiry, which is a larger design; this closes the case where a single
      * order oversells against a limit already visible to it.
      */
+    /** Seats already sold per event product, memoized for the life of one save. */
+    private readonly _seatsSoldElsewhere = new Map<string, number>();
+
     private async assertEventCapacity(
         line: mjBizAppsOrdersOrderLineEntity,
         capacity: number | null,
     ): Promise<void> {
         if (capacity === null || capacity === undefined) return;
 
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const sold = await rv.RunView<{ Quantity: number; OrderHeaderID: string }>(
-            {
-                EntityName: ORDER_LINE_ENTITY,
-                ExtraFilter: `ProductID='${line.ProductID}' AND OrderHeaderID <> '${this.ID}'`,
-                Fields: ['Quantity', 'OrderHeaderID'],
-                ResultType: 'simple',
-            },
-            this.ContextCurrentUser,
-        );
-        const elsewhere = (sold?.Results ?? []).reduce((sum, r) => sum + Number(r.Quantity ?? 0), 0);
+        // ONCE PER PRODUCT PER SAVE. This runs from applyEventServicePeriod, which is
+        // called per LINE, so an order with three tickets to one event would otherwise
+        // ask the same question three times.
+        const productID = String(line.ProductID);
+        let elsewhere = this._seatsSoldElsewhere.get(productID);
+        if (elsewhere === undefined) {
+            const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+            const sold = await rv.RunView<{ Quantity: number }>(
+                {
+                    EntityName: ORDER_LINE_ENTITY,
+                    ExtraFilter: `ProductID='${productID}' AND OrderHeaderID <> '${this.ID}'`,
+                    Fields: ['Quantity'],
+                    ResultType: 'simple',
+                },
+                this.ContextCurrentUser,
+            );
+            elsewhere = (sold?.Results ?? []).reduce((sum, r) => sum + Number(r.Quantity ?? 0), 0);
+            this._seatsSoldElsewhere.set(productID, elsewhere);
+        }
         const onThisOrder = this._lines
             .filter((l) => l.ProductID === line.ProductID)
             .reduce((sum, l) => sum + Number(l.Quantity ?? 0), 0);

@@ -1159,3 +1159,90 @@ executes nothing and reports success; the parity floor exists because of that.
 - `ProductPerformanceObligation` and the ASC-606 allocation engine — moved to bizapps-contracts per
   D44. Revenue recognition itself stays here.
 - `Order.ContractID` — removed by D44 for the same reason.
+
+## 21b. Seat reservation — the gap above the capacity check (NOT built)
+
+Raised 2026-08-04 alongside the capacity fix, and deliberately left unbuilt so the
+shape can be agreed before anything is written.
+
+**What exists now.** Confirm refuses a line that would take an event past its
+`EventProduct.Capacity`, counting seats already sold on other orders plus every line
+for that event on the order being confirmed.
+
+**What that does not do.** It is a *check at confirm*, not a *hold*. Two consequences,
+both real:
+
+1. **Concurrent confirms can jointly oversell.** Two orders each reading "1 of 1 sold"
+   before either commits will both pass and both book. The window is small and the
+   overshoot is bounded by the number of simultaneous confirms — but it is not zero,
+   and for a venue that means a person with a ticket and no seat.
+2. **Nothing is held while a customer is deciding.** A seat is available until the
+   instant someone else confirms, so a half-completed order competes with every other
+   one. For a popular event that is the normal case, not the edge case.
+
+**What a reservation system needs, minimally:**
+
+- A **hold** record — event product, quantity, who holds it, and an **expiry**. Expiry is
+  the load-bearing part: a hold that never expires is an inventory leak, and abandoned
+  carts are the majority.
+- **Availability = capacity − sold − live holds**, so the capacity check reads one number
+  rather than deriving it from two sources that can disagree.
+- **A hold taken when the line is added**, converted on confirm and released on cancel,
+  timeout, or line removal.
+- **Serialization at the point of truth.** Application-level counting cannot close the
+  concurrent-confirm window; the decrement has to be atomic — a constrained update, or
+  the seat count held in a row the confirm locks.
+- **A sweeper** for expired holds, and a decision on whether expiry is enforced lazily
+  (at read) or actively (scheduled) — lazily is simpler and usually enough.
+
+**Open questions for Amith:** should a hold survive a session (a saved draft holding
+seats for a day) or die with it? Does an oversold event fail the confirm outright, or
+waitlist? Is capacity per event, or per ticket type within an event? The answers change
+the schema, so they are worth settling before it is written.
+
+## 21c. A subscription records no quantity (KNOWN GAP, not fixed)
+
+Found 2026-08-04 by adversarial testing; recorded rather than fixed because the fix is
+a schema change and the right shape is a business decision.
+
+**What happens.** A subscription line bought with **quantity 10** bills 10 × the rate and
+creates **one** `Subscription` with one coverage window. Nothing anywhere records that ten
+seats were bought — `Subscription` has no quantity or seat-count column. The money is
+right; the entitlement is unknowable from the subscription.
+
+**Why it is not obviously a bug.** For a `Holder`-benefit type (one organisation-wide
+membership) quantity 10 might legitimately mean "ten times the price for the same single
+membership". For an `Individual`-benefit seat type it clearly does not — ten seats are ten
+people's access, and the system cannot say who or how many.
+
+**What it blocks.** Any "how many seats does this customer have" question, seat assignment,
+per-seat entitlement, and renewal at a different seat count.
+
+**The decision needed before code:** does quantity on a subscription line mean (a) a
+multiplier on one subscription, (b) N distinct subscriptions, or (c) one subscription with
+a recorded seat count? Only (c) needs a new column; (b) changes the concurrency rules
+materially, since ten seats for one subscriber currently collide as duplicates.
+
+## 21d. TODO — promote accounting's workspace tab card into ng-ui-components
+
+Raised 2026-08-04. Orders wants the tokenized tabbed-workspace look that
+`bizapps-accounting` uses for its JE and batch workspaces. It cannot import it today:
+
+- `WorkspaceCardComponent` is **not exported** from accounting's `public-api`.
+- It lives in accounting's `transfer-pending/`, whose README states everything there is
+  parked code owed to another home — so depending on it now buys a migration later.
+- It models **open documents**: every tab requires `Status` and `State`, the card does not
+  pass `ShowNewTab` through, and close is always rendered. Applied to the order editor's
+  five fixed panes it would render a "New" button (new *what*?) and a close × on "Parties".
+
+**So there are two separate wants, and they need separating:**
+
+1. **Panes of one record** (the order editor's Lines / Parties / Charges / Payment /
+   Accounting) — already on MJ's shipped `mj-tab-nav`, which is the correct shared
+   primitive and is more widely shared than an app-local card.
+2. **Several open orders as tabs** — the genuine match for the workspace card. That
+   feature does not exist in orders yet.
+
+**Next step:** promote the card to `ng-ui-components` (already filed in `MJ-UPSTREAM.md`
+with the stat-card work), then revisit (2) as a feature. Do not cross-import from
+accounting in the meantime.
