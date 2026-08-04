@@ -16,11 +16,7 @@ export class mjBizAppsOrdersProductTypeFormComponent extends BaseFormComponent {
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'generalInformation', sectionName: 'General Information', isExpanded: true },
-            { sectionKey: 'operationalSettings', sectionName: 'Operational Settings', isExpanded: true },
-            { sectionKey: 'financialDefaults', sectionName: 'Financial Defaults', isExpanded: true },
-            { sectionKey: 'subscriptionSettings', sectionName: 'Subscription Settings', isExpanded: true },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false }
         ]);
     }

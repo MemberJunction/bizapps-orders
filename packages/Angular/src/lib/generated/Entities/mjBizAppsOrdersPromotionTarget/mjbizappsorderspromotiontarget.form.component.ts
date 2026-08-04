@@ -15,9 +15,7 @@ export class mjBizAppsOrdersPromotionTargetFormComponent extends BaseFormCompone
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'promotionDefinition', sectionName: 'Promotion Definition', isExpanded: true },
-            { sectionKey: 'targetDefinition', sectionName: 'Target Definition', isExpanded: true },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true }
         ]);
     }
 }
