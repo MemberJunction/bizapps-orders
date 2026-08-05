@@ -64,9 +64,9 @@ interface EntryRow {
 const entriesForOrder = (ctx: IntegrationCheckContext, orderID: string) =>
   TxQuery<EntryRow>(
     ctx,
-    `SELECT je.ID, je.EntryType, je.EffectiveDate,
+    `SELECT je.ID, (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType, je.EffectiveDate,
             (SELECT SUM(DebitAmount) FROM ${ACCT_SCHEMA}.JournalEntryLine WHERE JournalEntryID = je.ID) AS D
-       FROM ${ACCT_SCHEMA}.JournalEntry je
+       FROM ${ACCT_SCHEMA}.vwJournalEntries je
        WHERE je.LinkedRecordID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}')
        ORDER BY je.EffectiveDate`,
   );
@@ -78,7 +78,7 @@ const netOnAccount = (ctx: IntegrationCheckContext, companyID: string, code: str
     `SELECT SUM(ISNULL(jel.DebitAmount,0)) - SUM(ISNULL(jel.CreditAmount,0)) AS Net
        FROM ${ACCT_SCHEMA}.JournalEntryLine jel
        JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
-       JOIN ${ACCT_SCHEMA}.JournalEntry je ON je.ID = jel.JournalEntryID
+       JOIN ${ACCT_SCHEMA}.vwJournalEntries je ON je.ID = jel.JournalEntryID
        WHERE gl.Code='${code}' AND je.CompanyID='${companyID}'`,
   );
 

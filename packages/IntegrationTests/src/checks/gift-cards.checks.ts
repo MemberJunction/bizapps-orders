@@ -90,8 +90,8 @@ const ledgerOf = (ctx: IntegrationCheckContext, cardID: string) =>
 const bookingLines = (ctx: IntegrationCheckContext, orderID: string) =>
   TxQuery<{ Code: string; Name: string; DebitAmount: number; CreditAmount: number; EntryType: string }>(
     ctx,
-    `SELECT gl.Code, gl.Name, jel.DebitAmount, jel.CreditAmount, je.EntryType
-       FROM ${ACCT_SCHEMA}.JournalEntry je
+    `SELECT gl.Code, gl.Name, jel.DebitAmount, jel.CreditAmount, (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType
+       FROM ${ACCT_SCHEMA}.vwJournalEntries je
        JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
        JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
       WHERE je.LinkedRecordID IN

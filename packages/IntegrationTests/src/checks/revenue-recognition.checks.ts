@@ -46,9 +46,9 @@ interface EntryRow {
 async function entriesForOrder(ctx: IntegrationCheckContext, orderID: string): Promise<EntryRow[]> {
     return TxQuery<EntryRow>(
         ctx,
-        `SELECT je.ID, je.EntryType, je.EffectiveDate,
+        `SELECT je.ID, (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType, je.EffectiveDate,
                 (SELECT SUM(DebitAmount) FROM ${ACCT_SCHEMA}.JournalEntryLine WHERE JournalEntryID = je.ID) AS D
-         FROM ${ACCT_SCHEMA}.JournalEntry je
+         FROM ${ACCT_SCHEMA}.vwJournalEntries je
          WHERE je.LinkedRecordID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}')
             OR je.LinkedRecordID IN (
                  SELECT st.ID FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
@@ -148,10 +148,10 @@ export const RevenueRecognitionChecks: NamedCheck[] = [
                 const lines = await TxQuery<{ Code: string; DebitAmount: number; CreditAmount: number }>(
                     ctx,
                     `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
-                     FROM ${ACCT_SCHEMA}.JournalEntry je
+                     FROM ${ACCT_SCHEMA}.vwJournalEntries je
                      JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
                      JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
-                     WHERE je.EntryType = 'RevenueRecognition'
+                     WHERE (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) = 'RevenueRecognition'
                        AND je.LinkedRecordID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${Order.ID}')`,
                 );
                 AssertEqual(lines.length, 24, 'two ledger lines per release × 12');
@@ -181,9 +181,9 @@ export const RevenueRecognitionChecks: NamedCheck[] = [
                 const { Order } = await confirmStraightLine(ctx);
                 const row = await TxOne<{ EntryType: string }>(
                     ctx,
-                    `SELECT je.EntryType
+                    `SELECT (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType
                      FROM ${ORDERS_SCHEMA}.OrderLine ol
-                     JOIN ${ACCT_SCHEMA}.JournalEntry je ON je.ID = ol.JournalEntryID
+                     JOIN ${ACCT_SCHEMA}.vwJournalEntries je ON je.ID = ol.JournalEntryID
                      WHERE ol.OrderHeaderID = '${Order.ID}'`,
                 );
                 AssertEqual(row.EntryType, 'OrderBooking', 'the entry the order line points at');

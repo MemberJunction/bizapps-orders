@@ -200,6 +200,20 @@ for (const request of requested) {
                 const message = String(e?.message ?? e).split('\n')[0];
                 failures.push({ Id: check.Id, message, stack: e?.stack });
                 console.log(`  ✖ ${check.Name}\n      ${message}`);
+                // The nested part, for the same reason the bundle-setup path below prints it:
+                // mssql puts the useful text ('Invalid column name X', 'The DELETE statement
+                // conflicted with …') in `originalError`, and the first line of the outer message
+                // is the useless 'Error executing SQL'. Without this a failing check says only
+                // that SQL failed, which is indistinguishable from a broken engine and sends the
+                // reader bisecting. The setup path already learned this; the check path had not.
+                for (const key of ['originalError', 'precedingErrors']) {
+                    const nested = e?.[key];
+                    if (!nested) continue;
+                    for (const n of Array.isArray(nested) ? nested : [nested]) {
+                        console.log(`      ↳ ${n?.message ?? n}`);
+                        if (n?.originalError?.message) console.log(`        ↳ ${n.originalError.message}`);
+                    }
+                }
             }
         }
     } catch (e) {
