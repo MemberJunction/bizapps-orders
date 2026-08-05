@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Details Section -->
+    <!-- Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="details"
-        SectionName="Details"
-        Icon="fa fa-align-left"
+        SectionKey="configuration"
+        SectionName="Configuration"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -44,6 +44,32 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="Sequence"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Recognition Logic Section -->
+    <mj-collapsible-panel
+        SectionKey="recognitionLogic"
+        SectionName="Recognition Logic"
+        Icon="fa fa-calculator"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="DriverClass"
             Type="textbox"
             [EditMode]="EditMode"
@@ -65,22 +91,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Sequence"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- System Metadata Section -->
+    <mj-collapsible-panel
+        SectionKey="systemMetadata"
+        SectionName="System Metadata"
+        Icon="fa fa-database"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -110,7 +130,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersProducts"
         SectionName="Products"
-        Icon="fa fa-table"
+        Icon="fa fa-box"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
@@ -135,7 +155,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersProductTypes"
         SectionName="Product Types"
-        Icon="fa fa-table"
+        Icon="fa fa-tags"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
@@ -156,36 +176,11 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Revenue Recognition Schedules Section -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersRevenueRecognitionSchedules"
-        SectionName="Revenue Recognition Schedules"
-        Icon="fa fa-table"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersRevenueRecognitionSchedules')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Revenue Recognition Schedules','RevenueRecognitionTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Revenue Recognition Schedules')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersRevenueRecognitionSchedules')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersRevenueRecognitionSchedules', $event.totalRowCount)"
-                >
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
     <!-- Subscription Terms Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersSubscriptionTerms"
         SectionName="Subscription Terms"
-        Icon="fa fa-table"
+        Icon="fa fa-calendar-alt"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

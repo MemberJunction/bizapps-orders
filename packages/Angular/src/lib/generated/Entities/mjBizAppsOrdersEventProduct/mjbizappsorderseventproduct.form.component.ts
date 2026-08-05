@@ -15,7 +15,12 @@ export class mjBizAppsOrdersEventProductFormComponent extends BaseFormComponent 
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true }
+            { sectionKey: 'eventSchedule', sectionName: 'Event Schedule', isExpanded: true },
+            { sectionKey: 'eventVenue', sectionName: 'Event Venue', isExpanded: true },
+            { sectionKey: 'eventLogistics', sectionName: 'Event Logistics', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'productDetails', sectionName: 'Product Details', isExpanded: true },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }
 }

@@ -10,11 +10,11 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Details Section -->
+    <!-- Payment Terms Configuration Section -->
     <mj-collapsible-panel
-        SectionKey="details"
-        SectionName="Details"
-        Icon="fa fa-align-left"
+        SectionKey="paymentTermsConfiguration"
+        SectionName="Payment Terms Configuration"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -57,6 +57,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- System Metadata Section -->
+    <mj-collapsible-panel
+        SectionKey="systemMetadata"
+        SectionName="System Metadata"
+        Icon="fa fa-cog"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -82,11 +92,36 @@
          RELATED ENTITY PANELS
          ======================================== -->
 
+    <!-- Customer Payment Terms Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersCustomerPaymentTerms"
+        SectionName="Customer Payment Terms"
+        Icon="fa fa-handshake"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersCustomerPaymentTerms')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Customer Payment Terms','PaymentTermsTypeID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Customer Payment Terms')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersCustomerPaymentTerms')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersCustomerPaymentTerms', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <!-- Order Headers Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderHeaders"
         SectionName="Order Headers"
-        Icon="fa fa-table"
+        Icon="fa fa-shopping-cart"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

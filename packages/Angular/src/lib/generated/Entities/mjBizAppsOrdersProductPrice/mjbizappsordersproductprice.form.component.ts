@@ -16,9 +16,13 @@ export class mjBizAppsOrdersProductPriceFormComponent extends BaseFormComponent 
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
-            { sectionKey: 'mJBizAppsOrdersPriceTiers', sectionName: 'Price Tiers', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false }
+            { sectionKey: 'productAssociation', sectionName: 'Product Association', isExpanded: true },
+            { sectionKey: 'pricingConfiguration', sectionName: 'Pricing Configuration', isExpanded: true },
+            { sectionKey: 'quantityAndTimeConstraints', sectionName: 'Quantity and Time Constraints', isExpanded: true },
+            { sectionKey: 'ruleManagement', sectionName: 'Rule Management', isExpanded: true },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPriceTiers', sectionName: 'Price Tiers', isExpanded: false }
         ]);
     }
 }

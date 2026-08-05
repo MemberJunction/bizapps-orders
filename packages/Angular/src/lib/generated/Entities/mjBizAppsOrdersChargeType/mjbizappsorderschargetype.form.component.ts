@@ -16,7 +16,9 @@ export class mjBizAppsOrdersChargeTypeFormComponent extends BaseFormComponent {
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'chargeDefinition', sectionName: 'Charge Definition', isExpanded: true },
+            { sectionKey: 'calculationLogic', sectionName: 'Calculation Logic', isExpanded: true },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderCharges', sectionName: 'Order Charges', isExpanded: false }
         ]);
     }

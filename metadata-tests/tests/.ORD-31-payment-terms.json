@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-31 - Payment Terms and Due Dates",
+    "Description": "When an order is due, resolved at confirm and STORED (PT1-PT12, plan D83). Nothing derived a due date before this: OrderHeader.DueDate was only ever what a caller passed, PaymentTermsType had no rows, and the schema comment promising that NetDays derives the due date was aspirational. That did not look like a missing feature - it looked like a quiet afternoon. Orders.GetOverdueWorklist returned zero rows as of any date at all, against 67 orders carrying an unpaid balance, because aging, the collections worklist and the invoice due date all read one column that was null on every row. PaymentTermsBehavior owns the resolution walk and its unit tests cover the rungs in isolation; this bundle proves the walk is wired into the confirm path, that the answer is persisted rather than re-derived per reader, and that the worklist now returns what it was always supposed to.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A stated due date survives confirm untouched, because that is the seam a contracts app supplies terms through and silently recomputing a negotiated date is unrecoverable by the customer; stated terms derive the date from NetDays and keep the terms named on the header so an invoice can print them; the buyer's own CustomerPaymentTerms beat the selling company's default; the company's AccountingCompanyProfile.DefaultPaymentTermsTypeID - which has existed since the accounting schema was written and which nothing read - is used when nothing more specific applies; an order with nothing configured anywhere is due on receipt with a REAL date rather than the null that made every order invisible to aging; a confirmed order past its due date actually appears on Orders.GetOverdueWorklist, aged from its stored due date; customer terms are effective on the ORDER date rather than on today, so renegotiating does not restate what an old order was due on; and company-scoped customer terms beat unscoped ones, because a subsidiary that negotiated its own terms meant to override the group's. Beyond the rungs themselves, the conditions WITHIN the customer-terms rung are exercised on the real path rather than only in unit tests: terms keyed to a PERSON resolve through a different SQL branch from organization-keyed ones and were previously untested end to end; expired terms stop applying and the walk falls through to the next rung; inactive terms are ignored, which the query and the predicate both enforce, so the check only fails when BOTH guards are removed; and among equally specific rows the most recently started wins, read in StartedAt order so that a 'keep the first row' bug is always caught rather than caught depending on the query plan."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "payment-terms"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "9C4E2F80-A15D-4739-B6C2-08E7A3D51F44"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T12:43:23.698Z",
+    "checksum": "a0192826ccab3e8ad625e2ad0d5b6144b006ad895d0b3a58efd97884d12f6714"
+  }
+}

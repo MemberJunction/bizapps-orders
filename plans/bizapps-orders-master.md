@@ -255,6 +255,8 @@ The current decision set. Each is the standing ruling — superseded ancestors l
 | D80 | **A payment intent is its OWN ROW, and opening one is its own step.** Every driver had implemented `CreateIntent` since the payment seam landed and NOTHING called it but unit tests — so `settleWithProvider` refused every provider-backed capture with *"there is nothing for the gateway to capture. Open an intent first"*, and there was no way to open one. `Orders.OpenPaymentIntent` is that step: it asks the gateway to stand ready, records the `PaymentIntent`, and returns the id `Orders.CapturePayment` now takes. It moves no money and writes no payment. The intent stays a ROW rather than becoming a status on `PaymentHeader` because **retries are 1:N** (a second ACH attempt is its own gateway intent), **an intent can exist with no payment** (abandoned checkout), and **`ProviderEventID` — the webhook idempotency key — lives on the intent** because events can arrive before any payment exists. The client secret is returned and never stored: it is a bearer credential, and the table deliberately has no column for it. | Amith 2026-08-02. The gateway path was complete at both ends and had no beginning; nobody noticed because no gateway payment had ever been run end to end. |
 | D81 | **`bizapps-accounting` is a HARD REQUIREMENT, and the manifests do not say so yet.** Orders books revenue on confirm and cash on capture — `PaymentLineEntityServer` statically imports `AccountingEngineBase` and calls it on every allocation. There is no degraded mode and no feature flag; a genuinely absent package fails at module load. The `optional: true` peer markings are therefore WRONG, and they are known-wrong rather than intended: they exist only because accounting is unpublished, and npm 7+ auto-installs peers, so making them mandatory today fails every install and CI run with E404 (verified). They come out **the day accounting publishes** — a dated to-do with the exact five entries to delete lives in [`docs/dependency-on-accounting.md`](../docs/dependency-on-accounting.md). No workaround flag: a root `.npmrc` with `legacy-peer-deps=true` was tried and removed, because a repo-wide npm setting that silently changes resolution for every dependency is too large and too invisible a lever for one temporary problem. | Amith 2026-08-02: "accounting must definitely NOT be an optional peer dep, we must have a hard requirement for this — orders and payments both create JEs," then: document it as a to-do after accounting publishes rather than reach for the flag. |
 | D82 | **The processor fee is READ per payment but ACCRUED at month end — it is not a per-payment ledger leg.** `PaymentType.BookProcessingFeeInline` decides per tender and **defaults to 0 for every one**, so nothing books a fee entry until a deployment opts a tender in. The reason is not fee-schedule complexity — the live path never CALCULATES a fee, it reads `balance_transaction.fee` from the gateway, so graduated and negotiated rates are the processor's problem. The reason is that **a per-payment fee leg cannot reconcile to a bank statement**: the processor BATCHES into payouts and deducts costs that never attach to any payment at all (a failed-debit charge, a dispute fee, a monthly platform charge), so booking one category per transaction yields a Cash figure that is right in aggregate only if every other category is captured, and never right on any given day. Accruing the whole cost once, from the statement Finance actually reconciles against, is simpler and more correct. The fee is still read and still stored on `ProcessingFeeAmount`/`NetAmount` — the flag decides only whether it becomes a journal entry, and a read that FAILS answers false loudly rather than refusing the capture. On the TENDER rather than the provider because that is the list an administrator curates; if per-provider granularity is ever needed this column becomes the default. **The proper long-term model is a clearing account** (`Dr Clearing/Cr AR` per payment; `Dr Cash + Dr Fees/Cr Clearing` per payout), which reconciles exactly because the payout total IS the fee total; that needs a `Payout` record and a statement import, is deliberately out of scope, and is compatible with this flag left at 0 everywhere. | Amith 2026-08-02: "I wonder about the wisdom of attempting to calc fees at all here versus letting that be an accrual at month end… I wonder if this will ever reconcile," then: make it a per-payment-type flag defaulting to false, as a migration + codegen rather than another rebuild. Per-payment attribution is the one thing the accrual cannot give, which is why the switch exists rather than the behaviour being deleted. |
+| D83 | **An order's due date is RESOLVED at confirm and STORED, through a terms walk.** Nothing derived it: `DueDate` was only ever what a caller passed, `PaymentTermsType` had no rows, and the schema comment promising that `NetDays` derives the due date was aspirational. The consequence did not look like a missing feature — `Orders.GetOverdueWorklist` returned **zero rows as of any date**, against 67 orders carrying an unpaid balance, because aging, the worklist and the invoice all read that one null column. The walk is the third of this shape after D5 (GL accounts) and D69 (price): **stated `DueDate` → stated `PaymentTermsTypeID` → the buyer's `CustomerPaymentTerms` → the selling company's `AccountingCompanyProfile.DefaultPaymentTermsTypeID` → due on receipt.** Resolved ONCE at confirm and persisted, so three surfaces read one date instead of deriving three that can disagree. A **stated** date is recorded as stated and never recomputed — that is the entire interface a contracts app needs, and Orders grows no knowledge of contracts. Terms are deliberately **not per product**: they belong to the deal, an order carrying a Net 30 and a Net 60 product has no coherent answer, and per-line due dates would mean splitting the receivable. Unlike D5 this walk does **not** fail loudly — missing terms have a sane answer, and refusing a sale over an unconfigured lookup would be hostile. | Amith 2026-08-02: "we should have a default terms at the company level… then the ability to override that at various levels," and on products: "agree about product pushback, not a factor on a product." |
+| D84 | **RETIRED: `RevenueRecognitionSchedule`, `RevRecScheduleLine` and `OrderLine.RevenueRecognitionScheduleID`.** Kept as "the computed envelope for MRR/ARR display and the computation source", and **nothing ever wrote them** — 14 lines in the review seed carry a deferred recognition type and not one had a schedule. Both stated purposes are already served by what recognition produces: the releases ARE a schedule (forward-dated, balanced, queryable in `JournalEntry`/`JournalEntryLine`), and the trail is those entries plus `OrderLinePriceComponent`. A second copy of the same facts is free to drift from the ledger, and **empty tables that look authoritative are worse than absent ones** — a report writer finds them and assumes they are the source of truth. Not redundant with Subscriptions, which was the first guess: the deferred lines in the seed carry no subscription at all. Redundant with the LEDGER. Forecasting, if it is ever wanted, belongs in an FP&A layer rather than beside the ledger. Revenue recognition itself is untouched — `RevenueRecognitionType` and the forward-dated entries stay. | Amith 2026-08-02: "I think the tables… are all redundant with what Subs does, why do we need it? I lean towards killing this," and "I don't need the forecast concept here, we'd model that later in the FP&A layer." |
 
 ---
 
@@ -414,7 +416,6 @@ __mj_BizAppsOrders.OrderLine
   FulfillmentStatus NULL,                      -- Pending | Fulfilled | Returned (seam, D15)
   ReversesOrderLineID NULL,
   SubscriptionID NULL,                         -- if this line births/extends a sub
-  RevenueRecognitionScheduleID NULL,           -- the computed envelope (§4.6)
   JournalEntryID NULL,                         -- ★ D10: this line's booked JE (SOFT ref → hard FK
                                                --   when CodeGen include-mode lands)
   Description NULL
@@ -453,7 +454,7 @@ __mj_BizAppsOrders.SubscriptionPlan     -- optional elaboration: billing cycle, 
 __mj_BizAppsOrders.Subscription         -- continuity record: OrderLineID (birth), CustomerOrganizationID,
                                         -- CompanyID [S1 rename], Status (Active|Paused|Canceled|Migrated|Trialing),
                                         -- period bounds, provider linkage (ProviderSubscriptionID),
-                                        -- RevenueRecognitionScheduleID, migration trail (MigratesFrom/To)
+                                        -- migration trail (MigratesFrom/To)
 __mj_BizAppsOrders.SubscriptionEvent    -- immutable log; ProviderEventID UNIQUE (webhook idempotency)
 ```
 
@@ -472,12 +473,9 @@ behavior and the renewal-spawn job are the deferred remainder of the subscriptio
 
 ### 4.6 Revenue-recognition envelope
 
-```sql
-__mj_BizAppsOrders.RevenueRecognitionSchedule  -- the COMPUTED envelope (method, dates, totals) —
-__mj_BizAppsOrders.RevRecScheduleLine          -- kept for MRR/ARR display + as the computation
-                                               -- source; the LEDGER truth is the forward-dated
-                                               -- JEs themselves (D14)
-```
+RETIRED (D84). There is no envelope table. The forward-dated journal entries ARE the schedule —
+dated, balanced and queryable — and the computation trail is those entries plus
+`OrderLinePriceComponent`. See D84 for why a second copy was worse than none.
 
 The waterfall math stands (per-period amounts, front-loaded rounding remainder in entry 1,
 anniversary dating); what gets WRITTEN is real future-dated JEs at booking-lock. The as-built
@@ -642,8 +640,9 @@ Per D14 — the whole model in four sentences:
    accounting batches sweep entries by date window (default cutoff = today).
 3. **Changes and cancellations are correcting Orders** whose new entries net against the staged
    ones; staged entries are never edited or deleted.
-4. `RevenueRecognitionSchedule`(+lines) remains as the **computed envelope** for MRR/ARR display and
-   as the computation source — never the ledger truth.
+4. MRR/ARR and the computation trail come from the LEDGER — the forward-dated entries themselves,
+   plus `OrderLinePriceComponent` for how a line's price was arrived at. There is no separate
+   envelope table (D84).
 
 Fulfillment never recognizes revenue (D15). Bundle SSP allocation across performance obligations is
 future (fields ship now, D21).
@@ -1149,8 +1148,12 @@ executes nothing and reports success; the parity floor exists because of that.
 - Sales-rule evaluation beyond `DiscountLimit`, and approval routing (deferred to v-next; see §21
   for exactly which slice is live and which is decorative).
 - Statements and consolidated bill packages · ORDER SPLITTING (the queue ships; splitting one order
-  into several shipments does not) · `create-into-Fulfilled` (`Orders.CreateOrderInState`, D17) ·
-  CDP migration tooling. (Orders-side RLS and role seeding are REMOVED, not deferred — MJ's own
+  into several shipments does not) · CDP migration tooling.
+- **The review seed exercises one status.** All 75 orders are `Confirmed`; no line requires
+  fulfilment, so `GetFulfillmentQueue` is empty the same way the overdue worklist was, and
+  `PaymentProvider`, `PaymentIntent`, `PriceList`, `PriceTier` and `CustomerTaxExemption` have no
+  rows. The back end has integration coverage for all of it — it just never reaches a screen. Worth
+  fixing in `seed-review-data.mjs` before anyone demos this. (Orders-side RLS and role seeding are REMOVED, not deferred — MJ's own
   row-level security covers it; see §14.)
 - Stripe against a real sandbox — the stub covers the path; the live run is a separate exercise.
 

@@ -88,9 +88,10 @@ const ledgerOf = (ctx: IntegrationCheckContext, cardID: string) =>
 
 /** The ledger lines an order's booking produced, by account code. */
 const bookingLines = (ctx: IntegrationCheckContext, orderID: string) =>
-  TxQuery<{ Code: string; Name: string; DebitAmount: number; CreditAmount: number; EntryType: string }>(
+  TxQuery<{ Code: string; Name: string; DebitAmount: number; CreditAmount: number; EntryType: string; EffectiveDate: string | null }>(
     ctx,
-    `SELECT gl.Code, gl.Name, jel.DebitAmount, jel.CreditAmount, (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType
+    `SELECT gl.Code, gl.Name, jel.DebitAmount, jel.CreditAmount, je.EffectiveDate,
+            (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType
        FROM ${ACCT_SCHEMA}.vwJournalEntries je
        JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
        JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
@@ -216,16 +217,17 @@ export const GiftCardChecks: NamedCheck[] = [
         // A deferred type releases on DATES. A gift card releases when somebody spends it, which is
         // an event on a different order — so a schedule here would recognise revenue on a timetable
         // that has nothing to do with the customer, and do it a second time at redemption.
+        // THE LEDGER IS THE SCHEDULE (D84). This used to also query
+        // `RevenueRecognitionSchedule`, which no longer exists — the envelope tables were retired
+        // because nothing ever wrote them and the forward-dated entries already are the schedule.
+        // So the release entries are the whole assertion, which is what the check was really about.
         const releases = lines.filter((l) => l.EntryType === "RevenueRecognition");
         AssertEqual(releases.length, 0, `no release entries: ${JSON.stringify(releases)}`);
 
-        const schedule = await TxMaybeOne<{ N: number }>(
-          ctx,
-          `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.RevenueRecognitionSchedule rrs
-             JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.RevenueRecognitionScheduleID = rrs.ID
-            WHERE ol.OrderHeaderID = '${order.Order.ID}'`,
-        );
-        AssertEqual(Number(schedule?.N ?? 0), 0, "and no schedule row");
+        // And nothing forward-dated at all: a release is identified by its type above, but a gift
+        // card must not stage an entry for a future date under any type.
+        const future = lines.filter((l) => l.EffectiveDate != null && new Date(l.EffectiveDate) > new Date());
+        AssertEqual(future.length, 0, `nothing is staged for a future date: ${JSON.stringify(future)}`);
       }),
   },
   {

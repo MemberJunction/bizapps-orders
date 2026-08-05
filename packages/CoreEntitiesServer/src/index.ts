@@ -412,3 +412,23 @@ export { ToISODate } from './InvoiceBuilder.js';
 // on nearly every write path and change a few times a year — a per-call RunView naming one column
 // looks careful and is really a silent dependency on CodeGen having run.
 export { OrdersEngine, LoadOrdersEngine } from './OrdersEngine.js';
+
+// The order lifecycle (D8/D53): the legal statuses, the legal MOVES between them, and what each one
+// permits. The DB CHECK enforces the set and never enforced the moves.
+export {
+    CanTransition,
+    CountsTowardReceivable,
+    IsBooked,
+    IsDeliverable,
+    IsEditable,
+    IsOrderStatus,
+    IsTerminal,
+    NextStatuses,
+    ORDER_STATUSES,
+} from './OrderStatusBehavior.js';
+export type { OrderStatus, TransitionVerdict } from './OrderStatusBehavior.js';
+
+// Payment terms (D83): when an order is due, resolved once at confirm and STORED — nothing
+// populated OrderHeader.DueDate before, so the collections worklist returned nothing, ever.
+export { AddDays, BestCustomerTerms, CustomerTermsApply, ResolveDueDate } from './PaymentTermsBehavior.js';
+export type { CustomerTermsFacts, TermsFacts, TermsResolution, TermsResolutionInput, TermsSource } from './PaymentTermsBehavior.js';
