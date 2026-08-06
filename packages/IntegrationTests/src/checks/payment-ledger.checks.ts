@@ -171,7 +171,7 @@ const allocationEntryLines = (ctx: IntegrationCheckContext, paymentID: string) =
     ctx,
     `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount, gl.CompanyID, je.ID AS EntryID
          FROM ${ORDERS_SCHEMA}.PaymentLine pl
-         JOIN ${ACCT_SCHEMA}.JournalEntry je
+         JOIN ${ACCT_SCHEMA}.vwJournalEntries je
            ON LOWER(je.LinkedRecordID) = LOWER(CAST(pl.ID AS NVARCHAR(400)))
          JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
          JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
@@ -182,9 +182,9 @@ const allocationEntryLines = (ctx: IntegrationCheckContext, paymentID: string) =
 const allocationEntries = (ctx: IntegrationCheckContext, paymentID: string) =>
   TxQuery<{ ID: string; EntryType: string; CompanyID: string }>(
     ctx,
-    `SELECT DISTINCT je.ID, je.EntryType, je.CompanyID
+    `SELECT DISTINCT je.ID, (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType, je.CompanyID
          FROM ${ORDERS_SCHEMA}.PaymentLine pl
-         JOIN ${ACCT_SCHEMA}.JournalEntry je
+         JOIN ${ACCT_SCHEMA}.vwJournalEntries je
            ON LOWER(je.LinkedRecordID) = LOWER(CAST(pl.ID AS NVARCHAR(400)))
          WHERE pl.PaymentHeaderID = '${paymentID}'`,
   );
@@ -214,7 +214,7 @@ const netOnAccount = (
     `SELECT SUM(ISNULL(jel.DebitAmount, 0)) - SUM(ISNULL(jel.CreditAmount, 0)) AS Net
          FROM ${ACCT_SCHEMA}.JournalEntryLine jel
          JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
-         JOIN ${ACCT_SCHEMA}.JournalEntry je ON je.ID = jel.JournalEntryID
+         JOIN ${ACCT_SCHEMA}.vwJournalEntries je ON je.ID = jel.JournalEntryID
          WHERE gl.Code = '${code}' AND je.CompanyID = '${companyID}'`,
   );
 

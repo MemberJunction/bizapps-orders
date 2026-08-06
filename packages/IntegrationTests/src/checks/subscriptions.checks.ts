@@ -228,9 +228,9 @@ export const SubscriptionChecks: NamedCheck[] = [
                 const released = await TxOne<{ Total: number }>(
                     ctx,
                     `SELECT SUM(jel.DebitAmount) AS Total
-                     FROM ${ACCT_SCHEMA}.JournalEntry je
+                     FROM ${ACCT_SCHEMA}.vwJournalEntries je
                      JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
-                     WHERE je.EntryType = 'RevenueRecognition' AND je.LinkedRecordID = '${term.ID}'
+                     WHERE (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) = 'RevenueRecognition' AND je.LinkedRecordID = '${term.ID}'
                        AND jel.DebitAmount > 0`,
                 );
                 AssertEqual(
@@ -358,9 +358,9 @@ export const SubscriptionChecks: NamedCheck[] = [
                 const releases = await TxQuery<{ LinkedRecordID: string; LinkedEntity: string }>(
                     ctx,
                     `SELECT je.LinkedRecordID, e.Name AS LinkedEntity
-                     FROM ${ACCT_SCHEMA}.JournalEntry je
+                     FROM ${ACCT_SCHEMA}.vwJournalEntries je
                      JOIN __mj.Entity e ON e.ID = je.LinkedEntityID
-                     WHERE je.EntryType = 'RevenueRecognition' AND je.LinkedRecordID = '${term.ID}'`,
+                     WHERE (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) = 'RevenueRecognition' AND je.LinkedRecordID = '${term.ID}'`,
                 );
                 AssertEqual(releases.length, 12, 'monthly releases anchored to the term');
                 Assert(
@@ -373,9 +373,9 @@ export const SubscriptionChecks: NamedCheck[] = [
                 const booking = await TxOne<{ LinkedEntity: string }>(
                     ctx,
                     `SELECT e.Name AS LinkedEntity
-                     FROM ${ACCT_SCHEMA}.JournalEntry je
+                     FROM ${ACCT_SCHEMA}.vwJournalEntries je
                      JOIN __mj.Entity e ON e.ID = je.LinkedEntityID
-                     WHERE je.EntryType = 'OrderBooking'
+                     WHERE (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) = 'OrderBooking'
                        AND je.LinkedRecordID IN (
                            SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${result.Order.ID}')`,
                 );
@@ -397,8 +397,8 @@ export const SubscriptionChecks: NamedCheck[] = [
                     ctx,
                     `SELECT (SELECT SUM(DebitAmount) FROM ${ACCT_SCHEMA}.JournalEntryLine
                              WHERE JournalEntryID = je.ID) AS D
-                     FROM ${ACCT_SCHEMA}.JournalEntry je
-                     WHERE je.EntryType = 'RevenueRecognition' AND je.LinkedRecordID = '${term.ID}'`,
+                     FROM ${ACCT_SCHEMA}.vwJournalEntries je
+                     WHERE (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) = 'RevenueRecognition' AND je.LinkedRecordID = '${term.ID}'`,
                 );
                 AssertEqual(releases.length, 4, 'quarterly slices over a 12-month term');
                 AssertEqual(
@@ -414,8 +414,8 @@ export const SubscriptionChecks: NamedCheck[] = [
                 const [monthlyTerm] = await termsForOrder(ctx, monthly.Order.ID as string);
                 const monthlyReleases = await TxQuery(
                     ctx,
-                    `SELECT ID FROM ${ACCT_SCHEMA}.JournalEntry
-                     WHERE EntryType = 'RevenueRecognition' AND LinkedRecordID = '${monthlyTerm.ID}'`,
+                    `SELECT ID FROM ${ACCT_SCHEMA}.vwJournalEntries
+                     WHERE (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = EntryTypeID) = 'RevenueRecognition' AND LinkedRecordID = '${monthlyTerm.ID}'`,
                 );
                 AssertEqual(monthlyReleases.length, 12, 'monthly slices over the same 12-month span');
             }),

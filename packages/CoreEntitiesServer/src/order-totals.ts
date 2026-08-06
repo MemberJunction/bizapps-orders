@@ -79,7 +79,13 @@ export function ComputeLinesAndTotals(hydrated: HydratedOrder): {
         const unit = money(field(line, 'UnitPrice', 0));
         const discountAmount = money(field(line, 'DiscountAmount', 0));
         const discountPct = Number(field(line, 'DiscountPct', 0));
-        const listAmount = money(qty * unit);
+        // LIST IS DERIVED FROM THE AUTHORITATIVE NET, not re-multiplied from the rate.
+        // `qty * unit` is a sixth copy of a formula that is only correct for PerUnit
+        // pricing: on a Flat rule it produced "Subtotal 99.99 − discounts 0.00 = 100.00"
+        // on screen, arithmetic that visibly does not add up. Deriving list as
+        // net + its own discounts makes the displayed ladder true by construction.
+        const rateGross = money(qty * unit);
+        const listAmount = money(net + discountAmount + money(rateGross * discountPct));
         const companyID = field(line, 'CompanyID', '');
         const taxable = tax !== 0;
 
@@ -108,7 +114,20 @@ export function ComputeLinesAndTotals(hydrated: HydratedOrder): {
             // the only moment it is knowable — afterwards a stated $40 and a
             // resolved $40 are the same number on the same field.
             UnitPriceWasStated: hydrated.LineUnitPriceWasStated[i] ?? false,
-            PriceSource: hydrated.LineUnitPriceWasStated[i] ? 'Stated' : null,
+            // Provenance, and it must be non-null whenever we actually know it. A rule-resolved
+            // price used to report `null` here, which the UI renders as an hourglass "resolving…"
+            // badge — sitting next to a perfectly correct price. It reads as a hung request on
+            // every line the engine priced, which is the common case.
+            //
+            // `ProductPriceID` is the answer: OrderEntityServer stamps it with the rule that
+            // produced the number precisely so a disputed invoice can be traced back. If it is
+            // set, a price rule resolved this line; null with no stated price means nothing
+            // resolved it, which is the only case that genuinely has no source.
+            PriceSource: hydrated.LineUnitPriceWasStated[i]
+                ? 'Stated'
+                : field<string | null>(line, 'ProductPriceID', null)
+                  ? 'Price rule'
+                  : null,
             DiscountPct: discountPct,
             DiscountAmount: discountAmount,
             ListAmount: listAmount,

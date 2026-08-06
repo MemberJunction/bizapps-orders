@@ -63,6 +63,7 @@ export * from './lib/services/orders-data.service';
 /** Screens. */
 export * from './lib/pages/orders/fast-entry.page';
 export * from './lib/pages/orders/order-editor.page';
+export * from './lib/pages/orders/order-workspace.page';
 export * from './lib/pages/orders/orders-list.page';
 export * from './lib/pages/orders/orders-dashboard.page';
 export * from './lib/pages/orders/fulfillment.page';

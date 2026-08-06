@@ -24,6 +24,167 @@
    ============================================================================ */
 
 /* ============================================================================
+   16. LAYOUT & TEXT HELPERS
+   ============================================================================
+   These were authored in `mockups/assets/app.css` §16 and never migrated here,
+   so the two consumers DID drift despite the promise at the top of this file:
+   the mockups styled them, the shipped app did not. 267 applications of `small`,
+   `muted`, `row`, `wrap`, `strong`, `mono`, `tiny`, `spacer` and `sec-label`
+   across the pages resolved to nothing — every caption rendered at full body
+   size in full-strength ink and every `.row` collapsed from a flex row to a
+   block stack. That single omission is most of the gap between the approved
+   mockups and what shipped.
+
+   Unprefixed on purpose — renaming ~267 call sites to `mj-` would buy nothing
+   and would break parity with the mockup markup they mirror.
+
+   TYPE SCALE — 12px is the floor, and we do NOT want a sub-12px token.
+   These arrived as raw px below MJ's smallest step: `small` 11.5px and `tiny`
+   10.5px. Both now resolve to `--mj-text-xs` (12px), MJ's own token, so the app
+   shares one scale instead of carrying two private sizes.
+
+   The obvious alternative — asking for a `--mj-text-xxs` — is the wrong ask, and
+   we should not raise it. 12px is the practical legibility floor for secondary
+   text (Material and Apple HIG both bottom out at 11–12px and reserve it for
+   non-essential labels), and `small` here is not decoration: it carries amounts,
+   counts and statuses on 120 elements. Shrinking DATA below the floor is exactly
+   the case the floor exists for, and a token would institutionalise it across
+   every app that adopts it.
+
+   Hierarchy that used to come from size now comes from COLOUR (`muted`) and
+   WEIGHT (`strong`) — both of which preserve the distinction at a legible size.
+   Size is the bluntest hierarchy tool available and the only one that costs
+   legibility, so it is the right one to give up.
+   ============================================================================ */
+
+.row  { display: flex; align-items: center; gap: var(--mj-space-2); }
+.row-t { display: flex; align-items: flex-start; gap: var(--mj-space-2); }
+.col  { display: flex; flex-direction: column; gap: var(--mj-space-2); }
+.wrap { flex-wrap: wrap; }
+.spacer { margin-left: auto; }
+.stack-2 > * + * { margin-top: var(--mj-space-2); }
+.stack-3 > * + * { margin-top: var(--mj-space-3); }
+.stack-4 > * + * { margin-top: var(--mj-space-4); }
+.stack-6 > * + * { margin-top: var(--mj-space-6); }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mj-space-4); }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mj-space-4); }
+.muted  { color: var(--mj-text-muted); }
+/* 12px floor, on MJ's own token — see the TYPE SCALE note above. `small` and
+   `tiny` were 11.5px and 10.5px; both now resolve to --mj-text-xs and the
+   small/tiny distinction is carried by COLOUR and WEIGHT instead of size. */
+.small  { font-size: var(--mj-text-xs); }
+.tiny   { font-size: var(--mj-text-xs); }
+.strong { font-weight: var(--mj-font-semibold); }
+.mono   { font-family: var(--mj-font-family-mono); font-size: .92em; }
+.center { text-align: center; }
+.nowrap { white-space: nowrap; }
+.hidden { display: none !important; }
+
+/* Numeric input modifier — pairs with `mj-input` on the five money fields
+   (payment, refund, credit, return qty, allocation). Undefined until now, so
+   amounts typed into them left-aligned against right-aligned totals directly
+   beside them. Same treatment as `.mj-num`, which is what those totals use. */
+.is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+}
+.sec-label {
+  font-size: var(--mj-text-xs); font-weight: var(--mj-font-bold); letter-spacing: .06em;
+  text-transform: uppercase; color: var(--mj-text-muted); margin-bottom: var(--mj-space-2);
+}
+
+/* Explanatory notes under a chart, table or panel. 51 of these across 14
+   `mjo-<page>__note` hooks were authored with NO rule anywhere, so every one sat
+   flush against the element above it — the note read as a wrapped continuation
+   of the legend rather than a separate caption. Prefix-scoped so the unrelated
+   `fe-books__note` (which sets its own padding) is untouched. */
+[class*="mjo-"][class*="__note"] { margin-top: var(--mj-space-2); }
+
+/* Two-pane working layout (payment entry, subscriptions, catalog) */
+.mj-split { display: flex; gap: var(--mj-space-4); align-items: flex-start; min-height: 0; }
+.mj-split > .left  { flex: 0 0 380px; min-width: 0; }
+.mj-split > .right { flex: 1; min-width: 0; }
+.mj-split--narrow-left > .left { flex: 0 0 300px; }
+
+@media (max-width: 1100px) {
+  .mj-split { flex-direction: column; }
+  .mj-split > .left, .mj-split > .right { flex: 1 1 auto; width: 100%; }
+  .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* ============================================================================
+   PAGE HEADER — three stacked rows compressed into two
+   ============================================================================
+   MJ stacks the identity column title -> subtitle -> meta, so our "as of 2:31 PM"
+   capsule landed on a third line of its own and the header stood 138px tall on
+   every section. The capsule is a timestamp for the subtitle, not a peer of it,
+   so it belongs BESIDE the subtitle rather than under it.
+
+   Done without restructuring MJ's template, so a future MJ header fix still
+   lands for us. Scoped to our shell — this is our editorial choice about our own
+   capsule, not an opinion about how every MJ header should read.
+
+   GRID, not flex-wrap. The first attempt used a wrapping flex row with order to
+   reseat the capsule; every child claimed its own line and the whole block
+   centred, because a full-width flex item forces a line break and the remaining
+   items had nothing to sit beside. Grid with EXPLICIT row and column placement
+   is deterministic — and it makes MJ's DOM order (title, subtitle, meta)
+   irrelevant, so the capsule renders to the LEFT of a subtitle that precedes it
+   in the markup, without touching the template. */
+mjo-section-shell .mj-page-header .mj-page-header-text {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  justify-items: start;
+  column-gap: var(--mj-space-2);
+  row-gap: 2px;
+}
+mjo-section-shell .mj-page-header .mj-page-header-title    { grid-row: 1; grid-column: 1 / -1; }
+mjo-section-shell .mj-page-header .mj-page-header-meta     { grid-row: 2; grid-column: 1; margin-top: 0; }
+mjo-section-shell .mj-page-header .mj-page-header-subtitle { grid-row: 2; grid-column: 2; margin-top: 0; }
+
+/* Reclaim the rest vertically. space-3 still clears the 40px icon tile with
+   room to spare; going tighter starts to crowd it. */
+mjo-section-shell .mj-page-header .mj-page-header-row--primary {
+  padding-top: var(--mj-space-3);
+  padding-bottom: var(--mj-space-3);
+}
+
+/* ============================================================================
+   CARD HOVER — undo MJ's ungated lift on cards that do nothing
+   ============================================================================
+   MJ lifts EVERY `.mj-card` on hover — `transform: translateY(-4px)` plus a
+   large shadow — from `explorer-app/src/lib/styles/_common.scss`. The selector
+   there is bare `.mj-card:hover`, with no gate on whether the card is
+   interactive, so a read-only dashboard panel rises under the cursor and
+   promises a click it will not accept.
+
+   This is not MJ's intent. `_shared-patterns.scss`, in the same package, heads
+   its own card-hover block "for clickable cards" and gates it properly on
+   `a.mj-card` / `.mj-card.clickable` — then weakens it with an ungated
+   `.mj-card:hover` of its own. Two competing rules, both ungated in practice.
+   Filed upstream; DELETE this block once MJ gates its own.
+
+   Scoped to the orders shell so it cannot alter any other app, and written the
+   way MJ says it means it: keep the lift where the card is genuinely a link or
+   is marked clickable, drop it everywhere else.
+
+   The values re-assert MJ's own RESTING state for `.mj-card` so that hovering a
+   non-interactive card is a true NO-OP rather than a different effect — an
+   earlier pass set a smaller shadow here, which only traded a card that rises
+   for one that flattens. `--mj-shadow-sm` is used rather than `_common.scss`'s
+   `var(--shadow)`: that variable is private to explorer-app and does not resolve
+   from here, so the declaration was silently dropped. */
+mjo-section-shell .mj-card:not(.clickable):not(a):hover {
+  transform: none;
+  box-shadow: var(--mj-shadow-sm);
+  border-color: transparent;
+}
+
+/* ============================================================================
    7. MONEY  (U7)
    ============================================================================ */
 
@@ -38,8 +199,12 @@
 .mj-money--muted { color: var(--mj-text-muted); }
 
 /* The money strip — TotalGross / AmountPaid / Balance / status */
+/* Columns follow the CELLS THAT EXIST rather than a fixed three-plus-note.
+   Paid is conditional (drafts have none) and the note is optional, so the fixed
+   template left one or two empty panels sitting in the strip — which reads as a
+   figure that failed to load rather than a figure that does not apply. */
 .mj-money-strip {
-  display: grid; grid-template-columns: repeat(3, 1fr) auto;
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
   border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-md);
   background: var(--mj-bg-surface); overflow: hidden;
 }
@@ -47,8 +212,13 @@
   padding: var(--mj-space-3) var(--mj-space-4);
   border-right: 1px solid var(--mj-border-default);
 }
-.mj-money-strip > div:last-child {
-  border-right: none; display: flex; align-items: center; gap: var(--mj-space-2);
+/* The chip row is the STATUS cell specifically — not whatever happens to be last.
+   Keyed on :last-child, this flex rule landed on BALANCE as soon as the status cell
+   stopped rendering (a draft has no PaymentStatus), which laid its label and value
+   side by side while TOTAL beside it stayed stacked. */
+.mj-money-strip > div:last-child { border-right: none; }
+.mj-money-strip > .mj-money-strip__status {
+  display: flex; align-items: center; gap: var(--mj-space-2);
 }
 .mj-money-strip .l {
   font-size: 10px; font-weight: var(--mj-font-bold); letter-spacing: .07em;
@@ -174,10 +344,35 @@
 .mj-aging-bar .b-cur  { background: var(--mj-color-neutral-500); }
 .mj-aging-bar .b-30   { background: var(--mj-color-warning-500); }
 .mj-aging-bar .b-60   { background: var(--mj-color-error-500); }
-.mj-aging-bar .b-90   { background: #991b1b; }
+/* Was the literal #991b1b, because MJ's error ramp stops at -700. Now fully
+   tokenised, and the reasoning is worth keeping because the first instinct was
+   the wrong one.
+
+   Re-measured independently (CIE76 + a Brettel deuteranope simulation) rather
+   than trusting the numbers above, whose validator script is NOT in this repo
+   and cannot be re-run. Worst adjacent pair, 31-60 vs 61+:
+
+       #991b1b (literal)              normal dE 26.6   deuteranope dE 23.8
+       --mj-color-error-700           normal dE 16.3   deuteranope dE 15.5
+       the REJECTED first attempt     normal dE 31.9   deuteranope dE  3.1
+
+   So the token step is a modest perceptual step DOWN, not a failure: dE 15 is
+   far above the ~2.3 just-noticeable difference, and nothing like the 3.1 that
+   made the original attempt genuinely unreadable. And the bar is never the sole
+   carrier — every segment shows its amount and the legend lists all four — so
+   WCAG 1.4.1 holds either way.
+
+   The token wins on a functional point the literal cannot match: a hardcoded
+   hex does not follow dark mode or a white-label rebrand, while every other
+   step of this ramp does. Trading ~10 dE of headroom for a ramp that themes
+   correctly is the right trade. */
+.mj-aging-bar .b-90   { background: var(--mj-color-error-700); }
 [data-theme="dark"] .mj-aging-bar .b-cur { background: var(--mj-color-neutral-500); }
 .mj-aging-bar > span.is-empty { display: none; }
-.mj-aging-legend { display: flex; gap: var(--mj-space-4); font-size: 11.5px; flex-wrap: wrap; }
+/* row-gap is explicit: the legend wraps to two rows in a narrow column, and a
+   single `gap` shorthand left the wrapped rows tighter than the note beneath
+   them, so the four buckets read as two unrelated pairs. */
+.mj-aging-legend { display: flex; gap: var(--mj-space-2) var(--mj-space-4); font-size: 11.5px; flex-wrap: wrap; }
 .mj-aging-legend > span { display: flex; align-items: center; gap: 6px; color: var(--mj-text-secondary); }
 .mj-aging-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 
@@ -390,12 +585,24 @@ kbd {
   display: flex; align-items: center; justify-content: center;
   font-size: 11.5px; font-weight: var(--mj-font-semibold); flex: none;
 }
-.mj-input, .mj-select {
-  font-family: inherit; font-size: 13px; color: var(--mj-text-primary);
-  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-strong);
-  border-radius: var(--mj-radius-md); padding: 6px 10px; width: 100%;
+/* `.mj-input` is deliberately NOT defined here — MJ owns it.
+   MJ ships it globally in ui-components/input/input.scss (`.mj-input, .mj-textarea`),
+   and this file is now global too (the section shell loads it with
+   ViewEncapsulation.None), so redefining it meant two global rules of equal
+   specificity fighting, with the winner decided by stylesheet LOAD ORDER — MJ's
+   happens to win today, which is luck, not design. It also differed from MJ's
+   (13px/6-10px/radius-md vs 14px/8-12px/radius-sm/min-height 38px), so whichever
+   won changed how every input in the app looked.
+
+   `.mj-select` stays: MJ styles `.mj-input, .mj-textarea` but ships no select rule,
+   so this is ours to own. Values match MJ's input so the two sit level. */
+.mj-select {
+  font-family: inherit; font-size: var(--mj-text-sm); color: var(--mj-text-primary);
+  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-sm); padding: 8px 12px; width: 100%;
+  min-height: 38px;
 }
-.mj-input:focus, .mj-select:focus {
+.mj-select:focus {
   outline: none; border-color: var(--mj-border-focus);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--mj-brand-primary) 16%, transparent);
 }
@@ -495,9 +702,21 @@ kbd {
 .mj-panel > summary .right { margin-left: auto; display: flex; gap: var(--mj-space-2); align-items: center; font-weight: var(--mj-font-normal); }
 .mj-panel-body { padding: 0 var(--mj-space-4) var(--mj-space-4); }
 .mj-panel-body.no-pad { padding: 0; }
-.mj-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+/* MJ ALREADY OWNS `.mj-table`. It is defined in ng-explorer-app's shared patterns, which
+   Explorer loads before this kit — so `width`, `border-collapse` and the base type were being
+   restated here purely to override MJ with the same thing, except in hardcoded pixels. Those
+   declarations are gone; what stays below is only what MJ's table does NOT do.
+
+   The one base property worth keeping is the SIZE: MJ's `--mj-text-sm` is 14px, and a dense
+   worklist reads better a step down. That is a deliberate deviation, so it is written as a token
+   rather than as 13px. */
+.mj-table { font-size: var(--mj-text-xs); }
+
+/* Additive, not a restatement: MJ's header has no sticky behaviour, and a worklist that scrolls
+   inside a card needs one — losing the column names on row 20 is what makes a long queue
+   unreadable. */
 .mj-table thead th {
-  text-align: left; font-size: 10.5px; font-weight: var(--mj-font-bold);
+  text-align: left; font-size: var(--mj-text-xs); font-weight: var(--mj-font-bold);
   letter-spacing: .06em; text-transform: uppercase; color: var(--mj-text-muted);
   padding: var(--mj-space-2) var(--mj-space-3);
   border-bottom: 1px solid var(--mj-border-strong);
@@ -506,45 +725,41 @@ kbd {
 }
 .mj-table thead th.num, .mj-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .mj-table thead th .sortable { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
-.mj-table thead th .sortable i { font-size: 9px; opacity: .5; }
+.mj-table thead th .sortable i { font-size: var(--mj-text-xs); opacity: .5; }
 .mj-table tbody td {
   padding: var(--mj-space-3); border-bottom: 1px solid var(--mj-border-subtle);
   vertical-align: middle;
 }
-.mj-table tbody tr:hover { background: var(--mj-bg-surface-hover); }
+/* Scoped to `.is-clickable`, which the worklist applies only when something is
+   actually listening (`[class.is-clickable]="RowClicked.observed"`). Unscoped,
+   EVERY table highlighted on hover — including read-only ones — which is a
+   promise of interactivity the row cannot keep. A highlight is the same
+   affordance as a lift: offer it only where a click does something. */
+.mj-table tbody tr.is-clickable:hover { background: var(--mj-bg-surface-hover); }
 .mj-table tbody tr.is-selected { background: color-mix(in srgb, var(--mj-brand-primary) 8%, transparent); }
 .mj-table tbody tr.is-clickable { cursor: pointer; }
 .mj-table tbody tr.is-total { background: var(--mj-bg-surface-card); font-weight: var(--mj-font-semibold); }
 .mj-table tbody tr.is-total td { border-bottom: none; border-top: 2px solid var(--mj-border-strong); }
 .mj-table .primary { font-weight: var(--mj-font-semibold); }
-.mj-table .secondary { font-size: 11.5px; color: var(--mj-text-muted); }
+.mj-table .secondary { font-size: var(--mj-text-xs); color: var(--mj-text-muted); }
 .mj-table-wrap {
   background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
   border-radius: var(--mj-radius-md); overflow: auto;
 }
-.mj-tabs {
-  display: flex; gap: 2px; border-bottom: 1px solid var(--mj-border-default);
-}
-.mj-tab {
-  display: inline-flex; align-items: center; gap: 7px;
-  padding: 9px 14px; font-size: 13px; font-weight: var(--mj-font-medium);
-  color: var(--mj-text-secondary); border-bottom: 2px solid transparent;
-  cursor: pointer; background: none; border-top: none; border-left: none; border-right: none;
-  font-family: inherit;
-}
-.mj-tab:hover { color: var(--mj-text-primary); }
-.mj-tab.is-active {
-  color: var(--mj-brand-primary); border-bottom-color: var(--mj-brand-primary);
-  font-weight: var(--mj-font-semibold);
-}
-.mj-tab .dot {
-  width: 6px; height: 6px; border-radius: var(--mj-radius-full);
-  background: var(--mj-status-error); flex: none;
-}
-.mj-tab .n {
-  font-size: 10.5px; color: var(--mj-text-muted); font-variant-numeric: tabular-nums;
-  background: var(--mj-bg-surface-sunken); border-radius: var(--mj-radius-full); padding: 0 5px;
-}
+/* The hand-rolled .mj-tabs / .mj-tab block lived here and is gone. The order
+   editor's five tabs now use MJ's own <mj-tab-nav>, which is the shipped,
+   tokenized component for exactly this job — a pane switcher over one record.
+
+   Not accounting's mj-workspace-card, despite the surface similarity: that models
+   OPEN DOCUMENTS, so its strip closes, reorders and adds tabs and carries a New
+   button — affordances that would be lies over five fixed panes of one order. It
+   also lives in accounting's transfer-pending/ folder, code explicitly parked for
+   another home, so depending on it would have bought a migration later.
+
+   The old red dot became an error-variant badge in the same slot the count uses.
+   A bare dot was a signifier with no meaning attached; only its aria-label said
+   what it meant, so a sighted user saw a dot and guessed. */
+
 .mj-slide-in {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: var(--mj-z-modal);
   width: min(560px, 100vw); display: flex; flex-direction: column;
@@ -553,14 +768,6 @@ kbd {
   transform: translateX(100%); transition: transform .18s ease;
 }
 .mj-slide-in.is-open { transform: translateX(0); }
-.mj-banner {
-  display: flex; align-items: flex-start; gap: var(--mj-space-3);
-  padding: var(--mj-space-3) var(--mj-space-4); border-radius: var(--mj-radius-md);
-  font-size: 12.5px; border: 1px solid transparent;
-}
-.mj-banner i:first-child { margin-top: 2px; font-size: 13px; flex: none; }
-.mj-banner .body { flex: 1; min-width: 0; }
-.mj-banner strong { font-weight: var(--mj-font-semibold); }
 .mj-empty {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: var(--mj-space-2); padding: var(--mj-space-12) var(--mj-space-6);
@@ -592,11 +799,6 @@ kbd {
   padding: var(--mj-space-3) var(--mj-space-5);
   border-top: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-card);
 }
-.mj-banner--error   { background: var(--mj-status-error-bg);   border-color: color-mix(in srgb, var(--mj-status-error) 35%, transparent);   color: var(--mj-status-error-text); }
-.mj-banner--warning { background: var(--mj-status-warning-bg); border-color: color-mix(in srgb, var(--mj-status-warning) 35%, transparent); color: var(--mj-status-warning-text); }
-.mj-banner--info    { background: var(--mj-status-info-bg);    border-color: color-mix(in srgb, var(--mj-status-info) 30%, transparent);    color: var(--mj-status-info-text); }
-.mj-banner--success { background: var(--mj-status-success-bg); border-color: color-mix(in srgb, var(--mj-status-success) 35%, transparent); color: var(--mj-status-success-text); }
-.mj-banner--neutral { background: var(--mj-bg-surface-card);   border-color: var(--mj-border-default); color: var(--mj-text-secondary); }
 
 /*
  * The table filter box.
@@ -616,4 +818,24 @@ kbd {
 .mjo-search input {
   border: none; outline: none; background: none; font-family: inherit;
   font-size: 13px; color: inherit; width: 100%;
+}
+
+/* ── A standing explanation, not an alert ───────────────────────────────────
+   `mj-alert` is for something that HAPPENED or needs attention. Screens that permanently
+   explain how they work were using it, which put a full-width coloured card above the work
+   on every visit — read once, then scrolled past forever. This is the quiet form: same
+   information, one line's worth of weight, no dismissal to manage. */
+.mjo-note {
+    display: flex;
+    align-items: baseline;
+    gap: var(--mj-space-2);
+    margin: 0 0 var(--mj-space-3);
+    color: var(--mj-text-secondary);
+    font-size: var(--mj-text-xs);
+    line-height: var(--mj-leading-relaxed, 1.6);
+}
+
+.mjo-note > i {
+    color: var(--mj-text-tertiary);
+    flex: 0 0 auto;
 }

@@ -15870,7 +15870,7 @@ GO
             1,
             0,
             0,
-            'B6B4B35C-8DBB-483A-97CB-6B465697C260',
+            '4E9052F8-911B-4C9C-B2D3-592297319262',
             'ID',
             0,
             0,
@@ -20406,7 +20406,7 @@ GO
             1,
             0,
             0,
-            'B14E041A-59CA-4732-BE6A-C0548F9A7DAC',
+            'D595BCBA-EE0A-4B3C-8FC5-16F15B85F4B1',
             'ID',
             0,
             0,
@@ -20469,7 +20469,7 @@ GO
             1,
             0,
             0,
-            '4ED9104E-CC95-40A0-AD60-DD77BA07E679',
+            '047E1C4A-8D45-457F-9606-9B051CBB8403',
             'ID',
             0,
             0,
@@ -40885,7 +40885,7 @@ GO
             1,
             0,
             0,
-            'B6B4B35C-8DBB-483A-97CB-6B465697C260',
+            '4E9052F8-911B-4C9C-B2D3-592297319262',
             'ID',
             0,
             0,
@@ -50550,7 +50550,7 @@ UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='0EFC7E88-3
    )
    BEGIN
       INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('477568f1-022b-4a90-bf8a-2b49e83e0ad8', 'B6B4B35C-8DBB-483A-97CB-6B465697C260', 'D67BF031-4E57-40B7-8D89-CFA1A67A0B39', 'JournalEntryID', 'One To Many', 1, 1, 6, GETUTCDATE(), GETUTCDATE())
+                    VALUES ('477568f1-022b-4a90-bf8a-2b49e83e0ad8', '4E9052F8-911B-4C9C-B2D3-592297319262', 'D67BF031-4E57-40B7-8D89-CFA1A67A0B39', 'JournalEntryID', 'One To Many', 1, 1, 6, GETUTCDATE(), GETUTCDATE())
    END;
                     
 /* Create Entity Relationship: MJ_BizApps_Accounting: Journal Entries -> MJ_BizApps_Orders: Order Lines (One To Many via JournalEntryID) */
@@ -50559,7 +50559,7 @@ UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='0EFC7E88-3
    )
    BEGIN
       INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('77d277aa-a56c-414a-97b7-bf1c30390e02', 'B6B4B35C-8DBB-483A-97CB-6B465697C260', '817BFDEF-AD75-4EE3-AE4B-290091AAB3F4', 'JournalEntryID', 'One To Many', 1, 1, 7, GETUTCDATE(), GETUTCDATE())
+                    VALUES ('77d277aa-a56c-414a-97b7-bf1c30390e02', '4E9052F8-911B-4C9C-B2D3-592297319262', '817BFDEF-AD75-4EE3-AE4B-290091AAB3F4', 'JournalEntryID', 'One To Many', 1, 1, 7, GETUTCDATE(), GETUTCDATE())
    END;
                     
 /* Create Entity Relationship: MJ_BizApps_Orders: Promotion Codes -> MJ_BizApps_Orders: Order Adjustments (One To Many via PromotionCodeID) */
@@ -50844,7 +50844,7 @@ UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='0EFC7E88-3
    )
    BEGIN
       INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('04eaf3fb-83cc-4fa3-8fd0-933b42ed23be', 'B14E041A-59CA-4732-BE6A-C0548F9A7DAC', 'BCD3B460-302D-4602-8B01-48779AC21BA5', 'DimensionID', 'One To Many', 1, 1, 5, GETUTCDATE(), GETUTCDATE())
+                    VALUES ('04eaf3fb-83cc-4fa3-8fd0-933b42ed23be', 'D595BCBA-EE0A-4B3C-8FC5-16F15B85F4B1', 'BCD3B460-302D-4602-8B01-48779AC21BA5', 'DimensionID', 'One To Many', 1, 1, 5, GETUTCDATE(), GETUTCDATE())
    END;
                     
 /* Create Entity Relationship: MJ_BizApps_Orders: Product Categories -> MJ_BizApps_Orders: Product Categories (One To Many via ParentProductCategoryID) */
@@ -51083,7 +51083,7 @@ UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='0EFC7E88-3
    )
    BEGIN
       INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('be98b37e-477c-4239-a1e8-e63095ca7063', '4ED9104E-CC95-40A0-AD60-DD77BA07E679', 'BCD3B460-302D-4602-8B01-48779AC21BA5', 'DimensionValueID', 'One To Many', 1, 1, 4, GETUTCDATE(), GETUTCDATE())
+                    VALUES ('be98b37e-477c-4239-a1e8-e63095ca7063', '047E1C4A-8D45-457F-9606-9B051CBB8403', 'BCD3B460-302D-4602-8B01-48779AC21BA5', 'DimensionValueID', 'One To Many', 1, 1, 4, GETUTCDATE(), GETUTCDATE())
    END;
                     
 /* Create Entity Relationship: MJ_BizApps_Orders: Revenue Recognition Types -> MJ_BizApps_Orders: Products (One To Many via RevenueRecognitionTypeID) */
@@ -51984,7 +51984,7 @@ SELECT
 FROM
     [${flyway:defaultSchema}].[CustomerPaymentMethod] AS c
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_OwnerPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_OwnerPersonID
   ON
     [c].[OwnerPersonID] = mjBizAppsCommonPerson_OwnerPersonID.[ID]
 LEFT OUTER JOIN
@@ -52268,7 +52268,7 @@ LEFT OUTER JOIN
   ON
     [c].[OrganizationID] = mjBizAppsCommonOrganization_OrganizationID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_PersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_PersonID
   ON
     [c].[PersonID] = mjBizAppsCommonPerson_PersonID.[ID]
 GO
@@ -52599,7 +52599,7 @@ INNER JOIN
   ON
     [e].[ProductEntitlementID] = mjBizAppsOrdersProductEntitlement_ProductEntitlementID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BeneficiaryPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BeneficiaryPersonID
   ON
     [e].[BeneficiaryPersonID] = mjBizAppsCommonPerson_BeneficiaryPersonID.[ID]
 LEFT OUTER JOIN
@@ -55849,7 +55849,7 @@ INNER JOIN
   ON
     [o].[CompanyID] = MJCompany_CompanyID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BillToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BillToPersonID
   ON
     [o].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
 LEFT OUTER JOIN
@@ -55873,7 +55873,7 @@ LEFT OUTER JOIN
   ON
     [o].[ShipToOrganizationID] = mjBizAppsCommonOrganization_ShipToOrganizationID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_ShipToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_ShipToPersonID
   ON
     [o].[ShipToPersonID] = mjBizAppsCommonPerson_ShipToPersonID.[ID]
 LEFT OUTER JOIN
@@ -57344,7 +57344,7 @@ INNER JOIN
   ON
     [p].[PaymentProviderID] = mjBizAppsOrdersPaymentProvider_PaymentProviderID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BillToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BillToPersonID
   ON
     [p].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
 LEFT OUTER JOIN
@@ -57795,7 +57795,7 @@ LEFT OUTER JOIN
   ON
     [o].[ShipToOrganizationID] = mjBizAppsCommonOrganization_ShipToOrganizationID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_ShipToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_ShipToPersonID
   ON
     [o].[ShipToPersonID] = mjBizAppsCommonPerson_ShipToPersonID.[ID]
 LEFT OUTER JOIN
@@ -58330,7 +58330,7 @@ INNER JOIN
   ON
     [p].[ReceivingCompanyID] = MJCompany_ReceivingCompanyID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BillToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BillToPersonID
   ON
     [p].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
 LEFT OUTER JOIN
@@ -61082,7 +61082,7 @@ LEFT OUTER JOIN
   ON
     [p].[OrganizationID] = mjBizAppsCommonOrganization_OrganizationID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_PersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_PersonID
   ON
     [p].[PersonID] = mjBizAppsCommonPerson_PersonID.[ID]
 GO
@@ -64396,7 +64396,7 @@ LEFT OUTER JOIN
   ON
     [p].[AssignedOrganizationID] = mjBizAppsCommonOrganization_AssignedOrganizationID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_AssignedPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_AssignedPersonID
   ON
     [p].[AssignedPersonID] = mjBizAppsCommonPerson_AssignedPersonID.[ID]
 GO
@@ -66608,7 +66608,7 @@ INNER JOIN
   ON
     [s].[IssuingCompanyID] = MJCompany_IssuingCompanyID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BeneficiaryPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BeneficiaryPersonID
   ON
     [s].[BeneficiaryPersonID] = mjBizAppsCommonPerson_BeneficiaryPersonID.[ID]
 LEFT OUTER JOIN
@@ -68159,7 +68159,7 @@ LEFT OUTER JOIN
   ON
     [s].[HolderOrganizationID] = mjBizAppsCommonOrganization_HolderOrganizationID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BeneficiaryPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BeneficiaryPersonID
   ON
     [s].[BeneficiaryPersonID] = mjBizAppsCommonPerson_BeneficiaryPersonID.[ID]
 LEFT OUTER JOIN
@@ -89673,7 +89673,7 @@ INNER JOIN
   ON
     [o].[CompanyID] = MJCompany_CompanyID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BillToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BillToPersonID
   ON
     [o].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
 LEFT OUTER JOIN
@@ -89697,7 +89697,7 @@ LEFT OUTER JOIN
   ON
     [o].[ShipToOrganizationID] = mjBizAppsCommonOrganization_ShipToOrganizationID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_ShipToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_ShipToPersonID
   ON
     [o].[ShipToPersonID] = mjBizAppsCommonPerson_ShipToPersonID.[ID]
 LEFT OUTER JOIN
@@ -91416,7 +91416,7 @@ LEFT OUTER JOIN
   ON
     [e].[SubscriptionID] = mjBizAppsOrdersSubscription_SubscriptionID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BeneficiaryPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BeneficiaryPersonID
   ON
     [e].[BeneficiaryPersonID] = mjBizAppsCommonPerson_BeneficiaryPersonID.[ID]
 LEFT OUTER JOIN
@@ -91765,7 +91765,7 @@ SELECT
 FROM
     [${flyway:defaultSchema}].[CustomerPaymentMethod] AS c
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_OwnerPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_OwnerPersonID
   ON
     [c].[OwnerPersonID] = mjBizAppsCommonPerson_OwnerPersonID.[ID]
 LEFT OUTER JOIN
@@ -92754,7 +92754,7 @@ LEFT OUTER JOIN
   ON
     [p].[OrderHeaderID] = mjBizAppsOrdersOrderHeader_OrderHeaderID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BillToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BillToPersonID
   ON
     [p].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
 LEFT OUTER JOIN
@@ -93205,7 +93205,7 @@ LEFT OUTER JOIN
   ON
     [o].[ShipToOrganizationID] = mjBizAppsCommonOrganization_ShipToOrganizationID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_ShipToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_ShipToPersonID
   ON
     [o].[ShipToPersonID] = mjBizAppsCommonPerson_ShipToPersonID.[ID]
 LEFT OUTER JOIN
@@ -93744,7 +93744,7 @@ INNER JOIN
   ON
     [p].[ReceivingCompanyID] = MJCompany_ReceivingCompanyID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BillToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BillToPersonID
   ON
     [p].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
 LEFT OUTER JOIN
@@ -95946,7 +95946,7 @@ LEFT OUTER JOIN
   ON
     [s].[HolderOrganizationID] = mjBizAppsCommonOrganization_HolderOrganizationID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BeneficiaryPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BeneficiaryPersonID
   ON
     [s].[BeneficiaryPersonID] = mjBizAppsCommonPerson_BeneficiaryPersonID.[ID]
 LEFT OUTER JOIN
@@ -98201,7 +98201,7 @@ SELECT
 FROM
     [${flyway:defaultSchema}].[CustomerPaymentMethod] AS c
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_OwnerPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_OwnerPersonID
   ON
     [c].[OwnerPersonID] = mjBizAppsCommonPerson_OwnerPersonID.[ID]
 LEFT OUTER JOIN
@@ -98447,7 +98447,7 @@ LEFT OUTER JOIN
   ON
     [e].[SubscriptionID] = mjBizAppsOrdersSubscription_SubscriptionID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BeneficiaryPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BeneficiaryPersonID
   ON
     [e].[BeneficiaryPersonID] = mjBizAppsCommonPerson_BeneficiaryPersonID.[ID]
 LEFT OUTER JOIN
@@ -100041,7 +100041,7 @@ LEFT OUTER JOIN
   ON
     [o].[ShipToOrganizationID] = mjBizAppsCommonOrganization_ShipToOrganizationID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_ShipToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_ShipToPersonID
   ON
     [o].[ShipToPersonID] = mjBizAppsCommonPerson_ShipToPersonID.[ID]
 LEFT OUTER JOIN
@@ -100918,7 +100918,7 @@ INNER JOIN
   ON
     [p].[ReceivingCompanyID] = MJCompany_ReceivingCompanyID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BillToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BillToPersonID
   ON
     [p].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
 LEFT OUTER JOIN
@@ -101313,7 +101313,7 @@ LEFT OUTER JOIN
   ON
     [p].[OrderHeaderID] = mjBizAppsOrdersOrderHeader_OrderHeaderID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BillToPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BillToPersonID
   ON
     [p].[BillToPersonID] = mjBizAppsCommonPerson_BillToPersonID.[ID]
 LEFT OUTER JOIN
@@ -103259,7 +103259,7 @@ LEFT OUTER JOIN
   ON
     [s].[HolderOrganizationID] = mjBizAppsCommonOrganization_HolderOrganizationID.[ID]
 LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[vwPeopleExtended] AS mjBizAppsCommonPerson_BeneficiaryPersonID
+    [${mjSchema}_BizAppsCommon].[vwPeople] AS mjBizAppsCommonPerson_BeneficiaryPersonID
   ON
     [s].[BeneficiaryPersonID] = mjBizAppsCommonPerson_BeneficiaryPersonID.[ID]
 LEFT OUTER JOIN

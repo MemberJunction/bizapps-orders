@@ -6,6 +6,7 @@ import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
+import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
 
 /**
  * `mjo-account-credit-page` — spend a credit a customer is holding.
@@ -35,18 +36,15 @@ import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-da
 @Component({
     selector: 'mjo-account-credit-page',
     standalone: true,
-    imports: [CommonModule, FormsModule, MJOWorklistTableComponent, MJOStatedValueComponent, MJOMoneyPipe],
+    imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, MJOWorklistTableComponent, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
-        <div class="mj-banner mj-banner--neutral mjo-cr__note">
-            <i class="fa-solid fa-piggy-bank" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="info" Icon="fa-solid fa-piggy-bank" class="mjo-cr__note">
                 <strong>A credit is an order with a negative balance.</strong>
                 There is no credit table and no stored balance — a second record holding the same number is
                 a second thing that can disagree with it. Spending one writes a <b>zero-amount</b> payment
                 with two offsetting lines: no new cash entered the business, this only re-attributes money
                 already received.
-            </div>
-        </div>
+        </mj-alert>
 
         <div class="mj-card mjo-cr__list">
             <div class="mj-card-head">
@@ -94,26 +92,23 @@ import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-da
                         <span class="mj-chip mj-chip--brand">To — an open order</span>
                         <label class="mj-field mjo-cr__field">
                             <label>Target order</label>
-                            <select class="mj-select" [(ngModel)]="TargetID" name="target">
-                                @for (order of Targets; track order.ID) {
-                                    <option [value]="order.ID">
-                                        {{ order.OrderNumber }} — {{ money(order.Balance) }}
-                                    </option>
-                                }
-                            </select>
+                            <mj-dropdown
+                                [Data]="TargetOptions"
+                                TextField="Label"
+                                ValueField="ID"
+                                [ValuePrimitive]="true"
+                                [(ngModel)]="TargetID"
+                                name="target" />
                         </label>
                         @if (Target) {
                             <mjo-stated-value Label="Balance now">{{ Target.Balance | mjoMoney }}</mjo-stated-value>
                             <mjo-stated-value Label="After credit">{{ TargetAfter | mjoMoney }}</mjo-stated-value>
                             @if (IsCrossCompany) {
-                                <div class="mj-banner mj-banner--warning mjo-cr__cross">
-                                    <i class="fa-solid fa-building-columns" aria-hidden="true"></i>
-                                    <div class="body">
+                                <mj-alert Variant="warning" Icon="fa-solid fa-building-columns" class="mjo-cr__cross">
                                         <strong>This crosses companies.</strong>
                                         The intercompany legs are required, not optional — a single
                                         Dr A/R / Cr A/R spanning two legal entities could not be booked at all.
-                                    </div>
-                                </div>
+                                </mj-alert>
                             }
                         }
                     </div>
@@ -121,21 +116,18 @@ import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-da
             </div>
 
             <div class="mjo-cr__actions">
-                <div class="mj-banner mj-banner--neutral mjo-cr__note">
-                    <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
-                    <div class="body">
+                <mj-alert Variant="info" Icon="fa-solid fa-scale-balanced" class="mjo-cr__note">
                         <strong>The payment this writes, and what books.</strong>
                         A payment whose Amount is ZERO, carrying two offsetting allocations: the
                         credit order is drawn down, the target order is settled. Zero is not a
                         degenerate case — no new cash entered the business. The money arrived
                         earlier, on the payment that over-paid the first order; this only
                         re-attributes it, so cash nets to nothing and A/R moves between orders.
-                    </div>
-                </div>
+                </mj-alert>
 
                 <button
                     type="button"
-                    class="mj-btn mj-btn--primary"
+                    mjButton variant="primary"
                     [disabled]="!CanApply || Busy"
                     (click)="Apply()">
                     <i class="fa-solid fa-check" aria-hidden="true"></i>
@@ -218,6 +210,17 @@ export class MJOAccountCreditPageComponent implements OnInit {
 
     public Credits: MJOOrderRow[] = [];
     public Targets: MJOOrderRow[] = [];
+
+    /**
+     * The target list with its label precomputed.
+     *
+     * The `<option>` built its text inline (`{{ OrderNumber }} — {{ money(Balance) }}`), which a
+     * data-driven dropdown cannot do. Projecting keeps the balance IN the choice — picking which
+     * order to credit without seeing what is owed on it is the whole decision.
+     */
+    public get TargetOptions(): Array<{ ID: string; Label: string }> {
+        return this.Targets.map((o) => ({ ID: o.ID, Label: `${o.OrderNumber} — ${this.money(o.Balance)}` }));
+    }
     public SourceID: string | null = null;
     public TargetID: string | null = null;
     public Amount = 0;
@@ -298,6 +301,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
         this.TargetID = this.Targets[0]?.ID ?? null;
         // Default to the most that both sides allow — the common intent.
         this.Amount = Math.min(this.Available, this.Targets[0]?.Balance ?? 0);
+        this.cdr.detectChanges();
     }
 
     public SetAmount(raw: string): void {

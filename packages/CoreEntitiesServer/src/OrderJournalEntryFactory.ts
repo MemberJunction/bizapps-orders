@@ -11,8 +11,9 @@
  *         Cr  Sales                gross               (recognized at booking)
  *         Cr  Deferred Revenue     gross               (deferred — released per the schedule)
  *
- * where gross = Quantity × UnitPrice, discount = (gross × DiscountPct) + DiscountAmount, and
- * net = gross − discount. Both discount fields are applied because the line applies both.
+ * where net is the LINE'S OWN stored LineTotalNet — the authority, not a recomputation —
+ * discount = (rate-gross × DiscountPct) + DiscountAmount, and gross = net + discount.
+ * Both discount fields are applied because the line applies both.
  * The entry balances by construction: net + discount = gross.
  *
  * Plan D14/D43 — RECOGNITION. The product's `RevenueRecognitionType` names a pluggable driver
@@ -209,15 +210,30 @@ export class OrderJournalEntryFactory {
         // negative debit is not a thing. So every amount below is computed on the ABSOLUTE quantity
         // and the finished lines are flipped once, at the end, when the line reverses.
         const isReversal = line.Quantity < 0;
-        const gross = money(Math.abs(line.Quantity) * line.UnitPrice);
+        // THE LINE IS THE AUTHORITY ON ITS OWN MONEY, and by booking time it has been
+        // computed and stored. This used to re-derive gross as quantity × UnitPrice —
+        // a fourth copy of a formula that is only correct for PerUnit pricing. On a
+        // Flat rule the unit price is a DERIVED rate that cannot always represent the
+        // total, so the entry mirrored the wrong figure: a flat 100 at quantity 3
+        // booked 99.99, at quantity 7 booked 100.03. The entry still BALANCED, which
+        // is exactly the failure this file's own header warns about — AR merely
+        // differs from the line total and nothing downstream reports it.
+        //
+        // Anchoring net to the stored LineTotalNet and deriving gross as net + discount
+        // keeps `net + discount = gross` true by construction, and makes the entry agree
+        // with the line by definition rather than by two computations happening to
+        // match. The rate is still used for the DISCOUNT split, which is the only part
+        // the line does not store separately.
+        const grossFromRate = money(Math.abs(line.Quantity) * line.UnitPrice);
         // BOTH discount fields, and in the same order OrderLineEntityServer applies them (D70).
         // The journal entry must mirror the line's arithmetic exactly — if the two disagree, the
         // entry still BALANCES (AR simply differs from the line total) and nothing downstream
         // reports it, which is the failure mode this whole area keeps producing.
-        const pctDiscount = money(gross * (line.DiscountPct ?? 0));
-        const amountDiscount = money(Math.min(Math.max(0, gross - pctDiscount), line.DiscountAmount ?? 0));
+        const pctDiscount = money(grossFromRate * (line.DiscountPct ?? 0));
+        const amountDiscount = money(Math.min(Math.max(0, grossFromRate - pctDiscount), line.DiscountAmount ?? 0));
         const discount = money(pctDiscount + amountDiscount);
-        const net = money(gross - discount);
+        const net = money(Math.abs(Number(line.LineTotalNet ?? 0)));
+        const gross = money(net + discount);
         const tax = money(Math.abs(line.LineTax ?? 0));
         const charges = money(Math.abs(line.ChargeAmount ?? 0));
 

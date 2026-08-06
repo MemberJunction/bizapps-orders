@@ -101,6 +101,47 @@ export function FormatQuantity(value: number | null | undefined): string {
 }
 
 /**
+ * Format money for a space where the full figure will not fit — a chart label,
+ * a dense chip, a column head.
+ *
+ * A bar chart cannot carry `$1,250.00` above a 40px column, so the choice is
+ * between an unlabelled bar and an abbreviated number. Unlabelled loses: the bar
+ * only shows RELATIVE size, so a lone tall column reads as "the biggest" without
+ * ever saying how big. The exact value stays available on hover and in the
+ * component's aria-label, so nothing is lost by rounding the visible one.
+ *
+ * Thresholds are the conventional ones and the rounding is deliberately coarse —
+ * one decimal below 10, none above, because the label is for orientation and the
+ * precise figure is one hover away.
+ *
+ * @example
+ * ```typescript
+ * FormatCompact(0)       // '—'
+ * FormatCompact(940)     // '$940'
+ * FormatCompact(1250)    // '$1.3k'
+ * FormatCompact(8000)    // '$8k'
+ * FormatCompact(24500)   // '$25k'
+ * FormatCompact(1250000) // '$1.3M'
+ * ```
+ */
+export function FormatCompact(value: number | null | undefined): string {
+    if (value === null || value === undefined || Number.isNaN(value)) return '—';
+    if (value === 0) return '—';
+    const sign = value < 0 ? '-' : '';
+    const n = Math.abs(value);
+    const scale = (divisor: number, suffix: string): string => {
+        const scaled = n / divisor;
+        // One decimal only while it still adds information; 9.7k is useful, 97.3k is noise.
+        const text = scaled < 10 ? String(Number(scaled.toFixed(1))) : String(Math.round(scaled));
+        return `${sign}$${text}${suffix}`;
+    };
+    if (n >= 1_000_000_000) return scale(1_000_000_000, 'B');
+    if (n >= 1_000_000) return scale(1_000_000, 'M');
+    if (n >= 1_000) return scale(1_000, 'k');
+    return `${sign}$${Math.round(n)}`;
+}
+
+/**
  * Format a rate as a percentage, trimming pointless zeros.
  *
  * @example

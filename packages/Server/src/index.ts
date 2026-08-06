@@ -9,11 +9,14 @@
 // Import entity and action packages to trigger @RegisterClass decorators
 import '@mj-biz-apps/orders-entities';
 import '@mj-biz-apps/orders-actions';
-import {
-    LoadGenerateInvoiceAction,
-    LoadOpenPaymentIntentAction,
-    LoadSendDocumentAction,
-} from '@mj-biz-apps/orders-actions';
+
+// Hand-authored, SERVER-ONLY actions. These live here rather than in @mj-biz-apps/orders-actions
+// because they import @mj-biz-apps/orders-core-entities-server — and orders-actions is a `shared`
+// package that also ships to MJExplorer, where a server dependency drags Node's `stream` into the
+// browser bundle and breaks the build. See packages/Actions/src/index.ts.
+import { LoadGenerateInvoiceAction } from './custom/generate-invoice.action.js';
+import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action.js';
+import { LoadSendDocumentAction } from './custom/send-document.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.

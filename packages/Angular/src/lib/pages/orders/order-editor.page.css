@@ -8,20 +8,53 @@
              horizontally scrolling a nine-column grid on a phone
 */
 
+/* FLEX FRAME. Same correction as fast entry, and for the same reason: a sticky
+   footer is not pinned to the bottom, it is only prevented from scrolling out of
+   view. This page read correctly at 900px tall purely because its content (856px)
+   happened to exceed the 769px pane — on a taller screen the content fits, sticky
+   has nothing to hold against, and the action bar floats up to sit under the last
+   card. The host is the frame; .ed-scroll is the scroll region and carries the
+   padding; the footer is always the bottom row. */
 :host {
-  display: block;
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
+  padding: 0;
+}
+
+/* THE FRAME NO LONGER SCROLLS — only .ed-panes does. Scrolling the whole interior pushed the
+   identity strip, stage and totals off the top of the editor, so the order being edited lost its
+   own header the moment the line table grew. */
+.ed-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: var(--mj-space-6);
+}
+
+/* The only scroll region inside the card. `min-height: 0` is load-bearing: without it a flex item
+   refuses to shrink below its content height, so the frame grows instead of this scrolling. */
+.ed-panes {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* ── Persistent chrome ────────────────────────────────────────────────── */
 
+/* Pinned by the flex frame now, not by `position: sticky` — it is a sibling of the scroll region
+   rather than a passenger inside it.
+
+   The background is the CARD's surface, not `--mj-bg-page`. This block was written when the editor
+   was a full page sitting on the page background; inside the workspace card that token painted the
+   top half of the card a different colour from the bottom half, so the card looked like two
+   stacked panels. */
 .ed-sticky {
-  position: sticky;
-  top: calc(-1 * var(--mj-space-6));
-  z-index: var(--mj-z-sticky);
-  background: var(--mj-bg-page);
+  flex: 0 0 auto;
+  background: var(--mj-bg-surface);
   margin: calc(-1 * var(--mj-space-6)) calc(-1 * var(--mj-space-6)) 0;
   padding: var(--mj-space-6) var(--mj-space-6) 0;
 }
@@ -194,9 +227,13 @@
 /* ── Footer ───────────────────────────────────────────────────────────── */
 
 .ed-footer {
-  position: sticky;
-  bottom: 0;
-  margin: var(--mj-space-6) calc(-1 * var(--mj-space-6)) 0;
+  /* A flex row on the frame, not sticky — see the :host note. It no longer
+     overlays scrolling content, so it needs no z-index and no negative margins to
+     bleed full width; it already spans the frame. The shadow stays, to separate
+     the bar from the region that now scrolls beneath its top edge. */
+  flex: none;
+  box-shadow: var(--mj-shadow-md);
+  margin: 0;
   padding: var(--mj-space-3) var(--mj-space-6);
   background: var(--mj-bg-surface);
   border-top: 1px solid var(--mj-border-default);
@@ -208,14 +245,9 @@
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
 
-@media (max-width: 1000px) {
-  .ed-stage-note {
-    display: none;
-  }
-}
-
 @media (max-width: 760px) {
-  :host {
+  /* The padding is on the scroll region now — the host is the frame and has none. */
+  .ed-scroll {
     padding: var(--mj-space-4);
   }
 
@@ -243,7 +275,228 @@
   }
 
   .ed-footer {
-    margin: var(--mj-space-4) calc(-1 * var(--mj-space-4)) 0;
+    /* No negative margins: as a flex row it already spans the frame. */
     padding: var(--mj-space-3) var(--mj-space-4);
   }
+}
+
+/* ── Hooks that lived only in the .html template ──────────────────────────
+   Both were referenced by order-editor.page.html and defined nowhere, so a
+   card meant to sit apart from the one above it butted against it, and the
+   dimension rows ran their chip and value together as one string. The
+   kit-classes guard missed them because it scanned only .ts templates until
+   the separate .html files were added to its sweep. */
+
+/* A standalone card below the tab pane, not part of the pane's own flow. */
+.ed-block {
+  margin-top: var(--mj-space-4);
+}
+
+/* Dimension tag + its value, side by side rather than run together. */
+.ed-dim {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mj-space-2);
+  padding: var(--mj-space-1) 0;
+}
+
+/* ── Add a line, and choose the parties ─────────────────────────────────────
+   The editor previously had neither: lines could only be removed, and the
+   parties tab printed GUIDs through a read-only control. Both are ordinary
+   typeahead shapes, styled from tokens so they match fast entry's pickers. */
+
+.ed-addline {
+    position: relative;
+    margin-block-end: var(--mj-space-3);
+}
+
+.ed-addline__field,
+.ed-party__field {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    inline-size: 100%;
+}
+
+.ed-addline__field > i,
+.ed-party__field > i {
+    color: var(--mj-text-tertiary);
+}
+
+.ed-addline__field .mj-input,
+.ed-party__field .mj-input {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+}
+
+/* The match lists overlay rather than push the table down — a picker that
+   reflows the whole pane on every keystroke is unusable at speed. */
+.ed-addline__matches,
+.ed-party__matches {
+    position: absolute;
+    z-index: 20;
+    inset-inline: 0;
+    margin: var(--mj-space-1) 0 0;
+    padding: 0;
+    list-style: none;
+    background: var(--mj-bg-surface);
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-md);
+    box-shadow: var(--mj-shadow-md);
+    max-block-size: 40cqh;
+    overflow-y: auto;
+}
+
+.ed-addline__match,
+.ed-party__match {
+    display: flex;
+    align-items: baseline;
+    gap: var(--mj-space-2);
+    inline-size: 100%;
+    padding: var(--mj-space-2) var(--mj-space-3);
+    background: none;
+    border: 0;
+    text-align: start;
+    cursor: pointer;
+}
+
+.ed-addline__match:hover,
+.ed-party__match:hover {
+    background: var(--mj-bg-surface-hover);
+}
+
+.ed-addline__match .nm,
+.ed-party__match .nm {
+    font-weight: var(--mj-font-medium);
+}
+
+.ed-addline__match .num {
+    margin-inline-start: auto;
+    font-variant-numeric: tabular-nums;
+}
+
+.ed-addline__none {
+    padding: var(--mj-space-2) 0 0;
+}
+
+.ed-party {
+    position: relative;
+    margin-block-end: var(--mj-space-3);
+}
+
+.ed-party__label {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-secondary);
+    margin-block-end: var(--mj-space-1);
+}
+
+.ed-party__chosen {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+}
+
+/* Editable identity fields. The strip is a compact label/value grid, so the input has to sit on
+   the value line without changing the row height — a full-size control here would push the stage
+   stepper and money strip down every time the order becomes editable. */
+.ed-identity__input {
+    inline-size: 100%;
+    min-inline-size: 0;
+    padding-block: var(--mj-space-1);
+    font-size: var(--mj-text-sm);
+}
+
+/* A labelled field inside a card pane. `mjo-stated-value` covers the read-only case; this is its
+   editable counterpart and deliberately matches its label typography so a tab does not visibly
+   change shape when the order stops being editable. */
+.ed-field {
+    margin-block-end: var(--mj-space-3);
+}
+
+.ed-field__label {
+    display: block;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-secondary);
+    margin-block-end: var(--mj-space-1);
+}
+
+.ed-field__row {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+}
+
+.ed-field__row .mj-input {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+}
+
+/* ── What is left to do, in one line ────────────────────────────────────────
+   This replaced a full warning card. The card restated what the tab dots already say and
+   cost ~90px of vertical space on the densest screen in the app to do it. The information
+   is worth keeping — knowing what blocks a confirm is the point — so it stays, compressed
+   to a single row where each item is a button that takes you to the tab that owns it. */
+
+.ed-todo {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    margin-block-start: var(--mj-space-3);
+    padding: var(--mj-space-1) var(--mj-space-3);
+    /* Tinted rather than filled: the row is a hint, not an error state, and a solid amber
+       block at this width reads as an alarm. */
+    background: color-mix(in srgb, var(--mj-color-warning-500) 8%, transparent);
+    border-inline-start: 3px solid var(--mj-color-warning-500);
+    border-radius: var(--mj-radius-sm);
+    font-size: var(--mj-text-xs);
+}
+
+.ed-todo__icon {
+    color: var(--mj-color-warning-700);
+}
+
+/* The count carries the "how many" so the sentence does not have to pluralise. */
+.ed-todo__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 18px;
+    block-size: 18px;
+    padding-inline: 5px;
+    border-radius: 9px;
+    background: var(--mj-color-warning-700);
+    color: var(--mj-text-inverse, #fff);
+    font-weight: var(--mj-font-semibold);
+}
+
+.ed-todo__lead {
+    color: var(--mj-text-secondary);
+}
+
+/* Items run inline and the row scrolls rather than wrapping — wrapping would let this grow
+   back into the multi-line block it replaced. */
+.ed-todo__items {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    min-inline-size: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.ed-todo__item {
+    flex: 0 0 auto;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-block-end: 1px dotted currentColor;
+    color: var(--mj-color-warning-700);
+    font: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.ed-todo__item:hover,
+.ed-todo__item:focus-visible {
+    color: var(--mj-text-primary);
 }

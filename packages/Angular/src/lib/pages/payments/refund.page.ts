@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { OrdersRefundPaymentOperation } from '@mj-biz-apps/orders-entities';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe } from '../../panels/money-format';
+import { MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** One order the original payment settled, and what a refund does to it. */
 interface MJOUnapplication {
@@ -39,16 +40,14 @@ interface MJOUnapplication {
 @Component({
     selector: 'mjo-refund-page',
     standalone: true,
-    imports: [CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe],
+    imports: [MJButtonDirective, CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe],
     template: `
-        <div class="mj-banner mj-banner--neutral mjo-rf__note">
+        <p class="mjo-note mjo-rf__note">
             <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-            <div class="body">
-                <strong>A refund is a new payment, never an edit of the capture.</strong>
+            <strong>A refund is a new payment, never an edit of the capture.</strong>
                 The original happened and has an entry; rewriting it would destroy the trail of money that
                 actually moved. The reversal mirrors it — same accounts, sides swapped.
-            </div>
-        </div>
+        </p>
 
         <div class="mjo-rf__split">
             <div class="mjo-rf__left">
@@ -150,32 +149,31 @@ interface MJOUnapplication {
                     </div>
                 </div>
 
-                <div class="mj-banner mj-banner--warning mjo-rf__note">
+                <!-- Amber, but not a warning: it reassures about invariants the SERVER enforces
+                     rather than cautioning about the action in front of you. A permanent warning
+                     colour on a screen that moves money spends the alarm on the wrong thing. -->
+                <p class="mjo-note mjo-rf__note">
                     <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-                    <div class="body">
-                        <strong>Guards.</strong>
-                        A refund cannot exceed what remains after earlier refunds, and a captured
-                        payment is never edited — the refund is a NEW payment that reverses it. Both
-                        rules are enforced server-side, so a stale screen cannot talk its way past
-                        them.
-                    </div>
-                </div>
+                    <strong>Guards.</strong>
+                    A refund cannot exceed what remains after earlier refunds, and a captured
+                    payment is never edited — the refund is a NEW payment that reverses it. Both
+                    rules are enforced server-side, so a stale screen cannot talk its way past
+                    them.
+                </p>
 
-                <div class="mj-banner mj-banner--info mjo-rf__note">
+                <p class="mjo-note mjo-rf__note">
                     <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
-                    <div class="body">
-                        <strong>Mirrored entry.</strong>
+                    <strong>Mirrored entry.</strong>
                         Cash is credited and A/R debited — the capture's entry with the directions
                         swapped. The processing fee is NOT reversed unless the provider actually
                         returned it, because our cost was incurred whether or not the customer kept
                         the goods.
-                    </div>
-                </div>
+                </p>
 
                 <div class="mjo-rf__actions">
                     <button
                         type="button"
-                        class="mj-btn mj-btn--primary"
+                        mjButton variant="primary"
                         [disabled]="!CanRefund || Busy"
                         (click)="Refund()">
                         <i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i>

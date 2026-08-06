@@ -129,9 +129,11 @@ export class MJOAgingBarComponent {
             make('Current', 'Current', 'b-cur', 'var(--mj-color-neutral-500)'),
             make('Days1To30', '1–30', 'b-30', 'var(--mj-color-warning-500)'),
             make('Days31To60', '31–60', 'b-60', 'var(--mj-color-error-500)'),
-            // The one literal colour in the app, and it is documented: this exact
-            // value is what makes the adjacent-pair separation pass.
-            make('Days61Plus', '61+', 'b-90', '#991b1b'),
+            // Was the literal #991b1b. Re-measured and switched to the token: the
+            // step down is dE 26.6 -> 16.3 (normal) / 23.8 -> 15.5 (deuteranope),
+            // still far above the ~2.3 JND, and a hardcoded hex cannot follow dark
+            // mode or a rebrand the way the other three steps do. See orders-kit.css.
+            make('Days61Plus', '61+', 'b-90', 'var(--mj-color-error-700)'),
         ];
     }
 

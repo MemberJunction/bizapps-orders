@@ -9,9 +9,18 @@
  * and `Payment Headers`, and every tile rendered a healthy-looking 0 and $0.00. Naming each entity
  * once means a typo is wrong in one place instead of silently wrong in fifteen.
  *
- * THE SEPARATOR IS NOT UNIFORM AND THAT IS NOT A MISTAKE. Orders and Accounting use underscores
- * (`MJ_BizApps_Orders:`), Common uses dots (`MJ.BizApps.Common:`). It reads like a typo every time,
- * so it is asserted in registry-parity so nobody "fixes" it into a runtime failure.
+ * THE SEPARATOR IS UNIFORM: every app uses UNDERSCORES — `MJ_BizApps_Orders:`,
+ * `MJ_BizApps_Accounting:`, `MJ_BizApps_Common:`. The prefix is not folklore; each app DECLARES it
+ * in its own committed `metadata/schema-info/.schema-info.json`, and bizapps-common declares
+ * `EntityNamePrefix: 'MJ_BizApps_Common: '`. That declaration is what CodeGen registers, so it is
+ * the authority.
+ *
+ * This file previously said Common used DOTS and registry-parity asserted it. That was wrong, and
+ * it cost a real bug: `OrderEntityServer` resolved `MJ.BizApps.Common: Relationships`, which does
+ * not exist, so the D64 organization inference threw `Entity ... not found in metadata` and took
+ * ORDER CONFIRM down with it whenever an order named a person. Two things hid it — the assertion
+ * pinned the mistake as intentional, and registry-parity itself fails to COLLECT in CI (it cannot
+ * resolve `@mj-biz-apps/orders-core-entities-server`), so the suite never ran. Corrected 2026-08-03.
  */
 
 // ── Orders: catalog ──────────────────────────────────────────────────────────────────────────────
@@ -59,8 +68,8 @@ export const INTERCOMPANY_ACCOUNT_MATCH_ENTITY = 'MJ_BizApps_Accounting: Interco
 export const COMPANY_TAX_NEXUS_ENTITY = 'MJ_BizApps_Accounting: Company Tax Nexus';
 
 // ── Common (dots, not underscores — see the header) ───────────────────────────────────────────────
-export const PERSON_ENTITY = 'MJ.BizApps.Common: People';
-export const RELATIONSHIP_ENTITY = 'MJ.BizApps.Common: Relationships';
+export const PERSON_ENTITY = 'MJ_BizApps_Common: People';
+export const RELATIONSHIP_ENTITY = 'MJ_BizApps_Common: Relationships';
 
 /**
  * Every name above, for the parity check that asserts each one resolves against live metadata.

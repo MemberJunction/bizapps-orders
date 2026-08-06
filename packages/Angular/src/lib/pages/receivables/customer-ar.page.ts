@@ -5,6 +5,7 @@ import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
 import { MJOOrdersDataService, type MJOOrderRow, type MJOPaymentRow } from '../../services/orders-data.service';
 import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money-format';
+import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 
 /** A customer with a balance, as the left rail lists them. */
 interface MJOCustomerSummary {
@@ -40,7 +41,7 @@ interface MJOCustomerSummary {
 @Component({
     selector: 'mjo-customer-ar-page',
     standalone: true,
-    imports: [CommonModule, MJOAgingBarComponent, MJOMoneyStripComponent, MJOWorklistTableComponent],
+    imports: [CommonModule, MJOAgingBarComponent, MJOMoneyStripComponent, MJOWorklistTableComponent, MJAlertComponent],
     template: `
         <div class="mjo-ar__split">
             <!-- ── Customers ── -->
@@ -54,8 +55,7 @@ interface MJOCustomerSummary {
                     <div class="mj-card-pad">
                         <mjo-aging-bar [Buckets]="TotalBuckets" />
                         <div class="small muted mjo-ar__note">
-                            Every customer, so the list below can be read against the whole. One
-                            customer at 90 days matters differently when they are all of it.
+                            All customers with an open balance.
                         </div>
                     </div>
                 </div>
@@ -124,15 +124,12 @@ interface MJOCustomerSummary {
                             </div>
 
                             @if (Selected.Credit > 0) {
-                                <div class="mj-banner mj-banner--success mjo-ar__credit">
-                                    <i class="fa-solid fa-piggy-bank" aria-hidden="true"></i>
-                                    <div class="body">
+                                <mj-alert Variant="success" Icon="fa-solid fa-piggy-bank" class="mjo-ar__credit">
                                         <strong>{{ money(Selected.Credit) }} of credit is sitting unused</strong>
                                         while {{ money(Selected.Open) }} is owed. Applying it first is almost always
                                         the right move — and it is one click, because the credit is just another
                                         order balance.
-                                    </div>
-                                </div>
+                                </mj-alert>
                             }
                         </div>
                     </div>
@@ -314,6 +311,31 @@ interface MJOCustomerSummary {
             .mjo-ar__items { margin-top: var(--mj-space-4); }
             .mjo-ar__empty { padding: var(--mj-space-12); }
 
+            /* These four hooks were in the markup with no rule anywhere, so the
+               two lower cards stacked full-width instead of pairing, and each
+               order/amount pair ran together as one line of text. */
+            .mjo-ar__grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: var(--mj-space-4);
+                margin-top: var(--mj-space-4);
+            }
+            .mjo-ar__row {
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+                gap: var(--mj-space-3);
+                padding: var(--mj-space-2) 0;
+                border-bottom: 1px solid var(--mj-border-subtle);
+            }
+            .mjo-ar__row:last-child { border-bottom: none; }
+            .mjo-ar__block { margin-top: var(--mj-space-4); }
+            .mjo-ar__total { display: block; }
+
+            @media (max-width: 900px) {
+                .mjo-ar__grid { grid-template-columns: 1fr; }
+            }
+
             @media (max-width: 1100px) {
                 .mjo-ar__split { flex-direction: column; }
                 .mjo-ar__left, .mjo-ar__right { flex: 1 1 auto; width: 100%; }
@@ -402,6 +424,7 @@ export class MJOCustomerARPageComponent implements OnInit {
         ]);
         this.Payments = payments;
         this.Subscriptions = subscriptions;
+        this.cdr.detectChanges();
     }
 
     /**

@@ -5,11 +5,15 @@
       "Name": "Order Booking",
       "Description": "Written when an order line is confirmed (orders D10): one entry per line, debiting the receivable and crediting revenue or deferred revenue, with any discount to its contra account. Seeded by bizapps-orders because the EVENT is an orders concept - accounting seeds only the ledger-mechanics types it originates itself.",
       "IsSystem": false,
-      "IsBatchSummary": false,
+      "IsJournalEntryBatchSummary": false,
       "IsActive": true
     },
     "primaryKey": {
       "ID": "684C06D4-55DA-49D7-8453-E046FC82B895"
+    },
+    "sync": {
+      "lastModified": "2026-08-06T20:29:26.574Z",
+      "checksum": "2f5df90c1cdac2947844b75f5172532ac7ac5e65364c6e14e91a5e1f215488f8"
     }
   },
   {
@@ -18,11 +22,15 @@
       "Name": "Revenue Recognition",
       "Description": "A forward-dated release of deferred revenue (orders D14). Written AT BOOKING for every future period rather than by a scheduler, so the whole obligation is visible in the ledger the day the order is confirmed.",
       "IsSystem": false,
-      "IsBatchSummary": false,
+      "IsJournalEntryBatchSummary": false,
       "IsActive": true
     },
     "primaryKey": {
       "ID": "48D60BCC-044B-4CC2-9675-0D3B57BCDCBA"
+    },
+    "sync": {
+      "lastModified": "2026-08-06T20:29:26.593Z",
+      "checksum": "02f4a1c3c93f7387613c4404fa76b4867b7b82bb1c11a4f1b384467ebf10b3eb"
     }
   },
   {
@@ -31,11 +39,15 @@
       "Name": "Payment Receipt",
       "Description": "Written when a payment allocation books the cash leg (orders D13): debits cash and clears the receivable of whichever company owns the line the money settles. On a multi-company order this is one entry per company plus the intercompany legs.",
       "IsSystem": false,
-      "IsBatchSummary": false,
+      "IsJournalEntryBatchSummary": false,
       "IsActive": true
     },
     "primaryKey": {
       "ID": "411DF6DC-3652-4151-836F-CDA2E46A5038"
+    },
+    "sync": {
+      "lastModified": "2026-08-06T20:29:26.612Z",
+      "checksum": "6afd78964e6209cded91ca60375b4b62dbb34a0d6e1d87cec8066b3f469ad1c6"
     }
   },
   {
@@ -44,11 +56,15 @@
       "Name": "Refund",
       "Description": "The MIRROR of a capture (orders D53) - the same accounts with debit and credit swapped, at positive amounts. Never a negated original: accounting refuses a line with a negative debit, and a mirrored entry is also what an auditor expects to see.",
       "IsSystem": false,
-      "IsBatchSummary": false,
+      "IsJournalEntryBatchSummary": false,
       "IsActive": true
     },
     "primaryKey": {
       "ID": "9A0B78EA-830D-40C5-A957-ABEBD02D9785"
+    },
+    "sync": {
+      "lastModified": "2026-08-06T20:29:26.630Z",
+      "checksum": "78136b56a28a0861bad15cbea411aa0d5e22f3b7f52051072cd98d7a2e162c34"
     }
   }
 ]

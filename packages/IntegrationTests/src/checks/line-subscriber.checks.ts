@@ -55,7 +55,7 @@ async function makePerson(ctx: IntegrationCheckContext, label: string): Promise<
   // on the same side of the boundary as __mj.Company and the tax geography.
   //
   // An earlier version of this comment blamed an IS-A/enriched-view mismatch and cited field counts.
-  // That reasoning was wrong and is recorded here so nobody rebuilds it: `MJ.BizApps.Common: People`
+  // That reasoning was wrong and is recorded here so nobody rebuilds it: `MJ_BizApps_Common: People`
   // has ParentID NULL and ZERO virtual+updatable fields, so it is not an IS-A child at all; its 18
   // non-virtual fields match the table's 18 columns, and spCreatePerson's 16 parameters are exactly
   // those minus the two auto-managed timestamps. The proc is correct.

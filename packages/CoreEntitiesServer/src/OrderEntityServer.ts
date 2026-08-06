@@ -48,7 +48,8 @@ import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePrice, type ResolvedPrice } from './PriceResolver.js';
-import { AllocateProRata, NetAfterDiscount } from './PricingBehavior.js';
+import { AllocateProRata, LineGross, NetAfterDiscount } from './PricingBehavior.js';
+import { OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
@@ -110,7 +111,7 @@ interface SubscriptionMaterialization {
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
 // bizapps-common names its entities with DOTS, not the underscores the other apps use.
-const COMMON_ADDRESS_ENTITY = 'MJ.BizApps.Common: Addresses';
+const COMMON_ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
@@ -122,7 +123,7 @@ const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
-const RELATIONSHIP_ENTITY = 'MJ.BizApps.Common: Relationships';
+const RELATIONSHIP_ENTITY = 'MJ_BizApps_Common: Relationships';
 const COMMON_SCHEMA = '__mj_BizAppsCommon';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
@@ -167,7 +168,28 @@ interface SubscriptionDecisionForLine {
     Subscriber: SubscriberIdentity;
     /** The resolved behaviour — reused for RecognitionMonths so a driver's override still applies. */
     Behavior: SubscriptionBehavior;
+    /**
+     * Product + subscriber identity, as the type's BenefitModel defines a duplicate.
+     *
+     * Carried from the decision pass so persistence can tell that two lines of the
+     * SAME order are the same subscription — the decision pass can only synthesise
+     * a placeholder for the second one, because the first is not written yet.
+     */
+    DedupeKey: string;
 }
+
+/**
+ * Stands in for a subscription an EARLIER LINE OF THIS ORDER is about to create.
+ *
+ * The concurrency rules are evaluated against `ExistingSubscription`, which is a
+ * database row — so with two lines for the same subscription in one order, the
+ * second line saw nothing and decided `CreateNew` too. That silently produced two
+ * concurrent subscriptions with identical terms under `ExtendExisting`, and
+ * bypassed `RejectDuplicate` entirely. Feeding the sibling's pending decision back
+ * in as `Existing` lets the SAME rule code handle the within-order case as the
+ * across-order one, rather than duplicating the concurrency logic.
+ */
+const PENDING_SIBLING_ID = '__pending-sibling__';
 
 interface CreateJournalEntriesResult {
     Success: boolean;
@@ -681,7 +703,9 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const chargeable = this._lines.map((line, i) => ({
             ID: String(i),
             Net: NetAfterDiscount(
-                Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0),
+                // Same LineGross the line itself uses — a Flat line's base must be the
+                // flat amount, or tax is computed on a number the line does not have.
+                LineGross(Number(line.Quantity ?? 0), Number(line.UnitPrice ?? 0), this.resolvedExtendedFor(line)),
                 // 4dp, matching `DiscountPct DECIMAL(7,4)`. The charge and tax base must agree with
                 // the line total to the penny, and the line rounds — so this has to round the same
                 // way or tax is computed on a base the line does not have.
@@ -1249,6 +1273,10 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const user = this.ContextCurrentUser as UserInfo;
 
         const product = await this.loadProductForPricing(line.ProductID);
+        // Before pricing it, establish that it may be sold at all — a retired or
+        // out-of-window product should not reach the ledger, and refusing here aborts
+        // the confirm before any line is written.
+        if (product) this.assertProductSellable(line, product);
         const resolved = await ResolvePrice(
             {
                 ProductID: line.ProductID,
@@ -1276,24 +1304,89 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
         line.UnitPrice = resolved.UnitPrice;
         line.ProductPriceID = resolved.ProductPriceID;
+        // The line computes its own totals in a hook outside this class, so it needs the
+        // exact figure too — otherwise it would re-derive quantity × a rounded unit rate
+        // and disagree with the base computed here.
+        (line as OrderLineEntityServer).ResolvedExtendedAmount = resolved.ExtendedAmount;
         this._priceComponents.set(line, resolved);
     }
 
-    /** Product facts pricing needs: its category (for the walk) and its company. */
+    /** Product facts pricing needs: its category (for the walk), its company, and whether it may be sold at all. */
     private async loadProductForPricing(
         productID: string,
-    ): Promise<{ ProductCategoryID: string | null; CompanyID: string; Name: string } | null> {
+    ): Promise<{
+        ProductCategoryID: string | null;
+        CompanyID: string;
+        Name: string;
+        Status: string;
+        AvailableFrom: Date | null;
+        AvailableTo: Date | null;
+    } | null> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ ProductCategoryID: string | null; CompanyID: string; Name: string }>(
+        const res = await rv.RunView<{
+            ProductCategoryID: string | null;
+            CompanyID: string;
+            Name: string;
+            Status: string;
+            AvailableFrom: Date | null;
+            AvailableTo: Date | null;
+        }>(
             {
                 EntityName: 'MJ_BizApps_Orders: Products',
                 ExtraFilter: `ID = '${productID}'`,
-                Fields: ['ProductCategoryID', 'CompanyID', 'Name'],
+                Fields: ['ProductCategoryID', 'CompanyID', 'Name', 'Status', 'AvailableFrom', 'AvailableTo'],
                 ResultType: 'simple',
             },
             this.ContextCurrentUser,
         );
         return res?.Results?.[0] ?? null;
+    }
+
+    /**
+     * Refuse a product that is not on sale — by STATUS or by its availability WINDOW.
+     *
+     * Neither was checked anywhere on the server. The product picker filters
+     * `Status = 'Active'`, which made the status look enforced while being purely
+     * presentational: anything reaching the API another way — a saved draft whose
+     * product was later retired, an import, a remote operation, a second UI — booked
+     * without complaint. `AvailableFrom` / `AvailableTo` were not consulted at all, so
+     * a product available from 2030 and one whose window closed in 2021 both sold
+     * today. The field that reads as the deliberate control worked; the dates beside
+     * it were decoration.
+     *
+     * Checked here because pricing already loads the product per line, so this costs
+     * no extra query, and because refusing during pricing aborts the confirm BEFORE
+     * any line is written — the same all-or-none point the subscription rules use.
+     *
+     * The order's own date is the test, not today: back-dating an order to when the
+     * product WAS on sale is legitimate, and re-pricing an old order must not start
+     * failing because the catalogue moved on.
+     */
+    private assertProductSellable(
+        line: mjBizAppsOrdersOrderLineEntity,
+        product: { Name: string; Status: string; AvailableFrom: Date | null; AvailableTo: Date | null },
+    ): void {
+        const asOf = this.OrderDate ? new Date(this.OrderDate) : new Date();
+        const day = (d: Date) => d.toISOString().slice(0, 10);
+
+        if (product.Status !== 'Active') {
+            throw new Error(
+                `Order line ${line.LineNumber} (${product.Name}) cannot be sold: the product's status is ` +
+                    `'${product.Status}', not 'Active'.`,
+            );
+        }
+        if (product.AvailableFrom && asOf < new Date(product.AvailableFrom)) {
+            throw new Error(
+                `Order line ${line.LineNumber} (${product.Name}) cannot be sold: it is not available until ` +
+                    `${day(new Date(product.AvailableFrom))}, and this order is dated ${day(asOf)}.`,
+            );
+        }
+        if (product.AvailableTo && asOf > new Date(product.AvailableTo)) {
+            throw new Error(
+                `Order line ${line.LineNumber} (${product.Name}) cannot be sold: it was available until ` +
+                    `${day(new Date(product.AvailableTo))}, and this order is dated ${day(asOf)}.`,
+            );
+        }
     }
 
     /** Company policy, defaulting to REFUSE when no policy row exists. */
@@ -1564,7 +1657,6 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      * A product with no `EventProduct` row is simply not an event; nothing happens.
      */
     private async applyEventServicePeriod(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
-        if (line.ServicePeriodStart || line.ServicePeriodEnd) return;
         if (!line.ProductID) return;
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
@@ -1579,7 +1671,15 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             this.ContextCurrentUser,
         );
         const event = res?.Results?.[0];
-        if (!event?.EventStartsAt) return;
+        if (!event) return;
+
+        // NOTE: EventProduct.Capacity is deliberately NOT enforced here — see
+        // plans/bizapps-orders-master.md §21b. A correct check cannot be written
+        // against these tables alone.
+
+        // Dates only when the line does not state its own — an explicitly-set period WINS.
+        if (line.ServicePeriodStart || line.ServicePeriodEnd) return;
+        if (!event.EventStartsAt) return;
 
         const start = new Date(event.EventStartsAt);
         // A single-day event has no end date; the period is that one day, so recognition lands on
@@ -1753,15 +1853,36 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             if (pending.ID) byLineID.set(uuidKey(pending.ID), decided);
         }
 
+        // Subscriptions created during THIS pass, so a later line extending a sibling's
+        // subscription can resolve the placeholder to the id that now exists.
+        const createdByDedupeKey = new Map<string, string>();
+
         for (const line of lines) {
             const decided = byLineID.get(uuidKey(line.ID));
             if (!decided) continue;
             const { Product: product, Rules: rules, Decision: decision } = decided;
 
+            // A line extending a subscription an EARLIER LINE of this order is creating
+            // carries a placeholder, because that subscription did not exist when the
+            // decision was made. Swap in the real ID now that the sibling has written it.
+            if (decision.SubscriptionID === PENDING_SIBLING_ID) {
+                const sibling = createdByDedupeKey.get(decided.DedupeKey);
+                if (!sibling) {
+                    throw new Error(
+                        `Order line ${line.LineNumber} (${product.Name}) extends a subscription from an ` +
+                            `earlier line of this order, but that line did not create one.`,
+                    );
+                }
+                decision.SubscriptionID = sibling;
+            }
+
             const subscriptionID =
                 decision.Action === 'CreateNew'
                     ? await this.createSubscription(line, product, rules, decision, decided.Subscriber, options)
                     : await this.touchExistingSubscription(decision, !!line.RenewsSubscriptionID, options);
+
+            // Remember it so a later line for the same subscription resolves above.
+            if (decision.Action === 'CreateNew') createdByDedupeKey.set(decided.DedupeKey, subscriptionID);
 
             const term = decision.Term!;
 
@@ -1806,6 +1927,13 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             // The line's stored service period reflects the TERM, not what a user typed.
             line.ServicePeriodStart = term.StartDate;
             line.ServicePeriodEnd = term.EndDate;
+            // The forward link, which nothing was writing. Subscription.OrderLineID
+            // recorded the reverse, so the subscription knew its line while the line
+            // did not know its subscription — and PreviewConfirmOperation reads
+            // exactly this field to show what a confirm will create, so the pre-flight
+            // could never show subscription detail for a line. Set here because the
+            // line is already being saved on the next statement; it costs no extra write.
+            line.SubscriptionID = subscriptionID;
             await line.Save(options);
         }
 
@@ -1828,14 +1956,23 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // rather than per line.
         await OrdersSettings.Load(this.ProviderToUse as unknown as IMetadataProvider, this.ContextCurrentUser);
 
+        // What an EARLIER line of this same order has already decided to create,
+        // keyed the way the type defines a duplicate. Without this the rules only
+        // ever see the database, so two lines for one subscription both decide
+        // "create" — see PENDING_SIBLING_ID.
+        const pendingSiblings = new Map<string, ExistingSubscription>();
+
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
             let subscriber = await this.withInferredOrganization(this.resolveSubscriber(line));
-            // An explicitly named subscription wins; otherwise find one for this subscriber and
-            // product, scoped by the type's BenefitModel (D62).
+            const identity = behavior.DedupeIdentity(rules, subscriber);
+            const dedupeKey = `${product.ID}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
+            // An explicitly named subscription wins; then a sibling line of THIS order;
+            // then one already in the database for this subscriber and product (D62).
             const existing = line.RenewsSubscriptionID
                 ? await this.loadSubscriptionState(`ID='${line.RenewsSubscriptionID}'`)
-                : await this.findExistingSubscription(product.ID, behavior.DedupeIdentity(rules, subscriber));
+                : (pendingSiblings.get(dedupeKey) ??
+                   (await this.findExistingSubscription(product.ID, identity)));
 
             // NAMING a subscription IS the statement of who the subscriber is. Requiring the line to
             // restate it would make renewing a seat impossible without repeating the person, and any
@@ -1868,7 +2005,29 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 );
             }
 
-            out.set(line, { Product: product, Rules: rules, Decision: decision, Behavior: behavior, Subscriber: subscriber });
+            // Record what this line will produce, so a LATER line covering the same
+            // subscription extends it (or is refused) instead of creating a second.
+            // A real renewal target is left alone: it is already in the database, so
+            // the ordinary lookup finds it.
+            if (decision.Term && !line.RenewsSubscriptionID) {
+                pendingSiblings.set(dedupeKey, {
+                    ID: existing?.ID ?? PENDING_SIBLING_ID,
+                    Status: 'Active',
+                    HolderOrganizationID: subscriber.OrganizationID,
+                    BeneficiaryPersonID: subscriber.PersonID,
+                    LatestTermEnd: decision.Term.EndDate,
+                    LatestTermNumber: decision.Term.TermNumber,
+                });
+            }
+
+            out.set(line, {
+                Product: product,
+                Rules: rules,
+                Decision: decision,
+                Behavior: behavior,
+                Subscriber: subscriber,
+                DedupeKey: dedupeKey,
+            });
         }
         return out;
     }
@@ -1965,9 +2124,26 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
     /** Net for a line that has not been saved yet — mirrors OrderLineEntityServer's own formula. */
     private pendingLineNet(line: mjBizAppsOrdersOrderLineEntity): number {
-        const gross = (line.Quantity ?? 0) * (line.UnitPrice ?? 0);
-        const net = gross * (1 - (line.DiscountPct ?? 0));
-        return Math.round((net + Number.EPSILON) * 100) / 100;
+        // Via LineGross for the same reason the other two sites do: a subscription sold
+        // on a Flat rule must price its TERM at the flat amount, not at a re-multiplied
+        // unit rate, or the term, the line and the journal entry disagree by pennies and
+        // deferred revenue never clears to zero.
+        return NetAfterDiscount(
+            LineGross(Number(line.Quantity ?? 0), Number(line.UnitPrice ?? 0), this.resolvedExtendedFor(line)),
+            Math.round(Number(line.DiscountPct ?? 0) * 1e4) / 1e4,
+            Number(line.DiscountAmount ?? 0),
+        );
+    }
+
+    /**
+     * The exact extended amount a price rule computed for this line, if one did.
+     *
+     * `_priceComponents` is populated by the pricing pass in this same save, so this
+     * is the authority while the line is still in flight; the line itself carries the
+     * same figure for its own totals hook, which runs outside this class.
+     */
+    private resolvedExtendedFor(line: mjBizAppsOrdersOrderLineEntity): number | null {
+        return this._priceComponents.get(line)?.ExtendedAmount ?? null;
     }
 
     /** Lines whose product carries a subscription type, joined to their rules. */
@@ -2118,7 +2294,16 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const sub = await provider.GetEntityObject<BaseEntity>(SUBSCRIPTION_ENTITY, this.ContextCurrentUser);
         sub.NewRecord();
         sub.Set('SubscriptionNumber', await this.assignSubscriptionNumber());
-        sub.Set('CompanyID', this.CompanyID);
+        // The LINE's company, not the order's. A subscription is recurring revenue
+        // for whoever sells it, and on a mixed order that is not the order's owner:
+        // an order carrying a membership from each of two companies produced two
+        // subscriptions that BOTH landed in the header's ledger, so one company held
+        // the other's subscriber. The journal entries in this same transaction are
+        // already per-line and single-company (D10) — this brings subscriptions onto
+        // the same footing rather than leaving the two records disagreeing about who
+        // sold what. Falls back to the order's company only if a line somehow has
+        // none, which savePendingLines does not allow.
+        sub.Set('CompanyID', line.CompanyID ?? this.CompanyID);
         // The BIRTH line (D39/D40) — which purchase brought this subscription into existence.
         // Renewals append terms that carry their own OrderLineID; this one never changes.
         sub.Set('OrderLineID', line.ID);

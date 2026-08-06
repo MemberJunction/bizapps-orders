@@ -15,6 +15,7 @@ import { AllocateOldestFirst, UnallocatedRemainder } from '../../panels/allocati
 import { MJOMoneyPipe, DaysSince } from '../../panels/money-format';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
+import { MJDropdownComponent, MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** A tender the customer can pay with. */
 export interface MJOTenderOption {
@@ -55,7 +56,7 @@ export interface MJOTenderOption {
 @Component({
     selector: 'mjo-payment-entry-page',
     standalone: true,
-    imports: [CommonModule, FormsModule, MJOAllocationGridComponent, MJOStatedValueComponent, MJOMoneyPipe],
+    imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, MJOAllocationGridComponent, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <div class="mjo-pe__split">
             <!-- ── Left: the money ── -->
@@ -69,7 +70,7 @@ export interface MJOTenderOption {
                         <label class="mj-field">
                             <label>Amount received</label>
                             <input
-                                class="mj-input is-num"
+                                class="mj-input is-num" [disabled]="IsCaptured"
                                 [value]="Amount"
                                 (change)="SetAmount($any($event.target).value); SchedulePreview()"
                                 aria-label="Amount received">
@@ -77,20 +78,20 @@ export interface MJOTenderOption {
 
                         <label class="mj-field">
                             <label>Date received</label>
-                            <input class="mj-input" type="date" [(ngModel)]="PaymentDate" name="paymentDate">
+                            <input class="mj-input" type="date" [(ngModel)]="PaymentDate" name="paymentDate" [disabled]="IsCaptured">
                         </label>
 
                         <label class="mj-field">
                             <label>Tender</label>
-                            <select
-                                class="mj-select"
+                            <mj-dropdown
+                                [Data]="Tenders"
+                                TextField="Name"
+                                ValueField="Code"
+                                [ValuePrimitive]="true"
+                                [Disabled]="IsCaptured"
                                 [(ngModel)]="TenderCode"
                                 name="tender"
-                                (ngModelChange)="OnTenderChanged()">
-                                @for (tender of Tenders; track tender.ID) {
-                                    <option [value]="tender.Code">{{ tender.Name }}</option>
-                                }
-                            </select>
+                                (ngModelChange)="OnTenderChanged()" />
                             <div class="hint">
                                 Reversal types are absent because the data says they are reversals — not
                                 because this list hardcodes an exclusion.
@@ -101,17 +102,21 @@ export interface MJOTenderOption {
                         @if (SelectedTender?.RequiresReference) {
                             <label class="mj-field">
                                 <label>Reference</label>
-                                <input class="mj-input" [(ngModel)]="Reference" name="reference"
+                                <input class="mj-input" [(ngModel)]="Reference" name="reference" [disabled]="IsCaptured"
                                        placeholder="Cheque number, wire confirmation…">
                             </label>
                         }
                         @if (SelectedTender?.RequiresInstrument) {
                             <label class="mj-field">
                                 <label>Instrument</label>
-                                <select class="mj-select" [(ngModel)]="Instrument" name="instrument">
-                                    <option value="">Saved payment method…</option>
-                                    <option value="new">New card — hosted tokenization</option>
-                                </select>
+                                <mj-dropdown
+                                    [Data]="InstrumentOptions"
+                                    TextField="Label"
+                                    ValueField="Value"
+                                    [ValuePrimitive]="true"
+                                    [Disabled]="IsCaptured"
+                                    [(ngModel)]="Instrument"
+                                    name="instrument" />
                                 <div class="hint">
                                     A wallet entry is <b>copied</b> onto the payment, never shared, so the
                                     snapshot cannot drift if the saved card changes later.
@@ -187,14 +192,11 @@ export interface MJOTenderOption {
                 }
 
                 @if (!Payer) {
-                    <div class="mj-banner mj-banner--neutral mjo-pe__note">
-                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-                        <div class="body">
+                    <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-pe__note">
                             Showing every open order across all customers. Choose who is paying to
                             narrow it — a payment belongs to one payer, and allocating across
                             customers is almost always a mistake rather than an intention.
-                        </div>
-                    </div>
+                    </mj-alert>
                 }
 
                 <mjo-allocation-grid
@@ -207,13 +209,13 @@ export interface MJOTenderOption {
                 <div class="mjo-pe__actions">
                     <button
                         type="button"
-                        class="mj-btn mj-btn--primary"
+                        mjButton variant="primary"
                         [disabled]="!CanCapture || Busy"
                         (click)="Capture()">
                         <i class="fa-solid fa-check" aria-hidden="true"></i>
                         {{ Busy ? 'Capturing…' : 'Capture payment' }}
                     </button>
-                    <button type="button" class="mj-btn mj-btn--outline">Save as pending</button>
+                    <button type="button" mjButton variant="outline">Save as pending</button>
                     <span class="small muted spacer">
                         Allocations freeze at capture. A pending payment is still a draft.
                     </span>
@@ -222,20 +224,17 @@ export interface MJOTenderOption {
         </div>
 
         @if (Error) {
-            <div class="mj-banner mj-banner--error mjo-pe__result" role="alert">
-                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                <div class="body"><strong>Nothing was captured.</strong> {{ Error }}</div>
-            </div>
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-pe__result" role="alert">
+<strong>Nothing was captured.</strong> {{ Error }}
+            </mj-alert>
         }
 
         @if (Result) {
-            <div
-                class="mj-banner mjo-pe__result"
-                [class.mj-banner--success]="!Result.WasRetry"
-                [class.mj-banner--info]="Result.WasRetry"
-                role="status">
-                <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-                <div class="body">
+            <mj-alert
+                class="mjo-pe__result"
+                [Variant]="Result.WasRetry ? 'info' : 'success'"
+                Icon="fa-solid fa-circle-check"
+                Role="status">
                     @if (Result.WasRetry) {
                         <strong>Already captured — no money moved.</strong>
                         {{ Result.PaymentNumber }} was taken by an earlier attempt carrying the same
@@ -256,8 +255,7 @@ export interface MJOTenderOption {
                             }
                         </div>
                     }
-                </div>
-            </div>
+            </mj-alert>
         }
     `,
     styles: [
@@ -304,7 +302,10 @@ export interface MJOTenderOption {
              */
             .mjo-pe__actions {
                 position: sticky;
-                bottom: 0;
+                /* Negative offset cancels the host's own space-6 padding, which is
+                   inside the scrollport; a plain bottom:0 left the bar floating 24px
+                   clear of the viewport edge instead of flush against it. */
+                bottom: calc(-1 * var(--mj-space-6));
                 z-index: 5;
                 display: flex;
                 align-items: center;
@@ -369,6 +370,20 @@ export class MJOPaymentEntryPageComponent implements OnInit {
     /** The user asked to capture. The host calls the operation. */
     /** Emitted AFTER the payment is captured, carrying what the server booked. */
     @Output() CaptureRequested = new EventEmitter<OrdersCapturePaymentOutput>();
+
+    /**
+     * Instrument choices, as data rather than markup.
+     *
+     * They were hard-coded `<option>` elements. A dropdown takes a list, and a list is also the
+     * thing a wallet lookup would eventually replace — the markup form could not be swapped for
+     * loaded data without rewriting the template.
+     */
+    public readonly InstrumentOptions: ReadonlyArray<{ Value: string; Label: string }> = [
+        // Exactly the two the <option> list carried — converting a control must not quietly
+        // change what it offers.
+        { Value: '', Label: 'Saved payment method…' },
+        { Value: 'new', Label: 'New card — hosted tokenization' },
+    ];
 
     public Amount = 0;
     public PaymentDate = new Date().toISOString().slice(0, 10);
@@ -447,6 +462,38 @@ export class MJOPaymentEntryPageComponent implements OnInit {
         this.cdr.detectChanges();
     }
 
+    /**
+     * Blank the form for a new payment.
+     *
+     * "Take a payment" re-inserts this page from the section's cache — deliberately, because
+     * detaching rather than destroying is what stops a half-entered payment being lost on a trip
+     * to another rail item. The cost is that the CACHED STATE comes back with it: open an existing
+     * payment, press Take a payment, and you get the previous payer, amount and allocations with
+     * no way to clear them. The caching is right; what was missing is an explicit way to start over.
+     *
+     * The idempotency key is regenerated here for the same reason it is regenerated after a
+     * capture: a fresh form is a NEW payment, and reusing the token would make it look like a retry
+     * of the last one and take no money at all.
+     */
+    public async Reset(): Promise<void> {
+        this.Payer = null;
+        this.PayerQuery = '';
+        this.PayerResults = [];
+        this.Allocations = {};
+        this.Amount = 0;
+        this.Fee = null;
+        this.NetCash = null;
+        this.Reference = '';
+        this.Instrument = '';
+        this.PaymentDate = new Date().toISOString().slice(0, 10);
+        this.TenderCode = this.Tenders.length ? this.Tenders[0].Code : '';
+        this.Result = null;
+        this.Error = null;
+        this.idempotencyKey = crypto.randomUUID();
+        await this.loadOpenOrders();
+        this.cdr.detectChanges();
+    }
+
     public async ClearPayer(): Promise<void> {
         this.Payer = null;
         this.Allocations = {};
@@ -493,7 +540,21 @@ export class MJOPaymentEntryPageComponent implements OnInit {
     public NetCash: number | null = null;
 
     /** Capture waits for the allocations to balance. */
+    /**
+     * True once this form represents a payment that HAS been taken.
+     *
+     * Captured money is immutable at the database — `trg_PaymentHeader_ImmutableAfterCapture`,
+     * `trg_PaymentDetail_Immutable` and `trg_PaymentLine_ImmutableAfterCapture` all refuse the
+     * update. Leaving the fields live after a capture invites someone to edit a payment that
+     * cannot be edited, and the only feedback they would get is a trigger error. "Take a payment"
+     * resets the form, which is the real way forward from here.
+     */
+    public get IsCaptured(): boolean {
+        return !!this.Result;
+    }
+
     public get CanCapture(): boolean {
+        if (this.IsCaptured) return false;
         return this.Amount > 0 && UnallocatedRemainder(this.Amount, this.Allocations) === 0;
     }
 

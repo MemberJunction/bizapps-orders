@@ -1,6 +1,7 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe, FormatMoney } from './money-format';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** An open order a payment can be applied to. */
 export interface MJOAllocatableOrder {
@@ -51,17 +52,17 @@ export type MJOAllocationMap = Record<string, number>;
 @Component({
     selector: 'mjo-allocation-grid',
     standalone: true,
-    imports: [CommonModule, MJOMoneyPipe],
+    imports: [MJButtonDirective, CommonModule, MJOMoneyPipe, MJAlertComponent],
     template: `
         <div class="mj-card">
             <div class="mj-card-head">
                 <i class="fa-solid fa-list-check" aria-hidden="true"></i>
                 <h3>{{ Title }}</h3>
                 <span class="right">
-                    <button type="button" class="mj-btn mj-btn--outline mj-btn--sm" (click)="AutoApplyRequested.emit()">
+                    <button type="button" mjButton variant="outline" size="sm" (click)="AutoApplyRequested.emit()">
                         <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i> Auto-apply oldest first
                     </button>
-                    <button type="button" class="mj-btn mj-btn--flat mj-btn--sm" (click)="clearAll()">Clear</button>
+                    <button type="button" mjButton variant="flat" size="sm" (click)="clearAll()">Clear</button>
                 </span>
             </div>
 
@@ -140,9 +141,7 @@ export type MJOAllocationMap = Record<string, number>;
         </div>
 
         @if (overAppliedOrders.length) {
-            <div class="mj-banner mj-banner--success mjo-ag__effect">
-                <i class="fa-solid fa-piggy-bank" aria-hidden="true"></i>
-                <div class="body">
+            <mj-alert Variant="success" Icon="fa-solid fa-piggy-bank" class="mjo-ag__effect">
                     <strong>This creates account credit.</strong>
                     @for (order of overAppliedOrders; track order.ID) {
                         {{ order.OrderNumber }} goes to {{ formatLeaves(order) }} —
@@ -152,14 +151,11 @@ export type MJOAllocationMap = Record<string, number>;
                         Legitimate and common. No separate credit record is created; the negative balance
                         <b>is</b> the credit.
                     </div>
-                </div>
-            </div>
+            </mj-alert>
         }
 
         @if (companiesInvolved.length > 1) {
-            <div class="mj-banner mj-banner--warning mjo-ag__effect">
-                <i class="fa-solid fa-building-columns" aria-hidden="true"></i>
-                <div class="body">
+            <mj-alert Variant="warning" Icon="fa-solid fa-building-columns" class="mjo-ag__effect">
                     <strong>This allocation crosses companies.</strong>
                     Cash landed with one entity but settles receivables owned by
                     {{ companiesInvolved.join(' and ') }}.
@@ -167,8 +163,7 @@ export type MJOAllocationMap = Record<string, number>;
                         The intercompany legs book <b>here, at allocation</b> — not at capture. A capture only
                         says how much cash arrived; only an allocation says whose revenue it settles.
                     </div>
-                </div>
-            </div>
+            </mj-alert>
         }
     `,
     styles: [

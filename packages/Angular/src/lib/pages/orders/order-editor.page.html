@@ -6,6 +6,10 @@
 -->
 
 <!-- ═══════ Persistent chrome: identity, stage, money ═══════ -->
+<!-- Everything that scrolls. The host is a flex frame so the footer can be a
+     real bottom row rather than a sticky element that only holds when the
+     content happens to overflow — see order-editor.page.css. -->
+<div class="ed-scroll">
 <div class="ed-sticky">
   <div class="ed-identity">
     <div>
@@ -14,15 +18,39 @@
     </div>
     <div>
       <span class="l">Type</span>
-      <span class="v">{{ Draft.Header.OrderType ?? 'Sale' }}</span>
+      @if (IsEditable) {
+        <mj-dropdown
+          class="ed-identity__input"
+          aria-label="Order type"
+          [Data]="OrderTypes"
+          [ValuePrimitive]="true"
+          [ngModel]="Draft.Header.OrderType ?? 'Sale'"
+          (ngModelChange)="SetOrderType($event)" />
+      } @else {
+        <span class="v">{{ Draft.Header.OrderType ?? 'Sale' }}</span>
+      }
     </div>
     <div>
       <span class="l">Order date</span>
-      <span class="v">{{ Draft.Header.OrderDate ?? 'today' }}</span>
+      @if (IsEditable) {
+        <input type="date" class="mj-input ed-identity__input" aria-label="Order date"
+               [ngModel]="DateValue(Draft.Header.OrderDate)"
+               (ngModelChange)="SetHeaderField('OrderDate', $event)" />
+      } @else {
+        <span class="v">{{ Draft.Header.OrderDate ?? 'today' }}</span>
+      }
     </div>
     <div>
       <span class="l">Due</span>
-      <span class="v">{{ Draft.Header.DueDate ?? '—' }}</span>
+      @if (IsEditable) {
+        <!-- Typing a due date is a STATED value and wins over the terms walk; clearing it hands
+             resolution back. Same rule the unit price follows. -->
+        <input type="date" class="mj-input ed-identity__input" aria-label="Due date"
+               [ngModel]="DateValue(Draft.Header.DueDate)"
+               (ngModelChange)="SetHeaderField('DueDate', $event)" />
+      } @else {
+        <span class="v">{{ Draft.Header.DueDate ?? '—' }}</span>
+      }
     </div>
     <div>
       <span class="l">Origin</span>
@@ -30,7 +58,14 @@
     </div>
     <div>
       <span class="l">Their PO</span>
-      <span class="v mono">{{ Draft.Header.ExternalDocumentNumber ?? '—' }}</span>
+      @if (IsEditable) {
+        <input type="text" class="mj-input ed-identity__input mono" aria-label="Their PO number"
+               placeholder="—"
+               [ngModel]="Draft.Header.ExternalDocumentNumber ?? ''"
+               (ngModelChange)="SetHeaderField('ExternalDocumentNumber', $event)" />
+      } @else {
+        <span class="v mono">{{ Draft.Header.ExternalDocumentNumber ?? '—' }}</span>
+      }
     </div>
   </div>
 
@@ -40,10 +75,6 @@
       [Stages]="Stages"
       [ReadOnly]="!IsEditable"
       (BeforeStageChange)="OnBeforeStageChange($event)" />
-    <span class="small muted spacer ed-stage-note">
-      Stage order is fixed; skipping <i>forward</i> is legal. After confirming, corrections are
-      reversing orders.
-    </span>
   </div>
 
   <mjo-money-strip
@@ -52,48 +83,88 @@
     [Paid]="0"
     [Balance]="Totals?.GrossTotal ?? null"
     [ShowPaid]="Status !== 'Draft'"
-    [PaymentStatus]="Status === 'Draft' ? null : 'Unpaid'"
-    Note="Rollups are trigger-maintained from the lines — never authored." />
+    [PaymentStatus]="Status === 'Draft' ? null : 'Unpaid'" />
 
   <!-- Issues above the tabs: a red dot alone leaves the user hunting. -->
   @if (Issues.length) {
-    <div class="mj-banner mj-banner--warning ed-issues">
-      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-      <div class="body">
-        <strong>{{ Issues.length }} thing{{ Issues.length === 1 ? '' : 's' }} to sort out before this can confirm.</strong>
-        <ul class="ed-issues__list">
-          @for (issue of Issues; track issue.Code) {
-            <li>{{ issue.Message }}</li>
-          }
-        </ul>
-      </div>
+    <!-- One line, and every item is a BUTTON that takes you to the tab that owns it. The old
+         version was a full alert card restating what the tab dots already say, so it cost a
+         card's worth of vertical space to tell you something twice and left you to find the
+         tab yourself. -->
+    <div class="ed-todo" role="status">
+      <i class="fa-solid fa-circle-exclamation ed-todo__icon" aria-hidden="true"></i>
+      <span class="ed-todo__count">{{ Issues.length }}</span>
+      <span class="ed-todo__lead">before you can confirm</span>
+      <span class="ed-todo__items">
+        @for (issue of Issues; track issue.Code) {
+          <button
+            type="button"
+            class="ed-todo__item"
+            [title]="'Go to ' + SectionLabel(issue.Section)"
+            (click)="GoToIssue(issue.Section)">
+            {{ issue.Message }}
+          </button>
+        }
+      </span>
     </div>
   }
 
-  <div class="mj-tabs ed-tabs" role="tablist">
-    @for (tab of Tabs; track tab.Key) {
-      <button
-        type="button"
-        class="mj-tab"
-        role="tab"
-        [class.is-active]="ActiveTab === tab.Key"
-        [attr.aria-selected]="ActiveTab === tab.Key"
-        (click)="SelectTab(tab.Key)">
-        {{ tab.Label }}
-        @if (tab.Count != null) {
-          <span class="n">{{ tab.Count }}</span>
-        }
-        @if (tab.HasError) {
-          <span class="dot" [attr.aria-label]="tab.Label + ' has something required and missing'"></span>
-        }
-      </button>
-    }
-  </div>
+  <mj-tab-nav
+    class="ed-tabs"
+    [Tabs]="TabNav"
+    [ActiveKey]="ActiveTab"
+    (TabChange)="SelectTabKey($event)" />
 </div>
+<!-- Only the tab content scrolls. The identity strip, stage, totals and tab
+     strip above stay put — scrolling the whole card meant the order you are
+     editing could scroll off the top of its own editor. -->
+<div class="ed-panes">
 
 <!-- ═══════ LINES ═══════ -->
 @if (ActiveTab === 'lines') {
   <div class="ed-pane">
+    @if (IsEditable) {
+      <!-- The editor could remove a line and never add one; this is the way in. -->
+      <div class="ed-addline">
+        <label class="ed-addline__field">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+          <input
+            type="text"
+            class="mj-input"
+            placeholder="Add a product — name or SKU"
+            aria-label="Add a product to this order"
+            (focus)="OnProductFocus()"
+            [(ngModel)]="ProductQuery"
+            (ngModelChange)="OnProductQueryChange()" />
+        </label>
+        @if (ProductMatches.length) {
+          <ul class="ed-addline__matches" role="listbox" aria-label="Matching products">
+            @for (option of ProductMatches; track option.ID) {
+              <li>
+                <button type="button" class="ed-addline__match" (click)="AddProduct(option)">
+                  <span class="nm">{{ option.Name }}</span>
+                  <!-- The separator belongs to the SKU, not to the row: products can have a NULL
+                       SKU, and an unconditional "·" renders a dangling bullet before the company. -->
+                  <span class="small muted">
+                    @if (option.SKU) { {{ option.SKU }} · } {{ option.CompanyName }}
+                  </span>
+                  <span class="num">{{ option.ListPrice | mjoMoney }}</span>
+                </button>
+              </li>
+            }
+          </ul>
+        } @else if (ProductQuery.trim().length >= 2) {
+          <div class="small muted ed-addline__none">
+            No catalogue match for &ldquo;{{ ProductQuery }}&rdquo;.
+            @if (CatalogTruncated) {
+              <!-- "Not found" and "not in the loaded subset" are different answers. -->
+              <b>The catalogue list was capped, so this may exist beyond it.</b>
+            }
+          </div>
+        }
+      </div>
+    }
+
     <div class="mj-table-wrap">
       <table class="mj-table mj-table--lines">
         <thead>
@@ -194,7 +265,7 @@
                 <div class="mj-empty ed-empty">
                   <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
                   <div class="t">No lines yet</div>
-                  <div class="small">An order needs at least one line before it can confirm.</div>
+                  <div class="small">Search the catalogue above to add the first one.</div>
                 </div>
               </td>
             </tr>
@@ -270,12 +341,48 @@
           <span class="right"><span class="mj-chip mj-chip--outline">header only</span></span>
         </div>
         <div class="mj-card-pad">
-          <mjo-stated-value Label="Organization" From="stamped at order time">
-            {{ Draft.Header.BillToOrganizationID ?? '— none —' }}
-          </mjo-stated-value>
-          <mjo-stated-value Label="Person">
-            {{ Draft.Header.BillToPersonID ?? '— none —' }}
-          </mjo-stated-value>
+          <div class="ed-party">
+            <div class="ed-party__label">Customer</div>
+            @if (PartyIdFor('bill'); as chosen) {
+              <div class="ed-party__chosen">
+                <span class="mj-chip">{{ PartyLabels.bill ?? chosen }}</span>
+                @if (IsEditable) {
+                  <button type="button" class="mj-iconbtn" (click)="ClearParty('bill')" aria-label="Clear customer">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                  </button>
+                }
+              </div>
+            } @else if (IsEditable) {
+              <label class="ed-party__field">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input
+                  type="text"
+                  class="mj-input"
+                  placeholder="Search people and organizations"
+                  aria-label="Customer"
+                  [(ngModel)]="PartyQuery.bill"
+                  (focus)="OnPartyFocus('bill')"
+                  (ngModelChange)="SearchParty('bill')" />
+              </label>
+              @if (PartySearching === 'bill') {
+                <div class="small muted">Searching…</div>
+              } @else if (PartyMatches.bill.length) {
+                <ul class="ed-party__matches" role="listbox" aria-label="Matching customers">
+                  @for (m of PartyMatches.bill; track m.ID) {
+                    <li>
+                      <button type="button" class="ed-party__match" (click)="ChooseParty('bill', m)">
+                        <i [class]="m.IsOrganization ? 'fa-solid fa-building' : 'fa-solid fa-user'" aria-hidden="true"></i>
+                        <span class="nm">{{ m.Name }}</span>
+                        @if (m.Email) { <span class="small muted">{{ m.Email }}</span> }
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+            } @else {
+              <div class="small muted">— none —</div>
+            }
+          </div>
           <mjo-stated-value Label="Terms" From="organization default">
             {{ Draft.Header.PaymentTermsTypeID ?? '— default —' }}
           </mjo-stated-value>
@@ -293,12 +400,48 @@
           <span class="right"><span class="mj-chip mj-chip--outline">line default</span></span>
         </div>
         <div class="mj-card-pad">
-          <mjo-stated-value Label="Organization">
-            {{ Draft.Header.ShipToOrganizationID ?? '— none —' }}
-          </mjo-stated-value>
-          <mjo-stated-value Label="Person">
-            {{ Draft.Header.ShipToPersonID ?? '— none —' }}
-          </mjo-stated-value>
+          <div class="ed-party">
+            <div class="ed-party__label">Recipient</div>
+            @if (PartyIdFor('ship'); as chosen) {
+              <div class="ed-party__chosen">
+                <span class="mj-chip">{{ PartyLabels.ship ?? chosen }}</span>
+                @if (IsEditable) {
+                  <button type="button" class="mj-iconbtn" (click)="ClearParty('ship')" aria-label="Clear recipient">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                  </button>
+                }
+              </div>
+            } @else if (IsEditable) {
+              <label class="ed-party__field">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input
+                  type="text"
+                  class="mj-input"
+                  placeholder="Leave empty to use the customer"
+                  aria-label="Recipient"
+                  [(ngModel)]="PartyQuery.ship"
+                  (focus)="OnPartyFocus('ship')"
+                  (ngModelChange)="SearchParty('ship')" />
+              </label>
+              @if (PartySearching === 'ship') {
+                <div class="small muted">Searching…</div>
+              } @else if (PartyMatches.ship.length) {
+                <ul class="ed-party__matches" role="listbox" aria-label="Matching customers">
+                  @for (m of PartyMatches.ship; track m.ID) {
+                    <li>
+                      <button type="button" class="ed-party__match" (click)="ChooseParty('ship', m)">
+                        <i [class]="m.IsOrganization ? 'fa-solid fa-building' : 'fa-solid fa-user'" aria-hidden="true"></i>
+                        <span class="nm">{{ m.Name }}</span>
+                        @if (m.Email) { <span class="small muted">{{ m.Email }}</span> }
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+            } @else {
+              <div class="small muted">— none —</div>
+            }
+          </div>
           <mjo-stated-value Label="Address">
             {{ Draft.Header.ShipToAddressID ?? '— none —' }}
           </mjo-stated-value>
@@ -371,14 +514,11 @@
               <span class="tot">Taxable base</span><span class="amt tot">{{ base.Base | mjoMoney }}</span>
             </div>
 
-            <div class="mj-banner mj-banner--success ed-note">
-              <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-              <div class="body">
+            <mj-alert Variant="success" Icon="fa-solid fa-circle-check" class="ed-note">
                 <strong>Tax layers never compound.</strong> Every jurisdiction computes on the same
                 {{ base.Base | mjoMoney }}. A non-tax charge enlarges the taxable base; a tax charge
                 does not — so county tax is not charged on state tax.
-              </div>
-            </div>
+            </mj-alert>
           } @else {
             <div class="small muted">No taxable base — nothing on this order is taxable.</div>
           }
@@ -429,12 +569,43 @@
         <span class="right"><span class="mj-chip mj-chip--info">not yet a payment</span></span>
       </div>
       <div class="mj-card-pad">
-        <mjo-stated-value Label="Tender">
-          {{ Draft.Header.InitialPaymentTypeID ?? '— invoice on terms —' }}
-        </mjo-stated-value>
-        <mjo-stated-value Label="Amount">
-          {{ Draft.Header.InitialPaymentAmount | mjoMoney: { Zero: '—' } }}
-        </mjo-stated-value>
+        @if (IsEditable) {
+          <div class="ed-field">
+            <label class="ed-field__label" for="ed-tender">Tender</label>
+            <!-- The DefaultItem is a real choice, not a prompt: it means invoice on terms. -->
+            <mj-dropdown
+              id="ed-tender"
+              [Data]="Tenders"
+              TextField="Name"
+              ValueField="ID"
+              [ValuePrimitive]="true"
+              [DefaultItem]="TenderNone"
+              [ngModel]="Draft.Header.InitialPaymentTypeID ?? ''"
+              (ngModelChange)="SetTender($event)" />
+          </div>
+
+          @if (Draft.Header.InitialPaymentTypeID) {
+            <div class="ed-field">
+              <label class="ed-field__label" for="ed-payamt">Amount</label>
+              <div class="ed-field__row">
+                <input id="ed-payamt" type="text" inputmode="decimal" class="mj-input is-num"
+                       [ngModel]="Draft.Header.InitialPaymentAmount ?? 0"
+                       (ngModelChange)="SetInitialAmount($event)" />
+                <button type="button" mjButton variant="outline" (click)="PayInFull()"
+                        title="Use the order total">
+                  Pay in full
+                </button>
+              </div>
+            </div>
+          }
+        } @else {
+          <mjo-stated-value Label="Tender">
+            {{ Draft.Header.InitialPaymentTypeID ?? '— invoice on terms —' }}
+          </mjo-stated-value>
+          <mjo-stated-value Label="Amount">
+            {{ Draft.Header.InitialPaymentAmount | mjoMoney: { Zero: '—' } }}
+          </mjo-stated-value>
+        }
 
         <div class="small muted ed-note">
           What is recorded here is <b>intent</b>. On confirm it becomes a real PaymentHeader and
@@ -544,6 +715,8 @@
     </div>
   </div>
 }
+</div>
+</div>
 
 <!-- ═══════ LINE DRAWER ═══════ -->
 @if (OpenLine) {
@@ -604,27 +777,31 @@
     </div>
 
     <div class="mj-slide-in-foot">
-      <button type="button" class="mj-btn mj-btn--primary mj-btn--sm" (click)="CloseDrawer()">Done</button>
+      <button type="button" mjButton variant="primary" size="sm" (click)="CloseDrawer()">Done</button>
       <span class="small muted spacer">Every field here defaults from something. Nothing is required.</span>
     </div>
   </aside>
 }
 
 <!-- ═══════ FOOTER ═══════ -->
+<!-- Suppressed inside the order workspace: the card supplies Confirm / Keep as draft / Discard,
+     and two action bars stacked on one screen is worse than either alone — the user has to work
+     out whether they do the same thing. Standalone hosts keep this bar. -->
+@if (ShowActions) {
 <div class="ed-footer">
   @if (IsEditable) {
-    <button type="button" class="mj-btn mj-btn--outline" (click)="SaveDraft()">
+    <button type="button" mjButton variant="outline" (click)="SaveDraft()">
       <i class="fa-regular fa-floppy-disk" aria-hidden="true"></i> Save draft
     </button>
-    <button type="button" class="mj-btn mj-btn--primary" [disabled]="!CanConfirm" (click)="RequestConfirm()">
+    <button type="button" mjButton variant="primary" [disabled]="!CanConfirm" (click)="RequestConfirm()">
       <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm order
     </button>
   } @else {
     <!-- Edit gating shows the state's REAL verbs rather than a greyed-out Save. -->
-    <button type="button" class="mj-btn mj-btn--outline">
+    <button type="button" mjButton variant="outline">
       <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Create reversal…
     </button>
-    <button type="button" class="mj-btn mj-btn--outline">
+    <button type="button" mjButton variant="outline">
       <i class="fa-solid fa-hand-holding-dollar" aria-hidden="true"></i> Take payment
     </button>
     <span class="small muted">
@@ -632,3 +809,4 @@
     </span>
   }
 </div>
+}

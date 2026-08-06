@@ -4,6 +4,7 @@ import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../..
 import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.component';
 import { MJOOrdersDataService, type MJOPaymentRow } from '../../services/orders-data.service';
 import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
+import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 
 /**
  * `mjo-payments-dashboard-page` — what came in, and does it tie?
@@ -22,7 +23,7 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 @Component({
     selector: 'mjo-payments-dashboard-page',
     standalone: true,
-    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent, MJOMoneyPipe],
+    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <div class="mj-stat-grid">
             <mjo-stat-tile
@@ -50,7 +51,7 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
                 Detail="Our cost, never netted against a customer's balance" />
         </div>
 
-        <div class="mjo-pd__split">
+        <div class="mjo-pd__split mjo-pd__split--three">
             <div class="mj-card">
                 <div class="mj-card-head">
                     <i class="fa-solid fa-credit-card" aria-hidden="true"></i>
@@ -58,10 +59,7 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
                 </div>
                 <div class="mj-card-pad">
                     <mjo-day-bars [Bars]="CashPerDay" Unit="received" />
-                    <div class="small muted mjo-pd__note">
-                        Amounts, not counts — one large wire and thirty small cards are the same
-                        number of payments and nothing like the same day.
-                    </div>
+                    <div class="small muted mjo-pd__note">Amounts received, not payment counts.</div>
                 </div>
             </div>
 
@@ -72,10 +70,6 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
                 </div>
                 <div class="mj-card-pad">
                     <mjo-bar-list [Rows]="TenderMix" EmptyText="No payments yet." />
-                    <div class="small muted mjo-pd__note">
-                        One hue and a label per row. Four tenders in four colours would look like an encoding
-                        while encoding nothing — the label already carries the identity.
-                    </div>
                 </div>
             </div>
 
@@ -85,21 +79,15 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
                     <h3>Reconciliation</h3>
                 </div>
                 <div class="mj-card-pad">
-                    <div class="mj-banner mj-banner--success">
-                        <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
-                        <div class="body">
+                    <mj-alert Variant="success" Icon="fa-solid fa-circle-check">
                             <strong>Every captured payment balances.</strong>
                             The amount-equals-allocations rule is enforced at the capture transition, so an
                             unbalanced payment cannot exist to be found later.
-                        </div>
-                    </div>
-                    <div class="mj-banner mj-banner--neutral mjo-pd__note">
-                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-                        <div class="body">
+                    </mj-alert>
+                    <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-pd__note">
                             A refund is a <b>new payment</b>, never an edit of the capture — so chargebacks and
                             reversals show in the refunds list rather than as a mutated original.
-                        </div>
-                    </div>
+                    </mj-alert>
                 </div>
             </div>
         </div>
@@ -160,6 +148,11 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
     `,
     styles: [
         `
+            /* NOTE: .mjo-pd__split was declared TWICE in this block with different column
+               templates, so the later one silently won and BOTH rows rendered as two equal
+               columns. The top row has three cards, so the third landed alone and left an empty
+               half-width slot beside it — a hole that read as a card that had failed to load.
+               Two layouts need two names. */
             .mjo-pd__split {
                 display: grid;
                 grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
@@ -184,10 +177,11 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
                 overflow: auto;
                 padding: var(--mj-space-6);
             }
-            .mjo-pd__split {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: var(--mj-space-4);
+            /* The three-card row: all three abreast, so nothing is left orphaned on a second
+               line. auto-fit rather than a fixed 3 so it reflows to 2 then 1 as the pane
+               narrows instead of squeezing three unreadable columns. */
+            .mjo-pd__split--three {
+                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
                 margin-top: var(--mj-space-6);
             }
             .mjo-pd__note { margin-top: var(--mj-space-3); }

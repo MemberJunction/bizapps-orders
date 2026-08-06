@@ -73,8 +73,8 @@ export const MJO_ENTITIES = {
  * underscores. It reads like a typo every time and is not one.
  */
 export const MJO_COMMON_ENTITIES = {
-    Organization: 'MJ.BizApps.Common: Organizations',
-    Person: 'MJ.BizApps.Common: People',
+    Organization: 'MJ_BizApps_Common: Organizations',
+    Person: 'MJ_BizApps_Common: People',
 } as const;
 
 export const MJO_ACCOUNTING_ENTITIES = {
@@ -85,6 +85,9 @@ export const MJO_ACCOUNTING_ENTITIES = {
 } as const;
 
 /** A row as the order list renders it. */
+/** Canonical 8-4-4-4-12 hex form. */
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 export interface MJOOrderRow extends Record<string, unknown> {
     ID: string;
     OrderNumber: string;
@@ -152,6 +155,22 @@ export interface MJOPaymentRow extends Record<string, unknown> {
 @Injectable({ providedIn: 'root' })
 export class MJOOrdersDataService {
     /**
+     * Entities whose last read came back capped.
+     *
+     * Deliberately NOT a UI element — the fix for a truncated total is a
+     * server-side aggregate, not a disclaimer next to a wrong number. This exists
+     * so the condition is *detectable* (by a test, by a caller that wants to
+     * refuse to render a total, or by anyone reading the console) instead of
+     * being invisible until someone reconciles by hand.
+     */
+    private readonly truncated = new Set<string>();
+
+    /** True when the last read of `entityName` was capped by `MaxRows`. */
+    public WasTruncated(entityName: string): boolean {
+        return this.truncated.has(entityName);
+    }
+
+    /**
      * Orders matching a preset.
      *
      * The presets are the business rules, and each is a filter rather than a
@@ -171,6 +190,8 @@ export class MJOOrdersDataService {
     public async GetOrders(
         options: {
             Preset?: 'all' | 'overdue' | 'unpaid' | 'notposted' | 'drafts' | 'credits' | 'lxp';
+            /** One specific order. Cheaper and exact where a caller already has the ID. */
+            OrderHeaderID?: string;
             Search?: string;
             CompanyID?: string;
             BillToOrganizationID?: string;
@@ -213,6 +234,13 @@ export class MJOOrdersDataService {
                 break;
         }
 
+        // Guarded rather than interpolated raw. The server package has `RequireUUID` for exactly
+        // this, but it does not ship to the browser, so this is the same idea locally: an id that
+        // is not a UUID never reaches the filter string.
+        if (options.OrderHeaderID) {
+            if (!UUID_RE.test(options.OrderHeaderID)) throw new Error(`OrderHeaderID is not a UUID: ${options.OrderHeaderID}`);
+            filters.push(`ID = '${options.OrderHeaderID}'`);
+        }
         if (options.CompanyID) filters.push(`CompanyID = '${options.CompanyID}'`);
         if (options.BillToOrganizationID) {
             filters.push(`BillToOrganizationID = '${options.BillToOrganizationID}'`);
@@ -485,6 +513,56 @@ export class MJOOrdersDataService {
     }
 
     /**
+     * The customers this desk has billed most recently, newest first.
+     *
+     * WHY THIS EXISTS. The customer field only searched, and only from two
+     * characters in — so an order taker facing an empty box had to already know a
+     * name to type. On seeded data that is close to unusable (you have to guess
+     * something like "IT-ORD-13242799 Buyer Org"), and even on real data it makes
+     * the commonest case — the customer you billed an hour ago — the slowest one.
+     *
+     * RECENCY, not alphabetical: a desk bills the same handful of accounts over
+     * and over, so the last few orders predict the next one far better than the
+     * top of the alphabet does. Derived from recent orders rather than stored,
+     * because "who we deal with" is already recorded there and a second list
+     * would be one more thing to keep true.
+     *
+     * Returns the same shape as {@link SearchCustomers} so the picker renders
+     * both through one template and selection behaves identically.
+     */
+    public async RecentCustomers(
+        limit = 8,
+        user?: UserInfo,
+    ): Promise<Array<{ ID: string; Name: string; IsOrganization: boolean; Email: string | null }>> {
+        const orders = await this.run<Record<string, unknown>>(
+            MJO_ENTITIES.OrderHeader,
+            [],
+            'OrderDate DESC',
+            80,
+            user,
+        );
+
+        const seen = new Set<string>();
+        const out: Array<{ ID: string; Name: string; IsOrganization: boolean; Email: string | null }> = [];
+        for (const order of orders) {
+            // An order can carry BOTH a bill-to organization and a bill-to person
+            // (an employee ordering against their employer's account), and either
+            // is a legitimate thing to start the next order from — so consider both.
+            const candidates: Array<{ id: string; name: string; isOrg: boolean }> = [
+                { id: String(order['BillToOrganizationID'] ?? ''), name: String(order['BillToOrganization'] ?? ''), isOrg: true },
+                { id: String(order['BillToPersonID'] ?? ''), name: String(order['BillToPerson'] ?? ''), isOrg: false },
+            ];
+            for (const c of candidates) {
+                if (!c.id || !c.name || seen.has(c.id)) continue;
+                seen.add(c.id);
+                out.push({ ID: c.id, Name: c.name, IsOrganization: c.isOrg, Email: null });
+                if (out.length >= limit) return out;
+            }
+        }
+        return out;
+    }
+
+    /**
      * Tenders a payment can be taken on, in the order they should be offered.
      *
      * Reversal types are excluded because they are not something a person CHOOSES
@@ -750,6 +828,35 @@ export class MJOOrdersDataService {
                     `  Reason: ${result.ErrorMessage ?? 'no error message supplied'}`,
             );
             return [];
+        }
+
+        // A TRUNCATED read is not an error, so nothing above catches it — and a
+        // truncated read that feeds a TOTAL is a wrong number rather than a short
+        // list. `TotalOpen` on Customer A/R reduces over these rows, so past the
+        // cap the headline A/R figure silently understates with nothing on screen
+        // to say so. That is the same class of failure as the empty-state case
+        // above: a plausible number is more dangerous than an obvious blank.
+        //
+        // MJ hands us the signal for free — `TotalRowCount` is "total rows that
+        // match the view criteria, not just the number returned" — so detecting
+        // this costs nothing. We were discarding both counts.
+        //
+        // ONLY the implicit default is reported. A caller that passed its own
+        // `maxRows` chose a short list on purpose — the typeahead asks for a
+        // handful of products out of hundreds and is right to. Flagging those
+        // buried the real signal under noise the first time this ran (Products,
+        // 1 of 22, entirely deliberate). The accidental case is precisely the one
+        // where nobody chose a number.
+        if (maxRows === undefined && result.TotalRowCount > result.RowCount) {
+            this.truncated.add(entityName);
+            console.error(
+                `[MJOOrdersDataService] TRUNCATED read of "${entityName}" — returned ` +
+                    `${result.RowCount} of ${result.TotalRowCount} matching rows.\n` +
+                    `  Any TOTAL derived from this read is UNDERSTATED by the remainder.\n` +
+                    `  Filter: ${filters.filter(Boolean).join(' AND ') || '(none)'}\n` +
+                    `  Fix: pass an explicit MaxRows for a worklist, or aggregate server-side ` +
+                    `(RunQuery) for a figure. See BACKLOG.md task 11d.`,
+            );
         }
         return result.Results ?? [];
     }

@@ -94,6 +94,7 @@
               id="mjo-customer-search"
               [(ngModel)]="CustomerQuery"
               (ngModelChange)="OnCustomerQuery()"
+              (focus)="OnCustomerFocus()"
               placeholder="Find a person or organization…"
               autocomplete="off"
               role="combobox"
@@ -107,6 +108,9 @@
 
           @if (CustomerResults.length) {
             <div class="mj-typeahead-list is-open" role="listbox">
+              @if (ShowingRecents) {
+                <div class="sec-label fe-cust__recents-label">Recently billed</div>
+              }
               @for (option of CustomerResults; track option.ID) {
                 <div
                   class="mj-typeahead-item"
@@ -210,7 +214,11 @@
       }
 
       <div class="mj-typeahead fe-picker">
-        <div class="mj-search">
+        <!-- mjo-search, not mj-search: the kit's class carries the mjo- prefix, and
+             the typo'd form is styled by nobody (MJ ships no .mj-search either), so
+             the product box rendered as a bare ~150px inline input beside its icon
+             instead of the full-width search field the customer box uses. -->
+        <div class="mjo-search">
           <i class="fa-solid fa-plus" aria-hidden="true"></i>
           <input
             id="mjo-product-search"
@@ -270,7 +278,7 @@
             (keydown.enter)="AddCode()"
             placeholder="e.g. MEMBER40"
             aria-label="Promotion code">
-          <button type="button" class="mj-btn mj-btn--outline" (click)="AddCode()">Apply</button>
+          <button type="button" mjButton variant="outline" (click)="AddCode()">Apply</button>
         </div>
 
         <div class="row wrap fe-codes">
@@ -344,13 +352,10 @@
 
       <div class="mj-card-pad">
         @if (Preview.Error) {
-          <div class="mj-banner mj-banner--error">
-            <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
-            <div class="body">
+          <mj-alert Variant="error" Icon="fa-solid fa-circle-exclamation">
               <strong>Couldn't price this draft.</strong>
               <div class="small">{{ Preview.Error }}</div>
-            </div>
-          </div>
+          </mj-alert>
         } @else {
           <mjo-decomposition-ladder
             [Rows]="LadderRows"
@@ -404,21 +409,27 @@
 <!-- ═══════════════ FOOTER ═══════════════ -->
 <div class="fe-footer">
   @if (SaveError) {
-    <div class="mj-banner mj-banner--error fe-save-error" role="alert">
-      <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-      <div class="body"><strong>Nothing was saved.</strong> {{ SaveError }}</div>
-    </div>
+    <mj-alert
+      Variant="error"
+      Icon="fa-solid fa-triangle-exclamation"
+      Size="sm"
+      Dismissible
+      (Dismissed)="ClearSaveError()"
+      class="fe-save-error"
+      role="alert">
+      <strong>Nothing was saved.</strong> {{ SaveError }}
+    </mj-alert>
   }
 
-  <button type="button" class="mj-btn mj-btn--outline" (click)="SaveDraft()">
+  <button type="button" mjButton variant="outline" (click)="SaveDraft()">
     <i class="fa-regular fa-floppy-disk" aria-hidden="true"></i> Save draft
   </button>
-  <button type="button" class="mj-btn mj-btn--flat" (click)="Escalate()">
+  <button type="button" mjButton variant="flat" (click)="Escalate()">
     <i class="fa-solid fa-pen-ruler" aria-hidden="true"></i> Open in full editor
   </button>
   <button
     type="button"
-    class="mj-btn mj-btn--primary"
+    mjButton variant="primary"
     [disabled]="!CanConfirm"
     (click)="RequestConfirm()">
     <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm order

@@ -258,10 +258,14 @@ async function testHappyPath(pool, md, user, seed) {
 
     const rows = await q(
         pool,
-        `SELECT ol.LineNumber, ol.JournalEntryID, ol.CompanyID, je.CompanyID AS JECompany, je.EntryType,
+        // EntryType is a LOOKUP now, not a column: accounting issue #24 replaced the CHECK-constrained
+        // JournalEntry.EntryType with JournalEntry.EntryTypeID → JournalEntryType. Joined out to Code
+        // so the assertions below keep reading a plain string.
+        `SELECT ol.LineNumber, ol.JournalEntryID, ol.CompanyID, je.CompanyID AS JECompany, jt.Code AS EntryType,
                 je.LinkedEntityID, je.LinkedRecordID, ol.ID AS OrderLineID
          FROM ${ORDERS}.OrderLine ol
          LEFT JOIN ${ACCT}.JournalEntry je ON je.ID = ol.JournalEntryID
+         LEFT JOIN ${ACCT}.JournalEntryType jt ON jt.ID = je.EntryTypeID
          WHERE ol.OrderHeaderID='${order.ID}' ORDER BY ol.LineNumber`,
     );
 
@@ -398,9 +402,11 @@ async function testRevRec(pool, md, user, seed) {
 
     const line = (await q(pool, `SELECT ID, JournalEntryID FROM ${ORDERS}.OrderLine WHERE OrderHeaderID='${order.ID}'`))[0];
     const entries = await q(pool, `
-        SELECT je.EntryType, je.EffectiveDate, SUM(ISNULL(jel.DebitAmount,0)) AS D
-        FROM ${ACCT}.JournalEntry je JOIN ${ACCT}.JournalEntryLine jel ON jel.JournalEntryID=je.ID
-        WHERE je.LinkedRecordID='${line.ID}' GROUP BY je.ID, je.EntryType, je.EffectiveDate ORDER BY je.EffectiveDate`);
+        SELECT jt.Code AS EntryType, je.EffectiveDate, SUM(ISNULL(jel.DebitAmount,0)) AS D
+        FROM ${ACCT}.JournalEntry je
+        JOIN ${ACCT}.JournalEntryLine jel ON jel.JournalEntryID=je.ID
+        LEFT JOIN ${ACCT}.JournalEntryType jt ON jt.ID = je.EntryTypeID
+        WHERE je.LinkedRecordID='${line.ID}' GROUP BY je.ID, jt.Code, je.EffectiveDate ORDER BY je.EffectiveDate`);
 
     const booking = entries.filter((e) => e.EntryType === 'OrderBooking');
     const releases = entries.filter((e) => e.EntryType === 'RevenueRecognition');

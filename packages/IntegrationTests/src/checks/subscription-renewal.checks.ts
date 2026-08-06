@@ -181,10 +181,10 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
 
                 const booking = await TxOne<{ EntryType: string; D: number }>(
                     ctx,
-                    `SELECT je.EntryType,
+                    `SELECT (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType,
                             (SELECT SUM(DebitAmount) FROM ${ACCT_SCHEMA}.JournalEntryLine WHERE JournalEntryID = je.ID) AS D
                      FROM ${ORDERS_SCHEMA}.OrderLine ol
-                     JOIN ${ACCT_SCHEMA}.JournalEntry je ON je.ID = ol.JournalEntryID
+                     JOIN ${ACCT_SCHEMA}.vwJournalEntries je ON je.ID = ol.JournalEntryID
                      WHERE ol.OrderHeaderID = '${renewalOrderID}'`,
                 );
                 AssertEqual(booking.EntryType, 'OrderBooking', 'the renewal books like any other sale');
@@ -197,8 +197,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     ctx,
                     `SELECT je.EffectiveDate,
                             (SELECT SUM(DebitAmount) FROM ${ACCT_SCHEMA}.JournalEntryLine WHERE JournalEntryID = je.ID) AS D
-                     FROM ${ACCT_SCHEMA}.JournalEntry je
-                     WHERE je.EntryType = 'RevenueRecognition' AND je.LinkedRecordID = '${terms[1].ID}'`,
+                     FROM ${ACCT_SCHEMA}.vwJournalEntries je
+                     WHERE (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) = 'RevenueRecognition' AND je.LinkedRecordID = '${terms[1].ID}'`,
                 );
                 AssertEqual(releases.length, 12, 'monthly releases over the renewed year');
                 AssertEqual(

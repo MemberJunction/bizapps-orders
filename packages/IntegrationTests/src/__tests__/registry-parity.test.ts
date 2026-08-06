@@ -332,12 +332,17 @@ describe('entity names are stated once and used everywhere', () => {
         ).toEqual([]);
     });
 
-    it('keeps the Common prefix on DOTS, not underscores', () => {
-        // Orders and Accounting are `MJ_BizApps_Orders:` / `MJ_BizApps_Accounting:`; Common is
-        // `MJ.BizApps.Common:`. It reads like a typo every single time, so it is asserted here to
-        // stop somebody "fixing" it into a runtime failure that surfaces as an empty grid.
-        expect(PERSON_ENTITY).toBe('MJ.BizApps.Common: People');
-        expect(RELATIONSHIP_ENTITY).toBe('MJ.BizApps.Common: Relationships');
+    it('uses UNDERSCORE prefixes for every app, Common included', () => {
+        // Every app DECLARES its own prefix in `metadata/schema-info/.schema-info.json`, and
+        // bizapps-common declares `MJ_BizApps_Common: `. CodeGen registers what that file says, so
+        // the underscore form is the authority — not a convention to argue about.
+        //
+        // This assertion previously demanded DOTS for Common and described the inconsistency as
+        // deliberate. It was wrong, and it protected a real bug: the dotted name resolves to
+        // nothing, so D64's organization inference threw `Entity ... not found in metadata` and
+        // failed ORDER CONFIRM for any order naming a person. Corrected 2026-08-03.
+        expect(PERSON_ENTITY).toBe('MJ_BizApps_Common: People');
+        expect(RELATIONSHIP_ENTITY).toBe('MJ_BizApps_Common: Relationships');
         expect(ORDER_HEADER_ENTITY).toBe('MJ_BizApps_Orders: Order Headers');
         expect(GL_ACCOUNT_LINK_ENTITY).toBe('MJ_BizApps_Accounting: GL Account Links');
     });

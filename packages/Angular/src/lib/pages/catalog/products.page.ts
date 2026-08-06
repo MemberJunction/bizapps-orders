@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
+import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 
 /** A catalog row. */
 interface MJOProductRow extends Record<string, unknown> {
@@ -38,17 +39,14 @@ interface MJOProductRow extends Record<string, unknown> {
 @Component({
     selector: 'mjo-products-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent],
+    imports: [CommonModule, MJOWorklistTableComponent, MJAlertComponent],
     template: `
-        <div class="mj-banner mj-banner--neutral mjo-cat__note">
-            <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="info" Icon="fa-solid fa-sitemap" class="mjo-cat__note">
                 <strong>The catalog is the behaviour root.</strong>
                 A product's type decides recognition, taxability, fulfillment and recurrence, and every
                 order line inherits those answers — which is why an order screen never asks for them
                 again.
-            </div>
-        </div>
+        </mj-alert>
 
         <mjo-worklist-table
             [Columns]="Columns"
@@ -142,16 +140,13 @@ interface MJOProductRow extends Record<string, unknown> {
             </div>
         </div>
 
-        <div class="mj-banner mj-banner--neutral mjo-cat__block">
-            <i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="info" Icon="fa-solid fa-puzzle-piece" class="mjo-cat__block">
                 <strong>Type extensions carry what only that type needs.</strong>
                 An event has a venue and a date; a subscription has a term length. Rather than a
                 products table with columns most rows leave null, a type names an extension entity
                 and the extra facts live there. The order line gets a matching extension, so a line
                 selling a ticket can hold ticket facts without every other line pretending to.
-            </div>
-        </div>
+        </mj-alert>
     `,
     styles: [
         `
@@ -280,17 +275,14 @@ export class MJOProductsPageComponent implements OnInit {
 @Component({
     selector: 'mjo-charges-tax-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent],
+    imports: [CommonModule, MJOWorklistTableComponent, MJAlertComponent],
     template: `
-        <div class="mj-banner mj-banner--info mjo-cat__note">
-            <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="info" Icon="fa-solid fa-layer-group" class="mjo-cat__note">
                 <strong>Tax is a charge.</strong>
                 State plus county plus city is three rows rather than a special case — so ordering,
                 allocation, override and GL treatment are written once. A charge's <b>sequence</b> decides
                 when it computes and its <b>basis</b> decides what it computes on.
-            </div>
-        </div>
+        </mj-alert>
 
         <mjo-worklist-table
             [Columns]="Columns"
@@ -432,36 +424,27 @@ export class MJOProductsPageComponent implements OnInit {
         </div>
 
         <div class="mjo-tax__grid mjo-tax__block">
-            <div class="mj-banner mj-banner--neutral">
-                <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
-                <div class="body">
+            <mj-alert Variant="info" Icon="fa-solid fa-sitemap">
                     <strong>Taxability inherits down one chain.</strong>
                     A product's tax category comes from its type unless the product overrides it, and
                     the order line takes whatever the product resolved to. One chain, one override
                     point — so "why was this taxed?" has a single answer rather than a search.
-                </div>
-            </div>
+            </mj-alert>
 
-            <div class="mj-banner mj-banner--neutral">
-                <i class="fa-solid fa-pen" aria-hidden="true"></i>
-                <div class="body">
+            <mj-alert Variant="info" Icon="fa-solid fa-pen">
                     <strong>Computed, but overridable.</strong>
                     A charge computes from its basis, and a person may replace the amount — with a
                     reason, which the database itself requires. An override without a reason is a
                     number nobody can explain a year later.
-                </div>
-            </div>
+            </mj-alert>
         </div>
 
-        <div class="mj-banner mj-banner--info mjo-tax__block">
-            <i class="fa-solid fa-check-double" aria-hidden="true"></i>
-            <div class="body">
+        <mj-alert Variant="info" Icon="fa-solid fa-check-double" class="mjo-tax__block">
                 <strong>Both must hold.</strong>
                 Tax is charged only where there is nexus AND the customer is not exempt for that
                 jurisdiction and category. Either one alone is not enough, and treating them as
                 interchangeable is how a business ends up collecting tax it must refund.
-            </div>
-        </div>
+        </mj-alert>
     `,
     styles: [
         `

@@ -13,10 +13,31 @@
              mid-figure
 */
 
+/* FLEX COLUMN, not a scrolling block with a sticky footer.
+
+   `position: sticky` does not pin anything to the bottom of the viewport — it
+   only stops an element scrolling OUT of view. With a short draft the content
+   barely overflowed (781px inside 769px), so the action bar simply sat at the
+   end of the content, 12px shy of the bottom, and no amount of tuning the sticky
+   offset fixes that because sticky has nothing to hold it against.
+
+   The host is now the frame and does not scroll; `.fe-wrap` is the scroll region
+   and carries the page padding; the footer is a flex item that is always last
+   and always on the bottom edge, whether the draft has one line or fifty. */
 :host {
-  display: block;
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  overflow: auto;
+  overflow: hidden;
+  padding: 0;
+}
+
+.fe-wrap {
+  flex: 1 1 auto;
+  /* Required, or the flex item refuses to shrink below its content height and
+     the whole frame grows instead of the region scrolling. */
+  min-height: 0;
+  overflow-y: auto;
   padding: var(--mj-space-6);
 }
 
@@ -278,9 +299,11 @@
 /* ── Footer ───────────────────────────────────────────────────────────── */
 
 .fe-footer {
-  position: sticky;
-  bottom: 0;
-  margin: var(--mj-space-6) calc(-1 * var(--mj-space-6)) 0;
+  /* A flex item on the frame, not sticky — see the :host note. It is always the
+     last row and always on the bottom edge, so it needs no offset trickery and
+     no negative margins to bleed full width; it already is full width. */
+  flex: none;
+  margin: 0;
   padding: var(--mj-space-3) var(--mj-space-6);
   background: var(--mj-bg-surface);
   border-top: 1px solid var(--mj-border-default);
@@ -307,7 +330,9 @@
 }
 
 @media (max-width: 760px) {
-  :host {
+  /* The padding lives on the scroll region now, not the host — the host is the
+     frame and has none to tighten. */
+  .fe-wrap {
     padding: var(--mj-space-4);
   }
 
@@ -350,4 +375,36 @@
   .fe-footer .mj-keys {
     display: none;
   }
+}
+
+/* ── Hooks that lived only in the .html template ──────────────────────────
+   Referenced by fast-entry.page.html and defined nowhere; the guard scanned
+   only .ts templates until the .html files were added to its sweep. */
+
+/* The customer typeahead's search box — matches the product picker's. */
+.fe-cust__search {
+  width: 100%;
+}
+
+/* "Searching…" under the customer box. Reserves its own line so the list
+   does not jump when the hint is replaced by results. */
+.fe-cust__hint {
+  padding: var(--mj-space-1) 0;
+}
+
+/* The save failure lives INSIDE the footer, which is a flex toolbar — so without
+   this it became a flex sibling of the buttons, stretching across the bar and
+   shoving Save/Confirm around. It gets its own full-width line above them
+   instead (the footer already wraps), and no bottom margin because the footer's
+   own gap provides the separation. */
+.fe-save-error {
+  flex: 1 0 100%;
+  margin-bottom: 0;
+}
+
+/* Header on the recents list, so "Recently billed" reads as a section label and
+   not as a selectable customer. */
+.fe-cust__recents-label {
+  padding: var(--mj-space-2) var(--mj-space-3) 0;
+  margin-bottom: 0;
 }

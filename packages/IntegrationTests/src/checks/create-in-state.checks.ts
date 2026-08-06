@@ -104,7 +104,7 @@ const entriesOf = (ctx: IntegrationCheckContext, orderID: string) =>
   TxQuery<{ EntryID: string; D: number; C: number }>(
     ctx,
     `SELECT je.ID AS EntryID, SUM(ISNULL(jel.DebitAmount,0)) AS D, SUM(ISNULL(jel.CreditAmount,0)) AS C
-       FROM ${ACCT_SCHEMA}.JournalEntry je
+       FROM ${ACCT_SCHEMA}.vwJournalEntries je
        JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = je.ID
       WHERE je.LinkedRecordID IN
             (SELECT CAST(ID AS NVARCHAR(400)) FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}')
@@ -168,8 +168,8 @@ export const CreateInStateChecks: NamedCheck[] = [
         const entries = await entriesOf(ctx, out.OrderHeaderID!);
         const bookings = await TxOne<{ N: number }>(
           ctx,
-          `SELECT COUNT(*) AS N FROM ${ACCT_SCHEMA}.JournalEntry je
-            WHERE je.EntryType = 'OrderBooking' AND je.LinkedRecordID IN
+          `SELECT COUNT(*) AS N FROM ${ACCT_SCHEMA}.vwJournalEntries je
+            WHERE (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) = 'OrderBooking' AND je.LinkedRecordID IN
                   (SELECT CAST(ID AS NVARCHAR(400)) FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${out.OrderHeaderID}')`,
         );
         AssertEqual(Number(bookings.N), 1, `one booking entry for one line: ${JSON.stringify(entries)}`);

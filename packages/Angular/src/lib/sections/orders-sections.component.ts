@@ -43,7 +43,7 @@ import { MJOOrderEntryService } from '../services/order-entry.service';
 import { MJOOrdersDataService } from '../services/orders-data.service';
 import type { OrderDraft } from '@mj-biz-apps/orders-entities';
 import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
-import { MJOOrderEditorPageComponent } from '../pages/orders/order-editor.page';
+import { MJOOrderWorkspacePageComponent } from '../pages/orders/order-workspace.page';
 import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
 import { MJOOrdersDashboardPageComponent } from '../pages/orders/orders-dashboard.page';
 import { MJOFulfillmentPageComponent } from '../pages/orders/fulfillment.page';
@@ -58,6 +58,7 @@ import { MJOSubscriptionsPageComponent } from '../pages/receivables/subscription
 import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/catalog/products.page';
 import { MJOPricingPageComponent, MJOPromotionsPageComponent } from '../pages/catalog/pricing.page';
 import { MJOReturnPageComponent } from '../pages/orders/return.page';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -169,6 +170,21 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         const cached = this.mounted.get(pageId);
         if (cached) {
             host.insert(cached.hostView);
+
+            // A CACHED PAGE STILL HAS TO BE TOLD WHICH RECORD TO OPEN. Clicking a row in All
+            // orders sets PendingRecordID and navigates here; the fresh-mount path below hands
+            // that to the page, but this path returned without doing so — so opening an order
+            // worked exactly once, before the editor had ever been visited, and silently did
+            // nothing every time after. From the user's side the row simply stopped responding.
+            if (this.PendingRecordID) {
+                const instance = cached.instance as Record<string, unknown>;
+                if ('OrderID' in instance) cached.setInput('OrderID', this.PendingRecordID);
+                else if ('RecordID' in instance) cached.setInput('RecordID', this.PendingRecordID);
+                this.PendingRecordID = null;
+                // The page is detached-and-reinserted rather than constructed, so nothing has
+                // scheduled a check for it — without this the input lands and nothing repaints.
+                cached.changeDetectorRef.detectChanges();
+            }
             return;
         }
 
@@ -218,6 +234,10 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // A page that fails to construct must not take the section down with
             // it — the rail has to stay usable so the user can go somewhere else.
             this.LoadError = `That page could not be opened: ${e instanceof Error ? e.message : String(e)}`;
+            // …and the banner has to actually appear. This assignment lands after an await on an
+            // imperatively-created, zoneless component, so without a tick the user gets a blank
+            // pane and no explanation — the failure state was itself invisible.
+            this.cdr.detectChanges();
         }
     }
 
@@ -256,7 +276,29 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
         // The irreversible step, gated behind the pre-flight.
         on<OrderDraft>('ConfirmRequested', (draft) => void this.OpenPreflight(draft));
-        on<OrderDraft>('EscalateRequested', () => this.OnPageSelected('editor'));
+
+        // The order workspace confirms in place — it owns the draft, so it does not hand one back
+        // for the section's pre-flight. What the section still needs is to know an order now
+        // EXISTS: any list or dashboard it has already mounted was read before the confirm and is
+        // now stale. Dropping the cached pages makes the next visit re-read rather than show a
+        // list the just-confirmed order is missing from.
+        on<string>('OrderConfirmed', () => {
+            for (const [pageId, ref] of this.mounted) {
+                if (pageId === this.ActivePageId) continue;
+                ref.destroy();
+                this.mounted.delete(pageId);
+            }
+        });
+        // ESCALATION CARRIES THE DRAFT. This used to ignore the emitted payload and merely
+        // navigate, so "open in full editor" landed on an empty workspace and the half-typed order
+        // was silently gone — the button looked like it did nothing. Fast entry and the editor were
+        // designed to share one draft instance; this is the handoff that makes that true.
+        on<OrderDraft>('EscalateRequested', (draft) => {
+            void this.OnPageSelected('editor').then(() => {
+                const page = this.mounted.get('editor')?.instance as { AdoptDraft?: (d: OrderDraft) => void } | undefined;
+                page?.AdoptDraft?.(draft);
+            });
+        });
 
         // Pages are cached rather than destroyed on rail changes, so these live as
         // long as the section does — but a destroyed section must not leave them
@@ -409,7 +451,16 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     /** Start the section's primary action. */
     public StartPrimary(): void {
         const action = this.primaryAction;
-        if (action) this.OnPageSelected(action.PageId);
+        if (!action) return;
+        this.OnPageSelected(action.PageId);
+
+        // STARTING SOMETHING NEW MEANS A BLANK SURFACE. Pages are cached and re-inserted rather
+        // than rebuilt (that is what preserves a part-typed order across a trip to another rail
+        // item), so navigating alone hands back whatever was on screen last time. A page that can
+        // be started fresh says so by exposing `Reset()`; one that must NOT be blanked simply does
+        // not, which is why this asks rather than destroying the cached view.
+        const page = this.mounted.get(action.PageId)?.instance as { Reset?: () => unknown } | undefined;
+        if (typeof page?.Reset === 'function') void page.Reset();
     }
 
     /* ── Confirm pre-flight ─────────────────────────────────────────────── */
@@ -457,6 +508,12 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             this.PreflightError = e instanceof Error ? e.message : String(e);
         } finally {
             this.PreflightBusy = false;
+            // MUST tick. Everything above lands after an `await`, and this component is created
+            // imperatively (no host template, zoneless), so assigning `Preflight` repaints
+            // nothing on its own. Without this the dialog sits on "Working out what this will
+            // do…" for ever — the pre-flight HAS run and its answer is in memory, but the commit
+            // button never appears, so an order can be built and priced and never confirmed.
+            this.cdr.detectChanges();
         }
     }
 
@@ -474,6 +531,11 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             this.OnPageSelected('list');
         } finally {
             this.PreflightBusy = false;
+            // Same reason as OpenPreflight: post-`await` state on an imperatively-created,
+            // zoneless component. Without this the order really IS confirmed and booked, but the
+            // dialog stays open showing a spinner — which reads as "it failed" and invites the
+            // user to confirm a second time.
+            this.cdr.detectChanges();
         }
     }
 
@@ -547,7 +609,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 @Component({
     selector: 'mjo-orders-section',
     standalone: true,
-    imports: [CommonModule, MJOSectionShellComponent, MJOConfirmPreflightComponent],
+    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent, MJOConfirmPreflightComponent, MJAlertComponent],
     template: `
         <mjo-section-shell
             Title="Orders"
@@ -570,13 +632,13 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             <div actions>
                 <button
                     type="button"
-                    class="mj-btn mj-btn--outline"
+                    mjButton variant="outline"
                     (click)="RefreshActivePage()"
                     aria-label="Refresh this page">
                     <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
                 </button>
                 @if (primaryAction; as action) {
-                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                    <button type="button" mjButton variant="primary" (click)="StartPrimary()">
                         <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
                     </button>
                 }
@@ -597,10 +659,9 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
                 (Cancelled)="ClosePreflight()" />
         }
         @if (PreflightError) {
-            <div class="mj-banner mj-banner--error mjo-section__preflight-error" role="alert">
-                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                <div class="body"><strong>Nothing was confirmed.</strong> {{ PreflightError }}</div>
-            </div>
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-section__preflight-error" role="alert">
+<strong>Nothing was confirmed.</strong> {{ PreflightError }}
+            </mj-alert>
         }
     `,
     styles: [
@@ -640,7 +701,11 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
             case 'fast-entry':
                 return MJOFastEntryPageComponent;
             case 'editor':
-                return MJOOrderEditorPageComponent;
+                // The WORKSPACE, not the bare editor: the editor is presentational and needs a
+                // Draft, and opening it with no record handed it none — which is what made the
+                // full order screen render a form with every field blank. The workspace owns the
+                // drafts and binds the editor properly.
+                return MJOOrderWorkspacePageComponent;
             case 'list':
                 return MJOOrdersListPageComponent;
             case 'dashboard':
@@ -664,7 +729,7 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
 @Component({
     selector: 'mjo-payments-section',
     standalone: true,
-    imports: [CommonModule, MJOSectionShellComponent],
+    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent],
     template: `
         <mjo-section-shell
             Title="Payments"
@@ -687,13 +752,13 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
             <div actions>
                 <button
                     type="button"
-                    class="mj-btn mj-btn--outline"
+                    mjButton variant="outline"
                     (click)="RefreshActivePage()"
                     aria-label="Refresh this page">
                     <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
                 </button>
                 @if (primaryAction; as action) {
-                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                    <button type="button" mjButton variant="primary" (click)="StartPrimary()">
                         <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
                     </button>
                 }
@@ -752,7 +817,7 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
 @Component({
     selector: 'mjo-receivables-section',
     standalone: true,
-    imports: [CommonModule, MJOSectionShellComponent],
+    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent],
     template: `
         <mjo-section-shell
             Title="Receivables"
@@ -775,13 +840,13 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
             <div actions>
                 <button
                     type="button"
-                    class="mj-btn mj-btn--outline"
+                    mjButton variant="outline"
                     (click)="RefreshActivePage()"
                     aria-label="Refresh this page">
                     <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
                 </button>
                 @if (primaryAction; as action) {
-                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                    <button type="button" mjButton variant="primary" (click)="StartPrimary()">
                         <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
                     </button>
                 }
@@ -832,7 +897,7 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
 @Component({
     selector: 'mjo-catalog-section',
     standalone: true,
-    imports: [CommonModule, MJOSectionShellComponent],
+    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent],
     template: `
         <mjo-section-shell
             Title="Catalog"
@@ -855,13 +920,13 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
             <div actions>
                 <button
                     type="button"
-                    class="mj-btn mj-btn--outline"
+                    mjButton variant="outline"
                     (click)="RefreshActivePage()"
                     aria-label="Refresh this page">
                     <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
                 </button>
                 @if (primaryAction; as action) {
-                    <button type="button" class="mj-btn mj-btn--primary" (click)="StartPrimary()">
+                    <button type="button" mjButton variant="primary" (click)="StartPrimary()">
                         <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
                     </button>
                 }

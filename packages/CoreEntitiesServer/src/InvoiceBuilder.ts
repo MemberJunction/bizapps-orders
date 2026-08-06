@@ -45,8 +45,8 @@ const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PAYMENT_TERMS_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Terms Types';
-const ADDRESS_ENTITY = 'MJ.BizApps.Common: Addresses';
-const ADDRESS_LINK_ENTITY = 'MJ.BizApps.Common: Address Links';
+const ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
+const ADDRESS_LINK_ENTITY = 'MJ_BizApps_Common: Address Links';
 const COMPANY_ENTITY = 'MJ: Companies';
 /**
  * The selling company's accounting identity. It IS-A Company, so the row shares the company's ID —

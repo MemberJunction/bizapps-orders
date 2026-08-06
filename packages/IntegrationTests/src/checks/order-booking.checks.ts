@@ -74,10 +74,10 @@ async function lineEntries(ctx: IntegrationCheckContext, orderID: string) {
     return TxQuery<LineJoinRow>(
         ctx,
         `SELECT ol.ID AS OrderLineID, p.CompanyID, ol.JournalEntryID,
-                je.CompanyID AS JECompany, je.LinkedRecordID, je.EntryType
+                je.CompanyID AS JECompany, je.LinkedRecordID, (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) AS EntryType
          FROM ${ORDERS_SCHEMA}.OrderLine ol
          JOIN ${ORDERS_SCHEMA}.Product p ON p.ID = ol.ProductID
-         LEFT JOIN ${ACCT_SCHEMA}.JournalEntry je ON je.ID = ol.JournalEntryID
+         LEFT JOIN ${ACCT_SCHEMA}.vwJournalEntries je ON je.ID = ol.JournalEntryID
          WHERE ol.OrderHeaderID = '${orderID}'`,
     );
 }
@@ -139,7 +139,7 @@ export const OrderBookingChecks: NamedCheck[] = [
 
                 const entityName = await TxOne<{ Name: string }>(
                     ctx,
-                    `SELECT TOP 1 e.Name FROM ${ACCT_SCHEMA}.JournalEntry je
+                    `SELECT TOP 1 e.Name FROM ${ACCT_SCHEMA}.vwJournalEntries je
                      JOIN __mj.Entity e ON e.ID = je.LinkedEntityID
                      JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.JournalEntryID = je.ID
                      WHERE ol.OrderHeaderID = '${Order.ID}'`,
@@ -322,7 +322,7 @@ export const OrderBookingChecks: NamedCheck[] = [
                 const companies = [f.CoA.ID, f.CoB.ID, f.CoC.ID].map((c) => `'${c}'`).join(',');
                 const before = await TxOne<{ N: number }>(
                     ctx,
-                    `SELECT COUNT(*) AS N FROM ${ACCT_SCHEMA}.JournalEntry WHERE CompanyID IN (${companies})`,
+                    `SELECT COUNT(*) AS N FROM ${ACCT_SCHEMA}.vwJournalEntries WHERE CompanyID IN (${companies})`,
                 );
 
                 const result = await ConfirmOrder(ctx.User, {
@@ -342,7 +342,7 @@ export const OrderBookingChecks: NamedCheck[] = [
 
                 const after = await TxOne<{ N: number }>(
                     ctx,
-                    `SELECT COUNT(*) AS N FROM ${ACCT_SCHEMA}.JournalEntry WHERE CompanyID IN (${companies})`,
+                    `SELECT COUNT(*) AS N FROM ${ACCT_SCHEMA}.vwJournalEntries WHERE CompanyID IN (${companies})`,
                 );
                 AssertEqual(Number(after.N), Number(before.N), 'journal entry count after a rejected confirm');
             }),

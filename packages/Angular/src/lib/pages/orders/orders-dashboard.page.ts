@@ -4,6 +4,7 @@ import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.compo
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
 import { DaysSince, FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
+import { MJAlertComponent, MJEmptyStateComponent, type MJAlertVariant } from '@memberjunction/ng-ui-components';
 
 /** A queue worth someone's attention, with where it leads. */
 interface MJOQueue {
@@ -18,8 +19,8 @@ interface MJOQueue {
 /** Something specific worth acting on, with the order it concerns. */
 interface MJOAttentionItem {
     Order: MJOOrderRow;
-    /** A banner modifier — the tone says how alarmed to be. */
-    Tone: string;
+    /** How alarmed to be — drives the mj-alert variant directly. */
+    Tone: MJAlertVariant;
     Icon: string;
     Headline: string;
     Detail: string;
@@ -46,7 +47,7 @@ interface MJOAttentionItem {
 @Component({
     selector: 'mjo-orders-dashboard-page',
     standalone: true,
-    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent, MJOMoneyPipe],
+    imports: [CommonModule, MJAlertComponent, MJEmptyStateComponent, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent, MJOMoneyPipe],
     template: `
         <div class="mj-stat-grid">
             <mjo-stat-tile
@@ -112,11 +113,6 @@ interface MJOAttentionItem {
                 </div>
                 <div class="mj-card-pad">
                     <mjo-day-bars [Bars]="OrdersPerDay" Unit="orders" />
-                    <div class="small muted mjo-dash__note">
-                        Bars rather than a line: seven discrete days are magnitudes to compare, not a
-                        curve to trace. One hue — the days are the categories, so colouring them
-                        differently would encode nothing.
-                    </div>
                 </div>
             </div>
 
@@ -127,10 +123,6 @@ interface MJOAttentionItem {
                 </div>
                 <div class="mj-card-pad">
                     <mjo-bar-list [Rows]="StatusMix" EmptyText="No orders yet." />
-                    <div class="small muted mjo-dash__note">
-                        Directly labelled, so the bar is a comparison aid rather than the only way to read
-                        the value.
-                    </div>
                 </div>
             </div>
         </div>
@@ -183,19 +175,16 @@ interface MJOAttentionItem {
                 </div>
                 <div class="mj-card-pad">
                     @for (item of WorthALook; track item.Order.ID) {
-                        <div class="mj-banner" [class]="item.Tone" role="note">
-                            <i [class]="item.Icon" aria-hidden="true"></i>
-                            <div class="body">
+                        <mj-alert [Variant]="item.Tone" [Icon]="item.Icon" Role="note">
                                 <strong>{{ item.Headline }}</strong>
                                 {{ item.Detail }}
                                 <a href="#" class="small" (click)="openFrom($event, item.Order)">Work it →</a>
-                            </div>
-                        </div>
+                        </mj-alert>
                     } @empty {
-                        <div class="small muted">
-                            Nothing is asking for attention. Named and specific is the only useful
-                            form here, so an empty panel is better than a vague one.
-                        </div>
+                        <mj-empty-state
+                            Icon="fa-solid fa-circle-check"
+                            Title="Nothing is asking for attention"
+                            Size="compact" />
                     }
                 </div>
             </div>
@@ -362,7 +351,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
             const days = DaysSince(String(worst.DueDate), today);
             items.push({
                 Order: worst,
-                Tone: 'mj-banner--error',
+                Tone: 'error',
                 Icon: 'fa-solid fa-hourglass-half',
                 Headline: `${worst.OrderNumber} is ${days} days past due.`,
                 Detail: `${FormatMoney(worst.Balance)} from ${this.customerOf(worst)}.`,
@@ -375,7 +364,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         if (biggestCredit) {
             items.push({
                 Order: biggestCredit,
-                Tone: 'mj-banner--info',
+                Tone: 'info',
                 Icon: 'fa-solid fa-piggy-bank',
                 Headline: `${this.customerOf(biggestCredit)} is holding ${FormatMoney(Math.abs(biggestCredit.Balance))}.`,
                 Detail: 'Spend it before invoicing them again.',

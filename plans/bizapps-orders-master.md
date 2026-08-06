@@ -1058,6 +1058,27 @@ accounting as just another upstream emitter) · CRM / customer master (BizApps C
 
 ---
 
+## 21a. Zero-value lines book nothing (and what must not assume otherwise)
+
+Recorded 2026-08-04, verified against the running system through the UI.
+
+A line whose value is zero — a freebie, a fully-discounted item, a zero-priced sample — **books no
+journal entry**, and that is the correct behaviour: there are no economic legs to record, and a
+Dr 0 / Cr 0 entry would be noise in the ledger. **The order line itself is kept**, because it is
+what the customer ordered and what fulfilment has to ship.
+
+So the invariant is **one JE per line THAT HAS VALUE**, never one JE per line.
+
+**The trap this creates, which is the reason it is written down:** `OrderLine.JournalEntryID IS NOT
+NULL` is *not* a test for "booked". A correctly-booked order containing a freebie has a line where
+that column is permanently NULL, so any posted/unposted check written that way reports the whole
+order as forever unbooked. Check the valued lines, or check the order's status.
+
+This is easy to get wrong in good faith rather than through carelessness: the first version of
+`test-harnesses/check-order.mjs` asserted `#JEs == #lines` and failed a perfectly correct order.
+The same note is in the accounting master plan §14, since the ledger side is where the wrong
+assumption does damage.
+
 ## 22. Build inventory (state as of 2026-07-31)
 
 For orientation only — the plan above is the authority. This section previously described a donor
@@ -1141,3 +1162,108 @@ executes nothing and reports success; the parity floor exists because of that.
 - `ProductPerformanceObligation` and the ASC-606 allocation engine — moved to bizapps-contracts per
   D44. Revenue recognition itself stays here.
 - `Order.ContractID` — removed by D44 for the same reason.
+
+## 21b. Event capacity is NOT enforced — and why the simple fix was rejected
+
+Found 2026-08-04 by adversarial testing: an event with `Capacity = 1` sold **5 seats**,
+with `RequiresAttendeeInfo = true` and no attendee rows. **Still unfixed, deliberately.**
+
+A check was written, tested, and then **reverted** — the reasoning is the useful part,
+because the obvious fix is wrong in a way that is worse than the bug.
+
+### Why counting sold seats cannot be done correctly against these tables
+
+The natural implementation sums `OrderLine.Quantity` for the event product. It fails on
+the first question you ask of it: **which lines count?**
+
+- **`vwOrderLines` does not expose the ORDER's status** — only the line-level
+  `FulfillmentStatus`. So a single query cannot restrict the sum to confirmed orders.
+  Doing it in two queries means fetching confirmed order IDs and passing them as an
+  `IN (...)` list that grows with every order ever placed for that event.
+- Without that restriction the sum **counts drafts and cancelled orders**, so an
+  abandoned draft consumes a seat permanently. That is worse than the bug it fixes:
+  overselling is currently theoretical (no real events are in use), while phantom
+  capacity would block *legitimate* sales, and support cannot see why.
+- `JournalEntryID IS NOT NULL` looks like a line-level proxy for "sold" and nearly works
+  — but a **zero-value line books no journal entry at all** (§21a), so free tickets would
+  not consume capacity, while a cancelled order's booked lines still would.
+- Summing by reading rows is also O(lines ever sold for that event): a conference with
+  10,000 tickets reads 10,000 rows to add them up, per confirm.
+
+Every variant has a wrong edge. That is the signal that the data model, not the query, is
+the problem.
+
+### What doing it right needs (schema)
+
+**Either** a denormalised seat count on `EventProduct` maintained transactionally as
+orders confirm and cancel — one number to read, correct by construction, and lockable so
+concurrent confirms serialise — **or** the full reservation model below, which subsumes it.
+
+### Reservations, the larger want
+
+The capacity check above, even done right, is a *check at confirm*, not a *hold*:
+
+1. **Concurrent confirms can jointly oversell.** Two orders each reading "1 of 1 sold"
+   before either commits both pass and both book.
+2. **Nothing is held while a customer decides.** A seat is available until someone else
+   confirms, so a half-completed order competes with every other one — the normal case
+   for a popular event, not the edge case.
+
+Minimally it needs: a **hold** record (event, quantity, holder, **expiry** — the
+load-bearing part, since a hold that never expires is an inventory leak and abandoned
+carts are the majority); **availability = capacity − sold − live holds** as one derived
+number rather than two sources that can disagree; a hold taken when the line is added,
+converted on confirm and released on cancel/timeout/removal; **atomic decrement at the
+point of truth**, because application-level counting cannot close the concurrency window;
+and a sweeper for expired holds.
+
+**Questions for Amith, whose answers change the schema:** does a hold survive a session (a
+saved draft holding seats for a day) or die with it? Does an oversold event fail the
+confirm outright, or waitlist? Is capacity per event, or per ticket type within an event?
+
+## 21c. A subscription records no quantity (KNOWN GAP, not fixed)
+
+Found 2026-08-04 by adversarial testing; recorded rather than fixed because the fix is
+a schema change and the right shape is a business decision.
+
+**What happens.** A subscription line bought with **quantity 10** bills 10 × the rate and
+creates **one** `Subscription` with one coverage window. Nothing anywhere records that ten
+seats were bought — `Subscription` has no quantity or seat-count column. The money is
+right; the entitlement is unknowable from the subscription.
+
+**Why it is not obviously a bug.** For a `Holder`-benefit type (one organisation-wide
+membership) quantity 10 might legitimately mean "ten times the price for the same single
+membership". For an `Individual`-benefit seat type it clearly does not — ten seats are ten
+people's access, and the system cannot say who or how many.
+
+**What it blocks.** Any "how many seats does this customer have" question, seat assignment,
+per-seat entitlement, and renewal at a different seat count.
+
+**The decision needed before code:** does quantity on a subscription line mean (a) a
+multiplier on one subscription, (b) N distinct subscriptions, or (c) one subscription with
+a recorded seat count? Only (c) needs a new column; (b) changes the concurrency rules
+materially, since ten seats for one subscriber currently collide as duplicates.
+
+## 21d. TODO — promote accounting's workspace tab card into ng-ui-components
+
+Raised 2026-08-04. Orders wants the tokenized tabbed-workspace look that
+`bizapps-accounting` uses for its JE and batch workspaces. It cannot import it today:
+
+- `WorkspaceCardComponent` is **not exported** from accounting's `public-api`.
+- It lives in accounting's `transfer-pending/`, whose README states everything there is
+  parked code owed to another home — so depending on it now buys a migration later.
+- It models **open documents**: every tab requires `Status` and `State`, the card does not
+  pass `ShowNewTab` through, and close is always rendered. Applied to the order editor's
+  five fixed panes it would render a "New" button (new *what*?) and a close × on "Parties".
+
+**So there are two separate wants, and they need separating:**
+
+1. **Panes of one record** (the order editor's Lines / Parties / Charges / Payment /
+   Accounting) — already on MJ's shipped `mj-tab-nav`, which is the correct shared
+   primitive and is more widely shared than an app-local card.
+2. **Several open orders as tabs** — the genuine match for the workspace card. That
+   feature does not exist in orders yet.
+
+**Next step:** promote the card to `ng-ui-components` (already filed in `MJ-UPSTREAM.md`
+with the stat-card work), then revisit (2) as a feature. Do not cross-import from
+accounting in the meantime.

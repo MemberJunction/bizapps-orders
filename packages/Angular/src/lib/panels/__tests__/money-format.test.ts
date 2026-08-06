@@ -8,6 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     DaysSince,
+    FormatCompact,
     FormatDate,
     FormatMoney,
     FormatQuantity,
@@ -196,5 +197,52 @@ describe('pipes wrap the pure functions', () => {
     it('mjoDate', () => {
         expect(new MJODatePipe().transform('2026-08-01')).toBe('Aug 1, 2026');
         expect(new MJODatePipe().transform('2026-08-01', true)).toBe('Aug 1');
+    });
+});
+
+describe('FormatCompact', () => {
+    // The chart label is the ONLY place a user sees this, and it sits next to a
+    // bar whose height already implies a magnitude — so the abbreviation has to
+    // agree with the bar. A wrong threshold shows "$1k" over a bar drawn for
+    // $999, which reads as a rendering fault rather than a rounding choice.
+    it('leaves sub-thousand values whole, with no decimal', () => {
+        expect(FormatCompact(940)).toBe('$940');
+        expect(FormatCompact(1)).toBe('$1');
+        expect(FormatCompact(999)).toBe('$999');
+        // Rounds rather than truncating — $999.60 belongs with $1,000, not $999.
+        expect(FormatCompact(999.6)).toBe('$1000');
+    });
+
+    it('switches to k at exactly 1,000 and keeps one decimal below 10k', () => {
+        expect(FormatCompact(1000)).toBe('$1k');
+        expect(FormatCompact(1250)).toBe('$1.3k');
+        expect(FormatCompact(8000)).toBe('$8k');
+        expect(FormatCompact(9900)).toBe('$9.9k');
+    });
+
+    it('drops the decimal at and above 10k, where it is noise', () => {
+        expect(FormatCompact(10000)).toBe('$10k');
+        expect(FormatCompact(24500)).toBe('$25k');
+        expect(FormatCompact(999000)).toBe('$999k');
+    });
+
+    it('scales to M and B', () => {
+        expect(FormatCompact(1000000)).toBe('$1M');
+        expect(FormatCompact(1250000)).toBe('$1.3M');
+        expect(FormatCompact(2000000000)).toBe('$2B');
+    });
+
+    it('shows an em dash for nothing — a zero day is blank, not "$0"', () => {
+        // Seven "$0" labels across a quiet week is noise; the muted zero-tick on
+        // the bar already carries "nothing happened".
+        expect(FormatCompact(0)).toBe('—');
+        expect(FormatCompact(null)).toBe('—');
+        expect(FormatCompact(undefined)).toBe('—');
+        expect(FormatCompact(Number.NaN)).toBe('—');
+    });
+
+    it('keeps the sign on a negative, ahead of the currency symbol', () => {
+        expect(FormatCompact(-1250)).toBe('-$1.3k');
+        expect(FormatCompact(-40)).toBe('-$40');
     });
 });

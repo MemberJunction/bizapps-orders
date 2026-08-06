@@ -7,11 +7,13 @@ import {
     type OrdersPreviewOrderOutput,
 } from '@mj-biz-apps/orders-entities';
 
+import { ReadableSaveError } from '../../services/save-error';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
 import { MJOOrderEntryService, type MJOPreviewState } from '../../services/order-entry.service';
 import { MJODecompositionLadderComponent, type MJOLadderRow } from '../../panels/decomposition-ladder.component';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney, Initials } from '../../panels/money-format';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** A catalog row as the product picker shows it. */
 export interface MJOProductOption {
@@ -65,7 +67,7 @@ export interface MJOCustomerContext {
 @Component({
     selector: 'mjo-fast-entry-page',
     standalone: true,
-    imports: [
+    imports: [MJAlertComponent, MJButtonDirective, 
         CommonModule,
         FormsModule,
         MJODecompositionLadderComponent,
@@ -131,7 +133,21 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         // Every mutation reschedules the preview. The service owns the debounce and
         // the out-of-order guard, so this stays a one-liner.
         this.stopWatching = this.Draft.Subscribe(() => {
-            this.orders.SchedulePreview(this.Draft, (state) => (this.Preview = state));
+            // Changing anything retires the last save failure. It described a draft
+            // that no longer exists, and leaving it up means an error about the old
+            // state sits over the new one until the user saves again — which is
+            // exactly when they least want to be reading stale bad news.
+            this.SaveError = null;
+            this.orders.SchedulePreview(this.Draft, (state) => {
+                this.Preview = state;
+                // MUST tick. This callback fires from a debounced timer + an awaited network
+                // round-trip, so it is outside anything Angular is watching: the page is created
+                // imperatively via ViewContainerRef.createComponent and runs zoneless, which means
+                // an assignment alone repaints nothing. Without this the preview lands, the line
+                // stays on "— resolving…" forever, and CanConfirm never turns true because it
+                // requires Preview.Result — a completed order that cannot be confirmed.
+                this.cdr.detectChanges();
+            });
         });
     }
 
@@ -182,14 +198,43 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
      * looked complete and could not start an order, because nothing could ever be
      * chosen. The order draft needs a bill-to before it can price anything.
      */
+    /** True while the list is showing recents rather than search hits. */
+    public ShowingRecents = false;
+
+    /**
+     * Offer the recently-billed customers the moment the field is focused.
+     *
+     * Search-only meant an empty box taught you nothing: you had to already know a
+     * name, and on seeded data you had to guess one. Showing the last few accounts
+     * on focus turns the commonest case — the customer billed an hour ago — into
+     * one click, and makes the field self-explanatory for anyone who has never
+     * seen it. Typing still searches; these only fill the empty state.
+     */
+    public async OnCustomerFocus(): Promise<void> {
+        if (this.CustomerQuery.trim().length >= 2 || this.CustomerResults.length) return;
+        const recents = await this.data.RecentCustomers();
+        // Assign only AFTER the await, never across it — an assignment that
+        // straddles the boundary produces an NG0100 that aborts the DOM write and
+        // freezes the view on its pre-load render.
+        if (this.CustomerQuery.trim().length >= 2) return;
+        this.ShowingRecents = true;
+        this.CustomerResults = recents;
+        this.cdr.detectChanges();
+    }
+
     public OnCustomerQuery(): void {
         if (this.customerTimer) clearTimeout(this.customerTimer);
         const query = this.CustomerQuery;
         if (query.trim().length < 2) {
+            // Falling back below the search threshold returns to the recents, so
+            // clearing the box does not leave a dead panel behind.
             this.CustomerResults = [];
             this.CustomerSearching = false;
+            this.ShowingRecents = false;
+            void this.OnCustomerFocus();
             return;
         }
+        this.ShowingRecents = false;
         this.CustomerSearching = true;
         this.customerTimer = setTimeout(async () => {
             const results = await this.data.SearchCustomers(query);
@@ -498,6 +543,21 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     public SaveError: string | null = null;
     public Saving = false;
 
+    /**
+     * Drop the save failure.
+     *
+     * Cleared from OUR state rather than left to the alert's own dismiss: the
+     * banner is inside an `@if (SaveError)`, so hiding it internally would leave
+     * the same component instance alive and already-dismissed — and the NEXT
+     * failure would then set SaveError, re-enter the @if with that same instance,
+     * and render nothing at all. A save could fail silently because the user had
+     * dismissed an earlier one.
+     */
+    public ClearSaveError(): void {
+        this.SaveError = null;
+        this.cdr.detectChanges();
+    }
+
     public async SaveDraft(): Promise<void> {
         this.Saving = true;
         this.SaveError = null;
@@ -505,7 +565,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
             const saved = await this.orders.Save(this.Draft);
             if (saved) this.Saved.emit(this.Draft);
         } catch (e) {
-            this.SaveError = e instanceof Error ? e.message : String(e);
+            this.SaveError = ReadableSaveError(e);
         } finally {
             this.Saving = false;
             this.cdr.detectChanges();
