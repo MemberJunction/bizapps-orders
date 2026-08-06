@@ -1,0 +1,178 @@
+name: Build and Publish
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      targetVersion:
+        description: 'Target version (e.g., 5.27.2). Leave empty for auto-detection.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: "publish"
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Validate package-lock.json case-sensitivity
+        run: ./.github/scripts/validate-package-lock-case.sh
+
+      - name: Validate migration filenames
+        run: ./.github/scripts/validate-migration-filenames.sh
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate all packages exist on npm
+        if: github.ref == 'refs/heads/main'
+        run: ./.github/scripts/validate-npm-packages.sh
+
+      - name: Validate repository.url for npm provenance
+        run: ./.github/scripts/validate-package-repository.sh
+
+      - name: Configure git credentials
+        run: |
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Check for pending changesets
+        id: changeset_check
+        run: |
+          PENDING=$(find .changeset -name "*.md" -not -name "README.md" 2>/dev/null | wc -l | tr -d ' ')
+          echo "pending=$PENDING" >> "$GITHUB_OUTPUT"
+          if [ "$PENDING" -eq 0 ]; then
+            echo "No pending changesets — nothing to publish"
+          else
+            echo "Found $PENDING pending changeset(s)"
+          fi
+
+      - name: Determine next expected version
+        if: steps.changeset_check.outputs.pending != '0' && github.ref == 'refs/heads/main' && !github.event.inputs.targetVersion
+        id: version_check
+        run: |
+          # Get current version from entities package (any of the 4 BAC packages works since they're fixed-versioned)
+          CURRENT_VERSION=$(jq -r .version packages/Entities/package.json)
+          echo "Current version: $CURRENT_VERSION"
+
+          IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+          NEXT_MAJOR_VERSION="$(( ${VERSION_PARTS[0]} + 1 )).0.0"
+          NEXT_MINOR_VERSION="${VERSION_PARTS[0]}.$(( ${VERSION_PARTS[1]} + 1 )).0"
+          NEXT_PATCH_VERSION="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.$(( ${VERSION_PARTS[2]} + 1 ))"
+
+          # Check if any changeset requests a major bump
+          HAS_MAJOR=false
+          for f in .changeset/*.md; do
+            [ "$f" = ".changeset/README.md" ] && continue
+            [ ! -f "$f" ] && continue
+            if grep -qE '^"@mj-biz-apps/.*":\s*major' "$f"; then
+              HAS_MAJOR=true
+              break
+            fi
+          done
+
+          if [ "$HAS_MAJOR" = true ]; then
+            echo "Major changeset found — bumping major version"
+            echo "EXPECTED_NEXT_VERSION=$NEXT_MAJOR_VERSION" >> "$GITHUB_OUTPUT"
+          else
+            # Check for new migration files since last tag
+            if git rev-parse "v${CURRENT_VERSION}" >/dev/null 2>&1; then
+              NEW_MIGRATION_FILES=$(git --no-pager diff --name-only "v${CURRENT_VERSION}" "${{ github.sha }}" -- migrations/ || true)
+            else
+              NEW_MIGRATION_FILES=""
+            fi
+
+            if [ -n "$NEW_MIGRATION_FILES" ]; then
+              echo "New migrations found — bumping minor version"
+              echo "EXPECTED_NEXT_VERSION=$NEXT_MINOR_VERSION" >> "$GITHUB_OUTPUT"
+            else
+              echo "No new migrations — bumping patch version"
+              echo "EXPECTED_NEXT_VERSION=$NEXT_PATCH_VERSION" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Update version
+        if: steps.changeset_check.outputs.pending != '0'
+        run: |
+          EXPECTED_NEXT_VERSION="${{ github.event.inputs.targetVersion || steps.version_check.outputs.EXPECTED_NEXT_VERSION }}"
+          echo "Expected next version: $EXPECTED_NEXT_VERSION"
+
+          npm run version
+
+          NEXT_VERSION=$(jq -r .version packages/Entities/package.json)
+          echo "Actual next version: $NEXT_VERSION"
+
+          if [ -n "$EXPECTED_NEXT_VERSION" ] && [ "$NEXT_VERSION" != "$EXPECTED_NEXT_VERSION" ]; then
+            echo "::error::Version mismatch! Expected $EXPECTED_NEXT_VERSION but got $NEXT_VERSION"
+            exit 1
+          fi
+
+      - name: Sync mj-app.json version and MJ version range
+        if: steps.changeset_check.outputs.pending != '0'
+        run: |
+          # Sync app version from entities package
+          VERSION=$(jq -r .version packages/Entities/package.json)
+          jq --arg v "$VERSION" '.version = $v' mj-app.json > mj-app.json.tmp
+          mv mj-app.json.tmp mj-app.json
+          echo "Updated mj-app.json version to $VERSION"
+
+          # Derive mjVersionRange from the @memberjunction/core dependency
+          MJ_DEP=$(jq -r '.dependencies["@memberjunction/core"] // .peerDependencies["@memberjunction/core"] // empty' packages/Entities/package.json)
+          if [ -n "$MJ_DEP" ]; then
+            # Strip semver range prefix (^, ~, >=, etc.) to get the base version
+            MJ_MIN=$(echo "$MJ_DEP" | sed 's/^[^0-9]*//')
+            # Next major = current major + 1
+            MJ_NEXT_MAJOR="$(( $(echo "$MJ_MIN" | cut -d. -f1) + 1 )).0.0"
+            MJ_RANGE=">=${MJ_MIN} <${MJ_NEXT_MAJOR}"
+            jq --arg r "$MJ_RANGE" '.mjVersionRange = $r' mj-app.json > mj-app.json.tmp
+            mv mj-app.json.tmp mj-app.json
+            echo "Updated mj-app.json mjVersionRange to $MJ_RANGE"
+          fi
+
+      - name: Build all packages
+        run: npm run build:packages
+
+      - name: Publish to npm
+        if: steps.changeset_check.outputs.pending != '0'
+        run: npx changeset publish
+
+      - name: Get version and create tag
+        if: steps.changeset_check.outputs.pending != '0'
+        id: get_version
+        run: |
+          git pull
+          VERSION="v$(jq -r .version packages/Entities/package.json)"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "## Published $VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit and push
+        if: steps.changeset_check.outputs.pending != '0'
+        env:
+          VERSION: ${{ steps.get_version.outputs.VERSION }}
+        run: npm run commitpush
+
+      - name: Merge main into next and update lockfile
+        if: steps.changeset_check.outputs.pending != '0'
+        run: |
+          git checkout next
+          npm run mergemain:update-lock

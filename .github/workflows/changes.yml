@@ -1,0 +1,84 @@
+name: Validate Changes
+
+on:
+  pull_request:
+    branches: [next, main]
+
+concurrency:
+  group: changes-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes_and_migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check for migration file changes
+        id: migration_check
+        run: |
+          MIGRATION_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E '^migrations/.*\.sql$' || true)
+          if [ -n "$MIGRATION_FILES" ]; then
+            echo "has_migrations=true" >> "$GITHUB_OUTPUT"
+            echo "Migration files changed:"
+            echo "$MIGRATION_FILES"
+          else
+            echo "has_migrations=false" >> "$GITHUB_OUTPUT"
+            echo "No migration files changed"
+          fi
+
+      - name: Validate migration filenames
+        if: steps.migration_check.outputs.has_migrations == 'true'
+        run: ./.github/scripts/validate-migration-filenames.sh
+
+      - name: Validate migration timestamps are newer than existing
+        if: steps.migration_check.outputs.has_migrations == 'true'
+        run: |
+          # Get max timestamp from existing migrations on base branch
+          MAX_EXISTING=$(git show ${{ github.event.pull_request.base.sha }}:migrations/ 2>/dev/null | \
+            grep -oE 'V[0-9]{12}' | sed 's/^V//' | sort -n | tail -1 || echo "0")
+
+          # Check only newly added migration files (not modified existing ones, not renames)
+          NEW_FILES=$(git diff --diff-filter=A --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} -- migrations/ | grep -E '\.sql$' || true)
+          for file in $NEW_FILES; do
+            basename=$(basename "$file")
+            timestamp=$(echo "$basename" | grep -oE '^V[0-9]{12}' | sed 's/^V//' || true)
+            if [ -n "$timestamp" ] && [ "$timestamp" -le "$MAX_EXISTING" ]; then
+              echo "::error::Migration $basename has timestamp ($timestamp) <= max existing ($MAX_EXISTING)"
+              exit 1
+            fi
+          done
+          echo "All new migration timestamps are valid"
+
+      - name: Check for changeset (PRs to next with migrations)
+        if: |
+          steps.migration_check.outputs.has_migrations == 'true' &&
+          github.base_ref == 'next'
+        run: |
+          CHANGESET_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E '^\.changeset/.*\.md$' | grep -v 'README.md' || true)
+          if [ -z "$CHANGESET_FILES" ]; then
+            echo "::error::Migrations were added but no changeset found. Run 'npx changeset' to create one with at least a 'minor' bump."
+            exit 1
+          fi
+
+          # Check that at least one changeset has 'minor' or 'major' bump
+          HAS_SUFFICIENT_BUMP=false
+          for f in $CHANGESET_FILES; do
+            if grep -qE "minor|major" "$f"; then
+              HAS_SUFFICIENT_BUMP=true
+              break
+            fi
+          done
+
+          if [ "$HAS_SUFFICIENT_BUMP" = false ]; then
+            echo "::error::Migrations require at least a 'minor' version bump in the changeset."
+            exit 1
+          fi
+          echo "Valid changeset with minor or major bump found"
