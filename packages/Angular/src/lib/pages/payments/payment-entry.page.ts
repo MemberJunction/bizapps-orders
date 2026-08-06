@@ -70,7 +70,7 @@ export interface MJOTenderOption {
                         <label class="mj-field">
                             <label>Amount received</label>
                             <input
-                                class="mj-input is-num"
+                                class="mj-input is-num" [disabled]="IsCaptured"
                                 [value]="Amount"
                                 (change)="SetAmount($any($event.target).value); SchedulePreview()"
                                 aria-label="Amount received">
@@ -78,7 +78,7 @@ export interface MJOTenderOption {
 
                         <label class="mj-field">
                             <label>Date received</label>
-                            <input class="mj-input" type="date" [(ngModel)]="PaymentDate" name="paymentDate">
+                            <input class="mj-input" type="date" [(ngModel)]="PaymentDate" name="paymentDate" [disabled]="IsCaptured">
                         </label>
 
                         <label class="mj-field">
@@ -87,6 +87,7 @@ export interface MJOTenderOption {
                                 class="mj-select"
                                 [(ngModel)]="TenderCode"
                                 name="tender"
+                                [disabled]="IsCaptured"
                                 (ngModelChange)="OnTenderChanged()">
                                 @for (tender of Tenders; track tender.ID) {
                                     <option [value]="tender.Code">{{ tender.Name }}</option>
@@ -102,14 +103,14 @@ export interface MJOTenderOption {
                         @if (SelectedTender?.RequiresReference) {
                             <label class="mj-field">
                                 <label>Reference</label>
-                                <input class="mj-input" [(ngModel)]="Reference" name="reference"
+                                <input class="mj-input" [(ngModel)]="Reference" name="reference" [disabled]="IsCaptured"
                                        placeholder="Cheque number, wire confirmation…">
                             </label>
                         }
                         @if (SelectedTender?.RequiresInstrument) {
                             <label class="mj-field">
                                 <label>Instrument</label>
-                                <select class="mj-select" [(ngModel)]="Instrument" name="instrument">
+                                <select class="mj-select" [(ngModel)]="Instrument" name="instrument" [disabled]="IsCaptured">
                                     <option value="">Saved payment method…</option>
                                     <option value="new">New card — hosted tokenization</option>
                                 </select>
@@ -444,6 +445,38 @@ export class MJOPaymentEntryPageComponent implements OnInit {
         this.cdr.detectChanges();
     }
 
+    /**
+     * Blank the form for a new payment.
+     *
+     * "Take a payment" re-inserts this page from the section's cache — deliberately, because
+     * detaching rather than destroying is what stops a half-entered payment being lost on a trip
+     * to another rail item. The cost is that the CACHED STATE comes back with it: open an existing
+     * payment, press Take a payment, and you get the previous payer, amount and allocations with
+     * no way to clear them. The caching is right; what was missing is an explicit way to start over.
+     *
+     * The idempotency key is regenerated here for the same reason it is regenerated after a
+     * capture: a fresh form is a NEW payment, and reusing the token would make it look like a retry
+     * of the last one and take no money at all.
+     */
+    public async Reset(): Promise<void> {
+        this.Payer = null;
+        this.PayerQuery = '';
+        this.PayerResults = [];
+        this.Allocations = {};
+        this.Amount = 0;
+        this.Fee = null;
+        this.NetCash = null;
+        this.Reference = '';
+        this.Instrument = '';
+        this.PaymentDate = new Date().toISOString().slice(0, 10);
+        this.TenderCode = this.Tenders.length ? this.Tenders[0].Code : '';
+        this.Result = null;
+        this.Error = null;
+        this.idempotencyKey = crypto.randomUUID();
+        await this.loadOpenOrders();
+        this.cdr.detectChanges();
+    }
+
     public async ClearPayer(): Promise<void> {
         this.Payer = null;
         this.Allocations = {};
@@ -490,7 +523,21 @@ export class MJOPaymentEntryPageComponent implements OnInit {
     public NetCash: number | null = null;
 
     /** Capture waits for the allocations to balance. */
+    /**
+     * True once this form represents a payment that HAS been taken.
+     *
+     * Captured money is immutable at the database — `trg_PaymentHeader_ImmutableAfterCapture`,
+     * `trg_PaymentDetail_Immutable` and `trg_PaymentLine_ImmutableAfterCapture` all refuse the
+     * update. Leaving the fields live after a capture invites someone to edit a payment that
+     * cannot be edited, and the only feedback they would get is a trigger error. "Take a payment"
+     * resets the form, which is the real way forward from here.
+     */
+    public get IsCaptured(): boolean {
+        return !!this.Result;
+    }
+
     public get CanCapture(): boolean {
+        if (this.IsCaptured) return false;
         return this.Amount > 0 && UnallocatedRemainder(this.Amount, this.Allocations) === 0;
     }
 
