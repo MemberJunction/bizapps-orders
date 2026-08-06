@@ -53,6 +53,22 @@ jobs:
           cache: npm
       - run: npm ci
 
+      # BUILD BEFORE TESTING. `registry-parity.test.ts` imports a workspace package by NAME, whose
+      # `main` points at a `dist/` that `npm ci` does not produce — so without this the file fails
+      # to RESOLVE and never executes. The suite still reported ~989 passing and a red X, which is
+      # the worst shape a check can have: it looks like a known failure rather than a test that is
+      # not running. Locally the same command reports 1065, and the missing 76 are exactly this file.
+      #
+      # `build:packages` rather than `build`: it compiles the six @mj-biz-apps/orders-* packages the
+      # tests actually import, and skips mj_api / mj_explorer, which are MJ's apps and add Angular
+      # build time for no coverage here.
+      #
+      # Second reason, independent of the test: CI could not previously catch a BUILD break at all.
+      # package.json and package-lock.json disagreed about @types/express for 24 commits and every
+      # `npm ci` failed — nobody noticed, because the check was already red for the other reason.
+      - name: Build app packages
+        run: npm run build:packages
+
       # Includes `registry-parity.test.ts`, which is the anti-vacuity floor: it asserts exact
       # per-bundle check counts against the filesystem and cross-checks the four places a bundle
       # name has to agree. Adding a bundle without a Test record, or a Test record that never joins
