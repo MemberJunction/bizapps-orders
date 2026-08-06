@@ -106,15 +106,31 @@ const UNTITLED = 'New order';
         `
             /* Container units, never viewport — the card is a pane, not the screen.
                (transfer-pending/README.md → DESIGN RULE, Marcelo 2026-07-21.) */
+
+            /* THE PAGE SUPPLIES ITS OWN GUTTER. The section shell wraps pages in
+               <mj-page-body-interior [Padding]="false"> and says so in its comment: padding is off
+               "because each page supplies its own". This page supplied none, so the card — which
+               draws its own border and 12px radius and is designed as one object AGAINST a page —
+               sat flush against the viewport edge with its border pressed flat and nothing to
+               separate the working surface from the page.
+
+               The inset belongs HERE, not on the card: the card is a byte-identical parked copy of
+               accounting's, and a component should not reserve space around itself anyway. */
             :host {
-                display: block;
+                display: flex;
+                flex-direction: column;
                 block-size: 100%;
                 min-block-size: 0;
+                padding: var(--mj-space-4);
+                background: var(--mj-bg-page);
             }
             .mjo-orderws {
-                block-size: 100%;
+                flex: 1 1 auto;
+                min-block-size: 0;
             }
+            /* Inside the card, so it conforms to the card's surface — not the page tone above. */
             .mjo-orderws__empty {
+                background: var(--mj-bg-surface);
                 display: flex;
                 flex-direction: column;
                 align-items: center;

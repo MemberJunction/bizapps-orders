@@ -423,11 +423,23 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     /** What the user has typed into the add-product box. */
     public ProductQuery = '';
 
-    /** Matching catalogue entries, capped — a picker is for choosing, not browsing. */
+    /**
+     * Matching catalogue entries, capped — a picker is for choosing, not browsing.
+     *
+     * ONE search over BOTH name and SKU, deliberately: an order taker reading off a purchase order
+     * has a code, one working from a conversation has a name, and asking them to pick the right box
+     * first is the kind of thing that makes people use the wrong one.
+     *
+     * `SKU ?? ''` is not defensive noise. Products in a freshly-migrated instance have a NULL SKU
+     * (the code ends up in the name instead), and `null.toLowerCase()` throws — which would take
+     * the whole picker down on the first keystroke rather than simply matching nothing.
+     */
     public get ProductMatches(): MJOProductOption[] {
         const q = this.ProductQuery.trim().toLowerCase();
         if (q.length < 2) return [];
-        return this.Catalog.filter((p) => p.Name.toLowerCase().includes(q) || p.SKU.toLowerCase().includes(q)).slice(0, 8);
+        return this.Catalog.filter(
+            (p) => (p.Name ?? '').toLowerCase().includes(q) || (p.SKU ?? '').toLowerCase().includes(q),
+        ).slice(0, 8);
     }
 
     /**

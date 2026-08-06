@@ -123,7 +123,11 @@
               <li>
                 <button type="button" class="ed-addline__match" (click)="AddProduct(option)">
                   <span class="nm">{{ option.Name }}</span>
-                  <span class="small muted">{{ option.SKU }} · {{ option.CompanyName }}</span>
+                  <!-- The separator belongs to the SKU, not to the row: products can have a NULL
+                       SKU, and an unconditional "·" renders a dangling bullet before the company. -->
+                  <span class="small muted">
+                    @if (option.SKU) { {{ option.SKU }} · } {{ option.CompanyName }}
+                  </span>
                   <span class="num">{{ option.ListPrice | mjoMoney }}</span>
                 </button>
               </li>
