@@ -18,15 +18,37 @@
     </div>
     <div>
       <span class="l">Type</span>
-      <span class="v">{{ Draft.Header.OrderType ?? 'Sale' }}</span>
+      @if (IsEditable) {
+        <select class="mj-input ed-identity__input" aria-label="Order type"
+                [ngModel]="Draft.Header.OrderType ?? 'Sale'"
+                (ngModelChange)="SetOrderType($event)">
+          @for (t of OrderTypes; track t) { <option [value]="t">{{ t }}</option> }
+        </select>
+      } @else {
+        <span class="v">{{ Draft.Header.OrderType ?? 'Sale' }}</span>
+      }
     </div>
     <div>
       <span class="l">Order date</span>
-      <span class="v">{{ Draft.Header.OrderDate ?? 'today' }}</span>
+      @if (IsEditable) {
+        <input type="date" class="mj-input ed-identity__input" aria-label="Order date"
+               [ngModel]="DateValue(Draft.Header.OrderDate)"
+               (ngModelChange)="SetHeaderField('OrderDate', $event)" />
+      } @else {
+        <span class="v">{{ Draft.Header.OrderDate ?? 'today' }}</span>
+      }
     </div>
     <div>
       <span class="l">Due</span>
-      <span class="v">{{ Draft.Header.DueDate ?? '—' }}</span>
+      @if (IsEditable) {
+        <!-- Typing a due date is a STATED value and wins over the terms walk; clearing it hands
+             resolution back. Same rule the unit price follows. -->
+        <input type="date" class="mj-input ed-identity__input" aria-label="Due date"
+               [ngModel]="DateValue(Draft.Header.DueDate)"
+               (ngModelChange)="SetHeaderField('DueDate', $event)" />
+      } @else {
+        <span class="v">{{ Draft.Header.DueDate ?? '—' }}</span>
+      }
     </div>
     <div>
       <span class="l">Origin</span>
@@ -34,7 +56,14 @@
     </div>
     <div>
       <span class="l">Their PO</span>
-      <span class="v mono">{{ Draft.Header.ExternalDocumentNumber ?? '—' }}</span>
+      @if (IsEditable) {
+        <input type="text" class="mj-input ed-identity__input mono" aria-label="Their PO number"
+               placeholder="—"
+               [ngModel]="Draft.Header.ExternalDocumentNumber ?? ''"
+               (ngModelChange)="SetHeaderField('ExternalDocumentNumber', $event)" />
+      } @else {
+        <span class="v mono">{{ Draft.Header.ExternalDocumentNumber ?? '—' }}</span>
+      }
     </div>
   </div>
 
@@ -508,12 +537,40 @@
         <span class="right"><span class="mj-chip mj-chip--info">not yet a payment</span></span>
       </div>
       <div class="mj-card-pad">
-        <mjo-stated-value Label="Tender">
-          {{ Draft.Header.InitialPaymentTypeID ?? '— invoice on terms —' }}
-        </mjo-stated-value>
-        <mjo-stated-value Label="Amount">
-          {{ Draft.Header.InitialPaymentAmount | mjoMoney: { Zero: '—' } }}
-        </mjo-stated-value>
+        @if (IsEditable) {
+          <div class="ed-field">
+            <label class="ed-field__label" for="ed-tender">Tender</label>
+            <select id="ed-tender" class="mj-input"
+                    [ngModel]="Draft.Header.InitialPaymentTypeID ?? ''"
+                    (ngModelChange)="SetTender($event)">
+              <!-- Blank is a real choice, not a prompt: it means invoice on terms. -->
+              <option value="">— invoice on terms —</option>
+              @for (t of Tenders; track t.ID) { <option [value]="t.ID">{{ t.Name }}</option> }
+            </select>
+          </div>
+
+          @if (Draft.Header.InitialPaymentTypeID) {
+            <div class="ed-field">
+              <label class="ed-field__label" for="ed-payamt">Amount</label>
+              <div class="ed-field__row">
+                <input id="ed-payamt" type="text" inputmode="decimal" class="mj-input is-num"
+                       [ngModel]="Draft.Header.InitialPaymentAmount ?? 0"
+                       (ngModelChange)="SetInitialAmount($event)" />
+                <button type="button" mjButton variant="outline" (click)="PayInFull()"
+                        title="Use the order total">
+                  Pay in full
+                </button>
+              </div>
+            </div>
+          }
+        } @else {
+          <mjo-stated-value Label="Tender">
+            {{ Draft.Header.InitialPaymentTypeID ?? '— invoice on terms —' }}
+          </mjo-stated-value>
+          <mjo-stated-value Label="Amount">
+            {{ Draft.Header.InitialPaymentAmount | mjoMoney: { Zero: '—' } }}
+          </mjo-stated-value>
+        }
 
         <div class="small muted ed-note">
           What is recorded here is <b>intent</b>. On confirm it becomes a real PaymentHeader and

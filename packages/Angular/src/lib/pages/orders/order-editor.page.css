@@ -379,3 +379,38 @@
     align-items: center;
     gap: var(--mj-space-2);
 }
+
+/* Editable identity fields. The strip is a compact label/value grid, so the input has to sit on
+   the value line without changing the row height — a full-size control here would push the stage
+   stepper and money strip down every time the order becomes editable. */
+.ed-identity__input {
+    inline-size: 100%;
+    min-inline-size: 0;
+    padding-block: var(--mj-space-1);
+    font-size: var(--mj-text-sm);
+}
+
+/* A labelled field inside a card pane. `mjo-stated-value` covers the read-only case; this is its
+   editable counterpart and deliberately matches its label typography so a tab does not visibly
+   change shape when the order stops being editable. */
+.ed-field {
+    margin-block-end: var(--mj-space-3);
+}
+
+.ed-field__label {
+    display: block;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-secondary);
+    margin-block-end: var(--mj-space-1);
+}
+
+.ed-field__row {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+}
+
+.ed-field__row .mj-input {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+}

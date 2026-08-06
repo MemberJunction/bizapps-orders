@@ -12,6 +12,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
     OrderDraft,
+    type OrderDraftHeaderPayload,
     type OrderDraftLine,
     type OrdersPreviewOrderOutput,
 } from '@mj-biz-apps/orders-entities';
@@ -31,6 +32,7 @@ import {
 import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format';
 import { BuildOrderStages, type MJOOrderStage, type MJOStageChangeRequestEventArgs } from '../../panels/order-stages';
 import type { MJOProductOption } from './fast-entry.page';
+import type { MJOTenderOption } from '../payments/payment-entry.page';
 import { MJAlertComponent, MJButtonDirective, MJTabNavComponent, type TabConfig } from '@memberjunction/ng-ui-components';
 
 /** Which tab is showing. */
@@ -143,6 +145,12 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
      * bars that appear to do different things and do not.
      */
     @Input() ShowActions = true;
+
+    /**
+     * Tenders the instance accepts, for the initial-payment picker. Supplied by the host — the
+     * section already loads and caches them.
+     */
+    @Input() Tenders: MJOTenderOption[] = [];
 
     /** Journal entries — populated on the Accounting tab from a preview. */
     @Input() JournalEntries: MJOJournalEntry[] = [];
@@ -258,7 +266,10 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
             // A tab can need attention without having a count (Parties has no
             // number), so the badge falls back to "!" rather than rendering
             // nothing and losing the signal entirely.
-            badge: tab.Count ?? (tab.HasError ? '!' : null),
+            // A tab nobody can act on yet gets a muted marker rather than looking like a place
+            // the user forgot to visit. MJ's TabConfig has no `disabled`, so this is the closest
+            // honest signal available — the pane itself explains why (see the Accounting tab).
+            badge: tab.Count ?? (tab.HasError ? '!' : this.IsTabInert(tab.Key) ? '—' : null),
             badgeVariant: tab.HasError ? ('error' as const) : ('default' as const),
         }));
     }
@@ -315,6 +326,16 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
 
     protected moneyOf(value: unknown): string {
         return FormatMoney(Number(value ?? 0));
+    }
+
+    /**
+     * True when a tab has nothing to show and nothing to edit for this order yet.
+     *
+     * Accounting is derived entirely from a confirm: an unbooked order has no journal entries and
+     * no dimensions to read, and nothing on that tab is authored by hand at any point.
+     */
+    public IsTabInert(key: MJOEditorTab): boolean {
+        return key === 'accounting' && !this.JournalEntries.length;
     }
 
     public SelectTab(tab: MJOEditorTab): void {
@@ -488,8 +509,71 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         return role === 'bill' ? (h.BillToOrganizationID ?? h.BillToPersonID ?? null) : (h.ShipToOrganizationID ?? h.ShipToPersonID ?? null);
     }
 
+    /* ── Initial payment ────────────────────────────────────────────────────
+     *
+     * INTENT, not a payment. On confirm this becomes a real PaymentHeader in the same
+     * transaction as the booking; until then it is two fields on the draft. The tab said as much
+     * and then showed both of them read-only, so an order taken over the counter could not record
+     * that it had been paid for.
+     */
+
+    public SetTender(paymentTypeID: string): void {
+        if (!paymentTypeID) {
+            // Choosing the blank option means "invoice on terms" — clear the intent rather than
+            // leaving an amount attached to no tender, which the server would reject.
+            this.Draft.ClearInitialPayment();
+            return;
+        }
+        this.Draft.SetInitialPayment({ PaymentTypeID: paymentTypeID, Amount: this.Draft.Header.InitialPaymentAmount ?? 0 });
+    }
+
+    public SetInitialAmount(raw: string): void {
+        const n = Number.parseFloat(raw.replace(/[^0-9.\-]/g, ''));
+        this.Draft.SetInitialPayment({
+            PaymentTypeID: this.Draft.Header.InitialPaymentTypeID ?? null,
+            Amount: Number.isFinite(n) && n >= 0 ? n : 0,
+        });
+    }
+
+    /** Offer the balance as the obvious amount — the common case is paying in full. */
+    public PayInFull(): void {
+        this.Draft.SetInitialPayment({
+            PaymentTypeID: this.Draft.Header.InitialPaymentTypeID ?? null,
+            Amount: this.Totals?.GrossTotal ?? 0,
+        });
+    }
+
+    /**
+     * Order types, from the draft's own union rather than a list typed here — CodeGen widens that
+     * union when the CHECK constraint gains a value, and a hand-copied list would not follow.
+     */
+    public readonly OrderTypes: ReadonlyArray<NonNullable<OrderDraftHeaderPayload['OrderType']>> = [
+        'Sale',
+        'Return',
+        'Cancellation',
+        'Amendment',
+        'AccountCredit',
+    ];
+
+    public SetOrderType(value: string): void {
+        this.Draft.SetHeader({ OrderType: value as OrderDraftHeaderPayload['OrderType'] });
+    }
+
+    /**
+     * `<input type="date">` will only accept `yyyy-MM-dd`. The draft stores whatever it was given —
+     * often a full ISO timestamp from a loaded order — and handing that to the input makes the field
+     * render EMPTY with no error, which reads as "this order has no date".
+     */
+    public DateValue(raw: string | null | undefined): string {
+        if (!raw) return '';
+        return raw.length >= 10 ? raw.slice(0, 10) : raw;
+    }
+
     /** Free-text and date header fields, written straight through to the draft. */
-    public SetHeaderField(field: 'Description' | 'Notes' | 'ExternalDocumentNumber' | 'RequestedDeliveryDate' | 'OrderDate', raw: string): void {
+    public SetHeaderField(
+        field: 'Description' | 'Notes' | 'ExternalDocumentNumber' | 'RequestedDeliveryDate' | 'OrderDate' | 'DueDate',
+        raw: string,
+    ): void {
         const value = raw.trim();
         this.Draft.SetHeader({ [field]: value || null } as Partial<Parameters<OrderDraft['SetHeader']>[0]>);
     }

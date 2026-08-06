@@ -42,6 +42,7 @@ import type { MJOOrderStage } from '../../panels/status-stepper.component';
 import { MJOOrderEntryService } from '../../services/order-entry.service';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
 import type { MJOProductOption } from './fast-entry.page';
+import type { MJOTenderOption } from '../payments/payment-entry.page';
 import { ReadableSaveError } from '../../services/save-error';
 
 /** What a tab's caption says before the customer is known. */
@@ -84,6 +85,7 @@ const UNTITLED = 'New order';
                 <mjo-order-editor-page
                     [Draft]="draft"
                     [Catalog]="Catalog"
+                    [Tenders]="Tenders"
                     [Status]="ActiveStatus"
                     [OrderNumber]="ActiveOrderNumber"
                     [ShowActions]="false"
@@ -138,6 +140,9 @@ export class MJOOrderWorkspacePageComponent implements OnDestroy {
 
     /** Product options, passed straight through to the editor. */
     @Input() Catalog: MJOProductOption[] = [];
+
+    /** Tenders the instance accepts, likewise passed through. */
+    @Input() Tenders: MJOTenderOption[] = [];
 
     /**
      * Set by the section when the user opened a specific order. Handled as an input rather than a
