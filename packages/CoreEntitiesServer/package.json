@@ -20,7 +20,8 @@
   "license": "ISC",
   "devDependencies": {
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "vite": "^7.1.5"
   },
   "dependencies": {
     "@mj-biz-apps/orders-entities": "5.0.0"
