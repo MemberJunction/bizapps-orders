@@ -289,7 +289,16 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
                 this.mounted.delete(pageId);
             }
         });
-        on<OrderDraft>('EscalateRequested', () => this.OnPageSelected('editor'));
+        // ESCALATION CARRIES THE DRAFT. This used to ignore the emitted payload and merely
+        // navigate, so "open in full editor" landed on an empty workspace and the half-typed order
+        // was silently gone — the button looked like it did nothing. Fast entry and the editor were
+        // designed to share one draft instance; this is the handoff that makes that true.
+        on<OrderDraft>('EscalateRequested', (draft) => {
+            void this.OnPageSelected('editor').then(() => {
+                const page = this.mounted.get('editor')?.instance as { AdoptDraft?: (d: OrderDraft) => void } | undefined;
+                page?.AdoptDraft?.(draft);
+            });
+        });
 
         // Pages are cached rather than destroyed on rail changes, so these live as
         // long as the section does — but a destroyed section must not leave them

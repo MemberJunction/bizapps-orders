@@ -245,6 +245,28 @@ export class MJOOrderWorkspacePageComponent implements OnDestroy {
         this.OpenTab(draft, { Label: UNTITLED, OrderNumber: null, Stage: 'Draft' });
     }
 
+    /**
+     * Take over a draft someone else was already building — fast entry escalating to the full
+     * editor.
+     *
+     * The SAME OrderDraft instance is adopted, not a copy. That is what makes escalation lossless:
+     * fast entry hands over the object it has been mutating, so every line, party and promotion
+     * code typed so far is simply already there. Copying would work today and drift the moment the
+     * draft grows a field the copier forgets.
+     *
+     * If this exact draft is already open in a tab, focus it rather than opening a second — two
+     * tabs editing one draft would be two views racing to save the same order.
+     */
+    public AdoptDraft(draft: OrderDraft): void {
+        const existing = this.tabs.Tabs.find((t) => t.State === draft);
+        if (existing) {
+            this.tabs.Activate(existing.Id);
+            this.cdr.detectChanges();
+            return;
+        }
+        this.OpenTab(draft, { Label: UNTITLED, OrderNumber: null, Stage: 'Draft' });
+    }
+
     /** Open an order that already exists, or focus its tab if it is already open. */
     public async OpenExisting(orderHeaderID: string): Promise<void> {
         // Re-opening the same order must not create a second tab — two tabs editing one order is
