@@ -119,7 +119,9 @@
             class="mj-input"
             placeholder="Add a product — name or SKU"
             aria-label="Add a product to this order"
-            [(ngModel)]="ProductQuery" />
+            (focus)="OnProductFocus()"
+            [(ngModel)]="ProductQuery"
+            (ngModelChange)="OnProductQueryChange()" />
         </label>
         @if (ProductMatches.length) {
           <ul class="ed-addline__matches" role="listbox" aria-label="Matching products">
@@ -138,7 +140,13 @@
             }
           </ul>
         } @else if (ProductQuery.trim().length >= 2) {
-          <div class="small muted ed-addline__none">No catalogue match for &ldquo;{{ ProductQuery }}&rdquo;.</div>
+          <div class="small muted ed-addline__none">
+            No catalogue match for &ldquo;{{ ProductQuery }}&rdquo;.
+            @if (CatalogTruncated) {
+              <!-- "Not found" and "not in the loaded subset" are different answers. -->
+              <b>The catalogue list was capped, so this may exist beyond it.</b>
+            }
+          </div>
         }
       </div>
     }
@@ -339,6 +347,7 @@
                   placeholder="Search people and organizations"
                   aria-label="Customer"
                   [(ngModel)]="PartyQuery.bill"
+                  (focus)="OnPartyFocus('bill')"
                   (ngModelChange)="SearchParty('bill')" />
               </label>
               @if (PartySearching === 'bill') {
@@ -397,6 +406,7 @@
                   placeholder="Leave empty to use the customer"
                   aria-label="Recipient"
                   [(ngModel)]="PartyQuery.ship"
+                  (focus)="OnPartyFocus('ship')"
                   (ngModelChange)="SearchParty('ship')" />
               </label>
               @if (PartySearching === 'ship') {

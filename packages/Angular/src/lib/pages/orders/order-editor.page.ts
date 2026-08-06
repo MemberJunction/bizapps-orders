@@ -18,7 +18,7 @@ import {
     type OrdersPreviewOrderOutput,
 } from '@mj-biz-apps/orders-entities';
 
-import { MJOOrdersDataService } from '../../services/orders-data.service';
+import { MJO_ENTITIES, MJOOrdersDataService } from '../../services/orders-data.service';
 import { MJOOrderEntryService, type MJOPreviewState } from '../../services/order-entry.service';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { MJOStatusStepperComponent } from '../../panels/status-stepper.component';
@@ -211,6 +211,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     }
 
     public ngOnDestroy(): void {
+        if (this.partyTimer) clearTimeout(this.partyTimer);
         this.stopWatching?.();
         this.orders.CancelPending();
     }
@@ -426,8 +427,16 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     /** What the user has typed into the add-product box. */
     public ProductQuery = '';
 
+    /** True once the box has focus — the list opens on click, not on the second keystroke. */
+    public ProductPickerOpen = false;
+
     /**
-     * Matching catalogue entries, capped — a picker is for choosing, not browsing.
+     * What the product list shows.
+     *
+     * OPENS ON FOCUS, showing the catalogue, and narrows as you type. Requiring two characters
+     * first meant clicking the box did nothing at all, so there was no way to see what was for
+     * sale without already knowing its name — fine for a desk that has the catalogue memorised,
+     * useless for everyone else.
      *
      * ONE search over BOTH name and SKU, deliberately: an order taker reading off a purchase order
      * has a code, one working from a conversation has a name, and asking them to pick the right box
@@ -436,13 +445,45 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
      * `SKU ?? ''` is not defensive noise. Products in a freshly-migrated instance have a NULL SKU
      * (the code ends up in the name instead), and `null.toLowerCase()` throws — which would take
      * the whole picker down on the first keystroke rather than simply matching nothing.
+     *
+     * The cap is generous rather than tight because the list SCROLLS: it exists to stop a
+     * pathological catalogue rendering thousands of DOM nodes, not to make the user type.
      */
     public get ProductMatches(): MJOProductOption[] {
+        if (!this.ProductPickerOpen) return [];
         const q = this.ProductQuery.trim().toLowerCase();
-        if (q.length < 2) return [];
-        return this.Catalog.filter(
-            (p) => (p.Name ?? '').toLowerCase().includes(q) || (p.SKU ?? '').toLowerCase().includes(q),
-        ).slice(0, 8);
+        const pool = q
+            ? this.Catalog.filter(
+                  (p) => (p.Name ?? '').toLowerCase().includes(q) || (p.SKU ?? '').toLowerCase().includes(q),
+              )
+            : this.Catalog;
+        return pool.slice(0, 50);
+    }
+
+    public OnProductFocus(): void {
+        this.ProductPickerOpen = true;
+    }
+
+    /**
+     * Typing reopens the picker.
+     *
+     * Escape closes the list but does NOT blur the box — so without this, carrying on typing
+     * produced nothing and the field looked broken until you clicked away and back. Focus alone is
+     * not enough of a trigger, because the element already had it.
+     */
+    public OnProductQueryChange(): void {
+        this.ProductPickerOpen = true;
+    }
+
+    /**
+     * True when the catalogue this picker filters was itself capped at the fetch.
+     *
+     * The section loads products with `MaxRows` (200 by default) and caches the result, so this
+     * picker filters a SUBSET and cannot see past it. Saying so is the difference between "no such
+     * product" and "not in the first 200" — the second is the one that wastes an afternoon.
+     */
+    public get CatalogTruncated(): boolean {
+        return this.data.WasTruncated(MJO_ENTITIES.Product);
     }
 
     /**
@@ -457,6 +498,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     public AddProduct(option: MJOProductOption): void {
         this.Draft.AddLine({ ProductID: option.ID, Quantity: 1 });
         this.ProductQuery = '';
+        this.ProductPickerOpen = false;
     }
 
     /* ── Dismissing the pickers ─────────────────────────────────────────────
@@ -493,7 +535,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     private ClosePickers(): void {
         const open =
             this.ProductQuery !== '' ||
-            this.ProductMatches.length > 0 ||
+            this.ProductPickerOpen ||
             this.PartyQuery.bill !== '' ||
             this.PartyQuery.ship !== '' ||
             this.PartyMatches.bill.length > 0 ||
@@ -501,6 +543,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         if (!open) return;
 
         this.ProductQuery = '';
+        this.ProductPickerOpen = false;
         this.PartyQuery = { bill: '', ship: '' };
         this.PartyMatches = { bill: [], ship: [] };
         this.cdr.detectChanges();
@@ -518,19 +561,54 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     public PartyMatches: Record<MJOPartyRole, MJOPartyMatch[]> = { bill: [], ship: [] };
     public PartySearching: MJOPartyRole | null = null;
 
-    public async SearchParty(role: MJOPartyRole): Promise<void> {
-        const q = this.PartyQuery[role].trim();
-        if (q.length < 2) {
-            this.PartyMatches[role] = [];
-            return;
-        }
+    /**
+     * Focusing a party box shows who we have billed most recently, before anything is typed.
+     *
+     * A desk bills the same handful of accounts over and over, so the last few orders predict the
+     * next one better than an empty box does. `RecentCustomers` returns the same shape as
+     * `SearchCustomers`, so one template renders both and selection behaves identically.
+     */
+    public async OnPartyFocus(role: MJOPartyRole): Promise<void> {
+        if (this.PartyQuery[role].trim()) return; // already searching — do not overwrite the results
         this.PartySearching = role;
         try {
-            this.PartyMatches[role] = await this.data.SearchCustomers(q);
+            this.PartyMatches[role] = await this.data.RecentCustomers();
         } finally {
             this.PartySearching = null;
             this.cdr.detectChanges();
         }
+    }
+
+    private partyTimer: ReturnType<typeof setTimeout> | null = null;
+
+    /**
+     * Search as they type, DEBOUNCED.
+     *
+     * This is bound to `ngModelChange`, so without the timer every keystroke is a server
+     * round-trip — eight requests to spell "Northgate", each a LIKE scan, arriving out of order so
+     * a slow early one can overwrite a fast late one. Fast entry already solved this the same way;
+     * this had simply not learned it.
+     */
+    public SearchParty(role: MJOPartyRole): void {
+        if (this.partyTimer) clearTimeout(this.partyTimer);
+        const q = this.PartyQuery[role].trim();
+        if (q.length < 2) {
+            // Falling back to recents rather than to nothing: clearing the box should return you
+            // to where focusing it started, not to an empty list.
+            void this.OnPartyFocus(role);
+            return;
+        }
+        this.partyTimer = setTimeout(async () => {
+            this.PartySearching = role;
+            try {
+                this.PartyMatches[role] = await this.data.SearchCustomers(q);
+            } finally {
+                this.PartySearching = null;
+                // Lands from a timer AND an awaited request, so nothing is watching this — it has
+                // to tick explicitly or the results never paint.
+                this.cdr.detectChanges();
+            }
+        }, 250);
     }
 
     /**
