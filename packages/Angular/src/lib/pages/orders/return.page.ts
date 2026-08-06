@@ -6,7 +6,7 @@ import { MJOMoneyPipe } from '../../panels/money-format';
 import { OrderDraft } from '@mj-biz-apps/orders-entities';
 import { MJOOrderEntryService } from '../../services/order-entry.service';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
-import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
 
 /** A line being returned, with the cap the origin imposes. */
 interface MJOReturnLine {
@@ -48,7 +48,7 @@ interface MJOReturnLine {
 @Component({
     selector: 'mjo-return-page',
     standalone: true,
-    imports: [MJButtonDirective, CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
+    imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-rotate-left" class="mjo-rt__note">
                 <strong>A return is a new order that mirrors the original.</strong>
@@ -130,13 +130,11 @@ interface MJOReturnLine {
                         <div class="mj-card-pad">
                             <label class="mj-field">
                                 <label>Reason</label>
-                                <select class="mj-select" [(ngModel)]="Reason" name="reason">
-                                    <option>Damaged in transit</option>
-                                    <option>Wrong item shipped</option>
-                                    <option>Customer changed mind</option>
-                                    <option>Duplicate order</option>
-                                    <option>Pricing error</option>
-                                </select>
+                                <mj-dropdown
+                                    [Data]="ReturnReasons"
+                                    [ValuePrimitive]="true"
+                                    [(ngModel)]="Reason"
+                                    name="reason" />
                             </label>
                         </div>
                     </div>
@@ -277,6 +275,15 @@ export class MJOReturnPageComponent implements OnInit {
 
     public Origin: MJOOrderRow | null = null;
     public Lines: MJOReturnLine[] = [];
+    /** The reasons the select used to hard-code, as data. */
+    public readonly ReturnReasons: readonly string[] = [
+        'Damaged in transit',
+        'Wrong item shipped',
+        'Customer changed mind',
+        'Duplicate order',
+        'Pricing error',
+    ];
+
     public Reason = 'Damaged in transit';
 
     public async ngOnInit(): Promise<void> {

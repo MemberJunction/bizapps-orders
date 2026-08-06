@@ -19,11 +19,13 @@
     <div>
       <span class="l">Type</span>
       @if (IsEditable) {
-        <select class="mj-input ed-identity__input" aria-label="Order type"
-                [ngModel]="Draft.Header.OrderType ?? 'Sale'"
-                (ngModelChange)="SetOrderType($event)">
-          @for (t of OrderTypes; track t) { <option [value]="t">{{ t }}</option> }
-        </select>
+        <mj-dropdown
+          class="ed-identity__input"
+          aria-label="Order type"
+          [Data]="OrderTypes"
+          [ValuePrimitive]="true"
+          [ngModel]="Draft.Header.OrderType ?? 'Sale'"
+          (ngModelChange)="SetOrderType($event)" />
       } @else {
         <span class="v">{{ Draft.Header.OrderType ?? 'Sale' }}</span>
       }
@@ -570,13 +572,16 @@
         @if (IsEditable) {
           <div class="ed-field">
             <label class="ed-field__label" for="ed-tender">Tender</label>
-            <select id="ed-tender" class="mj-input"
-                    [ngModel]="Draft.Header.InitialPaymentTypeID ?? ''"
-                    (ngModelChange)="SetTender($event)">
-              <!-- Blank is a real choice, not a prompt: it means invoice on terms. -->
-              <option value="">— invoice on terms —</option>
-              @for (t of Tenders; track t.ID) { <option [value]="t.ID">{{ t.Name }}</option> }
-            </select>
+            <!-- The DefaultItem is a real choice, not a prompt: it means invoice on terms. -->
+            <mj-dropdown
+              id="ed-tender"
+              [Data]="Tenders"
+              TextField="Name"
+              ValueField="ID"
+              [ValuePrimitive]="true"
+              [DefaultItem]="TenderNone"
+              [ngModel]="Draft.Header.InitialPaymentTypeID ?? ''"
+              (ngModelChange)="SetTender($event)" />
           </div>
 
           @if (Draft.Header.InitialPaymentTypeID) {

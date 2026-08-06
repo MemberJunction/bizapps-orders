@@ -15,7 +15,7 @@ import { AllocateOldestFirst, UnallocatedRemainder } from '../../panels/allocati
 import { MJOMoneyPipe, DaysSince } from '../../panels/money-format';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
-import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJDropdownComponent, MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** A tender the customer can pay with. */
 export interface MJOTenderOption {
@@ -56,7 +56,7 @@ export interface MJOTenderOption {
 @Component({
     selector: 'mjo-payment-entry-page',
     standalone: true,
-    imports: [MJButtonDirective, CommonModule, FormsModule, MJOAllocationGridComponent, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
+    imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, MJOAllocationGridComponent, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <div class="mjo-pe__split">
             <!-- ── Left: the money ── -->
@@ -83,16 +83,15 @@ export interface MJOTenderOption {
 
                         <label class="mj-field">
                             <label>Tender</label>
-                            <select
-                                class="mj-select"
+                            <mj-dropdown
+                                [Data]="Tenders"
+                                TextField="Name"
+                                ValueField="Code"
+                                [ValuePrimitive]="true"
+                                [Disabled]="IsCaptured"
                                 [(ngModel)]="TenderCode"
                                 name="tender"
-                                [disabled]="IsCaptured"
-                                (ngModelChange)="OnTenderChanged()">
-                                @for (tender of Tenders; track tender.ID) {
-                                    <option [value]="tender.Code">{{ tender.Name }}</option>
-                                }
-                            </select>
+                                (ngModelChange)="OnTenderChanged()" />
                             <div class="hint">
                                 Reversal types are absent because the data says they are reversals — not
                                 because this list hardcodes an exclusion.
@@ -110,10 +109,14 @@ export interface MJOTenderOption {
                         @if (SelectedTender?.RequiresInstrument) {
                             <label class="mj-field">
                                 <label>Instrument</label>
-                                <select class="mj-select" [(ngModel)]="Instrument" name="instrument" [disabled]="IsCaptured">
-                                    <option value="">Saved payment method…</option>
-                                    <option value="new">New card — hosted tokenization</option>
-                                </select>
+                                <mj-dropdown
+                                    [Data]="InstrumentOptions"
+                                    TextField="Label"
+                                    ValueField="Value"
+                                    [ValuePrimitive]="true"
+                                    [Disabled]="IsCaptured"
+                                    [(ngModel)]="Instrument"
+                                    name="instrument" />
                                 <div class="hint">
                                     A wallet entry is <b>copied</b> onto the payment, never shared, so the
                                     snapshot cannot drift if the saved card changes later.
@@ -367,6 +370,20 @@ export class MJOPaymentEntryPageComponent implements OnInit {
     /** The user asked to capture. The host calls the operation. */
     /** Emitted AFTER the payment is captured, carrying what the server booked. */
     @Output() CaptureRequested = new EventEmitter<OrdersCapturePaymentOutput>();
+
+    /**
+     * Instrument choices, as data rather than markup.
+     *
+     * They were hard-coded `<option>` elements. A dropdown takes a list, and a list is also the
+     * thing a wallet lookup would eventually replace — the markup form could not be swapped for
+     * loaded data without rewriting the template.
+     */
+    public readonly InstrumentOptions: ReadonlyArray<{ Value: string; Label: string }> = [
+        // Exactly the two the <option> list carried — converting a control must not quietly
+        // change what it offers.
+        { Value: '', Label: 'Saved payment method…' },
+        { Value: 'new', Label: 'New card — hosted tokenization' },
+    ];
 
     public Amount = 0;
     public PaymentDate = new Date().toISOString().slice(0, 10);

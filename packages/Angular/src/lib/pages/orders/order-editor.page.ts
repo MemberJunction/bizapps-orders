@@ -34,7 +34,7 @@ import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format
 import { BuildOrderStages, type MJOOrderStage, type MJOStageChangeRequestEventArgs } from '../../panels/order-stages';
 import type { MJOProductOption } from './fast-entry.page';
 import type { MJOTenderOption } from '../payments/payment-entry.page';
-import { MJAlertComponent, MJButtonDirective, MJTabNavComponent, type TabConfig } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective, MJDropdownComponent, MJTabNavComponent, type TabConfig } from '@memberjunction/ng-ui-components';
 
 /** Which tab is showing. */
 export type MJOEditorTab = 'lines' | 'parties' | 'charges' | 'payment' | 'accounting';
@@ -94,7 +94,7 @@ export interface MJOPartyMatch {
 @Component({
     selector: 'mjo-order-editor-page',
     standalone: true,
-    imports: [MJAlertComponent, MJButtonDirective, MJTabNavComponent,
+    imports: [MJAlertComponent, MJButtonDirective, MJDropdownComponent, MJTabNavComponent,
         CommonModule,
         FormsModule,
         MJOMoneyStripComponent,
@@ -711,6 +711,9 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         'Amendment',
         'AccountCredit',
     ];
+
+    /** The "no tender" row. A real option meaning invoice on terms, not a placeholder. */
+    public readonly TenderNone = { ID: '', Name: '— invoice on terms —' };
 
     public SetOrderType(value: string): void {
         this.Draft.SetHeader({ OrderType: value as OrderDraftHeaderPayload['OrderType'] });

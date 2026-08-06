@@ -6,7 +6,7 @@ import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
-import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
 
 /**
  * `mjo-account-credit-page` — spend a credit a customer is holding.
@@ -36,7 +36,7 @@ import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-compo
 @Component({
     selector: 'mjo-account-credit-page',
     standalone: true,
-    imports: [MJButtonDirective, CommonModule, FormsModule, MJOWorklistTableComponent, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
+    imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, MJOWorklistTableComponent, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-piggy-bank" class="mjo-cr__note">
                 <strong>A credit is an order with a negative balance.</strong>
@@ -92,13 +92,13 @@ import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-compo
                         <span class="mj-chip mj-chip--brand">To — an open order</span>
                         <label class="mj-field mjo-cr__field">
                             <label>Target order</label>
-                            <select class="mj-select" [(ngModel)]="TargetID" name="target">
-                                @for (order of Targets; track order.ID) {
-                                    <option [value]="order.ID">
-                                        {{ order.OrderNumber }} — {{ money(order.Balance) }}
-                                    </option>
-                                }
-                            </select>
+                            <mj-dropdown
+                                [Data]="TargetOptions"
+                                TextField="Label"
+                                ValueField="ID"
+                                [ValuePrimitive]="true"
+                                [(ngModel)]="TargetID"
+                                name="target" />
                         </label>
                         @if (Target) {
                             <mjo-stated-value Label="Balance now">{{ Target.Balance | mjoMoney }}</mjo-stated-value>
@@ -210,6 +210,17 @@ export class MJOAccountCreditPageComponent implements OnInit {
 
     public Credits: MJOOrderRow[] = [];
     public Targets: MJOOrderRow[] = [];
+
+    /**
+     * The target list with its label precomputed.
+     *
+     * The `<option>` built its text inline (`{{ OrderNumber }} — {{ money(Balance) }}`), which a
+     * data-driven dropdown cannot do. Projecting keeps the balance IN the choice — picking which
+     * order to credit without seeing what is owed on it is the whole decision.
+     */
+    public get TargetOptions(): Array<{ ID: string; Label: string }> {
+        return this.Targets.map((o) => ({ ID: o.ID, Label: `${o.OrderNumber} — ${this.money(o.Balance)}` }));
+    }
     public SourceID: string | null = null;
     public TargetID: string | null = null;
     public Amount = 0;
