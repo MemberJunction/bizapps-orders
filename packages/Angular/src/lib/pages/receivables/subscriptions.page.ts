@@ -58,13 +58,14 @@ interface MJORecognitionPeriod {
     template: `
         <div class="mjo-sub__split">
             <div class="mjo-sub__left">
-                <mj-alert Variant="info" Icon="fa-solid fa-shield-halved" class="mjo-sub__note">
-                        <strong>Why this cannot double-bill.</strong>
+                <p class="mjo-note mjo-sub__note">
+                    <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                    <strong>Why this cannot double-bill.</strong>
                         A renewal is refused when a term already covers the period it would create.
                         The check is against COVERAGE, not against whether a job has run — so a
                         retried batch, a manual nudge and a scheduled sweep all reach the same
                         answer.
-                </mj-alert>
+                </p>
 
                 <mjo-worklist-table
                     [Columns]="Columns"
@@ -106,11 +107,12 @@ interface MJORecognitionPeriod {
                                 {{ Selected.AutoRenew ? 'On' : 'Off — it simply ends' }}
                             </mjo-stated-value>
 
-                            <mj-alert Variant="info" Icon="fa-solid fa-user-group" class="mjo-sub__note">
-                                    Holder and beneficiary are separate on purpose, and it decides what counts
+                            <p class="mjo-note mjo-sub__note">
+                                <i class="fa-solid fa-user-group" aria-hidden="true"></i>
+                                Holder and beneficiary are separate on purpose, and it decides what counts
                                     as a duplicate — which is why ten seats for ten staff are ten subscriptions
                                     rather than ten collisions.
-                            </mj-alert>
+                            </p>
 
                             @if (RenewalDue) {
                                 <mj-alert Variant="warning" Icon="fa-solid fa-hourglass-half" class="mjo-sub__note">

@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { OrdersRefundPaymentOperation } from '@mj-biz-apps/orders-entities';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe } from '../../panels/money-format';
-import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** One order the original payment settled, and what a refund does to it. */
 interface MJOUnapplication {
@@ -40,13 +40,14 @@ interface MJOUnapplication {
 @Component({
     selector: 'mjo-refund-page',
     standalone: true,
-    imports: [MJButtonDirective, CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
+    imports: [MJButtonDirective, CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe],
     template: `
-        <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-rf__note">
-                <strong>A refund is a new payment, never an edit of the capture.</strong>
+        <p class="mjo-note mjo-rf__note">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            <strong>A refund is a new payment, never an edit of the capture.</strong>
                 The original happened and has an entry; rewriting it would destroy the trail of money that
                 actually moved. The reversal mirrors it — same accounts, sides swapped.
-        </mj-alert>
+        </p>
 
         <div class="mjo-rf__split">
             <div class="mjo-rf__left">
@@ -148,21 +149,26 @@ interface MJOUnapplication {
                     </div>
                 </div>
 
-                <mj-alert Variant="warning" Icon="fa-solid fa-shield-halved" class="mjo-rf__note">
-                        <strong>Guards.</strong>
-                        A refund cannot exceed what remains after earlier refunds, and a captured
-                        payment is never edited — the refund is a NEW payment that reverses it. Both
-                        rules are enforced server-side, so a stale screen cannot talk its way past
-                        them.
-                </mj-alert>
+                <!-- Amber, but not a warning: it reassures about invariants the SERVER enforces
+                     rather than cautioning about the action in front of you. A permanent warning
+                     colour on a screen that moves money spends the alarm on the wrong thing. -->
+                <p class="mjo-note mjo-rf__note">
+                    <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                    <strong>Guards.</strong>
+                    A refund cannot exceed what remains after earlier refunds, and a captured
+                    payment is never edited — the refund is a NEW payment that reverses it. Both
+                    rules are enforced server-side, so a stale screen cannot talk its way past
+                    them.
+                </p>
 
-                <mj-alert Variant="info" Icon="fa-solid fa-scale-balanced" class="mjo-rf__note">
-                        <strong>Mirrored entry.</strong>
+                <p class="mjo-note mjo-rf__note">
+                    <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
+                    <strong>Mirrored entry.</strong>
                         Cash is credited and A/R debited — the capture's entry with the directions
                         swapped. The processing fee is NOT reversed unless the provider actually
                         returned it, because our cost was incurred whether or not the customer kept
                         the goods.
-                </mj-alert>
+                </p>
 
                 <div class="mjo-rf__actions">
                     <button
