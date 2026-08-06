@@ -231,7 +231,9 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
 
     /** The five tabs, with counts and the red-dot state. */
     public get Tabs(): MJOEditorTabDef[] {
-        const sections = this.Draft?.SectionsWithErrors ?? [];
+        // Same rule as `Issues`: a confirmed order carries no "still missing" state, so the red
+        // dots come off with the banner rather than leaving Parties flagged on a booked order.
+        const sections = this.IsEditable ? (this.Draft?.SectionsWithErrors ?? []) : [];
         const chargeCount = this.Preview.Result?.Charges?.length ?? 0;
         return [
             { Key: 'lines', Label: 'Lines', Count: this.Draft?.LineCount ?? 0, HasError: sections.includes('lines') },
@@ -661,6 +663,12 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
 
     /** Errors worth surfacing above the tabs, so a red dot is never the only clue. */
     public get Issues() {
+        // ONLY WHILE THE ORDER CAN STILL BE CONFIRMED. `Validate()` answers "could this be
+        // confirmed as it stands", which is a question with no meaning once it HAS been — a
+        // confirmed order was showing "1 thing to sort out before this can confirm", and a red dot
+        // on Parties, for an order already booked to the ledger. That reads as "something is wrong
+        // with this order" when nothing is.
+        if (!this.IsEditable) return [];
         return this.Draft?.Validate().Issues ?? [];
     }
 

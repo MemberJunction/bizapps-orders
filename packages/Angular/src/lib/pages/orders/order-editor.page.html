@@ -101,6 +101,10 @@
     [ActiveKey]="ActiveTab"
     (TabChange)="SelectTabKey($event)" />
 </div>
+<!-- Only the tab content scrolls. The identity strip, stage, totals and tab
+     strip above stay put — scrolling the whole card meant the order you are
+     editing could scroll off the top of its own editor. -->
+<div class="ed-panes">
 
 <!-- ═══════ LINES ═══════ -->
 @if (ActiveTab === 'lines') {
@@ -684,6 +688,7 @@
     </div>
   </div>
 }
+</div>
 </div>
 
 <!-- ═══════ LINE DRAWER ═══════ -->

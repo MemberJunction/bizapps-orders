@@ -85,6 +85,9 @@ export const MJO_ACCOUNTING_ENTITIES = {
 } as const;
 
 /** A row as the order list renders it. */
+/** Canonical 8-4-4-4-12 hex form. */
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 export interface MJOOrderRow extends Record<string, unknown> {
     ID: string;
     OrderNumber: string;
@@ -187,6 +190,8 @@ export class MJOOrdersDataService {
     public async GetOrders(
         options: {
             Preset?: 'all' | 'overdue' | 'unpaid' | 'notposted' | 'drafts' | 'credits' | 'lxp';
+            /** One specific order. Cheaper and exact where a caller already has the ID. */
+            OrderHeaderID?: string;
             Search?: string;
             CompanyID?: string;
             BillToOrganizationID?: string;
@@ -229,6 +234,13 @@ export class MJOOrdersDataService {
                 break;
         }
 
+        // Guarded rather than interpolated raw. The server package has `RequireUUID` for exactly
+        // this, but it does not ship to the browser, so this is the same idea locally: an id that
+        // is not a UUID never reaches the filter string.
+        if (options.OrderHeaderID) {
+            if (!UUID_RE.test(options.OrderHeaderID)) throw new Error(`OrderHeaderID is not a UUID: ${options.OrderHeaderID}`);
+            filters.push(`ID = '${options.OrderHeaderID}'`);
+        }
         if (options.CompanyID) filters.push(`CompanyID = '${options.CompanyID}'`);
         if (options.BillToOrganizationID) {
             filters.push(`BillToOrganizationID = '${options.BillToOrganizationID}'`);

@@ -170,6 +170,21 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         const cached = this.mounted.get(pageId);
         if (cached) {
             host.insert(cached.hostView);
+
+            // A CACHED PAGE STILL HAS TO BE TOLD WHICH RECORD TO OPEN. Clicking a row in All
+            // orders sets PendingRecordID and navigates here; the fresh-mount path below hands
+            // that to the page, but this path returned without doing so — so opening an order
+            // worked exactly once, before the editor had ever been visited, and silently did
+            // nothing every time after. From the user's side the row simply stopped responding.
+            if (this.PendingRecordID) {
+                const instance = cached.instance as Record<string, unknown>;
+                if ('OrderID' in instance) cached.setInput('OrderID', this.PendingRecordID);
+                else if ('RecordID' in instance) cached.setInput('RecordID', this.PendingRecordID);
+                this.PendingRecordID = null;
+                // The page is detached-and-reinserted rather than constructed, so nothing has
+                // scheduled a check for it — without this the input lands and nothing repaints.
+                cached.changeDetectorRef.detectChanges();
+            }
             return;
         }
 

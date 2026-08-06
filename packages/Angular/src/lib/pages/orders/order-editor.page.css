@@ -23,22 +23,38 @@
   padding: 0;
 }
 
+/* THE FRAME NO LONGER SCROLLS — only .ed-panes does. Scrolling the whole interior pushed the
+   identity strip, stage and totals off the top of the editor, so the order being edited lost its
+   own header the moment the line table grew. */
 .ed-scroll {
   flex: 1 1 auto;
-  /* Without this the item will not shrink below its content height, so the frame
-     grows instead of the region scrolling. */
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--mj-space-6);
+}
+
+/* The only scroll region inside the card. `min-height: 0` is load-bearing: without it a flex item
+   refuses to shrink below its content height, so the frame grows instead of this scrolling. */
+.ed-panes {
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--mj-space-6);
 }
 
 /* ── Persistent chrome ────────────────────────────────────────────────── */
 
+/* Pinned by the flex frame now, not by `position: sticky` — it is a sibling of the scroll region
+   rather than a passenger inside it.
+
+   The background is the CARD's surface, not `--mj-bg-page`. This block was written when the editor
+   was a full page sitting on the page background; inside the workspace card that token painted the
+   top half of the card a different colour from the bottom half, so the card looked like two
+   stacked panels. */
 .ed-sticky {
-  position: sticky;
-  top: calc(-1 * var(--mj-space-6));
-  z-index: var(--mj-z-sticky);
-  background: var(--mj-bg-page);
+  flex: 0 0 auto;
+  background: var(--mj-bg-surface);
   margin: calc(-1 * var(--mj-space-6)) calc(-1 * var(--mj-space-6)) 0;
   padding: var(--mj-space-6) var(--mj-space-6) 0;
 }

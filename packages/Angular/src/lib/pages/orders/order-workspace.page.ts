@@ -214,6 +214,20 @@ export class MJOOrderWorkspacePageComponent implements OnDestroy {
         return null;
     }
 
+    /**
+     * Map the stored status onto the stepper's stage.
+     *
+     * Anything unrecognised falls back to `Draft` — but only for a MISSING status. A status we do
+     * not recognise is safer treated as read-only than as editable, because the failure modes are
+     * not symmetric: wrongly read-only is an inconvenience, wrongly editable invites someone to
+     * change a booked order.
+     */
+    private StageOf(status: string | undefined | null): MJOOrderStage {
+        if (!status) return 'Draft';
+        const known: MJOOrderStage[] = ['Draft', 'Quoted', 'Confirmed', 'Posted', 'Fulfilled'];
+        return known.find((s) => s.toLowerCase() === status.toLowerCase()) ?? 'Confirmed';
+    }
+
     public ngOnDestroy(): void {
         for (const stop of this.unsubscribes.values()) stop();
         this.unsubscribes.clear();
@@ -243,13 +257,26 @@ export class MJOOrderWorkspacePageComponent implements OnDestroy {
             }
         }
         try {
-            const draft = await this.entry.LoadDraft(orderHeaderID, this.data);
+            // The DRAFT and the ORDER'S IDENTITY are two different reads, and both are needed.
+            // `OrderDraft` models what can be EDITED, so it carries no order number and no status —
+            // opening an existing order with only the draft labelled the tab "New order", showed
+            // "New draft" where the number belongs, and (much worse) left `Stage: 'Draft'`, which
+            // is what `IsEditable` keys off. A CONFIRMED order came up fully editable.
+            const [draft, rows] = await Promise.all([
+                this.entry.LoadDraft(orderHeaderID, this.data),
+                this.data.GetOrders({ OrderHeaderID: orderHeaderID, MaxRows: 1 }),
+            ]);
             if (!draft) {
                 this.Error = 'That order could not be loaded.';
                 this.cdr.detectChanges();
                 return;
             }
-            this.OpenTab(draft, { Label: UNTITLED, OrderNumber: null, Stage: 'Draft' });
+            const header = rows[0];
+            this.OpenTab(draft, {
+                Label: header?.OrderNumber ?? UNTITLED,
+                OrderNumber: header?.OrderNumber ?? null,
+                Stage: this.StageOf(header?.Status),
+            });
         } catch (e) {
             this.Error = ReadableSaveError(e);
             this.cdr.detectChanges();
@@ -259,7 +286,16 @@ export class MJOOrderWorkspacePageComponent implements OnDestroy {
     private OpenTab(draft: OrderDraft, init: { Label: string; OrderNumber: string | null; Stage: MJOOrderStage }): void {
         const id = `ord-${Date.now().toString(36)}-${this.tabs.Count}`;
         this.meta.set(id, { OrderNumber: init.OrderNumber, Stage: init.Stage });
-        this.tabs.Open({ Id: id, Label: init.Label, Icon: 'fa-solid fa-file-invoice', Status: 'draft', State: draft, Dirty: false });
+        this.tabs.Open({
+            Id: id,
+            Label: init.Label,
+            Icon: 'fa-solid fa-file-invoice',
+            // An order that is already past Draft opens as a COMPLETE tab — read-only, and marked
+            // as such in the strip — rather than as a draft the user might expect to edit.
+            Status: init.Stage === 'Draft' || init.Stage === 'Quoted' ? 'draft' : 'complete',
+            State: draft,
+            Dirty: false,
+        });
 
         // The draft is the source of truth for the tab's caption and dirty flag. Subscribing keeps
         // both honest without the editor having to report anything upward — it already mutates the
