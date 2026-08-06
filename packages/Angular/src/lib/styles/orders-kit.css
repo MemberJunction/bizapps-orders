@@ -807,3 +807,23 @@ kbd {
   border: none; outline: none; background: none; font-family: inherit;
   font-size: 13px; color: inherit; width: 100%;
 }
+
+/* ── A standing explanation, not an alert ───────────────────────────────────
+   `mj-alert` is for something that HAPPENED or needs attention. Screens that permanently
+   explain how they work were using it, which put a full-width coloured card above the work
+   on every visit — read once, then scrolled past forever. This is the quiet form: same
+   information, one line's worth of weight, no dismissal to manage. */
+.mjo-note {
+    display: flex;
+    align-items: baseline;
+    gap: var(--mj-space-2);
+    margin: 0 0 var(--mj-space-3);
+    color: var(--mj-text-secondary);
+    font-size: var(--mj-text-xs);
+    line-height: var(--mj-leading-relaxed, 1.6);
+}
+
+.mjo-note > i {
+    color: var(--mj-text-tertiary);
+    flex: 0 0 auto;
+}

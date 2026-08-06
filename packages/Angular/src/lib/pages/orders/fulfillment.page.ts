@@ -58,12 +58,16 @@ interface MJOFulfillmentRow extends Record<string, unknown> {
     standalone: true,
     imports: [MJButtonDirective, CommonModule, MJOWorklistTableComponent, MJAlertComponent],
     template: `
-        <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-fq__note">
-                <strong>Marking a line fulfilled writes no journal entry.</strong>
-                Revenue was settled by the product's recognition shape when the order booked. What this
-                queue controls is the order's stage — an order with nothing to ship auto-advances past
-                Posted, and one with a physical line waits here.
-        </mj-alert>
+        <!-- A standing explanation of how a screen works is not an ALERT — an alert is for
+             something that happened or needs attention. These were two info cards saying the same
+             thing ("writes no journal entry") in different words, permanently, above the work. -->
+        <p class="mjo-note mjo-fq__note">
+            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            Everything here is already paid for and booked — nothing on this screen writes a journal
+            entry. What is outstanding is the goods, and what this queue controls is the order's
+            stage: one with nothing to ship auto-advances past Posted, one with a physical line waits
+            here.
+        </p>
 
         @if (Result) {
             <mj-alert
@@ -90,12 +94,6 @@ interface MJOFulfillmentRow extends Record<string, unknown> {
             </mj-alert>
         }
 
-        <mj-alert Variant="info" Icon="fa-solid fa-box-open" class="mjo-fq__note">
-                <strong>Orders held only by fulfillment.</strong>
-                Everything here has already been paid for and booked — the money and the revenue
-                moved when the order confirmed. What is outstanding is the goods, which is why
-                nothing on this screen writes a journal entry.
-        </mj-alert>
 
         <div class="mjo-fq__actions">
             <button
