@@ -43,7 +43,7 @@ import { MJOOrderEntryService } from '../services/order-entry.service';
 import { MJOOrdersDataService } from '../services/orders-data.service';
 import type { OrderDraft } from '@mj-biz-apps/orders-entities';
 import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
-import { MJOOrderEditorPageComponent } from '../pages/orders/order-editor.page';
+import { MJOOrderWorkspacePageComponent } from '../pages/orders/order-workspace.page';
 import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
 import { MJOOrdersDashboardPageComponent } from '../pages/orders/orders-dashboard.page';
 import { MJOFulfillmentPageComponent } from '../pages/orders/fulfillment.page';
@@ -261,6 +261,19 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
         // The irreversible step, gated behind the pre-flight.
         on<OrderDraft>('ConfirmRequested', (draft) => void this.OpenPreflight(draft));
+
+        // The order workspace confirms in place — it owns the draft, so it does not hand one back
+        // for the section's pre-flight. What the section still needs is to know an order now
+        // EXISTS: any list or dashboard it has already mounted was read before the confirm and is
+        // now stale. Dropping the cached pages makes the next visit re-read rather than show a
+        // list the just-confirmed order is missing from.
+        on<string>('OrderConfirmed', () => {
+            for (const [pageId, ref] of this.mounted) {
+                if (pageId === this.ActivePageId) continue;
+                ref.destroy();
+                this.mounted.delete(pageId);
+            }
+        });
         on<OrderDraft>('EscalateRequested', () => this.OnPageSelected('editor'));
 
         // Pages are cached rather than destroyed on rail changes, so these live as
@@ -655,7 +668,11 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
             case 'fast-entry':
                 return MJOFastEntryPageComponent;
             case 'editor':
-                return MJOOrderEditorPageComponent;
+                // The WORKSPACE, not the bare editor: the editor is presentational and needs a
+                // Draft, and opening it with no record handed it none — which is what made the
+                // full order screen render a form with every field blank. The workspace owns the
+                // drafts and binds the editor properly.
+                return MJOOrderWorkspacePageComponent;
             case 'list':
                 return MJOOrdersListPageComponent;
             case 'dashboard':

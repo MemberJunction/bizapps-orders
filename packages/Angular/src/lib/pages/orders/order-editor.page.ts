@@ -77,6 +77,17 @@ export interface MJOEditorTabDef {
  *   (ConfirmRequested)="openPreflight($event)" />
  * ```
  */
+/** Which party a picker is editing. Bill-to and ship-to fall back independently. */
+export type MJOPartyRole = 'bill' | 'ship';
+
+/** One customer-search hit, as `MJOOrdersDataService.SearchCustomers` returns it. */
+export interface MJOPartyMatch {
+    ID: string;
+    Name: string;
+    IsOrganization: boolean;
+    Email: string | null;
+}
+
 @Component({
     selector: 'mjo-order-editor-page',
     standalone: true,
@@ -123,6 +134,15 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
 
     /** The originating system's reference, when there is one. */
     @Input() OriginExternalID: string | null = null;
+
+    /**
+     * Show this page's own Save/Confirm bar.
+     *
+     * The order workspace hosts this editor inside `mj-workspace-card`, which already provides
+     * Confirm / Keep as draft / Discard for the active tab. Left on, the screen shows two action
+     * bars that appear to do different things and do not.
+     */
+    @Input() ShowActions = true;
 
     /** Journal entries — populated on the Accounting tab from a preview. */
     @Input() JournalEntries: MJOJournalEntry[] = [];
@@ -365,6 +385,121 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         if (this.OpenLine?.ClientKey === line.ClientKey) this.OpenLine = null;
         this.Draft.RemoveLine(line.ClientKey);
     }
+
+    /* ── Adding a line ──────────────────────────────────────────────────────
+     *
+     * This screen could REMOVE a line and never ADD one, so the empty state
+     * ("No lines yet. An order needs at least one line before it can confirm.")
+     * was a dead end — it named the requirement and gave you no way to meet it.
+     * Fast entry was the only way to put a line on an order, which is why the
+     * full editor read as a viewer.
+     *
+     * The catalogue is already an `@Input`, so this is a local filter rather
+     * than a query — no round trip, and it works the same for a new order and
+     * an existing one.
+     */
+
+    /** What the user has typed into the add-product box. */
+    public ProductQuery = '';
+
+    /** Matching catalogue entries, capped — a picker is for choosing, not browsing. */
+    public get ProductMatches(): MJOProductOption[] {
+        const q = this.ProductQuery.trim().toLowerCase();
+        if (q.length < 2) return [];
+        return this.Catalog.filter((p) => p.Name.toLowerCase().includes(q) || p.SKU.toLowerCase().includes(q)).slice(0, 8);
+    }
+
+    /**
+     * Add the product as a line.
+     *
+     * Quantity 1 and NO unit price: leaving `UnitPrice` undefined is what lets the
+     * pricing walk resolve it (`SetUnitPrice` documents the same rule from the
+     * other direction). Seeding it with the catalogue's list price would look
+     * helpful and would silently turn every line into a direct-entry price that
+     * ignores the customer's price list.
+     */
+    public AddProduct(option: MJOProductOption): void {
+        this.Draft.AddLine({ ProductID: option.ID, Quantity: 1 });
+        this.ProductQuery = '';
+    }
+
+    /* ── Parties ────────────────────────────────────────────────────────────
+     *
+     * The parties tab printed raw GUIDs through `mjo-stated-value` and had no
+     * inputs at all, so an order's payer could not be set here — the one field
+     * `OrderDraft.Validate()` requires before a confirm.
+     */
+
+    /** Search text per role, so bill-to and ship-to can be edited independently. */
+    public PartyQuery: Record<MJOPartyRole, string> = { bill: '', ship: '' };
+    public PartyMatches: Record<MJOPartyRole, MJOPartyMatch[]> = { bill: [], ship: [] };
+    public PartySearching: MJOPartyRole | null = null;
+
+    public async SearchParty(role: MJOPartyRole): Promise<void> {
+        const q = this.PartyQuery[role].trim();
+        if (q.length < 2) {
+            this.PartyMatches[role] = [];
+            return;
+        }
+        this.PartySearching = role;
+        try {
+            this.PartyMatches[role] = await this.data.SearchCustomers(q);
+        } finally {
+            this.PartySearching = null;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * A customer is an organization OR a person, never both — the database says so
+     * (`CK_*_Party`), so the picker sets one and clears the other rather than
+     * leaving whichever was chosen first behind.
+     */
+    public ChooseParty(role: MJOPartyRole, match: MJOPartyMatch): void {
+        const party = match.IsOrganization
+            ? { OrganizationID: match.ID, PersonID: null }
+            : { PersonID: match.ID, OrganizationID: null };
+        if (role === 'bill') this.Draft.SetBillTo(party);
+        else this.Draft.SetShipTo(party);
+        this.PartyLabels[role] = match.Name;
+        this.PartyQuery[role] = '';
+        this.PartyMatches[role] = [];
+    }
+
+    public ClearParty(role: MJOPartyRole): void {
+        const empty = { OrganizationID: null, PersonID: null };
+        if (role === 'bill') this.Draft.SetBillTo(empty);
+        else this.Draft.SetShipTo(empty);
+        this.PartyLabels[role] = null;
+    }
+
+    /**
+     * Display names for the chosen parties.
+     *
+     * Held here rather than read back from the draft because the draft stores IDs
+     * only — showing a GUID is what the old read-only tab did, and it told the
+     * user nothing.
+     */
+    public PartyLabels: Record<MJOPartyRole, string | null> = { bill: null, ship: null };
+
+    public PartyIdFor(role: MJOPartyRole): string | null {
+        const h = this.Draft?.Header;
+        if (!h) return null;
+        return role === 'bill' ? (h.BillToOrganizationID ?? h.BillToPersonID ?? null) : (h.ShipToOrganizationID ?? h.ShipToPersonID ?? null);
+    }
+
+    /** Free-text and date header fields, written straight through to the draft. */
+    public SetHeaderField(field: 'Description' | 'Notes' | 'ExternalDocumentNumber' | 'RequestedDeliveryDate' | 'OrderDate', raw: string): void {
+        const value = raw.trim();
+        this.Draft.SetHeader({ [field]: value || null } as Partial<Parameters<OrderDraft['SetHeader']>[0]>);
+    }
+
+    /*
+     * No re-preview call here on purpose. `ngOnInit` subscribes to the draft, and every mutator
+     * above goes through `OrderDraft`, which notifies — so pricing re-runs by itself. An explicit
+     * SchedulePreview in each mutator would be a second debounce for the same change and would
+     * quietly suggest the subscription is not doing its job.
+     */
 
     public Open(line: OrderDraftLine): void {
         this.OpenLine = line;

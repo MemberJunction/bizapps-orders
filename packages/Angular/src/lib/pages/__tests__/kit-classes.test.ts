@@ -61,6 +61,19 @@ const EXTERNALLY_OWNED = /^(fa[srlbd]?-|fas$|far$|k-|ng-)/;
  * bug this test exists to catch.
  */
 const MJ_OWNED = new Set<string>([
+    // MJ ships the button classes globally in ui-components/src/lib/button/button.scss — the same
+    // situation as .mj-input below. The `mjButton` DIRECTIVE is the idiomatic way to reach them and
+    // is what orders' own templates use; these bare class names arrive with the workspace card
+    // ported from accounting, which styles its buttons by class. Either spelling resolves to MJ's
+    // rules, so the app must not redefine them — a local copy would be a second source of truth for
+    // a control MJ already owns.
+    'mj-btn',
+    'mj-btn--primary',
+    'mj-btn--secondary',
+    'mj-btn--outline',
+    'mj-btn--flat',
+    'mj-btn--danger',
+    'mj-btn--icon',
     // MJ ships this globally in ui-components/input/input.scss (`.mj-input,
     // .mj-textarea`). The kit used to redefine it with different metrics — two
     // global rules of equal specificity with load order picking the winner — so
@@ -71,6 +84,12 @@ const MJ_OWNED = new Set<string>([
 
 const HOOK_ONLY = new Set<string>([
     'mjo-preflight', // panel root; every child is styled, the root needs nothing
+    // The caption span inside the already-styled `.ws-tabs__new` button. It carries no rule in
+    // either copy of the parked workspace-tabs component, and it does not need one — it inherits
+    // the button's typography and exists as a handle (a narrow strip could hide the label and keep
+    // the icon). Deliberately NOT given a rule here: the parked copy must stay identical to
+    // accounting's so promotion is a file move, and styling it in one app only would break that.
+    'ws-tabs__new-label',
 ]);
 
 const walk = (dir: string, out: string[] = []): string[] => {

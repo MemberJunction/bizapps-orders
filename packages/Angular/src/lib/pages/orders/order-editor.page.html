@@ -76,6 +76,36 @@
 <!-- ═══════ LINES ═══════ -->
 @if (ActiveTab === 'lines') {
   <div class="ed-pane">
+    @if (IsEditable) {
+      <!-- The editor could remove a line and never add one; this is the way in. -->
+      <div class="ed-addline">
+        <label class="ed-addline__field">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+          <input
+            type="text"
+            class="mj-input"
+            placeholder="Add a product — name or SKU"
+            aria-label="Add a product to this order"
+            [(ngModel)]="ProductQuery" />
+        </label>
+        @if (ProductMatches.length) {
+          <ul class="ed-addline__matches" role="listbox" aria-label="Matching products">
+            @for (option of ProductMatches; track option.ID) {
+              <li>
+                <button type="button" class="ed-addline__match" (click)="AddProduct(option)">
+                  <span class="nm">{{ option.Name }}</span>
+                  <span class="small muted">{{ option.SKU }} · {{ option.CompanyName }}</span>
+                  <span class="num">{{ option.ListPrice | mjoMoney }}</span>
+                </button>
+              </li>
+            }
+          </ul>
+        } @else if (ProductQuery.trim().length >= 2) {
+          <div class="small muted ed-addline__none">No catalogue match for &ldquo;{{ ProductQuery }}&rdquo;.</div>
+        }
+      </div>
+    }
+
     <div class="mj-table-wrap">
       <table class="mj-table mj-table--lines">
         <thead>
@@ -176,7 +206,7 @@
                 <div class="mj-empty ed-empty">
                   <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
                   <div class="t">No lines yet</div>
-                  <div class="small">An order needs at least one line before it can confirm.</div>
+                  <div class="small">Search the catalogue above to add the first one.</div>
                 </div>
               </td>
             </tr>
@@ -252,12 +282,47 @@
           <span class="right"><span class="mj-chip mj-chip--outline">header only</span></span>
         </div>
         <div class="mj-card-pad">
-          <mjo-stated-value Label="Organization" From="stamped at order time">
-            {{ Draft.Header.BillToOrganizationID ?? '— none —' }}
-          </mjo-stated-value>
-          <mjo-stated-value Label="Person">
-            {{ Draft.Header.BillToPersonID ?? '— none —' }}
-          </mjo-stated-value>
+          <div class="ed-party">
+            <div class="ed-party__label">Customer</div>
+            @if (PartyIdFor('bill'); as chosen) {
+              <div class="ed-party__chosen">
+                <span class="mj-chip">{{ PartyLabels.bill ?? chosen }}</span>
+                @if (IsEditable) {
+                  <button type="button" class="mj-iconbtn" (click)="ClearParty('bill')" aria-label="Clear customer">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                  </button>
+                }
+              </div>
+            } @else if (IsEditable) {
+              <label class="ed-party__field">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input
+                  type="text"
+                  class="mj-input"
+                  placeholder="Search people and organizations"
+                  aria-label="Customer"
+                  [(ngModel)]="PartyQuery.bill"
+                  (ngModelChange)="SearchParty('bill')" />
+              </label>
+              @if (PartySearching === 'bill') {
+                <div class="small muted">Searching…</div>
+              } @else if (PartyMatches.bill.length) {
+                <ul class="ed-party__matches" role="listbox" aria-label="Matching customers">
+                  @for (m of PartyMatches.bill; track m.ID) {
+                    <li>
+                      <button type="button" class="ed-party__match" (click)="ChooseParty('bill', m)">
+                        <i [class]="m.IsOrganization ? 'fa-solid fa-building' : 'fa-solid fa-user'" aria-hidden="true"></i>
+                        <span class="nm">{{ m.Name }}</span>
+                        @if (m.Email) { <span class="small muted">{{ m.Email }}</span> }
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+            } @else {
+              <div class="small muted">— none —</div>
+            }
+          </div>
           <mjo-stated-value Label="Terms" From="organization default">
             {{ Draft.Header.PaymentTermsTypeID ?? '— default —' }}
           </mjo-stated-value>
@@ -275,12 +340,47 @@
           <span class="right"><span class="mj-chip mj-chip--outline">line default</span></span>
         </div>
         <div class="mj-card-pad">
-          <mjo-stated-value Label="Organization">
-            {{ Draft.Header.ShipToOrganizationID ?? '— none —' }}
-          </mjo-stated-value>
-          <mjo-stated-value Label="Person">
-            {{ Draft.Header.ShipToPersonID ?? '— none —' }}
-          </mjo-stated-value>
+          <div class="ed-party">
+            <div class="ed-party__label">Recipient</div>
+            @if (PartyIdFor('ship'); as chosen) {
+              <div class="ed-party__chosen">
+                <span class="mj-chip">{{ PartyLabels.ship ?? chosen }}</span>
+                @if (IsEditable) {
+                  <button type="button" class="mj-iconbtn" (click)="ClearParty('ship')" aria-label="Clear recipient">
+                    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                  </button>
+                }
+              </div>
+            } @else if (IsEditable) {
+              <label class="ed-party__field">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <input
+                  type="text"
+                  class="mj-input"
+                  placeholder="Leave empty to use the customer"
+                  aria-label="Recipient"
+                  [(ngModel)]="PartyQuery.ship"
+                  (ngModelChange)="SearchParty('ship')" />
+              </label>
+              @if (PartySearching === 'ship') {
+                <div class="small muted">Searching…</div>
+              } @else if (PartyMatches.ship.length) {
+                <ul class="ed-party__matches" role="listbox" aria-label="Matching customers">
+                  @for (m of PartyMatches.ship; track m.ID) {
+                    <li>
+                      <button type="button" class="ed-party__match" (click)="ChooseParty('ship', m)">
+                        <i [class]="m.IsOrganization ? 'fa-solid fa-building' : 'fa-solid fa-user'" aria-hidden="true"></i>
+                        <span class="nm">{{ m.Name }}</span>
+                        @if (m.Email) { <span class="small muted">{{ m.Email }}</span> }
+                      </button>
+                    </li>
+                  }
+                </ul>
+              }
+            } @else {
+              <div class="small muted">— none —</div>
+            }
+          </div>
           <mjo-stated-value Label="Address">
             {{ Draft.Header.ShipToAddressID ?? '— none —' }}
           </mjo-stated-value>
@@ -591,6 +691,10 @@
 }
 
 <!-- ═══════ FOOTER ═══════ -->
+<!-- Suppressed inside the order workspace: the card supplies Confirm / Keep as draft / Discard,
+     and two action bars stacked on one screen is worse than either alone — the user has to work
+     out whether they do the same thing. Standalone hosts keep this bar. -->
+@if (ShowActions) {
 <div class="ed-footer">
   @if (IsEditable) {
     <button type="button" mjButton variant="outline" (click)="SaveDraft()">
@@ -612,3 +716,4 @@
     </span>
   }
 </div>
+}

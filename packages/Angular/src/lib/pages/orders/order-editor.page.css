@@ -283,3 +283,99 @@
   gap: var(--mj-space-2);
   padding: var(--mj-space-1) 0;
 }
+
+/* ── Add a line, and choose the parties ─────────────────────────────────────
+   The editor previously had neither: lines could only be removed, and the
+   parties tab printed GUIDs through a read-only control. Both are ordinary
+   typeahead shapes, styled from tokens so they match fast entry's pickers. */
+
+.ed-addline {
+    position: relative;
+    margin-block-end: var(--mj-space-3);
+}
+
+.ed-addline__field,
+.ed-party__field {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    inline-size: 100%;
+}
+
+.ed-addline__field > i,
+.ed-party__field > i {
+    color: var(--mj-text-tertiary);
+}
+
+.ed-addline__field .mj-input,
+.ed-party__field .mj-input {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+}
+
+/* The match lists overlay rather than push the table down — a picker that
+   reflows the whole pane on every keystroke is unusable at speed. */
+.ed-addline__matches,
+.ed-party__matches {
+    position: absolute;
+    z-index: 20;
+    inset-inline: 0;
+    margin: var(--mj-space-1) 0 0;
+    padding: 0;
+    list-style: none;
+    background: var(--mj-bg-surface);
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-md);
+    box-shadow: var(--mj-shadow-md);
+    max-block-size: 40cqh;
+    overflow-y: auto;
+}
+
+.ed-addline__match,
+.ed-party__match {
+    display: flex;
+    align-items: baseline;
+    gap: var(--mj-space-2);
+    inline-size: 100%;
+    padding: var(--mj-space-2) var(--mj-space-3);
+    background: none;
+    border: 0;
+    text-align: start;
+    cursor: pointer;
+}
+
+.ed-addline__match:hover,
+.ed-party__match:hover {
+    background: var(--mj-bg-surface-hover);
+}
+
+.ed-addline__match .nm,
+.ed-party__match .nm {
+    font-weight: var(--mj-font-medium);
+}
+
+.ed-addline__match .num {
+    margin-inline-start: auto;
+    font-variant-numeric: tabular-nums;
+}
+
+.ed-addline__none {
+    padding: var(--mj-space-2) 0 0;
+}
+
+.ed-party {
+    position: relative;
+    margin-block-end: var(--mj-space-3);
+}
+
+.ed-party__label {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-secondary);
+    margin-block-end: var(--mj-space-1);
+}
+
+.ed-party__chosen {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+}
