@@ -51,7 +51,7 @@ import { MJAlertComponent } from '@memberjunction/ng-ui-components';
                 Detail="Our cost, never netted against a customer's balance" />
         </div>
 
-        <div class="mjo-pd__split">
+        <div class="mjo-pd__split mjo-pd__split--three">
             <div class="mj-card">
                 <div class="mj-card-head">
                     <i class="fa-solid fa-credit-card" aria-hidden="true"></i>
@@ -148,6 +148,11 @@ import { MJAlertComponent } from '@memberjunction/ng-ui-components';
     `,
     styles: [
         `
+            /* NOTE: .mjo-pd__split was declared TWICE in this block with different column
+               templates, so the later one silently won and BOTH rows rendered as two equal
+               columns. The top row has three cards, so the third landed alone and left an empty
+               half-width slot beside it — a hole that read as a card that had failed to load.
+               Two layouts need two names. */
             .mjo-pd__split {
                 display: grid;
                 grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
@@ -172,10 +177,11 @@ import { MJAlertComponent } from '@memberjunction/ng-ui-components';
                 overflow: auto;
                 padding: var(--mj-space-6);
             }
-            .mjo-pd__split {
-                display: grid;
-                grid-template-columns: 1fr 1fr;
-                gap: var(--mj-space-4);
+            /* The three-card row: all three abreast, so nothing is left orphaned on a second
+               line. auto-fit rather than a fixed 3 so it reflows to 2 then 1 as the pane
+               narrows instead of squeezing three unreadable columns. */
+            .mjo-pd__split--three {
+                grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
                 margin-top: var(--mj-space-6);
             }
             .mjo-pd__note { margin-top: var(--mj-space-3); }
