@@ -16,7 +16,7 @@
  * generator asserts every live name was found in the migration — 120/120 — so the two agree
  * on what exists even though only one can say what it means.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 
 const [, , schemaPath, outPath, checkDefsPath] = process.argv;
 const db = JSON.parse(readFileSync(schemaPath, 'utf8'));
@@ -24,6 +24,12 @@ const checkDefs = checkDefsPath ? JSON.parse(readFileSync(checkDefsPath, 'utf8')
 const S = db.schema;
 
 const FLYWAY = 'flyway_schema_history';
+
+/** The newest migration on disk — what a reader should re-check this page against. */
+const latestMigration = readdirSync(new URL('../migrations', import.meta.url))
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .pop() ?? '(none)';
 const tables = db.tables.map((t) => t.TableName).filter((t) => t !== FLYWAY).sort();
 const colsOf = (t) => db.columns.filter((c) => c.TableName === t);
 const internalFks = db.fks.filter((f) => f.RefSchema === S && f.ParentTable !== FLYWAY);
@@ -243,6 +249,12 @@ p('> ```sh');
 p(`> node test-harnesses/dump-schema.mjs /tmp/orders-schema.json`);
 p(`> node test-harnesses/gen-erd.mjs   /tmp/orders-schema.json docs/ERD.md /tmp/checkdefs.json`);
 p('> ```');
+p(`>`);
+// A verification STAMP, not decoration. Without it a reader cannot tell whether this page was
+// checked against the database today or three migrations ago — and an ERD nobody can date is one
+// nobody can trust. The migration filename is included because that is what actually determines
+// the shape; if it changes and this page did not, the two disagree.
+p(`> **Verified against the live database:** ${new Date().toISOString().slice(0, 10)} · latest migration \`${latestMigration}\``);
 p(`>`);
 p(`> **Schema:** \`${S}\` · **Entity prefix:** \`MJ_BizApps_Orders: \` · **Keys:** UUID throughout`);
 p(`> **${tables.length} tables · ${internalFks.length} internal relationships · ${nCross} cross-app foreign keys ·`);
