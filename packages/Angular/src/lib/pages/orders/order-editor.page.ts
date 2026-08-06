@@ -2,6 +2,7 @@ import {
     ChangeDetectorRef,
     Component,
     EventEmitter,
+    HostListener,
     Input,
     OnDestroy,
     OnInit,
@@ -456,6 +457,53 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     public AddProduct(option: MJOProductOption): void {
         this.Draft.AddLine({ ProductID: option.ID, Quantity: 1 });
         this.ProductQuery = '';
+    }
+
+    /* ── Dismissing the pickers ─────────────────────────────────────────────
+     *
+     * A typeahead that only closes when you pick something is a trap: the list stays over the
+     * table, and the only way out is to choose a product you did not want or to clear the box by
+     * hand. Clicking away is what everyone tries first.
+     */
+
+    /**
+     * Close any open picker when the click lands outside all of them.
+     *
+     * `pointerdown`, not `click`: the list is inside the same subtree, so a pointerdown that
+     * started on an option is excluded by the `closest()` test below and the option's own click
+     * still fires. Using blur instead would race the click and swallow the selection.
+     */
+    @HostListener('document:pointerdown', ['$event'])
+    public OnDocumentPointerDown(event: Event): void {
+        const target = event.target as HTMLElement | null;
+        if (target?.closest('.ed-addline, .ed-party')) return;
+        this.ClosePickers();
+    }
+
+    /** Escape closes the open picker without touching what is already on the order. */
+    @HostListener('document:keydown.escape')
+    public OnEscape(): void {
+        this.ClosePickers();
+    }
+
+    /**
+     * Clears the SEARCH state only — never a chosen product or party. Guarded so an ordinary click
+     * anywhere on the page does not schedule a change-detection pass for nothing.
+     */
+    private ClosePickers(): void {
+        const open =
+            this.ProductQuery !== '' ||
+            this.ProductMatches.length > 0 ||
+            this.PartyQuery.bill !== '' ||
+            this.PartyQuery.ship !== '' ||
+            this.PartyMatches.bill.length > 0 ||
+            this.PartyMatches.ship.length > 0;
+        if (!open) return;
+
+        this.ProductQuery = '';
+        this.PartyQuery = { bill: '', ship: '' };
+        this.PartyMatches = { bill: [], ship: [] };
+        this.cdr.detectChanges();
     }
 
     /* ── Parties ────────────────────────────────────────────────────────────
