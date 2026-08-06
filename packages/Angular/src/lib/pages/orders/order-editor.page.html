@@ -85,14 +85,26 @@
 
   <!-- Issues above the tabs: a red dot alone leaves the user hunting. -->
   @if (Issues.length) {
-    <mj-alert Variant="warning" Icon="fa-solid fa-triangle-exclamation" class="ed-issues">
-        <strong>{{ Issues.length }} thing{{ Issues.length === 1 ? '' : 's' }} to sort out before this can confirm.</strong>
-        <ul class="ed-issues__list">
-          @for (issue of Issues; track issue.Code) {
-            <li>{{ issue.Message }}</li>
-          }
-        </ul>
-    </mj-alert>
+    <!-- One line, and every item is a BUTTON that takes you to the tab that owns it. The old
+         version was a full alert card restating what the tab dots already say, so it cost a
+         card's worth of vertical space to tell you something twice and left you to find the
+         tab yourself. -->
+    <div class="ed-todo" role="status">
+      <i class="fa-solid fa-circle-exclamation ed-todo__icon" aria-hidden="true"></i>
+      <span class="ed-todo__count">{{ Issues.length }}</span>
+      <span class="ed-todo__lead">before you can confirm</span>
+      <span class="ed-todo__items">
+        @for (issue of Issues; track issue.Code) {
+          <button
+            type="button"
+            class="ed-todo__item"
+            [title]="'Go to ' + SectionLabel(issue.Section)"
+            (click)="GoToIssue(issue.Section)">
+            {{ issue.Message }}
+          </button>
+        }
+      </span>
+    </div>
   }
 
   <mj-tab-nav

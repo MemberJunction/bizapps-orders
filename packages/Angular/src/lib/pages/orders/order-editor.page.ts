@@ -342,6 +342,23 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         return key === 'accounting' && !this.JournalEntries.length;
     }
 
+    /** Human name for a draft section, used in the to-do strip's tooltips. */
+    public SectionLabel(section: string): string {
+        return this.Tabs.find((t) => t.Key === section)?.Label ?? 'this order';
+    }
+
+    /**
+     * Jump to whichever tab owns an outstanding item.
+     *
+     * `OrderDraftSection` includes `header`, which has no tab — those fields live in the identity
+     * strip, which is always on screen. Navigating somewhere arbitrary for them would be worse
+     * than staying put, so a header issue simply does not move you.
+     */
+    public GoToIssue(section: string): void {
+        if (section === 'header') return;
+        if (this.Tabs.some((t) => t.Key === section)) this.SelectTab(section as MJOEditorTab);
+    }
+
     public SelectTab(tab: MJOEditorTab): void {
         this.ActiveTab = tab;
     }

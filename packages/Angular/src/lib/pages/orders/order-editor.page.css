@@ -430,3 +430,73 @@
     flex: 1 1 auto;
     min-inline-size: 0;
 }
+
+/* ── What is left to do, in one line ────────────────────────────────────────
+   This replaced a full warning card. The card restated what the tab dots already say and
+   cost ~90px of vertical space on the densest screen in the app to do it. The information
+   is worth keeping — knowing what blocks a confirm is the point — so it stays, compressed
+   to a single row where each item is a button that takes you to the tab that owns it. */
+
+.ed-todo {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    margin-block-start: var(--mj-space-3);
+    padding: var(--mj-space-1) var(--mj-space-3);
+    /* Tinted rather than filled: the row is a hint, not an error state, and a solid amber
+       block at this width reads as an alarm. */
+    background: color-mix(in srgb, var(--mj-color-warning-500) 8%, transparent);
+    border-inline-start: 3px solid var(--mj-color-warning-500);
+    border-radius: var(--mj-radius-sm);
+    font-size: var(--mj-text-xs);
+}
+
+.ed-todo__icon {
+    color: var(--mj-color-warning-700);
+}
+
+/* The count carries the "how many" so the sentence does not have to pluralise. */
+.ed-todo__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-inline-size: 18px;
+    block-size: 18px;
+    padding-inline: 5px;
+    border-radius: 9px;
+    background: var(--mj-color-warning-700);
+    color: var(--mj-text-inverse, #fff);
+    font-weight: var(--mj-font-semibold);
+}
+
+.ed-todo__lead {
+    color: var(--mj-text-secondary);
+}
+
+/* Items run inline and the row scrolls rather than wrapping — wrapping would let this grow
+   back into the multi-line block it replaced. */
+.ed-todo__items {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    min-inline-size: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.ed-todo__item {
+    flex: 0 0 auto;
+    padding: 0;
+    background: none;
+    border: 0;
+    border-block-end: 1px dotted currentColor;
+    color: var(--mj-color-warning-700);
+    font: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.ed-todo__item:hover,
+.ed-todo__item:focus-visible {
+    color: var(--mj-text-primary);
+}
