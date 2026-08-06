@@ -702,9 +702,21 @@ kbd {
 .mj-panel > summary .right { margin-left: auto; display: flex; gap: var(--mj-space-2); align-items: center; font-weight: var(--mj-font-normal); }
 .mj-panel-body { padding: 0 var(--mj-space-4) var(--mj-space-4); }
 .mj-panel-body.no-pad { padding: 0; }
-.mj-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+/* MJ ALREADY OWNS `.mj-table`. It is defined in ng-explorer-app's shared patterns, which
+   Explorer loads before this kit — so `width`, `border-collapse` and the base type were being
+   restated here purely to override MJ with the same thing, except in hardcoded pixels. Those
+   declarations are gone; what stays below is only what MJ's table does NOT do.
+
+   The one base property worth keeping is the SIZE: MJ's `--mj-text-sm` is 14px, and a dense
+   worklist reads better a step down. That is a deliberate deviation, so it is written as a token
+   rather than as 13px. */
+.mj-table { font-size: var(--mj-text-xs); }
+
+/* Additive, not a restatement: MJ's header has no sticky behaviour, and a worklist that scrolls
+   inside a card needs one — losing the column names on row 20 is what makes a long queue
+   unreadable. */
 .mj-table thead th {
-  text-align: left; font-size: 10.5px; font-weight: var(--mj-font-bold);
+  text-align: left; font-size: var(--mj-text-xs); font-weight: var(--mj-font-bold);
   letter-spacing: .06em; text-transform: uppercase; color: var(--mj-text-muted);
   padding: var(--mj-space-2) var(--mj-space-3);
   border-bottom: 1px solid var(--mj-border-strong);
@@ -713,7 +725,7 @@ kbd {
 }
 .mj-table thead th.num, .mj-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .mj-table thead th .sortable { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
-.mj-table thead th .sortable i { font-size: 9px; opacity: .5; }
+.mj-table thead th .sortable i { font-size: var(--mj-text-xs); opacity: .5; }
 .mj-table tbody td {
   padding: var(--mj-space-3); border-bottom: 1px solid var(--mj-border-subtle);
   vertical-align: middle;
@@ -729,7 +741,7 @@ kbd {
 .mj-table tbody tr.is-total { background: var(--mj-bg-surface-card); font-weight: var(--mj-font-semibold); }
 .mj-table tbody tr.is-total td { border-bottom: none; border-top: 2px solid var(--mj-border-strong); }
 .mj-table .primary { font-weight: var(--mj-font-semibold); }
-.mj-table .secondary { font-size: 11.5px; color: var(--mj-text-muted); }
+.mj-table .secondary { font-size: var(--mj-text-xs); color: var(--mj-text-muted); }
 .mj-table-wrap {
   background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
   border-radius: var(--mj-radius-md); overflow: auto;
