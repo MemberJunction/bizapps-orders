@@ -93,6 +93,36 @@ const step = (msg) => console.log(`\n\x1b[1m${msg}\x1b[0m`);
 
 if (doReset) {
     step('Removing previous demo data');
+
+    // THE RESET NEEDS A DDL-CAPABLE LOGIN, AND SILENTLY DID NOT HAVE ONE. Two statements below are
+    // `DISABLE TRIGGER`, which requires ALTER on the table. `MJ_Connect` — the login everything else
+    // here uses, correctly — does not have it, and SQL Server reports a missing permission as
+    // "Cannot find the object ... or you do not have permissions": indistinguishable from a renamed
+    // trigger. Every failure in this block is caught and warned, so the run continued with the
+    // immutability triggers still armed, deleted the chart of accounts and the profiles (which they
+    // do not guard) and left the orders, payments and journal entries (which they do) — an
+    // incoherent database, then a duplicate-key crash on the very next insert. It presented as
+    // "--reset does not work"; it was a permissions failure wearing a not-found message.
+    //
+    // So the reset gets its own pool on the CodeGen login. If that credential is absent, say so and
+    // carry on with the main pool rather than failing outright — the data deletes still work; only
+    // rows the triggers guard will refuse, and now the reason is on screen.
+    const resetPool = process.env.CODEGEN_DB_USERNAME
+        ? await new sql.ConnectionPool({
+              server: DB_HOST,
+              port: Number(DB_PORT ?? 1433),
+              database: DB_DATABASE,
+              user: process.env.CODEGEN_DB_USERNAME,
+              password: process.env.CODEGEN_DB_PASSWORD,
+              options: { trustServerCertificate: true, encrypt: false },
+              pool: { max: 4, min: 1 },
+          }).connect()
+        : (say(
+              '  note: CODEGEN_DB_USERNAME is not set — the immutability triggers cannot be stood down,\n' +
+                  '        so confirmed orders and captured payments from a previous run will NOT be removed.',
+          ),
+          pool);
+
     const scope = `SELECT ID FROM __mj.Company WHERE Name LIKE '${DEMO_TAG}%'`;
     const orders = `SELECT ID FROM ${ORDERS}.OrderHeader WHERE CompanyID IN (${scope})`;
     // FK-ordered, and the immutability triggers must be stood down: they exist precisely to stop
@@ -110,6 +140,13 @@ if (doReset) {
         `DELETE FROM ${ORDERS}.PaymentLine WHERE OrderHeaderID IN (${orders})`,
         `DELETE FROM ${ORDERS}.PaymentHeader WHERE ReceivingCompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.PaymentDetail WHERE CompanyID IN (${scope})`,
+        // OrderLine and Subscription reference EACH OTHER — OrderLine.SubscriptionID (nullable) and
+        // Subscription.OrderLineID (NOT NULL). Neither table can be deleted first, so the cycle has
+        // to be cut on the nullable side before either delete is attempted. Without this the
+        // Subscription delete fails, and every later delete that waits on it fails too: products,
+        // categories, types, the organization, the person and finally the company — nine cascading
+        // FK warnings that all look like independent problems and are one.
+        `UPDATE ${ORDERS}.OrderLine SET SubscriptionID=NULL WHERE OrderHeaderID IN (${orders})`,
         `DELETE FROM ${ORDERS}.SubscriptionEvent WHERE SubscriptionID IN (SELECT ID FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope}))`,
         `DELETE FROM ${ORDERS}.SubscriptionTerm WHERE SubscriptionID IN (SELECT ID FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope}))`,
         `DELETE FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope})`,
@@ -117,7 +154,15 @@ if (doReset) {
         `DELETE FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders})`,
         `DELETE FROM ${ORDERS}.OrderHeader WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ACCT}.IntercompanyAccountMatch WHERE SourceCompanyID IN (${scope}) OR TargetCompanyID IN (${scope})`,
+        // Every child of Product, enumerated from sys.foreign_keys rather than guessed — the list was
+        // previously EventProduct alone, so a demo product that had picked up a price row could never
+        // be deleted. `SuccessorProductID` is Product referencing itself, hence the null-out.
         `DELETE FROM ${ORDERS}.EventProduct WHERE ID IN (SELECT ID FROM ${ORDERS}.Product WHERE CompanyID IN (${scope}))`,
+        `DELETE FROM ${ORDERS}.ProductPrice WHERE ProductID IN (SELECT ID FROM ${ORDERS}.Product WHERE CompanyID IN (${scope}))`,
+        `DELETE FROM ${ORDERS}.ProductEntitlement WHERE ProductID IN (SELECT ID FROM ${ORDERS}.Product WHERE CompanyID IN (${scope}))`,
+        `DELETE FROM ${ORDERS}.ProductBundleItem WHERE BundleProductID IN (SELECT ID FROM ${ORDERS}.Product WHERE CompanyID IN (${scope})) OR ComponentProductID IN (SELECT ID FROM ${ORDERS}.Product WHERE CompanyID IN (${scope}))`,
+        `DELETE FROM ${ORDERS}.PromotionTarget WHERE ProductID IN (SELECT ID FROM ${ORDERS}.Product WHERE CompanyID IN (${scope})) OR ProductCategoryID IN (SELECT ID FROM ${ORDERS}.ProductCategory WHERE CompanyID IN (${scope}))`,
+        `UPDATE ${ORDERS}.Product SET SuccessorProductID=NULL WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.Product WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.ProductCategory WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.ProductType WHERE Name LIKE '${DEMO_TAG}%'`,
@@ -132,13 +177,34 @@ if (doReset) {
         `ENABLE TRIGGER ${ORDERS}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS}.PaymentHeader`,
         `ENABLE TRIGGER ${ORDERS}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS}.PaymentLine`,
     ];
+    const warnings = [];
     for (const s of statements) {
         try {
-            const r = await pool.request().query(s);
+            const r = await resetPool.request().query(s);
             if (r.rowsAffected?.[0]) say(`  ${r.rowsAffected[0]} × ${s.split(' WHERE')[0].replace(/^(DELETE|UPDATE)\s+(FROM\s+)?/, '')}`);
         } catch (e) {
-            console.warn(`  warn: ${String(e.message).split('\n')[0]}`);
+            const message = String(e.message).split('\n')[0];
+            warnings.push(message);
+            console.warn(`  warn: ${message}`);
         }
+    }
+    if (resetPool !== pool) await resetPool.close();
+
+    // ASSERT THE RESET ACTUALLY RESET. Warnings alone are not a result: the failure mode this block
+    // exists to prevent is a half-deleted dataset that then crashes on a duplicate key twenty lines
+    // later, with the real cause scrolled off the top. If a demo company survived, stop here and say
+    // what went wrong instead of seeding on top of it.
+    const survivors = await q(`${scope} `);
+    if (survivors.length) {
+        console.error(
+            `\n  ${survivors.length} demo company row(s) survived the reset. Not seeding on top of a` +
+                ` partial dataset.\n  The deletes that failed:\n` +
+                warnings.map((w) => `    - ${w}`).join('\n') +
+                `\n\n  If these are FK conflicts from rows the immutability triggers refused to release,` +
+                ` the reset\n  is running without a DDL-capable login — set CODEGEN_DB_USERNAME /` +
+                ` CODEGEN_DB_PASSWORD.\n`,
+        );
+        process.exit(1);
     }
 }
 
