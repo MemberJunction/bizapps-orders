@@ -150,7 +150,26 @@ if (doReset) {
         `DELETE FROM ${ORDERS}.SubscriptionEvent WHERE SubscriptionID IN (SELECT ID FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope}))`,
         `DELETE FROM ${ORDERS}.SubscriptionTerm WHERE SubscriptionID IN (SELECT ID FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope}))`,
         `DELETE FROM ${ORDERS}.Subscription WHERE CompanyID IN (${scope})`,
+        // EVERY child of OrderLine and OrderHeader, enumerated from sys.foreign_keys rather than
+        // discovered one failed run at a time. The list used to name EventOrderLine alone, so the
+        // first demo order that picked up a resolved price (and therefore an
+        // OrderLinePriceComponent row) made the whole reset unrunnable. The self-references —
+        // OrderLine.ReversesOrderLineID / .ParentOrderLineID and OrderHeader.ReversesOrderHeaderID —
+        // are nulled rather than ordered, because a return and its origin are mutually reachable
+        // and no delete order satisfies both.
         `DELETE FROM ${ORDERS}.EventOrderLine WHERE ID IN (SELECT ID FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders}))`,
+        `DELETE FROM ${ORDERS}.OrderLinePriceComponent WHERE OrderLineID IN (SELECT ID FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders}))`,
+        `DELETE FROM ${ORDERS}.OrderLineDimension WHERE OrderLineID IN (SELECT ID FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders}))`,
+        `DELETE FROM ${ORDERS}.OrderChargeAllocation WHERE OrderLineID IN (SELECT ID FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders}))`,
+        `DELETE FROM ${ORDERS}.OrderAdjustmentAllocation WHERE OrderLineID IN (SELECT ID FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders}))`,
+        `DELETE FROM ${ORDERS}.OrderAdjustment WHERE OrderHeaderID IN (${orders}) OR OrderLineID IN (SELECT ID FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders}))`,
+        `DELETE FROM ${ORDERS}.OrderCharge WHERE OrderHeaderID IN (${orders})`,
+        `DELETE FROM ${ORDERS}.EntitlementGrant WHERE OrderLineID IN (SELECT ID FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders}))`,
+        `DELETE FROM ${ORDERS}.StoredValueTransaction WHERE RelatedOrderHeaderID IN (${orders})`,
+        `DELETE FROM ${ORDERS}.StoredValueAccount WHERE IssuedFromOrderLineID IN (SELECT ID FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders}))`,
+        `DELETE FROM ${ORDERS}.PaymentIntent WHERE OrderHeaderID IN (${orders})`,
+        `UPDATE ${ORDERS}.OrderLine SET ReversesOrderLineID=NULL, ParentOrderLineID=NULL WHERE OrderHeaderID IN (${orders})`,
+        `UPDATE ${ORDERS}.OrderHeader SET ReversesOrderHeaderID=NULL WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders})`,
         `DELETE FROM ${ORDERS}.OrderHeader WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ACCT}.IntercompanyAccountMatch WHERE SourceCompanyID IN (${scope}) OR TargetCompanyID IN (${scope})`,
