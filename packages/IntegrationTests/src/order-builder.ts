@@ -7,6 +7,7 @@
  * directly would test the schema and nothing else.
  */
 import { Metadata } from '@memberjunction/core';
+import { Fx } from './fixture.js';
 import type { BaseEntity, IMetadataProvider, UserInfo } from '@memberjunction/core';
 
 /**
@@ -59,9 +60,14 @@ export interface OrderSpec {
     DueDate?: string;
     /** State the terms and let the walk derive the date from `NetDays` (D83). */
     PaymentTermsTypeID?: string;
-    /** WHO PAYS (D65). Either side, or both. Falls through as the last tier of subscriber resolution. */
-    BillToOrganizationID?: string;
-    BillToPersonID?: string;
+    /**
+     * WHO PAYS (D65). Either side, or both. Falls through as the last tier of subscriber resolution.
+     *
+     * Omit both and you get the fixture's buyer organization — a confirmed order must name someone.
+     * Pass `null` to opt out deliberately, which is how a check proves a payer-less confirm is refused.
+     */
+    BillToOrganizationID?: string | null;
+    BillToPersonID?: string | null;
     /** Order-level ship-to — the default every line inherits unless it overrides (D61). */
     ShipToOrganizationID?: string;
     ShipToPersonID?: string;
@@ -111,8 +117,23 @@ export async function BuildOrder(
     order.CompanyID = spec.CompanyID;
     if (spec.DueDate) order.DueDate = new Date(spec.DueDate);
     if (spec.PaymentTermsTypeID) order.PaymentTermsTypeID = spec.PaymentTermsTypeID;
-    if (spec.BillToOrganizationID) order.BillToOrganizationID = spec.BillToOrganizationID;
-    if (spec.BillToPersonID) order.BillToPersonID = spec.BillToPersonID;
+    // EVERY FIXTURE ORDER NAMES A CUSTOMER, because every real one does.
+    //
+    // This used to leave both payer fields null whenever a spec did not state one, which was most
+    // of the suite — so the checks were confirming orders that no business could have: a receivable
+    // owed by nobody. That went unnoticed because nothing enforced a payer (the rule lived only in
+    // the order screen), and it is precisely the state
+    // `OrderEntityServer.ValidateAsync` now rejects.
+    //
+    // Passing `null` explicitly is the opt-out, and it means "prove the rejection" — it is how the
+    // checks that assert a payer-less confirm is refused build their subject. `undefined`, which is
+    // what you get by simply not mentioning the field, takes the fixture's buyer organization.
+    if (spec.BillToOrganizationID === undefined && spec.BillToPersonID === undefined) {
+        order.BillToOrganizationID = Fx().Customers.OrganizationID;
+    } else {
+        if (spec.BillToOrganizationID) order.BillToOrganizationID = spec.BillToOrganizationID;
+        if (spec.BillToPersonID) order.BillToPersonID = spec.BillToPersonID;
+    }
     if (spec.ShipToOrganizationID) order.ShipToOrganizationID = spec.ShipToOrganizationID;
     if (spec.ShipToPersonID) order.ShipToPersonID = spec.ShipToPersonID;
     if (spec.ShipToAddressID) order.ShipToAddressID = spec.ShipToAddressID;

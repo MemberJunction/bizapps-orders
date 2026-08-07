@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB9).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB12).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -14,6 +14,9 @@
  *   OB7  an unresolvable GL account REJECTS the confirm (all-or-none, D12)
  *   OB8  …and leaves no journal entries behind
  *   OB9  …and leaves the order unconfirmed
+ *   OB10 the booking debits reconcile against the order's own totals
+ *   OB11 a confirm with NO CUSTOMER is refused, and books nothing
+ *   OB12 a confirm with NO LINES is refused
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -371,6 +374,92 @@ export const OrderBookingChecks: NamedCheck[] = [
                 Assert(
                     persisted.length === 0 || persisted[0].Status !== 'Confirmed',
                     `a rejected order must not persist as Confirmed: ${JSON.stringify(persisted)}`,
+                );
+            }),
+    },
+    {
+        Id: 'order-booking.OB11',
+        Name: 'OB11: a confirm with NO CUSTOMER is refused, and books nothing',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // A confirmed order IS the receivable here — there is no separate invoice — so one
+                // with neither a bill-to person nor a bill-to organization is a receivable owed by
+                // nobody: it debits A/R, sits in the balance, and can never be aged or collected,
+                // because every collections surface groups by the payer key that is null on it.
+                //
+                // This was reachable. Before the rule existed, this exact order confirmed and posted
+                // Dr 11201 A/R 99 / Cr 40100 Sales 99. The order screen did block it, but a screen
+                // is not a rule — the entity is.
+                //
+                // `null` on both payer fields is the deliberate opt-out from the fixture's default
+                // buyer (see BuildOrder); every other check gets a customer precisely because a real
+                // order always has one.
+                const f = Fx();
+                const before = await TxOne<{ N: number }>(
+                    ctx,
+                    `SELECT COUNT(*) AS N FROM ${ACCT_SCHEMA}.JournalEntry`,
+                );
+
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: null,
+                    BillToPersonID: null,
+                    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 99 }],
+                });
+
+                Assert(!result.Saved, 'a confirm with no customer must be refused');
+                Assert(
+                    /without a customer/i.test(result.Message),
+                    `refused for the RIGHT reason, got: ${result.Message}`,
+                );
+
+                // Refused is not enough — it must also be all-or-none.
+                const after = await TxOne<{ N: number }>(
+                    ctx,
+                    `SELECT COUNT(*) AS N FROM ${ACCT_SCHEMA}.JournalEntry`,
+                );
+                AssertEqual(
+                    Number(after.N),
+                    Number(before.N),
+                    'journal entry count after a customer-less confirm',
+                );
+            }),
+    },
+    {
+        Id: 'order-booking.OB12',
+        Name: 'OB12: a confirm with NO LINES is refused',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The rule this asserts was WRITTEN long before this check and never once ran.
+                // `OrderEntityServer.ValidateAsync` was skipped entirely (BaseEntity opts out of
+                // async validation by default), and even once enabled it asked
+                // `willBookOnThisSave()`, which `Save()` had already falsified by stamping
+                // `ConfirmedAt` three lines earlier. Two defects, each masking the other.
+                //
+                // So this check exists as much for the plumbing as for the rule: if either defect
+                // returns, an order with nothing on it confirms again, and this is what says so.
+                const f = Fx();
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [],
+                });
+
+                Assert(!result.Saved, 'a confirm with no lines must be refused');
+                Assert(
+                    /no lines/i.test(result.Message),
+                    `refused for the RIGHT reason, got: ${result.Message}`,
+                );
+
+                const persisted = await TxQuery<{ Status: string }>(
+                    ctx,
+                    `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${result.Order.ID}'`,
+                );
+                Assert(
+                    persisted.length === 0 || persisted[0].Status !== 'Confirmed',
+                    `an empty order must not persist as Confirmed: ${JSON.stringify(persisted)}`,
                 );
             }),
     },

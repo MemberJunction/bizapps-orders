@@ -262,6 +262,26 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
     // ─── Validation ────────────────────────────────────────────────────────────
 
+    /**
+     * WITHOUT THIS, NOTHING BELOW RUNS.
+     *
+     * `BaseEntity.DefaultSkipAsyncValidation` returns **true** — `Save()` calls `Validate()` always
+     * but reaches `ValidateAsync()` only when a subclass opts in. This class never did, so its
+     * entire async validation block was dead code from the day it was written: the "an order
+     * entering the booked state must have something to book" rule never fired, and neither did the
+     * loop that surfaces each line's `ValidateAsync` failures against the order.
+     *
+     * That is not a theory. Saving an order straight to Confirmed with ZERO lines succeeded and
+     * produced ORD-000030 — a confirmed order with nothing on it. `ProductPriceEntityServer` is the
+     * only class in this package that got this right, and its comment says exactly why.
+     *
+     * The failure mode is the dangerous kind: the rule reads as enforced, reviews as enforced, and
+     * is not. If you add a `ValidateAsync` to any entity here, add this override with it.
+     */
+    public override get DefaultSkipAsyncValidation(): boolean {
+        return false;
+    }
+
     public override async ValidateAsync(): Promise<ValidationResult> {
         const result = await super.ValidateAsync();
 
@@ -280,6 +300,39 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                     ),
                 );
             }
+        }
+
+        // AND IT MUST NAME SOMEONE TO BILL. A confirmed order IS the receivable in this app —
+        // there is no separate invoice record — so a booked order with neither a bill-to person nor
+        // a bill-to organization is a receivable owed by nobody. It debits Accounts Receivable,
+        // appears in the balance, and can never be aged, chased or collected, because every
+        // collections surface groups by the payer key that is null on it.
+        //
+        // This was reachable, not theoretical: before this check, saving an order straight to
+        // Confirmed with lines and no payer succeeded and posted a real journal entry
+        // (Dr 11201 Accounts Receivable 99 / Cr 40100 Sales Revenue 99). The order screen does
+        // block it — but the screen is not the rule. Per the note on Save() below, a rule enforced
+        // only in the UI holds until somebody saves an entity directly, which is the failure this
+        // codebase has now found three times.
+        //
+        // The subscription path already rejected the payer-less case, but only incidentally: it
+        // needs a SUBSCRIBER, so a plain goods order sailed through. That is why this belongs here,
+        // next to the lines rule, rather than in any one behaviour.
+        //
+        // Draft and Quoted are deliberately exempt — you take an order before you know who is
+        // paying, and forcing the payer up front would break order entry.
+        if (this.willBookOnThisSave() && !this.BillToPersonID && !this.BillToOrganizationID) {
+            result.Success = false;
+            result.Errors.push(
+                new ValidationErrorInfo(
+                    'BillToOrganizationID',
+                    `Order ${this.OrderNumber ?? ''} cannot be confirmed without a customer — ` +
+                        `set a bill-to person or a bill-to organization. A confirmed order is the ` +
+                        `receivable, so one with no payer could never be collected.`,
+                    this.BillToOrganizationID,
+                    ValidationErrorType.Failure,
+                ),
+            );
         }
 
         // Children guard their own invariants; surface their failures against the order.
@@ -334,6 +387,12 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         if (booking) await this.resolveDueDate();
 
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
+
+        // Latch it BEFORE ConfirmedAt is stamped, so the validation that runs inside the
+        // `super.Save()` below still knows this is the booking save. Cleared in `finally` — an
+        // entity object can be re-saved, and a stale latch would make a later ordinary update
+        // re-run the booking-only rules. See `bookingInFlight`.
+        this.bookingInFlight = booking;
 
         try {
             await dbProvider.BeginTransaction();
@@ -419,6 +478,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             // integration suite all need the reason; the log is not a return value.
             this.RegisterResultHistoryEntry(this.buildFailureResult(err));
             return false;
+        } finally {
+            this.bookingInFlight = false;
         }
     }
 
@@ -601,8 +662,26 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
     // ─── Booking ───────────────────────────────────────────────────────────────
 
+    /**
+     * True while THIS save is the booking save, and it stays true across `ConfirmedAt` being set.
+     *
+     * `willBookOnThisSave()` answers "would a save starting now book?", which is the right question
+     * everywhere except inside the booking save itself. `Save()` stamps `ConfirmedAt` before it calls
+     * `super.Save()`, and `ConfirmedAt` is exactly what makes `willBookOnThisSave()` return false —
+     * so validation running inside that `super.Save()` was asking a question whose answer had
+     * already been flipped by its own caller, three lines earlier. Every rule gated on it was
+     * therefore skipped on the one save it existed to guard.
+     *
+     * That is why a confirm with zero lines (ORD-000030) and a confirm with no payer (ORD-000028,
+     * which posted Dr A/R 99 / Cr Sales 99) both went through. Two separate defects had to coincide
+     * — this one and the skipped `ValidateAsync` — and fixing either alone changes nothing, which is
+     * why the block looked correct for as long as it did.
+     */
+    private bookingInFlight = false;
+
     /** True when this save is the first transition into a booked status (plan D8). */
     private willBookOnThisSave(): boolean {
+        if (this.bookingInFlight) return true;
         if (!BOOKED_STATUSES.has(this.Status)) return false;
         if (this.ConfirmedAt) return false; // already booked — never re-book
         return true;
