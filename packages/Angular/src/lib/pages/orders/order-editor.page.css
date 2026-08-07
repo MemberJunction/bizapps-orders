@@ -78,6 +78,13 @@
   border-right: none;
 }
 
+/* A cell whose VALUE is a name rather than a code. Company names do not abbreviate — "DEMO Pu…"
+   identifies nothing — so this one takes two of the 150px tracks. It degrades safely: when the
+   strip is already down to one or two columns the span is clamped to the columns that exist. */
+.ed-identity > div.ed-identity__cell--wide {
+  grid-column: span 2;
+}
+
 .ed-identity .l {
   font-size: 10px;
   font-weight: var(--mj-font-bold);

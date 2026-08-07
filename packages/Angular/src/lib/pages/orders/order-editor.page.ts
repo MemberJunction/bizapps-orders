@@ -18,7 +18,7 @@ import {
     type OrdersPreviewOrderOutput,
 } from '@mj-biz-apps/orders-entities';
 
-import { MJO_ENTITIES, MJOOrdersDataService } from '../../services/orders-data.service';
+import { MJO_ENTITIES, MJOOrdersDataService, type MJOCompanyOption } from '../../services/orders-data.service';
 import { MJOOrderEntryService, type MJOPreviewState } from '../../services/order-entry.service';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { MJOStatusStepperComponent } from '../../panels/status-stepper.component';
@@ -125,6 +125,16 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
 
     /** Catalog for the product column and the add-line picker. */
     @Input() Catalog: MJOProductOption[] = [];
+
+    /**
+     * The companies this order could be raised under.
+     *
+     * The OWNING company decides which chart of accounts the order books into and who can see it,
+     * and it was previously taken silently from the first product in the catalog and never shown.
+     * A default nobody can see is a decision made on the user's behalf in secret — and with more
+     * than one company it is a decision they may well want to make differently.
+     */
+    @Input() Companies: MJOCompanyOption[] = [];
 
     /** Where the order is. Drives the stepper and which verbs are offered. */
     @Input() Status: MJOOrderStage = 'Draft';
@@ -673,6 +683,29 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
      * and then showed both of them read-only, so an order taken over the counter could not record
      * that it had been paid for.
      */
+
+    /** True when there is a real choice to make — one company needs no picker. */
+    public get HasCompanyChoice(): boolean {
+        return this.IsEditable && this.Companies.length > 1;
+    }
+
+    /** The owning company's name, for the read-only case. */
+    public get OwningCompanyName(): string {
+        const id = this.Draft?.Header.CompanyID;
+        return this.Companies.find((c) => c.ID === id)?.Name ?? '—';
+    }
+
+    /**
+     * Change which company owns the order.
+     *
+     * Only meaningful while the order is a draft: the owning company anchors the document and the
+     * ledger it books into, so moving it after confirm would rewrite history rather than edit a form.
+     * `IsEditable` already gates the control.
+     */
+    public SetOwningCompany(companyID: string): void {
+        if (!companyID) return;
+        this.Draft.SetHeader({ CompanyID: companyID });
+    }
 
     /** The `PaymentType` row behind the chosen tender, or null for invoice-on-terms. */
     public get SelectedTenderType(): MJOTenderOption | null {

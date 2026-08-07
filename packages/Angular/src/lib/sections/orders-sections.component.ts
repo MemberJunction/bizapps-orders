@@ -312,12 +312,13 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
      * produce an answer already in memory.
      */
     private async sharedInputs(): Promise<Record<string, unknown>> {  // eslint-disable-line
-        const [Catalog, CompanyID, Tenders] = await Promise.all([
+        const [Catalog, CompanyID, Tenders, Companies] = await Promise.all([
             this.catalogOptions(),
             this.defaultCompanyID(),
             this.tenderOptions(),
+            this.data.GetSellingCompanies(),
         ]);
-        return { Catalog, CompanyID, Tenders };
+        return { Catalog, CompanyID, Tenders, Companies };
     }
 
     private catalogCache: Array<Record<string, unknown>> | null = null;

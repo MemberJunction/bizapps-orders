@@ -84,6 +84,12 @@ export const MJO_ACCOUNTING_ENTITIES = {
     CompanyTaxNexus: 'MJ_BizApps_Accounting: Company Tax Nexus',
 } as const;
 
+/** A company an order can be raised under. */
+export interface MJOCompanyOption {
+    ID: string;
+    Name: string;
+}
+
 /** A row as the order list renders it. */
 /** Canonical 8-4-4-4-12 hex form. */
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -793,6 +799,28 @@ export class MJOOrdersDataService {
             else grouped.set(key, [row]);
         }
         return grouped;
+    }
+
+    /**
+     * The companies this instance can SELL as, ordered by name.
+     *
+     * Derived from which companies own PRODUCTS rather than from the Company table: a company with
+     * nothing to sell cannot raise an order, and the Company table is MJ-core-wide, so it carries
+     * every company any app ever created. Note this does NOT exclude integration-test fixture
+     * companies — those own products too, so they appear here until the fixture data is purged
+     * (`test-harnesses/purge-fixture-data.mjs`).
+     */
+    public async GetSellingCompanies(user?: UserInfo): Promise<MJOCompanyOption[]> {
+        const products = await this.GetProducts({ MaxRows: 500, User: user });
+        const byID = new Map<string, string>();
+        for (const p of products) {
+            const id = String(p['CompanyID'] ?? '');
+            if (!id) continue;
+            if (!byID.has(id)) byID.set(id, String(p['Company'] ?? ''));
+        }
+        return [...byID]
+            .map(([ID, Name]) => ({ ID, Name }))
+            .sort((a, b) => a.Name.localeCompare(b.Name));
     }
 
     /**

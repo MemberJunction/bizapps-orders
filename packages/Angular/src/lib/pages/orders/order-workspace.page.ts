@@ -40,7 +40,7 @@ import type { TabReorder } from '../../transfer-pending/workspace-tabs/workspace
 import { MJOOrderEditorPageComponent } from './order-editor.page';
 import type { MJOOrderStage } from '../../panels/status-stepper.component';
 import { MJOOrderEntryService } from '../../services/order-entry.service';
-import { MJOOrdersDataService } from '../../services/orders-data.service';
+import { MJOOrdersDataService, type MJOCompanyOption } from '../../services/orders-data.service';
 import type { MJOProductOption } from './fast-entry.page';
 import type { MJOTenderOption } from '../payments/payment-entry.page';
 import { ReadableSaveError } from '../../services/save-error';
@@ -86,6 +86,7 @@ const UNTITLED = 'New order';
                     [Draft]="draft"
                     [Catalog]="Catalog"
                     [Tenders]="Tenders"
+                    [Companies]="Companies"
                     [Status]="ActiveStatus"
                     [OrderNumber]="ActiveOrderNumber"
                     [ShowActions]="false"
@@ -159,6 +160,15 @@ export class MJOOrderWorkspacePageComponent implements OnDestroy {
 
     /** Tenders the instance accepts, likewise passed through. */
     @Input() Tenders: MJOTenderOption[] = [];
+
+    /**
+     * Companies an order can be sold as, passed through to the editor's identity strip.
+     *
+     * The section supplies this to whatever page it mounts, and for 'editor' the page it mounts is
+     * THIS workspace — not the editor. Without the pass-through the editor's list stayed empty, so
+     * "Selling as" rendered a dash and the picker never appeared however many companies existed.
+     */
+    @Input() Companies: MJOCompanyOption[] = [];
 
     /**
      * Set by the section when the user opened a specific order. Handled as an input rather than a

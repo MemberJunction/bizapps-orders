@@ -32,6 +32,30 @@
         <span class="v">{{ Draft.Header.OrderType ?? 'Sale' }}</span>
       }
     </div>
+    <div class="ed-identity__cell--wide">
+      <!-- WHICH COMPANY IS SELLING. High on the strip — straight after the order and its type —
+           because it decides the chart of accounts the order books into, and it used to be taken
+           silently from the first product in the catalogue. Rendered as plain text when there is
+           only one company, because a picker with one option is a decision that isn't.
+
+           It spans two columns: a 150px cell truncates "DEMO Publishing Co" to "DEMO Pu…", and a
+           company picker that cannot show which company is picked has no reason to exist. -->
+      <span class="l">Selling as</span>
+      @if (HasCompanyChoice) {
+        <mj-dropdown
+          class="ed-identity__input"
+          [title]="OwningCompanyName"
+          aria-label="Selling company"
+          [Data]="Companies"
+          TextField="Name"
+          ValueField="ID"
+          [ValuePrimitive]="true"
+          [ngModel]="Draft.Header.CompanyID"
+          (ngModelChange)="SetOwningCompany($event)" />
+      } @else {
+        <span class="v">{{ OwningCompanyName }}</span>
+      }
+    </div>
     <div>
       <span class="l">Order date</span>
       @if (IsEditable) {
