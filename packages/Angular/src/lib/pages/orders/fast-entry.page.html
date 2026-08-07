@@ -472,9 +472,19 @@
     type="button"
     mjButton variant="primary"
     [disabled]="!CanConfirm"
+    [title]="ConfirmBlockedReason ?? 'Confirm the order and book it'"
     (click)="RequestConfirm()">
     <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm order
   </button>
+
+  <!--
+    THE REASON, IN THE OPEN. The title alone is not enough: it needs a hover, it is invisible on
+    touch, and a screen reader announces it inconsistently. Rendering it next to the button means
+    the answer to "why can't I confirm" is on screen at the moment the question is asked.
+  -->
+  @if (ConfirmBlockedReason) {
+    <span class="fe-confirm-why" role="status">{{ ConfirmBlockedReason }}</span>
+  }
 
   <div class="mj-keys spacer">
     <span><kbd>/</kbd> add product</span>

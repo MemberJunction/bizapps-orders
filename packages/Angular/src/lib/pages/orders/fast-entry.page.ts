@@ -549,10 +549,34 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     /* ── Actions ────────────────────────────────────────────────────────── */
 
     public get CanConfirm(): boolean {
-        // A tender that needs a reference and has none is not confirmable. The server refuses it
-        // too — this only stops the user reaching a rejection they could see coming.
-        if (this.RequiresReference && !this.Reference.trim()) return false;
-        return this.Draft?.Validate().IsValid === true && !this.Preview.Loading && !!this.Preview.Result;
+        return this.ConfirmBlockedReason === null;
+    }
+
+    /**
+     * WHY the confirm is unavailable, or null when it is available.
+     *
+     * A disabled button that says nothing is the worst control on a screen: the user can see the
+     * action they want, cannot have it, and is given no way to work out what to change. This page
+     * had exactly that — `[disabled]="!CanConfirm"` with no title and no hint — so every blocking
+     * condition, old and new, presented identically as "the confirm button does not work".
+     *
+     * Ordered by what the user should fix FIRST, not by how the checks happen to be written: there
+     * is no point telling someone to add a check number when they have not chosen a customer yet.
+     */
+    public get ConfirmBlockedReason(): string | null {
+        if (!this.Draft) return 'Nothing to confirm yet.';
+        if (this.Saving) return 'Saving…';
+
+        const issues = this.Draft.Validate().Issues.filter((i) => i.Severity === 'error');
+        if (issues.length) return issues[0].Message;
+
+        if (this.RequiresReference && !this.Reference.trim()) {
+            return `Enter the ${this.SelectedTenderType?.Name ?? 'payment'} number — it is needed to match the payment to the bank statement.`;
+        }
+        if (this.Preview.Error) return this.Preview.Error;
+        if (this.Preview.Loading) return 'Working out what this order comes to…';
+        if (!this.Preview.Result) return 'Waiting for the order total.';
+        return null;
     }
 
     /**

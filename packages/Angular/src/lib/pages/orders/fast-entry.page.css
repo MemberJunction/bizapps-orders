@@ -469,3 +469,12 @@
     color: var(--mj-text-primary);
     background: var(--mj-bg-surface-hover);
 }
+
+/* Why the confirm is unavailable, beside the button that is unavailable. Amber rather than red:
+   nothing has gone wrong — there is simply something still to do. */
+.fe-confirm-why {
+    align-self: center;
+    margin-inline-start: var(--mj-space-2);
+    font-size: var(--mj-text-sm);
+    color: var(--mj-status-warning-text);
+}
