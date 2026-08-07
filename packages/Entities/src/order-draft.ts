@@ -460,13 +460,24 @@ export class OrderDraft {
         /** True when the chosen tender cannot be captured without a reference. */
         RequiresReference?: boolean;
     }): this {
-        return this.SetHeader({
-            InitialPaymentTypeID: intent.PaymentTypeID ?? null,
-            InitialPaymentAmount: intent.Amount ?? 0,
-            SourceCustomerPaymentMethodID: intent.SourceCustomerPaymentMethodID ?? null,
-            InitialPaymentReference: intent.Reference?.trim() || null,
-            InitialPaymentRequiresReference: intent.RequiresReference ?? false,
-        });
+        // ONLY WHAT THE CALLER STATED. This used to write all five fields on every call, defaulting
+        // the unmentioned ones to null/0 — so any caller patching one part silently erased the rest.
+        // It produced the same bug three times: `SetTender`, `SetInitialAmount` and `PayInFull` each
+        // restated a partial intent and wiped a typed check number. Fixing the callers one at a time
+        // was fixing the symptom; the shape of this method was the cause.
+        //
+        // Clearing is explicit and has its own method — {@link ClearInitialPayment} — so nothing is
+        // lost by leaving unmentioned fields alone. A caller that genuinely means "no reference"
+        // passes `Reference: null`.
+        const patch: Partial<OrderDraftHeaderPayload> = {};
+        if (intent.PaymentTypeID !== undefined) patch.InitialPaymentTypeID = intent.PaymentTypeID;
+        if (intent.Amount !== undefined) patch.InitialPaymentAmount = intent.Amount;
+        if (intent.SourceCustomerPaymentMethodID !== undefined) {
+            patch.SourceCustomerPaymentMethodID = intent.SourceCustomerPaymentMethodID;
+        }
+        if (intent.Reference !== undefined) patch.InitialPaymentReference = intent.Reference?.trim() || null;
+        if (intent.RequiresReference !== undefined) patch.InitialPaymentRequiresReference = intent.RequiresReference;
+        return this.SetHeader(patch);
     }
 
     /** Clear any initial-payment intent — the customer will be invoiced on terms. */

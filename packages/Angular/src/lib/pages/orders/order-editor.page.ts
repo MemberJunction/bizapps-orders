@@ -732,10 +732,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
 
     /** Offer the balance as the obvious amount — the common case is paying in full. */
     public PayInFull(): void {
-        this.Draft.SetInitialPayment({
-            PaymentTypeID: this.Draft.Header.InitialPaymentTypeID ?? null,
-            Amount: this.Totals?.GrossTotal ?? 0,
-        });
+        this.restateIntent({ Amount: this.Totals?.GrossTotal ?? 0 });
     }
 
     /**

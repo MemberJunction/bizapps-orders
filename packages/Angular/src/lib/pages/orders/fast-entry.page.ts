@@ -685,6 +685,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
             PaymentTypeID: this.SelectedTenderType?.ID ?? null,
             Amount: this.Preview.Result?.Totals.GrossTotal ?? 0,
             Reference: this.Reference,
+            RequiresReference: this.RequiresReference,
         });
     }
 
