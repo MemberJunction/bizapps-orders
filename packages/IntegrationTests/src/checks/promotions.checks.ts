@@ -52,7 +52,7 @@ import {
   SALES_RULE_ENTITY,
 } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
-import type { LooseEntity } from "../payment-builder.js";
+import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
 
 const q = (x: unknown) => (x == null ? "NULL" : typeof x === "string" ? `'${String(x).replace(/'/g, "''")}'` : String(x));
 
@@ -184,7 +184,7 @@ async function confirmWith(
     codes?: string[];
     manual?: Array<{ OrderLineID?: string | null; Amount: number; Reason: string }>;
   },
-): Promise<{ Saved: boolean; Message: string; Order: LooseEntity }> {
+): Promise<{ Saved: boolean; Message: string; Order: OrderEntityServer }> {
   const f = Fx();
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
@@ -193,7 +193,7 @@ async function confirmWith(
     PromotionCodes: opts.codes,
     ManualDiscounts: opts.manual,
   });
-  return { Saved: result.Saved, Message: result.Message, Order: result.Order as LooseEntity };
+  return { Saved: result.Saved, Message: result.Message, Order: result.Order };
 }
 
 const totals = (ctx: IntegrationCheckContext, orderID: string) =>
@@ -239,7 +239,7 @@ export const PromotionChecks: NamedCheck[] = [
         Assert(order.Saved, `confirm failed: ${order.Message}`);
 
         // A customer who typed a code needs to be told it did nothing, and why.
-        const unusable = (order.Order as unknown as { UnusablePromotionCodes: Array<{ Code: string; Reason: string }> })
+        const unusable = (order.Order)
           .UnusablePromotionCodes;
         AssertEqual(unusable.length, 1, "the bad code is reported");
         Assert(/no such code/i.test(unusable[0].Reason), `expected a reason, got: ${unusable[0].Reason}`);
@@ -430,7 +430,7 @@ export const PromotionChecks: NamedCheck[] = [
         Assert(order.Saved, `confirm failed: ${order.Message}`);
         AssertEqual(Number((await totals(ctx, order.Order.ID as string)).Discount), 0, "a paused promotion takes nothing");
 
-        const unusable = (order.Order as unknown as { UnusablePromotionCodes: Array<{ Code: string; Reason: string }> })
+        const unusable = (order.Order)
           .UnusablePromotionCodes;
         Assert(unusable.length === 1 && /not currently running/i.test(unusable[0].Reason),
           `expected 'not currently running', got: ${JSON.stringify(unusable)}`);

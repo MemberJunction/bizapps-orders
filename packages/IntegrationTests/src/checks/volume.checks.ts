@@ -81,6 +81,7 @@ import { randomUUID } from "crypto";
 import { BaseRemotableOperation, CompositeKey } from "@memberjunction/core";
 import type { BaseEntity, IMetadataProvider, UserInfo } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
+import type { mjBizAppsOrdersOrderHeaderEntity } from "@mj-biz-apps/orders-entities";
 import {
   Assert,
   AssertEqual,
@@ -1402,7 +1403,7 @@ export const VolumeChecks: NamedCheck[] = [
         const provider = ctx.Provider as unknown as IMetadataProvider;
         const started = Date.now();
         for (let i = 0; i < ids.length; i++) {
-          const again = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(
+          const again = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(
             ORDER_HEADER_ENTITY,
             CompositeKey.FromID(ids[i]),
             ctx.User,

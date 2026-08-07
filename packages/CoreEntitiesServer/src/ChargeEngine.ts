@@ -19,6 +19,10 @@
  *   DOC:    plans/pricing-charges-and-promotions.md §5
  */
 import { BaseEntity, IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
+import {
+    mjBizAppsOrdersOrderChargeAllocationEntity,
+    mjBizAppsOrdersOrderChargeEntity,
+} from '@mj-biz-apps/orders-entities';
 import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 import {
     ComputeCharges,
@@ -168,24 +172,24 @@ export async function WriteCharges(
     user: UserInfo,
 ): Promise<void> {
     for (const charge of result.Charges) {
-        const row = await provider.GetEntityObject<BaseEntity>(ORDER_CHARGE_ENTITY, user);
+        const row = await provider.GetEntityObject<mjBizAppsOrdersOrderChargeEntity>(ORDER_CHARGE_ENTITY, user);
         row.NewRecord();
-        row.Set('OrderHeaderID', orderHeaderID);
-        row.Set('ChargeTypeID', charge.Request.ChargeTypeID);
-        row.Set('Amount', charge.Amount);
-        row.Set('BasisAmount', charge.BasisAmount);
-        if (charge.Request.Rate != null) row.Set('Rate', charge.Request.Rate);
-        row.Set('Sequence', charge.Request.Sequence);
-        if (charge.Request.TaxJurisdictionID) row.Set('TaxJurisdictionID', charge.Request.TaxJurisdictionID);
-        if (charge.Request.TaxRateID) row.Set('TaxRateID', charge.Request.TaxRateID);
+        row.OrderHeaderID = orderHeaderID;
+        row.ChargeTypeID = charge.Request.ChargeTypeID;
+        row.Amount = charge.Amount;
+        row.BasisAmount = charge.BasisAmount;
+        if (charge.Request.Rate != null) row.Rate = charge.Request.Rate;
+        row.Sequence = charge.Request.Sequence;
+        if (charge.Request.TaxJurisdictionID) row.TaxJurisdictionID = charge.Request.TaxJurisdictionID;
+        if (charge.Request.TaxRateID) row.TaxRateID = charge.Request.TaxRateID;
         if (charge.IsOverridden) {
-            row.Set('IsOverridden', true);
+            row.IsOverridden = true;
             // ComputedAmount is what the rules said. Recording it is the whole difference between
             // "we waived this" and "this was always free".
-            row.Set('ComputedAmount', charge.ComputedAmount);
-            row.Set('OverrideReason', charge.Request.OverrideReason);
-            row.Set('OverriddenByUserID', userID);
-            row.Set('OverriddenAt', new Date());
+            row.ComputedAmount = charge.ComputedAmount;
+            row.OverrideReason = charge.Request.OverrideReason;
+            row.OverriddenByUserID = userID;
+            row.OverriddenAt = new Date();
         }
         if (!(await row.Save())) {
             throw new ChargeError(
@@ -196,11 +200,11 @@ export async function WriteCharges(
         for (const alloc of charge.Allocations) {
             const lineID = lineIDFor(alloc.LineID);
             if (!lineID) continue;
-            const a = await provider.GetEntityObject<BaseEntity>(ORDER_CHARGE_ALLOCATION_ENTITY, user);
+            const a = await provider.GetEntityObject<mjBizAppsOrdersOrderChargeAllocationEntity>(ORDER_CHARGE_ALLOCATION_ENTITY, user);
             a.NewRecord();
-            a.Set('OrderChargeID', row.Get('ID'));
-            a.Set('OrderLineID', lineID);
-            a.Set('Amount', alloc.Amount);
+            a.OrderChargeID = row.ID;
+            a.OrderLineID = lineID;
+            a.Amount = alloc.Amount;
             if (!(await a.Save())) {
                 throw new ChargeError(
                     `Could not allocate charge '${charge.Request.Code}' to its line: ` +

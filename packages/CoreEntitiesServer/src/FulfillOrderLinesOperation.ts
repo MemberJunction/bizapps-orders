@@ -29,6 +29,10 @@ import {
     type IRunViewProvider,
     type UserInfo,
 } from '@memberjunction/core';
+import {
+    mjBizAppsOrdersOrderHeaderEntity,
+    mjBizAppsOrdersOrderLineEntity,
+} from '@mj-biz-apps/orders-entities';
 import { RegisterClass } from '@memberjunction/global';
 import {
     OrdersFulfillOrderLinesOperation as OrdersFulfillOrderLinesOperationBase,
@@ -153,8 +157,8 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
         // ── WRITE ──
         const flipped = new Set<string>();
         for (const decision of decisions.filter((d) => d.Fulfilled)) {
-            const entity = await provider.GetEntityObject<BaseEntity>(ORDER_LINE_ENTITY, user);
-            const loaded = await (entity as unknown as { Load(id: string): Promise<boolean> }).Load(
+            const entity = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+            const loaded = await entity.Load(
                 decision.OrderLineID,
             );
             if (!loaded) {
@@ -163,7 +167,7 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
                 decision.RefusalReason = ExplainRefusal('LineNotFound', decision.OrderLineID);
                 continue;
             }
-            entity.Set('FulfillmentStatus', 'Fulfilled');
+            entity.FulfillmentStatus = 'Fulfilled';
             if (!(await entity.Save())) {
                 // FulfillmentStatus is the ONE line column the immutability trigger lets a fulfiller
                 // change on a Confirmed order (the D15 carve-out). A refusal here means something
@@ -201,9 +205,9 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
             let didAdvance = false;
 
             if (ShouldAdvanceToFulfilled(after) && order.Status !== 'Fulfilled') {
-                const header = await provider.GetEntityObject<BaseEntity>(ORDER_HEADER_ENTITY, user);
-                if (await (header as unknown as { Load(id: string): Promise<boolean> }).Load(orderID)) {
-                    header.Set('Status', 'Fulfilled');
+                const header = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, user);
+                if (await header.Load(orderID)) {
+                    header.Status = 'Fulfilled';
                     // `Notes` is accepted by the input but NOT written: OrderHeader has no column
                     // for it, and inventing one to hold a picker's remark is a schema change that
                     // has not been asked for. Left in the contract because callers reasonably want

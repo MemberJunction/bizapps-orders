@@ -175,7 +175,7 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
         //
         // Deliberately after the DiscountPct rounding above, so the stored rate stays consistent
         // whether or not the line happens to be a parent.
-        if ((this as unknown as { IsRollupParent?: boolean }).IsRollupParent) {
+        if (this.IsRollupParent) {
             this.LineTotalNet = 0;
             this.LineTotalGross = 0;
             return;

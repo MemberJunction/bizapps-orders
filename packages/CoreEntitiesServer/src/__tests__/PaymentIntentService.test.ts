@@ -60,7 +60,7 @@ function fakeProvider(state: Recorded): IMetadataProvider {
         RunView: async () => ({ Success: true, Results: state.Existing ? [{ ID: state.Existing }] : [] }),
         GetEntityObject: async () => {
             const fields: Record<string, unknown> = {};
-            return {
+            const api: Record<string, unknown> = {
                 NewRecord: () => undefined,
                 Set: (k: string, v: unknown) => {
                     fields[k] = v;
@@ -72,6 +72,19 @@ function fakeProvider(state: Recorded): IMetadataProvider {
                 },
                 LatestResult: { CompleteMessage: 'the database said no' },
             };
+            // A REAL entity exposes every column as a generated get/set pair that delegates to
+            // Get/Set, so production code writes `row.Status = …` rather than `row.Set('Status', …)`.
+            // The proxy gives the double that same surface — without it the double is not a stand-in
+            // for the class under test, it is a stand-in for an older, weaker one.
+            return new Proxy(api, {
+                get: (target, prop: string) =>
+                    prop in target ? target[prop] : (target.Get as (k: string) => unknown)(prop),
+                set: (target, prop: string, value) => {
+                    if (prop in target) target[prop] = value;
+                    else fields[prop] = value;
+                    return true;
+                },
+            });
         },
     } as unknown as IMetadataProvider;
 }

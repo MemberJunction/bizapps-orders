@@ -65,7 +65,7 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
-import { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
@@ -86,7 +86,7 @@ interface CreateJournalEntriesResult {
 
 @RegisterClass(BaseEntity, PAYMENT_HEADER_ENTITY)
 export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntity {
-    private _lines: BaseEntity[] = [];
+    private _lines: mjBizAppsOrdersPaymentLineEntity[] = [];
 
     /**
      * Unsaved allocation lines to persist with this payment (D68). Populate before `Save()`;
@@ -94,10 +94,10 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
      * disagreeing. Lines already persisted from an earlier save are counted too — this collection
      * is only the NEW ones.
      */
-    public get Lines(): BaseEntity[] {
+    public get Lines(): mjBizAppsOrdersPaymentLineEntity[] {
         return this._lines;
     }
-    public set Lines(value: BaseEntity[]) {
+    public set Lines(value: mjBizAppsOrdersPaymentLineEntity[]) {
         this._lines = value ?? [];
     }
 
@@ -249,7 +249,7 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
         const previousStatus = this.GetFieldByName('Status')?.OldValue as string | undefined;
         if (this.IsSaved && previousStatus === 'Pending') return;
 
-        const providerID = (this as unknown as { PaymentProviderID?: string | null }).PaymentProviderID;
+        const providerID = this.PaymentProviderID;
         // No gateway means a RECORDED payment — cheque, cash, wire. Nothing settles late.
         if (!providerID) return;
 
@@ -300,8 +300,8 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
         const user = this.ContextCurrentUser as UserInfo;
 
         for (const line of this._lines) {
-            line.Set('PaymentHeaderID', this.ID);
-            if (!line.Get('AllocatedAt')) line.Set('AllocatedAt', new Date());
+            line.PaymentHeaderID = this.ID;
+            if (!line.AllocatedAt) line.AllocatedAt = new Date();
             if (!(await line.Save(options))) {
                 throw new Error(
                     `Failed to save a payment allocation for ${this.PaymentNumber}: ` +
@@ -431,10 +431,10 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
      * that will not balance three calls later.
      */
     private async settleWithProvider(): Promise<void> {
-        const providerID = (this as unknown as { PaymentProviderID?: string | null }).PaymentProviderID;
+        const providerID = this.PaymentProviderID;
         if (!providerID) return;
 
-        const alreadySettled = (this as unknown as { ProviderChargeID?: string | null }).ProviderChargeID;
+        const alreadySettled = this.ProviderChargeID;
         if (alreadySettled) return;
 
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
@@ -486,13 +486,13 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
         }
 
         if (capture.ProviderChargeID) {
-            (this as unknown as { ProviderChargeID: string }).ProviderChargeID = capture.ProviderChargeID;
+            this.ProviderChargeID = capture.ProviderChargeID;
         }
     }
 
     /** The gateway's own intent string, from the `PaymentIntent` row this payment points at. */
     private async loadProviderIntent(): Promise<string | null> {
-        const intentID = (this as unknown as { PaymentIntentID?: string | null }).PaymentIntentID;
+        const intentID = this.PaymentIntentID;
         if (!intentID) return null;
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const result = await rv.RunView<{ ID: string; ProviderIntentID: string }>(

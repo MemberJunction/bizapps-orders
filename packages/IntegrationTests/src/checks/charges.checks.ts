@@ -44,7 +44,7 @@ import {
 } from "../fixture.js";
 import { PROMOTION_CODE_ENTITY, PROMOTION_ENTITY } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
-import type { LooseEntity } from "../payment-builder.js";
+import type { OrderEntityServer, RequestedCharge } from "@mj-biz-apps/orders-core-entities-server";
 
 const ACCOUNTING = "__mj_BizAppsAccounting";
 
@@ -57,8 +57,8 @@ async function addPrice(ctx: IntegrationCheckContext, productID: string, amount:
 async function confirmWithCharges(
   ctx: IntegrationCheckContext,
   lines: Array<{ ProductID: string; Quantity: number }>,
-  charges: Array<Record<string, unknown>>,
-): Promise<{ Saved: boolean; Message: string; Order: LooseEntity }> {
+  charges: RequestedCharge[],
+): Promise<{ Saved: boolean; Message: string; Order: OrderEntityServer }> {
   const f = Fx();
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
@@ -66,7 +66,7 @@ async function confirmWithCharges(
     Lines: lines,
     Charges: charges,
   });
-  return { Saved: result.Saved, Message: result.Message, Order: result.Order as LooseEntity };
+  return { Saved: result.Saved, Message: result.Message, Order: result.Order };
 }
 
 const lineSums = (ctx: IntegrationCheckContext, orderID: string) =>

@@ -41,6 +41,9 @@ import {
     RunView,
     UserInfo,
 } from '@memberjunction/core';
+import {
+    mjBizAppsOrdersPaymentIntentEntity,
+} from '@mj-biz-apps/orders-entities';
 import { DecideWebhookAction, type WebhookAction } from './PaymentProviderBehavior.js';
 import { SettlePaymentForEvent } from './PaymentSettlement.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
@@ -195,15 +198,15 @@ async function applyEvent(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<void> {
-    const intent = await provider.GetEntityObject<BaseEntity>(
+    const intent = await provider.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(
         PAYMENT_INTENT_ENTITY,
         CompositeKey.FromID(paymentIntentID),
         user,
     );
 
-    if (event.Status) intent.Set('Status', event.Status);
-    intent.Set('ProviderEventID', event.EventID);
-    intent.Set('LastEventAt', new Date());
+    if (event.Status) intent.Status = event.Status;
+    intent.ProviderEventID = event.EventID;
+    intent.LastEventAt = new Date();
 
     if (!(await intent.Save())) {
         throw new Error(

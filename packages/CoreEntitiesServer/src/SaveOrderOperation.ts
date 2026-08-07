@@ -47,17 +47,15 @@ import {
 } from '@mj-biz-apps/orders-entities';
 
 import { HydrateOrderDraft, type HydratableDraft, type HydratedOrder } from './OrderDraftHydrator.js';
+import type { OrderEntityServer } from './OrderEntityServer.js';
 import { ComputeLinesAndTotals } from './order-totals.js';
 import { RequireOptionalUUID } from './sql-guards.js';
 
 /** Round to cents the way the rest of the engine does. */
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
-/** Read a field off an entity without fighting the dynamic index signature. */
-const field = <T>(entity: BaseEntity, name: string, fallback: T): T => {
-    const value = (entity as unknown as Record<string, unknown>)[name];
-    return (value === undefined || value === null ? fallback : value) as T;
-};
+// (The `field()` reader that used to live here is gone: it existed only to get values off the
+// dynamic index signature the hydrator no longer carries. Every caller now reads a typed property.)
 
 /**
  * Project the saved entities into the wire result.
@@ -76,13 +74,13 @@ async function projectResult(
     Charges: ChargeResult[];
     Promotions: PromotionResult[];
 }> {
-    const order = hydrated.Order as unknown as BaseEntity;
+    const order = hydrated.Order;
 
     // The decomposition lives in order-totals.ts because PreviewConfirm shows the
     // same numbers on the pre-flight. Two copies drifted once already.
     const { Lines, Totals } = ComputeLinesAndTotals(hydrated);
 
-    const charges = await loadCharges(field(order, 'ID', ''), provider, user);
+    const charges = await loadCharges(order.ID, provider, user);
     const promotions = readPromotions(hydrated);
 
     return { Lines, Totals, Charges: charges, Promotions: promotions };
@@ -138,7 +136,7 @@ async function loadCharges(
  */
 function readPromotions(hydrated: HydratedOrder): PromotionResult[] {
     const unusable =
-        (hydrated.Order as unknown as { UnusablePromotionCodes?: Array<{ Code: string; Reason: string }> })
+        (hydrated.Order)
             .UnusablePromotionCodes ?? [];
     return unusable.map((u) => ({
         Code: u.Code,
@@ -200,7 +198,7 @@ export class SaveOrderOperation extends OrdersSaveOrderOperationBase {
         }
 
         const hydrated = await HydrateOrderDraft(input.Draft as HydratableDraft, provider, user);
-        const order = hydrated.Order as unknown as BaseEntity;
+        const order = hydrated.Order;
 
         // A save never transitions status. An order arrives Draft and stays Draft
         // until Orders.ConfirmOrder says otherwise.
@@ -216,9 +214,9 @@ export class SaveOrderOperation extends OrdersSaveOrderOperationBase {
         const projected = await projectResult(hydrated, provider, user);
         return {
             Success: true,
-            OrderHeaderID: field(order, 'ID', ''),
-            OrderNumber: field<string | null>(order, 'OrderNumber', null),
-            Status: field(order, 'Status', 'Draft'),
+            OrderHeaderID: order.ID,
+            OrderNumber: order.OrderNumber,
+            Status: order.Status,
             ...projected,
         };
     }
@@ -304,7 +302,7 @@ async function runPreview(
         };
 
         const hydrated = await HydrateOrderDraft(previewDraft, provider, user);
-        const order = hydrated.Order as unknown as BaseEntity;
+        const order = hydrated.Order;
 
         const saved = await order.Save();
         if (!saved) {
@@ -393,17 +391,17 @@ export class ConfirmOrderOperation extends OrdersConfirmOrderOperationBase {
             : { Header: { CompanyID: '', OrderHeaderID: input.OrderHeaderID }, Lines: [] };
 
         const hydrated = await HydrateOrderDraft(draft, provider, user);
-        const order = hydrated.Order as unknown as BaseEntity;
+        const order = hydrated.Order;
 
         // Already-locked orders are not re-confirmable. Booking fires exactly once,
         // on the FIRST transition, and saying so plainly beats letting the engine's
         // idempotency guard produce a confusing no-op.
-        const currentStatus = field(order, 'Status', 'Draft');
+        const currentStatus = order.Status;
         if (!['Draft', 'Quoted'].includes(currentStatus)) {
             return {
                 Success: false,
                 Message: `This order is already ${currentStatus}.`,
-                OrderHeaderID: field(order, 'ID', ''),
+                OrderHeaderID: order.ID,
                 Status: currentStatus,
                 Blockers: [
                     {
@@ -431,7 +429,7 @@ export class ConfirmOrderOperation extends OrdersConfirmOrderOperationBase {
                     return {
                         Success: false,
                         Message: `The total changed from ${expected.toFixed(2)} to ${actual.toFixed(2)}.`,
-                        OrderHeaderID: field(order, 'ID', ''),
+                        OrderHeaderID: order.ID,
                         Totals: preview.Totals,
                         Blockers: [
                             {
@@ -448,7 +446,7 @@ export class ConfirmOrderOperation extends OrdersConfirmOrderOperationBase {
             }
         }
 
-        order.Set('Status', 'Confirmed');
+        order.Status = 'Confirmed';
 
         const saved = await order.Save();
         if (!saved) {
@@ -457,7 +455,7 @@ export class ConfirmOrderOperation extends OrdersConfirmOrderOperationBase {
             return {
                 Success: false,
                 Message: order.LatestResult?.CompleteMessage ?? 'The order could not be confirmed.',
-                OrderHeaderID: field(order, 'ID', ''),
+                OrderHeaderID: order.ID,
                 Status: currentStatus,
                 Blockers: blockersFrom(order, 'The order could not be confirmed.'),
             };
@@ -466,11 +464,11 @@ export class ConfirmOrderOperation extends OrdersConfirmOrderOperationBase {
         const projected = await projectResult(hydrated, provider, user);
         return {
             Success: true,
-            OrderHeaderID: field(order, 'ID', ''),
+            OrderHeaderID: order.ID,
             // Taken from the sequence inside the transaction, so a failed confirm
             // burns no number.
-            OrderNumber: field(order, 'OrderNumber', ''),
-            Status: field(order, 'Status', 'Confirmed'),
+            OrderNumber: order.OrderNumber,
+            Status: order.Status,
             Totals: projected.Totals,
         };
     }
@@ -488,15 +486,15 @@ export function LoadConfirmOrderOperation(): void {
  * Only the fields that affect pricing are carried across; the rest are already
  * persisted and are not what the guard is asking about.
  */
-async function draftFromSavedOrder(order: BaseEntity, hydrated: HydratedOrder): Promise<HydratableDraft> {
+async function draftFromSavedOrder(order: OrderEntityServer, hydrated: HydratedOrder): Promise<HydratableDraft> {
     void hydrated;
     return {
         Header: {
-            CompanyID: field(order, 'CompanyID', ''),
-            OrderType: field(order, 'OrderType', 'Sale'),
-            BillToPersonID: field<string | null>(order, 'BillToPersonID', null),
-            BillToOrganizationID: field<string | null>(order, 'BillToOrganizationID', null),
-            ShipToAddressID: field<string | null>(order, 'ShipToAddressID', null),
+            CompanyID: order.CompanyID,
+            OrderType: order.OrderType,
+            BillToPersonID: order.BillToPersonID,
+            BillToOrganizationID: order.BillToOrganizationID,
+            ShipToAddressID: order.ShipToAddressID,
             OrderHeaderID: null,
         },
         // A saved order's lines are already persisted rows, so re-pricing them means

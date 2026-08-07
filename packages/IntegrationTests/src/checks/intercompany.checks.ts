@@ -57,7 +57,9 @@ import {
   PAYMENT_LINE_ENTITY,
 } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
-import { CreatePayment, type LooseEntity } from "../payment-builder.js";
+import { CreatePayment } from "../payment-builder.js";
+import type { mjBizAppsOrdersPaymentLineEntity } from "@mj-biz-apps/orders-entities";
+import type { PaymentHeaderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
 
 const CASH_CODE = "10100";
 const AR_CODE = "11201";
@@ -130,7 +132,7 @@ async function payToCoA(
   orderID: string,
   amount: number,
   opts: { targetOrderLineID?: string; expectFailure?: boolean } = {},
-): Promise<{ Payment: LooseEntity; Applied: boolean; Message: string }> {
+): Promise<{ Payment: PaymentHeaderEntityServer; Applied: boolean; Message: string }> {
   const f = Fx();
   const cash = f.PaymentTypeIDs.get("Cash");
   Assert(cash != null, "PaymentType 'Cash' missing — push the orders app metadata");
@@ -500,12 +502,11 @@ export const IntercompanyChecks: NamedCheck[] = [
           ctx,
           `SELECT TOP 1 ID FROM ${ORDERS_SCHEMA}.PaymentLine WHERE PaymentHeaderID='${Payment.ID}'`,
         );
-        const entity = await new Metadata().GetEntityObject<LooseEntity>(
+        const entity = await new Metadata().GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(
           PAYMENT_LINE_ENTITY,
           ctx.User,
         );
-        // Cast for Load: LooseEntity's index signature widens every method to `unknown`.
-        const loaded = await (entity as unknown as { Load(id: string): Promise<boolean> }).Load(lineRow.ID);
+        const loaded = await entity.Load(lineRow.ID);
         Assert(loaded, "could not reload the payment line");
         entity.AllocatedAt = new Date();
         Assert(await entity.Save(), `re-save failed: ${entity.LatestResult?.CompleteMessage}`);

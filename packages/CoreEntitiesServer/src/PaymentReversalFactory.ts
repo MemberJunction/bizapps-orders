@@ -37,6 +37,11 @@ import {
     type IRunViewProvider,
     type UserInfo,
 } from '@memberjunction/core';
+import {
+    mjBizAppsOrdersPaymentDetailEntity,
+    mjBizAppsOrdersPaymentLineEntity,
+} from '@mj-biz-apps/orders-entities';
+import type { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -118,8 +123,8 @@ export async function BuildUnapplyLines(
     user: UserInfo,
     applications: AppliedAllocation[],
     reversalAmount: number,
-): Promise<BaseEntity[]> {
-    const built: BaseEntity[] = [];
+): Promise<mjBizAppsOrdersPaymentLineEntity[]> {
+    const built: mjBizAppsOrdersPaymentLineEntity[] = [];
     const appliedTotal = applications.reduce((s, a) => s + Number(a.Amount), 0);
     if (appliedTotal <= 0) return built;
 
@@ -133,13 +138,13 @@ export async function BuildUnapplyLines(
         allocated = money(allocated + share);
         if (share <= 0) continue;
 
-        const line = await provider.GetEntityObject<BaseEntity>(PAYMENT_LINE_ENTITY, user);
+        const line = await provider.GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(PAYMENT_LINE_ENTITY, user);
         line.NewRecord();
-        line.Set('OrderHeaderID', app.OrderHeaderID);
+        line.OrderHeaderID = app.OrderHeaderID;
         // NEGATIVE: this removes cash from the order, which is what moves Balance back up.
-        line.Set('Amount', -share);
-        line.Set('AllocatedAt', new Date());
-        line.Set('AllocatedByUserID', user?.ID ?? null);
+        line.Amount = -share;
+        line.AllocatedAt = new Date();
+        line.AllocatedByUserID = user?.ID ?? null;
         built.push(line);
     }
     return built;
@@ -156,23 +161,23 @@ export async function CopyPaymentDetail(
     user: UserInfo,
     sourceID: string,
 ): Promise<string> {
-    const source = await provider.GetEntityObject<BaseEntity>(
+    const source = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(
         PAYMENT_DETAIL_ENTITY,
         CompositeKey.FromID(sourceID),
         user,
     );
-    const copy = await provider.GetEntityObject<BaseEntity>(PAYMENT_DETAIL_ENTITY, user);
+    const copy = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(PAYMENT_DETAIL_ENTITY, user);
     copy.NewRecord();
-    for (const field of source.Fields) {
-        if (field.Name === 'ID' || field.Name.startsWith('__mj_')) continue;
-        copy.Set(field.Name, field.Value);
-    }
+    // `CopyFrom` skips primary keys by default, which is the only exclusion this needs: the
+    // `__mj_*` columns the hand-rolled loop also skipped are ReadOnly and are not parameters of
+    // spCreatePaymentDetail, so copying them cannot reach the insert.
+    copy.CopyFrom(source);
     if (!(await copy.Save())) {
         throw new Error(
             `Failed to copy the payment instrument: ${copy.LatestResult?.CompleteMessage ?? 'unknown error'}`,
         );
     }
-    return copy.Get('ID') as string;
+    return copy.ID;
 }
 
 /**
@@ -215,29 +220,29 @@ export async function CreateReversingPayment(
     user: UserInfo,
     original: ReversiblePayment,
     request: PaymentReversalRequest,
-    lines: BaseEntity[],
+    lines: mjBizAppsOrdersPaymentLineEntity[],
 ): Promise<PaymentReversalResult> {
-    const reversal = await provider.GetEntityObject<BaseEntity>(PAYMENT_HEADER_ENTITY, user);
+    const reversal = await provider.GetEntityObject<PaymentHeaderEntityServer>(PAYMENT_HEADER_ENTITY, user);
     reversal.NewRecord();
-    reversal.Set('PaymentNumber', await NextPaymentNumber(provider));
-    reversal.Set('ReceivingCompanyID', original.ReceivingCompanyID);
-    reversal.Set('BillToOrganizationID', original.BillToOrganizationID);
-    reversal.Set('BillToPersonID', original.BillToPersonID);
-    reversal.Set('PaymentDate', new Date());
-    reversal.Set('PaymentTypeID', original.PaymentTypeID);
-    reversal.Set('Amount', request.Amount);
-    reversal.Set('ProcessingFeeAmount', 0);
-    reversal.Set('ReversesPaymentHeaderID', original.ID);
-    reversal.Set('ReversalReason', request.Reason ?? null);
-    reversal.Set('ProviderRefundID', request.ProviderRefundID ?? null);
-    reversal.Set('Status', 'Refunded');
-    reversal.Set('Description', request.Description ?? `Refund of ${original.PaymentNumber}`);
+    reversal.PaymentNumber = await NextPaymentNumber(provider);
+    reversal.ReceivingCompanyID = original.ReceivingCompanyID;
+    reversal.BillToOrganizationID = original.BillToOrganizationID;
+    reversal.BillToPersonID = original.BillToPersonID;
+    reversal.PaymentDate = new Date();
+    reversal.PaymentTypeID = original.PaymentTypeID;
+    reversal.Amount = request.Amount;
+    reversal.ProcessingFeeAmount = 0;
+    reversal.ReversesPaymentHeaderID = original.ID;
+    reversal.ReversalReason = request.Reason ?? null;
+    reversal.ProviderRefundID = request.ProviderRefundID ?? null;
+    reversal.Status = 'Refunded';
+    reversal.Description = request.Description ?? `Refund of ${original.PaymentNumber}`;
 
     if (original.PaymentDetailID) {
-        reversal.Set('PaymentDetailID', await CopyPaymentDetail(provider, user, original.PaymentDetailID));
+        reversal.PaymentDetailID = await CopyPaymentDetail(provider, user, original.PaymentDetailID);
     }
 
-    (reversal as unknown as { Lines: BaseEntity[] }).Lines = lines;
+    reversal.Lines = lines;
 
     if (!(await reversal.Save())) {
         throw new Error(
@@ -247,8 +252,8 @@ export async function CreateReversingPayment(
     }
 
     return {
-        ID: reversal.Get('ID') as string,
-        Number: reversal.Get('PaymentNumber') as string,
-        JournalEntryID: (reversal.Get('JournalEntryID') as string) ?? undefined,
+        ID: reversal.ID,
+        Number: reversal.PaymentNumber,
+        JournalEntryID: reversal.JournalEntryID ?? undefined,
     };
 }

@@ -44,6 +44,11 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import {
+    mjBizAppsOrdersOrderLineEntity,
+    mjBizAppsOrdersSubscriptionEventEntity,
+} from '@mj-biz-apps/orders-entities';
+import type { OrderEntityServer } from './OrderEntityServer.js';
 import { RequireOptionalUUID } from './sql-guards.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
@@ -286,39 +291,39 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
         const dbProvider = provider as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
-            const order = await provider.GetEntityObject<BaseEntity>(ORDER_HEADER_ENTITY, user);
+            const order = await provider.GetEntityObject<OrderEntityServer>(ORDER_HEADER_ENTITY, user);
             order.NewRecord();
-            order.Set('OrderType', 'Sale');
+            order.OrderType = 'Sale';
             // Dated the day AFTER the expiring term, so the new term starts where the old one ends
             // and the ledger shows the sale in the period it belongs to — not on the day the job
             // happened to run.
-            order.Set('OrderDate', this.dayAfter(due.TermEndDate));
-            order.Set('CompanyID', due.CompanyID);
-            order.Set('BillToOrganizationID', due.HolderOrganizationID);
-            order.Set('BillToPersonID', due.BeneficiaryPersonID);
-            order.Set('Notes', `Automatic renewal of ${due.SubscriptionNumber} (term ${due.TermNumber + 1})`);
+            order.OrderDate = this.dayAfter(due.TermEndDate);
+            order.CompanyID = due.CompanyID;
+            order.BillToOrganizationID = due.HolderOrganizationID;
+            order.BillToPersonID = due.BeneficiaryPersonID;
+            order.Notes = `Automatic renewal of ${due.SubscriptionNumber} (term ${due.TermNumber + 1})`;
 
-            const line = await provider.GetEntityObject<BaseEntity>(ORDER_LINE_ENTITY, user);
+            const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
             line.NewRecord();
-            line.Set('ProductID', due.ProductID);
-            line.Set('LineNumber', 1);
+            line.ProductID = due.ProductID;
+            line.LineNumber = 1;
             // Per-LINE (D61): renewal is a line-level act, so one order could renew several
             // subscriptions. Naming the target also removes the guesswork from resolution — the
             // engine renews exactly this one rather than searching by subscriber and product.
-            line.Set('RenewsSubscriptionID', due.SubscriptionID);
+            line.RenewsSubscriptionID = due.SubscriptionID;
             // The subscription's own subscriber, carried onto the line's ship-to so the renewal
             // lands on the same holder even when the order's customer differs.
-            line.Set('ShipToOrganizationID', due.HolderOrganizationID);
-            line.Set('ShipToPersonID', due.BeneficiaryPersonID);
+            line.ShipToOrganizationID = due.HolderOrganizationID;
+            line.ShipToPersonID = due.BeneficiaryPersonID;
             // Renew at what they last paid. Re-pricing from the current ProductPrice is a policy
             // decision (grandfathering, notice periods) that nobody has made yet — carrying the
             // price forward is the choice that cannot surprise a customer.
-            line.Set('Quantity', this.renewalQuantity(source));
-            line.Set('UnitPrice', source.UnitPrice);
-            line.Set('DiscountPct', source.DiscountPct ?? 0);
+            line.Quantity = this.renewalQuantity(source);
+            line.UnitPrice = source.UnitPrice;
+            line.DiscountPct = source.DiscountPct ?? 0;
 
-            (order as unknown as { Lines: unknown }).Lines = [line];
-            order.Set('Status', 'Confirmed');
+            order.Lines = [line];
+            order.Status = 'Confirmed';
 
             if (!(await order.Save())) {
                 throw new Error(
@@ -326,9 +331,9 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
                 );
             }
 
-            await this.logEvent(provider, user, due, order.Get('ID') as string);
+            await this.logEvent(provider, user, due, order.ID);
             await dbProvider.CommitTransaction();
-            return { ID: order.Get('ID') as string, Number: order.Get('OrderNumber') as string };
+            return { ID: order.ID, Number: order.OrderNumber };
         } catch (err) {
             try {
                 await dbProvider.RollbackTransaction();
@@ -381,12 +386,12 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
         due: DueRow,
         orderID: string,
     ): Promise<void> {
-        const event = await provider.GetEntityObject<BaseEntity>(SUBSCRIPTION_EVENT_ENTITY, user);
+        const event = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEventEntity>(SUBSCRIPTION_EVENT_ENTITY, user);
         event.NewRecord();
-        event.Set('SubscriptionID', due.SubscriptionID);
-        event.Set('EventType', 'RenewalOrderSpawned');
-        event.Set('OccurredAt', new Date());
-        event.Set('RelatedOrderHeaderID', orderID);
+        event.SubscriptionID = due.SubscriptionID;
+        event.EventType = 'RenewalOrderSpawned';
+        event.OccurredAt = new Date();
+        event.RelatedOrderHeaderID = orderID;
         event.Set(
             'EventData',
             JSON.stringify({

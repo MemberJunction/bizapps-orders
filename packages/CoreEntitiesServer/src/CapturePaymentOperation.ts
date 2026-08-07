@@ -29,6 +29,9 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import {
     OrdersCapturePaymentOperation as OrdersCapturePaymentOperationBase,
+    mjBizAppsOrdersPaymentDetailEntity,
+    mjBizAppsOrdersPaymentHeaderEntity,
+    mjBizAppsOrdersPaymentLineEntity,
     type BlockerResult,
     type CapturePaymentOrderEffect,
     type JournalEntryPreview,
@@ -36,6 +39,7 @@ import {
     type OrdersCapturePaymentOutput,
 } from '@mj-biz-apps/orders-entities';
 
+import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
@@ -297,45 +301,47 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<string> {
-        const header = await provider.GetEntityObject<BaseEntity>(PAYMENT_HEADER_ENTITY, user);
+        // The SERVER subclass: `Lines` (set below) lives there, and the class factory returns it for
+        // this key regardless of what we ask for.
+        const header = await provider.GetEntityObject<PaymentHeaderEntityServer>(PAYMENT_HEADER_ENTITY, user);
         header.NewRecord();
         // A payment number is a cash-receipt document number, minted gap-consciously from the same
         // PaymentSequence the confirm path and the account-credit path use — one sequence, so the
         // numbers a customer sees never collide or skip regardless of which door the payment came in.
-        header.Set('PaymentNumber', await this.nextPaymentNumber(provider as unknown as DatabaseProviderBase));
-        header.Set('ReceivingCompanyID', ctx.receivingCompanyID);
-        header.Set('PaymentTypeID', ctx.paymentTypeID);
-        header.Set('Amount', ctx.amount);
-        header.Set('PaymentDate', input?.PaymentDate ? new Date(input.PaymentDate) : new Date());
-        if (input?.BillToOrganizationID) header.Set('BillToOrganizationID', input.BillToOrganizationID);
-        if (input?.BillToPersonID) header.Set('BillToPersonID', input.BillToPersonID);
-        if (input?.Reference) header.Set('Description', input.Reference);
-        if (input?.Notes) header.Set('Notes', input.Notes);
-        if (ctx.idempotencyKey) header.Set('IdempotencyKey', ctx.idempotencyKey);
+        header.PaymentNumber = await this.nextPaymentNumber(provider as unknown as DatabaseProviderBase);
+        header.ReceivingCompanyID = ctx.receivingCompanyID;
+        header.PaymentTypeID = ctx.paymentTypeID;
+        header.Amount = ctx.amount;
+        header.PaymentDate = input?.PaymentDate ? new Date(input.PaymentDate) : new Date();
+        if (input?.BillToOrganizationID) header.BillToOrganizationID = input.BillToOrganizationID;
+        if (input?.BillToPersonID) header.BillToPersonID = input.BillToPersonID;
+        if (input?.Reference) header.Description = input.Reference;
+        if (input?.Notes) header.Notes = input.Notes;
+        if (ctx.idempotencyKey) header.IdempotencyKey = ctx.idempotencyKey;
 
         // The instrument, when the tender needs one. Its own row (D38/D39): a payment gets its OWN
         // copy rather than pointing at a wallet entry that can later change.
         if (input?.PaymentDetail) {
-            const detail = await provider.GetEntityObject<BaseEntity>(PAYMENT_DETAIL_ENTITY, user);
+            const detail = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(PAYMENT_DETAIL_ENTITY, user);
             detail.NewRecord();
-            detail.Set('CompanyID', ctx.receivingCompanyID);
-            detail.Set('PaymentTypeID', ctx.paymentTypeID);
-            if (input.PaymentDetail.ReferenceNumber) detail.Set('ReferenceNumber', input.PaymentDetail.ReferenceNumber);
+            detail.CompanyID = ctx.receivingCompanyID;
+            detail.PaymentTypeID = ctx.paymentTypeID;
+            if (input.PaymentDetail.ReferenceNumber) detail.ReferenceNumber = input.PaymentDetail.ReferenceNumber;
             if (input.PaymentDetail.ProviderInstrumentRef) {
-                detail.Set('ProviderInstrumentRef', input.PaymentDetail.ProviderInstrumentRef);
+                detail.ProviderInstrumentRef = input.PaymentDetail.ProviderInstrumentRef;
             }
             if (input.PaymentDetail.SourceCustomerPaymentMethodID) {
-                detail.Set('SourceCustomerPaymentMethodID', input.PaymentDetail.SourceCustomerPaymentMethodID);
+                detail.SourceCustomerPaymentMethodID = input.PaymentDetail.SourceCustomerPaymentMethodID;
             }
-            if (input.PaymentDetail.InstrumentDate) detail.Set('InstrumentDate', input.PaymentDetail.InstrumentDate);
+            if (input.PaymentDetail.InstrumentDate) detail.InstrumentDate = new Date(input.PaymentDetail.InstrumentDate);
             if (!(await detail.Save())) {
                 throw new Error(
                     `Could not record the payment instrument: ${detail.LatestResult?.CompleteMessage ?? 'no reason given'}`,
                 );
             }
-            header.Set('PaymentDetailID', detail.Get('ID'));
+            header.PaymentDetailID = detail.ID;
             if (input.PaymentDetail.PaymentProviderID) {
-                header.Set('PaymentProviderID', input.PaymentDetail.PaymentProviderID);
+                header.PaymentProviderID = input.PaymentDetail.PaymentProviderID;
             }
         }
 
@@ -344,21 +350,21 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
         // "there is nothing for the gateway to capture", which is precisely the state this whole path
         // sat in before `Orders.OpenPaymentIntent` existed.
         if (input?.PaymentIntentID) {
-            header.Set('PaymentIntentID', input.PaymentIntentID);
+            header.PaymentIntentID = input.PaymentIntentID;
         }
 
-        const lines: BaseEntity[] = [];
+        const lines: mjBizAppsOrdersPaymentLineEntity[] = [];
         for (const a of input?.Allocations ?? []) {
-            const line = await provider.GetEntityObject<BaseEntity>(PAYMENT_LINE_ENTITY, user);
+            const line = await provider.GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(PAYMENT_LINE_ENTITY, user);
             line.NewRecord();
-            line.Set('OrderHeaderID', a.OrderHeaderID);
-            line.Set('Amount', money(Number(a.Amount)));
-            if (a.OrderLineID) line.Set('OrderLineID', a.OrderLineID);
-            line.Set('AllocatedAt', new Date());
-            if (user?.ID) line.Set('AllocatedByUserID', user.ID);
+            line.OrderHeaderID = a.OrderHeaderID;
+            line.Amount = money(Number(a.Amount));
+            if (a.OrderLineID) line.OrderLineID = a.OrderLineID;
+            line.AllocatedAt = new Date();
+            if (user?.ID) line.AllocatedByUserID = user.ID;
             lines.push(line);
         }
-        (header as unknown as { Lines: BaseEntity[] }).Lines = lines;
+        header.Lines = lines;
 
         // CAPTURED FOR EVERY RAIL THAT ANSWERS IMMEDIATELY. `savePendingLines` books each allocation
         // from this collection, and a header saved Pending would persist the lines with nothing
@@ -372,14 +378,14 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
         // promotes it when the bank confirms — at which point `bookPersistedLines` settles the cash
         // leg. The debt is deliberate and is discharged in exactly one place.
         const settlesLate = await this.settlesAsynchronously(header, provider, user);
-        header.Set('Status', settlesLate ? 'Pending' : 'Captured');
+        header.Status = settlesLate ? 'Pending' : 'Captured';
 
         if (!(await header.Save())) {
             throw new Error(
                 `Could not capture the payment: ${header.LatestResult?.CompleteMessage ?? 'no reason given'}`,
             );
         }
-        return header.Get('ID') as string;
+        return header.ID;
     }
 
     /**
@@ -394,11 +400,11 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
      * Defaulting to the existing behaviour keeps every rail that worked before working unchanged.
      */
     private async settlesAsynchronously(
-        header: BaseEntity,
+        header: mjBizAppsOrdersPaymentHeaderEntity,
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<boolean> {
-        const providerID = header.Get('PaymentProviderID') as string | null;
+        const providerID = header.PaymentProviderID;
         if (!providerID) return false;
         try {
             const driver = await ResolvePaymentProvider(providerID, provider, user);

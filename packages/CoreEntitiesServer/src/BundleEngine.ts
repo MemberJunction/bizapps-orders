@@ -30,6 +30,7 @@ import {
     RunView,
     UserInfo,
 } from '@memberjunction/core';
+import { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import {
     PlanBundleExpansion,
     type BundleComponent,
@@ -44,14 +45,13 @@ const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 const quote = (ids: string[]): string => [...new Set(ids.map((i) => `'${i}'`))].join(',');
 
 /** The subset of an order line this engine reads and writes. Kept structural so there is no import cycle. */
-export interface ExpandableLine {
-    ID: string;
-    ProductID: string;
-    Quantity: number;
-    UnitPrice: number | null;
-    Get(field: string): unknown;
-    Set(field: string, value: unknown): void;
-}
+/**
+ * An order line this engine can expand.
+ *
+ * Was a structural duck-type built on `Get`/`Set` — which meant every field this module touched
+ * was a string literal the compiler could not check. It is the order-line entity; say so.
+ */
+export type ExpandableLine = mjBizAppsOrdersOrderLineEntity;
 
 export interface BundleExpansionOutcome {
     /** How many parent lines were expanded. */
@@ -141,8 +141,8 @@ export async function ExpandBundleLines(
             ProductID: line.ProductID,
             Quantity: Number(line.Quantity ?? 0),
             UnitPrice: Number(line.UnitPrice ?? 0),
-            ReversesOrderLineID: (line.Get('ReversesOrderLineID') as string | null) ?? null,
-            HasParent: !!(line.Get('ParentOrderLineID') as string | null),
+            ReversesOrderLineID: line.ReversesOrderLineID ?? null,
+            HasParent: !!line.ParentOrderLineID,
         };
 
         const plan = PlanBundleExpansion(
@@ -173,20 +173,20 @@ export async function ExpandBundleLines(
         // THE PARENT KEEPS ITS PRICE FOR DISPLAY AND CONTRIBUTES NOTHING. Every rollup skips a
         // rollup parent, so leaving money on it would double the order — which is exactly what the
         // CK_OrderLine_RollupParentIsFree constraint refuses at the database.
-        line.Set('IsRollupParent', true);
-        line.Set('DiscountAmount', 0);
-        line.Set('ChargeAmount', 0);
-        line.Set('LineTax', 0);
+        line.IsRollupParent = true;
+        line.DiscountAmount = 0;
+        line.ChargeAmount = 0;
+        line.LineTax = 0;
 
         for (const child of plan.Children) {
             const row = await makeLine();
-            row.Set('ProductID', child.ComponentProductID);
-            row.Set('Quantity', child.Quantity);
-            row.Set('UnitPrice', child.UnitPrice);
-            row.Set('ParentOrderLineID', line.ID);
-            row.Set('SourceBundleProductID', line.ProductID);
-            row.Set('IsRollupParent', false);
-            row.Set('IsQuantityOverridden', false);
+            row.ProductID = child.ComponentProductID;
+            row.Quantity = child.Quantity;
+            row.UnitPrice = child.UnitPrice;
+            row.ParentOrderLineID = line.ID;
+            row.SourceBundleProductID = line.ProductID;
+            row.IsRollupParent = false;
+            row.IsQuantityOverridden = false;
             lines.push(row);
             out.ChildrenCreated++;
         }
@@ -264,9 +264,9 @@ export async function RippleBundleQuantity(
         const target = Math.round((parentQuantity * per + Number.EPSILON) * 10000) / 10000;
         if (target === Number(child.Quantity)) continue;
 
-        const entity = await provider.GetEntityObject<BaseEntity>(ORDER_LINE_ENTITY, user);
-        if (!(await (entity as unknown as { Load(id: string): Promise<boolean> }).Load(child.ID))) continue;
-        entity.Set('Quantity', target);
+        const entity = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+        if (!(await entity.Load(child.ID))) continue;
+        entity.Quantity = target;
         if (!(await entity.Save())) {
             throw new Error(
                 `Could not ripple quantity ${target} to bundle child ${child.ID}: ` +

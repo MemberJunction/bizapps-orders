@@ -31,6 +31,8 @@ import {
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import {
     OrdersCreateOrderInStateOperation as OrdersCreateOrderInStateOperationBase,
+    mjBizAppsOrdersOrderHeaderEntity,
+    mjBizAppsOrdersOrderLineEntity,
     type BlockerResult,
     type OrderStateTransition,
     type OrdersCreateOrderInStateInput,
@@ -274,19 +276,21 @@ export class CreateOrderInStateOperation extends OrdersCreateOrderInStateOperati
     /** Move the header, reporting a refusal rather than throwing — a stalled advance is still a result. */
     private async setStatus(
         orderID: string,
-        status: string,
+        // Derived from the entity: `Status` is CHECK-constrained, so CodeGen owns this union and it
+        // widens with the constraint. Restating it here would freeze it at today's six values.
+        status: mjBizAppsOrdersOrderHeaderEntity['Status'],
         reason: string | null | undefined,
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<{ ok: boolean; reason: string | null }> {
-        const header = await provider.GetEntityObject<BaseEntity>(ORDER_HEADER_ENTITY, user);
-        if (!(await (header as unknown as { Load(id: string): Promise<boolean> }).Load(orderID))) {
+        const header = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, user);
+        if (!(await header.Load(orderID))) {
             return { ok: false, reason: `Order ${orderID} could not be loaded.` };
         }
-        header.Set('Status', status);
+        header.Status = status;
         if (reason) {
-            const existing = (header.Get('Description') as string | null) ?? '';
-            header.Set('Description', existing ? `${existing} — ${reason}` : reason);
+            const existing = header.Description ?? '';
+            header.Description = existing ? `${existing} — ${reason}` : reason;
         }
         if (!(await header.Save())) {
             return { ok: false, reason: header.LatestResult?.CompleteMessage ?? 'no reason given' };
@@ -349,12 +353,12 @@ export class CreateOrderInStateOperation extends OrdersCreateOrderInStateOperati
             };
             if (!IsAwaitingFulfillment(shaped)) continue;
 
-            const entity = await provider.GetEntityObject<BaseEntity>(ORDER_LINE_ENTITY, user);
-            if (!(await (entity as unknown as { Load(id: string): Promise<boolean> }).Load(row.ID))) {
+            const entity = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+            if (!(await entity.Load(row.ID))) {
                 remaining++;
                 continue;
             }
-            entity.Set('FulfillmentStatus', 'Fulfilled');
+            entity.FulfillmentStatus = 'Fulfilled';
             if (!(await entity.Save())) remaining++;
         }
         return remaining;

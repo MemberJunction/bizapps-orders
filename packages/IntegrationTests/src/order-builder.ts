@@ -7,6 +7,16 @@
  * directly would test the schema and nothing else.
  */
 import { Metadata } from '@memberjunction/core';
+import type {
+    mjBizAppsOrdersOrderHeaderEntity,
+    mjBizAppsOrdersOrderLineEntity,
+    mjBizAppsOrdersPaymentDetailEntity,
+} from '@mj-biz-apps/orders-entities';
+import type {
+    ManualDiscountRequest,
+    OrderEntityServer,
+    RequestedCharge,
+} from '@mj-biz-apps/orders-core-entities-server';
 import { Fx } from './fixture.js';
 import type { BaseEntity, IMetadataProvider, UserInfo } from '@memberjunction/core';
 
@@ -49,7 +59,7 @@ export interface OrderSpec {
      * Defaults to 'Sale'. A return or cancellation carries the negative lines; reversal is what the
      * negative LINE does, not what the order is called, so the type here is descriptive only.
      */
-    OrderType?: string;
+    OrderType?: mjBizAppsOrdersOrderHeaderEntity['OrderType'];
     Lines: LineSpec[];
     /** Defaults to today; set explicitly whenever a check asserts dates. */
     OrderDate?: Date;
@@ -80,14 +90,21 @@ export interface OrderSpec {
     /** Promotion codes the customer presented (D70). Resolved after the lines are priced. */
     PromotionCodes?: string[];
     /** Ad-hoc discounts, each gated by the applying user's SalesAuthority (D70). */
-    ManualDiscounts?: Array<{ OrderLineID?: string | null; Amount: number; Reason: string }>;
-    /** Charges to apply — shipping, handling, tax layers (D71). Computed after promotions. */
-    Charges?: Array<Record<string, unknown>>;
+    ManualDiscounts?: ManualDiscountRequest[];
+    /**
+     * Charges to apply — shipping, handling, tax layers (D71). Computed after promotions.
+     *
+     * The ENGINE's request shape, keyed on `ChargeType.Code`. Typed rather than
+     * `Record<string, unknown>` so a check cannot quietly hand the engine a charge it will not
+     * match — which is exactly the mismatch the client payload has today (BUGS.md Bug 5a).
+     */
+    Charges?: RequestedCharge[];
 }
 
 export interface BuiltOrder {
-    Order: BaseEntity & Record<string, unknown>;
-    Lines: Array<BaseEntity & Record<string, unknown>>;
+    /** The header, typed as the server subclass the class factory returns — `Lines` lives there. */
+    Order: OrderEntityServer;
+    Lines: mjBizAppsOrdersOrderLineEntity[];
 }
 
 /**
@@ -106,7 +123,7 @@ export async function BuildOrder(
     provider?: IMetadataProvider,
 ): Promise<BuiltOrder> {
     const md = provider ?? new Metadata();
-    const order = await md.GetEntityObject<BaseEntity & Record<string, unknown>>(
+    const order = await md.GetEntityObject<OrderEntityServer>(
         'MJ_BizApps_Orders: Order Headers',
         user,
     );
@@ -156,19 +173,19 @@ export async function BuildOrder(
     if (spec.InitialPaymentDetailID) order.InitialPaymentDetailID = spec.InitialPaymentDetailID;
     // Promotions ride the header the same way lines do — set here, resolved inside Save (D70).
     if (spec.PromotionCodes) {
-        (order as unknown as { PromotionCodes: string[] }).PromotionCodes = spec.PromotionCodes;
+        order.PromotionCodes = spec.PromotionCodes;
     }
     if (spec.ManualDiscounts) {
-        (order as unknown as { ManualDiscounts: unknown[] }).ManualDiscounts = spec.ManualDiscounts;
+        order.ManualDiscounts = spec.ManualDiscounts;
     }
     if (spec.Charges) {
-        (order as unknown as { Charges: unknown[] }).Charges = spec.Charges;
+        order.Charges = spec.Charges;
     }
 
-    const lines: Array<BaseEntity & Record<string, unknown>> = [];
+    const lines: mjBizAppsOrdersOrderLineEntity[] = [];
     let lineNumber = 1;
     for (const ls of spec.Lines) {
-        const line = await md.GetEntityObject<BaseEntity & Record<string, unknown>>(
+        const line = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
             'MJ_BizApps_Orders: Order Lines',
             user,
         );
@@ -191,7 +208,7 @@ export async function BuildOrder(
     }
 
     // `Lines` is the transient collection OrderEntityServer.Save persists after the header exists.
-    (order as unknown as { Lines: unknown }).Lines = lines;
+    order.Lines = lines;
     return { Order: order, Lines: lines };
 }
 
@@ -233,7 +250,7 @@ async function createReferenceDetail(
     companyID: string,
     paymentTypeID: string,
 ): Promise<string> {
-    const detail = await (md as Metadata).GetEntityObject<BaseEntity & Record<string, unknown>>(
+    const detail = await (md as Metadata).GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(
         'MJ_BizApps_Orders: Payment Details',
         user,
     );

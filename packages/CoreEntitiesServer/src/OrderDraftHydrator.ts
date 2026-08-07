@@ -26,6 +26,10 @@
 
 import { RunView } from '@memberjunction/core';
 import type { BaseEntity, IMetadataProvider, UserInfo } from '@memberjunction/core';
+import { mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersPaymentDetailEntity } from '@mj-biz-apps/orders-entities';
+import type { OrderEntityServer } from './OrderEntityServer.js';
+import type { ManualDiscountRequest } from './PromotionEngine.js';
+import type { RequestedCharge } from './ChargeEngine.js';
 
 /** MJ entity names. Centralised so a rename is one edit rather than a search. */
 // 'Order Headers', NOT 'Orders'. The entity is named for its TABLE (OrderHeader), and the shorter
@@ -114,10 +118,18 @@ export interface HydratableDraft {
  * a row is removed, so they cannot do that job.
  */
 export interface HydratedOrder {
-    /** The header entity, with the transient collections already attached. */
-    Order: BaseEntity & Record<string, unknown>;
+    /**
+     * The header entity, with the transient collections already attached.
+     *
+     * Typed as the SERVER subclass rather than `BaseEntity & Record<string, unknown>`: the class
+     * factory returns that class for this entity key, and it is where `Lines`, `PromotionCodes`,
+     * `ManualDiscounts` and `Charges` are actually declared. The index-signature intersection made
+     * every one of those assignments — and every read in the six files consuming this — untyped, so
+     * a misspelt collection name compiled cleanly and did nothing at runtime.
+     */
+    Order: OrderEntityServer;
     /** The unsaved line entities, in order. Also assigned to `Order.Lines`. */
-    Lines: Array<BaseEntity & Record<string, unknown>>;
+    Lines: mjBizAppsOrdersOrderLineEntity[];
     /** Parallel to `Lines`: the client key for each, or undefined if none was sent. */
     LineKeys: Array<string | undefined>;
     /**
@@ -171,7 +183,7 @@ export async function HydrateOrderDraft(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<HydratedOrder> {
-    const order = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(ORDER_HEADER_ENTITY, user);
+    const order = await provider.GetEntityObject<OrderEntityServer>(ORDER_HEADER_ENTITY, user);
     if (!order) {
         // NAME THE ENTITY. GetEntityObject returns null for an unknown name, and
         // the next line then throws "Cannot read properties of null (reading
@@ -187,7 +199,7 @@ export async function HydrateOrderDraft(
         // Single-key `Load(id)` is emitted on the generated subclass, not declared
         // on `BaseEntity`, so it needs a structural cast. Same pattern as
         // `packages/IntegrationTests/src/payment-builder.ts`.
-        const loaded = await (order as unknown as { Load(id: string): Promise<boolean> }).Load(
+        const loaded = await order.Load(
             draft.Header.OrderHeaderID,
         );
         if (!loaded) {
@@ -216,7 +228,7 @@ export async function HydrateOrderDraft(
 
     applyHeader(order, draft.Header);
 
-    const lines: Array<BaseEntity & Record<string, unknown>> = [];
+    const lines: mjBizAppsOrdersOrderLineEntity[] = [];
     const lineKeys: Array<string | undefined> = [];
     const lineUnitPriceWasStated: boolean[] = [];
     let lineNumber = 1;
@@ -233,7 +245,7 @@ export async function HydrateOrderDraft(
     const existingLines = await loadExistingLines(draft.Header.OrderHeaderID ?? null, user);
 
     for (const spec of draft.Lines ?? []) {
-        const line = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(ORDER_LINE_ENTITY, user);
+        const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
         if (!line) {
             throw new Error(
                 `Could not create an entity object for "${ORDER_LINE_ENTITY}". ` +
@@ -243,7 +255,7 @@ export async function HydrateOrderDraft(
         const existingID = existingLines.get(lineNumber);
         if (existingID) {
             // Load rather than NewRecord: this row exists, so the save must be an UPDATE.
-            const loaded = await (line as unknown as { Load(id: string): Promise<boolean> }).Load(existingID);
+            const loaded = await line.Load(existingID);
             if (!loaded) line.NewRecord(); // vanished under us — fall back to an insert
             existingLines.delete(lineNumber);
         } else {
@@ -284,9 +296,9 @@ export async function HydrateOrderDraft(
     // delete the ROW, or the order silently keeps billing for something the screen no longer shows —
     // and the next save collides on its line number all over again.
     for (const [, staleID] of existingLines) {
-        const stale = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(ORDER_LINE_ENTITY, user);
+        const stale = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
         if (!stale) continue;
-        if (await (stale as unknown as { Load(id: string): Promise<boolean> }).Load(staleID)) {
+        if (await stale.Load(staleID)) {
             // A booked line refuses to delete (trigger 51003) and SHOULD — that is history, not a
             // draft edit. Report it rather than swallowing, so the user is told why it is still there.
             if (!(await stale.Delete())) {
@@ -300,8 +312,29 @@ export async function HydrateOrderDraft(
     // The transient collections. `Save()` reads each of these; none is a column.
     order.Lines = lines;
     order.PromotionCodes = [...(draft.PromotionCodes ?? [])];
-    order.ManualDiscounts = mapManualDiscounts(draft, lineKeys);
-    order.Charges = [...(draft.Charges ?? [])];
+
+    // ⚠ CONTRACT MISMATCH — TYPED HERE SO IT CANNOT KEEP HIDING; SEE BUGS.md (Bug 5a).
+    //
+    // The client payloads and the engine's request types genuinely disagree, and the untyped
+    // `Record<string, unknown>` header this module used to carry is what let them:
+    //
+    //   ManualDiscounts  client sends { LineClientKey?, Percent?, Amount?, Reason }
+    //                    engine reads { OrderLineID?, Amount (required), Reason }
+    //                    → `LineNumber` (mapped below) is read by nothing, so a line-targeted
+    //                      discount silently becomes an order-level one, and a Percent-only
+    //                      discount reaches AuthorizeManualDiscount with Amount undefined
+    //                      (`request.Amount / baseAmount` → NaN → over-the-cap branch).
+    //
+    //   Charges          client sends { ChargeTypeID, Amount, OverrideReason }
+    //                    engine reads { Code, … } — there is no ChargeTypeID on RequestedCharge
+    //                    → RunCharges filters `Code IN ('undefined')` and matches no charge type.
+    //
+    // The mapping is NOT knowable here (an unsaved line has no OrderLineID; a percent needs a base
+    // the engine holds; a code needs a ChargeType lookup), so this hydrator does not invent one.
+    // Behaviour is left EXACTLY as it was pending a ruling on the contract — the casts are the
+    // record of that decision, not an oversight. No UI control currently sends either collection.
+    order.ManualDiscounts = mapManualDiscounts(draft, lineKeys) as unknown as ManualDiscountRequest[];
+    order.Charges = [...(draft.Charges ?? [])] as unknown as RequestedCharge[];
 
     return {
         Order: order,
@@ -312,7 +345,7 @@ export async function HydrateOrderDraft(
 }
 
 /** Copy the stated header fields, refusing the ones the engine owns. */
-function applyHeader(order: BaseEntity & Record<string, unknown>, header: HydratableHeader): void {
+function applyHeader(order: OrderEntityServer, header: HydratableHeader): void {
     const assign = (field: string, value: unknown): void => {
         if (value === undefined) return;
         if (HEADER_FIELDS_OWNED_BY_THE_ENGINE.has(field)) return;
@@ -369,14 +402,14 @@ function applyHeader(order: BaseEntity & Record<string, unknown>, header: Hydrat
  * record, and refusing the whole order over it would make the UI's origin
  * tracking a hard dependency on a migration that is still in flight.
  */
-function trySetOptionalField(
-    order: BaseEntity & Record<string, unknown>,
-    field: string,
-    value: unknown,
-): void {
+// GENUINELY generic, and one of the few places weak access is right: the whole point is to set a
+// field whose EXISTENCE is unknown until runtime, so there is no typed property to reach for.
+// `Set` rather than an index write — an index write needs the index-signature intersection this
+// module has otherwise been rid of.
+function trySetOptionalField(order: BaseEntity, field: string, value: unknown): void {
     if (value === undefined || value === null) return;
     const exists = order.EntityInfo?.Fields?.some((f) => f.Name === field);
-    if (exists) order[field] = value;
+    if (exists) order.Set(field, value);
 }
 
 /**
@@ -416,7 +449,7 @@ async function createReferenceInstrument(
     paymentTypeID: string,
     reference: string,
 ): Promise<string> {
-    const detail = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(
+    const detail = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(
         PAYMENT_DETAIL_ENTITY,
         user,
     );
@@ -427,15 +460,15 @@ async function createReferenceInstrument(
         );
     }
     detail.NewRecord();
-    detail.Set('CompanyID', companyID);
-    detail.Set('PaymentTypeID', paymentTypeID);
-    detail.Set('ReferenceNumber', reference);
+    detail.CompanyID = companyID;
+    detail.PaymentTypeID = paymentTypeID;
+    detail.ReferenceNumber = reference;
     if (!(await detail.Save())) {
         throw new Error(
             `Could not record the payment reference: ${detail.LatestResult?.CompleteMessage ?? 'unknown error'}`,
         );
     }
-    return detail.Get('ID') as string;
+    return detail.ID;
 }
 
 

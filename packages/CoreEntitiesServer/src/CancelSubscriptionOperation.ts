@@ -45,6 +45,13 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import {
+    mjBizAppsOrdersOrderLineEntity,
+    mjBizAppsOrdersSubscriptionEntity,
+    mjBizAppsOrdersSubscriptionEventEntity,
+    mjBizAppsOrdersSubscriptionTermEntity,
+} from '@mj-biz-apps/orders-entities';
+import type { OrderEntityServer } from './OrderEntityServer.js';
 import { RequireUUID } from './sql-guards.js';
 import {
     SubscriptionBehavior,
@@ -311,21 +318,21 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
             );
         }
 
-        const order = await provider.GetEntityObject<BaseEntity>(ORDER_HEADER_ENTITY, user);
+        const order = await provider.GetEntityObject<OrderEntityServer>(ORDER_HEADER_ENTITY, user);
         order.NewRecord();
         // 'Cancellation' — one of the CK_OrderHeader_OrderType values. There is no 'Reversal'
         // order type; reversal is what the negative LINE does, not what the order is called.
-        order.Set('OrderType', 'Cancellation');
-        order.Set('OrderDate', decision.EffectiveDate);
-        order.Set('CompanyID', subscription.CompanyID);
-        order.Set('BillToOrganizationID', subscription.HolderOrganizationID);
-        order.Set('BillToPersonID', subscription.BeneficiaryPersonID);
-        order.Set('Notes', reason ? `Subscription cancellation: ${reason}` : 'Subscription cancellation');
+        order.OrderType = 'Cancellation';
+        order.OrderDate = decision.EffectiveDate;
+        order.CompanyID = subscription.CompanyID;
+        order.BillToOrganizationID = subscription.HolderOrganizationID;
+        order.BillToPersonID = subscription.BeneficiaryPersonID;
+        order.Notes = reason ? `Subscription cancellation: ${reason}` : 'Subscription cancellation';
 
-        const line = await provider.GetEntityObject<BaseEntity>(ORDER_LINE_ENTITY, user);
+        const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
         line.NewRecord();
-        line.Set('ProductID', original.ProductID);
-        line.Set('LineNumber', 1);
+        line.ProductID = original.ProductID;
+        line.LineNumber = 1;
         // A FRACTION OF THE ORIGINAL LINE, not of one unit. The purchased line may already carry a
         // prorated quantity (a short first period), so reversing `-fraction` flat would unwind more
         // than was ever sold. Rounded to the column's 4dp scale for the same reason the purchase
@@ -339,22 +346,22 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
                     `rounds to zero, which is not a valid order line. Nothing can be reversed at this size.`,
             );
         }
-        line.Set('Quantity', -reversalQuantity);
-        line.Set('UnitPrice', original.UnitPrice);
-        line.Set('DiscountPct', original.DiscountPct ?? 0);
-        line.Set('ReversesOrderLineID', original.ID);
-        line.Set('ServicePeriodStart', decision.EffectiveDate);
-        line.Set('ServicePeriodEnd', new Date(term.EndDate));
+        line.Quantity = -reversalQuantity;
+        line.UnitPrice = original.UnitPrice;
+        line.DiscountPct = original.DiscountPct ?? 0;
+        line.ReversesOrderLineID = original.ID;
+        line.ServicePeriodStart = decision.EffectiveDate;
+        line.ServicePeriodEnd = new Date(term.EndDate);
 
-        (order as unknown as { Lines: unknown }).Lines = [line];
-        order.Set('Status', 'Confirmed');
+        order.Lines = [line];
+        order.Status = 'Confirmed';
 
         if (!(await order.Save())) {
             throw new Error(
                 `Failed to book the reversal order: ${order.LatestResult?.CompleteMessage ?? 'unknown error'}`,
             );
         }
-        return { ID: order.Get('ID') as string, Number: order.Get('OrderNumber') as string };
+        return { ID: order.ID, Number: order.OrderNumber };
     }
 
     private async loadOriginalLine(
@@ -382,14 +389,14 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         termID: string,
         decision: CancellationDecision,
     ): Promise<void> {
-        const term = await provider.GetEntityObject<BaseEntity>(
+        const term = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionTermEntity>(
             SUBSCRIPTION_TERM_ENTITY,
             CompositeKey.FromID(termID),
             user,
         );
-        term.Set('Status', decision.TermStatus);
-        term.Set('CanceledAt', new Date());
-        term.Set('CancellationEffectiveDate', decision.EffectiveDate);
+        term.Status = decision.TermStatus;
+        term.CanceledAt = new Date();
+        term.CancellationEffectiveDate = decision.EffectiveDate;
         if (!(await term.Save())) {
             throw new Error(`Failed to stamp the term: ${term.LatestResult?.CompleteMessage ?? 'unknown error'}`);
         }
@@ -401,17 +408,17 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         subscriptionID: string,
         decision: CancellationDecision,
     ): Promise<void> {
-        const sub = await provider.GetEntityObject<BaseEntity>(
+        const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
             SUBSCRIPTION_ENTITY,
             CompositeKey.FromID(subscriptionID),
             user,
         );
-        sub.Set('Status', 'Canceled');
-        sub.Set('CanceledAt', new Date());
+        sub.Status = 'Canceled';
+        sub.CanceledAt = new Date();
         // EndDate is the ACCESS date, not the revenue date — grace is exactly the window where the
         // customer still gets in but nothing more is earned.
-        sub.Set('EndDate', decision.AccessThroughDate);
-        sub.Set('AutoRenew', false);
+        sub.EndDate = decision.AccessThroughDate;
+        sub.AutoRenew = false;
         if (!(await sub.Save())) {
             throw new Error(
                 `Failed to stamp the subscription: ${sub.LatestResult?.CompleteMessage ?? 'unknown error'}`,
@@ -427,12 +434,12 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         reason?: string,
         reversalOrderID?: string,
     ): Promise<void> {
-        const event = await provider.GetEntityObject<BaseEntity>(SUBSCRIPTION_EVENT_ENTITY, user);
+        const event = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEventEntity>(SUBSCRIPTION_EVENT_ENTITY, user);
         event.NewRecord();
-        event.Set('SubscriptionID', subscriptionID);
-        event.Set('EventType', 'Canceled');
-        event.Set('OccurredAt', new Date());
-        event.Set('RelatedOrderHeaderID', reversalOrderID ?? null);
+        event.SubscriptionID = subscriptionID;
+        event.EventType = 'Canceled';
+        event.OccurredAt = new Date();
+        event.RelatedOrderHeaderID = reversalOrderID ?? null;
         event.Set(
             'EventData',
             JSON.stringify({

@@ -25,6 +25,11 @@
  *   DOC:    plans/pricing-charges-and-promotions.md §4
  */
 import { BaseEntity, IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
+import {
+    mjBizAppsOrdersOrderAdjustmentAllocationEntity,
+    mjBizAppsOrdersOrderAdjustmentEntity,
+    mjBizAppsOrdersOrderLineEntity,
+} from '@mj-biz-apps/orders-entities';
 import { MJGlobal } from '@memberjunction/global';
 import { AllocateProRata, Money } from './PricingBehavior.js';
 import {
@@ -112,7 +117,8 @@ export interface PromotableLine {
     Quantity: number;
     /** Net after pricing and any percentage concession — the base promotions work against. */
     Net: number;
-    Entity: BaseEntity;
+    /** The line row itself, so an applied discount can be written back onto it. */
+    Entity: mjBizAppsOrdersOrderLineEntity;
 }
 
 export interface PromotionApplication {
@@ -683,20 +689,20 @@ export async function WriteAdjustments(
 ): Promise<void> {
     let seq = 0;
     for (const app of applications) {
-        const adj = await provider.GetEntityObject<BaseEntity>(ORDER_ADJUSTMENT_ENTITY, user);
+        const adj = await provider.GetEntityObject<mjBizAppsOrdersOrderAdjustmentEntity>(ORDER_ADJUSTMENT_ENTITY, user);
         adj.NewRecord();
-        adj.Set('OrderHeaderID', orderHeaderID);
-        adj.Set('OrderLineID', app.OrderLineID);
-        adj.Set('PromotionID', app.PromotionID);
-        adj.Set('PromotionCodeID', app.PromotionCodeID);
-        adj.Set('Amount', app.Amount);
-        adj.Set('Sequence', seq++);
-        if (app.Reason) adj.Set('Reason', app.Reason);
-        adj.Set('AppliedByUserID', userID);
-        if (app.AuthorizedBySalesAuthorityID) adj.Set('AuthorizedBySalesAuthorityID', app.AuthorizedBySalesAuthorityID);
+        adj.OrderHeaderID = orderHeaderID;
+        adj.OrderLineID = app.OrderLineID;
+        adj.PromotionID = app.PromotionID;
+        adj.PromotionCodeID = app.PromotionCodeID;
+        adj.Amount = app.Amount;
+        adj.Sequence = seq++;
+        if (app.Reason) adj.Reason = app.Reason;
+        adj.AppliedByUserID = userID;
+        if (app.AuthorizedBySalesAuthorityID) adj.AuthorizedBySalesAuthorityID = app.AuthorizedBySalesAuthorityID;
         if (app.ApprovedByUserID) {
-            adj.Set('ApprovedByUserID', app.ApprovedByUserID);
-            adj.Set('ApprovedAt', new Date());
+            adj.ApprovedByUserID = app.ApprovedByUserID;
+            adj.ApprovedAt = new Date();
         }
         if (!(await adj.Save())) {
             throw new PromotionError(
@@ -705,11 +711,11 @@ export async function WriteAdjustments(
         }
 
         if (app.OrderLineID) {
-            const alloc = await provider.GetEntityObject<BaseEntity>(ORDER_ADJUSTMENT_ALLOCATION_ENTITY, user);
+            const alloc = await provider.GetEntityObject<mjBizAppsOrdersOrderAdjustmentAllocationEntity>(ORDER_ADJUSTMENT_ALLOCATION_ENTITY, user);
             alloc.NewRecord();
-            alloc.Set('OrderAdjustmentID', adj.Get('ID'));
-            alloc.Set('OrderLineID', app.OrderLineID);
-            alloc.Set('Amount', app.Amount);
+            alloc.OrderAdjustmentID = adj.ID;
+            alloc.OrderLineID = app.OrderLineID;
+            alloc.Amount = app.Amount;
             if (!(await alloc.Save())) {
                 throw new PromotionError(
                     `Could not allocate '${app.Label}' to its line: ${alloc.LatestResult?.CompleteMessage ?? 'unknown error'}`,
@@ -721,7 +727,7 @@ export async function WriteAdjustments(
     for (const line of lines) {
         const total = perLine.get(uuidKey(line.ID));
         if (!total) continue;
-        line.Entity.Set('DiscountAmount', total);
+        line.Entity.DiscountAmount = total;
         if (!(await line.Entity.Save())) {
             throw new PromotionError(
                 `Could not apply the discount to line ${line.ID}: ` +

@@ -31,6 +31,7 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import {
     OrdersPreviewConfirmOperation as OrdersPreviewConfirmOperationBase,
+    mjBizAppsOrdersOrderLineEntity,
     type OrdersPreviewConfirmInput,
     type OrdersPreviewConfirmOutput,
     type JournalEntryPreview,
@@ -47,11 +48,6 @@ import { RequireOptionalUUID } from './sql-guards.js';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
-
-const field = <T>(entity: BaseEntity, name: string, fallback: T): T => {
-    const value = (entity as unknown as Record<string, unknown>)[name];
-    return (value === undefined || value === null ? fallback : value) as T;
-};
 
 /**
  * Dry-run a confirm.
@@ -97,10 +93,10 @@ export class PreviewConfirmOperation extends OrdersPreviewConfirmOperationBase {
                 : await this.draftFromSaved(String(input.OrderHeaderID), provider, user);
 
             const hydrated = await HydrateOrderDraft(draft, provider, user);
-            const order = hydrated.Order as unknown as BaseEntity;
+            const order = hydrated.Order;
 
             // THE REAL TRANSITION. Everything below reads what this produced.
-            order.Set('Status', 'Confirmed');
+            order.Status = 'Confirmed';
             const confirmed = await order.Save();
 
             if (!confirmed) {
@@ -119,16 +115,16 @@ export class PreviewConfirmOperation extends OrdersPreviewConfirmOperationBase {
 
             const entries = await this.readJournalEntries(hydrated.Lines, provider, user);
             const subscriptions = await this.readSubscriptionDecisions(hydrated.Lines, provider, user);
-            const grants = await this.readGrants(field(order, 'ID', ''), provider, user);
+            const grants = await this.readGrants(order.ID, provider, user);
 
             const companies = new Set(entries.map((e) => e.CompanyID));
             const holds = hydrated.Lines
-                .map((line, index) => ({ line: line as unknown as BaseEntity, index }))
-                .filter(({ line }) => field<string | null>(line, 'FulfillmentStatus', null) === 'Pending')
+                .map((line, index) => ({ line, index }))
+                .filter(({ line }) => line.FulfillmentStatus === 'Pending')
                 .map(({ line, index }) => ({
-                    LineNumber: Number(field(line, 'LineNumber', index + 1)),
-                    ProductName: field(line, 'Product', ''),
-                    Quantity: Number(field(line, 'Quantity', 0)),
+                    LineNumber: Number(line.LineNumber ?? index + 1),
+                    ProductName: line.Product ?? '',
+                    Quantity: Number(line.Quantity ?? 0),
                 }));
 
             // The REAL decomposition, from the same function the entry rail uses.
@@ -180,7 +176,7 @@ export class PreviewConfirmOperation extends OrdersPreviewConfirmOperationBase {
 
     /** The entries the confirm actually created, read back before the rollback. */
     private async readJournalEntries(
-        lines: Array<BaseEntity & Record<string, unknown>>,
+        lines: mjBizAppsOrdersOrderLineEntity[],
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<JournalEntryPreview[]> {
@@ -188,8 +184,8 @@ export class PreviewConfirmOperation extends OrdersPreviewConfirmOperationBase {
         const rv = RunView.FromMetadataProvider(provider);
 
         for (const raw of lines) {
-            const line = raw as unknown as BaseEntity;
-            const journalEntryID = field<string | null>(line, 'JournalEntryID', null);
+            const line = raw;
+            const journalEntryID = line.JournalEntryID ?? null;
             if (!journalEntryID) continue;
 
             const result = await rv.RunView<Record<string, unknown>>(
@@ -216,9 +212,9 @@ export class PreviewConfirmOperation extends OrdersPreviewConfirmOperationBase {
             const credits = entryLines.filter((l) => l.Side === 'Cr').reduce((s, l) => s + l.Amount, 0);
 
             entries.push({
-                CompanyID: field(line, 'CompanyID', ''),
-                CompanyName: field(line, 'Company', ''),
-                LineNumber: Number(field(line, 'LineNumber', 0)),
+                CompanyID: line.CompanyID ?? '',
+                CompanyName: line.Company ?? '',
+                LineNumber: Number(line.LineNumber ?? 0),
                 JournalEntryID: null, // previewing — the id vanishes with the rollback
                 EntryType: 'OrderBooking',
                 Balanced: Math.abs(debits - credits) < 0.005,
@@ -230,7 +226,7 @@ export class PreviewConfirmOperation extends OrdersPreviewConfirmOperationBase {
 
     /** What happened to a subscription, read from the lines that carry one. */
     private async readSubscriptionDecisions(
-        lines: Array<BaseEntity & Record<string, unknown>>,
+        lines: mjBizAppsOrdersOrderLineEntity[],
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<SubscriptionDecisionPreview[]> {
@@ -238,8 +234,8 @@ export class PreviewConfirmOperation extends OrdersPreviewConfirmOperationBase {
         const rv = RunView.FromMetadataProvider(provider);
 
         for (const raw of lines) {
-            const line = raw as unknown as BaseEntity;
-            const subscriptionID = field<string | null>(line, 'SubscriptionID', null);
+            const line = raw;
+            const subscriptionID = line.SubscriptionID ?? null;
             if (!subscriptionID) continue;
 
             const result = await rv.RunView<Record<string, unknown>>(

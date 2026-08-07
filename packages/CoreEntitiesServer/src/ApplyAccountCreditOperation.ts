@@ -63,6 +63,11 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import {
+    mjBizAppsOrdersPaymentDetailEntity,
+    mjBizAppsOrdersPaymentLineEntity,
+} from '@mj-biz-apps/orders-entities';
+import type { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { RequireUUID } from './sql-guards.js';
 import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 
@@ -211,46 +216,46 @@ export class ApplyAccountCreditOperation extends BaseRemotableOperation<ApplyAcc
         const db = provider as unknown as DatabaseProviderBase;
         await db.BeginTransaction();
         try {
-            const detail = await provider.GetEntityObject<BaseEntity>(PAYMENT_DETAIL_ENTITY, user);
+            const detail = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(PAYMENT_DETAIL_ENTITY, user);
             detail.NewRecord();
-            detail.Set('CompanyID', target.CompanyID);
-            detail.Set('PaymentTypeID', typeID);
-            detail.Set('SourceOrderHeaderID', source.ID);
-            detail.Set('Notes', input.Reason ?? `Credit from order ${source.OrderNumber}`);
+            detail.CompanyID = target.CompanyID;
+            detail.PaymentTypeID = typeID;
+            detail.SourceOrderHeaderID = source.ID;
+            detail.Notes = input.Reason ?? `Credit from order ${source.OrderNumber}`;
             if (!(await detail.Save())) {
                 throw new Error(`Could not record the credit tender: ${detail.LatestResult?.CompleteMessage ?? 'unknown error'}`);
             }
 
-            const payment = await provider.GetEntityObject<BaseEntity>(PAYMENT_HEADER_ENTITY, user);
+            const payment = await provider.GetEntityObject<PaymentHeaderEntityServer>(PAYMENT_HEADER_ENTITY, user);
             payment.NewRecord();
             const paymentNumber = await this.nextPaymentNumber(db);
-            payment.Set('PaymentNumber', paymentNumber);
-            payment.Set('ReceivingCompanyID', target.CompanyID);
-            payment.Set('PaymentTypeID', typeID);
-            payment.Set('PaymentDetailID', detail.Get('ID'));
+            payment.PaymentNumber = paymentNumber;
+            payment.ReceivingCompanyID = target.CompanyID;
+            payment.PaymentTypeID = typeID;
+            payment.PaymentDetailID = detail.ID;
             // ZERO on purpose — no new cash entered the business, this re-attributes money already
             // received. The D68 invariant holds exactly: 0 == (-requested) + (+requested).
-            payment.Set('Amount', 0);
-            payment.Set('ProcessingFeeAmount', 0);
-            payment.Set('PaymentDate', new Date());
-            payment.Set('Status', 'Captured');
-            payment.Set('Notes', input.Reason ?? `Applied ${requested} of order ${source.OrderNumber}'s credit`);
+            payment.Amount = 0;
+            payment.ProcessingFeeAmount = 0;
+            payment.PaymentDate = new Date();
+            payment.Status = 'Captured';
+            payment.Notes = input.Reason ?? `Applied ${requested} of order ${source.OrderNumber}'s credit`;
 
             // Both legs ride the header's Lines collection so they land inside this transaction and
             // the invariant is checked against the pair, never against a half-written payment.
-            const consume = await provider.GetEntityObject<BaseEntity>(PAYMENT_LINE_ENTITY, user);
+            const consume = await provider.GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(PAYMENT_LINE_ENTITY, user);
             consume.NewRecord();
-            consume.Set('OrderHeaderID', source.ID);
-            consume.Set('Amount', -requested);
-            consume.Set('AllocatedByUserID', user?.ID ?? null);
+            consume.OrderHeaderID = source.ID;
+            consume.Amount = -requested;
+            consume.AllocatedByUserID = user?.ID ?? null;
 
-            const apply = await provider.GetEntityObject<BaseEntity>(PAYMENT_LINE_ENTITY, user);
+            const apply = await provider.GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(PAYMENT_LINE_ENTITY, user);
             apply.NewRecord();
-            apply.Set('OrderHeaderID', target.ID);
-            apply.Set('Amount', requested);
-            apply.Set('AllocatedByUserID', user?.ID ?? null);
+            apply.OrderHeaderID = target.ID;
+            apply.Amount = requested;
+            apply.AllocatedByUserID = user?.ID ?? null;
 
-            (payment as unknown as { Lines: BaseEntity[] }).Lines = [consume, apply];
+            payment.Lines = [consume, apply];
 
             if (!(await payment.Save())) {
                 throw new Error(`Could not save the credit application: ${payment.LatestResult?.CompleteMessage ?? 'unknown error'}`);
@@ -264,7 +269,7 @@ export class ApplyAccountCreditOperation extends BaseRemotableOperation<ApplyAcc
                 AppliedAmount: requested,
                 RemainingCredit: remainingCredit,
                 TargetBalanceAfter: targetBalanceAfter,
-                PaymentHeaderID: String(payment.Get('ID')),
+                PaymentHeaderID: payment.ID,
                 PaymentNumber: paymentNumber,
             };
         } catch (err) {

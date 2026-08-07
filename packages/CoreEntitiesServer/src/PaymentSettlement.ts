@@ -44,6 +44,9 @@ import {
     type IRunViewProvider,
     type UserInfo,
 } from '@memberjunction/core';
+import {
+    mjBizAppsOrdersPaymentHeaderEntity,
+} from '@mj-biz-apps/orders-entities';
 import { DecideSettlement, type SettlementAction } from './PaymentProviderBehavior.js';
 import type { WebhookEvent } from './BasePaymentProvider.js';
 import {
@@ -252,12 +255,12 @@ async function promote(
     payment: SettlingPayment,
     event: WebhookEvent,
 ): Promise<void> {
-    const header = await provider.GetEntityObject<BaseEntity>(
+    const header = await provider.GetEntityObject<mjBizAppsOrdersPaymentHeaderEntity>(
         PAYMENT_HEADER_ENTITY,
         CompositeKey.FromID(payment.ID),
         user,
     );
-    header.Set('Status', 'Captured');
+    header.Status = 'Captured';
 
     if (!(await header.Save())) {
         throw new Error(
@@ -280,17 +283,17 @@ async function markFailed(
     payment: SettlingPayment,
     event: WebhookEvent,
 ): Promise<void> {
-    const header = await provider.GetEntityObject<BaseEntity>(
+    const header = await provider.GetEntityObject<mjBizAppsOrdersPaymentHeaderEntity>(
         PAYMENT_HEADER_ENTITY,
         CompositeKey.FromID(payment.ID),
         user,
     );
-    header.Set('Status', 'Failed');
+    header.Status = 'Failed';
 
     if (event.FailureReason) {
-        const existing = (header.Get('Notes') as string | null) ?? '';
+        const existing = header.Notes ?? '';
         const note = `Bank debit did not clear: ${event.FailureReason}`;
-        header.Set('Notes', existing ? `${existing}\n${note}` : note);
+        header.Notes = existing ? `${existing}\n${note}` : note;
     }
 
     if (!(await header.Save())) {

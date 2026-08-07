@@ -44,7 +44,18 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
-import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import {
+    mjBizAppsOrdersOrderHeaderEntity,
+    mjBizAppsOrdersOrderLineEntity,
+    mjBizAppsOrdersOrderLinePriceComponentEntity,
+    mjBizAppsOrdersPaymentDetailEntity,
+    mjBizAppsOrdersPaymentLineEntity,
+    mjBizAppsOrdersPaymentTypeEntity,
+    mjBizAppsOrdersSubscriptionEntity,
+    mjBizAppsOrdersSubscriptionEventEntity,
+    mjBizAppsOrdersSubscriptionTermEntity,
+} from '@mj-biz-apps/orders-entities';
+import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePrice, type ResolvedPrice } from './PriceResolver.js';
@@ -541,7 +552,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 // `OldValue` is what is on disk. On the confirm save the caller may have set a date
                 // moments ago, so the CURRENT value is what "stated" means here.
                 StatedDueDate: this.DueDate ? new Date(this.DueDate).toISOString().slice(0, 10) : null,
-                StatedPaymentTermsTypeID: (this as unknown as { PaymentTermsTypeID?: string | null }).PaymentTermsTypeID ?? null,
+                StatedPaymentTermsTypeID: this.PaymentTermsTypeID ?? null,
                 OrderDate: orderDate,
                 CompanyID: this.CompanyID ?? null,
                 CustomerTerms: customerTerms,
@@ -552,7 +563,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             if (resolution.WasStated) return;
             if (resolution.DueDate) this.DueDate = new Date(resolution.DueDate);
             if (resolution.PaymentTermsTypeID) {
-                (this as unknown as { PaymentTermsTypeID: string }).PaymentTermsTypeID = resolution.PaymentTermsTypeID;
+                this.PaymentTermsTypeID = resolution.PaymentTermsTypeID;
             }
         } catch (err) {
             LogError(
@@ -808,7 +819,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             if (!share) continue;
             if (share.Tax) this._lines[i].LineTax = share.Tax;
             if (share.Other) {
-                (this._lines[i] as unknown as { ChargeAmount: number }).ChargeAmount = share.Other;
+                this._lines[i].ChargeAmount = share.Other;
             }
         }
         return result;
@@ -1081,20 +1092,23 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // database default would only assign it at insert — too late for the child rows going down
         // in the same batch.
         for (const line of this._lines) {
-            if (!line.ID) (line as unknown as { ID: string }).ID = crypto.randomUUID().toUpperCase();
+            // `Set`, not `line.ID = …`: the primary key is ReadOnly on the generated class and has
+            // no setter. BaseEntity allows exactly one write to a ReadOnly field on a new record,
+            // which is what mints the id here.
+            if (!line.ID) line.Set('ID', crypto.randomUUID().toUpperCase());
         }
 
         const before = this._lines.length;
         await ExpandBundleLines(
-            this._lines as unknown as ExpandableLine[],
+            this._lines,
             async () => {
                 const row = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
                     'MJ_BizApps_Orders: Order Lines',
                     user,
                 );
                 row.NewRecord();
-                (row as unknown as { ID: string }).ID = crypto.randomUUID().toUpperCase();
-                return row as unknown as ExpandableLine;
+                row.Set('ID', crypto.randomUUID().toUpperCase());  // ReadOnly PK — see above
+                return row;
             },
             provider,
             user,
@@ -1109,7 +1123,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const byParent = new Map<string, mjBizAppsOrdersOrderLineEntity[]>();
         const roots: mjBizAppsOrdersOrderLineEntity[] = [];
         for (const line of this._lines) {
-            const parentID = (line as unknown as { ParentOrderLineID?: string | null }).ParentOrderLineID;
+            const parentID = line.ParentOrderLineID;
             if (parentID) {
                 const k = parentID.toLowerCase();
                 if (!byParent.has(k)) byParent.set(k, []);
@@ -1165,7 +1179,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 Quantity: Number(l.Quantity ?? 0),
                 UnitPrice: Number(l.UnitPrice ?? 0),
                 ReversesOrderLineID:
-                    (l as unknown as { ReversesOrderLineID?: string | null }).ReversesOrderLineID ?? null,
+                    l.ReversesOrderLineID ?? null,
                 ShipToPersonID: l.ShipToPersonID ?? null,
                 ShipToOrganizationID: l.ShipToOrganizationID ?? null,
             })),
@@ -1210,7 +1224,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         options?: EntitySaveOptions,
     ): Promise<void> {
         const reversals = lines.filter(
-            (l) => (l as unknown as { ReversesOrderLineID?: string | null }).ReversesOrderLineID,
+            (l) => l.ReversesOrderLineID,
         );
         if (!reversals.length) return;
 
@@ -1218,7 +1232,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const user = this.ContextCurrentUser as UserInfo;
 
         for (const line of reversals) {
-            const reverses = (line as unknown as { ReversesOrderLineID: string }).ReversesOrderLineID;
+            const reverses = line.ReversesOrderLineID;
             const context = await LoadReversalContext(reverses, provider, user, [line.ID]);
             if (!context) continue; // applyReversalOrigin already refused anything unresolvable
 
@@ -1253,7 +1267,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      * at an origin is making a claim about that origin, and the claim is checkable either way.
      */
     private async applyReversalOrigin(line: mjBizAppsOrdersOrderLineEntity): Promise<boolean> {
-        const reverses = (line as unknown as { ReversesOrderLineID?: string | null }).ReversesOrderLineID;
+        const reverses = line.ReversesOrderLineID;
         if (!reverses) {
             // A negative line with no origin. `OrderLineEntityServer.ValidateAsync` says this too,
             // and says it well — but it never gets the chance: pricing is skipped for a negative
@@ -1289,8 +1303,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         let siblingReversed = 0;
         for (const other of this._lines) {
             if (other === line) continue;
-            const otherReverses = (other as unknown as { ReversesOrderLineID?: string | null })
-                .ReversesOrderLineID;
+            const otherReverses = other.ReversesOrderLineID;
             if (otherReverses && uuidKey(otherReverses) === uuidKey(reverses)) {
                 siblingReversed += Math.abs(Number(other.Quantity ?? 0));
             }
@@ -1503,17 +1516,17 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         for (const [index, reason] of this._taxReasons) {
             const line = persisted[index];
             if (!line?.ID) continue;
-            const row = await provider.GetEntityObject<BaseEntity>(
+            const row = await provider.GetEntityObject<mjBizAppsOrdersOrderLinePriceComponentEntity>(
                 'MJ_BizApps_Orders: Order Line Price Components',
                 user,
             );
             row.NewRecord();
-            row.Set('OrderLineID', line.ID);
-            row.Set('Sequence', 900);
-            row.Set('ComponentType', 'Tax');
-            row.Set('Label', `no tax — ${reason}`);
-            row.Set('Amount', 0);
-            row.Set('RunningTotal', Number(line.LineTotalNet ?? 0));
+            row.OrderLineID = line.ID;
+            row.Sequence = 900;
+            row.ComponentType = 'Tax';
+            row.Label = `no tax — ${reason}`;
+            row.Amount = 0;
+            row.RunningTotal = Number(line.LineTotalNet ?? 0);
             if (!(await row.Save())) {
                 throw new Error(
                     `Failed to record why line ${line.LineNumber} owes no tax: ` +
@@ -1541,22 +1554,22 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         for (const [line, resolved] of this._priceComponents) {
             let seq = 0;
             for (const c of resolved.Components) {
-                const row = await provider.GetEntityObject<BaseEntity>(
+                const row = await provider.GetEntityObject<mjBizAppsOrdersOrderLinePriceComponentEntity>(
                     'MJ_BizApps_Orders: Order Line Price Components',
                     user,
                 );
                 row.NewRecord();
-                row.Set('OrderLineID', line.ID);
-                row.Set('Sequence', seq++);
-                row.Set('ComponentType', c.ComponentType);
-                row.Set('Label', c.Label);
-                row.Set('Amount', c.Amount);
-                row.Set('RunningTotal', c.RunningTotal);
+                row.OrderLineID = line.ID;
+                row.Sequence = seq++;
+                row.ComponentType = c.ComponentType;
+                row.Label = c.Label;
+                row.Amount = c.Amount;
+                row.RunningTotal = c.RunningTotal;
                 if (c.SourceEntityName && c.SourceRecordID) {
                     const ent = md.EntityByName(c.SourceEntityName);
                     if (ent) {
-                        row.Set('SourceEntityID', ent.ID);
-                        row.Set('SourceRecordID', c.SourceRecordID);
+                        row.SourceEntityID = ent.ID;
+                        row.SourceRecordID = c.SourceRecordID;
                     }
                 }
                 if (!(await row.Save(options))) {
@@ -1606,7 +1619,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 ProductCategoryID: product?.ProductCategoryID ?? null,
                 Quantity: Number(line.Quantity ?? 0),
                 Net: net,
-                Entity: line as unknown as BaseEntity,
+                Entity: line,
             });
         }
 
@@ -1671,7 +1684,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // Stamp the lines while they are still unsaved.
         for (const l of lines) {
             const total = run.PerLine.get(l.ID);
-            if (total) (l.Entity as unknown as { DiscountAmount: number }).DiscountAmount = total;
+            if (total) l.Entity.DiscountAmount = total;
         }
         return run;
     }
@@ -1973,20 +1986,23 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             // or deferred revenue never clears to zero.
             term.Amount = line.LineTotalNet ?? term.Amount;
 
-            const termEntity = await provider.GetEntityObject<BaseEntity>(SUBSCRIPTION_TERM_ENTITY, user);
+            const termEntity = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionTermEntity>(
+                SUBSCRIPTION_TERM_ENTITY,
+                user,
+            );
             termEntity.NewRecord();
-            termEntity.Set('SubscriptionID', subscriptionID);
-            termEntity.Set('TermNumber', term.TermNumber);
-            termEntity.Set('OrderLineID', line.ID);
-            termEntity.Set('StartDate', term.StartDate);
-            termEntity.Set('EndDate', term.EndDate);
-            termEntity.Set('Amount', term.Amount);
-            termEntity.Set('IsProrated', term.IsProrated);
-            termEntity.Set('ProrationFactor', term.ProrationFactor);
+            termEntity.SubscriptionID = subscriptionID;
+            termEntity.TermNumber = term.TermNumber;
+            termEntity.OrderLineID = line.ID;
+            termEntity.StartDate = term.StartDate;
+            termEntity.EndDate = term.EndDate;
+            termEntity.Amount = term.Amount;
+            termEntity.IsProrated = term.IsProrated;
+            termEntity.ProrationFactor = term.ProrationFactor;
             // Frozen at purchase: later changes to the product's rules must never restate a
             // term that has already been booked.
-            termEntity.Set('RevenueRecognitionTypeID', product.RevenueRecognitionTypeID);
-            termEntity.Set('Status', 'Active');
+            termEntity.RevenueRecognitionTypeID = product.RevenueRecognitionTypeID;
+            termEntity.Status = 'Active';
 
             if (!(await termEntity.Save(options))) {
                 throw new Error(
@@ -1998,7 +2014,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             // The term is the coverage window the schedule must follow, and its cadence decides
             // how many slices that window produces.
             out.TermsByLine.set(line.ID, {
-                ID: termEntity.Get('ID') as string,
+                ID: termEntity.ID,
                 StartDate: term.StartDate,
                 EndDate: term.EndDate,
                 Amount: term.Amount,
@@ -2372,9 +2388,12 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         options?: EntitySaveOptions,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
-        const sub = await provider.GetEntityObject<BaseEntity>(SUBSCRIPTION_ENTITY, this.ContextCurrentUser);
+        const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
+            SUBSCRIPTION_ENTITY,
+            this.ContextCurrentUser,
+        );
         sub.NewRecord();
-        sub.Set('SubscriptionNumber', await this.assignSubscriptionNumber());
+        sub.SubscriptionNumber = await this.assignSubscriptionNumber();
         // The LINE's company, not the order's. A subscription is recurring revenue
         // for whoever sells it, and on a mixed order that is not the order's owner:
         // an order carrying a membership from each of two companies produced two
@@ -2384,25 +2403,25 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // the same footing rather than leaving the two records disagreeing about who
         // sold what. Falls back to the order's company only if a line somehow has
         // none, which savePendingLines does not allow.
-        sub.Set('CompanyID', line.CompanyID ?? this.CompanyID);
+        sub.CompanyID = line.CompanyID ?? this.CompanyID;
         // The BIRTH line (D39/D40) — which purchase brought this subscription into existence.
         // Renewals append terms that carry their own OrderLineID; this one never changes.
-        sub.Set('OrderLineID', line.ID);
-        sub.Set('SubscriptionTypeID', rules.ID);
-        sub.Set('ProductID', product.ID);
+        sub.OrderLineID = line.ID;
+        sub.SubscriptionTypeID = rules.ID;
+        sub.ProductID = product.ID;
         // The RESOLVED subscriber, which may differ from the order's customer: the customer pays,
         // the ship-to holds and benefits.
-        sub.Set('HolderOrganizationID', subscriber.OrganizationID);
-        sub.Set('BeneficiaryPersonID', subscriber.PersonID);
-        sub.Set('Status', rules.TrialDays > 0 ? 'Trialing' : 'Active');
-        sub.Set('StartDate', decision.Term!.StartDate);
-        sub.Set('AutoRenew', rules.AutoRenewDefault);
+        sub.HolderOrganizationID = subscriber.OrganizationID;
+        sub.BeneficiaryPersonID = subscriber.PersonID;
+        sub.Status = rules.TrialDays > 0 ? 'Trialing' : 'Active';
+        sub.StartDate = decision.Term!.StartDate;
+        sub.AutoRenew = rules.AutoRenewDefault;
         // A trial with no end date is not a trial. Without this, `Status='Trialing'` is a label
         // nothing can ever act on — no job can find trials about to expire.
         if (rules.TrialDays > 0) {
             const trialEnd = new Date(decision.Term!.StartDate);
             trialEnd.setUTCDate(trialEnd.getUTCDate() + rules.TrialDays);
-            sub.Set('TrialEndDate', trialEnd);
+            sub.TrialEndDate = trialEnd;
         }
 
         if (!(await sub.Save(options))) {
@@ -2412,7 +2431,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             );
         }
 
-        const subscriptionID = sub.Get('ID') as string;
+        const subscriptionID = sub.ID;
         await this.logSubscriptionEvent(
             subscriptionID,
             rules.TrialDays > 0 ? 'TrialStarted' : 'Created',
@@ -2430,21 +2449,24 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      */
     private async logSubscriptionEvent(
         subscriptionID: string,
-        eventType: string,
+        // DERIVED from the entity, never restated: `EventType` is a CHECK-constrained value list, so
+        // CodeGen widens this union whenever a migration adds a value. A hand-copied union would
+        // silently stop tracking it.
+        eventType: mjBizAppsOrdersSubscriptionEventEntity['EventType'],
         options?: EntitySaveOptions,
         data?: Record<string, unknown>,
     ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
-        const event = await provider.GetEntityObject<BaseEntity>(
+        const event = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEventEntity>(
             SUBSCRIPTION_EVENT_ENTITY,
             this.ContextCurrentUser,
         );
         event.NewRecord();
-        event.Set('SubscriptionID', subscriptionID);
-        event.Set('EventType', eventType);
-        event.Set('OccurredAt', new Date());
-        event.Set('RelatedOrderHeaderID', this.ID);
-        if (data) event.Set('EventData', JSON.stringify(data));
+        event.SubscriptionID = subscriptionID;
+        event.EventType = eventType;
+        event.OccurredAt = new Date();
+        event.RelatedOrderHeaderID = this.ID;
+        if (data) event.EventData = JSON.stringify(data);
 
         if (!(await event.Save(options))) {
             // Inside the booking transaction: a lost lifecycle record is a silent hole in the
@@ -2463,16 +2485,16 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         options?: EntitySaveOptions,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
-        const sub = await provider.GetEntityObject<BaseEntity>(
+        const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
             SUBSCRIPTION_ENTITY,
             CompositeKey.FromID(decision.SubscriptionID!),
             this.ContextCurrentUser,
         );
         if (decision.Action === 'Reactivate') {
-            sub.Set('Status', 'Active');
-            sub.Set('CanceledAt', null);
-            sub.Set('EndDate', null);
-            sub.Set('AutoRenew', true);
+            sub.Status = 'Active';
+            sub.CanceledAt = null;
+            sub.EndDate = null;
+            sub.AutoRenew = true;
             if (!(await sub.Save(options))) {
                 throw new Error(
                     `Failed to reactivate subscription: ${sub.LatestResult?.CompleteMessage ?? 'unknown error'}`,
@@ -2576,22 +2598,20 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<void> {
-        const type = await provider.GetEntityObject<BaseEntity>(PAYMENT_TYPE_ENTITY, user);
-        const loaded = await (type as unknown as { Load(id: string): Promise<boolean> }).Load(
-            this.InitialPaymentTypeID as string,
-        );
-        if (!loaded || !type.Get('RequiresReference')) return;
+        const type = await provider.GetEntityObject<mjBizAppsOrdersPaymentTypeEntity>(PAYMENT_TYPE_ENTITY, user);
+        const loaded = await type.Load(this.InitialPaymentTypeID as string);
+        if (!loaded || !type.RequiresReference) return;
 
         let reference: string | null = null;
         if (this.InitialPaymentDetailID) {
-            const detail = await provider.GetEntityObject<BaseEntity>(PAYMENT_DETAIL_ENTITY, user);
-            if (await (detail as unknown as { Load(id: string): Promise<boolean> }).Load(this.InitialPaymentDetailID)) {
-                reference = ((detail.Get('ReferenceNumber') as string) ?? '').trim() || null;
+            const detail = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(PAYMENT_DETAIL_ENTITY, user);
+            if (await detail.Load(this.InitialPaymentDetailID)) {
+                reference = (detail.ReferenceNumber ?? '').trim() || null;
             }
         }
         if (!reference) {
             throw new Error(
-                `${type.Get('Name')} payments need a reference number — a check number, wire ` +
+                `${type.Name} payments need a reference number — a check number, wire ` +
                     `confirmation or transfer id. Without one the payment cannot be reconciled ` +
                     `against the bank statement. Enter it on the order, or invoice on terms instead.`,
             );
@@ -2621,29 +2641,32 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             paymentDetailID = await this.copyPaymentDetail(this.InitialPaymentDetailID, options);
         }
 
-        const payment = await provider.GetEntityObject<BaseEntity>(PAYMENT_HEADER_ENTITY, user);
+        // Typed as the SERVER subclass, which is what the class factory returns for this key: the
+        // header's `Lines` collection lives there, and asking for the generated class would mean
+        // casting it back to reach the very property this code exists to set.
+        const payment = await provider.GetEntityObject<PaymentHeaderEntityServer>(PAYMENT_HEADER_ENTITY, user);
         payment.NewRecord();
-        payment.Set('PaymentNumber', await this.assignPaymentNumber());
-        payment.Set('ReceivingCompanyID', this.CompanyID);
-        payment.Set('BillToOrganizationID', this.BillToOrganizationID);
-        payment.Set('BillToPersonID', this.BillToPersonID);
-        payment.Set('PaymentDate', this.OrderDate ?? new Date());
-        payment.Set('PaymentTypeID', this.InitialPaymentTypeID);
-        payment.Set('Amount', amount);
-        payment.Set('PaymentDetailID', paymentDetailID);
-        payment.Set('Status', 'Captured');
-        payment.Set('Description', `Initial payment for order ${this.OrderNumber}`);
+        payment.PaymentNumber = await this.assignPaymentNumber();
+        payment.ReceivingCompanyID = this.CompanyID;
+        payment.BillToOrganizationID = this.BillToOrganizationID;
+        payment.BillToPersonID = this.BillToPersonID;
+        payment.PaymentDate = this.OrderDate ?? new Date();
+        payment.PaymentTypeID = this.InitialPaymentTypeID;
+        payment.Amount = amount;
+        payment.PaymentDetailID = paymentDetailID;
+        payment.Status = 'Captured';
+        payment.Description = `Initial payment for order ${this.OrderNumber}`;
 
         // The allocation rides the payment's Lines collection so both land in ONE save (D68). The
         // payment's Amount must equal the sum of its lines at capture, so writing the header first
         // and the allocation second would fail on a payment that is about to be exactly consistent.
-        const line = await provider.GetEntityObject<BaseEntity>(PAYMENT_LINE_ENTITY, user);
+        const line = await provider.GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(PAYMENT_LINE_ENTITY, user);
         line.NewRecord();
-        line.Set('OrderHeaderID', this.ID);
-        line.Set('Amount', amount);
-        line.Set('AllocatedAt', new Date());
-        line.Set('AllocatedByUserID', user?.ID ?? null);
-        (payment as unknown as { Lines: BaseEntity[] }).Lines = [line];
+        line.OrderHeaderID = this.ID;
+        line.Amount = amount;
+        line.AllocatedAt = new Date();
+        line.AllocatedByUserID = user?.ID ?? null;
+        payment.Lines = [line];
 
         if (!(await payment.Save(options))) {
             throw new Error(
@@ -2656,22 +2679,24 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     /** Duplicate a PaymentDetail so each host owns its own immutable snapshot (D39). */
     private async copyPaymentDetail(sourceID: string, options?: EntitySaveOptions): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
-        const source = await provider.GetEntityObject<BaseEntity>(
+        const source = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(
             PAYMENT_DETAIL_ENTITY,
             CompositeKey.FromID(sourceID),
             this.ContextCurrentUser,
         );
 
-        const copy = await provider.GetEntityObject<BaseEntity>(PAYMENT_DETAIL_ENTITY, this.ContextCurrentUser);
+        const copy = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(
+            PAYMENT_DETAIL_ENTITY,
+            this.ContextCurrentUser,
+        );
         copy.NewRecord();
-        for (const f of source.Fields) {
-            if (f.Name === 'ID' || f.Name.startsWith('__mj_')) continue;
-            copy.Set(f.Name, source.Get(f.Name));
-        }
-        // Record where the copy came from when the source was a saved wallet entry.
-        if (!source.Get('SourceCustomerPaymentMethodID')) {
-            copy.Set('SourceCustomerPaymentMethodID', source.Get('SourceCustomerPaymentMethodID'));
-        }
+        // `CopyFrom` rather than a field loop: it skips primary keys by default, which is the only
+        // exclusion this copy actually needs. The loop it replaced also skipped `__mj_*`, but those
+        // are ReadOnly and absent from spCreate's parameter list, so they cannot reach the insert.
+        // `SourceCustomerPaymentMethodID` comes across with everything else — the guard that used to
+        // "record where the copy came from" only fired when the source value was FALSY and then
+        // assigned that same falsy value, so it was dead code stating the opposite of its comment.
+        copy.CopyFrom(source);
 
         if (!(await copy.Save(options))) {
             throw new Error(
@@ -2679,7 +2704,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                     `${copy.LatestResult?.CompleteMessage ?? 'unknown error'}`,
             );
         }
-        return copy.Get('ID') as string;
+        return copy.ID;
     }
 
     private async assignPaymentNumber(): Promise<string> {

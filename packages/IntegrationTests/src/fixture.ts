@@ -31,7 +31,7 @@
  *   USED BY: every bundle under ./checks
  */
 import { randomUUID } from 'node:crypto';
-import { BaseEntity, Metadata, RunView } from '@memberjunction/core';
+import { BaseEntity, CompositeKey, Metadata, RunView } from '@memberjunction/core';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
@@ -903,7 +903,10 @@ export async function createViaEntity(
     fields: Record<string, unknown>,
 ): Promise<string> {
     const md = new Metadata();
-    const entity = await md.GetEntityObject<BaseEntity & Record<string, unknown>>(entityName, ctx.User);
+    // GENERIC BY DESIGN — `entityName` and the field names are runtime values, so there is no typed
+    // property to reach for and `Set` is the correct tool. Plain `BaseEntity`, not the old
+    // `& Record<string, unknown>`: that intersection bought nothing here and hid `InnerLoad`.
+    const entity = await md.GetEntityObject<BaseEntity>(entityName, ctx.User);
     entity.NewRecord();
     for (const [key, value] of Object.entries(fields)) {
         if (value !== undefined) entity.Set(key, value);
@@ -919,7 +922,7 @@ export async function createViaEntity(
                 .join('; ') || result?.CompleteMessage || 'no reason given';
         throw new Error(`Fixture could not create a '${entityName}' through the object model: ${detail}`);
     }
-    return entity.Get('ID') as string;
+    return entity.Get('ID') as string;  // generic: the PK column name is not known statically
 }
 
 /**
@@ -939,12 +942,13 @@ export async function upsertViaEntity(
     fields: Record<string, unknown>,
 ): Promise<string> {
     const md = new Metadata();
-    const entity = await md.GetEntityObject<BaseEntity & Record<string, unknown>>(entityName, ctx.User);
+    // Generic by design, as in `createViaEntity` above.
+    const entity = await md.GetEntityObject<BaseEntity>(entityName, ctx.User);
 
-    // Load returns false when the row is absent, which is the create path — not an error. The cast
-    // matches the convention already used in payment-builder and OrderDraftHydrator: the
-    // `& Record<string, unknown>` that makes Set/Get ergonomic also widens every method to `{}`.
-    const existed = await (entity as unknown as { Load(id: string): Promise<boolean> }).Load(primaryKey);
+    // Absent row → false, which is the create path, not an error. `InnerLoad` is BaseEntity's own
+    // key-based load; the typed `Load(id)` overload only exists on generated subclasses, and this
+    // function does not know which subclass it has.
+    const existed = await entity.InnerLoad(CompositeKey.FromID(primaryKey));
     if (!existed) {
         entity.NewRecord();
         entity.Set('ID', primaryKey);
@@ -963,7 +967,7 @@ export async function upsertViaEntity(
             `through the object model: ${detail}`,
         );
     }
-    return entity.Get('ID') as string;
+    return entity.Get('ID') as string;  // generic: the PK column name is not known statically
 }
 
 /** Intercompany account codes. Shared so the two bundles that provision them cannot drift apart. */
