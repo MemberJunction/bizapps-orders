@@ -19,7 +19,8 @@
   "devDependencies": {
     "typescript": "^5.9.3",
     "vitest": "^4.0.18",
-    "@types/node": "^22.10.2"
+    "@types/node": "^22.10.2",
+    "vite": "^7.1.5"
   },
   "dependencies": {
     "@mj-biz-apps/orders-entities": "5.0.0",
