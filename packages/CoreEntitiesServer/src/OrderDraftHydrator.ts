@@ -24,6 +24,7 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 
+import { RunView } from '@memberjunction/core';
 import type { BaseEntity, IMetadataProvider, UserInfo } from '@memberjunction/core';
 
 /** MJ entity names. Centralised so a rename is one edit rather than a search. */
@@ -220,6 +221,17 @@ export async function HydrateOrderDraft(
     const lineUnitPriceWasStated: boolean[] = [];
     let lineNumber = 1;
 
+    // AN ORDER THAT WAS SAVED AS A DRAFT ALREADY HAS LINE ROWS. Every line below used to be
+    // `NewRecord()` unconditionally, so confirming a saved draft tried to INSERT line 1 a second
+    // time and died on UQ_OrderLine_OrderHeader_LineNumber. The order could never be confirmed
+    // again by any route — "Save draft" quietly made an order permanently unconfirmable.
+    //
+    // Matched on LINE NUMBER rather than on an id, because the payload has no line id to send: line
+    // numbers are assigned from array order here (see below), so position is the only identity the
+    // client and server share. That is exactly the identity the unique constraint is keyed on, so
+    // matching on it is what makes the reconcile total.
+    const existingLines = await loadExistingLines(draft.Header.OrderHeaderID ?? null, user);
+
     for (const spec of draft.Lines ?? []) {
         const line = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(ORDER_LINE_ENTITY, user);
         if (!line) {
@@ -228,7 +240,15 @@ export async function HydrateOrderDraft(
                     `Either the name is wrong or the entity is not registered with this provider.`,
             );
         }
-        line.NewRecord();
+        const existingID = existingLines.get(lineNumber);
+        if (existingID) {
+            // Load rather than NewRecord: this row exists, so the save must be an UPDATE.
+            const loaded = await (line as unknown as { Load(id: string): Promise<boolean> }).Load(existingID);
+            if (!loaded) line.NewRecord(); // vanished under us — fall back to an insert
+            existingLines.delete(lineNumber);
+        } else {
+            line.NewRecord();
+        }
         line.ProductID = spec.ProductID;
         // Line numbers come from ARRAY ORDER, assigned here rather than sent, so
         // removing the second of three lines leaves 1-2-3 instead of 1-3.
@@ -258,6 +278,23 @@ export async function HydrateOrderDraft(
 
         lines.push(line);
         lineKeys.push(spec.ClientKey);
+    }
+
+    // WHATEVER IS LEFT WAS REMOVED IN THE UI. Deleting a line in the editor and saving again has to
+    // delete the ROW, or the order silently keeps billing for something the screen no longer shows —
+    // and the next save collides on its line number all over again.
+    for (const [, staleID] of existingLines) {
+        const stale = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(ORDER_LINE_ENTITY, user);
+        if (!stale) continue;
+        if (await (stale as unknown as { Load(id: string): Promise<boolean> }).Load(staleID)) {
+            // A booked line refuses to delete (trigger 51003) and SHOULD — that is history, not a
+            // draft edit. Report it rather than swallowing, so the user is told why it is still there.
+            if (!(await stale.Delete())) {
+                throw new Error(
+                    `Could not remove order line: ${stale.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+        }
     }
 
     // The transient collections. `Save()` reads each of these; none is a column.
@@ -399,4 +436,32 @@ async function createReferenceInstrument(
         );
     }
     return detail.Get('ID') as string;
+}
+
+
+/**
+ * The line numbers this order already has persisted, mapped to their row ids.
+ *
+ * Empty for an order that has never been saved, which is the common path — a brand-new draft does
+ * one extra no-op call rather than branching, because the branch is where the bug would hide.
+ */
+async function loadExistingLines(orderHeaderID: string | null, user: UserInfo): Promise<Map<number, string>> {
+    const map = new Map<number, string>();
+    if (!orderHeaderID) return map;
+
+    const result = await new RunView().RunView<{ ID: string; LineNumber: number }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}'`,
+            ResultType: 'simple',
+        },
+        user,
+    );
+    // RunView reports failure in its result rather than throwing. Treating a failed read as "no
+    // lines" would put us straight back to inserting duplicates, so it is raised.
+    if (!result.Success) {
+        throw new Error(`Could not read the order's existing lines: ${result.ErrorMessage ?? 'unknown error'}`);
+    }
+    for (const row of result.Results ?? []) map.set(Number(row.LineNumber), String(row.ID));
+    return map;
 }

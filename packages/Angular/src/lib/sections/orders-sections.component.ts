@@ -282,13 +282,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         // EXISTS: any list or dashboard it has already mounted was read before the confirm and is
         // now stale. Dropping the cached pages makes the next visit re-read rather than show a
         // list the just-confirmed order is missing from.
-        on<string>('OrderConfirmed', () => {
-            for (const [pageId, ref] of this.mounted) {
-                if (pageId === this.ActivePageId) continue;
-                ref.destroy();
-                this.mounted.delete(pageId);
-            }
-        });
+        on<string>('OrderConfirmed', () => this.dropStalePages());
         // ESCALATION CARRIES THE DRAFT. This used to ignore the emitted payload and merely
         // navigate, so "open in full editor" landed on an empty workspace and the half-typed order
         // was silently gone — the button looked like it did nothing. Fast entry and the editor were
@@ -528,7 +522,17 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
                 return;
             }
             this.ClosePreflight();
-            this.OnPageSelected('list');
+            // THE LIST IS CACHED, AND WAS READ BEFORE THIS ORDER EXISTED. `showPage` re-inserts a
+            // cached view with the data it originally loaded, so confirming from fast entry landed
+            // the user on All orders with their brand-new order missing from it. The order really
+            // was booked; the screen was showing a snapshot from before it. Indistinguishable, from
+            // the user's side, from the confirm having done nothing at all — which is how it was
+            // reported, and how they were led to press confirm again.
+            //
+            // The workspace path already did this through its `OrderConfirmed` output. The section's
+            // own confirm — the one fast entry uses — did not.
+            this.dropStalePages();
+            await this.OnPageSelected('list');
         } catch (e) {
             // `Confirm` THROWS on a refusal now — it used to return the failed output, and the
             // check above read it. Both shapes have to be handled: without this catch the rejection
@@ -543,6 +547,21 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // dialog stays open showing a spinner — which reads as "it failed" and invites the
             // user to confirm a second time.
             this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * Throw away cached pages so the next visit re-reads.
+     *
+     * The ACTIVE page is kept: it is on screen, the user is looking at it, and destroying it under
+     * them would blank the view mid-interaction. Everything else is a snapshot of the world before
+     * whatever just changed.
+     */
+    private dropStalePages(): void {
+        for (const [pageId, ref] of this.mounted) {
+            if (pageId === this.ActivePageId) continue;
+            ref.destroy();
+            this.mounted.delete(pageId);
         }
     }
 
