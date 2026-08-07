@@ -674,6 +674,27 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
      * that it had been paid for.
      */
 
+    /** The `PaymentType` row behind the chosen tender, or null for invoice-on-terms. */
+    public get SelectedTenderType(): MJOTenderOption | null {
+        const id = this.Draft?.Header.InitialPaymentTypeID;
+        if (!id) return null;
+        return this.Tenders.find((t) => t.ID === id) ?? null;
+    }
+
+    /** True when this tender cannot be captured without a check/wire/transfer number. */
+    public get RequiresReference(): boolean {
+        return this.SelectedTenderType?.RequiresReference === true;
+    }
+
+    /** The reference as typed. Read from the DRAFT, so it survives a tab switch or a remount. */
+    public get Reference(): string {
+        return this.Draft?.Header.InitialPaymentReference ?? '';
+    }
+
+    public SetReference(value: string): void {
+        this.restateIntent({ Reference: value });
+    }
+
     public SetTender(paymentTypeID: string): void {
         if (!paymentTypeID) {
             // Choosing the blank option means "invoice on terms" — clear the intent rather than
@@ -681,15 +702,32 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
             this.Draft.ClearInitialPayment();
             return;
         }
-        this.Draft.SetInitialPayment({ PaymentTypeID: paymentTypeID, Amount: this.Draft.Header.InitialPaymentAmount ?? 0 });
+        // Switching tender drops a reference typed for the previous one: a check number is not a
+        // wire confirmation, and carrying it across would put the wrong id on the payment.
+        this.restateIntent({ PaymentTypeID: paymentTypeID, Reference: '' });
+    }
+
+    /**
+     * Re-state the WHOLE initial-payment intent with one part changed.
+     *
+     * `SetInitialPayment` deliberately takes the complete intent, so patching one field means
+     * restating the others — and the two setters here used to omit the reference entirely, which
+     * would have wiped a typed check number the moment the amount changed.
+     */
+    private restateIntent(patch: { PaymentTypeID?: string | null; Amount?: number; Reference?: string | null }): void {
+        const paymentTypeID = patch.PaymentTypeID !== undefined ? patch.PaymentTypeID : (this.Draft.Header.InitialPaymentTypeID ?? null);
+        const requiresReference = this.Tenders.find((t) => t.ID === paymentTypeID)?.RequiresReference === true;
+        this.Draft.SetInitialPayment({
+            PaymentTypeID: paymentTypeID,
+            Amount: patch.Amount !== undefined ? patch.Amount : (this.Draft.Header.InitialPaymentAmount ?? 0),
+            Reference: patch.Reference !== undefined ? patch.Reference : (this.Draft.Header.InitialPaymentReference ?? null),
+            RequiresReference: requiresReference,
+        });
     }
 
     public SetInitialAmount(raw: string): void {
         const n = Number.parseFloat(raw.replace(/[^0-9.\-]/g, ''));
-        this.Draft.SetInitialPayment({
-            PaymentTypeID: this.Draft.Header.InitialPaymentTypeID ?? null,
-            Amount: Number.isFinite(n) && n >= 0 ? n : 0,
-        });
+        this.restateIntent({ Amount: Number.isFinite(n) && n >= 0 ? n : 0 });
     }
 
     /** Offer the balance as the obvious amount — the common case is paying in full. */

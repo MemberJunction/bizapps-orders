@@ -513,3 +513,25 @@
 .ed-todo__item:focus-visible {
     color: var(--mj-text-primary);
 }
+
+/* ── Tender reference ─────────────────────────────────────────────────────────
+   Directly under the tender picker, so the requirement it announces has its
+   answer in the same place rather than on another tab. */
+.ed-tender-ref {
+    margin-block-start: var(--mj-space-3);
+    max-inline-size: 22rem;
+}
+
+/* Amber, not red: nothing has gone wrong — there is something still to do. */
+.ed-tender-ref__req {
+    margin-inline-start: var(--mj-space-2);
+    font-size: var(--mj-text-xs);
+    font-weight: 600;
+    color: var(--mj-status-warning-text);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.ed-tender-ref__hint {
+    margin-block-start: var(--mj-space-1);
+}

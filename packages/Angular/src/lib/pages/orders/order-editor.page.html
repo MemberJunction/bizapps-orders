@@ -595,6 +595,32 @@
               [DefaultItem]="TenderNone"
               [ngModel]="Draft.Header.InitialPaymentTypeID ?? ''"
               (ngModelChange)="SetTender($event)" />
+
+            <!--
+              THE REFERENCE, ONLY WHEN THE TENDER DEMANDS ONE. Check, Wire and Internal Transfer
+              carry RequiresReference: a captured payment with no check number cannot be reconciled
+              against a bank statement, so the money is recorded and unfindable. The dropdown named
+              the requirement; nothing let anyone satisfy it.
+            -->
+            @if (RequiresReference) {
+              <div class="ed-tender-ref">
+                <label class="ed-field__label" for="ed-tender-ref">
+                  {{ SelectedTenderType?.Name }} number
+                  <span class="ed-tender-ref__req" aria-hidden="true">required</span>
+                </label>
+                <input
+                  id="ed-tender-ref"
+                  class="mj-input"
+                  [value]="Reference"
+                  (input)="SetReference($any($event.target).value)"
+                  [attr.aria-invalid]="!Reference.trim()"
+                  [placeholder]="SelectedTenderType?.Code === 'Check' ? 'e.g. 10428' : 'confirmation or transfer id'"
+                  autocomplete="off" />
+                <div class="ed-tender-ref__hint small muted">
+                  Recorded on the payment so it can be matched to the bank statement.
+                </div>
+              </div>
+            }
           </div>
 
           @if (Draft.Header.InitialPaymentTypeID) {

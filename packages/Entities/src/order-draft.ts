@@ -110,6 +110,16 @@ export interface OrderDraftHeaderPayload {
      * check with no number cannot be reconciled against a bank statement.
      */
     InitialPaymentReference?: string | null;
+    /**
+     * Whether the chosen tender's `PaymentType.RequiresReference` is set.
+     *
+     * STATED BY THE CALLER rather than looked up, because this model is framework-free and does no
+     * data access — the UI already holds the tender list and knows the answer. Carrying it as a
+     * plain boolean is what lets {@link OrderDraft.Validate} enforce the rule for BOTH entry lanes
+     * and the workspace's confirm gate, instead of each screen re-implementing it and one of them
+     * forgetting.
+     */
+    InitialPaymentRequiresReference?: boolean;
     InitialPaymentAmount?: number;
     SourceCustomerPaymentMethodID?: string | null;
 }
@@ -447,12 +457,15 @@ export class OrderDraft {
         SourceCustomerPaymentMethodID?: string | null;
         /** Check number / wire confirmation / transfer id, for tenders that require one. */
         Reference?: string | null;
+        /** True when the chosen tender cannot be captured without a reference. */
+        RequiresReference?: boolean;
     }): this {
         return this.SetHeader({
             InitialPaymentTypeID: intent.PaymentTypeID ?? null,
             InitialPaymentAmount: intent.Amount ?? 0,
             SourceCustomerPaymentMethodID: intent.SourceCustomerPaymentMethodID ?? null,
             InitialPaymentReference: intent.Reference?.trim() || null,
+            InitialPaymentRequiresReference: intent.RequiresReference ?? false,
         });
     }
 
@@ -463,6 +476,7 @@ export class OrderDraft {
             InitialPaymentAmount: 0,
             SourceCustomerPaymentMethodID: null,
             InitialPaymentReference: null,
+            InitialPaymentRequiresReference: false,
         });
     }
 
@@ -670,6 +684,24 @@ export class OrderDraft {
                 Section: 'header',
                 Severity: 'error',
                 Message: 'An owning company is required — it anchors the order document and who can see it.',
+            });
+        }
+
+        // A tender that cannot be reconciled without a number must have one BEFORE the confirm is
+        // attempted. The server refuses it too — this exists so the user is stopped at the field
+        // they can fix rather than at a rejection after the fact.
+        if (
+            this._header.InitialPaymentTypeID &&
+            this._header.InitialPaymentRequiresReference &&
+            !this._header.InitialPaymentReference?.trim()
+        ) {
+            issues.push({
+                Code: 'PAYMENT_REFERENCE_REQUIRED',
+                Section: 'payment',
+                Severity: 'error',
+                Message:
+                    'This tender needs a reference number — a check number, wire confirmation or ' +
+                    'transfer id. Without one the payment cannot be matched to the bank statement.',
             });
         }
 
