@@ -729,6 +729,16 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         return raw.length >= 10 ? raw.slice(0, 10) : raw;
     }
 
+    /**
+     * True when this header field is showing a DEFAULT the user has not confirmed — drives the
+     * muted styling and the explanatory tooltip on the identity strip.
+     *
+     * Guarded on `Draft` because the editor renders before a draft is bound in the imperative path.
+     */
+    public IsDefault(field: 'OrderDate' | 'OrderType'): boolean {
+        return this.Draft?.IsDefaulted(field) ?? false;
+    }
+
     /** Free-text and date header fields, written straight through to the draft. */
     public SetHeaderField(
         field: 'Description' | 'Notes' | 'ExternalDocumentNumber' | 'RequestedDeliveryDate' | 'OrderDate' | 'DueDate',

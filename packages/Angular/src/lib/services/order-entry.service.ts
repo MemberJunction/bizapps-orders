@@ -181,7 +181,43 @@ export class MJOOrderEntryService {
             Draft: draft.ToInput(),
             ExpectedGrossTotal: draft.ConfirmableGrossTotal,
         });
-        return result.Success && result.Output ? result.Output : (result.Output ?? null);
+
+        // A FAILED CONFIRM MUST THROW. This used to read
+        //
+        //     return result.Success && result.Output ? result.Output : (result.Output ?? null);
+        //
+        // — a ternary whose branches are the same expression, so `Success` was evaluated and
+        // discarded. The operation returns an Output object on failure too (it carries the reason),
+        // so a rejected confirm came back looking exactly like a successful one. The workspace then
+        // stamped the tab 'Confirmed', marked it clean and moved the stage stepper, while NOTHING
+        // had been booked — and `result.Message`, the only text saying why, was dropped on the
+        // floor. That is the silent confirm: the screen said yes, the database had no order, and
+        // there was no error anywhere to find.
+        //
+        // Throwing is what the caller is already written for: `OnConfirm` catches and renders the
+        // message in a dismissable alert.
+        // TWO `Success` FLAGS, AND THE OUTER ONE IS NOT THE ANSWER. `RemoteOpResult.Success` means
+        // the operation EXECUTED — it is true for a confirm the engine deliberately refused. The
+        // domain outcome is `Output.Success`, with the reason in `Output.Message` / `Output.Blockers`.
+        // A real rejection came back as:
+        //
+        //     { success: true, resultCode: "SUCCESS",
+        //       outputJSON: "{\"Success\":false,\"Message\":\"No GL account is linked for role
+        //                     'Accounts Receivable'...\",\"Status\":\"Draft\",\"Blockers\":[...]}" }
+        //
+        // so checking only the envelope reports a refusal as a success. Both are checked here.
+        if (!result.Success) {
+            throw new Error(result.ErrorMessage?.trim() || 'The order could not be confirmed.');
+        }
+        const output = result.Output ?? null;
+        if (output && output.Success === false) {
+            // Prefer a blocker: they are written for the person taking the order, and the top-level
+            // Message is sometimes the same sentence repeated by each layer that re-threw it.
+            const blocker = output.Blockers?.find((b) => b?.Message?.trim())?.Message?.trim();
+            const message = blocker || output.Message?.split('\n')[0]?.trim();
+            throw new Error(message || 'The order could not be confirmed.');
+        }
+        return output;
     }
 
     /**

@@ -406,6 +406,19 @@
     font-size: var(--mj-text-sm);
 }
 
+/* A VALUE NOBODY CHOSE, shown in the muted text colour so it reads as a suggestion rather than an
+   entry. The order date is the case this exists for: it defaults to today, and the difference
+   between "today because nobody picked" and "today because I picked today" has to stay visible —
+   otherwise the default is a decision made on the user's behalf, silently.
+
+   Colour is not carrying this alone: each control also gets a `title` explaining the default, so
+   the distinction survives for anyone who cannot separate the two greys. The style drops the moment
+   the field is touched, because `SetHeader` clears the flag. */
+.ed-identity__input--default,
+.ed-identity__input--default input {
+    color: var(--mj-text-muted);
+}
+
 /* A labelled field inside a card pane. `mjo-stated-value` covers the read-only case; this is its
    editable counterpart and deliberately matches its label typography so a tab does not visibly
    change shape when the order stops being editable. */

@@ -276,16 +276,61 @@ export class OrderDraft {
     private _keySeq = 0;
     private _subscribers: Array<(draft: OrderDraft) => void> = [];
 
+    /**
+     * Header fields currently holding a DEFAULT rather than something the user stated.
+     *
+     * A default the user cannot see is a decision made on their behalf in secret. The order date is
+     * the case that made this matter: it was left undefined here and quietly filled in with "now" by
+     * the server at confirm, so the field rendered empty and the user had no way to know what date
+     * their order would carry until after it was booked. Showing the value is half the fix — the
+     * other half is saying it is a default, so the difference between "today, because nobody chose"
+     * and "today, because I chose today" stays visible.
+     *
+     * Cleared per-field on `SetHeader`, because the moment a user states a value it stops being a
+     * default even if they typed the same thing.
+     */
+    private _defaulted = new Set<keyof OrderDraftHeaderPayload>();
+
     constructor(init: OrderDraftInit) {
         this._header = {
             OrderHeaderID: init.OrderHeaderID ?? null,
             CompanyID: init.CompanyID,
             OrderType: init.OrderType ?? 'Sale',
-            OrderDate: init.OrderDate,
+            // TODAY, STATED HERE rather than left for the server. `OrderEntityServer` already
+            // defaults a missing date to `new Date()` at save, so this changes no outcome — it makes
+            // the outcome VISIBLE while the order is still being taken, which is the only time the
+            // user can disagree with it.
+            OrderDate: init.OrderDate ?? OrderDraft.Today(),
             SalesRepUserID: init.SalesRepUserID ?? null,
             OriginChannel: init.OriginChannel ?? null,
             OriginExternalID: init.OriginExternalID ?? null,
         };
+        if (!init.OrderDate) this._defaulted.add('OrderDate');
+        if (!init.OrderType) this._defaulted.add('OrderType');
+    }
+
+    /**
+     * Today as `yyyy-MM-dd` in the USER'S timezone, which is what `<input type="date">` reads and
+     * what an order taker means by "today".
+     *
+     * `toISOString().slice(0,10)` is the obvious version and is wrong: it converts to UTC first, so
+     * anyone west of Greenwich taking an evening order gets TOMORROW's date — a date that lands in
+     * the wrong accounting period at every month end.
+     */
+    public static Today(): string {
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    }
+
+    /**
+     * True when this header field currently holds a default nobody has confirmed.
+     *
+     * The UI uses it to render the value in a muted style, so a defaulted date reads differently
+     * from one the user typed.
+     */
+    public IsDefaulted(field: keyof OrderDraftHeaderPayload): boolean {
+        return this._defaulted.has(field);
     }
 
     // ── Reading ──────────────────────────────────────────────────────────────
@@ -348,6 +393,12 @@ export class OrderDraft {
     /** Merge header fields. Unspecified keys are left alone. */
     public SetHeader(patch: Partial<Omit<OrderDraftHeaderPayload, 'CompanyID'>> & { CompanyID?: string }): this {
         this._header = { ...this._header, ...patch };
+        // Stating a value ends its default status, even when the user types exactly what was already
+        // there — "today, because I chose today" is a different fact from "today, because nobody
+        // chose", and only the user can turn the first into the second.
+        for (const key of Object.keys(patch) as Array<keyof OrderDraftHeaderPayload>) {
+            this._defaulted.delete(key);
+        }
         return this.touch();
     }
 
@@ -755,6 +806,10 @@ export class OrderDraft {
         copy._previewVersion = this._previewVersion;
         copy._version = this._version;
         copy._keySeq = this._keySeq;
+        // A clone inherits which fields are still defaults. Without this the copy's constructor
+        // would have marked its own — and then `_header` was overwritten wholesale above, so the
+        // flags would describe values the copy no longer holds.
+        copy._defaulted = new Set(this._defaulted);
         return copy;
     }
 
@@ -765,6 +820,10 @@ export class OrderDraft {
     public static FromInput(payload: OrderDraftPayload): OrderDraft {
         const draft = new OrderDraft({ CompanyID: payload.Header.CompanyID });
         draft._header = { ...payload.Header };
+        // Nothing in a payload is a default: every value in it was either stated by a user or
+        // already persisted. The constructor above flagged its own placeholders, and the line before
+        // replaced the header they described — so leaving them set would mute real values in the UI.
+        draft._defaulted.clear();
         for (const line of payload.Lines ?? []) {
             // Reuse the incoming key when there is one, so a preview keyed against
             // it still lines up after a round trip.

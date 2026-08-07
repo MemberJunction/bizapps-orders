@@ -21,6 +21,8 @@
       @if (IsEditable) {
         <mj-dropdown
           class="ed-identity__input"
+          [class.ed-identity__input--default]="IsDefault('OrderType')"
+          [title]="IsDefault('OrderType') ? 'Default — not chosen yet' : ''"
           aria-label="Order type"
           [Data]="OrderTypes"
           [ValuePrimitive]="true"
@@ -34,6 +36,8 @@
       <span class="l">Order date</span>
       @if (IsEditable) {
         <input type="date" class="mj-input ed-identity__input" aria-label="Order date"
+               [class.ed-identity__input--default]="IsDefault('OrderDate')"
+               [title]="IsDefault('OrderDate') ? 'Defaults to today — change it if the order was taken on another date' : ''"
                [ngModel]="DateValue(Draft.Header.OrderDate)"
                (ngModelChange)="SetHeaderField('OrderDate', $event)" />
       } @else {
