@@ -139,7 +139,51 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
 
     private stopWatching: (() => void) | null = null;
 
+    /**
+     * The order that was just booked, so the screen can say so after it clears.
+     *
+     * Cleared the moment the next order is touched — a stale "booked ORD-123" hanging over a
+     * half-typed new order is worse than no message at all.
+     */
+    public JustBooked: string | null = null;
+
+    /**
+     * Empty the screen for the NEXT order.
+     *
+     * This lane is a queue of orders, not one form: an order taker who has just booked something is
+     * about to take another, and leaving the previous customer and lines on screen means the next
+     * order starts as an edit of the last one. Which is also how a line gets billed twice.
+     *
+     * Called by the section after a successful confirm, and by "New order" in the header.
+     */
+    public Reset(orderNumber?: string | null): void {
+        this.stopWatching?.();
+        this.orders.CancelPending();
+
+        this.Customer = null;
+        this.CustomerQuery = '';
+        this.CustomerResults = [];
+        this.ProductQuery = '';
+        this.PickerOpen = false;
+        this.CodeEntry = '';
+        this.Tender = 'terms';
+        this.Reference = '';
+        this.SaveError = null;
+        this.Preview = { Result: null, Loading: false, Error: null };
+        this.JustBooked = orderNumber ?? null;
+
+        this.startDraft();
+        this.cdr.detectChanges();
+        // Straight back to the first thing they will type.
+        setTimeout(() => document.getElementById('mjo-customer-search')?.focus(), 0);
+    }
+
     public ngOnInit(): void {
+        this.startDraft();
+    }
+
+    /** Build a fresh draft and re-subscribe the preview. Shared by init and {@link Reset}. */
+    private startDraft(): void {
         this.Draft = new OrderDraft({ CompanyID: this.CompanyID, OriginChannel: 'Staff' });
         // Every mutation reschedules the preview. The service owns the debounce and
         // the out-of-order guard, so this stays a one-liner.
@@ -149,6 +193,9 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
             // state sits over the new one until the user saves again — which is
             // exactly when they least want to be reading stale bad news.
             this.SaveError = null;
+            // Touching the next order retires the last one's confirmation. A stale "booked ORD-123"
+            // sitting over a half-typed new order invites the reader to think THIS one is booked.
+            this.JustBooked = null;
             this.orders.SchedulePreview(this.Draft, (state) => {
                 this.Preview = state;
                 // MUST tick. This callback fires from a debounced timer + an awaited network

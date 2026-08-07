@@ -478,3 +478,9 @@
     font-size: var(--mj-text-sm);
     color: var(--mj-status-warning-text);
 }
+
+/* The just-booked receipt, above the customer step it replaces. */
+.fe-booked {
+    display: block;
+    margin-block-end: var(--mj-space-3);
+}

@@ -509,6 +509,41 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // button never appears, so an order can be built and priced and never confirmed.
             this.cdr.detectChanges();
         }
+
+        // FAST ENTRY DOES NOT STOP TO SAY NOTHING. The lane exists to take an order at speed, and
+        // its rail already shows the decomposition LIVE while the user types — totals, which
+        // companies it books to, the entry count, whether it balances. A modal that repeats what is
+        // already on screen is a click charged for no information.
+        //
+        // So the pre-flight still RUNS — it is the thing that knows about blockers, approvals and
+        // an unbalanced entry — and only INTERRUPTS when it has something the rail does not already
+        // say. Anything the user should see stops them; agreement does not.
+        //
+        // The full editor always reviews. It is the lane for the order that is complicated enough to
+        // want one, and its user chose it for that.
+        if (this.ActivePageId === 'fast-entry' && this.preflightIsUneventful()) {
+            await this.ConfirmFromPreflight();
+        }
+    }
+
+    /**
+     * True when the pre-flight found nothing the user needs to weigh up.
+     *
+     * Deliberately conservative: anything unexpected — a blocker, a required approval, an entry
+     * that does not balance, a fulfillment hold, a subscription decision the engine made on the
+     * user's behalf — stops for review. Only a clean, ordinary confirm goes straight through.
+     */
+    private preflightIsUneventful(): boolean {
+        const p = this.Preflight;
+        if (!p || this.PreflightError) return false;
+        return (
+            p.CanConfirm &&
+            p.AllBalanced &&
+            (p.Blockers?.length ?? 0) === 0 &&
+            (p.Approvals?.length ?? 0) === 0 &&
+            (p.FulfillmentHolds?.length ?? 0) === 0 &&
+            (p.SubscriptionDecisions?.length ?? 0) === 0
+        );
     }
 
     /** Commit. Only reachable when the pre-flight said it could be. */
@@ -522,6 +557,22 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
                 return;
             }
             this.ClosePreflight();
+
+            // FAST ENTRY STAYS PUT AND CLEARS. It is a QUEUE of orders, not one form: the person who
+            // just booked something is about to take another, so throwing them to All orders costs a
+            // navigation back and leaves the next order starting as an edit of the last one — which
+            // is also how a line gets billed twice. The page resets and says which order it booked.
+            if (this.ActivePageId === 'fast-entry') {
+                const page = this.mounted.get('fast-entry')?.instance as
+                    | { Reset?: (orderNumber?: string | null) => void }
+                    | undefined;
+                if (page?.Reset) {
+                    this.dropStalePages();
+                    page.Reset(output.OrderNumber ?? null);
+                    return;
+                }
+            }
+
             // THE LIST IS CACHED, AND WAS READ BEFORE THIS ORDER EXISTED. `showPage` re-inserts a
             // cached view with the data it originally loaded, so confirming from fast entry landed
             // the user on All orders with their brand-new order missing from it. The order really

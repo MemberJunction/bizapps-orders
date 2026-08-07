@@ -15,7 +15,15 @@
     <section class="fe-step" [class.is-done]="!!Customer">
       <div class="fe-step-head">
         <span class="fe-step-n">
-          @if (Customer) { <i class="fa-solid fa-check" aria-hidden="true"></i> } @else { 1 }
+          @if (JustBooked) {
+        <!-- The receipt for the order that just left the screen. Without it, clearing the form and
+             confirming look identical from the user's side: everything they typed disappears. -->
+        <mj-alert Variant="success" Icon="fa-solid fa-circle-check" class="fe-booked" [Dismissible]="true" (Dismissed)="JustBooked = null">
+          <strong>{{ JustBooked }}</strong> is confirmed and booked. Ready for the next order.
+        </mj-alert>
+      }
+
+      @if (Customer) { <i class="fa-solid fa-check" aria-hidden="true"></i> } @else { 1 }
         </span>
         <span class="fe-step-t">Who is this for?</span>
         <span class="fe-step-hint">Bill-to party</span>
