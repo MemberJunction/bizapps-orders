@@ -529,6 +529,13 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             }
             this.ClosePreflight();
             this.OnPageSelected('list');
+        } catch (e) {
+            // `Confirm` THROWS on a refusal now — it used to return the failed output, and the
+            // check above read it. Both shapes have to be handled: without this catch the rejection
+            // escapes the handler, `PreflightError` is never set, and the pre-flight sits there
+            // doing nothing. Which is precisely the silent confirm that the throw was added to
+            // eliminate, reintroduced one layer up.
+            this.PreflightError = e instanceof Error ? e.message : String(e);
         } finally {
             this.PreflightBusy = false;
             // Same reason as OpenPreflight: post-`await` state on an imperatively-created,
