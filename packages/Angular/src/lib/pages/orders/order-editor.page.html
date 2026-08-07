@@ -145,7 +145,15 @@
           <ul class="ed-addline__matches" role="listbox" aria-label="Matching products">
             @for (option of ProductMatches; track option.ID) {
               <li>
-                <button type="button" class="ed-addline__match" (click)="AddProduct(option)">
+                <!--
+                  MOUSEDOWN, NOT CLICK. A click is only delivered if the element survives from
+                  mousedown to mouseup, and these lists re-render on a debounced search landing —
+                  so a result arriving mid-click unmounts the row under the cursor and the
+                  selection is silently lost. It presents as "I clicked it and nothing happened",
+                  intermittently, which reads as lag rather than as a bug. Fast entry's picker has
+                  always bound mousedown; this one had not.
+                -->
+                <button type="button" class="ed-addline__match" (mousedown)="AddProduct(option)">
                   <span class="nm">{{ option.Name }}</span>
                   <!-- The separator belongs to the SKU, not to the row: products can have a NULL
                        SKU, and an unconditional "·" renders a dangling bullet before the company. -->
@@ -233,6 +241,7 @@
                   aria-label="Unit price">
                 <mjo-price-source-badge
                   [Source]="PricedLine(line)?.PriceSource ?? null"
+                  [Settled]="PricingSettled"
                   [Overridden]="line.UnitPriceWasStated" />
               </td>
 
@@ -374,7 +383,7 @@
                 <ul class="ed-party__matches" role="listbox" aria-label="Matching customers">
                   @for (m of PartyMatches.bill; track m.ID) {
                     <li>
-                      <button type="button" class="ed-party__match" (click)="ChooseParty('bill', m)">
+                      <button type="button" class="ed-party__match" (mousedown)="ChooseParty('bill', m)">
                         <i [class]="m.IsOrganization ? 'fa-solid fa-building' : 'fa-solid fa-user'" aria-hidden="true"></i>
                         <span class="nm">{{ m.Name }}</span>
                         @if (m.Email) { <span class="small muted">{{ m.Email }}</span> }
@@ -433,7 +442,7 @@
                 <ul class="ed-party__matches" role="listbox" aria-label="Matching customers">
                   @for (m of PartyMatches.ship; track m.ID) {
                     <li>
-                      <button type="button" class="ed-party__match" (click)="ChooseParty('ship', m)">
+                      <button type="button" class="ed-party__match" (mousedown)="ChooseParty('ship', m)">
                         <i [class]="m.IsOrganization ? 'fa-solid fa-building' : 'fa-solid fa-user'" aria-hidden="true"></i>
                         <span class="nm">{{ m.Name }}</span>
                         @if (m.Email) { <span class="small muted">{{ m.Email }}</span> }

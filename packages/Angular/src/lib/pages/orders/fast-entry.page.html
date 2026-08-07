@@ -23,6 +23,20 @@
 
       @if (Customer) {
         <div class="mj-card">
+          <!--
+            The way OUT of a choice. Without this a mis-picked customer could not be changed at
+            all — the card replaced the search box permanently and the only escape was abandoning
+            the order. Placed on the card itself rather than in a menu, because correcting a
+            wrong name is a first-order action, not an advanced one.
+          -->
+          <button
+            type="button"
+            class="mj-iconbtn fe-cust__clear"
+            (click)="ClearCustomer()"
+            title="Choose a different customer"
+            aria-label="Clear the selected customer and choose a different one">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
           <div class="fe-cust">
             <span class="mj-avatar fe-cust__avatar">{{ CustomerInitials }}</span>
 
@@ -173,6 +187,7 @@
               <div class="mj-num">{{ PricedLine(line)?.UnitPrice | mjoMoney }}</div>
               <mjo-price-source-badge
                 [Source]="PricedLine(line)?.PriceSource ?? null"
+                [Settled]="PricingSettled"
                 [Overridden]="line.UnitPriceWasStated" />
             </div>
 
@@ -334,6 +349,32 @@
           </button>
         }
       </div>
+
+      <!--
+        THE REFERENCE, ONLY WHEN THE TENDER DEMANDS ONE. Check, Wire and Internal Transfer carry
+        RequiresReference: a captured payment with no check number cannot be reconciled against a
+        bank statement, so the money is recorded and unfindable. The tile has always SAID
+        "Reference required" — this is the field that lets someone act on it.
+      -->
+      @if (RequiresReference) {
+        <div class="fe-tender-ref">
+          <label class="fe-tender-ref__label" for="mjo-tender-ref">
+            {{ SelectedTenderType?.Name }} number
+            <span class="fe-tender-ref__req" aria-hidden="true">required</span>
+          </label>
+          <input
+            id="mjo-tender-ref"
+            class="mj-input"
+            [value]="Reference"
+            (input)="SetReference($any($event.target).value)"
+            [attr.aria-invalid]="!Reference.trim()"
+            [placeholder]="SelectedTenderType?.Code === 'Check' ? 'e.g. 10428' : 'confirmation or transfer id'"
+            autocomplete="off" />
+          <div class="fe-tender-ref__hint small muted">
+            Recorded on the payment so it can be matched to the bank statement.
+          </div>
+        </div>
+      }
     </section>
   </div>
 

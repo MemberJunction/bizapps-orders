@@ -121,6 +121,8 @@ const COMPANY_ENTITY = 'MJ: Companies';
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
+/** Carries `RequiresReference`, which decides whether a tender needs a check/wire number. */
+const PAYMENT_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Types';
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 const RELATIONSHIP_ENTITY = 'MJ_BizApps_Common: Relationships';
@@ -2564,12 +2566,54 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      * The instrument is COPIED, never shared (D39): the order keeps its snapshot of what was
      * intended, the payment gets its own record of what ran, and neither can rewrite the other.
      */
+    /**
+     * Refuse the confirm when the initial tender needs a reference and none reached us.
+     *
+     * "None reached us" means no `InitialPaymentDetailID`, or one whose `ReferenceNumber` is blank —
+     * an instrument row with an empty reference is the same failure wearing a foreign key.
+     */
+    private async requireReferenceWhenTenderDemandsOne(
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<void> {
+        const type = await provider.GetEntityObject<BaseEntity>(PAYMENT_TYPE_ENTITY, user);
+        const loaded = await (type as unknown as { Load(id: string): Promise<boolean> }).Load(
+            this.InitialPaymentTypeID as string,
+        );
+        if (!loaded || !type.Get('RequiresReference')) return;
+
+        let reference: string | null = null;
+        if (this.InitialPaymentDetailID) {
+            const detail = await provider.GetEntityObject<BaseEntity>(PAYMENT_DETAIL_ENTITY, user);
+            if (await (detail as unknown as { Load(id: string): Promise<boolean> }).Load(this.InitialPaymentDetailID)) {
+                reference = ((detail.Get('ReferenceNumber') as string) ?? '').trim() || null;
+            }
+        }
+        if (!reference) {
+            throw new Error(
+                `${type.Get('Name')} payments need a reference number — a check number, wire ` +
+                    `confirmation or transfer id. Without one the payment cannot be reconciled ` +
+                    `against the bank statement. Enter it on the order, or invoice on terms instead.`,
+            );
+        }
+    }
+
     private async createInitialPayment(options?: EntitySaveOptions): Promise<void> {
         const amount = this.InitialPaymentAmount ?? 0;
         if (!this.InitialPaymentTypeID || amount <= 0) return;
 
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser;
+
+        // A TENDER THAT REQUIRES A REFERENCE MUST HAVE ONE. Check, Wire and Internal Transfer carry
+        // `RequiresReference` because a captured payment with no check number or confirmation id
+        // cannot be reconciled against a bank statement — the money is recorded and unfindable.
+        //
+        // Enforced HERE, in the save path, rather than in the order screen. The screen should ask
+        // for it too, but a rule that lives only in the screen is a rule that holds until the next
+        // caller — a fixture, an import, the other entry lane — and this codebase has now been
+        // caught by that three times.
+        await this.requireReferenceWhenTenderDemandsOne(provider, user);
 
         // Copy the intent instrument so the payment owns its own row (D39).
         let paymentDetailID: string | null = null;

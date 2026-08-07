@@ -195,6 +195,15 @@ export class MJOOrdersDataService {
             Search?: string;
             CompanyID?: string;
             BillToOrganizationID?: string;
+            /**
+             * Filter to ONE person's orders, server-side.
+             *
+             * Its absence was a real performance bug, not an omission: fast entry's `ChooseCustomer`
+             * called `GetOrders({})` for a person — every order in the database — and filtered in the
+             * browser. That is invisible on a fresh instance and gets steadily worse with every order
+             * taken, which is exactly how it presented: "selecting a customer started getting slow".
+             */
+            BillToPersonID?: string;
             MaxRows?: number;
             User?: UserInfo;
         } = {},
@@ -242,6 +251,7 @@ export class MJOOrdersDataService {
             filters.push(`ID = '${options.OrderHeaderID}'`);
         }
         if (options.CompanyID) filters.push(`CompanyID = '${options.CompanyID}'`);
+        if (options.BillToPersonID) filters.push(`BillToPersonID = '${options.BillToPersonID}'`);
         if (options.BillToOrganizationID) {
             filters.push(`BillToOrganizationID = '${options.BillToOrganizationID}'`);
         }

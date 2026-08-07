@@ -37,6 +37,8 @@ import type { BaseEntity, IMetadataProvider, UserInfo } from '@memberjunction/co
 // because of this one string, and nothing caught it because every integration check reaches the
 // engine through the order-builder rather than through the operations the UI actually calls.
 export const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
+/** The instrument row a tender's reference number lands on. */
+const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 export const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
 /**
@@ -89,6 +91,8 @@ export interface HydratableHeader {
     OriginChannel?: string | null;
     OriginExternalID?: string | null;
     InitialPaymentTypeID?: string | null;
+    InitialPaymentReference?: string | null;
+    InitialPaymentDetailID?: string | null;
     InitialPaymentAmount?: number;
     SourceCustomerPaymentMethodID?: string | null;
 }
@@ -190,6 +194,23 @@ export async function HydrateOrderDraft(
         }
     } else {
         order.NewRecord();
+    }
+
+    // A REFERENCE IS AN INSTRUMENT, NOT AN ORDER FIELD. Check numbers, wire confirmations and
+    // transfer ids have no column on OrderHeader — they belong to the thing that paid. So a stated
+    // reference becomes a real PaymentDetail here, and the order points at it; `createInitialPayment`
+    // then COPIES that row onto the payment (D39), which is what stops the payment's record of the
+    // check drifting if the intent row is later edited.
+    //
+    // Done before applyHeader so the id it produces is assigned with everything else, in one write.
+    if (draft.Header.InitialPaymentReference?.trim() && draft.Header.InitialPaymentTypeID) {
+        draft.Header.InitialPaymentDetailID = await createReferenceInstrument(
+            provider,
+            user,
+            draft.Header.CompanyID,
+            draft.Header.InitialPaymentTypeID,
+            draft.Header.InitialPaymentReference.trim(),
+        );
     }
 
     applyHeader(order, draft.Header);
@@ -294,6 +315,7 @@ function applyHeader(order: BaseEntity & Record<string, unknown>, header: Hydrat
     // then on the payment record is the truth and these are never updated again.
     assign('InitialPaymentTypeID', header.InitialPaymentTypeID);
     if (header.InitialPaymentAmount !== undefined) assign('InitialPaymentAmount', header.InitialPaymentAmount);
+    assign('InitialPaymentDetailID', header.InitialPaymentDetailID);
 
     // Origin, so a self-serve purchase is never inferred from a null sales rep.
     // Guarded because the columns arrive with the OriginChannel schema wave; until
@@ -341,4 +363,40 @@ function mapManualDiscounts(
             Reason: discount.Reason,
         };
     });
+}
+
+
+/**
+ * Create the `PaymentDetail` that carries a tender's own reference number.
+ *
+ * Only the three columns that matter are set: a check is not a card, so brand, last-4 and expiry
+ * stay null rather than being filled with placeholders that would later read as real card data.
+ */
+async function createReferenceInstrument(
+    provider: IMetadataProvider,
+    user: UserInfo,
+    companyID: string,
+    paymentTypeID: string,
+    reference: string,
+): Promise<string> {
+    const detail = await provider.GetEntityObject<BaseEntity & Record<string, unknown>>(
+        PAYMENT_DETAIL_ENTITY,
+        user,
+    );
+    if (!detail) {
+        throw new Error(
+            `Could not create an entity object for "${PAYMENT_DETAIL_ENTITY}" while recording the ` +
+                `payment reference. Either the name is wrong or the entity is not registered.`,
+        );
+    }
+    detail.NewRecord();
+    detail.Set('CompanyID', companyID);
+    detail.Set('PaymentTypeID', paymentTypeID);
+    detail.Set('ReferenceNumber', reference);
+    if (!(await detail.Save())) {
+        throw new Error(
+            `Could not record the payment reference: ${detail.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+        );
+    }
+    return detail.Get('ID') as string;
 }

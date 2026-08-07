@@ -138,6 +138,20 @@ export async function BuildOrder(
     if (spec.ShipToPersonID) order.ShipToPersonID = spec.ShipToPersonID;
     if (spec.ShipToAddressID) order.ShipToAddressID = spec.ShipToAddressID;
     if (spec.InitialPaymentTypeID) order.InitialPaymentTypeID = spec.InitialPaymentTypeID;
+
+    // A REFERENCE-REQUIRING TENDER GETS AN INSTRUMENT, because a real one always would.
+    //
+    // Check, Wire and Internal Transfer carry `RequiresReference`, and `createInitialPayment` now
+    // refuses them without one — a captured payment with no check number cannot be reconciled
+    // against a bank statement. Two checks (RU8, PL7) were booking a Check with no number, which is
+    // the same shape of fixture bug as an order with no payer: the suite asserting a state the
+    // business does not permit. RU7/RU9 already supplied a detail, which is why they kept passing.
+    //
+    // Stated `InitialPaymentDetailID` always wins, so a check that wants to prove the refusal, or
+    // to assert something about a specific instrument, is unaffected.
+    if (spec.InitialPaymentTypeID && !spec.InitialPaymentDetailID && requiresReference(spec.InitialPaymentTypeID)) {
+        order.InitialPaymentDetailID = await createReferenceDetail(md, user, spec.CompanyID, spec.InitialPaymentTypeID);
+    }
     if (spec.InitialPaymentAmount != null) order.InitialPaymentAmount = spec.InitialPaymentAmount;
     if (spec.InitialPaymentDetailID) order.InitialPaymentDetailID = spec.InitialPaymentDetailID;
     // Promotions ride the header the same way lines do — set here, resolved inside Save (D70).
@@ -199,4 +213,38 @@ export async function ConfirmOrder(
         Saved: saved,
         Message: (built.Order.LatestResult?.CompleteMessage as string) ?? '',
     };
+}
+
+
+/** Tender codes whose `PaymentType.RequiresReference` is true. */
+const REFERENCE_TENDER_CODES = ['Check', 'Wire', 'InternalTransfer'] as const;
+
+/** True when this payment type cannot be captured without a reference number. */
+function requiresReference(paymentTypeID: string): boolean {
+    const key = (v: string | null | undefined) => (v ?? '').trim().toLowerCase();
+    const ids = Fx().PaymentTypeIDs;
+    return REFERENCE_TENDER_CODES.some((code) => key(ids.get(code)) === key(paymentTypeID));
+}
+
+/** The instrument row a reference-requiring tender needs, with a recognisable fixture reference. */
+async function createReferenceDetail(
+    md: IMetadataProvider | Metadata,
+    user: UserInfo,
+    companyID: string,
+    paymentTypeID: string,
+): Promise<string> {
+    const detail = await (md as Metadata).GetEntityObject<BaseEntity & Record<string, unknown>>(
+        'MJ_BizApps_Orders: Payment Details',
+        user,
+    );
+    detail.NewRecord();
+    detail.CompanyID = companyID;
+    detail.PaymentTypeID = paymentTypeID;
+    detail.ReferenceNumber = `FIXTURE-${String(detail.ID ?? '').slice(0, 8) || 'REF'}`;
+    if (!(await detail.Save())) {
+        throw new Error(
+            `fixture could not create the payment instrument: ${detail.LatestResult?.CompleteMessage ?? 'unknown'}`,
+        );
+    }
+    return detail.ID as string;
 }

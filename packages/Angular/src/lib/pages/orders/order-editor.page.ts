@@ -724,6 +724,18 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
      * often a full ISO timestamp from a loaded order — and handing that to the input makes the field
      * render EMPTY with no error, which reads as "this order has no date".
      */
+    /**
+     * True once pricing has RETURNED, so an empty price source means "there is no rule" rather
+     * than "not yet". Drives the price badge's missing-rule state.
+     *
+     * Deliberately NOT `!!Preview.Result` alone: a stale result from the previous keystroke is
+     * present while the next preview is in flight, and treating that as settled would flash
+     * "no price rule" at a line that is simply being recomputed.
+     */
+    public get PricingSettled(): boolean {
+        return !this.Preview.Loading && !!this.Preview.Result;
+    }
+
     public DateValue(raw: string | null | undefined): string {
         if (!raw) return '';
         return raw.length >= 10 ? raw.slice(0, 10) : raw;

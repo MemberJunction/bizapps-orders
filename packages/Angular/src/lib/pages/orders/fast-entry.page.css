@@ -408,3 +408,64 @@
   padding: var(--mj-space-2) var(--mj-space-3) 0;
   margin-bottom: 0;
 }
+
+/* ── Tender reference ─────────────────────────────────────────────────────────
+   Shown only for a tender that cannot be captured without a number (Check, Wire,
+   Internal Transfer). Sits directly under the tender tiles so the requirement the
+   tile announces has its answer in the same place, rather than on another tab. */
+.fe-tender-ref {
+    margin-block-start: var(--mj-space-3);
+    max-inline-size: 22rem;
+}
+
+.fe-tender-ref__label {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    margin-block-end: var(--mj-space-1);
+    font-size: var(--mj-text-sm);
+    color: var(--mj-text-secondary);
+}
+
+/* Amber rather than red: nothing has gone wrong yet — this is an input the user
+   has not reached, not a mistake they have made. */
+.fe-tender-ref__req {
+    font-size: var(--mj-text-xs);
+    font-weight: 600;
+    color: var(--mj-status-warning-text);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.fe-tender-ref__hint {
+    margin-block-start: var(--mj-space-1);
+}
+
+/* ── Clear the chosen customer ────────────────────────────────────────────────
+   Top-right of the customer card. The card is `position: relative` via .mj-card,
+   so this anchors to it rather than to the page. */
+/* IN THE FLOW, NOT OVER IT. Absolutely positioning this put it on top of the customer's name and
+   chips at narrow widths — the button covered the very text it refers to. The card lays its content
+   out in a row instead, so the button has its own column and nothing overlaps at any width. */
+.mj-card:has(> .fe-cust__clear) {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mj-space-2);
+}
+
+/* The customer block takes the space the button does not. */
+.mj-card:has(> .fe-cust__clear) > .fe-cust {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+}
+
+.fe-cust__clear {
+    flex: 0 0 auto;
+    order: 2;
+    color: var(--mj-text-muted);
+}
+
+.fe-cust__clear:hover {
+    color: var(--mj-text-primary);
+    background: var(--mj-bg-surface-hover);
+}

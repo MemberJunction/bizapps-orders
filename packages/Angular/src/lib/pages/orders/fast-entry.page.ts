@@ -14,6 +14,7 @@ import { MJODecompositionLadderComponent, type MJOLadderRow } from '../../panels
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import type { MJOTenderOption } from '../payments/payment-entry.page';
 
 /** A catalog row as the product picker shows it. */
 export interface MJOProductOption {
@@ -91,6 +92,16 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
 
     /** What the product picker searches. */
     @Input() Catalog: MJOProductOption[] = [];
+
+    /**
+     * The instance's payment types, so a tender tile maps to a REAL `PaymentType` row.
+     *
+     * Supplied by the section, which already loads and caches them. Without this, `SelectTender`
+     * could set an amount but never a type — and `createInitialPayment` opens with
+     * `if (!this.InitialPaymentTypeID || amount <= 0) return;`, so the order confirmed and the
+     * payment was silently dropped. The customer paid and the order said Unpaid.
+     */
+    @Input() Tenders: MJOTenderOption[] = [];
 
     /**
      * The user asked to confirm. The page deliberately does NOT confirm itself:
@@ -261,11 +272,12 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
 
         // What an order taker needs to know before quoting: what they already owe,
         // and what credit they are sitting on.
-        const orders = await this.data.GetOrders(
-            option.IsOrganization ? { BillToOrganizationID: option.ID } : {},
-        );
-        const theirs = orders.filter(
-            (o) => (option.IsOrganization ? o['BillToOrganizationID'] : o['BillToPersonID']) === option.ID,
+        // FILTERED ON THE SERVER, BOTH WAYS. The person branch used to pass `{}` — fetching every
+        // order in the database and narrowing in the browser — so picking a customer got slower with
+        // every order ever taken. The organization branch filtered server-side and the person branch
+        // did not, which is why it looked intermittent.
+        const theirs = await this.data.GetOrders(
+            option.IsOrganization ? { BillToOrganizationID: option.ID } : { BillToPersonID: option.ID },
         );
         const today = new Date().toISOString().slice(0, 10);
 
@@ -281,6 +293,30 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         this.CustomerQuery = '';
         this.CustomerResults = [];
         this.cdr.detectChanges();
+    }
+
+    /**
+     * Put the customer back to unchosen, so a different one can be picked.
+     *
+     * There was no way out of a wrong choice: `ChooseCustomer` set the card and nothing ever
+     * cleared it, so mis-picking meant abandoning the order and starting again. Clearing the
+     * DRAFT's bill-to as well as the card matters — leaving the header pointing at the old party
+     * while the screen shows "no customer" is the worse failure, because the order would confirm
+     * against someone the user believes they removed.
+     *
+     * The lines are deliberately kept. Someone correcting the payer has not changed their mind
+     * about what is being bought, and re-typing the basket to fix a name is a punishment.
+     */
+    public ClearCustomer(): void {
+        this.Draft.SetHeader({ BillToOrganizationID: null, BillToPersonID: null });
+        this.Customer = null;
+        this.CustomerQuery = '';
+        this.CustomerResults = [];
+        // Account credit is the customer's, so a tender that spends it cannot survive them leaving.
+        if (this.Tender === 'credit') this.SelectTender('terms');
+        this.cdr.detectChanges();
+        // Put the cursor where the next action is, rather than making them find the box again.
+        setTimeout(() => document.getElementById('mjo-customer-search')?.focus(), 0);
     }
 
     /** Catalog rows matching the query, capped — a picker is not a report. */
@@ -513,15 +549,72 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     /* ── Actions ────────────────────────────────────────────────────────── */
 
     public get CanConfirm(): boolean {
+        // A tender that needs a reference and has none is not confirmable. The server refuses it
+        // too — this only stops the user reaching a rejection they could see coming.
+        if (this.RequiresReference && !this.Reference.trim()) return false;
         return this.Draft?.Validate().IsValid === true && !this.Preview.Loading && !!this.Preview.Result;
+    }
+
+    /**
+     * Which `PaymentType` each tile means.
+     *
+     * 'terms' is deliberately absent: invoicing on terms is the ABSENCE of an initial payment, not
+     * a payment of a different kind, so it clears the intent instead of naming a type.
+     */
+    private static readonly TENDER_CODES: Readonly<Record<string, string>> = {
+        onfile: 'CreditCard',
+        newcard: 'CreditCard',
+        check: 'Check',
+        credit: 'AccountCredit',
+    };
+
+    /** The `PaymentType` row behind the current tile, or null for invoice-on-terms. */
+    public get SelectedTenderType(): MJOTenderOption | null {
+        const code = MJOFastEntryPageComponent.TENDER_CODES[this.Tender];
+        if (!code) return null;
+        return this.Tenders.find((t) => t.Code === code) ?? null;
+    }
+
+    /** True when this tender cannot be captured without a check/wire/transfer number. */
+    public get RequiresReference(): boolean {
+        return this.SelectedTenderType?.RequiresReference === true;
+    }
+
+    /** The check number / wire confirmation, while it is being typed. */
+    public Reference = '';
+
+    public SetReference(value: string): void {
+        this.Reference = value;
+        // Re-state the whole intent rather than patching it: the amount and type must stay together
+        // with the reference, and SetInitialPayment is the one place that knows the shape.
+        this.applyTenderIntent();
     }
 
     public SelectTender(tender: typeof this.Tender): void {
         this.Tender = tender;
-        // Tender is intent, not a payment. It rides the draft so the pre-flight can
-        // say what confirming will capture.
-        if (tender === 'terms') this.Draft.ClearInitialPayment();
-        else this.Draft.SetInitialPayment({ Amount: this.Preview.Result?.Totals.GrossTotal ?? 0 });
+        // Switching tender abandons a reference typed for the previous one — a check number is not
+        // a wire confirmation, and carrying it across would attach the wrong id to the payment.
+        this.Reference = '';
+        this.applyTenderIntent();
+    }
+
+    /**
+     * Push the current tender choice onto the draft.
+     *
+     * Tender is INTENT, not a payment. It rides the draft so the pre-flight can say what confirming
+     * will capture, and `createInitialPayment` turns it into a real PaymentHeader inside the same
+     * transaction as the booking.
+     */
+    private applyTenderIntent(): void {
+        if (this.Tender === 'terms') {
+            this.Draft.ClearInitialPayment();
+            return;
+        }
+        this.Draft.SetInitialPayment({
+            PaymentTypeID: this.SelectedTenderType?.ID ?? null,
+            Amount: this.Preview.Result?.Totals.GrossTotal ?? 0,
+            Reference: this.Reference,
+        });
     }
 
     /** ⌘↵ / Ctrl+↵ confirms; ⌘S saves; `/` jumps to the product field. */
@@ -538,6 +631,18 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
             event.preventDefault();
             document.getElementById('mjo-product-search')?.focus();
         }
+    }
+
+    /**
+     * True once pricing has RETURNED, so an empty price source means "there is no rule" rather
+     * than "not yet". Drives the price badge's missing-rule state.
+     *
+     * Deliberately NOT `!!Preview.Result` alone: a stale result from the previous keystroke is
+     * present while the next preview is in flight, and treating that as settled would flash
+     * "no price rule" at a line that is simply being recomputed.
+     */
+    public get PricingSettled(): boolean {
+        return !this.Preview.Loading && !!this.Preview.Result;
     }
 
     public SaveError: string | null = null;

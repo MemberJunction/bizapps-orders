@@ -100,6 +100,16 @@ export interface OrderDraftHeaderPayload {
     OriginChannel?: string | null;
     OriginExternalID?: string | null;
     InitialPaymentTypeID?: string | null;
+    /**
+     * The instrument's own reference — a check number, a wire confirmation, a transfer id.
+     *
+     * Lives here rather than on the order because the ORDER has no column for it: a reference
+     * belongs to the instrument, so on confirm this becomes a `PaymentDetail.ReferenceNumber` and
+     * the order points at that row. Required for any `PaymentType` with `RequiresReference` — Check,
+     * Wire and Internal Transfer today — and refused server-side when missing, because a captured
+     * check with no number cannot be reconciled against a bank statement.
+     */
+    InitialPaymentReference?: string | null;
     InitialPaymentAmount?: number;
     SourceCustomerPaymentMethodID?: string | null;
 }
@@ -435,11 +445,14 @@ export class OrderDraft {
         PaymentTypeID?: string | null;
         Amount?: number;
         SourceCustomerPaymentMethodID?: string | null;
+        /** Check number / wire confirmation / transfer id, for tenders that require one. */
+        Reference?: string | null;
     }): this {
         return this.SetHeader({
             InitialPaymentTypeID: intent.PaymentTypeID ?? null,
             InitialPaymentAmount: intent.Amount ?? 0,
             SourceCustomerPaymentMethodID: intent.SourceCustomerPaymentMethodID ?? null,
+            InitialPaymentReference: intent.Reference?.trim() || null,
         });
     }
 
@@ -449,6 +462,7 @@ export class OrderDraft {
             InitialPaymentTypeID: null,
             InitialPaymentAmount: 0,
             SourceCustomerPaymentMethodID: null,
+            InitialPaymentReference: null,
         });
     }
 
