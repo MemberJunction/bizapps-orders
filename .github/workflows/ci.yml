@@ -66,8 +66,33 @@ jobs:
       # Second reason, independent of the test: CI could not previously catch a BUILD break at all.
       # package.json and package-lock.json disagreed about @types/express for 24 commits and every
       # `npm ci` failed — nobody noticed, because the check was already red for the other reason.
+      #
+      # WHY `--continue`, AND WHY THE FAILURE IS DEFERRED TO THE LAST STEP. `orders-core-entities-server`
+      # does not compile on a runner at all: it imports `@mj-biz-apps/accounting-engine-base` for
+      # runtime values, and that package is unpublished — it exists here only because the mjdev
+      # dev-link puts accounting in the same npm workspace. A plain `npm run build:packages` therefore
+      # aborts the job on its first failing package and `npx vitest run` never executes, which puts us
+      # straight back in the shape this build step was added to escape: a red X that reads like a known
+      # failure but is really a thousand tests not running.
+      #
+      # So the build keeps going past what it cannot compile, the tests run and report, and the job is
+      # failed deliberately at the end. Nothing is downgraded to a warning — the check stays RED, and
+      # it goes green by itself the day accounting publishes, with nothing for anyone to remember to
+      # revert. (Same reasoning as `pg-migrations.yml`.)
+      #
+      # What this does NOT recover: `registry-parity.test.ts` imports `orders-core-entities-server` by
+      # name, so those 76 tests still cannot resolve while that package is unbuildable. ~989 of 1065
+      # run. The vitest config already stubs `accounting-engine-base` for the tests; that stub is a
+      # module-graph shim and deliberately does not paper over the compile.
       - name: Build app packages
-        run: npm run build:packages
+        id: build
+        run: |
+          if npm run build:packages -- --continue; then
+            echo 'ok=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ok=false' >> "$GITHUB_OUTPUT"
+            echo "::error title=Build failed::One or more @mj-biz-apps/orders-* packages did not compile. Unit tests below ran against whatever did build."
+          fi
 
       # Includes `registry-parity.test.ts`, which is the anti-vacuity floor: it asserts exact
       # per-bundle check counts against the filesystem and cross-checks the four places a bundle
@@ -75,7 +100,57 @@ jobs:
       # the suite, both leave the integration suite passing with strictly less in it — and both have
       # actually happened.
       - name: Unit tests
-        run: npx vitest run
+        id: unit
+        run: |
+          set -o pipefail
+          if npx vitest run 2>&1 | tee /tmp/vitest.log; then
+            echo 'ok=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ok=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      # The run's landing page, so the tally is readable without expanding a log. When the build has
+      # broken, the collapsed view of a failing job shows only the LAST failing step, which would
+      # otherwise bury the thing you actually came to read.
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '## Orders CI'
+            echo
+            echo '| gate | result |'
+            echo '| --- | --- |'
+            if [ "${{ steps.build.outputs.ok }}" = 'true' ]; then
+              echo '| Build (`build:packages`) | ✅ passed |'
+            else
+              echo '| Build (`build:packages`) | ❌ failed — see the Build step |'
+            fi
+            if [ -f /tmp/vitest.log ]; then
+              # Strip the colour escapes first — vitest colourises on an Actions runner, and the codes
+              # sit BEFORE the leading whitespace, so an anchored grep silently matches nothing and the
+              # tally quietly degrades to "see log". Verified against a real run's output.
+              CLEAN=$(perl -pe 's/\e\[[0-9;]*m//g' /tmp/vitest.log)
+              # `|| true` because the step runs under `bash -e`: a grep that matches nothing would
+              # otherwise abort the step mid-summary rather than fall through to "see log".
+              FILES=$(printf '%s\n' "$CLEAN" | grep -E '^[[:space:]]*Test Files[[:space:]]' | tail -1 | sed -E 's/^[[:space:]]*Test Files[[:space:]]+//') || true
+              TESTS=$(printf '%s\n' "$CLEAN" | grep -E '^[[:space:]]*Tests[[:space:]]' | tail -1 | sed -E 's/^[[:space:]]*Tests[[:space:]]+//') || true
+              if [ "${{ steps.unit.outputs.ok }}" = 'true' ]; then
+                echo "| Unit tests | ✅ ${TESTS:-see log} |"
+              else
+                echo "| Unit tests | ❌ ${TESTS:-see log} |"
+              fi
+              echo
+              echo "Test files: ${FILES:-see log}"
+            else
+              echo '| Unit tests | ⚠️ did not run |'
+            fi
+            if [ "${{ steps.build.outputs.ok }}" != 'true' ]; then
+              echo
+              echo '> The build failure is expected while `@mj-biz-apps/accounting-engine-base` is'
+              echo '> unpublished. Tests downstream of a package that did not compile cannot run —'
+              echo '> a lower test count here is that, not a regression. See `.github/workflows/ci.yml`.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # Advisory, not a gate. `migrations/_README.md` requires a changeset on any PR touching a
       # migration, and that rule sat unenforced through several schema changes. A warning annotation
@@ -92,3 +167,10 @@ jobs:
         if: always()
         run: |
           echo "::notice title=Integration checks are not run here::The 366 database checks need a local environment. Run 'RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs' before merging — see .github/workflows/ci.yml for why."
+
+      # THE GATE, and it is last on purpose. Failing earlier would skip every step above that is not
+      # marked `always()` — including the changeset reminder — and, more importantly, would collapse
+      # the job onto the build error again. Everything before this reports; this decides.
+      - name: Fail if the build broke or tests failed
+        if: always() && (steps.build.outputs.ok != 'true' || steps.unit.outputs.ok != 'true')
+        run: exit 1
