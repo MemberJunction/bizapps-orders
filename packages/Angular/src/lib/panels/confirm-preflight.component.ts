@@ -326,6 +326,38 @@ export interface MJOPreflight {
     `,
     styles: [
         `
+            /*
+              A MODAL, BECAUSE IT IS ONE. This component had no positioning whatsoever: it rendered
+              as a plain block at the END of the section template, after the page host. On a scrolled
+              page — an order with a few lines is enough — pressing Confirm rendered the pre-flight
+              BELOW THE FOLD. Nothing appeared to happen, because what appeared was off-screen, and
+              the user pressed Confirm again.
+              It was invisible in exactly the case it matters and nowhere else: the pre-flight ERROR
+              banner is position:fixed, so refusals reached the user while the review step never did.
+            */
+            :host {
+                position: fixed;
+                inset: 0;
+                z-index: 100;
+                display: grid;
+                place-items: center;
+                padding: var(--mj-space-4);
+                overflow-y: auto;
+                background: var(--mj-bg-overlay);
+            }
+
+            .mjo-preflight {
+                inline-size: min(46rem, 100%);
+                /* Its own scroll, so a long journal-entry list cannot push the confirm button out
+                   of reach — the whole point of the step is that the button is there to press. */
+                max-block-size: min(85dvh, 100%);
+                overflow-y: auto;
+                padding: var(--mj-space-5);
+                border-radius: var(--mj-radius-md);
+                background: var(--mj-bg-surface);
+                box-shadow: var(--mj-shadow-xl);
+            }
+
             .mjo-preflight__actions {
                 display: flex;
                 justify-content: flex-end;
