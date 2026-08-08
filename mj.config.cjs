@@ -110,6 +110,70 @@ module.exports = {
   // CodeGen Overrides
   // ============================================================================
 
+  /**
+   * AI "Advanced Generation" features, declared EXPLICITLY.
+   *
+   * WHY THIS BLOCK EXISTS AT ALL. MJ carries TWO default feature sets that disagree, and which one
+   * you land on is decided by the SHAPE of your config rather than by anything you can see
+   * (verified against MJ 5.51, `packages/CodeGenLib/src/Config/config.ts`):
+   *
+   *   - `DEFAULT_CODEGEN_CONFIG` (~line 879) enables the useful set and names it correctly:
+   *     FormLayoutGeneration, ParseCheckConstraints, SmartFieldIdentification,
+   *     TransitiveJoinIntelligence, VirtualEntityFieldDecoration.
+   *   - The zod schema default on `features` (~line 185) is nearly all `false`, and names the
+   *     layout feature `FormLayout` — while the code asks for `FormLayoutGeneration`
+   *     (`Misc/advanced_generation.ts:480`). Under that set the feature can never run.
+   *
+   * Omit `advancedGeneration` entirely and you get the first. Declare it WITHOUT `features` and
+   * the zod default fills in the second. Either way CodeGen exits 0 and reports success, so the
+   * difference is invisible at the point of use — and it is the difference between the layout pass
+   * running and silently never running.
+   *
+   * The list is an ALLOW-LIST, not a merge: `featureEnabled()` is
+   * `enabled && getFeature(name)?.enabled === true`, so a feature absent from this array is OFF.
+   * That is what makes declaring it deterministic — and it is also this block's one cost: a feature
+   * MJ adds later will not reach this app until someone adds it here.
+   *
+   * The master switch is separate and is NOT set here: mjdev's generated `.mjrc.cjs` overlay owns
+   * `enableAdvancedGeneration` (it flips to true when an AI provider key is configured, and
+   * `--ai` / `--no-ai` force it per run). Setting it in both places would let them disagree.
+   *
+   * WHAT EACH ONE BUYS, and when it fires — several only run for NEWLY-CREATED entities/fields,
+   * which on an established app means never, because the baseline migration inserts the metadata
+   * before CodeGen looks. That is why the enriched baseline is produced against a bare database.
+   *
+   * DELIBERATELY OFF:
+   *   EntityDescriptions — ours are hand-authored and reviewed; we do not want them rewritten.
+   *   EntityNames        — renames entities, which breaks every 'MJ_BizApps_Orders: X' string in
+   *                        the app, its specs, and any downstream app that references them.
+   *
+   * NOT LISTED because no code reads them — `EntityFieldDescriptions`, `FormTabs` and
+   * `DefaultInViewFields` appear in MJ's default sets but have zero references anywhere in
+   * `packages/CodeGenLib/src` outside `config.ts`, so they are dead knobs. Listing a dead knob
+   * would read as coverage we do not have. SmartFieldIdentification does the DefaultInView work.
+   *
+   * Field DESCRIPTIONS do not come from AI at all — CodeGen imports them from
+   * `sp_addextendedproperty` in the DDL. To document a column, document it in the migration.
+   */
+  advancedGeneration: {
+    features: [
+      // Every run: categorises fields with AutoUpdateCategory=1 and an empty Category, which is
+      // what turns a flat field list into a real form layout.
+      { name: 'FormLayoutGeneration', enabled: true },
+      // Existing objects: CHECK-constraint descriptions + Validate() bodies in the subclasses.
+      { name: 'ParseCheckConstraints', enabled: true },
+      // Virtual entities lacking a soft PK/FK.
+      { name: 'VirtualEntityFieldDecoration', enabled: true },
+      // New entities/fields (and existing ones where auto-update is allowed): DefaultInView,
+      // IsNameField, user-search flags.
+      { name: 'SmartFieldIdentification', enabled: true },
+      // New entities: junction / many-to-many detection.
+      { name: 'TransitiveJoinIntelligence', enabled: true },
+      { name: 'EntityDescriptions', enabled: false },
+      { name: 'EntityNames', enabled: false },
+    ],
+  },
+
   newEntityDefaults: {
     NameRulesBySchema: [
       { SchemaName: '${mj_core_schema}', EntityNamePrefix: 'MJ: ' },
