@@ -241,8 +241,8 @@ export const GiftCardChecks: NamedCheck[] = [
         AssertEqual(before.length, 2, "two cards to begin with");
 
         // Re-save the order exactly as a UI would on any subsequent edit.
-        const entity = order.Order as unknown as { Save(): Promise<boolean>; Set(f: string, v: unknown): void };
-        entity.Set("Description", "touched");
+        const entity = order.Order;
+        entity.Description = "touched";
         Assert(await entity.Save(), "the re-save should succeed");
 
         const after = await cardsOf(ctx, order.Order.ID as string);

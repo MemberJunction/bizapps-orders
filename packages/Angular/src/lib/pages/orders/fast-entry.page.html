@@ -15,7 +15,15 @@
     <section class="fe-step" [class.is-done]="!!Customer">
       <div class="fe-step-head">
         <span class="fe-step-n">
-          @if (Customer) { <i class="fa-solid fa-check" aria-hidden="true"></i> } @else { 1 }
+          @if (JustBooked) {
+        <!-- The receipt for the order that just left the screen. Without it, clearing the form and
+             confirming look identical from the user's side: everything they typed disappears. -->
+        <mj-alert Variant="success" Icon="fa-solid fa-circle-check" class="fe-booked" [Dismissible]="true" (Dismissed)="JustBooked = null">
+          <strong>{{ JustBooked }}</strong> is confirmed and booked. Ready for the next order.
+        </mj-alert>
+      }
+
+      @if (Customer) { <i class="fa-solid fa-check" aria-hidden="true"></i> } @else { 1 }
         </span>
         <span class="fe-step-t">Who is this for?</span>
         <span class="fe-step-hint">Bill-to party</span>
@@ -23,6 +31,20 @@
 
       @if (Customer) {
         <div class="mj-card">
+          <!--
+            The way OUT of a choice. Without this a mis-picked customer could not be changed at
+            all — the card replaced the search box permanently and the only escape was abandoning
+            the order. Placed on the card itself rather than in a menu, because correcting a
+            wrong name is a first-order action, not an advanced one.
+          -->
+          <button
+            type="button"
+            class="mj-iconbtn fe-cust__clear"
+            (click)="ClearCustomer()"
+            title="Choose a different customer"
+            aria-label="Clear the selected customer and choose a different one">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
           <div class="fe-cust">
             <span class="mj-avatar fe-cust__avatar">{{ CustomerInitials }}</span>
 
@@ -173,10 +195,16 @@
               <div class="mj-num">{{ PricedLine(line)?.UnitPrice | mjoMoney }}</div>
               <mjo-price-source-badge
                 [Source]="PricedLine(line)?.PriceSource ?? null"
+                [Settled]="PricingSettled"
                 [Overridden]="line.UnitPriceWasStated" />
+              @if (PricedLine(line)?.Error; as why) {
+                <!-- An unpriced line SAYS SO. A blank or a $0.00 is indistinguishable
+                     from a deliberately free line, and only one is what anyone meant. -->
+                <div class="tiny mj-money--credit">{{ why }}</div>
+              }
             </div>
 
-            <div class="tot mj-num">{{ PricedLine(line)?.LineTotalNet | mjoMoney }}</div>
+            <div class="tot mj-num">{{ PricedLine(line)?.NetAmount | mjoMoney }}</div>
 
             <button type="button" class="mj-iconbtn" (click)="Remove(line)" [attr.aria-label]="'Remove ' + (ProductFor(line)?.Name ?? 'line')">
               <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
@@ -185,23 +213,24 @@
 
           <!-- Consequences: what this line WILL do, shown during entry rather
                than discovered at confirm. -->
+          <!--
+            Read from the CATALOGUE, not from a priced line. These chips used to come off
+            the rolled-back preview's projection, so a line could not say what it WOULD do
+            until a whole throwaway booking had run for it. Whether a product ships, is
+            taxable, and which company earns it are properties of the product.
+
+            Revenue recognition and the settled service period are genuinely decided at
+            confirm, so they are no longer claimed here.
+          -->
           <div class="mj-linecard-conseq">
-            @if (PricedLine(line); as priced) {
-              @if (priced.ServicePeriodStart && priced.ServicePeriodSource) {
-                <mjo-consequence-chip Kind="event">
-                  Period from {{ priced.ServicePeriodSource }}
-                </mjo-consequence-chip>
-              }
-              @if (priced.RevenueRecognitionType) {
-                <mjo-consequence-chip Kind="deferred">{{ priced.RevenueRecognitionType }}</mjo-consequence-chip>
-              }
-              @if (priced.RequiresFulfillment) {
+            @if (ProductFor(line); as product) {
+              @if (product.TypeName === 'Goods') {
                 <mjo-consequence-chip Kind="fulfillment">Ships — holds the order at Posted</mjo-consequence-chip>
               }
-              @if (priced.TaxZeroReason) {
-                <mjo-consequence-chip Kind="untaxable">{{ priced.TaxZeroReason }}</mjo-consequence-chip>
+              @if (!product.Taxable) {
+                <mjo-consequence-chip Kind="untaxable">Untaxable</mjo-consequence-chip>
               }
-              <mjo-consequence-chip Kind="company">Revenue to {{ priced.CompanyName }}</mjo-consequence-chip>
+              <mjo-consequence-chip Kind="company">Revenue to {{ product.CompanyName }}</mjo-consequence-chip>
             }
           </div>
         </div>
@@ -334,6 +363,32 @@
           </button>
         }
       </div>
+
+      <!--
+        THE REFERENCE, ONLY WHEN THE TENDER DEMANDS ONE. Check, Wire and Internal Transfer carry
+        RequiresReference: a captured payment with no check number cannot be reconciled against a
+        bank statement, so the money is recorded and unfindable. The tile has always SAID
+        "Reference required" — this is the field that lets someone act on it.
+      -->
+      @if (RequiresReference) {
+        <div class="fe-tender-ref">
+          <label class="fe-tender-ref__label" for="mjo-tender-ref">
+            {{ SelectedTenderType?.Name }} number
+            <span class="fe-tender-ref__req" aria-hidden="true">required</span>
+          </label>
+          <input
+            id="mjo-tender-ref"
+            class="mj-input"
+            [value]="Reference"
+            (input)="SetReference($any($event.target).value)"
+            [attr.aria-invalid]="!Reference.trim()"
+            [placeholder]="SelectedTenderType?.Code === 'Check' ? 'e.g. 10428' : 'confirmation or transfer id'"
+            autocomplete="off" />
+          <div class="fe-tender-ref__hint small muted">
+            Recorded on the payment so it can be matched to the bank statement.
+          </div>
+        </div>
+      }
     </section>
   </div>
 
@@ -344,22 +399,22 @@
         <i class="fa-solid fa-calculator" aria-hidden="true"></i>
         <h3>What this order comes to</h3>
         <span class="right">
-          <span class="mj-chip" [class.mj-chip--brand]="Preview.Loading">
-            {{ Preview.Loading ? 'recomputing' : 'live' }}
+          <span class="mj-chip" [class.mj-chip--brand]="Pricing.Loading">
+            {{ Pricing.Loading ? 'recomputing' : 'live' }}
           </span>
         </span>
       </div>
 
       <div class="mj-card-pad">
-        @if (Preview.Error) {
+        @if (Pricing.Error) {
           <mj-alert Variant="error" Icon="fa-solid fa-circle-exclamation">
               <strong>Couldn't price this draft.</strong>
-              <div class="small">{{ Preview.Error }}</div>
+              <div class="small">{{ Pricing.Error }}</div>
           </mj-alert>
         } @else {
           <mjo-decomposition-ladder
             [Rows]="LadderRows"
-            [Stale]="Preview.Loading || Draft.IsPreviewStale"
+            [Stale]="Pricing.Loading"
             [Footnote]="LadderFootnote" />
         }
       </div>
@@ -383,17 +438,13 @@
           <h3>Will book to</h3>
         </div>
         <div class="mj-card-pad small">
-          @for (company of BookingSummary; track company.CompanyID) {
+          @for (company of BookingSummary; track company.CompanyName) {
             <div class="fe-books__row">
               <div class="row">
                 <b>{{ company.CompanyName }}</b>
-                <span class="spacer mj-num strong">{{ company.Gross | mjoMoney }}</span>
+                <span class="spacer mj-num strong">{{ company.NetTotal | mjoMoney }}</span>
               </div>
-              <div class="muted tiny">
-                net {{ company.Net | mjoMoney }}
-                @if (company.Charges) { · charges {{ company.Charges | mjoMoney }} }
-                @if (company.Tax) { · tax {{ company.Tax | mjoMoney }} }
-              </div>
+              <div class="muted tiny">net, before tax and charges</div>
             </div>
           }
           <div class="muted tiny fe-books__note">
@@ -431,9 +482,19 @@
     type="button"
     mjButton variant="primary"
     [disabled]="!CanConfirm"
+    [title]="ConfirmBlockedReason ?? 'Confirm the order and book it'"
     (click)="RequestConfirm()">
     <i class="fa-solid fa-check" aria-hidden="true"></i> Confirm order
   </button>
+
+  <!--
+    THE REASON, IN THE OPEN. The title alone is not enough: it needs a hover, it is invisible on
+    touch, and a screen reader announces it inconsistently. Rendering it next to the button means
+    the answer to "why can't I confirm" is on screen at the moment the question is asked.
+  -->
+  @if (ConfirmBlockedReason) {
+    <span class="fe-confirm-why" role="status">{{ ConfirmBlockedReason }}</span>
+  }
 
   <div class="mj-keys spacer">
     <span><kbd>/</kbd> add product</span>

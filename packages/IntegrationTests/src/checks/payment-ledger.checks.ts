@@ -60,8 +60,8 @@ import { ConfirmOrder } from "../order-builder.js";
 import {
   ApplyPayment,
   CreatePayment,
-  type LooseEntity,
 } from "../payment-builder.js";
+import type { PaymentHeaderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
 
 const CASH_CODE = "10100";
 const AR_CODE = "11201";
@@ -121,7 +121,7 @@ async function capturePayment(
   orderID: string,
   amount: number,
   opts: { fee?: number; allocate?: boolean; allocation?: number } = {},
-): Promise<LooseEntity> {
+): Promise<PaymentHeaderEntityServer> {
   const f = Fx();
   const cash = f.PaymentTypeIDs.get("Cash");
   Assert(

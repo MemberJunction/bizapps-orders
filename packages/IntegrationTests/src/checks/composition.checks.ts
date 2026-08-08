@@ -49,7 +49,7 @@ import { ConfirmOrder } from "../order-builder.js";
 // rows). CX7/CX8 pay a two-company order, which needs them.
 import { CreateIntercompanyFixture, TeardownIntercompanyFixture } from "./intercompany.checks.js";
 import { CreatePayment } from "../payment-builder.js";
-import type { LooseEntity } from "../payment-builder.js";
+import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
   // Delegates to the shared builder so the price goes through `ProductPriceEntityServer` and its

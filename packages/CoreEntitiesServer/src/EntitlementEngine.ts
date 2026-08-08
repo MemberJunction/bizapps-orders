@@ -33,6 +33,7 @@ import {
     RunView,
     UserInfo,
 } from '@memberjunction/core';
+import { mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
 import {
     InitialGrantStatus,
     ReduceGrantForReturn,
@@ -221,14 +222,14 @@ export async function CreateEntitlementGrants(
                 TermEndDate: term ? new Date(term.EndDate) : null,
             });
 
-            const grant = await provider.GetEntityObject<BaseEntity>(ENTITLEMENT_GRANT_ENTITY, user);
+            const grant = await provider.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(ENTITLEMENT_GRANT_ENTITY, user);
             grant.NewRecord();
-            grant.Set('ProductEntitlementID', template.ID);
-            grant.Set('OrderLineID', line.ID);
+            grant.ProductEntitlementID = template.ID;
+            grant.OrderLineID = line.ID;
             if (term) {
-                grant.Set('SubscriptionTermID', term.ID);
+                grant.SubscriptionTermID = term.ID;
                 const subID = subscriptionByTerm.get(key(term.ID));
-                if (subID) grant.Set('SubscriptionID', subID);
+                if (subID) grant.SubscriptionID = subID;
             }
 
             // BENEFICIARY: the line's own ship-to first, because that is where 'who is this for'
@@ -236,18 +237,19 @@ export async function CreateEntitlementGrants(
             // a recipient. Only then the buyer.
             const person = line.ShipToPersonID ?? order.BillToPersonID ?? null;
             const organization = line.ShipToOrganizationID ?? order.BillToOrganizationID ?? null;
-            if (person) grant.Set('BeneficiaryPersonID', person);
-            if (organization) grant.Set('BeneficiaryOrganizationID', organization);
+            if (person) grant.BeneficiaryPersonID = person;
+            if (organization) grant.BeneficiaryOrganizationID = organization;
 
-            grant.Set(
-                'Quantity',
-                ResolveGrantQuantity(template.Quantity, Number(line.Quantity ?? 0), resolved.QuantityMode),
+            grant.Quantity = ResolveGrantQuantity(
+                template.Quantity,
+                Number(line.Quantity ?? 0),
+                resolved.QuantityMode,
             );
-            grant.Set('ValidFrom', validity.ValidFrom);
-            grant.Set('ValidTo', validity.ValidTo);
-            grant.Set('ValidityModeApplied', validity.ModeApplied);
+            grant.ValidFrom = validity.ValidFrom;
+            grant.ValidTo = validity.ValidTo;
+            grant.ValidityModeApplied = validity.ModeApplied;
             const status = InitialGrantStatus(resolved.GrantTiming, order);
-            grant.Set('Status', status);
+            grant.Status = status;
 
             if (!(await grant.Save(options))) {
                 throw new Error(
@@ -258,7 +260,7 @@ export async function CreateEntitlementGrants(
 
             out.Created++;
             out.Grants.push({
-                ID: grant.Get('ID') as string,
+                ID: grant.ID,
                 OrderLineID: line.ID,
                 Code: template.Code,
                 Status: status,
@@ -445,21 +447,21 @@ export async function RevokeGrantsForReturn(
     for (const row of grants?.Results ?? []) {
         const decision = ReduceGrantForReturn(row.Quantity, originQuantity, returnedQuantity);
         // `GetEntityObject` with a CompositeKey loads it — the house idiom, same as
-        // CancelSubscriptionOperation. There is no `Load(id)` on BaseEntity.
-        const grant = await provider.GetEntityObject<BaseEntity>(
+        // CancelSubscriptionOperation.
+        const grant = await provider.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(
             ENTITLEMENT_GRANT_ENTITY,
             CompositeKey.FromID(row.ID),
             user,
         );
 
         if (decision.Revoke) {
-            grant.Set('Status', 'Revoked');
-            grant.Set('RevokedAt', new Date());
-            grant.Set('RevocationReason', reason);
+            grant.Status = 'Revoked';
+            grant.RevokedAt = new Date();
+            grant.RevocationReason = reason;
             revoked++;
         } else {
             if (decision.Quantity === row.Quantity) continue; // nothing to change
-            grant.Set('Quantity', decision.Quantity);
+            grant.Quantity = decision.Quantity;
             reduced++;
         }
 

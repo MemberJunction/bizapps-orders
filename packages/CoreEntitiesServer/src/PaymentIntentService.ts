@@ -53,6 +53,9 @@ import {
     type IRunViewProvider,
     type UserInfo,
 } from '@memberjunction/core';
+import {
+    mjBizAppsOrdersPaymentIntentEntity,
+} from '@mj-biz-apps/orders-entities';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import type { IntentStatus } from './PaymentProviderBehavior.js';
 
@@ -157,17 +160,17 @@ export async function OpenPaymentIntent(
         };
     }
 
-    const row = await provider.GetEntityObject<BaseEntity>(PAYMENT_INTENT_ENTITY, user);
+    const row = await provider.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, user);
     row.NewRecord();
-    row.Set('PaymentProviderID', request.PaymentProviderID);
-    row.Set('ProviderIntentID', opened.ProviderIntentID);
+    row.PaymentProviderID = request.PaymentProviderID;
+    row.ProviderIntentID = opened.ProviderIntentID;
     // The gateway's reading, already mapped to our CHECK vocabulary by the driver. Defaulted to
     // Processing rather than to a confident value — the same rule `MapStripeIntentStatus` follows.
-    row.Set('Status', opened.Status ?? 'Processing');
-    row.Set('Amount', Math.round(request.Amount * 100) / 100);
-    if (request.OrderHeaderID) row.Set('OrderHeaderID', request.OrderHeaderID);
-    if (request.BillToPersonID) row.Set('BillToPersonID', request.BillToPersonID);
-    if (request.BillToOrganizationID) row.Set('BillToOrganizationID', request.BillToOrganizationID);
+    row.Status = opened.Status ?? 'Processing';
+    row.Amount = Math.round(request.Amount * 100) / 100;
+    if (request.OrderHeaderID) row.OrderHeaderID = request.OrderHeaderID;
+    if (request.BillToPersonID) row.BillToPersonID = request.BillToPersonID;
+    if (request.BillToOrganizationID) row.BillToOrganizationID = request.BillToOrganizationID;
 
     if (!(await row.Save())) {
         // A FAULT. The gateway has an open intent and we failed to record it, which means a webhook
@@ -185,7 +188,7 @@ export async function OpenPaymentIntent(
     return {
         Success: true,
         WasExisting: false,
-        PaymentIntentID: row.Get('ID') as string,
+        PaymentIntentID: row.ID,
         ProviderIntentID: opened.ProviderIntentID,
         Status: opened.Status,
         ClientSecret: opened.ClientSecret,

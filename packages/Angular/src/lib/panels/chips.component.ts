@@ -200,6 +200,20 @@ export class MJOOriginChipComponent {
             <span class="mjo-price-badge" [title]="'Resolved from ' + Source">
                 <i class="fa-solid fa-tag" aria-hidden="true"></i> {{ Source }}
             </span>
+        } @else if (Settled) {
+            <!--
+              PRICING FINISHED AND FOUND NOTHING. This is a different fact from "still working",
+              and it used to be indistinguishable: both showed "resolving…", so a product with no
+              price rule spun for ever, the line stayed at zero, and the order totalled $0.00 with
+              nothing on screen saying why. A spinner that never stops reads as a slow system, not
+              as a thing the user has to go and fix.
+            -->
+            <span
+                class="mjo-price-badge mjo-price-badge--missing"
+                role="status"
+                title="No active price rule covers this product on this order's date, and no unit price was typed. Type a unit price on the line, or add a price rule for the product in the catalog.">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> no price rule
+            </span>
         } @else {
             <span class="mjo-price-badge mjo-price-badge--muted">
                 <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> resolving…
@@ -222,6 +236,12 @@ export class MJOOriginChipComponent {
             .mjo-price-badge--muted {
                 opacity: 0.7;
             }
+            /* An unpriced line is a problem the user must act on, so it is styled as one rather
+               than as another muted hint. */
+            .mjo-price-badge--missing {
+                color: var(--mj-status-warning-text);
+                font-weight: 600;
+            }
         `,
     ],
 })
@@ -231,6 +251,15 @@ export class MJOPriceSourceBadgeComponent {
 
     /** The user typed the price. Wins outright, and says so. */
     @Input() Overridden = false;
+
+    /**
+     * True once pricing has RETURNED — i.e. the caller has a preview result and is not mid-flight.
+     *
+     * Without it this component cannot tell "not computed yet" from "computed, and there is no
+     * rule", because both leave `Source` empty. Defaults to false so an un-updated caller keeps the
+     * old spinner rather than accusing a perfectly good product of having no price.
+     */
+    @Input() Settled = false;
 }
 
 /* ────────────────────────────────────────────────────────────────────────────

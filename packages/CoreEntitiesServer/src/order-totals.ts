@@ -32,12 +32,6 @@ import type { HydratedOrder } from './OrderDraftHydrator.js';
 /** Round to cents, avoiding the float representation error at the halfway point. */
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
-/** Read a field off an entity whose generated type is not in scope here. */
-function field<T>(entity: BaseEntity, name: string, fallback: T): T {
-    const value = (entity as unknown as Record<string, unknown>)[name];
-    return (value ?? fallback) as T;
-}
-
 function isoOrNull(value: unknown): string | null {
     if (!value) return null;
     const d = value instanceof Date ? value : new Date(String(value));
@@ -59,7 +53,7 @@ export function ComputeLinesAndTotals(hydrated: HydratedOrder): {
     Lines: OrderLineResult[];
     Totals: OrderTotalsResult;
 } {
-    const order = hydrated.Order as unknown as BaseEntity;
+    const order = hydrated.Order;
     const lines: OrderLineResult[] = [];
 
     let listSubtotal = 0;
@@ -70,15 +64,15 @@ export function ComputeLinesAndTotals(hydrated: HydratedOrder): {
     const byCompany = new Map<string, { Net: number; Charges: number; Tax: number }>();
 
     for (let i = 0; i < hydrated.Lines.length; i++) {
-        const line = hydrated.Lines[i] as unknown as BaseEntity;
-        const net = money(field(line, 'LineTotalNet', 0));
-        const tax = money(field(line, 'LineTax', 0));
-        const charge = money(field(line, 'ChargeAmount', 0));
-        const gross = money(field(line, 'LineTotalGross', net + tax + charge));
-        const qty = Number(field(line, 'Quantity', 0));
-        const unit = money(field(line, 'UnitPrice', 0));
-        const discountAmount = money(field(line, 'DiscountAmount', 0));
-        const discountPct = Number(field(line, 'DiscountPct', 0));
+        const line = hydrated.Lines[i];
+        const net = money(line.LineTotalNet ?? 0);
+        const tax = money(line.LineTax ?? 0);
+        const charge = money(line.ChargeAmount ?? 0);
+        const gross = money(line.LineTotalGross ?? net + tax + charge);
+        const qty = Number(line.Quantity ?? 0);
+        const unit = money(line.UnitPrice ?? 0);
+        const discountAmount = money(line.DiscountAmount ?? 0);
+        const discountPct = Number(line.DiscountPct ?? 0);
         // LIST IS DERIVED FROM THE AUTHORITATIVE NET, not re-multiplied from the rate.
         // `qty * unit` is a sixth copy of a formula that is only correct for PerUnit
         // pricing: on a Flat rule it produced "Subtotal 99.99 − discounts 0.00 = 100.00"
@@ -86,7 +80,7 @@ export function ComputeLinesAndTotals(hydrated: HydratedOrder): {
         // net + its own discounts makes the displayed ladder true by construction.
         const rateGross = money(qty * unit);
         const listAmount = money(net + discountAmount + money(rateGross * discountPct));
-        const companyID = field(line, 'CompanyID', '');
+        const companyID = line.CompanyID ?? '';
         const taxable = tax !== 0;
 
         listSubtotal += listAmount;
@@ -102,14 +96,14 @@ export function ComputeLinesAndTotals(hydrated: HydratedOrder): {
 
         lines.push({
             ClientKey: hydrated.LineKeys[i],
-            LineNumber: Number(field(line, 'LineNumber', i + 1)),
-            ProductID: field(line, 'ProductID', ''),
-            ProductName: field(line, 'Product', ''),
+            LineNumber: Number(line.LineNumber ?? i + 1),
+            ProductID: line.ProductID ?? '',
+            ProductName: line.Product ?? '',
             CompanyID: companyID,
-            CompanyName: field(line, 'Company', ''),
+            CompanyName: line.Company ?? '',
             Quantity: qty,
             UnitPrice: unit,
-            ProductPriceID: field<string | null>(line, 'ProductPriceID', null),
+            ProductPriceID: (line.ProductPriceID ?? null),
             // The client stated it iff it sent one. The hydrator records this at
             // the only moment it is knowable — afterwards a stated $40 and a
             // resolved $40 are the same number on the same field.
@@ -125,7 +119,7 @@ export function ComputeLinesAndTotals(hydrated: HydratedOrder): {
             // resolved it, which is the only case that genuinely has no source.
             PriceSource: hydrated.LineUnitPriceWasStated[i]
                 ? 'Stated'
-                : field<string | null>(line, 'ProductPriceID', null)
+                : (line.ProductPriceID ?? null)
                   ? 'Price rule'
                   : null,
             DiscountPct: discountPct,
@@ -137,9 +131,9 @@ export function ComputeLinesAndTotals(hydrated: HydratedOrder): {
             LineTotalGross: gross,
             Taxable: taxable,
             TaxLayers: [] as TaxLayerResult[],
-            ServicePeriodStart: isoOrNull(field<unknown>(line, 'ServicePeriodStart', null)),
-            ServicePeriodEnd: isoOrNull(field<unknown>(line, 'ServicePeriodEnd', null)),
-            RequiresFulfillment: field<string | null>(line, 'FulfillmentStatus', null) !== null,
+            ServicePeriodStart: isoOrNull(line.ServicePeriodStart ?? null),
+            ServicePeriodEnd: isoOrNull(line.ServicePeriodEnd ?? null),
+            RequiresFulfillment: (line.FulfillmentStatus ?? null) !== null,
             Components: [],
         });
     }
@@ -159,7 +153,7 @@ export function ComputeLinesAndTotals(hydrated: HydratedOrder): {
         TaxTotal: taxTotal,
         // Read the header's rollup rather than summing again: it is trigger-maintained
         // and is the number every other surface will show.
-        GrossTotal: money(field(order, 'TotalGross', netTotal + chargeTotal + taxTotal)),
+        GrossTotal: money(order.TotalGross ?? netTotal + chargeTotal + taxTotal),
         TaxableBase: {
             TaxableGoods: money(taxableGoods),
             UntaxableGoods: money(untaxableGoods),

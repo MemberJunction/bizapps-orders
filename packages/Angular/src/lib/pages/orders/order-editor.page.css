@@ -78,6 +78,13 @@
   border-right: none;
 }
 
+/* A cell whose VALUE is a name rather than a code. Company names do not abbreviate — "DEMO Pu…"
+   identifies nothing — so this one takes two of the 150px tracks. It degrades safely: when the
+   strip is already down to one or two columns the span is clamped to the columns that exist. */
+.ed-identity > div.ed-identity__cell--wide {
+  grid-column: span 2;
+}
+
 .ed-identity .l {
   font-size: 10px;
   font-weight: var(--mj-font-bold);
@@ -406,6 +413,19 @@
     font-size: var(--mj-text-sm);
 }
 
+/* A VALUE NOBODY CHOSE, shown in the muted text colour so it reads as a suggestion rather than an
+   entry. The order date is the case this exists for: it defaults to today, and the difference
+   between "today because nobody picked" and "today because I picked today" has to stay visible —
+   otherwise the default is a decision made on the user's behalf, silently.
+
+   Colour is not carrying this alone: each control also gets a `title` explaining the default, so
+   the distinction survives for anyone who cannot separate the two greys. The style drops the moment
+   the field is touched, because `SetHeader` clears the flag. */
+.ed-identity__input--default,
+.ed-identity__input--default input {
+    color: var(--mj-text-muted);
+}
+
 /* A labelled field inside a card pane. `mjo-stated-value` covers the read-only case; this is its
    editable counterpart and deliberately matches its label typography so a tab does not visibly
    change shape when the order stops being editable. */
@@ -499,4 +519,26 @@
 .ed-todo__item:hover,
 .ed-todo__item:focus-visible {
     color: var(--mj-text-primary);
+}
+
+/* ── Tender reference ─────────────────────────────────────────────────────────
+   Directly under the tender picker, so the requirement it announces has its
+   answer in the same place rather than on another tab. */
+.ed-tender-ref {
+    margin-block-start: var(--mj-space-3);
+    max-inline-size: 22rem;
+}
+
+/* Amber, not red: nothing has gone wrong — there is something still to do. */
+.ed-tender-ref__req {
+    margin-inline-start: var(--mj-space-2);
+    font-size: var(--mj-text-xs);
+    font-weight: 600;
+    color: var(--mj-status-warning-text);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.ed-tender-ref__hint {
+    margin-block-start: var(--mj-space-1);
 }

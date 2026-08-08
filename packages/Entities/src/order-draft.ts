@@ -7,16 +7,19 @@
  * boundary as scalar fields. A browser therefore cannot compose an order through
  * `BaseEntity` at all. `OrderDraft` is the answer to the other half of that
  * problem: something for the UI to hold and mutate that knows how to become the
- * payload `Orders.SaveOrder` / `Orders.ConfirmOrder` / `Orders.PreviewOrder`
- * accept, which the server then rehydrates into real entities.
+ * payload `Orders.SaveOrder` / `Orders.ConfirmOrder` accept, which the server then
+ * rehydrates into real entities.
  *
- * WHAT IT DELIBERATELY DOES NOT DO. It does not price anything. Not the subtotal,
- * not a discount, not a tax layer. Every derived number comes from
- * `Orders.PreviewOrder` and is stored via {@link OrderDraft.ApplyPreview}. A
- * second implementation of the pricing rules living next to the engine is the
- * thing that eventually disagrees with it, and the disagreement surfaces as a
- * balanced journal entry for the wrong amount — which nothing downstream can
- * catch.
+ * WHAT IT DELIBERATELY DOES NOT DO. It does not price anything, and it does not
+ * REMEMBER a price either. Not the subtotal, not a discount, not a tax layer. A
+ * second implementation of the pricing rules living next to the engine is the thing
+ * that eventually disagrees with it, and the disagreement surfaces as a balanced
+ * journal entry for the wrong amount — which nothing downstream can catch.
+ *
+ * Prices for display are resolved by `Orders.PreviewPrice`, which calls the same
+ * `ResolvePrice` the engine's own pricing walk calls, and they are held by the
+ * VIEW, not here. The price that actually counts is computed inside the confirm
+ * transaction and never reaches the browser.
  *
  * FRAMEWORK-FREE ON PURPOSE. No Angular, no DOM, no MJ provider. Both order-entry
  * lanes bind to the same instance, so "open in the full editor" is the same object
@@ -100,6 +103,26 @@ export interface OrderDraftHeaderPayload {
     OriginChannel?: string | null;
     OriginExternalID?: string | null;
     InitialPaymentTypeID?: string | null;
+    /**
+     * The instrument's own reference — a check number, a wire confirmation, a transfer id.
+     *
+     * Lives here rather than on the order because the ORDER has no column for it: a reference
+     * belongs to the instrument, so on confirm this becomes a `PaymentDetail.ReferenceNumber` and
+     * the order points at that row. Required for any `PaymentType` with `RequiresReference` — Check,
+     * Wire and Internal Transfer today — and refused server-side when missing, because a captured
+     * check with no number cannot be reconciled against a bank statement.
+     */
+    InitialPaymentReference?: string | null;
+    /**
+     * Whether the chosen tender's `PaymentType.RequiresReference` is set.
+     *
+     * STATED BY THE CALLER rather than looked up, because this model is framework-free and does no
+     * data access — the UI already holds the tender list and knows the answer. Carrying it as a
+     * plain boolean is what lets {@link OrderDraft.Validate} enforce the rule for BOTH entry lanes
+     * and the workspace's confirm gate, instead of each screen re-implementing it and one of them
+     * forgetting.
+     */
+    InitialPaymentRequiresReference?: boolean;
     InitialPaymentAmount?: number;
     SourceCustomerPaymentMethodID?: string | null;
 }
@@ -142,27 +165,6 @@ export interface OrderDraftValidationResult {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Preview results the draft carries but never computes
- * ──────────────────────────────────────────────────────────────────────────── */
-
-/**
- * The structural minimum of `OrdersPreviewOrderOutput` that the draft itself
- * needs — enough to answer "is my stored decomposition still current" and "what
- * is the total I could confirm against". The UI reads the full result; the draft
- * deliberately knows less.
- *
- * NO INDEX SIGNATURE. An earlier version declared `[key: string]: unknown` to be
- * permissive, which had the opposite effect: TypeScript then required the SOURCE
- * to carry one too, so the concrete generated output type would not assign. Extra
- * properties on a non-literal are already allowed; the minimal shape is the
- * permissive one.
- */
-export interface OrderDraftPreview {
-    Lines?: ReadonlyArray<{ ClientKey?: string; LineNumber: number }>;
-    Totals?: { GrossTotal: number; NetTotal: number };
-}
-
-/* ────────────────────────────────────────────────────────────────────────────
  * The draft
  * ──────────────────────────────────────────────────────────────────────────── */
 
@@ -170,7 +172,7 @@ export interface OrderDraftPreview {
 export class OrderDraftLine implements OrderDraftLinePayload {
     /**
      * Stable identity for this row, generated client-side and never persisted.
-     * It is how a preview result is matched back to the row that produced it —
+     * It is how a resolved price is matched back to the row that produced it —
      * line NUMBERS renumber when a row is removed, so they cannot do this job.
      */
     public readonly ClientKey: string;
@@ -246,19 +248,15 @@ export interface OrderDraftInit {
  * draft.AddLine({ ProductID: membership.ID, Quantity: 1 });
  * draft.AddPromotionCode('SPRING10');
  *
- * // Every derived number comes from the engine, never from here.
- * const preview = await new OrdersPreviewOrderOperation().Execute({ Draft: draft.ToInput() });
- * if (preview.Success) draft.ApplyPreview(preview.Output!);
- *
- * const confirmed = await new OrdersConfirmOrderOperation().Execute({
- *   Draft: draft.ToInput(),
- *   ExpectedGrossTotal: draft.Preview?.Totals?.GrossTotal,   // refuse a price that moved
- * });
+ * // Every derived number comes from the engine, never from here. The draft holds
+ * // NO money at all: prices are resolved by `Orders.PreviewPrice` for display and
+ * // by `OrderEntityServer.Save()` for real, and neither answer is cached here.
+ * const confirmed = await new OrdersConfirmOrderOperation().Execute({ Draft: draft.ToInput() });
  * ```
  *
  * @example Subscribe to changes from a view
  * ```typescript
- * const stop = draft.Subscribe(() => this.schedulePreview());
+ * const stop = draft.Subscribe(() => this.schedulePricing());
  * // ... later
  * stop();
  * ```
@@ -269,23 +267,65 @@ export class OrderDraft {
     private _promotionCodes: string[] = [];
     private _manualDiscounts: OrderDraftManualDiscountPayload[] = [];
     private _charges: OrderDraftChargePayload[] = [];
-    private _preview: OrderDraftPreview | null = null;
-    /** The version the stored preview was computed against. */
-    private _previewVersion = -1;
     private _version = 0;
     private _keySeq = 0;
     private _subscribers: Array<(draft: OrderDraft) => void> = [];
+
+    /**
+     * Header fields currently holding a DEFAULT rather than something the user stated.
+     *
+     * A default the user cannot see is a decision made on their behalf in secret. The order date is
+     * the case that made this matter: it was left undefined here and quietly filled in with "now" by
+     * the server at confirm, so the field rendered empty and the user had no way to know what date
+     * their order would carry until after it was booked. Showing the value is half the fix — the
+     * other half is saying it is a default, so the difference between "today, because nobody chose"
+     * and "today, because I chose today" stays visible.
+     *
+     * Cleared per-field on `SetHeader`, because the moment a user states a value it stops being a
+     * default even if they typed the same thing.
+     */
+    private _defaulted = new Set<keyof OrderDraftHeaderPayload>();
 
     constructor(init: OrderDraftInit) {
         this._header = {
             OrderHeaderID: init.OrderHeaderID ?? null,
             CompanyID: init.CompanyID,
             OrderType: init.OrderType ?? 'Sale',
-            OrderDate: init.OrderDate,
+            // TODAY, STATED HERE rather than left for the server. `OrderEntityServer` already
+            // defaults a missing date to `new Date()` at save, so this changes no outcome — it makes
+            // the outcome VISIBLE while the order is still being taken, which is the only time the
+            // user can disagree with it.
+            OrderDate: init.OrderDate ?? OrderDraft.Today(),
             SalesRepUserID: init.SalesRepUserID ?? null,
             OriginChannel: init.OriginChannel ?? null,
             OriginExternalID: init.OriginExternalID ?? null,
         };
+        if (!init.OrderDate) this._defaulted.add('OrderDate');
+        if (!init.OrderType) this._defaulted.add('OrderType');
+    }
+
+    /**
+     * Today as `yyyy-MM-dd` in the USER'S timezone, which is what `<input type="date">` reads and
+     * what an order taker means by "today".
+     *
+     * `toISOString().slice(0,10)` is the obvious version and is wrong: it converts to UTC first, so
+     * anyone west of Greenwich taking an evening order gets TOMORROW's date — a date that lands in
+     * the wrong accounting period at every month end.
+     */
+    public static Today(): string {
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    }
+
+    /**
+     * True when this header field currently holds a default nobody has confirmed.
+     *
+     * The UI uses it to render the value in a muted style, so a defaulted date reads differently
+     * from one the user typed.
+     */
+    public IsDefaulted(field: keyof OrderDraftHeaderPayload): boolean {
+        return this._defaulted.has(field);
     }
 
     // ── Reading ──────────────────────────────────────────────────────────────
@@ -318,24 +358,10 @@ export class OrderDraft {
 
     /**
      * Increments on every mutation. A view can compare it to decide whether to
-     * re-render, and it is what tells the draft its stored preview went stale.
+     * re-render, and it is what tells a view its displayed prices went stale.
      */
     public get Version(): number {
         return this._version;
-    }
-
-    /** The last decomposition the engine returned, or null if none yet. */
-    public get Preview(): OrderDraftPreview | null {
-        return this._preview;
-    }
-
-    /**
-     * True when the draft has changed since the stored preview was computed — so
-     * the UI can mark the totals as recomputing instead of showing stale money
-     * as though it were current.
-     */
-    public get IsPreviewStale(): boolean {
-        return this._preview === null || this._previewVersion !== this._version;
     }
 
     /** True when this draft has never been saved. */
@@ -348,6 +374,12 @@ export class OrderDraft {
     /** Merge header fields. Unspecified keys are left alone. */
     public SetHeader(patch: Partial<Omit<OrderDraftHeaderPayload, 'CompanyID'>> & { CompanyID?: string }): this {
         this._header = { ...this._header, ...patch };
+        // Stating a value ends its default status, even when the user types exactly what was already
+        // there — "today, because I chose today" is a different fact from "today, because nobody
+        // chose", and only the user can turn the first into the second.
+        for (const key of Object.keys(patch) as Array<keyof OrderDraftHeaderPayload>) {
+            this._defaulted.delete(key);
+        }
         return this.touch();
     }
 
@@ -384,12 +416,29 @@ export class OrderDraft {
         PaymentTypeID?: string | null;
         Amount?: number;
         SourceCustomerPaymentMethodID?: string | null;
+        /** Check number / wire confirmation / transfer id, for tenders that require one. */
+        Reference?: string | null;
+        /** True when the chosen tender cannot be captured without a reference. */
+        RequiresReference?: boolean;
     }): this {
-        return this.SetHeader({
-            InitialPaymentTypeID: intent.PaymentTypeID ?? null,
-            InitialPaymentAmount: intent.Amount ?? 0,
-            SourceCustomerPaymentMethodID: intent.SourceCustomerPaymentMethodID ?? null,
-        });
+        // ONLY WHAT THE CALLER STATED. This used to write all five fields on every call, defaulting
+        // the unmentioned ones to null/0 — so any caller patching one part silently erased the rest.
+        // It produced the same bug three times: `SetTender`, `SetInitialAmount` and `PayInFull` each
+        // restated a partial intent and wiped a typed check number. Fixing the callers one at a time
+        // was fixing the symptom; the shape of this method was the cause.
+        //
+        // Clearing is explicit and has its own method — {@link ClearInitialPayment} — so nothing is
+        // lost by leaving unmentioned fields alone. A caller that genuinely means "no reference"
+        // passes `Reference: null`.
+        const patch: Partial<OrderDraftHeaderPayload> = {};
+        if (intent.PaymentTypeID !== undefined) patch.InitialPaymentTypeID = intent.PaymentTypeID;
+        if (intent.Amount !== undefined) patch.InitialPaymentAmount = intent.Amount;
+        if (intent.SourceCustomerPaymentMethodID !== undefined) {
+            patch.SourceCustomerPaymentMethodID = intent.SourceCustomerPaymentMethodID;
+        }
+        if (intent.Reference !== undefined) patch.InitialPaymentReference = intent.Reference?.trim() || null;
+        if (intent.RequiresReference !== undefined) patch.InitialPaymentRequiresReference = intent.RequiresReference;
+        return this.SetHeader(patch);
     }
 
     /** Clear any initial-payment intent — the customer will be invoiced on terms. */
@@ -398,6 +447,8 @@ export class OrderDraft {
             InitialPaymentTypeID: null,
             InitialPaymentAmount: 0,
             SourceCustomerPaymentMethodID: null,
+            InitialPaymentReference: null,
+            InitialPaymentRequiresReference: false,
         });
     }
 
@@ -559,33 +610,15 @@ export class OrderDraft {
         return payload;
     }
 
-    /**
-     * Store a decomposition the engine returned, and remember which version of the
-     * draft it belongs to so {@link IsPreviewStale} can tell the truth.
-     */
-    public ApplyPreview(preview: OrderDraftPreview): this {
-        this._preview = preview;
-        this._previewVersion = this._version;
-        return this;
-    }
-
-    /** Forget the stored decomposition — e.g. after a failed preview call. */
-    public ClearPreview(): this {
-        this._preview = null;
-        this._previewVersion = -1;
-        return this;
-    }
-
-    /**
-     * The gross the user is currently looking at, or `undefined` when there is no
-     * current preview. Pass it as `ExpectedGrossTotal` on confirm so a price that
-     * moved underneath them stops the confirm instead of silently booking a
-     * different amount.
-     */
-    public get ConfirmableGrossTotal(): number | undefined {
-        if (this.IsPreviewStale) return undefined;
-        return this._preview?.Totals?.GrossTotal;
-    }
+    // THE DRAFT HOLDS NO MONEY, DELIBERATELY.
+    //
+    // It used to cache the engine's decomposition (`ApplyPreview` / `Preview` /
+    // `IsPreviewStale` / `ConfirmableGrossTotal`), which existed to feed
+    // `ExpectedGrossTotal` on confirm. That whole surface is gone with the preview
+    // that filled it: a cached total is stale money one keystroke later, and a draft
+    // that carries money invites a screen to trust it. Prices for DISPLAY come from
+    // `Orders.PreviewPrice` and live in the view; the price that COUNTS is computed
+    // inside the confirm transaction and is never in the browser at all.
 
     // ── Validation ───────────────────────────────────────────────────────────
 
@@ -605,6 +638,24 @@ export class OrderDraft {
                 Section: 'header',
                 Severity: 'error',
                 Message: 'An owning company is required — it anchors the order document and who can see it.',
+            });
+        }
+
+        // A tender that cannot be reconciled without a number must have one BEFORE the confirm is
+        // attempted. The server refuses it too — this exists so the user is stopped at the field
+        // they can fix rather than at a rejection after the fact.
+        if (
+            this._header.InitialPaymentTypeID &&
+            this._header.InitialPaymentRequiresReference &&
+            !this._header.InitialPaymentReference?.trim()
+        ) {
+            issues.push({
+                Code: 'PAYMENT_REFERENCE_REQUIRED',
+                Section: 'payment',
+                Severity: 'error',
+                Message:
+                    'This tender needs a reference number — a check number, wire confirmation or ' +
+                    'transfer id. Without one the payment cannot be matched to the bank statement.',
             });
         }
 
@@ -751,10 +802,12 @@ export class OrderDraft {
         copy._promotionCodes = [...this._promotionCodes];
         copy._manualDiscounts = this._manualDiscounts.map((d) => ({ ...d }));
         copy._charges = this._charges.map((c) => ({ ...c }));
-        copy._preview = this._preview;
-        copy._previewVersion = this._previewVersion;
         copy._version = this._version;
         copy._keySeq = this._keySeq;
+        // A clone inherits which fields are still defaults. Without this the copy's constructor
+        // would have marked its own — and then `_header` was overwritten wholesale above, so the
+        // flags would describe values the copy no longer holds.
+        copy._defaulted = new Set(this._defaulted);
         return copy;
     }
 
@@ -765,6 +818,10 @@ export class OrderDraft {
     public static FromInput(payload: OrderDraftPayload): OrderDraft {
         const draft = new OrderDraft({ CompanyID: payload.Header.CompanyID });
         draft._header = { ...payload.Header };
+        // Nothing in a payload is a default: every value in it was either stated by a user or
+        // already persisted. The constructor above flagged its own placeholders, and the line before
+        // replaced the header they described — so leaving them set would mute real values in the UI.
+        draft._defaulted.clear();
         for (const line of payload.Lines ?? []) {
             // Reuse the incoming key when there is one, so a preview keyed against
             // it still lines up after a round trip.

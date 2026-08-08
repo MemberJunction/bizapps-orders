@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import { Metadata, RunView, type RunViewParams, type UserInfo } from '@memberjunction/core';
 
 /** MJ entity names, in one place so a rename is one edit. */
 /**
@@ -82,7 +82,19 @@ export const MJO_ACCOUNTING_ENTITIES = {
     TaxRate: 'MJ_BizApps_Accounting: Tax Rates',
     // SINGULAR — CodeGen leaves 'Nexus' alone rather than forming 'Nexuses'.
     CompanyTaxNexus: 'MJ_BizApps_Accounting: Company Tax Nexus',
+    /**
+     * The ledger an order books into. READ-ONLY here, always: orders creates Pending entries and
+     * owns nothing in the ledger, and the UI role's permissions say the same (CanRead, and neither
+     * CanCreate nor CanUpdate).
+     */
+    JournalEntry: 'MJ_BizApps_Accounting: Journal Entries',
 } as const;
+
+/** A company an order can be raised under. */
+export interface MJOCompanyOption {
+    ID: string;
+    Name: string;
+}
 
 /** A row as the order list renders it. */
 /** Canonical 8-4-4-4-12 hex form. */
@@ -195,6 +207,15 @@ export class MJOOrdersDataService {
             Search?: string;
             CompanyID?: string;
             BillToOrganizationID?: string;
+            /**
+             * Filter to ONE person's orders, server-side.
+             *
+             * Its absence was a real performance bug, not an omission: fast entry's `ChooseCustomer`
+             * called `GetOrders({})` for a person — every order in the database — and filtered in the
+             * browser. That is invisible on a fresh instance and gets steadily worse with every order
+             * taken, which is exactly how it presented: "selecting a customer started getting slow".
+             */
+            BillToPersonID?: string;
             MaxRows?: number;
             User?: UserInfo;
         } = {},
@@ -242,6 +263,7 @@ export class MJOOrdersDataService {
             filters.push(`ID = '${options.OrderHeaderID}'`);
         }
         if (options.CompanyID) filters.push(`CompanyID = '${options.CompanyID}'`);
+        if (options.BillToPersonID) filters.push(`BillToPersonID = '${options.BillToPersonID}'`);
         if (options.BillToOrganizationID) {
             filters.push(`BillToOrganizationID = '${options.BillToOrganizationID}'`);
         }
@@ -732,6 +754,81 @@ export class MJOOrdersDataService {
         );
     }
 
+    /* ── The order's consequences: what it booked, and what it started ──────────
+     *
+     * Both tabs render through `mj-entity-data-grid` (@memberjunction/ng-entity-viewer, already a
+     * dependency), which takes a `RunViewParams` and does its own loading, paging and column
+     * generation from entity metadata. So this service's job is NOT to fetch and reshape rows — it
+     * is to hand the grid the right question. Two builders and one lookup, rather than a
+     * view-model the grid would only have to be talked out of.
+     *
+     * BOTH ARE KEYED ON THE ORDER'S LINES, not the order:
+     *   · a journal entry points at the ORDER LINE that caused it (`LinkedRecordID`, D25) — one
+     *     entry per line, per company;
+     *   · a subscription records the line that brought it into existence (`OrderLineID`, D39/D40).
+     * There is no column on either that names the order header, which is why the line ids come
+     * first and why an order with no lines can have neither.
+     */
+
+    /**
+     * The ids of an order's lines — the key both consequence grids filter on.
+     *
+     * @returns Line ids in line-number order. Empty when the order has no lines or the id is not
+     *          a UUID; callers must treat empty as "there is nothing to show", never as a filter.
+     */
+    public async GetOrderLineIDs(orderHeaderID: string, user?: UserInfo): Promise<string[]> {
+        if (!UUID_PATTERN.test(orderHeaderID)) return [];
+        const lines = await this.GetOrderLines(orderHeaderID, user);
+        return lines.map((line) => String(line['ID'] ?? '')).filter((id) => UUID_PATTERN.test(id));
+    }
+
+    /**
+     * What this order booked into the ledger, as grid params.
+     *
+     * Newest first: a corrected or reversed order accumulates entries, and the one that explains
+     * the current state is the most recent.
+     *
+     * @param orderLineIDs From {@link GetOrderLineIDs}. Every id is re-checked before it reaches
+     *        the filter — this is SQL text, and an `IN` list is the classic way a caller's value
+     *        becomes a query.
+     * @returns Params for `mj-entity-data-grid`, or **null** when the order has no lines. Null
+     *          means "do not load": an `IN ()` with nothing in it is not valid SQL, and a filter
+     *          that matches everything would show another order's ledger.
+     */
+    public JournalEntryViewParams(orderLineIDs: string[]): RunViewParams | null {
+        const list = this.uuidList(orderLineIDs);
+        if (!list) return null;
+        return {
+            EntityName: MJO_ACCOUNTING_ENTITIES.JournalEntry,
+            ExtraFilter: `LinkedRecordID IN (${list})`,
+            OrderBy: '__mj_CreatedAt DESC',
+            ResultType: 'entity_object',
+        };
+    }
+
+    /**
+     * What this order started, as grid params.
+     *
+     * @param orderLineIDs From {@link GetOrderLineIDs}.
+     * @returns Params for `mj-entity-data-grid`, or **null** when the order has no lines.
+     */
+    public SubscriptionViewParams(orderLineIDs: string[]): RunViewParams | null {
+        const list = this.uuidList(orderLineIDs);
+        if (!list) return null;
+        return {
+            EntityName: MJO_ENTITIES.Subscription,
+            ExtraFilter: `OrderLineID IN (${list})`,
+            OrderBy: 'StartDate DESC',
+            ResultType: 'entity_object',
+        };
+    }
+
+    /** Quoted, comma-separated ids, or null when none survive validation. */
+    private uuidList(ids: string[]): string | null {
+        const safe = [...new Set(ids)].filter((id) => UUID_PATTERN.test(id));
+        return safe.length ? safe.map((id) => `'${id}'`).join(',') : null;
+    }
+
     /** Lines belonging to one order. */
     public async GetOrderLines(orderHeaderID: string, user?: UserInfo) {
         return this.run<Record<string, unknown>>(
@@ -783,6 +880,28 @@ export class MJOOrdersDataService {
             else grouped.set(key, [row]);
         }
         return grouped;
+    }
+
+    /**
+     * The companies this instance can SELL as, ordered by name.
+     *
+     * Derived from which companies own PRODUCTS rather than from the Company table: a company with
+     * nothing to sell cannot raise an order, and the Company table is MJ-core-wide, so it carries
+     * every company any app ever created. Note this does NOT exclude integration-test fixture
+     * companies — those own products too, so they appear here until the fixture data is purged
+     * (`test-harnesses/purge-fixture-data.mjs`).
+     */
+    public async GetSellingCompanies(user?: UserInfo): Promise<MJOCompanyOption[]> {
+        const products = await this.GetProducts({ MaxRows: 500, User: user });
+        const byID = new Map<string, string>();
+        for (const p of products) {
+            const id = String(p['CompanyID'] ?? '');
+            if (!id) continue;
+            if (!byID.has(id)) byID.set(id, String(p['Company'] ?? ''));
+        }
+        return [...byID]
+            .map(([ID, Name]) => ({ ID, Name }))
+            .sort((a, b) => a.Name.localeCompare(b.Name));
     }
 
     /**

@@ -4,8 +4,10 @@ import {
     EventEmitter,
     HostListener,
     Input,
+    OnChanges,
     OnDestroy,
     OnInit,
+    type SimpleChanges,
     Output,
     inject,
 } from '@angular/core';
@@ -15,12 +17,21 @@ import {
     OrderDraft,
     type OrderDraftHeaderPayload,
     type OrderDraftLine,
-    type OrdersPreviewOrderOutput,
 } from '@mj-biz-apps/orders-entities';
 
-import { MJO_ENTITIES, MJOOrdersDataService } from '../../services/orders-data.service';
-import { MJOOrderEntryService, type MJOPreviewState } from '../../services/order-entry.service';
-import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
+import {
+    MJO_ENTITIES,
+    MJOOrdersDataService,
+    type MJOCompanyOption,
+    type MJOOrderRow,
+} from '../../services/orders-data.service';
+import {
+    MJOOrderEntryService,
+    type MJOEstimatedTotals,
+    type MJOLinePrice,
+    type MJOPricingState,
+} from '../../services/order-entry.service';
+import { MJOMoneyStripComponent, type MJOPaymentStatus } from '../../panels/money-strip.component';
 import { MJOStatusStepperComponent } from '../../panels/status-stepper.component';
 import { MJOJournalEntryPreviewComponent, type MJOJournalEntry } from '../../panels/journal-entry-preview.component';
 import { MJODecompositionLadderComponent, type MJOLadderRow } from '../../panels/decomposition-ladder.component';
@@ -34,10 +45,24 @@ import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format
 import { BuildOrderStages, type MJOOrderStage, type MJOStageChangeRequestEventArgs } from '../../panels/order-stages';
 import type { MJOProductOption } from './fast-entry.page';
 import type { MJOTenderOption } from '../payments/payment-entry.page';
-import { MJAlertComponent, MJButtonDirective, MJDropdownComponent, MJTabNavComponent, type TabConfig } from '@memberjunction/ng-ui-components';
+import type { RunViewParams } from '@memberjunction/core';
+import { MJButtonDirective, MJDropdownComponent, MJTabNavComponent, type TabConfig } from '@memberjunction/ng-ui-components';
+// The MODULE, not the component: `mj-entity-data-grid` is declared (standalone: false), so a
+// standalone host imports its module. Same route accounting's generated forms take.
+import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 
 /** Which tab is showing. */
-export type MJOEditorTab = 'lines' | 'parties' | 'charges' | 'payment' | 'accounting';
+export type MJOEditorTab =
+    | 'lines'
+    | 'parties'
+    | 'charges'
+    | 'payment'
+    | 'accounting'
+    // The order's CONSEQUENCES, after the fact. Both are read-only, both exist only for a booked
+    // order, and both are somebody else's records — the ledger belongs to accounting, and a
+    // subscription outlives the order that started it.
+    | 'journal'
+    | 'subscriptions';
 
 /** A tab, with the red-dot state that drives completeness gating. */
 export interface MJOEditorTabDef {
@@ -94,7 +119,8 @@ export interface MJOPartyMatch {
 @Component({
     selector: 'mjo-order-editor-page',
     standalone: true,
-    imports: [MJAlertComponent, MJButtonDirective, MJDropdownComponent, MJTabNavComponent,
+    imports: [MJButtonDirective, MJDropdownComponent, MJTabNavComponent,
+        EntityViewerModule,
         CommonModule,
         FormsModule,
         MJOMoneyStripComponent,
@@ -110,7 +136,7 @@ export interface MJOPartyMatch {
     templateUrl: './order-editor.page.html',
     styleUrls: ['./order-editor.page.css'],
 })
-export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
+export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy {
     private readonly orders = inject(MJOOrderEntryService);
     private readonly data = inject(MJOOrdersDataService);
     // Required: this page is created imperatively and runs zoneless, so every assignment that
@@ -125,6 +151,16 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
 
     /** Catalog for the product column and the add-line picker. */
     @Input() Catalog: MJOProductOption[] = [];
+
+    /**
+     * The companies this order could be raised under.
+     *
+     * The OWNING company decides which chart of accounts the order books into and who can see it,
+     * and it was previously taken silently from the first product in the catalog and never shown.
+     * A default nobody can see is a decision made on the user's behalf in secret — and with more
+     * than one company it is a decision they may well want to make differently.
+     */
+    @Input() Companies: MJOCompanyOption[] = [];
 
     /** Where the order is. Drives the stepper and which verbs are offered. */
     @Input() Status: MJOOrderStage = 'Draft';
@@ -177,8 +213,52 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     /** Active tab. */
     public ActiveTab: MJOEditorTab = 'lines';
 
-    /** Latest preview. */
-    public Preview: MJOPreviewState = { Result: null, Loading: false, Error: null };
+    /**
+     * What the consequence grids ask for, or null when this order has no saved lines.
+     *
+     * Set in `loadPersistedDetail`, which only runs for a persisted order — a draft that has never
+     * been saved has booked nothing and started nothing, and the panes say so rather than
+     * rendering an empty grid that looks like a failed query.
+     */
+    public get JournalEntryParams(): RunViewParams | null {
+        return this.consequences.get(this.currentOrderID ?? '')?.Journal ?? null;
+    }
+    public get SubscriptionParams(): RunViewParams | null {
+        return this.consequences.get(this.currentOrderID ?? '')?.Subscriptions ?? null;
+    }
+
+    /**
+     * Params PER ORDER, not per editor instance.
+     *
+     * The workspace holds one tab per order but renders ONE editor for whichever is active, so
+     * anything stored as a plain field on this component belongs to "the last order that loaded"
+     * rather than to the order on screen — which is exactly how the journal tab came to show the
+     * previous tab's entries. Keyed by order id, a tab switch is a different map lookup and cannot
+     * be stale; the query runs once per order and only when someone opens one of the two tabs.
+     *
+     * A null result is NOT cached: an order with no saved lines yet has nothing to ask for, and
+     * caching that would keep answering "nothing" after its lines are saved.
+     */
+    private readonly consequences = new Map<
+        string,
+        { Journal: RunViewParams | null; Subscriptions: RunViewParams | null }
+    >();
+
+    /** The order on screen, or null for a draft that has never been saved. */
+    private get currentOrderID(): string | null {
+        return this.Draft?.Header?.OrderHeaderID ?? null;
+    }
+
+    /**
+     * Latest line pricing.
+     *
+     * LINE PRICES ONLY, and the name says so. It is what `Orders.PreviewPrice`
+     * resolved per line — the same `ResolvePrice` the engine's own pricing walk
+     * calls — summed to a net subtotal. Charges, tax and promotions are decided
+     * inside the confirm transaction and are NOT here; the screen says so rather
+     * than showing them as zero.
+     */
+    public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
 
     /** The line whose drawer is open, or null. */
     public OpenLine: OrderDraftLine | null = null;
@@ -195,19 +275,35 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         // page. Assigning alone repaints nothing, so the decomposition stays on "— resolving…"
         // and CanConfirm never turns true. Same defect as fast-entry.page.ts.
         this.stopWatching = this.Draft.Subscribe(() => {
-            this.orders.SchedulePreview(this.Draft, (state) => {
-                this.Preview = state;
+            this.orders.SchedulePricing(this.Draft, (state) => {
+                this.Pricing = state;
                 this.cdr.detectChanges();
             });
         });
-        void this.orders.PreviewNow(this.Draft, (state) => {
-            this.Preview = state;
+        void this.orders.PriceNow(this.Draft, (state) => {
+            this.Pricing = state;
             this.cdr.detectChanges();
         });
 
         // Payments and dimension tags exist only against a SAVED order, so this
         // resolves to empty for a fresh draft rather than querying for nothing.
         void this.loadPersistedDetail();
+    }
+
+    /**
+     * The workspace swaps `[Draft]` when you change order tabs — the component is never remounted,
+     * so this is the only signal that the order on screen has changed.
+     */
+    public ngOnChanges(changes: SimpleChanges): void {
+        if (changes['Draft']) void this.loadConsequences();
+
+        // STATUS IS THE CONFIRM SIGNAL. The workspace confirms in place and never remounts this
+        // component — it just flips `[Status]` to 'Confirmed'. Without re-reading here, the money
+        // on screen stays whatever the DRAFT implied, so an order that is Paid in the database went
+        // on saying "BALANCE $560.00 · Unpaid" to the person who had just paid it.
+        //
+        // Also covers `Draft`, because a tab switch swaps the draft and its persisted money with it.
+        if (changes['Status'] || changes['Draft']) void this.loadPersistedDetail();
     }
 
     public ngOnDestroy(): void {
@@ -222,13 +318,26 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         return BuildOrderStages(this.Status, this.RequiresFulfillment);
     }
 
-    /** Whether any line must ship — changes what the stepper says about Fulfilled. */
+    /**
+     * Whether any line must ship — changes what the stepper says about Fulfilled.
+     *
+     * Read from the CATALOGUE, not from a priced line. It used to come off the
+     * preview's projection, which meant the stepper could not say whether an order
+     * shipped until a whole rolled-back booking had run. Whether a product is
+     * physical is a property of the product; the order does not decide it.
+     */
     public get RequiresFulfillment(): boolean {
-        return (this.Preview.Result?.Lines ?? []).some((l) => l.RequiresFulfillment);
+        return this.Lines.some((line) => this.ProductFor(line)?.TypeName === 'Goods');
     }
 
-    public get Totals(): OrdersPreviewOrderOutput['Totals'] | null {
-        return this.Preview.Result?.Totals ?? null;
+    /** The line subtotal, BEFORE tax and charges. Null until the first pass returns. */
+    public get Totals(): MJOEstimatedTotals | null {
+        return this.Pricing.Result?.Totals ?? null;
+    }
+
+    /** True when at least one line has no resolvable price, so the subtotal is short. */
+    public get HasUnpricedLines(): boolean {
+        return this.Pricing.Result?.HasUnpricedLines === true;
     }
 
     /** The five tabs, with counts and the red-dot state. */
@@ -236,13 +345,18 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         // Same rule as `Issues`: a confirmed order carries no "still missing" state, so the red
         // dots come off with the banner rather than leaving Parties flagged on a booked order.
         const sections = this.IsEditable ? (this.Draft?.SectionsWithErrors ?? []) : [];
-        const chargeCount = this.Preview.Result?.Charges?.length ?? 0;
+        // Charges are decided inside the confirm transaction, so a draft has no count to show.
+        const chargeCount = 0;
         return [
             { Key: 'lines', Label: 'Lines', Count: this.Draft?.LineCount ?? 0, HasError: sections.includes('lines') },
             { Key: 'parties', Label: 'Parties', HasError: sections.includes('parties') },
             { Key: 'charges', Label: 'Charges & tax', Count: chargeCount || null, HasError: sections.includes('charges') },
             { Key: 'payment', Label: 'Payment', HasError: sections.includes('payment') },
             { Key: 'accounting', Label: 'Accounting' },
+            // AFTER Accounting, in the order the consequences happen: the entries are written
+            // inside the confirm, the subscription is decided from the line that caused it.
+            { Key: 'journal', Label: 'Journal entries' },
+            { Key: 'subscriptions', Label: 'Subscriptions' },
         ];
     }
 
@@ -297,16 +411,77 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         // one too — neither is a database id, because a line has no id until it is
         // saved. Dimensions hang off the SAVED lines, so those are read first and
         // their ids are what the dimension query is given.
-        const [payments, savedLines] = await Promise.all([
+        const [payments, savedLines, rows] = await Promise.all([
             this.data.GetPaymentLinesForOrder(orderID),
             this.data.GetOrderLines(orderID),
+            // THE ORDER'S OWN MONEY, READ BACK. Once an order is saved its total, amount paid,
+            // balance and payment status are FACTS the engine computed and triggers maintain —
+            // not something to re-derive here from client-side line pricing, which knows nothing
+            // about charges or tax and would disagree the moment either exists.
+            this.data.GetOrders({ OrderHeaderID: orderID, MaxRows: 1 }),
         ]);
         const dimensions = await this.data.GetLineDimensionsForOrder(
             savedLines.map((line) => String(line['ID'])),
         );
         this.AppliedPayments = payments;
         this.Dimensions = dimensions;
+        this.Persisted = rows[0] ?? null;
         this.cdr.detectChanges();
+    }
+
+    /**
+     * The saved order row, or null while this is a draft that has never been saved.
+     *
+     * The DIVIDING LINE of this screen. Before a save there is no order, so the only money
+     * available is what `Orders.PreviewPrice` resolved per line — an estimate that excludes
+     * charges and tax and says so. After a save the engine's own figures exist, and they are
+     * authoritative; nothing here should be recomputing them.
+     */
+    public Persisted: MJOOrderRow | null = null;
+
+    /** True once this order exists in the database, so its own money can be shown. */
+    public get IsPersisted(): boolean {
+        return this.Persisted !== null;
+    }
+
+    /**
+     * The money strip's four values, persisted-first.
+     *
+     * These exist because the strip used to be bound to `[Paid]="0"` and
+     * `[PaymentStatus]="Status === 'Draft' ? null : 'Unpaid'"` — LITERALS, not stale reads. So a
+     * confirmed, fully-paid order reported "PAID — · BALANCE $560.00 · Unpaid" for ever, and no
+     * amount of refreshing would have changed it. Verified against ORD-000122, which the database
+     * had as Paid / AmountPaid 560 / Balance 0 while the screen said otherwise.
+     *
+     * A draft still shows the estimate — it has nothing else to show — but it is labelled as one
+     * and, being a Draft, the strip hides Paid entirely.
+     */
+    public get DisplayTotal(): number | null {
+        return this.Persisted ? Number(this.Persisted.TotalGross ?? 0) : (this.Totals?.NetTotal ?? null);
+    }
+
+    public get DisplayPaid(): number {
+        // The header's rollup when it exists; otherwise the allocations, which is the same figure
+        // reached the long way and is what a not-yet-rolled-up read can still answer.
+        return this.Persisted ? Number(this.Persisted.AmountPaid ?? 0) : this.AppliedTotal;
+    }
+
+    public get DisplayBalance(): number | null {
+        return this.Persisted ? Number(this.Persisted.Balance ?? 0) : (this.Totals?.NetTotal ?? null);
+    }
+
+    /**
+     * Null while the order is a draft — an unsaved order has no payment state to report.
+     *
+     * Narrowed rather than cast. `MJOOrderRow.PaymentStatus` is a plain `string` off the view,
+     * and the strip takes the union; a cast would compile and then render an unstyled chip for
+     * any value the column grows later. Checking against the union means an unrecognised value
+     * shows nothing at all, which is the honest outcome.
+     */
+    public get DisplayPaymentStatus(): MJOPaymentStatus | null {
+        const status = this.Persisted?.PaymentStatus;
+        const known: MJOPaymentStatus[] = ['Unpaid', 'PartiallyPaid', 'Paid', 'Overdue', 'WrittenOff'];
+        return known.find((s) => s === status) ?? null;
     }
 
     /** What has actually reached this order, summed from its allocations. */
@@ -316,12 +491,16 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         ) / 100;
     }
 
-    public get GrossTotal(): number {
-        return this.Preview.Result?.Totals.GrossTotal ?? 0;
+    /**
+     * The line subtotal. NOT the order's gross — tax and charges are not known here.
+     * Named for what it is so no caller mistakes it for the amount that will book.
+     */
+    public get EstimatedTotal(): number {
+        return this.Pricing.Result?.Totals.NetTotal ?? 0;
     }
 
     public get BalanceDue(): number {
-        return Math.round((this.GrossTotal - this.AppliedTotal) * 100) / 100;
+        return Math.round((this.EstimatedTotal - this.AppliedTotal) * 100) / 100;
     }
 
     protected dateOf(value: unknown): string {
@@ -361,6 +540,38 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
 
     public SelectTab(tab: MJOEditorTab): void {
         this.ActiveTab = tab;
+        // LOAD ON OPEN, not just on mount. `loadPersistedDetail` used to run only in `ngOnInit`,
+        // and this editor is mounted ONCE and re-fed through `[Draft]` — opening an existing order
+        // swaps the input without re-running the hook, so the consequence params stayed null and
+        // both tabs claimed nothing was booked for orders that plainly had entries.
+        //
+        // Keyed on the ORDER, so it re-reads when you switch to a different one, and after a
+        // confirm (which is when the entries first exist) rather than serving the pre-confirm
+        // answer for the rest of the session.
+        void this.loadConsequences();
+    }
+
+    /**
+     * Read the current order's consequence params, once, on demand.
+     *
+     * ON DEMAND is the point: nothing needs refreshing from the five places an order can change,
+     * because the answer is fetched the first time someone opens the tab for THAT order and is
+     * then keyed to it. Switching workspace tabs needs no notification — the getters read a
+     * different key.
+     */
+    private async loadConsequences(): Promise<void> {
+        if (this.ActiveTab !== 'journal' && this.ActiveTab !== 'subscriptions') return;
+        const orderID = this.currentOrderID;
+        if (!orderID || this.consequences.has(orderID)) return;
+
+        const lineIDs = (await this.data.GetOrderLines(orderID)).map((line) => String(line['ID']));
+        const journal = this.data.JournalEntryViewParams(lineIDs);
+        const subscriptions = this.data.SubscriptionViewParams(lineIDs);
+        // Only a real answer is remembered — see `consequences`.
+        if (journal || subscriptions) {
+            this.consequences.set(orderID, { Journal: journal, Subscriptions: subscriptions });
+        }
+        this.cdr.detectChanges();
     }
 
     /**
@@ -378,13 +589,13 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     }
 
     /**
-     * Always cancels a move to Confirmed so the pre-flight runs first. Booking is
-     * not undoable, and a stepper click is too easy a way to trigger it.
+     * Always cancels a move to Confirmed and routes through the confirm action instead.
+     * Booking is not undoable, and a stepper click is too easy a way to trigger it.
      */
     public OnBeforeStageChange(event: MJOStageChangeRequestEventArgs): void {
         if (event.To === 'Confirmed') {
             event.Cancel = true;
-            event.CancelReason = 'Pre-flight review runs first.';
+            event.CancelReason = 'Use Confirm — booking is not undoable.';
             this.ConfirmRequested.emit(this.Draft);
         }
     }
@@ -399,8 +610,16 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         return this.Catalog.find((p) => p.ID === line.ProductID);
     }
 
-    public PricedLine(line: OrderDraftLine): OrdersPreviewOrderOutput['Lines'][number] | undefined {
-        return this.Preview.Result?.Lines?.find((l) => l.ClientKey === line.ClientKey);
+    public PricedLine(line: OrderDraftLine): MJOLinePrice | undefined {
+        return this.Pricing.Result?.Lines?.find((l) => l.ClientKey === line.ClientKey);
+    }
+
+    /** What one line's discount comes to, derived rather than reported. */
+    public DiscountAmount(line: OrderDraftLine): number | null {
+        const priced = this.PricedLine(line);
+        if (!priced || priced.ExtendedAmount === null || priced.NetAmount === null) return null;
+        const discount = Math.round((priced.ExtendedAmount - priced.NetAmount) * 100) / 100;
+        return discount > 0 ? discount : null;
     }
 
     public SetQuantity(line: OrderDraftLine, raw: string): void {
@@ -674,6 +893,50 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
      * that it had been paid for.
      */
 
+    /** True when there is a real choice to make — one company needs no picker. */
+    public get HasCompanyChoice(): boolean {
+        return this.IsEditable && this.Companies.length > 1;
+    }
+
+    /** The owning company's name, for the read-only case. */
+    public get OwningCompanyName(): string {
+        const id = this.Draft?.Header.CompanyID;
+        return this.Companies.find((c) => c.ID === id)?.Name ?? '—';
+    }
+
+    /**
+     * Change which company owns the order.
+     *
+     * Only meaningful while the order is a draft: the owning company anchors the document and the
+     * ledger it books into, so moving it after confirm would rewrite history rather than edit a form.
+     * `IsEditable` already gates the control.
+     */
+    public SetOwningCompany(companyID: string): void {
+        if (!companyID) return;
+        this.Draft.SetHeader({ CompanyID: companyID });
+    }
+
+    /** The `PaymentType` row behind the chosen tender, or null for invoice-on-terms. */
+    public get SelectedTenderType(): MJOTenderOption | null {
+        const id = this.Draft?.Header.InitialPaymentTypeID;
+        if (!id) return null;
+        return this.Tenders.find((t) => t.ID === id) ?? null;
+    }
+
+    /** True when this tender cannot be captured without a check/wire/transfer number. */
+    public get RequiresReference(): boolean {
+        return this.SelectedTenderType?.RequiresReference === true;
+    }
+
+    /** The reference as typed. Read from the DRAFT, so it survives a tab switch or a remount. */
+    public get Reference(): string {
+        return this.Draft?.Header.InitialPaymentReference ?? '';
+    }
+
+    public SetReference(value: string): void {
+        this.restateIntent({ Reference: value });
+    }
+
     public SetTender(paymentTypeID: string): void {
         if (!paymentTypeID) {
             // Choosing the blank option means "invoice on terms" — clear the intent rather than
@@ -681,23 +944,46 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
             this.Draft.ClearInitialPayment();
             return;
         }
-        this.Draft.SetInitialPayment({ PaymentTypeID: paymentTypeID, Amount: this.Draft.Header.InitialPaymentAmount ?? 0 });
+        // Switching tender drops a reference typed for the previous one: a check number is not a
+        // wire confirmation, and carrying it across would put the wrong id on the payment.
+        this.restateIntent({ PaymentTypeID: paymentTypeID, Reference: '' });
+    }
+
+    /**
+     * Re-state the WHOLE initial-payment intent with one part changed.
+     *
+     * `SetInitialPayment` deliberately takes the complete intent, so patching one field means
+     * restating the others — and the two setters here used to omit the reference entirely, which
+     * would have wiped a typed check number the moment the amount changed.
+     */
+    private restateIntent(patch: { PaymentTypeID?: string | null; Amount?: number; Reference?: string | null }): void {
+        const paymentTypeID = patch.PaymentTypeID !== undefined ? patch.PaymentTypeID : (this.Draft.Header.InitialPaymentTypeID ?? null);
+        const requiresReference = this.Tenders.find((t) => t.ID === paymentTypeID)?.RequiresReference === true;
+        this.Draft.SetInitialPayment({
+            PaymentTypeID: paymentTypeID,
+            Amount: patch.Amount !== undefined ? patch.Amount : (this.Draft.Header.InitialPaymentAmount ?? 0),
+            Reference: patch.Reference !== undefined ? patch.Reference : (this.Draft.Header.InitialPaymentReference ?? null),
+            RequiresReference: requiresReference,
+        });
     }
 
     public SetInitialAmount(raw: string): void {
         const n = Number.parseFloat(raw.replace(/[^0-9.\-]/g, ''));
-        this.Draft.SetInitialPayment({
-            PaymentTypeID: this.Draft.Header.InitialPaymentTypeID ?? null,
-            Amount: Number.isFinite(n) && n >= 0 ? n : 0,
-        });
+        this.restateIntent({ Amount: Number.isFinite(n) && n >= 0 ? n : 0 });
     }
 
-    /** Offer the balance as the obvious amount — the common case is paying in full. */
+    /**
+     * Offer the balance as the obvious amount — the common case is paying in full.
+     *
+     * ⚠ It offers the NET subtotal, not the gross. See the same note in
+     * `fast-entry.page.ts` (`applyTenderIntent`): `createInitialPayment` takes the
+     * stated amount at face value and has no pay-in-full intent to settle against the
+     * total it computes, and the client can no longer know that total. Harmless while
+     * no charge or tax rule is configured; it UNDER-PAYS the moment one is. The fix is
+     * an engine-side intent, and it is backlogged rather than guessed at here.
+     */
     public PayInFull(): void {
-        this.Draft.SetInitialPayment({
-            PaymentTypeID: this.Draft.Header.InitialPaymentTypeID ?? null,
-            Amount: this.Totals?.GrossTotal ?? 0,
-        });
+        this.restateIntent({ Amount: this.Totals?.NetTotal ?? 0 });
     }
 
     /**
@@ -724,9 +1010,31 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
      * often a full ISO timestamp from a loaded order — and handing that to the input makes the field
      * render EMPTY with no error, which reads as "this order has no date".
      */
+    /**
+     * True once pricing has RETURNED, so an empty price source means "there is no rule" rather
+     * than "not yet". Drives the price badge's missing-rule state.
+     *
+     * Deliberately NOT `!!Pricing.Result` alone: a stale result from the previous keystroke is
+     * present while the next pass is in flight, and treating that as settled would flash
+     * "no price rule" at a line that is simply being recomputed.
+     */
+    public get PricingSettled(): boolean {
+        return !this.Pricing.Loading && !!this.Pricing.Result;
+    }
+
     public DateValue(raw: string | null | undefined): string {
         if (!raw) return '';
         return raw.length >= 10 ? raw.slice(0, 10) : raw;
+    }
+
+    /**
+     * True when this header field is showing a DEFAULT the user has not confirmed — drives the
+     * muted styling and the explanatory tooltip on the identity strip.
+     *
+     * Guarded on `Draft` because the editor renders before a draft is bound in the imperative path.
+     */
+    public IsDefault(field: 'OrderDate' | 'OrderType'): boolean {
+        return this.Draft?.IsDefaulted(field) ?? false;
     }
 
     /** Free-text and date header fields, written straight through to the draft. */
@@ -739,9 +1047,9 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
     }
 
     /*
-     * No re-preview call here on purpose. `ngOnInit` subscribes to the draft, and every mutator
+     * No re-pricing call here on purpose. `ngOnInit` subscribes to the draft, and every mutator
      * above goes through `OrderDraft`, which notifies — so pricing re-runs by itself. An explicit
-     * SchedulePreview in each mutator would be a second debounce for the same change and would
+     * SchedulePricing in each mutator would be a second debounce for the same change and would
      * quietly suggest the subscription is not doing its job.
      */
 
@@ -754,43 +1062,33 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         this.OpenLine = null;
     }
 
-    /* ── Charges & tax ──────────────────────────────────────────────────── */
-
-    public get Charges() {
-        return this.Preview.Result?.Charges ?? [];
-    }
-
-    public get TaxableBase() {
-        return this.Preview.Result?.Totals.TaxableBase ?? null;
-    }
-
-    /** Lines with their tax outcome, for the "why did this tax" panel. */
-    public get TaxExplanations(): OrdersPreviewOrderOutput['Lines'] {
-        return this.Preview.Result?.Lines ?? [];
-    }
-
     /* ── Totals ladder (Lines tab) ──────────────────────────────────────── */
 
+    /**
+     * The decomposition ladder, as far as the browser can honestly go.
+     *
+     * It stops at the net subtotal, and SAYS it stops there. Charges and tax used to
+     * appear here because the rolled-back preview had run the engine's whole walk;
+     * without that run they are unknown, and an unknown rendered as `$0.00` on the
+     * screen that tells someone what they are committing to is the exact defect this
+     * ladder was built to prevent. A missing row is honest; a zero is not.
+     */
     public get LadderRows(): MJOLadderRow[] {
         const t = this.Totals;
         if (!t) return [];
         const rows: MJOLadderRow[] = [{ Label: 'Subtotal at list', Amount: t.ListSubtotal }];
         if (t.DiscountTotal > 0) {
             rows.push({ Label: 'Discounts', Amount: t.DiscountTotal, IsSub: true, IsCredit: true });
-            rows.push({ Label: '<b>Net after discounts</b>', Amount: t.NetTotal });
         }
-        if (t.ChargeTotal) rows.push({ Label: 'Charges', Amount: t.ChargeTotal });
-        if (t.TaxTotal) {
-            rows.push({
-                Label: 'Tax',
-                Amount: t.TaxTotal,
-                Detail: `on ${FormatMoney(t.TaxableBase.Base)}`,
-                Why:
-                    'Every layer computes on the same base — a non-tax charge enlarges it, a tax charge does not. ' +
-                    'That is what "tax layers never compound" means.',
-            });
-        }
-        rows.push({ Label: 'Total', Amount: t.GrossTotal, IsTotal: true });
+        rows.push({
+            Label: 'Net before tax & charges',
+            Amount: t.NetTotal,
+            IsTotal: true,
+            Why:
+                'Charges, tax and promotions are decided when the order is confirmed, inside the same ' +
+                'transaction that books it. They are not shown here because they are not known here — ' +
+                'the confirmed order is what states the final amount.',
+        });
         return rows;
     }
 
@@ -803,8 +1101,14 @@ export class MJOOrderEditorPageComponent implements OnInit, OnDestroy {
         return this.Status === 'Draft' || this.Status === 'Quoted';
     }
 
+    /**
+     * NOT GATED ON A PRICE. It used to require a returned preview, so a failed or
+     * still-running preview left a completed order permanently unconfirmable with a
+     * dead button and no reason on it. The engine decides whether an order can be
+     * confirmed; this checks only what the client can know for itself.
+     */
     public get CanConfirm(): boolean {
-        return this.IsEditable && this.Draft?.Validate().IsValid === true && !!this.Preview.Result;
+        return this.IsEditable && this.Draft?.Validate().IsValid === true;
     }
 
     /** Errors worth surfacing above the tabs, so a red dot is never the only clue. */

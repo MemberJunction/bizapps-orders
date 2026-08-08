@@ -26,6 +26,10 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import {
+    mjBizAppsOrdersStoredValueAccountEntity,
+    mjBizAppsOrdersStoredValueTransactionEntity,
+} from '@mj-biz-apps/orders-entities';
+import {
     FormatGiftCardCode,
     GIFT_CARD_ALPHABET,
     GiftCardLiability,
@@ -175,19 +179,19 @@ export async function IssueGiftCards(
             );
             const toVoid = PlanGiftCardVoid(Number(line.Quantity ?? 0), originCards.length);
             for (let i = 0; i < toVoid; i++) {
-                const account = await provider.GetEntityObject<BaseEntity>(
+                const account = await provider.GetEntityObject<mjBizAppsOrdersStoredValueAccountEntity>(
                     STORED_VALUE_ACCOUNT_ENTITY,
                     user,
                 );
-                if (!(await (account as unknown as { Load(id: string): Promise<boolean> }).Load(originCards[i].ID))) {
+                if (!(await account.Load(originCards[i].ID))) {
                     continue;
                 }
                 // Voided, not Depleted: the card was never spent, it was un-sold. Keeping the two
                 // apart is what lets breakage reporting tell a card the customer used from one the
                 // company took back.
-                account.Set('Status', 'Voided');
-                const balanceBefore = Number(account.Get('CurrentBalance') ?? 0);
-                account.Set('CurrentBalance', 0);
+                account.Status = 'Voided';
+                const balanceBefore = Number(account.CurrentBalance ?? 0);
+                account.CurrentBalance = 0;
                 if (!(await account.Save(options))) {
                     throw new Error(
                         `Could not void gift card ${originCards[i].ID} for returned line ${line.ID}: ` +
@@ -230,17 +234,17 @@ export async function IssueGiftCards(
         }
 
         for (const card of plan.Cards) {
-            const account = await provider.GetEntityObject<BaseEntity>(STORED_VALUE_ACCOUNT_ENTITY, user);
+            const account = await provider.GetEntityObject<mjBizAppsOrdersStoredValueAccountEntity>(STORED_VALUE_ACCOUNT_ENTITY, user);
             account.NewRecord();
-            account.Set('Code', FormatGiftCardCode(randomChar));
-            account.Set('IssuingCompanyID', order.IssuingCompanyID);
-            account.Set('InitialAmount', card.FaceValue);
-            account.Set('CurrentBalance', card.FaceValue);
-            account.Set('Status', 'Active');
-            account.Set('IssuedFromOrderLineID', card.OrderLineID);
-            if (card.BeneficiaryPersonID) account.Set('BeneficiaryPersonID', card.BeneficiaryPersonID);
+            account.Code = FormatGiftCardCode(randomChar);
+            account.IssuingCompanyID = order.IssuingCompanyID;
+            account.InitialAmount = card.FaceValue;
+            account.CurrentBalance = card.FaceValue;
+            account.Status = 'Active';
+            account.IssuedFromOrderLineID = card.OrderLineID;
+            if (card.BeneficiaryPersonID) account.BeneficiaryPersonID = card.BeneficiaryPersonID;
             if (card.BeneficiaryOrganizationID) {
-                account.Set('BeneficiaryOrganizationID', card.BeneficiaryOrganizationID);
+                account.BeneficiaryOrganizationID = card.BeneficiaryOrganizationID;
             }
             // ExpiresAt stays null. Breakage and expiry are deferred (§21), and a card with an
             // expiry nothing enforces would be worse than one with none.
@@ -252,7 +256,7 @@ export async function IssueGiftCards(
                 );
             }
 
-            const accountID = account.Get('ID') as string;
+            const accountID = account.ID;
             await writeTransaction(
                 provider,
                 user,
@@ -266,7 +270,7 @@ export async function IssueGiftCards(
 
             out.Issued.push({
                 ID: accountID,
-                Code: account.Get('Code') as string,
+                Code: account.Code,
                 FaceValue: card.FaceValue,
                 OrderLineID: card.OrderLineID,
             });
@@ -289,14 +293,14 @@ async function writeTransaction(
     relatedOrderHeaderID: string | null,
     options?: EntitySaveOptions,
 ): Promise<void> {
-    const txn = await provider.GetEntityObject<BaseEntity>(STORED_VALUE_TRANSACTION_ENTITY, user);
+    const txn = await provider.GetEntityObject<mjBizAppsOrdersStoredValueTransactionEntity>(STORED_VALUE_TRANSACTION_ENTITY, user);
     txn.NewRecord();
-    txn.Set('StoredValueAccountID', storedValueAccountID);
-    txn.Set('TransactionType', type);
-    txn.Set('Amount', amount);
-    txn.Set('BalanceAfter', balanceAfter);
-    if (relatedOrderHeaderID) txn.Set('RelatedOrderHeaderID', relatedOrderHeaderID);
-    txn.Set('OccurredAt', new Date());
+    txn.StoredValueAccountID = storedValueAccountID;
+    txn.TransactionType = type;
+    txn.Amount = amount;
+    txn.BalanceAfter = balanceAfter;
+    if (relatedOrderHeaderID) txn.RelatedOrderHeaderID = relatedOrderHeaderID;
+    txn.OccurredAt = new Date();
     if (!(await txn.Save(options))) {
         throw new Error(
             `Could not write the ${type} transaction for stored-value account ${storedValueAccountID}: ` +

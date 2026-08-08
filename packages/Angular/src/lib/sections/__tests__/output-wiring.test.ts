@@ -129,7 +129,26 @@ describe('page outputs are wired to the section', () => {
         // The specific regression: this is the only path to the operation that
         // writes journal entries, and it was unreachable.
         expect(shell).toMatch(/ConfirmRequested/);
-        expect(shell).toMatch(/PreviewConfirm/);
         expect(shell).toMatch(/entry\.Confirm\(/);
+    });
+
+    it('confirms WITHOUT a dry run in front of it', () => {
+        // This assertion replaces `expect(shell).toMatch(/PreviewConfirm/)`, which was
+        // correct when the confirm went through a pre-flight and is now the opposite of
+        // what we want. It is a STALE assertion, not a failing one — the behaviour changed
+        // deliberately: `Orders.PreviewConfirm` ran the REAL confirm inside a rolled-back
+        // transaction, so every order booked twice and the button was gated on the copy
+        // nobody would ever read.
+        //
+        // Matched against CODE, with comment lines stripped first. Left as-is the old
+        // assertion still passed after the operation was deleted, because the word survives
+        // in the comment explaining why it went — a green test asserting a fact that is no
+        // longer true, which is worse than a red one.
+        const code = shell
+            .split('\n')
+            .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+            .join('\n');
+        expect(code).not.toMatch(/PreviewConfirm/);
+        expect(code).not.toMatch(/OpenPreflight/);
     });
 });

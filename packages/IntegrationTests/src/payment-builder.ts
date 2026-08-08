@@ -17,12 +17,16 @@
  */
 import { Metadata } from '@memberjunction/core';
 import type { BaseEntity, UserInfo } from '@memberjunction/core';
+import type {
+    mjBizAppsOrdersPaymentHeaderEntity,
+    mjBizAppsOrdersPaymentLineEntity,
+} from '@mj-biz-apps/orders-entities';
+import type { PaymentHeaderEntityServer } from '@mj-biz-apps/orders-core-entities-server';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 
 /** An entity with untyped field access — the same shape order-builder uses. */
-export type LooseEntity = BaseEntity & Record<string, unknown>;
 
 /** One allocation to write with the payment. */
 export interface AllocationSpec {
@@ -40,7 +44,7 @@ export interface PaymentSpec {
     /** The provider's cut. Booked separately only when a Processing Fee account resolves. */
     ProcessingFeeAmount?: number;
     /** Defaults to `Captured` — the status that books. Pass `Pending` for an unbooked draft. */
-    Status?: string;
+    Status?: mjBizAppsOrdersPaymentHeaderEntity['Status'];
     PaymentDate?: Date;
     BillToOrganizationID?: string | null;
     BillToPersonID?: string | null;
@@ -62,7 +66,7 @@ export interface PaymentSpec {
 }
 
 export interface SavedPayment {
-    Payment: LooseEntity;
+    Payment: PaymentHeaderEntityServer;
     Saved: boolean;
     Message: string;
 }
@@ -75,7 +79,7 @@ export interface SavedPayment {
  */
 export async function CreatePayment(user: UserInfo, spec: PaymentSpec): Promise<SavedPayment> {
     const md = new Metadata();
-    const payment = await md.GetEntityObject<LooseEntity>(PAYMENT_HEADER_ENTITY, user);
+    const payment = await md.GetEntityObject<PaymentHeaderEntityServer>(PAYMENT_HEADER_ENTITY, user);
     payment.NewRecord();
     payment.PaymentNumber = spec.PaymentNumber;
     payment.ReceivingCompanyID = spec.ReceivingCompanyID;
@@ -90,9 +94,9 @@ export async function CreatePayment(user: UserInfo, spec: PaymentSpec): Promise<
     if (spec.PaymentProviderID) payment.PaymentProviderID = spec.PaymentProviderID;
     if (spec.PaymentIntentID) payment.PaymentIntentID = spec.PaymentIntentID;
 
-    const lines: BaseEntity[] = [];
+    const lines: mjBizAppsOrdersPaymentLineEntity[] = [];
     for (const alloc of spec.Allocations ?? []) {
-        const line = await md.GetEntityObject<LooseEntity>(PAYMENT_LINE_ENTITY, user);
+        const line = await md.GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(PAYMENT_LINE_ENTITY, user);
         line.NewRecord();
         line.OrderHeaderID = alloc.OrderHeaderID;
         line.Amount = alloc.Amount;
@@ -101,13 +105,13 @@ export async function CreatePayment(user: UserInfo, spec: PaymentSpec): Promise<
         line.AllocatedByUserID = user?.ID ?? null;
         lines.push(line);
     }
-    (payment as unknown as { Lines: BaseEntity[] }).Lines = lines;
+    payment.Lines = lines;
 
     const saved = await payment.Save();
     return {
         Payment: payment,
         Saved: saved,
-        Message: (payment.LatestResult?.CompleteMessage as string) ?? '',
+        Message: payment.LatestResult?.CompleteMessage ?? '',
     };
 }
 
@@ -124,9 +128,9 @@ export async function ApplyPayment(
     orderID: string,
     amount: number,
     orderLineID?: string | null,
-): Promise<{ Line: LooseEntity; Saved: boolean; Message: string }> {
+): Promise<{ Line: mjBizAppsOrdersPaymentLineEntity; Saved: boolean; Message: string }> {
     const md = new Metadata();
-    const line = await md.GetEntityObject<LooseEntity>(PAYMENT_LINE_ENTITY, user);
+    const line = await md.GetEntityObject<mjBizAppsOrdersPaymentLineEntity>(PAYMENT_LINE_ENTITY, user);
     line.NewRecord();
     line.PaymentHeaderID = paymentID;
     line.OrderHeaderID = orderID;
@@ -136,7 +140,7 @@ export async function ApplyPayment(
     line.AllocatedByUserID = user?.ID ?? null;
 
     const saved = await line.Save();
-    return { Line: line, Saved: saved, Message: (line.LatestResult?.CompleteMessage as string) ?? '' };
+    return { Line: line, Saved: saved, Message: line.LatestResult?.CompleteMessage ?? '' };
 }
 
 /**
@@ -148,14 +152,11 @@ export async function ApplyPayment(
 export async function CapturePayment(
     user: UserInfo,
     paymentID: string,
-): Promise<{ Payment: LooseEntity; Saved: boolean; Message: string }> {
+): Promise<{ Payment: PaymentHeaderEntityServer; Saved: boolean; Message: string }> {
     const md = new Metadata();
-    const payment = await md.GetEntityObject<LooseEntity>(PAYMENT_HEADER_ENTITY, user);
-    // `Load` is declared on the generated subclass rather than on BaseEntity itself, and the
-    // intersection with Record<string, unknown> hides it — the same structural cast
-    // intercompany.checks.ts uses to reach it.
-    await (payment as unknown as { Load(id: string): Promise<boolean> }).Load(paymentID);
+    const payment = await md.GetEntityObject<PaymentHeaderEntityServer>(PAYMENT_HEADER_ENTITY, user);
+    await payment.Load(paymentID);
     payment.Status = 'Captured';
     const saved = await payment.Save();
-    return { Payment: payment, Saved: saved, Message: (payment.LatestResult?.CompleteMessage as string) ?? '' };
+    return { Payment: payment, Saved: saved, Message: payment.LatestResult?.CompleteMessage ?? '' };
 }

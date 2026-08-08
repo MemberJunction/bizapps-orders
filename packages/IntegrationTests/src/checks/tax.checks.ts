@@ -55,7 +55,7 @@ import {
   PRODUCT_CATEGORY_ENTITY,
 } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
-import type { LooseEntity } from "../payment-builder.js";
+import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
   // Delegates to the shared builder so the price goes through `ProductPriceEntityServer` and its
@@ -122,7 +122,7 @@ async function confirmShippingTo(
   ctx: IntegrationCheckContext,
   addressKey: string,
   lines: Array<{ ProductID: string; Quantity: number }>,
-): Promise<{ Saved: boolean; Message: string; Order: LooseEntity }> {
+): Promise<{ Saved: boolean; Message: string; Order: OrderEntityServer }> {
   const f = Fx();
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
@@ -130,7 +130,7 @@ async function confirmShippingTo(
     ShipToAddressID: f.Tax.AddressIDs.get(addressKey),
     Lines: lines,
   });
-  return { Saved: result.Saved, Message: result.Message, Order: result.Order as LooseEntity };
+  return { Saved: result.Saved, Message: result.Message, Order: result.Order };
 }
 
 /** The recorded REASON a line owes no tax — a zero-amount component, not a bare zero. */

@@ -67,6 +67,17 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
      */
     public ResolvedExtendedAmount: number | null = null;
 
+    /**
+     * `BaseEntity` skips `ValidateAsync` unless a subclass opts in, so without this the checks
+     * below never run when a line is saved on its own. The order's own `ValidateAsync` loops over
+     * its lines and would have covered the confirm path — except that one was skipped for the same
+     * reason, so in practice nothing here was enforced anywhere. See the note on
+     * `OrderEntityServer.DefaultSkipAsyncValidation`.
+     */
+    public override get DefaultSkipAsyncValidation(): boolean {
+        return false;
+    }
+
     public override async ValidateAsync(): Promise<ValidationResult> {
         const result = await super.ValidateAsync();
 
@@ -164,7 +175,7 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
         //
         // Deliberately after the DiscountPct rounding above, so the stored rate stays consistent
         // whether or not the line happens to be a parent.
-        if ((this as unknown as { IsRollupParent?: boolean }).IsRollupParent) {
+        if (this.IsRollupParent) {
             this.LineTotalNet = 0;
             this.LineTotalGross = 0;
             return;

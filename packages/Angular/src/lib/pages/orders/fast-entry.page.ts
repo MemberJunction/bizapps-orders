@@ -4,16 +4,16 @@ import { FormsModule } from '@angular/forms';
 import {
     OrderDraft,
     type OrderDraftLine,
-    type OrdersPreviewOrderOutput,
 } from '@mj-biz-apps/orders-entities';
 
 import { ReadableSaveError } from '../../services/save-error';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
-import { MJOOrderEntryService, type MJOPreviewState } from '../../services/order-entry.service';
+import { MJOOrderEntryService, type MJOLinePrice, type MJOPricingState } from '../../services/order-entry.service';
 import { MJODecompositionLadderComponent, type MJOLadderRow } from '../../panels/decomposition-ladder.component';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import type { MJOTenderOption } from '../payments/payment-entry.page';
 
 /** A catalog row as the product picker shows it. */
 export interface MJOProductOption {
@@ -50,7 +50,7 @@ export interface MJOCustomerContext {
  * than a copy, which is what makes "open in full editor" lose nothing.
  *
  * THE DECOMPOSITION RAIL IS THE POINT. Every figure in it comes from
- * `Orders.PreviewOrder` — the engine's own arithmetic, run as a real save inside
+ * `Orders.PreviewPrice` — the engine's own price resolver, run without any write inside
  * a rolled-back transaction — and it dims the instant the draft changes, so stale
  * money is never presented as current. Nothing on this screen computes a price.
  *
@@ -93,6 +93,16 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     @Input() Catalog: MJOProductOption[] = [];
 
     /**
+     * The instance's payment types, so a tender tile maps to a REAL `PaymentType` row.
+     *
+     * Supplied by the section, which already loads and caches them. Without this, `SelectTender`
+     * could set an amount but never a type — and `createInitialPayment` opens with
+     * `if (!this.InitialPaymentTypeID || amount <= 0) return;`, so the order confirmed and the
+     * payment was silently dropped. The customer paid and the order said Unpaid.
+     */
+    @Input() Tenders: MJOTenderOption[] = [];
+
+    /**
      * The user asked to confirm. The page deliberately does NOT confirm itself:
      * the pre-flight review goes in front of it, because confirming books journal
      * entries and cannot be undone. The host owns that dialog.
@@ -109,7 +119,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     public Draft!: OrderDraft;
 
     /** Latest preview state — result, in-flight flag and error. */
-    public Preview: MJOPreviewState = { Result: null, Loading: false, Error: null };
+    public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
 
     /** Product search text. */
     public ProductQuery = '';
@@ -128,7 +138,51 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
 
     private stopWatching: (() => void) | null = null;
 
+    /**
+     * The order that was just booked, so the screen can say so after it clears.
+     *
+     * Cleared the moment the next order is touched — a stale "booked ORD-123" hanging over a
+     * half-typed new order is worse than no message at all.
+     */
+    public JustBooked: string | null = null;
+
+    /**
+     * Empty the screen for the NEXT order.
+     *
+     * This lane is a queue of orders, not one form: an order taker who has just booked something is
+     * about to take another, and leaving the previous customer and lines on screen means the next
+     * order starts as an edit of the last one. Which is also how a line gets billed twice.
+     *
+     * Called by the section after a successful confirm, and by "New order" in the header.
+     */
+    public Reset(orderNumber?: string | null): void {
+        this.stopWatching?.();
+        this.orders.CancelPending();
+
+        this.Customer = null;
+        this.CustomerQuery = '';
+        this.CustomerResults = [];
+        this.ProductQuery = '';
+        this.PickerOpen = false;
+        this.CodeEntry = '';
+        this.Tender = 'terms';
+        this.Reference = '';
+        this.SaveError = null;
+        this.Pricing = { Result: null, Loading: false, Error: null };
+        this.JustBooked = orderNumber ?? null;
+
+        this.startDraft();
+        this.cdr.detectChanges();
+        // Straight back to the first thing they will type.
+        setTimeout(() => document.getElementById('mjo-customer-search')?.focus(), 0);
+    }
+
     public ngOnInit(): void {
+        this.startDraft();
+    }
+
+    /** Build a fresh draft and re-subscribe the preview. Shared by init and {@link Reset}. */
+    private startDraft(): void {
         this.Draft = new OrderDraft({ CompanyID: this.CompanyID, OriginChannel: 'Staff' });
         // Every mutation reschedules the preview. The service owns the debounce and
         // the out-of-order guard, so this stays a one-liner.
@@ -138,14 +192,16 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
             // state sits over the new one until the user saves again — which is
             // exactly when they least want to be reading stale bad news.
             this.SaveError = null;
-            this.orders.SchedulePreview(this.Draft, (state) => {
-                this.Preview = state;
+            // Touching the next order retires the last one's confirmation. A stale "booked ORD-123"
+            // sitting over a half-typed new order invites the reader to think THIS one is booked.
+            this.JustBooked = null;
+            this.orders.SchedulePricing(this.Draft, (state) => {
+                this.Pricing = state;
                 // MUST tick. This callback fires from a debounced timer + an awaited network
                 // round-trip, so it is outside anything Angular is watching: the page is created
                 // imperatively via ViewContainerRef.createComponent and runs zoneless, which means
-                // an assignment alone repaints nothing. Without this the preview lands, the line
-                // stays on "— resolving…" forever, and CanConfirm never turns true because it
-                // requires Preview.Result — a completed order that cannot be confirmed.
+                // an assignment alone repaints nothing. Without this the prices land and the line
+                // stays on "— resolving…" for ever.
                 this.cdr.detectChanges();
             });
         });
@@ -261,11 +317,12 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
 
         // What an order taker needs to know before quoting: what they already owe,
         // and what credit they are sitting on.
-        const orders = await this.data.GetOrders(
-            option.IsOrganization ? { BillToOrganizationID: option.ID } : {},
-        );
-        const theirs = orders.filter(
-            (o) => (option.IsOrganization ? o['BillToOrganizationID'] : o['BillToPersonID']) === option.ID,
+        // FILTERED ON THE SERVER, BOTH WAYS. The person branch used to pass `{}` — fetching every
+        // order in the database and narrowing in the browser — so picking a customer got slower with
+        // every order ever taken. The organization branch filtered server-side and the person branch
+        // did not, which is why it looked intermittent.
+        const theirs = await this.data.GetOrders(
+            option.IsOrganization ? { BillToOrganizationID: option.ID } : { BillToPersonID: option.ID },
         );
         const today = new Date().toISOString().slice(0, 10);
 
@@ -281,6 +338,30 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         this.CustomerQuery = '';
         this.CustomerResults = [];
         this.cdr.detectChanges();
+    }
+
+    /**
+     * Put the customer back to unchosen, so a different one can be picked.
+     *
+     * There was no way out of a wrong choice: `ChooseCustomer` set the card and nothing ever
+     * cleared it, so mis-picking meant abandoning the order and starting again. Clearing the
+     * DRAFT's bill-to as well as the card matters — leaving the header pointing at the old party
+     * while the screen shows "no customer" is the worse failure, because the order would confirm
+     * against someone the user believes they removed.
+     *
+     * The lines are deliberately kept. Someone correcting the payer has not changed their mind
+     * about what is being bought, and re-typing the basket to fix a name is a punishment.
+     */
+    public ClearCustomer(): void {
+        this.Draft.SetHeader({ BillToOrganizationID: null, BillToPersonID: null });
+        this.Customer = null;
+        this.CustomerQuery = '';
+        this.CustomerResults = [];
+        // Account credit is the customer's, so a tender that spends it cannot survive them leaving.
+        if (this.Tender === 'credit') this.SelectTender('terms');
+        this.cdr.detectChanges();
+        // Put the cursor where the next action is, rather than making them find the box again.
+        setTimeout(() => document.getElementById('mjo-customer-search')?.focus(), 0);
     }
 
     /** Catalog rows matching the query, capped — a picker is not a report. */
@@ -360,8 +441,8 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     }
 
     /** The priced result for a line, matched by the key the client sent. */
-    public PricedLine(line: OrderDraftLine): OrdersPreviewOrderOutput['Lines'][number] | undefined {
-        return this.Preview.Result?.Lines?.find((l) => l.ClientKey === line.ClientKey);
+    public PricedLine(line: OrderDraftLine): MJOLinePrice | undefined {
+        return this.Pricing.Result?.Lines?.find((l) => l.ClientKey === line.ClientKey);
     }
 
     /* ── Codes ──────────────────────────────────────────────────────────── */
@@ -376,28 +457,42 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         this.Draft.RemovePromotionCode(code);
     }
 
-    /** Whether a code was accepted, rejected, or is still being decided. */
+    /**
+     * Whether a code was accepted, rejected, or is still being decided.
+     *
+     * ALWAYS 'pending' NOW, and honestly so. Promotions are qualified inside the
+     * confirm transaction; the old answer came from a rolled-back booking run on
+     * every keystroke. Claiming 'applied' without having run the qualifier would be
+     * a promise the confirm might not keep.
+     */
     public CodeState(code: string): 'applied' | 'rejected' | 'pending' {
-        const promo = this.Preview.Result?.Promotions?.find((p) => p.Code === code);
-        if (!promo) return 'pending';
-        return promo.Applied ? 'applied' : 'rejected';
+        void code;
+        return 'pending';
     }
 
     public CodeReason(code: string): string | null {
-        return this.Preview.Result?.Promotions?.find((p) => p.Code === code)?.NotAppliedReason ?? null;
+        void code;
+        return null;
     }
 
     /* ── The rail ───────────────────────────────────────────────────────── */
 
     /**
-     * Turn the engine's decomposition into ladder rows, in the engine's own order:
-     * list → promotions → net → charges → tax layers → gross.
+     * Turn the resolved line prices into ladder rows.
      *
-     * This is a PROJECTION, not a calculation. Every number is read from the
-     * preview; the only arithmetic is picking which figure goes on which row.
+     * IT STOPS AT THE NET SUBTOTAL, AND SAYS SO. It used to run list → promotions →
+     * net → charges → tax layers → gross, because `Orders.PreviewOrder` had produced
+     * every one of those figures by performing the REAL save and rolling it back —
+     * on every keystroke. Without that run, charges, tax and promotions are not
+     * known, and a `$0.00` tax row on the screen someone reads before committing is
+     * a statement rather than a gap.
+     *
+     * This is still a PROJECTION, not a calculation: the prices are the engine's own
+     * (`Orders.PreviewPrice` calls the same `ResolvePrice`), and the only arithmetic
+     * is which figure goes on which row.
      */
     public get LadderRows(): MJOLadderRow[] {
-        const result = this.Preview.Result;
+        const result = this.Pricing.Result;
         if (!result) return [];
 
         const rows: MJOLadderRow[] = [
@@ -408,120 +503,186 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
             },
         ];
 
-        for (const promo of result.Promotions ?? []) {
-            if (promo.Applied) {
-                rows.push({
-                    Label: `${promo.Code} <span class="muted">· ${promo.Scope.toLowerCase()}</span>`,
-                    Amount: promo.Amount,
-                    IsSub: true,
-                    IsCredit: true,
-                    Why:
-                        `<b>${promo.Name}</b> — ` +
-                        (promo.Kind === 'Percent'
-                            ? `${promo.Value * 100}% off`
-                            : `${FormatMoney(promo.Value)} fixed`) +
-                        (promo.Scope === 'Order'
-                            ? '<br>Order-level, so it is <b>allocated onto the lines</b> — tax and GL both operate on line amounts.'
-                            : ''),
-                });
-            } else {
-                rows.push({
-                    Label: `${promo.Code} <span class="muted">offered, not applied</span>`,
-                    Amount: 0,
-                    IsSub: true,
-                    IsInactive: true,
-                    Why: promo.NotAppliedReason ?? 'This code did not apply to anything on the order.',
-                });
-            }
-        }
-
         if (result.Totals.DiscountTotal > 0) {
-            rows.push({ Label: '<b>Net after discounts</b>', Amount: result.Totals.NetTotal });
-        }
-
-        for (const charge of (result.Charges ?? []).filter((c) => !c.IsTax)) {
             rows.push({
-                Label: charge.Name,
-                Amount: charge.Amount,
-                Why:
-                    `Charge type <b>${charge.Name}</b>, basis <code>${charge.Basis}</code>. ` +
-                    'Computed, never hand-typed — but overridable on the record, which stores who, when, why, ' +
-                    'and the value it replaced.',
+                Label: 'Discounts',
+                Amount: result.Totals.DiscountTotal,
+                IsSub: true,
+                IsCredit: true,
             });
         }
 
-        const taxLayers = (result.Charges ?? []).filter((c) => c.IsTax);
-        if (taxLayers.length) {
-            const base = result.Totals.TaxableBase;
-            rows.push({
-                Label: 'Tax',
-                Amount: result.Totals.TaxTotal,
-                Why:
-                    `${taxLayers.length} jurisdiction layer${taxLayers.length === 1 ? '' : 's'}, each computing on the ` +
-                    `<b>same</b> base of ${FormatMoney(base.Base)} — taxable goods ${FormatMoney(base.TaxableGoods)} ` +
-                    `plus non-tax charges ${FormatMoney(base.NonTaxCharges)}.<br><br>` +
-                    '<b>Tax layers never compound.</b> A non-tax charge enlarges the taxable base; a tax charge does not. ' +
-                    'That is why every layer below shares one base instead of stacking on the one above.',
-            });
-            for (const layer of taxLayers) {
-                rows.push({
-                    Label: layer.Name,
-                    Amount: layer.Amount,
-                    IsSub: true,
-                    Detail: layer.Rate != null ? `${layer.Rate * 100}% on ${FormatMoney(layer.BasisAmount ?? 0)}` : null,
-                });
-            }
-        } else {
-            const zeroReason = result.Lines.find((l) => l.TaxZeroReason)?.TaxZeroReason;
-            rows.push({
-                Label: 'Tax',
-                Amount: 0,
-                Why:
-                    'A zero always records <b>which</b> of four reasons produced it — untaxable, no nexus, exempt, ' +
-                    `or no jurisdiction.${zeroReason ? ` Here: ${zeroReason}.` : ''}`,
-            });
-        }
-
-        rows.push({ Label: 'Total', Amount: result.Totals.GrossTotal, IsTotal: true });
+        rows.push({
+            Label: 'Net before tax &amp; charges',
+            Amount: result.Totals.NetTotal,
+            IsTotal: true,
+            Why:
+                'Charges, tax and promotion codes are decided when the order is confirmed, inside the ' +
+                'same transaction that books it. The confirmed order states the final amount.',
+        });
         return rows;
     }
 
     public get LadderFootnote(): string | null {
-        const t = this.Preview.Result?.Totals;
+        const t = this.Pricing.Result?.Totals;
         if (!t) return null;
+        const unpriced = this.Pricing.Result?.HasUnpricedLines
+            ? ' Some lines have no price rule, so this subtotal is short.'
+            : '';
         return (
-            `Subtotal ${FormatMoney(t.ListSubtotal)} − discounts ${FormatMoney(t.DiscountTotal)} ` +
-            `+ charges ${FormatMoney(t.ChargeTotal)} + tax ${FormatMoney(t.TaxTotal)} = ${FormatMoney(t.GrossTotal)}`
+            `Subtotal ${FormatMoney(t.ListSubtotal)} − discounts ${FormatMoney(t.DiscountTotal)} = ` +
+            `${FormatMoney(t.NetTotal)}, before tax and charges.${unpriced}`
         );
     }
 
-    /** What the customer pays now versus on terms. */
+    /**
+     * What the customer pays now versus on terms.
+     *
+     * ADVISORY. It is the net subtotal, not the gross — tax and charges are added by
+     * the confirm. The tender still captures the full amount the engine computes;
+     * this is what the screen can honestly display beforehand.
+     */
     public get DueNow(): number {
-        const gross = this.Preview.Result?.Totals.GrossTotal ?? 0;
-        return this.Tender === 'terms' ? 0 : gross;
+        const net = this.Pricing.Result?.Totals.NetTotal ?? 0;
+        return this.Tender === 'terms' ? 0 : net;
     }
 
     public get DueLater(): number {
-        return (this.Preview.Result?.Totals.GrossTotal ?? 0) - this.DueNow;
+        return (this.Pricing.Result?.Totals.NetTotal ?? 0) - this.DueNow;
     }
 
-    /** Companies the order will book to, from the preview's per-company split. */
-    public get BookingSummary(): OrdersPreviewOrderOutput['Totals']['ByCompany'] {
-        return this.Preview.Result?.Totals.ByCompany ?? [];
+    /**
+     * Companies the order will book to, read from the CATALOGUE.
+     *
+     * Revenue follows the PRODUCT's company (`OrderLine.CompanyID` is stamped from it
+     * and the UI can never set it), so the split is knowable from the lines without
+     * asking the engine — which is what the per-company breakdown on the old preview
+     * was really reporting. Amounts are the net line figures, so they carry the same
+     * before-tax-and-charges caveat as everything else on this rail.
+     */
+    public get BookingSummary(): Array<{ CompanyName: string; NetTotal: number }> {
+        const byCompany = new Map<string, number>();
+        for (const line of this.Draft?.Lines ?? []) {
+            const company = this.ProductFor(line)?.CompanyName;
+            if (!company) continue;
+            byCompany.set(company, (byCompany.get(company) ?? 0) + (this.PricedLine(line)?.NetAmount ?? 0));
+        }
+        return [...byCompany].map(([CompanyName, NetTotal]) => ({
+            CompanyName,
+            NetTotal: Math.round(NetTotal * 100) / 100,
+        }));
     }
 
     /* ── Actions ────────────────────────────────────────────────────────── */
 
     public get CanConfirm(): boolean {
-        return this.Draft?.Validate().IsValid === true && !this.Preview.Loading && !!this.Preview.Result;
+        return this.ConfirmBlockedReason === null;
+    }
+
+    /**
+     * WHY the confirm is unavailable, or null when it is available.
+     *
+     * A disabled button that says nothing is the worst control on a screen: the user can see the
+     * action they want, cannot have it, and is given no way to work out what to change. This page
+     * had exactly that — `[disabled]="!CanConfirm"` with no title and no hint — so every blocking
+     * condition, old and new, presented identically as "the confirm button does not work".
+     *
+     * Ordered by what the user should fix FIRST, not by how the checks happen to be written: there
+     * is no point telling someone to add a check number when they have not chosen a customer yet.
+     */
+    public get ConfirmBlockedReason(): string | null {
+        if (!this.Draft) return 'Nothing to confirm yet.';
+        if (this.Saving) return 'Saving…';
+
+        const issues = this.Draft.Validate().Issues.filter((i) => i.Severity === 'error');
+        if (issues.length) return issues[0].Message;
+
+        if (this.RequiresReference && !this.Reference.trim()) {
+            return `Enter the ${this.SelectedTenderType?.Name ?? 'payment'} number — it is needed to match the payment to the bank statement.`;
+        }
+        // NOT BLOCKED ON A PRICE. These used to end with `if (!Preview.Result) return
+        // 'Waiting for the order total.'`, which meant a preview that failed for any reason
+        // left a complete order permanently unconfirmable. Pricing is for the person reading
+        // the screen; the engine prices the order again, for real, inside the confirm.
+        return null;
+    }
+
+    /**
+     * Which `PaymentType` each tile means.
+     *
+     * 'terms' is deliberately absent: invoicing on terms is the ABSENCE of an initial payment, not
+     * a payment of a different kind, so it clears the intent instead of naming a type.
+     */
+    private static readonly TENDER_CODES: Readonly<Record<string, string>> = {
+        onfile: 'CreditCard',
+        newcard: 'CreditCard',
+        check: 'Check',
+        credit: 'AccountCredit',
+    };
+
+    /** The `PaymentType` row behind the current tile, or null for invoice-on-terms. */
+    public get SelectedTenderType(): MJOTenderOption | null {
+        const code = MJOFastEntryPageComponent.TENDER_CODES[this.Tender];
+        if (!code) return null;
+        return this.Tenders.find((t) => t.Code === code) ?? null;
+    }
+
+    /** True when this tender cannot be captured without a check/wire/transfer number. */
+    public get RequiresReference(): boolean {
+        return this.SelectedTenderType?.RequiresReference === true;
+    }
+
+    /** The check number / wire confirmation, while it is being typed. */
+    public Reference = '';
+
+    public SetReference(value: string): void {
+        this.Reference = value;
+        // Re-state the whole intent rather than patching it: the amount and type must stay together
+        // with the reference, and SetInitialPayment is the one place that knows the shape.
+        this.applyTenderIntent();
     }
 
     public SelectTender(tender: typeof this.Tender): void {
         this.Tender = tender;
-        // Tender is intent, not a payment. It rides the draft so the pre-flight can
-        // say what confirming will capture.
-        if (tender === 'terms') this.Draft.ClearInitialPayment();
-        else this.Draft.SetInitialPayment({ Amount: this.Preview.Result?.Totals.GrossTotal ?? 0 });
+        // Switching tender abandons a reference typed for the previous one — a check number is not
+        // a wire confirmation, and carrying it across would attach the wrong id to the payment.
+        this.Reference = '';
+        this.applyTenderIntent();
+    }
+
+    /**
+     * Push the current tender choice onto the draft.
+     *
+     * Tender is INTENT, not a payment. It rides the draft, and `createInitialPayment` turns it
+     * into a real PaymentHeader inside the same transaction as the booking.
+     */
+    private applyTenderIntent(): void {
+        if (this.Tender === 'terms') {
+            this.Draft.ClearInitialPayment();
+            return;
+        }
+        // ⚠ KNOWN GAP — the tender amount is the NET subtotal, not the gross.
+        //
+        // `createInitialPayment` takes `InitialPaymentAmount` at face value; it has no
+        // "pay in full" intent to resolve against the total it just computed. The client
+        // used to supply the gross because the rolled-back preview had run the engine's
+        // whole walk to find it. It can no longer know that number.
+        //
+        // Harmless while no charge or tax rule is configured (gross == net, and the
+        // payment settles the order exactly). The moment tax lands, this UNDER-PAYS: the
+        // order books at gross, the payment covers net, and the difference shows up as a
+        // PartiallyPaid order nobody chased.
+        //
+        // The fix belongs in the engine — a pay-in-full intent it settles against the
+        // gross inside the booking transaction, where the real number exists. Backlogged;
+        // NOT worked around here, because a client-side guess at tax is how the two
+        // implementations start disagreeing.
+        this.Draft.SetInitialPayment({
+            PaymentTypeID: this.SelectedTenderType?.ID ?? null,
+            Amount: this.Pricing.Result?.Totals.NetTotal ?? 0,
+            Reference: this.Reference,
+            RequiresReference: this.RequiresReference,
+        });
     }
 
     /** ⌘↵ / Ctrl+↵ confirms; ⌘S saves; `/` jumps to the product field. */
@@ -538,6 +699,18 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
             event.preventDefault();
             document.getElementById('mjo-product-search')?.focus();
         }
+    }
+
+    /**
+     * True once pricing has RETURNED, so an empty price source means "there is no rule" rather
+     * than "not yet". Drives the price badge's missing-rule state.
+     *
+     * Deliberately NOT `!!Pricing.Result` alone: a stale result from the previous keystroke is
+     * present while the next pass is in flight, and treating that as settled would flash
+     * "no price rule" at a line that is simply being recomputed.
+     */
+    public get PricingSettled(): boolean {
+        return !this.Pricing.Loading && !!this.Pricing.Result;
     }
 
     public SaveError: string | null = null;

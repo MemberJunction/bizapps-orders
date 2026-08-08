@@ -7,6 +7,17 @@
  * directly would test the schema and nothing else.
  */
 import { Metadata } from '@memberjunction/core';
+import type {
+    mjBizAppsOrdersOrderHeaderEntity,
+    mjBizAppsOrdersOrderLineEntity,
+    mjBizAppsOrdersPaymentDetailEntity,
+} from '@mj-biz-apps/orders-entities';
+import type {
+    ManualDiscountRequest,
+    OrderEntityServer,
+    RequestedCharge,
+} from '@mj-biz-apps/orders-core-entities-server';
+import { Fx } from './fixture.js';
 import type { BaseEntity, IMetadataProvider, UserInfo } from '@memberjunction/core';
 
 /**
@@ -48,7 +59,7 @@ export interface OrderSpec {
      * Defaults to 'Sale'. A return or cancellation carries the negative lines; reversal is what the
      * negative LINE does, not what the order is called, so the type here is descriptive only.
      */
-    OrderType?: string;
+    OrderType?: mjBizAppsOrdersOrderHeaderEntity['OrderType'];
     Lines: LineSpec[];
     /** Defaults to today; set explicitly whenever a check asserts dates. */
     OrderDate?: Date;
@@ -59,9 +70,14 @@ export interface OrderSpec {
     DueDate?: string;
     /** State the terms and let the walk derive the date from `NetDays` (D83). */
     PaymentTermsTypeID?: string;
-    /** WHO PAYS (D65). Either side, or both. Falls through as the last tier of subscriber resolution. */
-    BillToOrganizationID?: string;
-    BillToPersonID?: string;
+    /**
+     * WHO PAYS (D65). Either side, or both. Falls through as the last tier of subscriber resolution.
+     *
+     * Omit both and you get the fixture's buyer organization — a confirmed order must name someone.
+     * Pass `null` to opt out deliberately, which is how a check proves a payer-less confirm is refused.
+     */
+    BillToOrganizationID?: string | null;
+    BillToPersonID?: string | null;
     /** Order-level ship-to — the default every line inherits unless it overrides (D61). */
     ShipToOrganizationID?: string;
     ShipToPersonID?: string;
@@ -74,14 +90,21 @@ export interface OrderSpec {
     /** Promotion codes the customer presented (D70). Resolved after the lines are priced. */
     PromotionCodes?: string[];
     /** Ad-hoc discounts, each gated by the applying user's SalesAuthority (D70). */
-    ManualDiscounts?: Array<{ OrderLineID?: string | null; Amount: number; Reason: string }>;
-    /** Charges to apply — shipping, handling, tax layers (D71). Computed after promotions. */
-    Charges?: Array<Record<string, unknown>>;
+    ManualDiscounts?: ManualDiscountRequest[];
+    /**
+     * Charges to apply — shipping, handling, tax layers (D71). Computed after promotions.
+     *
+     * The ENGINE's request shape, keyed on `ChargeType.Code`. Typed rather than
+     * `Record<string, unknown>` so a check cannot quietly hand the engine a charge it will not
+     * match — which is exactly the mismatch the client payload has today (BUGS.md Bug 5a).
+     */
+    Charges?: RequestedCharge[];
 }
 
 export interface BuiltOrder {
-    Order: BaseEntity & Record<string, unknown>;
-    Lines: Array<BaseEntity & Record<string, unknown>>;
+    /** The header, typed as the server subclass the class factory returns — `Lines` lives there. */
+    Order: OrderEntityServer;
+    Lines: mjBizAppsOrdersOrderLineEntity[];
 }
 
 /**
@@ -100,7 +123,7 @@ export async function BuildOrder(
     provider?: IMetadataProvider,
 ): Promise<BuiltOrder> {
     const md = provider ?? new Metadata();
-    const order = await md.GetEntityObject<BaseEntity & Record<string, unknown>>(
+    const order = await md.GetEntityObject<OrderEntityServer>(
         'MJ_BizApps_Orders: Order Headers',
         user,
     );
@@ -111,29 +134,58 @@ export async function BuildOrder(
     order.CompanyID = spec.CompanyID;
     if (spec.DueDate) order.DueDate = new Date(spec.DueDate);
     if (spec.PaymentTermsTypeID) order.PaymentTermsTypeID = spec.PaymentTermsTypeID;
-    if (spec.BillToOrganizationID) order.BillToOrganizationID = spec.BillToOrganizationID;
-    if (spec.BillToPersonID) order.BillToPersonID = spec.BillToPersonID;
+    // EVERY FIXTURE ORDER NAMES A CUSTOMER, because every real one does.
+    //
+    // This used to leave both payer fields null whenever a spec did not state one, which was most
+    // of the suite — so the checks were confirming orders that no business could have: a receivable
+    // owed by nobody. That went unnoticed because nothing enforced a payer (the rule lived only in
+    // the order screen), and it is precisely the state
+    // `OrderEntityServer.ValidateAsync` now rejects.
+    //
+    // Passing `null` explicitly is the opt-out, and it means "prove the rejection" — it is how the
+    // checks that assert a payer-less confirm is refused build their subject. `undefined`, which is
+    // what you get by simply not mentioning the field, takes the fixture's buyer organization.
+    if (spec.BillToOrganizationID === undefined && spec.BillToPersonID === undefined) {
+        order.BillToOrganizationID = Fx().Customers.OrganizationID;
+    } else {
+        if (spec.BillToOrganizationID) order.BillToOrganizationID = spec.BillToOrganizationID;
+        if (spec.BillToPersonID) order.BillToPersonID = spec.BillToPersonID;
+    }
     if (spec.ShipToOrganizationID) order.ShipToOrganizationID = spec.ShipToOrganizationID;
     if (spec.ShipToPersonID) order.ShipToPersonID = spec.ShipToPersonID;
     if (spec.ShipToAddressID) order.ShipToAddressID = spec.ShipToAddressID;
     if (spec.InitialPaymentTypeID) order.InitialPaymentTypeID = spec.InitialPaymentTypeID;
+
+    // A REFERENCE-REQUIRING TENDER GETS AN INSTRUMENT, because a real one always would.
+    //
+    // Check, Wire and Internal Transfer carry `RequiresReference`, and `createInitialPayment` now
+    // refuses them without one — a captured payment with no check number cannot be reconciled
+    // against a bank statement. Two checks (RU8, PL7) were booking a Check with no number, which is
+    // the same shape of fixture bug as an order with no payer: the suite asserting a state the
+    // business does not permit. RU7/RU9 already supplied a detail, which is why they kept passing.
+    //
+    // Stated `InitialPaymentDetailID` always wins, so a check that wants to prove the refusal, or
+    // to assert something about a specific instrument, is unaffected.
+    if (spec.InitialPaymentTypeID && !spec.InitialPaymentDetailID && requiresReference(spec.InitialPaymentTypeID)) {
+        order.InitialPaymentDetailID = await createReferenceDetail(md, user, spec.CompanyID, spec.InitialPaymentTypeID);
+    }
     if (spec.InitialPaymentAmount != null) order.InitialPaymentAmount = spec.InitialPaymentAmount;
     if (spec.InitialPaymentDetailID) order.InitialPaymentDetailID = spec.InitialPaymentDetailID;
     // Promotions ride the header the same way lines do — set here, resolved inside Save (D70).
     if (spec.PromotionCodes) {
-        (order as unknown as { PromotionCodes: string[] }).PromotionCodes = spec.PromotionCodes;
+        order.PromotionCodes = spec.PromotionCodes;
     }
     if (spec.ManualDiscounts) {
-        (order as unknown as { ManualDiscounts: unknown[] }).ManualDiscounts = spec.ManualDiscounts;
+        order.ManualDiscounts = spec.ManualDiscounts;
     }
     if (spec.Charges) {
-        (order as unknown as { Charges: unknown[] }).Charges = spec.Charges;
+        order.Charges = spec.Charges;
     }
 
-    const lines: Array<BaseEntity & Record<string, unknown>> = [];
+    const lines: mjBizAppsOrdersOrderLineEntity[] = [];
     let lineNumber = 1;
     for (const ls of spec.Lines) {
-        const line = await md.GetEntityObject<BaseEntity & Record<string, unknown>>(
+        const line = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
             'MJ_BizApps_Orders: Order Lines',
             user,
         );
@@ -156,7 +208,7 @@ export async function BuildOrder(
     }
 
     // `Lines` is the transient collection OrderEntityServer.Save persists after the header exists.
-    (order as unknown as { Lines: unknown }).Lines = lines;
+    order.Lines = lines;
     return { Order: order, Lines: lines };
 }
 
@@ -178,4 +230,38 @@ export async function ConfirmOrder(
         Saved: saved,
         Message: (built.Order.LatestResult?.CompleteMessage as string) ?? '',
     };
+}
+
+
+/** Tender codes whose `PaymentType.RequiresReference` is true. */
+const REFERENCE_TENDER_CODES = ['Check', 'Wire', 'InternalTransfer'] as const;
+
+/** True when this payment type cannot be captured without a reference number. */
+function requiresReference(paymentTypeID: string): boolean {
+    const key = (v: string | null | undefined) => (v ?? '').trim().toLowerCase();
+    const ids = Fx().PaymentTypeIDs;
+    return REFERENCE_TENDER_CODES.some((code) => key(ids.get(code)) === key(paymentTypeID));
+}
+
+/** The instrument row a reference-requiring tender needs, with a recognisable fixture reference. */
+async function createReferenceDetail(
+    md: IMetadataProvider | Metadata,
+    user: UserInfo,
+    companyID: string,
+    paymentTypeID: string,
+): Promise<string> {
+    const detail = await (md as Metadata).GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(
+        'MJ_BizApps_Orders: Payment Details',
+        user,
+    );
+    detail.NewRecord();
+    detail.CompanyID = companyID;
+    detail.PaymentTypeID = paymentTypeID;
+    detail.ReferenceNumber = `FIXTURE-${String(detail.ID ?? '').slice(0, 8) || 'REF'}`;
+    if (!(await detail.Save())) {
+        throw new Error(
+            `fixture could not create the payment instrument: ${detail.LatestResult?.CompleteMessage ?? 'unknown'}`,
+        );
+    }
+    return detail.ID as string;
 }

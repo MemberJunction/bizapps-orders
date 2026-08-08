@@ -54,9 +54,10 @@ import {
   TxQuery,
 } from "../fixture.js";
 import { BuildOrder, ConfirmOrder } from "../order-builder.js";
+import type { mjBizAppsOrdersOrderHeaderEntity } from "@mj-biz-apps/orders-entities";
 
 /** Build a saved order sitting in `status`. */
-async function orderIn(ctx: IntegrationCheckContext, status: string) {
+async function orderIn(ctx: IntegrationCheckContext, status: mjBizAppsOrdersOrderHeaderEntity['Status']) {
   const f = Fx();
   const built = await BuildOrder(ctx.User, {
     CompanyID: f.CoA.ID,
@@ -70,7 +71,13 @@ async function orderIn(ctx: IntegrationCheckContext, status: string) {
 }
 
 /** Move a saved order, returning whether the save was accepted and what it said. */
-async function moveTo(order: { Status: string; Save(): Promise<boolean>; LatestResult?: { CompleteMessage?: string } }, status: string) {
+// `status` is a plain string ON PURPOSE, unlike `orderIn` above: OS-refusal checks move an order to
+// a status that does NOT exist ('Complete') to prove the engine names it rather than letting the CHECK
+// constraint answer. Typing this to the entity's union would make the very case under test unwritable.
+async function moveTo(
+  order: { Status: string; Save(): Promise<boolean>; LatestResult?: { CompleteMessage?: string } },
+  status: string,
+) {
   order.Status = status;
   const saved = await order.Save();
   return { Saved: saved, Message: order.LatestResult?.CompleteMessage ?? "" };
@@ -137,7 +144,7 @@ export const OrderStatusChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
-        for (const from of ["Draft", "Quoted"]) {
+        for (const from of ["Draft", "Quoted"] as const) {
           const order = await orderIn(ctx, from);
           const result = await moveTo(order as never, "Voided");
           Assert(result.Saved, `${from} should be voidable: ${result.Message}`);

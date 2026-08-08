@@ -38,7 +38,6 @@ import type { MJLeftNavSection } from '@memberjunction/ng-ui-components';
 import type { ResourceData } from '@memberjunction/core-entities';
 
 import { MJOSectionShellComponent } from './section-shell.component';
-import { MJOConfirmPreflightComponent, type MJOPreflight } from '../panels/confirm-preflight.component';
 import { MJOOrderEntryService } from '../services/order-entry.service';
 import { MJOOrdersDataService } from '../services/orders-data.service';
 import type { OrderDraft } from '@mj-biz-apps/orders-entities';
@@ -274,21 +273,15 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         on<{ ID?: string } | string>('PaymentOpened', (row) => this.openRecord('entry', row));
         on<{ ID?: string } | string>('ProductOpened', (row) => this.openRecord('products', row));
 
-        // The irreversible step, gated behind the pre-flight.
-        on<OrderDraft>('ConfirmRequested', (draft) => void this.OpenPreflight(draft));
+        // The irreversible step. Straight to the engine — there is no dry run in front of it.
+        on<OrderDraft>('ConfirmRequested', (draft) => void this.Confirm(draft));
 
         // The order workspace confirms in place — it owns the draft, so it does not hand one back
         // for the section's pre-flight. What the section still needs is to know an order now
         // EXISTS: any list or dashboard it has already mounted was read before the confirm and is
         // now stale. Dropping the cached pages makes the next visit re-read rather than show a
         // list the just-confirmed order is missing from.
-        on<string>('OrderConfirmed', () => {
-            for (const [pageId, ref] of this.mounted) {
-                if (pageId === this.ActivePageId) continue;
-                ref.destroy();
-                this.mounted.delete(pageId);
-            }
-        });
+        on<string>('OrderConfirmed', () => this.dropStalePages());
         // ESCALATION CARRIES THE DRAFT. This used to ignore the emitted payload and merely
         // navigate, so "open in full editor" landed on an empty workspace and the half-typed order
         // was silently gone — the button looked like it did nothing. Fast entry and the editor were
@@ -318,12 +311,13 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
      * produce an answer already in memory.
      */
     private async sharedInputs(): Promise<Record<string, unknown>> {  // eslint-disable-line
-        const [Catalog, CompanyID, Tenders] = await Promise.all([
+        const [Catalog, CompanyID, Tenders, Companies] = await Promise.all([
             this.catalogOptions(),
             this.defaultCompanyID(),
             this.tenderOptions(),
+            this.data.GetSellingCompanies(),
         ]);
-        return { Catalog, CompanyID, Tenders };
+        return { Catalog, CompanyID, Tenders, Companies };
     }
 
     private catalogCache: Array<Record<string, unknown>> | null = null;
@@ -463,86 +457,134 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         if (typeof page?.Reset === 'function') void page.Reset();
     }
 
-    /* ── Confirm pre-flight ─────────────────────────────────────────────── */
+    /* ── Confirm ────────────────────────────────────────────────────────── */
 
     private readonly entry = inject(MJOOrderEntryService);
     private readonly data = inject(MJOOrdersDataService);
 
-    /** The pre-flight being shown, or null when the overlay is closed. */
-    public Preflight: MJOPreflight | null = null;
-    public PreflightBusy = false;
-    public PreflightError: string | null = null;
-    private preflightDraft: OrderDraft | null = null;
+    /** A confirm is in flight — the button says so and cannot be pressed twice. */
+    public Confirming = false;
+    /** Why the last confirm was refused, rendered verbatim. Null when there is nothing to say. */
+    public ConfirmError: string | null = null;
 
     /**
-     * Run `Orders.PreviewConfirm` and show what confirming would do.
+     * Confirm an order. THE ENGINE IS THE ONLY AUTHORITY, AND IT IS ASKED ONCE.
      *
-     * The preview executes the REAL confirm inside a rolled-back transaction, so
-     * the journal entries on screen are the ones the commit will write.
+     * This used to open a pre-flight backed by `Orders.PreviewConfirm`, which ran the
+     * REAL confirm inside a rolled-back transaction so it could show the journal
+     * entries the commit would write. Truthful, and far too expensive: every confirm
+     * booked the order twice, and the button was GATED on the throwaway run, so a
+     * transient failure in the half nobody would ever see blocked the half that
+     * mattered. Repeatedly, that presented as "the confirm button does nothing".
+     *
+     * So there is no dry run. `Orders.ConfirmOrder` either books — journal entries,
+     * subscriptions, entitlements, the initial payment, one transaction — or it is
+     * refused with a reason. Every rule that was pre-checked is still enforced, by
+     * `OrderEntityServer.ValidateAsync` and the booking walk; the difference is that
+     * the refusal now reaches the user as itself rather than as a prediction of
+     * itself. `MJOOrderEntryService.Confirm` throws on refusal, and the catch below
+     * puts that sentence on screen.
+     *
+     * A richer pre-flight can come back, but it must be built on a read-only decide
+     * pass (the shape `Orders.PreviewPrice` already has), never on a save.
      */
-    public async OpenPreflight(draft: OrderDraft): Promise<void> {
-        this.preflightDraft = draft;
-        this.PreflightBusy = true;
-        this.PreflightError = null;
-        this.Preflight = null;
+    public async Confirm(draft: OrderDraft): Promise<void> {
+        if (this.Confirming) return;
+        this.Confirming = true;
+        this.ConfirmError = null;
+        this.cdr.detectChanges();
+
         try {
-            const output = await this.entry.PreviewConfirm(draft);
-            if (!output) {
-                this.PreflightError = 'The pre-flight could not be run, so nothing was confirmed.';
+            const output = await this.entry.Confirm(draft);
+
+            // A CONFIRMED ORDER OPENS IN THE EDITOR. Both lanes, one destination.
+            //
+            // The order is the thing that was just created and it is the thing the user
+            // wants to see, so the confirm ends by putting it on screen — with its number,
+            // its status, its lines and (once the confirm has booked them) its journal
+            // entries and subscriptions. Every previous ending was a step away from it:
+            // fast entry blanked its own form, and the editor navigated to the list.
+            //
+            // Supersedes the fast-entry "stay put and clear" behaviour. That treated the
+            // lane as a QUEUE — book one, start the next — which is a real workflow and
+            // will want a way back; the trade is deliberate (Marcelo, 2026-08-07) and
+            // taking the queue behaviour further is deferred until the editor path is
+            // proven. What is NOT lost is the reason it existed: whatever replaces it must
+            // never leave the next order starting as an edit of the last one, which is how
+            // a line gets billed twice.
+            //
+            // dropStalePages FIRST. Pages are cached and re-inserted with the data they
+            // originally loaded, so a cached list or editor read before this order existed
+            // would show a world without it — indistinguishable, from the user's side,
+            // from the confirm having done nothing, which is how it was reported and how
+            // they were led to press confirm again.
+            this.dropStalePages();
+
+            if (output?.OrderHeaderID) {
+                // DESTROY THE EDITOR FIRST, EVEN WHEN IT IS THE ACTIVE PAGE.
+                //
+                // `dropStalePages` deliberately spares the active page — destroying what
+                // someone is looking at mid-interaction is worse than a stale read. Here
+                // that rule is wrong, and it fails in exactly the way this branch keeps
+                // finding: confirming from the editor left the SAME component instance on
+                // screen, still holding its pre-confirm draft, so the order read
+                // "BALANCE $560.00 · Unpaid" while the database said Paid, AmountPaid 560,
+                // balance 0. The money was right and the screen was not.
+                //
+                // `openRecord` alone could not fix it. It sets `OrderID`/`RecordID` on the
+                // cached instance, and the editor takes a `Draft` — it has neither input
+                // and no ngOnChanges, so the re-insert was a silent no-op. Only the
+                // FRESH-MOUNT path reads `PendingRecordID` and rehydrates through
+                // `MJOOrderEntryService.LoadDraft`, so the page has to be gone first.
+                const editor = this.mounted.get('editor');
+                if (editor) {
+                    editor.destroy();
+                    this.mounted.delete('editor');
+                }
+
+                // Sets PendingRecordID and navigates; `OnPageSelected('editor')` reads it
+                // and hydrates the SAVED order — number, status, lines, payments applied.
+                this.openRecord('editor', { ID: output.OrderHeaderID });
                 return;
             }
-            this.Preflight = {
-                CanConfirm: output.CanConfirm,
-                GrossTotal: output.Totals?.GrossTotal ?? null,
-                JournalEntries: output.JournalEntries ?? [],
-                EntryCount: output.EntryCount ?? 0,
-                CompanyCount: output.CompanyCount ?? 0,
-                AllBalanced: output.AllBalanced ?? false,
-                SubscriptionDecisions: output.SubscriptionDecisions ?? [],
-                EntitlementGrants: output.EntitlementGrants ?? [],
-                Approvals: output.Approvals ?? [],
-                FulfillmentHolds: output.FulfillmentHolds ?? [],
-                Blockers: output.Blockers ?? [],
-            };
+
+            // No id came back — the confirm reported success without saying WHAT it
+            // created. Nothing to open, so fall back to the list rather than leaving the
+            // user on a form that no longer describes anything.
+            await this.OnPageSelected('list');
         } catch (e) {
-            this.PreflightError = e instanceof Error ? e.message : String(e);
+            // `Confirm` THROWS on a refusal. Without this catch the rejection escapes the handler,
+            // nothing is set, and the screen sits there — precisely the silent confirm the throw
+            // was added to eliminate, reintroduced one layer up.
+            this.ConfirmError = e instanceof Error ? e.message : String(e);
         } finally {
-            this.PreflightBusy = false;
+            this.Confirming = false;
             // MUST tick. Everything above lands after an `await`, and this component is created
-            // imperatively (no host template, zoneless), so assigning `Preflight` repaints
-            // nothing on its own. Without this the dialog sits on "Working out what this will
-            // do…" for ever — the pre-flight HAS run and its answer is in memory, but the commit
-            // button never appears, so an order can be built and priced and never confirmed.
+            // imperatively (no host template, zoneless), so assigning state repaints nothing on its
+            // own. Without this the order really IS booked but the screen never says so — which
+            // reads as failure and invites a second confirm.
             this.cdr.detectChanges();
         }
     }
 
-    /** Commit. Only reachable when the pre-flight said it could be. */
-    public async ConfirmFromPreflight(): Promise<void> {
-        if (!this.preflightDraft) return;
-        this.PreflightBusy = true;
-        try {
-            const output = await this.entry.Confirm(this.preflightDraft);
-            if (!output?.Success) {
-                this.PreflightError = output?.Message ?? 'The order was not confirmed.';
-                return;
-            }
-            this.ClosePreflight();
-            this.OnPageSelected('list');
-        } finally {
-            this.PreflightBusy = false;
-            // Same reason as OpenPreflight: post-`await` state on an imperatively-created,
-            // zoneless component. Without this the order really IS confirmed and booked, but the
-            // dialog stays open showing a spinner — which reads as "it failed" and invites the
-            // user to confirm a second time.
-            this.cdr.detectChanges();
-        }
+    /** Dismiss the refusal banner. */
+    public ClearConfirmError(): void {
+        this.ConfirmError = null;
     }
 
-    public ClosePreflight(): void {
-        this.Preflight = null;
-        this.PreflightError = null;
-        this.preflightDraft = null;
+    /**
+     * Throw away cached pages so the next visit re-reads.
+     *
+     * The ACTIVE page is kept: it is on screen, the user is looking at it, and destroying it under
+     * them would blank the view mid-interaction. Everything else is a snapshot of the world before
+     * whatever just changed.
+     */
+    private dropStalePages(): void {
+        for (const [pageId, ref] of this.mounted) {
+            if (pageId === this.ActivePageId) continue;
+            ref.destroy();
+            this.mounted.delete(pageId);
+        }
     }
 
     /** First page in the rail — the fallback when nothing is remembered. */
@@ -609,7 +651,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 @Component({
     selector: 'mjo-orders-section',
     standalone: true,
-    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent, MJOConfirmPreflightComponent, MJAlertComponent],
+    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent, MJAlertComponent],
     template: `
         <mjo-section-shell
             Title="Orders"
@@ -647,26 +689,24 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         </mjo-section-shell>
 
         <!--
-          The pre-flight lives at the SECTION, not on a page: both fast entry and
-          the full editor confirm, and the overlay must survive the rail switch
-          between them. It renders only while a confirm is in flight.
+          The refusal banner lives at the SECTION, not on a page: both fast entry and
+          the full editor confirm, and the message must survive the rail switch
+          between them.
+
+          position:fixed is load-bearing here, not styling. The old pre-flight rendered
+          as a plain block at the end of this template, so on a scrolled page it
+          appeared BELOW THE FOLD — refusals reached the user only because the banner
+          was fixed and successes never did. Whatever replaces this must stay pinned.
         -->
-        @if (Preflight || PreflightBusy || PreflightError) {
-            <mjo-confirm-preflight
-                [Preflight]="Preflight"
-                [Busy]="PreflightBusy"
-                (Confirmed)="ConfirmFromPreflight()"
-                (Cancelled)="ClosePreflight()" />
-        }
-        @if (PreflightError) {
-            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-section__preflight-error" role="alert">
-<strong>Nothing was confirmed.</strong> {{ PreflightError }}
+        @if (ConfirmError) {
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-section__confirm-error" role="alert">
+<strong>Nothing was confirmed.</strong> {{ ConfirmError }}
             </mj-alert>
         }
     `,
     styles: [
         `
-            .mjo-section__preflight-error {
+            .mjo-section__confirm-error {
                 position: fixed; left: 50%; bottom: var(--mj-space-6);
                 transform: translateX(-50%); z-index: 60; max-width: 560px;
             }
