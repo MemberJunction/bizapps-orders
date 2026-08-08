@@ -3379,6 +3379,55 @@ GO
 EXEC sp_addextendedproperty @name=N'MS_Description', @value=N'Which lines a charge belongs to. Needed for tax (per line), GL (per line''s company) and returns (refunding a line refunds its share of the charge). The same shape as OrderAdjustmentAllocation, deliberately.', @level0type=N'SCHEMA', @level0name=N'__mj_BizAppsOrders', @level1type=N'TABLE', @level1name=N'OrderChargeAllocation';
 GO
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -- =============================================================================
 --
 --   CODEGEN OUTPUT — GENERATED CODE BELOW THIS LINE (do not hand-edit)
