@@ -7,16 +7,19 @@
  * boundary as scalar fields. A browser therefore cannot compose an order through
  * `BaseEntity` at all. `OrderDraft` is the answer to the other half of that
  * problem: something for the UI to hold and mutate that knows how to become the
- * payload `Orders.SaveOrder` / `Orders.ConfirmOrder` / `Orders.PreviewOrder`
- * accept, which the server then rehydrates into real entities.
+ * payload `Orders.SaveOrder` / `Orders.ConfirmOrder` accept, which the server then
+ * rehydrates into real entities.
  *
- * WHAT IT DELIBERATELY DOES NOT DO. It does not price anything. Not the subtotal,
- * not a discount, not a tax layer. Every derived number comes from
- * `Orders.PreviewOrder` and is stored via {@link OrderDraft.ApplyPreview}. A
- * second implementation of the pricing rules living next to the engine is the
- * thing that eventually disagrees with it, and the disagreement surfaces as a
- * balanced journal entry for the wrong amount — which nothing downstream can
- * catch.
+ * WHAT IT DELIBERATELY DOES NOT DO. It does not price anything, and it does not
+ * REMEMBER a price either. Not the subtotal, not a discount, not a tax layer. A
+ * second implementation of the pricing rules living next to the engine is the thing
+ * that eventually disagrees with it, and the disagreement surfaces as a balanced
+ * journal entry for the wrong amount — which nothing downstream can catch.
+ *
+ * Prices for display are resolved by `Orders.PreviewPrice`, which calls the same
+ * `ResolvePrice` the engine's own pricing walk calls, and they are held by the
+ * VIEW, not here. The price that actually counts is computed inside the confirm
+ * transaction and never reaches the browser.
  *
  * FRAMEWORK-FREE ON PURPOSE. No Angular, no DOM, no MJ provider. Both order-entry
  * lanes bind to the same instance, so "open in the full editor" is the same object
@@ -162,27 +165,6 @@ export interface OrderDraftValidationResult {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Preview results the draft carries but never computes
- * ──────────────────────────────────────────────────────────────────────────── */
-
-/**
- * The structural minimum of `OrdersPreviewOrderOutput` that the draft itself
- * needs — enough to answer "is my stored decomposition still current" and "what
- * is the total I could confirm against". The UI reads the full result; the draft
- * deliberately knows less.
- *
- * NO INDEX SIGNATURE. An earlier version declared `[key: string]: unknown` to be
- * permissive, which had the opposite effect: TypeScript then required the SOURCE
- * to carry one too, so the concrete generated output type would not assign. Extra
- * properties on a non-literal are already allowed; the minimal shape is the
- * permissive one.
- */
-export interface OrderDraftPreview {
-    Lines?: ReadonlyArray<{ ClientKey?: string; LineNumber: number }>;
-    Totals?: { GrossTotal: number; NetTotal: number };
-}
-
-/* ────────────────────────────────────────────────────────────────────────────
  * The draft
  * ──────────────────────────────────────────────────────────────────────────── */
 
@@ -190,7 +172,7 @@ export interface OrderDraftPreview {
 export class OrderDraftLine implements OrderDraftLinePayload {
     /**
      * Stable identity for this row, generated client-side and never persisted.
-     * It is how a preview result is matched back to the row that produced it —
+     * It is how a resolved price is matched back to the row that produced it —
      * line NUMBERS renumber when a row is removed, so they cannot do this job.
      */
     public readonly ClientKey: string;
@@ -266,19 +248,15 @@ export interface OrderDraftInit {
  * draft.AddLine({ ProductID: membership.ID, Quantity: 1 });
  * draft.AddPromotionCode('SPRING10');
  *
- * // Every derived number comes from the engine, never from here.
- * const preview = await new OrdersPreviewOrderOperation().Execute({ Draft: draft.ToInput() });
- * if (preview.Success) draft.ApplyPreview(preview.Output!);
- *
- * const confirmed = await new OrdersConfirmOrderOperation().Execute({
- *   Draft: draft.ToInput(),
- *   ExpectedGrossTotal: draft.Preview?.Totals?.GrossTotal,   // refuse a price that moved
- * });
+ * // Every derived number comes from the engine, never from here. The draft holds
+ * // NO money at all: prices are resolved by `Orders.PreviewPrice` for display and
+ * // by `OrderEntityServer.Save()` for real, and neither answer is cached here.
+ * const confirmed = await new OrdersConfirmOrderOperation().Execute({ Draft: draft.ToInput() });
  * ```
  *
  * @example Subscribe to changes from a view
  * ```typescript
- * const stop = draft.Subscribe(() => this.schedulePreview());
+ * const stop = draft.Subscribe(() => this.schedulePricing());
  * // ... later
  * stop();
  * ```
@@ -289,9 +267,6 @@ export class OrderDraft {
     private _promotionCodes: string[] = [];
     private _manualDiscounts: OrderDraftManualDiscountPayload[] = [];
     private _charges: OrderDraftChargePayload[] = [];
-    private _preview: OrderDraftPreview | null = null;
-    /** The version the stored preview was computed against. */
-    private _previewVersion = -1;
     private _version = 0;
     private _keySeq = 0;
     private _subscribers: Array<(draft: OrderDraft) => void> = [];
@@ -383,24 +358,10 @@ export class OrderDraft {
 
     /**
      * Increments on every mutation. A view can compare it to decide whether to
-     * re-render, and it is what tells the draft its stored preview went stale.
+     * re-render, and it is what tells a view its displayed prices went stale.
      */
     public get Version(): number {
         return this._version;
-    }
-
-    /** The last decomposition the engine returned, or null if none yet. */
-    public get Preview(): OrderDraftPreview | null {
-        return this._preview;
-    }
-
-    /**
-     * True when the draft has changed since the stored preview was computed — so
-     * the UI can mark the totals as recomputing instead of showing stale money
-     * as though it were current.
-     */
-    public get IsPreviewStale(): boolean {
-        return this._preview === null || this._previewVersion !== this._version;
     }
 
     /** True when this draft has never been saved. */
@@ -649,33 +610,15 @@ export class OrderDraft {
         return payload;
     }
 
-    /**
-     * Store a decomposition the engine returned, and remember which version of the
-     * draft it belongs to so {@link IsPreviewStale} can tell the truth.
-     */
-    public ApplyPreview(preview: OrderDraftPreview): this {
-        this._preview = preview;
-        this._previewVersion = this._version;
-        return this;
-    }
-
-    /** Forget the stored decomposition — e.g. after a failed preview call. */
-    public ClearPreview(): this {
-        this._preview = null;
-        this._previewVersion = -1;
-        return this;
-    }
-
-    /**
-     * The gross the user is currently looking at, or `undefined` when there is no
-     * current preview. Pass it as `ExpectedGrossTotal` on confirm so a price that
-     * moved underneath them stops the confirm instead of silently booking a
-     * different amount.
-     */
-    public get ConfirmableGrossTotal(): number | undefined {
-        if (this.IsPreviewStale) return undefined;
-        return this._preview?.Totals?.GrossTotal;
-    }
+    // THE DRAFT HOLDS NO MONEY, DELIBERATELY.
+    //
+    // It used to cache the engine's decomposition (`ApplyPreview` / `Preview` /
+    // `IsPreviewStale` / `ConfirmableGrossTotal`), which existed to feed
+    // `ExpectedGrossTotal` on confirm. That whole surface is gone with the preview
+    // that filled it: a cached total is stale money one keystroke later, and a draft
+    // that carries money invites a screen to trust it. Prices for DISPLAY come from
+    // `Orders.PreviewPrice` and live in the view; the price that COUNTS is computed
+    // inside the confirm transaction and is never in the browser at all.
 
     // ── Validation ───────────────────────────────────────────────────────────
 
@@ -859,8 +802,6 @@ export class OrderDraft {
         copy._promotionCodes = [...this._promotionCodes];
         copy._manualDiscounts = this._manualDiscounts.map((d) => ({ ...d }));
         copy._charges = this._charges.map((c) => ({ ...c }));
-        copy._preview = this._preview;
-        copy._previewVersion = this._previewVersion;
         copy._version = this._version;
         copy._keySeq = this._keySeq;
         // A clone inherits which fields are still defaults. Without this the copy's constructor

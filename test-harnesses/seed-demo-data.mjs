@@ -239,6 +239,21 @@ const COA = [
     { role: 'Accounts Receivable', code: '11201', name: 'Accounts Receivable', type: 'Asset' },
     { role: 'Deferred Revenue', code: '21301', name: 'Deferred Revenue', type: 'Liability' },
     { role: 'Sales', code: '40100', name: 'Sales Revenue', type: 'Revenue' },
+    // ── The two below were MISSING, and their absence only shows up at booking. ──
+    //
+    // `GLAccountResolver` throws "No GL account is linked for role 'X'" and the whole
+    // confirm rolls back. Both are reachable from ordinary order entry, so a demo
+    // dataset without them is a demo that fails on the second thing anyone tries:
+    //
+    //   Sales Discounts  — any line with a DiscountPct, and the discount control is
+    //                      right there on the order editor's line row.
+    //   Processing Fee   — any payment carrying a ProcessingFeeAmount, which is every
+    //                      card capture through a provider that charges one.
+    //
+    // Found 2026-08-07 by reading the seeded links against `GLAccountRole` and noticing
+    // four of nine roles were linked. Cost nothing to add; costs a demo to leave out.
+    { role: 'Sales Discounts', code: '40900', name: 'Sales Discounts', type: 'Revenue' },
+    { role: 'Processing Fee', code: '60300', name: 'Payment Processing Fees', type: 'Expense' },
 ];
 /**
  * Intercompany accounts. Not role-linked: an intercompany account is per-company-PAIR, which a
@@ -337,13 +352,19 @@ await q(`INSERT INTO ${ORDERS}.ProductCategory (ID, CompanyID, Name, IsActive)
  *
  * WHY THE PRICE MATTERS: every order below states its own `line.UnitPrice`, so this seed used to
  * create no ProductPrice rows at all. That is fine for the seeded orders and useless for anything
- * driven by hand: Fast entry adds a line WITHOUT a price and asks `Orders.PreviewOrder` to resolve
- * one, which fails with "no price rule was found for this product, and no UnitPrice was supplied".
- * The line then sits on "— resolving…" and `Confirm order` never enables, because CanConfirm
- * requires a preview result. So the catalog looked complete and could not be sold from.
+ * driven by hand: Fast entry adds a line WITHOUT a price and asks `Orders.PreviewPrice` to resolve
+ * one, which refuses with "No price is configured for <product>". The line then shows that refusal
+ * instead of a number. (Before 2026-08-07 it was worse: the confirm button was GATED on a preview
+ * result, so an unpriced line made the whole order unconfirmable. It no longer is — the engine
+ * decides — but a catalog you cannot price is still a catalog you cannot sell from.)
  *
- * Pass `listPrice: null` to leave a product deliberately unpriced — that is the manual-entry case,
- * and it is worth keeping one so both paths are demonstrable.
+ * Pass `listPrice: null` to leave a product unpriced. NOTHING IN THE DEMO SET DOES ANY
+ * MORE. `consulting` used to, to demonstrate the price-it-by-hand path — but an unpriced
+ * product in the picker is indistinguishable from a broken one, and it produced $0.00
+ * lines that read as a bug in every hands-on session. The manual path is still
+ * demonstrable and always was: a typed price WINS over a resolved one (the hydrator
+ * leaves a stated `UnitPrice` alone), so type over the resolved figure on any line.
+ * (Ruled by Marcelo, 2026-08-07: "add a price rule for each of these".)
  */
 async function product(name, revRecCode, subTypeCode = null, typeID = servicesTypeID, listPrice = null) {
     const id = randomUUID();
@@ -369,14 +390,14 @@ await q(`INSERT INTO ${ORDERS}.ProductType
                  'MJ_BizApps_Orders: Event Products','MJ_BizApps_Orders: Event Order Lines','${revRec.get('AllBackEnd')}')`);
 
 // List prices match the amounts the orders below state, so a hand-built order prices the same as
-// a seeded one. `consulting` is deliberately left UNPRICED — the price-it-by-hand case.
+// a seeded one. EVERY product carries one — see the note on `product()` above.
 const products = {
     handbook: await product(`${DEMO_TAG} Style Handbook`, 'UpFront', null, goodsTypeID, 45),
     workshop: await product(`${DEMO_TAG} Editing Workshop Seat`, 'UpFront', null, servicesTypeID, 150),
     conference: await product(`${DEMO_TAG} Annual Conference Ticket`, 'AllBackEnd', null, eventTypeID, 275),
     membership: await product(`${DEMO_TAG} Individual Membership`, 'EvenOverTime', 'AnnualRolling', servicesTypeID, 240),
     calendarMembership: await product(`${DEMO_TAG} Institutional Membership`, 'EvenOverTime', 'CalendarYear', servicesTypeID, 1200),
-    consulting: await product(`${DEMO_TAG} Editorial Consulting (hourly)`, 'UpFront', null, servicesTypeID, null),
+    consulting: await product(`${DEMO_TAG} Editorial Consulting (hourly)`, 'UpFront', null, servicesTypeID, 120),
 };
 
 // The conference is a REAL event: its dates live on the EventProduct row, so a ticket line needs
@@ -397,6 +418,13 @@ await q(`INSERT INTO ${ORDERS}.Product
             (ID, CompanyID, ProductTypeID, ProductCategoryID, Name, Status, RevenueRecognitionTypeID, IsTaxable)
          VALUES ('${products.pressAnthology}','${press.ID}','${goodsTypeID}','${pressCatID}',
                  '${DEMO_TAG} Partner Press Anthology','Active','${revRec.get('UpFront')}',0)`);
+// 210 matches the amount the seeded order below states for this line, so picking it by hand
+// prices identically to the seeded order. It is written out rather than going through
+// `product()` because that helper hard-codes the PRIMARY company; this product is the other
+// company's, which is the whole reason it exists.
+await q(`INSERT INTO ${ORDERS}.ProductPrice
+            (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
+         VALUES ('${randomUUID()}','${products.pressAnthology}','PerUnit','Standard',210,'2020-01-01',100,'Active')`);
 
 // A SUBSCRIPTION on the other company too, not just a one-off good.
 //
@@ -418,7 +446,7 @@ await q(`INSERT INTO ${ORDERS}.ProductPrice
             (ID, ProductID, PricingModel, FeeType, Amount, EffectiveFrom, Priority, Status)
          VALUES ('${randomUUID()}','${products.pressMembership}','PerUnit','Standard',180,'2020-01-01',100,'Active')`);
 say(`  ${DEMO_TAG} Partner Press Membership  (EvenOverTime, AnnualRolling)  list 180  — on the OTHER company`);
-say(`  ${DEMO_TAG} Partner Press Anthology  (UpFront, owned by ${press.Name})`);
+say(`  ${DEMO_TAG} Partner Press Anthology  (UpFront, owned by ${press.Name})  list 210`);
 
 // ─── Orders ────────────────────────────────────────────────────────────────────
 
@@ -433,8 +461,30 @@ async function confirmOrder({ lines, customer, orderDate, initialPayment, note }
     if (customer?.person) order.BillToPersonID = customer.person;
     if (note) order.Notes = note;
     if (initialPayment) {
-        order.InitialPaymentTypeID = payTypes.get(initialPayment.type);
+        const paymentTypeID = payTypes.get(initialPayment.type);
+        order.InitialPaymentTypeID = paymentTypeID;
         order.InitialPaymentAmount = initialPayment.amount;
+
+        // A TENDER THAT REQUIRES A REFERENCE MUST CARRY ONE — and the reference is an
+        // INSTRUMENT, not an order field. There is no `ReferenceNumber` column on
+        // OrderHeader; it lives on a `PaymentDetail` the order points at, which
+        // `createInitialPayment` then COPIES onto the payment (D39) so the payment's
+        // record of the check cannot drift if the intent row is later edited. That is
+        // the same thing `OrderDraftHydrator.createReferenceInstrument` does for the UI.
+        //
+        // This seed did not do it, and the whole run died at the SECOND order once the
+        // reference rule landed (`requireReferenceWhenTenderDemandsOne`, 2026-08-07):
+        //   "Check payments need a reference number ... Enter it on the order, or
+        //    invoice on terms instead."
+        // The rule is right and the seed was stale. Fixed here rather than by weakening
+        // the rule or switching the demo order to terms — a paid-by-check order is
+        // exactly what the demo needs to show.
+        if (initialPayment.reference) {
+            const detailID = randomUUID();
+            await q(`INSERT INTO ${ORDERS}.PaymentDetail (ID, CompanyID, PaymentTypeID, ReferenceNumber)
+                     VALUES ('${detailID}','${companyID}','${paymentTypeID}','${initialPayment.reference}')`);
+            order.InitialPaymentDetailID = detailID;
+        }
     }
 
     const built = [];
@@ -511,7 +561,7 @@ const o1 = await confirmOrder({
 const o2 = await confirmOrder({
     lines: [{ product: products.workshop, qty: 2, price: 150 }],
     customer: { org: org2ID },
-    initialPayment: { type: 'Check', amount: 300 },
+    initialPayment: { type: 'Check', amount: 300, reference: 'CHK-20481' },
     note: 'Paid in full at confirm — AR nets to zero and the cash leg is booked',
 });
 
@@ -521,7 +571,7 @@ const o3 = await confirmOrder({
         { product: products.workshop, qty: 1, price: 150 },
     ],
     customer: { org: orgID },
-    initialPayment: { type: 'ACH', amount: 200 },
+    initialPayment: { type: 'ACH', amount: 200, reference: 'ACH-77310' },
     note: 'Partially paid — a discounted line plus split tender',
 });
 

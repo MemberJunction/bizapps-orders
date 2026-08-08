@@ -105,13 +105,19 @@
       (BeforeStageChange)="OnBeforeStageChange($event)" />
   </div>
 
+  <!--
+    PERSISTED MONEY WINS. Every value here was previously a LITERAL — `[Paid]="0"` and a
+    PaymentStatus of the string 'Unpaid' for any non-draft order — so a confirmed, fully-paid
+    order reported "PAID — · BALANCE $560.00 · Unpaid" permanently, and nothing the user did
+    could change it. See `DisplayTotal` / `DisplayPaid` / `DisplayBalance` for the reads.
+  -->
   <mjo-money-strip
     class="ed-money"
-    [Total]="Totals?.GrossTotal ?? null"
-    [Paid]="0"
-    [Balance]="Totals?.GrossTotal ?? null"
-    [ShowPaid]="Status !== 'Draft'"
-    [PaymentStatus]="Status === 'Draft' ? null : 'Unpaid'" />
+    [Total]="DisplayTotal"
+    [Paid]="DisplayPaid"
+    [Balance]="DisplayBalance"
+    [ShowPaid]="IsPersisted"
+    [PaymentStatus]="DisplayPaymentStatus" />
 
   <!-- Issues above the tabs: a red dot alone leaves the user hunting. -->
   @if (Issues.length) {
@@ -212,8 +218,10 @@
             <th class="num ed-col-price">Unit price</th>
             <th class="num ed-col-disc">Discount</th>
             <th class="num ed-col-net">Line net</th>
-            <th class="num ed-col-tax">Tax</th>
-            <th class="num ed-col-total">Line total</th>
+            <!-- Marked pending, not removed: the columns keep the table's shape and say
+                 plainly that the figure is decided later, rather than implying zero. -->
+            <th class="num ed-col-tax muted" title="Decided when the order is confirmed">Tax</th>
+            <th class="num ed-col-total muted" title="Decided when the order is confirmed">Line total</th>
             <th class="ed-col-act"></th>
           </tr>
         </thead>
@@ -227,15 +235,17 @@
                   <span class="primary">{{ ProductFor(line)?.Name ?? 'Product' }}</span>
                   <span class="secondary">{{ ProductFor(line)?.SKU }}</span>
                 </div>
+                <!--
+                  Consequence chips read the CATALOGUE, not a priced line. They used to
+                  come off the rolled-back preview's projection, which meant a line could
+                  not say "ships" until a whole throwaway booking had run.
+                -->
                 <div class="ed-line-conseq">
-                  @if (PricedLine(line); as priced) {
-                    @if (priced.ServicePeriodSource) {
-                      <mjo-consequence-chip Kind="event">{{ priced.ServicePeriodSource }}</mjo-consequence-chip>
-                    }
-                    @if (priced.RequiresFulfillment) {
+                  @if (ProductFor(line); as product) {
+                    @if (product.TypeName === 'Goods') {
                       <mjo-consequence-chip Kind="fulfillment">Ships</mjo-consequence-chip>
                     }
-                    @if (priced.TaxZeroReason) {
+                    @if (!product.Taxable) {
                       <mjo-consequence-chip Kind="untaxable">Untaxable</mjo-consequence-chip>
                     }
                   }
@@ -243,7 +253,7 @@
               </td>
 
               <td>
-                <span class="mj-chip mj-chip--outline">{{ PricedLine(line)?.CompanyName ?? '—' }}</span>
+                <span class="mj-chip mj-chip--outline">{{ ProductFor(line)?.CompanyName ?? '—' }}</span>
               </td>
 
               <td class="num" (click)="$event.stopPropagation()">
@@ -267,26 +277,34 @@
                   [Source]="PricedLine(line)?.PriceSource ?? null"
                   [Settled]="PricingSettled"
                   [Overridden]="line.UnitPriceWasStated" />
+                @if (PricedLine(line)?.Error; as why) {
+                  <!--
+                    A LINE WITH NO PRICE SAYS SO. Rendering nothing (or a $0.00) makes an
+                    unpriced line and a deliberately free one identical on screen, and only
+                    one of those is what anybody meant.
+                  -->
+                  <div class="secondary mj-money--credit">{{ why }}</div>
+                }
               </td>
 
               <td class="num">
-                @if (PricedLine(line)?.DiscountAmount) {
-                  <span class="mj-money--credit">−{{ PricedLine(line)?.DiscountAmount | mjoMoney: { Sign: 'absolute' } }}</span>
+                @if (DiscountAmount(line); as discount) {
+                  <span class="mj-money--credit">−{{ discount | mjoMoney: { Sign: 'absolute' } }}</span>
                 } @else {
                   <span class="muted">—</span>
                 }
               </td>
 
-              <td class="num strong">{{ PricedLine(line)?.LineTotalNet | mjoMoney }}</td>
+              <td class="num strong">{{ PricedLine(line)?.NetAmount | mjoMoney }}</td>
 
-              <td class="num">
-                {{ PricedLine(line)?.LineTax | mjoMoney: { Zero: '$0.00' } }}
-                @if (PricedLine(line)?.TaxLayers?.length) {
-                  <div class="secondary">{{ PricedLine(line)?.TaxLayers?.length }} layers</div>
-                }
-              </td>
-
-              <td class="num strong">{{ PricedLine(line)?.LineTotalGross | mjoMoney }}</td>
+              <!--
+                BLANK, NOT ZERO. Tax and the tax-inclusive line total are decided inside the
+                confirm transaction and are not knowable from the browser. A $0.00 here would
+                read as "this order is untaxed" on the screen people trust for exactly that,
+                so the cell says "—" and the header says when the number arrives.
+              -->
+              <td class="num muted" title="Decided when the order is confirmed">—</td>
+              <td class="num muted" title="Decided when the order is confirmed">—</td>
 
               <td (click)="$event.stopPropagation()">
                 @if (IsEditable) {
@@ -312,10 +330,15 @@
         @if (Totals) {
           <tfoot>
             <tr class="is-total">
-              <td colspan="6">Order totals</td>
+              <td colspan="6">
+                Net before tax &amp; charges
+                @if (HasUnpricedLines) {
+                  <span class="secondary mj-money--credit">— some lines have no price, so this is short</span>
+                }
+              </td>
               <td class="num">{{ Totals.NetTotal | mjoMoney }}</td>
-              <td class="num">{{ Totals.TaxTotal | mjoMoney }}</td>
-              <td class="num">{{ Totals.GrossTotal | mjoMoney }}</td>
+              <td class="num muted">—</td>
+              <td class="num muted">—</td>
               <td></td>
             </tr>
           </tfoot>
@@ -329,24 +352,21 @@
           <i class="fa-solid fa-percent" aria-hidden="true"></i>
           <h3>Promotions</h3>
         </div>
+        <!--
+          Codes are LISTED, not adjudicated. Whether one qualifies is decided by the
+          promotion engine inside the confirm transaction; the old outcome here came
+          from a rolled-back booking run on every keystroke. Showing "applied" for a
+          code the confirm might refuse is a promise the screen cannot keep.
+        -->
         <div class="mj-card-pad">
-          @for (promo of Preview.Result?.Promotions ?? []; track promo.Code) {
-            <div class="ed-promo">
-              <i
-                class="fa-solid"
-                [class.fa-circle-check]="promo.Applied"
-                [class.fa-circle-minus]="!promo.Applied"
-                [style.color]="promo.Applied ? 'var(--mj-status-success)' : 'var(--mj-text-disabled)'"
-                aria-hidden="true"></i>
+          @for (code of Draft.PromotionCodes; track code) {
+            <div class="ed-promo muted">
+              <i class="fa-solid fa-circle-minus" style="color: var(--mj-text-disabled)" aria-hidden="true"></i>
               <div class="ed-promo__body">
-                <div><b class="mono">{{ promo.Code }}</b> {{ promo.Name }}</div>
-                @if (!promo.Applied && promo.NotAppliedReason) {
-                  <div class="small muted">{{ promo.NotAppliedReason }}</div>
-                }
+                <div><b class="mono">{{ code }}</b></div>
+                <div class="small">Checked when the order is confirmed.</div>
               </div>
-              <span class="mj-num strong" [class.mj-money--credit]="promo.Applied">
-                {{ promo.Applied ? '−' + (promo.Amount | mjoMoney: { Sign: 'absolute' }) : '—' }}
-              </span>
+              <span class="mj-num">—</span>
             </div>
           } @empty {
             <div class="small muted">No promotion codes on this order.</div>
@@ -360,7 +380,7 @@
           <h3>Totals</h3>
         </div>
         <div class="mj-card-pad">
-          <mjo-decomposition-ladder [Rows]="LadderRows" [Stale]="Preview.Loading" />
+          <mjo-decomposition-ladder [Rows]="LadderRows" [Stale]="Pricing.Loading" />
         </div>
       </div>
     </div>
@@ -496,103 +516,40 @@
 <!-- ═══════ CHARGES & TAX ═══════ -->
 @if (ActiveTab === 'charges') {
   <div class="ed-pane">
-    <div class="mj-table-wrap">
-      <table class="mj-table mj-table--compact">
-        <thead>
-          <tr>
-            <th class="num ed-col-seq">Seq</th>
-            <th>Charge</th>
-            <th>Basis</th>
-            <th class="num">Basis amount</th>
-            <th class="num">Rate</th>
-            <th class="num">Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (charge of Charges; track $index) {
-            <tr>
-              <td class="num muted">{{ charge.Sequence }}</td>
-              <td>
-                <b>{{ charge.Name }}</b>
-                @if (charge.JurisdictionName) {
-                  <div class="secondary">{{ charge.JurisdictionName }}</div>
-                }
-                <span class="mj-chip" [class.mj-chip--info]="charge.IsTax" [class.mj-chip--outline]="!charge.IsTax">
-                  {{ charge.IsTax ? 'tax' : 'charge' }}
-                </span>
-              </td>
-              <td class="small">{{ charge.Basis }}</td>
-              <td class="num">{{ charge.BasisAmount == null ? '—' : (charge.BasisAmount | mjoMoney) }}</td>
-              <td class="num">{{ charge.Rate == null ? '—' : (charge.Rate * 100) + '%' }}</td>
-              <td class="num strong">{{ charge.Amount | mjoMoney }}</td>
-            </tr>
-          } @empty {
-            <tr><td colspan="6" class="small muted ed-pad">No charges on this order.</td></tr>
-          }
-        </tbody>
-      </table>
-    </div>
+    <!--
+      THIS TAB IS EMPTY BEFORE THE CONFIRM, AND SAYS WHY.
 
-    <div class="grid-2 ed-below">
-      <div class="mj-card">
-        <div class="mj-card-head">
-          <i class="fa-solid fa-layer-group" aria-hidden="true"></i>
-          <h3>How the taxable base was built</h3>
-        </div>
-        <div class="mj-card-pad">
-          @if (TaxableBase; as base) {
-            <div class="ed-base">
-              <span>Taxable goods</span><span class="amt">{{ base.TaxableGoods | mjoMoney }}</span>
-              <span class="muted">Untaxable goods</span>
-              <span class="amt muted">excluded ({{ base.UntaxableGoods | mjoMoney }})</span>
-              <span>Non-tax charges</span><span class="amt">+ {{ base.NonTaxCharges | mjoMoney }}</span>
-              <span class="muted tiny">Tax charges</span>
-              <span class="amt muted tiny">never enlarge the base</span>
-              <span class="tot">Taxable base</span><span class="amt tot">{{ base.Base | mjoMoney }}</span>
-            </div>
+      It used to render the engine's charge rows, the taxable-base build-up and the
+      per-line "why did this tax" panel. All of it came from `Orders.PreviewOrder`,
+      which produced those figures by running the REAL save inside a transaction that
+      always rolled back — so every keystroke booked and unbooked the order to fill in
+      this screen.
 
-            <mj-alert Variant="success" Icon="fa-solid fa-circle-check" class="ed-note">
-                <strong>Tax layers never compound.</strong> Every jurisdiction computes on the same
-                {{ base.Base | mjoMoney }}. A non-tax charge enlarges the taxable base; a tax charge
-                does not — so county tax is not charged on state tax.
-            </mj-alert>
-          } @else {
-            <div class="small muted">No taxable base — nothing on this order is taxable.</div>
-          }
-        </div>
-      </div>
+      Charges, tax and promotions are decided inside `OrderEntityServer.Save()` and
+      have no read-only entry point yet. Line PRICING does (`Orders.PreviewPrice`
+      calls the same `ResolvePrice` the engine calls), which is why the Lines tab
+      still shows real prices and this one does not.
 
-      <div class="mj-card">
-        <div class="mj-card-head">
-          <i class="fa-solid fa-scale-unbalanced" aria-hidden="true"></i>
-          <h3>Why each line taxed the way it did</h3>
-        </div>
-        <div class="mj-card-pad">
-          @for (line of TaxExplanations; track line.LineNumber) {
-            <div class="ed-taxwhy">
-              <div class="row">
-                <b>Line {{ line.LineNumber }} · {{ line.ProductName }}</b>
-                <span class="spacer mj-num strong">{{ line.LineTax | mjoMoney }}</span>
-              </div>
-              @if (line.TaxZeroReason) {
-                <div class="small muted">{{ line.TaxZeroReason }}</div>
-                <div class="tiny muted">
-                  A zero always records <b>which</b> of four reasons produced it — untaxable, no
-                  nexus, exempt, or no jurisdiction.
-                </div>
-              } @else {
-                @for (layer of line.TaxLayers; track layer.Name) {
-                  <div class="row small">
-                    <span class="muted">{{ layer.Name }} · {{ layer.Rate * 100 }}%</span>
-                    <span class="spacer mj-num">{{ layer.Amount | mjoMoney }}</span>
-                  </div>
-                }
-              }
-            </div>
-          }
-        </div>
+      Showing zeroes here would be worse than showing nothing: a $0.00 tax row on the
+      order screen reads as "this order is untaxed", which is a statement, not a gap.
+      When the decide phase is extracted the same way pricing was, this tab comes back
+      reading from that — never from a save.
+    -->
+    <div class="mj-empty ed-empty muted">
+      <i class="fa-solid fa-receipt" aria-hidden="true"></i>
+      <div class="t">Not available yet</div>
+      <div class="small">
+        Charges and tax are decided when the order is confirmed. The Lines tab shows the
+        net subtotal before them.
       </div>
     </div>
+
+    @if (JournalEntries.length) {
+      <div class="small muted ed-note">
+        This order is confirmed — its charges and tax are on the entries under
+        <b>Accounting</b>.
+      </div>
+    }
   </div>
 }
 
@@ -662,8 +619,15 @@
             </div>
           }
         } @else {
+          <!--
+            The tender's NAME, not its id. This read-only branch printed
+            `InitialPaymentTypeID` directly, so every confirmed order showed the user a raw
+            GUID — "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E04" — where the editable branch two
+            lines up shows "Check". `SelectedTenderType` already resolves it against the
+            same `Tenders` list the dropdown is bound to.
+          -->
           <mjo-stated-value Label="Tender">
-            {{ Draft.Header.InitialPaymentTypeID ?? '— invoice on terms —' }}
+            {{ SelectedTenderType?.Name ?? '— invoice on terms —' }}
           </mjo-stated-value>
           <mjo-stated-value Label="Amount">
             {{ Draft.Header.InitialPaymentAmount | mjoMoney: { Zero: '—' } }}
@@ -683,7 +647,7 @@
       <div class="mj-card-head">
         <i class="fa-solid fa-list-check" aria-hidden="true"></i>
         <h3>Payments applied</h3>
-        <span class="right small muted">{{ AppliedTotal | mjoMoney }} of {{ GrossTotal | mjoMoney }}</span>
+        <span class="right small muted">{{ AppliedTotal | mjoMoney }} of {{ EstimatedTotal | mjoMoney }}</span>
       </div>
       <div class="mj-table-wrap">
         <table class="mj-table mj-table--compact">
@@ -778,6 +742,72 @@
     </div>
   </div>
 }
+
+<!-- ═══════ JOURNAL ENTRIES ═══════ -->
+<!--
+  THE LEDGER AS ACCOUNTING HOLDS IT, not a rendering of our own. `mj-entity-data-grid` reads the
+  entity's metadata for its columns, so this stays correct when accounting adds a field — and the
+  rows are the real records, reachable from here rather than re-described here.
+
+  Read-only by construction: the UI role has CanRead on Journal Entries and neither CanCreate nor
+  CanUpdate, which is the same rule the app has always stated in prose.
+-->
+@if (ActiveTab === 'journal') {
+  <div class="ed-pane">
+    @if (JournalEntryParams) {
+      <!-- READ-ONLY, and said so three ways: no New, no Delete, no cell editing. Orders creates
+           Pending entries and owns nothing in the ledger, and the UI role could not write here
+           anyway — a button that always fails is worse than no button.
+           HEIGHT IS UNRESOLVED, and it is the editor's layout rather than the grid's fault. The
+           sticky header (identity strip, stepper, money strip, tabs) leaves `.ed-panes` about 79px
+           tall at 1280x700, so: a fixed height renders a grid taller than its container and you
+           scroll into blank space, and `fit-content` collapses to nothing at all. 360 is the less
+           wrong of the two — the rows exist and load correctly (verified: 4 for ORD-000122).
+           The real fix is giving the pane real height, which belongs with the editor layout work,
+           not here. -->
+      <mj-entity-data-grid
+        [Params]="JournalEntryParams"
+        [Height]="360"
+        [EditMode]="'none'"
+        [ShowNewButton]="false"
+        [ShowDeleteButton]="false"
+        [AllowDelete]="false"
+        [ShowPager]="true" />
+    } @else {
+      <!-- Not an error: an order with no saved lines has booked nothing, and one journal entry is
+           written per line. Saying so beats an empty grid, which reads as a failed query. -->
+      <div class="small muted ed-note">
+        Nothing booked yet — an order books one journal entry per line when it is confirmed.
+      </div>
+    }
+  </div>
+}
+
+<!-- ═══════ SUBSCRIPTIONS ═══════ -->
+<!--
+  What the order STARTED. A subscription is keyed to the order line that brought it into existence
+  (D39/D40) and then outlives the order, so this is a window onto a longer-lived record rather than
+  part of the order document.
+-->
+@if (ActiveTab === 'subscriptions') {
+  <div class="ed-pane">
+    @if (SubscriptionParams) {
+      <mj-entity-data-grid
+        [Params]="SubscriptionParams"
+        [Height]="360"
+        [EditMode]="'none'"
+        [ShowNewButton]="false"
+        [ShowDeleteButton]="false"
+        [AllowDelete]="false"
+        [ShowPager]="true" />
+    } @else {
+      <div class="small muted ed-note">
+        No subscriptions — they are created on confirm, from lines whose product carries a
+        subscription type.
+      </div>
+    }
+  </div>
+}
 </div>
 </div>
 
@@ -788,7 +818,7 @@
       <div>
         <h2>{{ ProductFor(OpenLine)?.Name ?? 'Line' }}</h2>
         <div class="small muted">
-          {{ ProductFor(OpenLine)?.SKU }} · revenue to {{ PricedLine(OpenLine)?.CompanyName }}
+          {{ ProductFor(OpenLine)?.SKU }} · revenue to {{ ProductFor(OpenLine)?.CompanyName }}
         </div>
       </div>
       <span class="right">
@@ -810,15 +840,16 @@
         {{ OpenLine.ShipToOrganizationID ?? '— header default —' }}
       </mjo-stated-value>
 
+      <!--
+        Reads the DRAFT's own dates. The engine may narrow a service period at confirm
+        (an event's dates win over a stated one), and that decision happens inside the
+        booking transaction — so what is shown here is what was ASKED for, not what was
+        settled. The confirmed order states the settled window.
+      -->
       <div class="sec-label ed-drawer__section">Timing</div>
-      @if (PricedLine(OpenLine); as priced) {
-        <mjo-stated-value Label="Service period" [From]="priced.ServicePeriodSource ?? null">
-          {{ priced.ServicePeriodStart ?? '—' }} – {{ priced.ServicePeriodEnd ?? '—' }}
-        </mjo-stated-value>
-        <mjo-stated-value Label="Revenue recognition" From="product type">
-          {{ priced.RevenueRecognitionType ?? '—' }}
-        </mjo-stated-value>
-      }
+      <mjo-stated-value Label="Service period" From="as entered">
+        {{ OpenLine.ServicePeriodStart ?? '—' }} – {{ OpenLine.ServicePeriodEnd ?? '—' }}
+      </mjo-stated-value>
 
       <div class="sec-label ed-drawer__section">Reversal</div>
       <mjo-stated-value Label="Reverses">

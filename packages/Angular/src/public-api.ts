@@ -48,7 +48,6 @@ export { MJOSectionShellComponent } from './lib/sections/section-shell.component
 
 /** The panel library — the shared vocabulary every screen is assembled from. */
 export * from './lib/panels';
-export * from './lib/panels/confirm-preflight.component';
 export * from './lib/panels/worklist-table.component';
 export * from './lib/panels/stat-tile.component';
 export * from './lib/panels/summary-strip.component';

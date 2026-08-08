@@ -33,9 +33,7 @@ import {
     LoadApplyAccountCreditOperation,
     LoadPreviewPriceOperation,
     LoadSaveOrderOperation,
-    LoadPreviewOrderOperation,
     LoadConfirmOrderOperation,
-    LoadPreviewConfirmOperation,
     LoadGetOverdueWorklistOperation,
     LoadGetFulfillmentQueueOperation,
     LoadFulfillOrderLinesOperation,
@@ -98,9 +96,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadApplyAccountCreditOperation(); // the 'Orders.ApplyAccountCredit' remote operation (D68)
     LoadPreviewPriceOperation();       // the 'Orders.PreviewPrice' dry run (D69)
     LoadSaveOrderOperation();          // 'Orders.SaveOrder' — the only way a browser can compose an order
-    LoadPreviewOrderOperation();       // 'Orders.PreviewOrder' — the real save, rolled back
     LoadConfirmOrderOperation();       // 'Orders.ConfirmOrder' — the irreversible step (D8)
-    LoadPreviewConfirmOperation();     // 'Orders.PreviewConfirm' — the real confirm, rolled back
     LoadGetOverdueWorklistOperation(); // 'Orders.GetOverdueWorklist' — overdue is computed, not stored
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act

@@ -160,42 +160,47 @@ describe('OrderDraft — promotion codes', () => {
     });
 });
 
-describe('OrderDraft — preview staleness', () => {
-    it('starts stale', () => {
-        expect(validDraft().IsPreviewStale).toBe(true);
+describe('OrderDraft — the draft carries no money', () => {
+    // WHAT THESE REPLACE. There used to be five tests here for preview staleness:
+    // `ApplyPreview` stored the engine's decomposition, `IsPreviewStale` compared it
+    // against the draft's version, and `ConfirmableGrossTotal` withheld a stale total
+    // so the confirm-time guard could not authorise the very amount it existed to
+    // catch. That whole surface is gone with the save-and-roll-back preview that fed
+    // it, so those tests were STALE — they guarded behaviour deliberately removed, not
+    // behaviour that broke.
+    //
+    // The invariant they were protecting is now structural rather than conditional: a
+    // draft that holds no total cannot offer a stale one. These pin that, so a cached
+    // total cannot be quietly reintroduced — which is what would bring the whole class
+    // of bug back.
+
+    it('exposes no total, and no way to store one', () => {
+        const draft = validDraft();
+        const surface = draft as unknown as Record<string, unknown>;
+        for (const removed of ['Preview', 'ApplyPreview', 'ClearPreview', 'IsPreviewStale', 'ConfirmableGrossTotal']) {
+            expect(surface[removed]).toBeUndefined();
+        }
     });
 
-    it('is current immediately after applying a preview', () => {
+    it('puts no money on the wire payload', () => {
         const draft = validDraft();
-        draft.ApplyPreview({ Totals: { GrossTotal: 170, NetTotal: 160 } });
-        expect(draft.IsPreviewStale).toBe(false);
-        expect(draft.ConfirmableGrossTotal).toBe(170);
+        const payload = draft.ToInput() as unknown as Record<string, unknown>;
+        // Lines carry a STATED unit price when the user typed one — that is input, not a
+        // computed total. What must never appear is an order-level figure.
+        for (const money of ['Totals', 'GrossTotal', 'NetTotal', 'TotalGross', 'Preview']) {
+            expect(payload[money]).toBeUndefined();
+        }
     });
 
-    it('goes stale on the next mutation, and withholds a confirmable total', () => {
+    it('still versions every mutation, which is what tells a view its prices went stale', () => {
         const draft = validDraft();
-        draft.ApplyPreview({ Totals: { GrossTotal: 170, NetTotal: 160 } });
+        const before = draft.Version;
         draft.AddLine({ ProductID: PRODUCT_B, Quantity: 1 });
+        expect(draft.Version).toBeGreaterThan(before);
 
-        expect(draft.IsPreviewStale).toBe(true);
-        // The critical one: a stale total must NOT be offered as the number to
-        // confirm against, or the guard would authorise the amount it is meant
-        // to catch.
-        expect(draft.ConfirmableGrossTotal).toBeUndefined();
-    });
-
-    it('goes stale when a line is edited, not just added', () => {
-        const draft = validDraft();
-        draft.ApplyPreview({ Totals: { GrossTotal: 170, NetTotal: 160 } });
+        const afterAdd = draft.Version;
         draft.UpdateLine(draft.Lines[0].ClientKey, { Quantity: 2 });
-        expect(draft.IsPreviewStale).toBe(true);
-    });
-
-    it('clears back to stale', () => {
-        const draft = validDraft();
-        draft.ApplyPreview({ Totals: { GrossTotal: 170, NetTotal: 160 } });
-        draft.ClearPreview();
-        expect(draft.IsPreviewStale).toBe(true);
+        expect(draft.Version).toBeGreaterThan(afterAdd);
     });
 });
 

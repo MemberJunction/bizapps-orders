@@ -11,13 +11,10 @@ export type { GLRole, ResolverEntityIDs } from './GLAccountResolver.js';
 export {
     SaveOrderOperation,
     LoadSaveOrderOperation,
-    PreviewOrderOperation,
-    LoadPreviewOrderOperation,
     ConfirmOrderOperation,
     LoadConfirmOrderOperation,
 } from './SaveOrderOperation.js';
 
-export { PreviewConfirmOperation, LoadPreviewConfirmOperation } from './PreviewConfirmOperation.js';
 export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './GetOverdueWorklistOperation.js';
 
 // Fulfilment (D15) — a logistics fact, deliberately disconnected from revenue.

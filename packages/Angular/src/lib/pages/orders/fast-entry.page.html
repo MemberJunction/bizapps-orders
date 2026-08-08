@@ -197,9 +197,14 @@
                 [Source]="PricedLine(line)?.PriceSource ?? null"
                 [Settled]="PricingSettled"
                 [Overridden]="line.UnitPriceWasStated" />
+              @if (PricedLine(line)?.Error; as why) {
+                <!-- An unpriced line SAYS SO. A blank or a $0.00 is indistinguishable
+                     from a deliberately free line, and only one is what anyone meant. -->
+                <div class="tiny mj-money--credit">{{ why }}</div>
+              }
             </div>
 
-            <div class="tot mj-num">{{ PricedLine(line)?.LineTotalNet | mjoMoney }}</div>
+            <div class="tot mj-num">{{ PricedLine(line)?.NetAmount | mjoMoney }}</div>
 
             <button type="button" class="mj-iconbtn" (click)="Remove(line)" [attr.aria-label]="'Remove ' + (ProductFor(line)?.Name ?? 'line')">
               <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
@@ -208,23 +213,24 @@
 
           <!-- Consequences: what this line WILL do, shown during entry rather
                than discovered at confirm. -->
+          <!--
+            Read from the CATALOGUE, not from a priced line. These chips used to come off
+            the rolled-back preview's projection, so a line could not say what it WOULD do
+            until a whole throwaway booking had run for it. Whether a product ships, is
+            taxable, and which company earns it are properties of the product.
+
+            Revenue recognition and the settled service period are genuinely decided at
+            confirm, so they are no longer claimed here.
+          -->
           <div class="mj-linecard-conseq">
-            @if (PricedLine(line); as priced) {
-              @if (priced.ServicePeriodStart && priced.ServicePeriodSource) {
-                <mjo-consequence-chip Kind="event">
-                  Period from {{ priced.ServicePeriodSource }}
-                </mjo-consequence-chip>
-              }
-              @if (priced.RevenueRecognitionType) {
-                <mjo-consequence-chip Kind="deferred">{{ priced.RevenueRecognitionType }}</mjo-consequence-chip>
-              }
-              @if (priced.RequiresFulfillment) {
+            @if (ProductFor(line); as product) {
+              @if (product.TypeName === 'Goods') {
                 <mjo-consequence-chip Kind="fulfillment">Ships — holds the order at Posted</mjo-consequence-chip>
               }
-              @if (priced.TaxZeroReason) {
-                <mjo-consequence-chip Kind="untaxable">{{ priced.TaxZeroReason }}</mjo-consequence-chip>
+              @if (!product.Taxable) {
+                <mjo-consequence-chip Kind="untaxable">Untaxable</mjo-consequence-chip>
               }
-              <mjo-consequence-chip Kind="company">Revenue to {{ priced.CompanyName }}</mjo-consequence-chip>
+              <mjo-consequence-chip Kind="company">Revenue to {{ product.CompanyName }}</mjo-consequence-chip>
             }
           </div>
         </div>
@@ -393,22 +399,22 @@
         <i class="fa-solid fa-calculator" aria-hidden="true"></i>
         <h3>What this order comes to</h3>
         <span class="right">
-          <span class="mj-chip" [class.mj-chip--brand]="Preview.Loading">
-            {{ Preview.Loading ? 'recomputing' : 'live' }}
+          <span class="mj-chip" [class.mj-chip--brand]="Pricing.Loading">
+            {{ Pricing.Loading ? 'recomputing' : 'live' }}
           </span>
         </span>
       </div>
 
       <div class="mj-card-pad">
-        @if (Preview.Error) {
+        @if (Pricing.Error) {
           <mj-alert Variant="error" Icon="fa-solid fa-circle-exclamation">
               <strong>Couldn't price this draft.</strong>
-              <div class="small">{{ Preview.Error }}</div>
+              <div class="small">{{ Pricing.Error }}</div>
           </mj-alert>
         } @else {
           <mjo-decomposition-ladder
             [Rows]="LadderRows"
-            [Stale]="Preview.Loading || Draft.IsPreviewStale"
+            [Stale]="Pricing.Loading"
             [Footnote]="LadderFootnote" />
         }
       </div>
@@ -432,17 +438,13 @@
           <h3>Will book to</h3>
         </div>
         <div class="mj-card-pad small">
-          @for (company of BookingSummary; track company.CompanyID) {
+          @for (company of BookingSummary; track company.CompanyName) {
             <div class="fe-books__row">
               <div class="row">
                 <b>{{ company.CompanyName }}</b>
-                <span class="spacer mj-num strong">{{ company.Gross | mjoMoney }}</span>
+                <span class="spacer mj-num strong">{{ company.NetTotal | mjoMoney }}</span>
               </div>
-              <div class="muted tiny">
-                net {{ company.Net | mjoMoney }}
-                @if (company.Charges) { · charges {{ company.Charges | mjoMoney }} }
-                @if (company.Tax) { · tax {{ company.Tax | mjoMoney }} }
-              </div>
+              <div class="muted tiny">net, before tax and charges</div>
             </div>
           }
           <div class="muted tiny fe-books__note">

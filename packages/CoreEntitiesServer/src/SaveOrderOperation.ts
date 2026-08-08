@@ -1,20 +1,30 @@
 /**
- * @fileoverview `Orders.SaveOrder` and `Orders.PreviewOrder`.
+ * @fileoverview `Orders.SaveOrder` and `Orders.ConfirmOrder` — the two operations
+ * that write an order.
  *
- * Together these are what make browser-side order entry possible. Both hydrate a
- * client draft through {@link HydrateOrderDraft} and hand it to
- * `OrderEntityServer.Save()`; they differ only in whether the transaction commits.
+ * Both hydrate a client draft through {@link HydrateOrderDraft} and hand it to
+ * `OrderEntityServer.Save()`; they differ only in whether the status transitions.
  *
- * WHY PREVIEW RUNS THE REAL SAVE. A preview that reimplemented pricing would be a
- * second copy of the rules living beside the engine, and the two would eventually
- * disagree — as a BALANCED journal entry for the wrong amount, which nothing
- * downstream can catch. So `PreviewOrder` performs the actual save inside a
- * transaction that always rolls back, then reads the computed values off the
- * entities before they vanish. It cannot drift from what confirming will do,
- * because it *is* what confirming will do.
+ * WHAT USED TO LIVE HERE, AND WHY IT DOESN'T. `Orders.PreviewOrder` ran the REAL
+ * save inside a transaction that always rolled back, then read the computed values
+ * off the entities before they vanished. The reasoning was sound as far as it went
+ * — a preview that reimplemented pricing would be a second copy of the rules, and
+ * the two would eventually disagree — but the cost was not acceptable: it fired on
+ * every keystroke, so composing one order ran the full booking walk (journal
+ * entries, subscription decisions, entitlement grants, sequence numbers) dozens of
+ * times and discarded all of it. Worse, the confirm was GATED on it, so any
+ * transient failure in a run nobody would ever read blocked the run that mattered.
  *
- * That is the same isolation primitive the integration suite is built on, for the
- * same reason.
+ * The replacement is not a second implementation — it is the SAME functions,
+ * called without the write. `Orders.PreviewPrice` calls `ResolvePrice`, which is
+ * exactly what the pricing walk inside `Save()` calls. That is the shape every
+ * future read-only projection should take: extract the decide step, expose it as
+ * a remotable operation, and let `Save()` call the same function before it
+ * persists. One implementation, two callers — never a save you throw away.
+ *
+ * Charges, tax and promotions do not have that separation yet; until they do,
+ * anything computed outside `Save()` covers line pricing only and is advisory.
+ * The engine remains the authority on what an order actually comes to.
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */
@@ -27,15 +37,11 @@ import {
     type UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import type { DatabaseProviderBase } from '@memberjunction/core';
 import {
     OrdersSaveOrderOperation as OrdersSaveOrderOperationBase,
-    OrdersPreviewOrderOperation as OrdersPreviewOrderOperationBase,
     OrdersConfirmOrderOperation as OrdersConfirmOrderOperationBase,
     type OrdersSaveOrderInput,
     type OrdersSaveOrderOutput,
-    type OrdersPreviewOrderInput,
-    type OrdersPreviewOrderOutput,
     type OrdersConfirmOrderInput,
     type OrdersConfirmOrderOutput,
     type OrderLineResult,
@@ -43,11 +49,9 @@ import {
     type ChargeResult,
     type PromotionResult,
     type BlockerResult,
-    type TaxLayerResult,
 } from '@mj-biz-apps/orders-entities';
 
 import { HydrateOrderDraft, type HydratableDraft, type HydratedOrder } from './OrderDraftHydrator.js';
-import type { OrderEntityServer } from './OrderEntityServer.js';
 import { ComputeLinesAndTotals } from './order-totals.js';
 import { RequireOptionalUUID } from './sql-guards.js';
 
@@ -76,8 +80,8 @@ async function projectResult(
 }> {
     const order = hydrated.Order;
 
-    // The decomposition lives in order-totals.ts because PreviewConfirm shows the
-    // same numbers on the pre-flight. Two copies drifted once already.
+    // The decomposition lives in order-totals.ts so every operation that reports an
+    // order's money reads the same function. Two copies drifted once already.
     const { Lines, Totals } = ComputeLinesAndTotals(hydrated);
 
     const charges = await loadCharges(order.ID, provider, user);
@@ -183,17 +187,23 @@ export class SaveOrderOperation extends OrdersSaveOrderOperationBase {
             return { Success: false, Message: 'Draft.Header.CompanyID is required.' };
         }
 
-        // Preview is the same work without the commit, so route rather than duplicate.
+        // REFUSED, NOT IGNORED. `Preview` used to route into a save-and-roll-back; that path is
+        // gone. Silently treating the flag as absent would turn a caller's "just tell me what this
+        // would cost" into a real, committed order — the single worst failure this operation could
+        // have. So it is rejected by name, pointing at the operation that answers the question.
         if (input.Preview) {
-            const preview = await runPreview(input.Draft as HydratableDraft, provider, user);
             return {
-                Success: preview.Success,
-                Message: preview.Message,
-                Lines: preview.Lines,
-                Totals: preview.Totals,
-                Charges: preview.Charges,
-                Promotions: preview.Promotions,
-                Blockers: preview.Blockers,
+                Success: false,
+                Message:
+                    'Orders.SaveOrder no longer supports Preview — it ran a real save and rolled it back. ' +
+                    'Use Orders.PreviewPrice to price a line without writing anything.',
+                Blockers: [
+                    {
+                        Code: 'PREVIEW_REMOVED',
+                        Message: 'Preview mode was removed from Orders.SaveOrder.',
+                        ResolutionHint: 'Call Orders.PreviewPrice per line instead.',
+                    },
+                ],
             };
         }
 
@@ -229,112 +239,6 @@ export function LoadSaveOrderOperation(): void {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Orders.PreviewOrder
- * ──────────────────────────────────────────────────────────────────────────── */
-
-/**
- * Price a draft without writing anything.
- *
- * Runs the REAL save inside a transaction that always rolls back, so the numbers
- * are the engine's own rather than a second implementation's. This is the
- * operation continuous preview is built on: order entry calls it, debounced, as
- * the user types.
- */
-@RegisterClass(BaseRemotableOperation, 'Orders.PreviewOrder')
-export class PreviewOrderOperation extends OrdersPreviewOrderOperationBase {
-    protected async InternalExecute(
-        input: OrdersPreviewOrderInput,
-        provider: IMetadataProvider,
-        user: UserInfo,
-    ): Promise<OrdersPreviewOrderOutput> {
-        if (!input?.Draft?.Header?.CompanyID) {
-            return {
-                Success: false,
-                Message: 'Draft.Header.CompanyID is required.',
-                Lines: [],
-                Totals: emptyTotals(),
-                Charges: [],
-                Promotions: [],
-            };
-        }
-        return runPreview(input.Draft as HydratableDraft, provider, user);
-    }
-}
-
-/** Registers {@link PreviewOrderOperation}. Called from the server bootstrap. */
-export function LoadPreviewOrderOperation(): void {
-    void PreviewOrderOperation;
-}
-
-function emptyTotals(): OrderTotalsResult {
-    return {
-        ListSubtotal: 0,
-        DiscountTotal: 0,
-        NetTotal: 0,
-        ChargeTotal: 0,
-        TaxTotal: 0,
-        GrossTotal: 0,
-        TaxableBase: { TaxableGoods: 0, UntaxableGoods: 0, NonTaxCharges: 0, Base: 0 },
-        ByCompany: [],
-    };
-}
-
-/**
- * Save the draft, read what the engine computed, then roll the whole thing back.
- *
- * The rollback is in `finally`, so a failed save is still undone — a preview that
- * left a half-written order behind would be worse than no preview.
- */
-async function runPreview(
-    draft: HydratableDraft,
-    provider: IMetadataProvider,
-    user: UserInfo,
-): Promise<OrdersPreviewOrderOutput> {
-    const db = provider as unknown as DatabaseProviderBase;
-    await db.BeginTransaction();
-    try {
-        // Force a create even when the client is editing a saved draft: previewing
-        // must never touch the persisted row, and hydrating onto a load would make
-        // the rollback the only thing standing between a preview and a mutation.
-        const previewDraft: HydratableDraft = {
-            ...draft,
-            Header: { ...draft.Header, OrderHeaderID: null },
-        };
-
-        const hydrated = await HydrateOrderDraft(previewDraft, provider, user);
-        const order = hydrated.Order;
-
-        const saved = await order.Save();
-        if (!saved) {
-            return {
-                Success: false,
-                Message: 'The draft could not be priced.',
-                Lines: [],
-                Totals: emptyTotals(),
-                Charges: [],
-                Promotions: readPromotions(hydrated),
-                Blockers: blockersFrom(order, 'The draft could not be priced.'),
-            };
-        }
-
-        const projected = await projectResult(hydrated, provider, user);
-        return { Success: true, ...projected };
-    } finally {
-        try {
-            await db.RollbackTransaction();
-        } catch (e) {
-            // SQL Server dooms a transaction on a severity-16 trigger error, so by
-            // the time we ask there may be nothing left to roll back. Isolation
-            // still held; swallow only that case.
-            const aborted = /transaction has been aborted|no active transaction/i.test(
-                String((e as Error).message),
-            );
-            if (!aborted) throw e;
-        }
-    }
-}
-
-/* ────────────────────────────────────────────────────────────────────────────
  * Orders.ConfirmOrder
  * ──────────────────────────────────────────────────────────────────────────── */
 
@@ -347,12 +251,19 @@ async function runPreview(
  * back entirely on any failure. This operation's job is to set up that transition
  * correctly and to report the reason when it is refused.
  *
- * The `ExpectedGrossTotal` guard is the part worth understanding. Between the
- * moment a user reads a total and the moment they press Confirm, a promotion can
- * expire or a rate can change. Without the guard the order books at the new
- * number silently. With it, the confirm is refused and the user re-reads the
- * total — which is the only outcome that respects the fact that they were
- * agreeing to a specific amount.
+ * `ExpectedGrossTotal` IS ACCEPTED AND NOT YET ENFORCED — a deliberate gap, recorded
+ * here rather than left to be discovered. The guard it used to drive was real and is
+ * worth having: between the moment a user reads a total and the moment they press
+ * Confirm, a promotion can expire or a rate can change, and without a guard the order
+ * books at the new number silently. But it was implemented by running an ENTIRE second
+ * booking through a rolled-back transaction purely to learn the total, which is the
+ * cost this operation no longer pays.
+ *
+ * Its correct home is INSIDE the transaction below: `Save()` already computes the real
+ * gross, so the comparison is one subtraction against a figure that exists anyway, and
+ * a mismatch throws before the commit. That is a change to `OrderEntityServer`, so it
+ * is backlogged rather than smuggled in here. Until it lands, the screen's total is
+ * advisory and the engine's is authoritative.
  */
 @RegisterClass(BaseRemotableOperation, 'Orders.ConfirmOrder')
 export class ConfirmOrderOperation extends OrdersConfirmOrderOperationBase {
@@ -414,37 +325,9 @@ export class ConfirmOrderOperation extends OrdersConfirmOrderOperationBase {
             };
         }
 
-        // The price-moved guard. Checked BEFORE the transition, because after it the
-        // entries exist and refusing is no longer an option.
-        if (input.ExpectedGrossTotal != null) {
-            const preview = await runPreview(
-                hasDraft ? draft : await draftFromSavedOrder(order, hydrated),
-                provider,
-                user,
-            );
-            if (preview.Success) {
-                const actual = money(preview.Totals.GrossTotal);
-                const expected = money(input.ExpectedGrossTotal);
-                if (actual !== expected) {
-                    return {
-                        Success: false,
-                        Message: `The total changed from ${expected.toFixed(2)} to ${actual.toFixed(2)}.`,
-                        OrderHeaderID: order.ID,
-                        Totals: preview.Totals,
-                        Blockers: [
-                            {
-                                Code: 'TOTAL_CHANGED',
-                                Message:
-                                    `This order now comes to ${actual.toFixed(2)}, not the ${expected.toFixed(2)} ` +
-                                    'you were shown. Something re-priced — a promotion window, or a rate. ' +
-                                    'Review the new total before confirming.',
-                                ResolutionHint: 'Re-read the totals, then confirm again.',
-                            },
-                        ],
-                    };
-                }
-            }
-        }
+        // `input.ExpectedGrossTotal` is read by nothing right now. See the note on this class:
+        // the guard belongs inside the booking transaction, where the real gross already exists,
+        // rather than in a whole second booking run to discover it.
 
         order.Status = 'Confirmed';
 
@@ -477,28 +360,4 @@ export class ConfirmOrderOperation extends OrdersConfirmOrderOperationBase {
 /** Registers {@link ConfirmOrderOperation}. Called from the server bootstrap. */
 export function LoadConfirmOrderOperation(): void {
     void ConfirmOrderOperation;
-}
-
-/**
- * Rebuild a draft payload from a SAVED order, so the price-moved guard can price
- * it the same way it would price an unsaved one.
- *
- * Only the fields that affect pricing are carried across; the rest are already
- * persisted and are not what the guard is asking about.
- */
-async function draftFromSavedOrder(order: OrderEntityServer, hydrated: HydratedOrder): Promise<HydratableDraft> {
-    void hydrated;
-    return {
-        Header: {
-            CompanyID: order.CompanyID,
-            OrderType: order.OrderType,
-            BillToPersonID: order.BillToPersonID,
-            BillToOrganizationID: order.BillToOrganizationID,
-            ShipToAddressID: order.ShipToAddressID,
-            OrderHeaderID: null,
-        },
-        // A saved order's lines are already persisted rows, so re-pricing them means
-        // reading them back rather than trusting a client payload that may be stale.
-        Lines: [],
-    };
 }
