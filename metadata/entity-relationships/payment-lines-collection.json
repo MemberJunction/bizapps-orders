@@ -1,0 +1,8 @@
+{
+  "Name": "Lines",
+  "Source": "database",
+  "Load": "explicit",
+  "OnRemove": "delete",
+  "OrderBy": "AllocatedAt ASC",
+  "ClearAfterSave": false
+}

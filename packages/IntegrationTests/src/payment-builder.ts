@@ -105,7 +105,8 @@ export async function CreatePayment(user: UserInfo, spec: PaymentSpec): Promise<
         line.AllocatedByUserID = user?.ID ?? null;
         lines.push(line);
     }
-    payment.Lines = lines;
+    // Attached through the collection, which stamps PaymentHeaderID and tracks removals.
+    for (const line of lines) payment.Lines.Add(line);
 
     const saved = await payment.Save();
     return {

@@ -242,7 +242,8 @@ export async function CreateReversingPayment(
         reversal.PaymentDetailID = await CopyPaymentDetail(provider, user, original.PaymentDetailID);
     }
 
-    reversal.Lines = lines;
+    // Attached, not assigned — the collection stamps PaymentHeaderID.
+    for (const line of lines) reversal.Lines.Add(line);
 
     if (!(await reversal.Save())) {
         throw new Error(

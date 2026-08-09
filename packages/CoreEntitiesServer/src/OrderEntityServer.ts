@@ -2770,7 +2770,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         line.Amount = amount;
         line.AllocatedAt = new Date();
         line.AllocatedByUserID = user?.ID ?? null;
-        payment.Lines = [line];
+        // Attached, not assigned — the collection stamps PaymentHeaderID.
+        payment.Lines.Add(line);
 
         if (!(await payment.Save(options))) {
             throw new Error(

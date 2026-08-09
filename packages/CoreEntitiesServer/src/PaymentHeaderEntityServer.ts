@@ -86,20 +86,13 @@ interface CreateJournalEntriesResult {
 
 @RegisterClass(BaseEntity, PAYMENT_HEADER_ENTITY)
 export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntity {
-    private _lines: mjBizAppsOrdersPaymentLineEntity[] = [];
 
-    /**
-     * Unsaved allocation lines to persist with this payment (D68). Populate before `Save()`;
-     * they are written inside the same transaction as the header, so the two can never be seen
-     * disagreeing. Lines already persisted from an earlier save are counted too — this collection
-     * is only the NEW ones.
-     */
-    public get Lines(): mjBizAppsOrdersPaymentLineEntity[] {
-        return this._lines;
-    }
-    public set Lines(value: mjBizAppsOrdersPaymentLineEntity[]) {
-        this._lines = value ?? [];
-    }
+    // `Lines` is a RelatedRecordCollection on the GENERATED class now, emitted from the
+    // RelatedRecordCollection metadata on the 'Payment Headers -> Payment Lines' relationship, so it
+    // exists on both tiers. It replaces a `_lines` array plus getter/setter that lived only on the
+    // server. No Sequence policy is declared: an allocation is identified by which order line it
+    // pays, not by position, and PaymentLine has no line-number column to renumber.
+
 
     public override Validate(): ValidationResult {
         const result = super.Validate();
@@ -129,7 +122,7 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
         const capturing = this.willBookOnThisSave();
 
         // A Pending payment with no new lines is an ordinary row save — nothing to co-ordinate.
-        if (!capturing && this._lines.length === 0) {
+        if (!capturing && !this.Lines.Dirty) {
             return super.Save(options);
         }
 
@@ -149,6 +142,32 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
             // noticed was that PV4 asserted the fee rather than just the status.
             if (capturing) await this.settleWithProvider();
 
+            // COMPLETE THE ALLOCATIONS BEFORE THE HEADER SAVE, because `Lines` is a companion and MJ
+            // validates companions from the PARENT's save — before any line's own Save() runs.
+            //
+            // `AllocatedAt` is NOT NULL and used to be defaulted during the line-save loop, which ran
+            // after the header. Most callers set it (CapturePaymentOperation, PaymentReversalFactory,
+            // OrderEntityServer) but the fallback exists precisely for those that do not, and without
+            // it here their allocations fail validation on a column no caller is required to author.
+            //
+            // The foreign key is NOT set here — the collection stamps PaymentHeaderID itself, which is
+            // what makes this correct even when the header is new and its key is minted by this save.
+            for (const line of this.Lines.Items) {
+                if (!line.AllocatedAt) line.AllocatedAt = new Date();
+            }
+
+            // THE HEADER AND ITS ALLOCATIONS, AS ONE GRAPH.
+            //
+            // Unlike bizapps-orders, this does NOT pass IsGraphNodeSave, because a payment's
+            // allocations are COMPLETE by the time they get here — the caller supplies them (manual
+            // entry, an order's initial payment, a reversal), and the gateway has already settled
+            // above in `settleWithProvider()`. There is nothing left to decide about a line, so
+            // there is no reason to keep ownership of when it is written.
+            //
+            // The graph does it better than the loop this replaced: removals run before inserts, and
+            // the foreign key is stamped at execution time, so it is correct even though the header's
+            // key is minted by this very save. Each line is still written by its own Save(), so
+            // PaymentLineEntityServer's application-total check and booking guards fire unchanged.
             if (!(await super.Save(options))) {
                 throw new Error(
                     `Failed to save payment ${this.PaymentNumber}: ` +
@@ -159,14 +178,13 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
             // The lines go down BEFORE the invariant is checked, because the check reads what is
             // actually persisted rather than what this object happens to be holding — a line that
             // silently failed to save would otherwise still count toward the total.
-            await this.savePendingLines(options);
 
             if (capturing) {
                 // BOOK THE LINES THAT WERE ALREADY ON DISK. A payment that was saved `Pending` — the
                 // shape a bank debit takes, because nothing has cleared when the caller asks — persisted
                 // its allocations with nothing booked, exactly as `PaymentLineEntityServer` intends
                 // ("it books when the payment reaches Captured, not here"). THIS is that moment, and
-                // without this call the cash leg never books: `savePendingLines` only writes the
+                // without this call the cash leg never books: persisting an allocation only writes the
                 // transient collection, which is empty on a promotion.
                 //
                 // Safe to run on every capture. `BookedAt` is the allocation's idempotency key, so a
@@ -295,25 +313,6 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
      * payment's status to decide whether to — so by the time these run the header is already
      * `Captured` and the cash leg follows automatically.
      */
-    private async savePendingLines(options?: EntitySaveOptions): Promise<void> {
-        const provider = this.ProviderToUse as unknown as IMetadataProvider;
-        const user = this.ContextCurrentUser as UserInfo;
-
-        for (const line of this._lines) {
-            line.PaymentHeaderID = this.ID;
-            if (!line.AllocatedAt) line.AllocatedAt = new Date();
-            if (!(await line.Save(options))) {
-                throw new Error(
-                    `Failed to save a payment allocation for ${this.PaymentNumber}: ` +
-                        `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
-                );
-            }
-        }
-        this._lines = [];
-        void provider;
-        void user;
-    }
-
     /**
      * Re-save any allocation already on disk that has not booked yet, so its cash leg lands.
      *

@@ -9486,6 +9486,25 @@ export class mjBizAppsOrdersPaymentDetailEntity extends BaseEntity<mjBizAppsOrde
  */
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Payment Headers')
 export class mjBizAppsOrdersPaymentHeaderEntity extends BaseEntity<mjBizAppsOrdersPaymentHeaderEntityType> {
+
+  /**
+  * Related records: MJ_BizApps_Orders: Payment Lines
+  *
+  * Loads, validates and persists as one unit with this MJ_BizApps_Orders: Payment Headers record — see
+  * guides/TRANSACTIONS_AND_BATCHING_GUIDE.md. Declared by the RelatedRecordCollection metadata on
+  * the 'MJ_BizApps_Orders: Payment Headers → MJ_BizApps_Orders: Payment Lines' relationship; edit that row, not this file.
+  *
+  */
+  public readonly Lines = this.DeclareRelatedRecords<mjBizAppsOrdersPaymentLineEntity>({
+      Name: 'Lines',
+        RelatedEntity: 'MJ_BizApps_Orders: Payment Lines',
+        RelatedEntityJoinField: 'PaymentHeaderID',
+        OrderBy: 'AllocatedAt ASC',
+        Load: 'explicit',
+        OnRemove: 'delete',
+        Source: 'database',
+  });
+
     /**
     * Loads the MJ_BizApps_Orders: Payment Headers record from the database
     * @param ID: string - primary key value to load the MJ_BizApps_Orders: Payment Headers record.

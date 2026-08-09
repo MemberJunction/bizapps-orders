@@ -27,5 +27,34 @@
       "lastModified": "2026-08-09T19:33:39.029Z",
       "checksum": "488e55e9386d181b7f748126e844f123395804b65294e08b3c69030096abf400"
     }
+  },
+  {
+    "_comments": [
+      "Declares Payment Headers -> Payment Lines as a related-record collection (MJ 6.1).",
+      "",
+      "Same treatment as Order Headers -> Order Lines, and for the same reason: PaymentHeaderEntityServer",
+      "held a `_lines` array plus a getter/setter pair that existed only on the server, so a payment and",
+      "its allocations could not be composed in the browser.",
+      "",
+      "RelatedEntity and RelatedEntityJoinField (Payment Lines / PaymentHeaderID) are already columns on",
+      "this row and are deliberately not duplicated here.",
+      "",
+      "NO Sequence policy, unlike Order Lines. PaymentLine has no line-number column — an allocation is",
+      "identified by which order line it pays, not by position — so there is nothing to renumber, and",
+      "declaring a sequence against a field that does not exist would fail at save time.",
+      "",
+      "OrderBy AllocatedAt: allocations are read in the order they were made, which is what a remittance",
+      "shows."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:payment-lines-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Payment Headers&RelatedEntity=MJ_BizApps_Orders: Payment Lines"
+    },
+    "sync": {
+      "lastModified": "2026-08-09T22:52:57.941Z",
+      "checksum": "bfcabc5922ad680a98754275c3f6b331bc0e8fd247872f2354de8301cc43e45b"
+    }
   }
 ]

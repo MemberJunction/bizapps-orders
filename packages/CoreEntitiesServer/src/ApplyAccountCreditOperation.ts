@@ -255,7 +255,10 @@ export class ApplyAccountCreditOperation extends BaseRemotableOperation<ApplyAcc
             apply.Amount = requested;
             apply.AllocatedByUserID = user?.ID ?? null;
 
-            payment.Lines = [consume, apply];
+            // Attached, not assigned: `Lines` is a RelatedRecordCollection and `Add()` stamps
+            // PaymentHeaderID for us — correct even though the header has not been saved yet.
+            payment.Lines.Add(consume);
+            payment.Lines.Add(apply);
 
             if (!(await payment.Save())) {
                 throw new Error(`Could not save the credit application: ${payment.LatestResult?.CompleteMessage ?? 'unknown error'}`);
