@@ -309,8 +309,14 @@ export async function HydrateOrderDraft(
         }
     }
 
-    // The transient collections. `Save()` reads each of these; none is a column.
-    order.Lines = lines;
+    // `Lines` is a RelatedRecordCollection on the generated class now, so it is attached to rather
+    // than assigned. `Add()` stamps OrderHeaderID and re-applies the LineNumber sequence by array
+    // position — the same numbering this loop assigned above, since the array is already in the
+    // intended order.
+    for (const line of lines) {
+        order.Lines.Add(line);
+    }
+    // Still a transient collection that `Save()` reads; not a column.
     order.PromotionCodes = [...(draft.PromotionCodes ?? [])];
 
     // ⚠ CONTRACT MISMATCH — TYPED HERE SO IT CANNOT KEEP HIDING; SEE BUGS.md (Bug 5a).

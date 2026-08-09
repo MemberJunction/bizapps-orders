@@ -99,9 +99,27 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
         return result;
     }
 
-    public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+    /**
+     * Populate the fields this line DERIVES rather than accepts, so it is valid before anything
+     * validates it.
+     *
+     * Public because the ORDER now has to call it. `Lines` is a related-record collection, and
+     * MJ validates every companion from the PARENT's save — deliberately, so a cross-record
+     * invariant sees the whole graph before the first row lands. But that runs before any child's
+     * own `Save()`, and `CompanyID` is stamped here, inside this class's `Save()`. The result was
+     * that every confirm failed with `Lines[0].CompanyID: Company cannot be null` — a NOT NULL
+     * column the line derives from its product and no caller ever authors.
+     *
+     * Idempotent, so the ordinary path (`Save()` calling it directly) is unaffected, and a line
+     * that was prepared by its order and then saved individually simply re-derives the same values.
+     */
+    public async PrepareForSave(): Promise<void> {
         await this.stampCompanyFromProduct();
         this.computeTotals();
+    }
+
+    public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+        await this.PrepareForSave();
         return super.Save(options);
     }
 

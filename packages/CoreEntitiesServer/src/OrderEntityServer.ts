@@ -45,7 +45,7 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import {
-    mjBizAppsOrdersOrderHeaderEntity,
+    OrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersOrderLinePriceComponentEntity,
     mjBizAppsOrdersPaymentDetailEntity,
@@ -91,13 +91,12 @@ import {
 } from './PromotionEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type OrderLineDraft } from './OrderJournalEntryFactory.js';
-import { CanTransition } from './OrderStatusBehavior.js';
 import { RequireUUID } from './sql-guards.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
 import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 
 const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
-const ACCOUNTING_COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Company Profiles';
+const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
 import {
     SubscriptionBehavior,
     type SubscriberIdentity,
@@ -211,8 +210,7 @@ interface CreateJournalEntriesResult {
 }
 
 @RegisterClass(BaseEntity, ORDER_ENTITY)
-export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
-    private _lines: mjBizAppsOrdersOrderLineEntity[] = [];
+export class OrderEntityServer extends OrderHeaderEntity {
     /** Price decompositions produced during this save, written once the lines have IDs (D69). */
     private readonly _priceComponents = new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>();
     /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */
@@ -220,6 +218,32 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     private _promotionCodes: string[] = [];
     private _manualDiscounts: ManualDiscountRequest[] = [];
     private _charges: RequestedCharge[] = [];
+    /**
+     * The total the CALLER was shown, if they want the confirm to refuse when it no longer matches.
+     *
+     * Between a user reading a total and pressing Confirm, a promotion can expire or a rate can
+     * change, and without a guard the order books at the new number in silence. `Orders.ConfirmOrder`
+     * accepted `ExpectedGrossTotal` for exactly this and then read it nowhere — a guard that reads as
+     * enforced and is not, which is the failure mode this codebase keeps finding.
+     *
+     * It was implemented once by running an ENTIRE second booking through a rolled-back transaction
+     * purely to learn the total, and removed because that cost was not acceptable. Its correct home
+     * was always inside the booking transaction, where the real gross exists anyway — which is where
+     * it now lives. Left null, nothing changes.
+     */
+    public ExpectedGrossTotal: number | null = null;
+
+    /**
+     * Promotion and charge decisions made by `prepareLines` and consumed by `savePendingLines`.
+     *
+     * They are decided while the lines are still in memory — a Confirmed line is frozen by trigger
+     * 51003 — but the ROWS they produce need line keys, so writing them waits until after the
+     * inserts. The two halves used to be one method; they were split when companion validation
+     * moved the deadline for a complete line ahead of the header save.
+     */
+    private _pendingPromotions: PromotionRunResult | null = null;
+    private _pendingCharges: ComputeChargesResult | null = null;
+
     /** Codes that resolved to nothing usable, so the caller can tell the customer WHY. */
     private _unusableCodes: Array<{ Code: string; Reason: string }> = [];
 
@@ -262,16 +286,15 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         return this._unusableCodes;
     }
 
-    /**
-     * Unsaved child lines to persist with this order (plan D12). Populate before `Save()` when
-     * creating an order and its lines as one unit; leave empty to save the header alone.
-     */
-    public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
-        return this._lines;
-    }
-    public set Lines(value: mjBizAppsOrdersOrderLineEntity[]) {
-        this._lines = value ?? [];
-    }
+    // `Lines` is not declared here any more. It is a RelatedRecordCollection on the GENERATED class,
+    // emitted from the `RelatedRecordCollection` metadata on the 'Order Headers → Order Lines'
+    // relationship — so both tiers have it, and the browser can compose an order and ship the whole
+    // graph in one `MJ.SaveEntityGraph` call.
+    //
+    // What it replaced: a `_lines` array plus a getter/setter pair that existed only on the server.
+    // Callers assigned a whole array; they now add through the collection (`Lines.Create()` /
+    // `Lines.Add()`), which stamps the foreign key and the line number for them, and tracks removals
+    // so a dropped line is deleted rather than left orphaned pointing at its order.
 
     // ─── Validation ────────────────────────────────────────────────────────────
 
@@ -295,66 +318,43 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         return false;
     }
 
+    /**
+     * The one order rule that CANNOT be decided without the database.
+     *
+     * The payer rule, the status-transition guard and the has-lines rule for a loaded collection all
+     * moved to `OrderHeaderEntity.Validate()`, so the browser now refuses those before a round trip.
+     * What is left here is the case the browser genuinely cannot answer: an order that is already
+     * saved, being confirmed, whose `Lines` collection was never loaded. In memory that is
+     * indistinguishable from an empty order — and answering "empty" would refuse a perfectly good
+     * confirm of an order whose lines are sitting on disk.
+     *
+     * Per-line validation is no longer fanned out by hand. `Lines` is a companion, and
+     * `BaseEntity.Save()` validates every companion — including pending removals — before the first
+     * row is written, attributing failures by position (`Lines[3].Quantity`).
+     */
     public override async ValidateAsync(): Promise<ValidationResult> {
         const result = await super.ValidateAsync();
 
-        // An order entering the booked state must have something to book. Draft orders may be
-        // empty — you build them up over time.
-        if (this.willBookOnThisSave()) {
-            const lineCount = this._lines.length > 0 ? this._lines.length : await this.countPersistedLines();
-            if (lineCount === 0) {
-                result.Success = false;
-                result.Errors.push(
-                    new ValidationErrorInfo(
-                        'Status',
-                        `Order ${this.OrderNumber ?? ''} cannot be confirmed with no lines — there would be nothing to book.`,
-                        this.Status,
-                        ValidationErrorType.Failure,
-                    ),
-                );
-            }
-        }
-
-        // AND IT MUST NAME SOMEONE TO BILL. A confirmed order IS the receivable in this app —
-        // there is no separate invoice record — so a booked order with neither a bill-to person nor
-        // a bill-to organization is a receivable owed by nobody. It debits Accounts Receivable,
-        // appears in the balance, and can never be aged, chased or collected, because every
-        // collections surface groups by the payer key that is null on it.
+        // The DEFINITIVE has-something-to-book check: nothing in memory AND nothing on disk.
         //
-        // This was reachable, not theoretical: before this check, saving an order straight to
-        // Confirmed with lines and no payer succeeded and posted a real journal entry
-        // (Dr 11201 Accounts Receivable 99 / Cr 40100 Sales Revenue 99). The order screen does
-        // block it — but the screen is not the rule. Per the note on Save() below, a rule enforced
-        // only in the UI holds until somebody saves an entity directly, which is the failure this
-        // codebase has now found three times.
-        //
-        // The subscription path already rejected the payer-less case, but only incidentally: it
-        // needs a SUBSCRIBER, so a plain goods order sailed through. That is why this belongs here,
-        // next to the lines rule, rather than in any one behaviour.
-        //
-        // Draft and Quoted are deliberately exempt — you take an order before you know who is
-        // paying, and forcing the payer up front would break order entry.
-        if (this.willBookOnThisSave() && !this.BillToPersonID && !this.BillToOrganizationID) {
+        // Both halves are required. Asking only about the collection refuses a confirm of a saved
+        // order whose lines were never loaded; asking only the database refuses a brand-new order
+        // whose lines exist solely in memory — and `Add()` does not mark a collection loaded, so
+        // `IsLoaded` cannot stand in for either question.
+        if (
+            this.willBookOnThisSave() &&
+            this.Lines.Count === 0 &&
+            (await this.countPersistedLines()) === 0
+        ) {
             result.Success = false;
             result.Errors.push(
                 new ValidationErrorInfo(
-                    'BillToOrganizationID',
-                    `Order ${this.OrderNumber ?? ''} cannot be confirmed without a customer — ` +
-                        `set a bill-to person or a bill-to organization. A confirmed order is the ` +
-                        `receivable, so one with no payer could never be collected.`,
-                    this.BillToOrganizationID,
+                    'Status',
+                    `Order ${this.OrderNumber ?? ''} cannot be confirmed with no lines — there would be nothing to book.`,
+                    this.Status,
                     ValidationErrorType.Failure,
                 ),
             );
-        }
-
-        // Children guard their own invariants; surface their failures against the order.
-        for (const line of this._lines) {
-            const lineResult = await line.ValidateAsync();
-            if (!lineResult.Success) {
-                result.Success = false;
-                result.Errors.push(...lineResult.Errors);
-            }
         }
 
         return result;
@@ -378,8 +378,22 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
         const booking = this.willBookOnThisSave();
 
-        // Not a booking save — ordinary path, no transaction needed beyond the base save.
-        if (!booking && this._lines.length === 0) {
+        // ORDINARY PATH — no booking, and no line work to do.
+        //
+        // The test is DIRTINESS, not emptiness. It used to read `this._lines.length === 0`, which
+        // worked only because `_lines` was a staging buffer that was emptied after every save: an
+        // order that had just been saved had no lines in memory, so the next trivial save took this
+        // branch by accident.
+        //
+        // `Lines` is a live collection now (`ClearAfterSave: false`), so it still holds the order's
+        // lines afterwards, and asking about emptiness would send every subsequent edit — changing
+        // Notes, say — down the full booking walk: expanding bundles, re-pricing, re-deciding
+        // promotions, charges and tax for lines nobody touched.
+        //
+        // `Dirty` is the question that was always meant: it rolls up the collection, so it is true
+        // when a line was added, edited or removed and false when the lines are merely present.
+        // That also distinguishes a case emptiness never could — lines loaded but untouched.
+        if (!booking && !this.Lines.Dirty) {
             return super.Save(options);
         }
 
@@ -420,31 +434,79 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
                 this.OrderNumber = await this.assignOrderNumber();
             }
 
-            const savedHeader = await super.Save(options);
+            // THE HEADER ONLY — `IsGraphNodeSave` is what makes that true, and it is load-bearing.
+            //
+            // `Lines` is a companion now, so an ordinary `super.Save()` would build a save plan,
+            // see more than one node, and persist the lines here as part of the graph. That is the
+            // right behaviour for a plain composite and completely wrong for this path: the lines
+            // have not been expanded, priced, discounted, charged or taxed yet — all of that runs
+            // below, and it has to, because it needs the header's key and the subscription
+            // decisions.
+            //
+            // The failure would not have been obvious either. The lines would insert at their raw
+            // quantities against an order that is already Confirmed, and `savePendingLines()` would
+            // then try to UPDATE them with the resolved prices — which trigger 51003 refuses,
+            // because a booked line is frozen. The error surfaces as an INSERT-EXEC rollback naming
+            // neither the line nor the rule.
+            //
+            // `IsGraphNodeSave` bypasses graph routing (and the in-flight debounce) and goes
+            // straight to the single-record path, which is precisely the old behaviour.
+            //
+            // It does NOT suppress companion VALIDATION, and it should not: MJ validates every
+            // companion from the parent's save so a cross-record invariant sees the whole graph
+            // before the first row lands. That is the right guarantee — but it moves a deadline.
+            // The lines are now validated HERE, before any line's own `Save()` runs, so every field
+            // a line DERIVES rather than accepts has to exist by this point:
+            //
+            //   CompanyID — stamped from the product by OrderLineEntityServer
+            //   UnitPrice — resolved by the pricing walk below
+            //
+            // Both are NOT NULL and neither is ever authored by a caller, so leaving them until
+            // after the header save failed every confirm with "Company cannot be null" and then
+            // "Unit Price cannot be null" — on columns nobody sets by hand.
+            //
+            // Hence the whole IN-MEMORY preparation phase runs first: bundles expand into real
+            // lines, subscription decisions settle the quantities, and each line is priced. None of
+            // it writes a row, and none of it needs the header's key — the collection stamps the
+            // foreign key itself.
+            await this.expandBundles();
+            const decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine> =
+                booking ? await this.decideSubscriptions() : new Map();
+            await this.prepareLines(decisions);
+
+            const savedHeader = await super.Save({ ...options, IsGraphNodeSave: true } as EntitySaveOptions);
             if (!savedHeader) {
                 throw new Error(
                     `Failed to save order header: ${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                 );
             }
 
-            // DECIDE BEFORE THE LINES ARE INSERTED. The rules may shorten the first period, and a
-            // prorated term must bill the prorated amount — but the header is already Confirmed by
-            // now, so the immutability trigger (correctly) refuses to let a saved line's Quantity
-            // change afterwards. Deciding first means the line is INSERTED at its final quantity
-            // and never updated, which keeps the trigger's guarantee intact instead of working
-            // around it.
-            // BUNDLES EXPAND FIRST, before anything reads the line collection. Everything downstream
-            // — pricing, proration, totals, tax, booking, entitlements — operates per line, so the
-            // components have to BE lines by the time any of it runs. It also has to happen before
-            // the insert: a Confirmed line is frozen by trigger 51003, so turning a parent's money to
-            // zero afterwards would be an update the trigger refuses, reported as an INSERT-EXEC
-            // rollback that names neither the line nor the rule.
-            await this.expandBundles();
-
-            const decisions = booking ? await this.decideSubscriptions() : new Map();
-
+            // Bundle expansion, subscription decisions and pricing all happened BEFORE the header
+            // save — see the note there. What is left is the writing.
             await this.savePendingLines(options, decisions);
             await this.savePriceComponents(options);
+
+            // THE PRICE THE CALLER WAS SHOWN STILL HOLDS — checked here, inside the transaction,
+            // where the real gross already exists.
+            //
+            // The lines are written by now, so `trg_OrderLine_RollupTotals` has maintained
+            // OrderHeader.TotalGross from what actually landed rather than from anything this
+            // process computed. Throwing rolls the whole booking back: no journal entries, no
+            // subscription, no sequence number consumed.
+            //
+            // Half a penny is the tolerance for the same reason it is elsewhere in this codebase:
+            // the money columns are DECIMAL(18,2), so a penny is the unit of account and anything
+            // finer is an artefact of summing in binary floating point.
+            if (this.ExpectedGrossTotal != null) {
+                const actual = (await this.readBalanceFromRow()).TotalGross ?? 0;
+                if (Math.abs(actual - this.ExpectedGrossTotal) >= 0.005) {
+                    throw new Error(
+                        `The order total changed before it was confirmed: you were shown ` +
+                            `${this.ExpectedGrossTotal.toFixed(2)} and it now comes to ${actual.toFixed(2)}. ` +
+                            `Nothing has been booked. Review the order and confirm again.`,
+                    );
+                }
+            }
 
             if (booking) {
                 const lines = await this.loadLinesForBooking();
@@ -621,10 +683,21 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     }
 
     /**
-     * The selling company's default terms.
+     * The selling company's default terms — the last step of the due-date walk before "due on
+     * receipt" (D83).
      *
-     * From `AccountingCompanyProfile.DefaultPaymentTermsTypeID`, which has existed since the
-     * accounting schema was written and which nothing read until now.
+     * Reads `OrderCompanyPolicy`, NOT accounting's `AccountingCompanyProfile`.
+     *
+     * It used to read the latter, and accounting removed that column (their issue #22) on grounds
+     * this codebase agrees with: accounting records what was owed and when, but deciding WHEN AN
+     * ORDER IS DUE is a selling decision, so the default belongs to the app that makes it. Orders
+     * kept reading the removed column, so every order whose customer had no negotiated terms failed
+     * the walk with `Invalid column name 'DefaultPaymentTermsTypeID'` — six integration checks, and
+     * in production the entire company-default step.
+     *
+     * `OrderCompanyPolicy` is the right home and needed no new table: it is already the per-company
+     * orders policy row, IS-A `__mj.Company` so its ID *is* the company ID, and a company with no
+     * row simply takes the defaults — which here means falling through to due on receipt.
      */
     private async companyDefaultTerms(
         provider: IMetadataProvider,
@@ -635,7 +708,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const rv = new RunView(provider as unknown as IRunViewProvider);
         const result = await rv.RunView<{ DefaultPaymentTermsTypeID: string | null }>(
             {
-                EntityName: ACCOUNTING_COMPANY_PROFILE_ENTITY,
+                EntityName: ORDER_COMPANY_POLICY_ENTITY,
                 ExtraFilter: `ID = '${RequireUUID(this.CompanyID, 'CompanyID')}'`,
                 ResultType: 'simple',
             },
@@ -646,73 +719,62 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
     }
 
     /**
-     * Refuse a status move the lifecycle does not permit.
+     * Refuse an illegal status move BEFORE this save does anything, and say why.
      *
-     * Reports through `LatestResult` and returns false, the same shape every other refusal on this
-     * path uses — a caller gets the reason rather than a bare `false`, and `Orders.SaveOrder` and
-     * friends surface it unchanged.
+     * ONLY the lifecycle verdict is asked here, deliberately. `super.Save()` runs the full
+     * `Validate()` later, and that is the right place for the rest of it: `Validate()` includes the
+     * generated NOT NULL field checks, and `OrderNumber`, `Company` and every line's `UnitPrice` are
+     * populated BY this save — minted from the sequence, or resolved by the pricing walk below. An
+     * attempt to run all of `Validate()` up front refused every confirm in the suite with
+     * "Order Number cannot be null", on fields the save was about to fill in.
      *
-     * The PERSISTED status is the `from`: `OldValue` is what is on disk, so re-saving an unchanged
-     * row is a no-op transition and a genuine move is measured against what was really there rather
-     * than against whatever this object was last set to.
+     * The transition check has no such dependency: it reads the persisted `Status` against the new
+     * one, and both are known before anything runs. Asking it here is what makes integration check
+     * OS4 hold — a refused move must change nothing on disk and book nothing, and by the time
+     * control reaches `super.Save()` this method has already priced lines, decided promotions and
+     * charges, minted an order number and posted journal entries.
+     *
+     * The booking rules that DO need the full record — a payer, something to book — live on
+     * `OrderHeaderEntity.Validate()` and fire inside `super.Save()`, where `bookingInFlight` keeps
+     * `willBookOnThisSave()` answering true even though `ConfirmedAt` has just been stamped.
+     *
+     * Reports through `LatestResult`, the same shape every other refusal on this path uses, so a
+     * caller gets the reason rather than a bare `false`.
      */
     private passesStatusTransition(): boolean {
-        const from = this.IsSaved ? (this.GetFieldByName('Status')?.OldValue as string | undefined) : null;
-        const verdict = CanTransition(from ?? null, this.Status);
+        const verdict = this.statusTransitionVerdict();
         if (verdict.Allowed) return true;
 
         this.RegisterResultHistoryEntry(
-            this.buildFailureResult(
-            new Error(
-                `${verdict.Reason} ` +
-                    `(order ${this.OrderNumber ?? 'not yet numbered'}). Voiding is how a booked order is ` +
-                    `undone; a reversal is its own record rather than an edit of the original (D53).`,
-                ),
-            ),
+            this.buildFailureResult(new Error(this.statusTransitionRefusal(verdict))),
         );
         return false;
     }
 
     // ─── Booking ───────────────────────────────────────────────────────────────
 
+    // `bookingInFlight` and `willBookOnThisSave()` moved to OrderHeaderEntity (both `protected`),
+    // because the rules that consult them — must have a payer, must have something to book — are
+    // decidable without the database and now run on both tiers.
+
     /**
-     * True while THIS save is the booking save, and it stays true across `ConfirmedAt` being set.
+     * Settle every line's money IN MEMORY. Writes nothing.
      *
-     * `willBookOnThisSave()` answers "would a save starting now book?", which is the right question
-     * everywhere except inside the booking save itself. `Save()` stamps `ConfirmedAt` before it calls
-     * `super.Save()`, and `ConfirmedAt` is exactly what makes `willBookOnThisSave()` return false —
-     * so validation running inside that `super.Save()` was asking a question whose answer had
-     * already been flipped by its own caller, three lines earlier. Every rule gated on it was
-     * therefore skipped on the one save it existed to guard.
+     * EVERY in-memory decision happens before any row goes down. That ordering is forced rather
+     * than tidy: a Confirmed line is frozen by trigger 51003, and because the CRUD procs run under
+     * INSERT-EXEC, a trigger rollback raises 'Cannot use the ROLLBACK statement within an
+     * INSERT-EXEC statement' — an error naming neither the line nor the rule it broke. So anything
+     * that changes a line's money must be settled BEFORE the insert, not corrected after it.
      *
-     * That is why a confirm with zero lines (ORD-000030) and a confirm with no payer (ORD-000028,
-     * which posted Dr A/R 99 / Cr Sales 99) both went through. Two separate defects had to coincide
-     * — this one and the skipped `ValidateAsync` — and fixing either alone changes nothing, which is
-     * why the block looked correct for as long as it did.
+     * Split out of `savePendingLines` and hoisted ahead of the header save when `Lines` became a
+     * related-record collection: MJ validates companions from the parent's save, so a line has to be
+     * complete — `CompanyID` stamped, `UnitPrice` resolved, both NOT NULL and neither ever authored
+     * by a caller — before that save runs, not after it.
      */
-    private bookingInFlight = false;
-
-    /** True when this save is the first transition into a booked status (plan D8). */
-    private willBookOnThisSave(): boolean {
-        if (this.bookingInFlight) return true;
-        if (!BOOKED_STATUSES.has(this.Status)) return false;
-        if (this.ConfirmedAt) return false; // already booked — never re-book
-        return true;
-    }
-
-    private async savePendingLines(
-        options?: EntitySaveOptions,
+    private async prepareLines(
         decisions?: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
     ): Promise<void> {
-        // EVERY in-memory decision happens first, then the rows go down. That ordering is forced
-        // rather than tidy: a Confirmed line is frozen by trigger 51003, and because the CRUD procs
-        // run under INSERT-EXEC, a trigger rollback raises 'Cannot use the ROLLBACK statement within
-        // an INSERT-EXEC statement' — an error naming neither the line nor the rule it broke. So
-        // anything that changes a line's money must be settled BEFORE the insert, not corrected
-        // after it.
-        for (const line of this._lines) {
-            line.OrderHeaderID = this.ID;
-
+        for (const line of this.Lines.Items) {
             // Scale the QUANTITY, not DiscountPct: a short first period is not a concession, and
             // routing it through the discount field would corrupt discount reporting and post the
             // difference to the Sales Discounts contra account, where it does not belong.
@@ -744,6 +806,12 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             if (!inheritedFromOrigin && Number(line.Quantity ?? 0) >= 0) {
                 await this.applyResolvedPrice(line);
             }
+
+            // The line's OWN derived fields — CompanyID from the product, and the computed totals.
+            // Normally done inside `OrderLineEntityServer.Save()`; hoisted here for the same reason
+            // the rest of this method is, so the line is complete before companion validation sees
+            // it. Idempotent, so its own `Save()` re-deriving them below changes nothing.
+            await (line as OrderLineEntityServer).PrepareForSave?.();
         }
 
         // Promotions see priced lines and stamp DiscountAmount while they are still in memory.
@@ -751,9 +819,22 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // Charges follow promotions: their basis is the DISCOUNTED line, and tax computes on what
         // the customer actually owes rather than on list price.
         const charges = await this.decideCharges();
+        this._pendingPromotions = pending;
+        this._pendingCharges = charges;
+    }
+
+    /**
+     * Write the lines that `prepareLines` settled, plus the adjustment rows that need their keys.
+     */
+    private async savePendingLines(
+        options?: EntitySaveOptions,
+        _decisions?: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
+    ): Promise<void> {
+        const pending = this._pendingPromotions;
+        const charges = this._pendingCharges;
 
         const persisted: mjBizAppsOrdersOrderLineEntity[] = [];
-        for (const line of this._lines) {
+        for (const line of this.Lines.Items) {
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
@@ -763,7 +844,11 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             persisted.push(line);
         }
         await this.saveTaxReasons(persisted);
-        this._lines = [];
+        // The lines are NOT emptied here any more. `this._lines = []` drained a staging buffer that
+        // existed because the old wire format shipped a draft and discarded it. The collection is
+        // declared `ClearAfterSave: false`, so it stays a live view of what was just persisted —
+        // carrying the server-assigned keys — which is what a UI bound straight to `order.Lines`
+        // needs, and what the caller gets back from a graph save.
 
         // The adjustment and charge rows need line IDs, so they follow the insert — but they only ADD
         // rows and never touch the frozen line again.
@@ -783,7 +868,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // than stated by the caller, so the commonest real order — goods, an address, no
         // hand-entered charges — has an empty _charges and still owes tax. Returning early here
         // silently skipped tax on every such order, and the zeros looked correct.
-        if (!this._lines.length) return null;
+        if (!this.Lines.Count) return null;
 
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
@@ -792,7 +877,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // Shared with `OrderLineEntityServer.computeTotals` — the same rule, computed once. When
         // these were two independent expressions they clamped a reversal line to zero in both
         // places, so a return owed no tax refund and the ledger and the line disagreed.
-        const chargeable = this._lines.map((line, i) => ({
+        const chargeable = this.Lines.Items.map((line, i) => ({
             ID: String(i),
             Net: NetAfterDiscount(
                 // Same LineGross the line itself uses — a Flat line's base must be the
@@ -814,12 +899,12 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         if (!this._charges.length && !resolvedTax.length) return null;
         const result = await RunCharges([...this._charges, ...resolvedTax], chargeable, provider, user);
         const split = SplitChargesByLine(result);
-        for (let i = 0; i < this._lines.length; i++) {
+        for (let i = 0; i < this.Lines.Count; i++) {
             const share = split.get(String(i));
             if (!share) continue;
-            if (share.Tax) this._lines[i].LineTax = share.Tax;
+            if (share.Tax) this.Lines.Items[i].LineTax = share.Tax;
             if (share.Other) {
-                this._lines[i].ChargeAmount = share.Other;
+                this.Lines.Items[i].ChargeAmount = share.Other;
             }
         }
         return result;
@@ -854,8 +939,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
 
         const out: RequestedCharge[] = [];
 
-        for (let i = 0; i < this._lines.length; i++) {
-            const line = this._lines[i];
+        for (let i = 0; i < this.Lines.Count; i++) {
+            const line = this.Lines.Items[i];
             // A line worth NOTHING is not taxed — but a NEGATIVE line is a reversal (D16), and it
             // owes a tax refund of exactly the same shape. `<= 0` collapsed those two: a return
             // came back with the goods refunded and the tax kept, which overcharges the customer
@@ -1083,7 +1168,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      * at INSERT time rather than through a later update the immutability trigger would refuse.
      */
     private async expandBundles(): Promise<void> {
-        if (!this._lines.length) return;
+        if (!this.Lines.Count) return;
 
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
@@ -1091,16 +1176,21 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // A parent needs an ID the children can name. Unsaved lines may not have one yet, and the
         // database default would only assign it at insert — too late for the child rows going down
         // in the same batch.
-        for (const line of this._lines) {
+        for (const line of this.Lines.Items) {
             // `Set`, not `line.ID = …`: the primary key is ReadOnly on the generated class and has
             // no setter. BaseEntity allows exactly one write to a ReadOnly field on a new record,
             // which is what mints the id here.
             if (!line.ID) line.Set('ID', crypto.randomUUID().toUpperCase());
         }
 
-        const before = this._lines.length;
+        // ExpandBundleLines APPENDS to the array it is handed, and `Lines.Items` is readonly by
+        // design — push/splice would bypass the FK stamping, sequence maintenance and removal
+        // tracking the collection exists to guarantee. So it expands a working copy and the children
+        // it created are attached through `Add()`, which stamps OrderHeaderID for us.
+        const working = [...this.Lines.Items];
+        const before = working.length;
         await ExpandBundleLines(
-            this._lines,
+            working,
             async () => {
                 const row = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
                     'MJ_BizApps_Orders: Order Lines',
@@ -1113,7 +1203,11 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             provider,
             user,
         );
-        if (this._lines.length === before) return;
+        if (working.length === before) return;
+
+        for (const child of working.slice(before)) {
+            this.Lines.Add(child);
+        }
 
         // REORDER AND RENUMBER. Children are appended to the end of the collection, so without this
         // a two-bundle order interleaves as parent, parent, child, child, child, child — unreadable
@@ -1122,7 +1216,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // no LineNumber at all, and the column is NOT NULL.
         const byParent = new Map<string, mjBizAppsOrdersOrderLineEntity[]>();
         const roots: mjBizAppsOrdersOrderLineEntity[] = [];
-        for (const line of this._lines) {
+        for (const line of this.Lines.Items) {
             const parentID = line.ParentOrderLineID;
             if (parentID) {
                 const k = parentID.toLowerCase();
@@ -1139,12 +1233,22 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
             for (const child of byParent.get((root.ID ?? '').toLowerCase()) ?? []) ordered.push(child);
         }
         // Anything whose parent is not on this order still has to be saved rather than dropped.
-        for (const line of this._lines) if (!ordered.includes(line)) ordered.push(line);
+        for (const line of this.Lines.Items) if (!ordered.includes(line)) ordered.push(line);
 
+        // ASSIGNED LAST, and deliberately after every `Add()` above.
+        //
+        // The collection declares `Sequence: { Field: 'LineNumber', From: 1 }`, and MJ's
+        // `applySequence()` re-stamps LineNumber by ARRAY INDEX on every `Add()` and `Create()`. So
+        // numbering the lines before attaching the bundle children would have been silently undone
+        // by the next `Add()`. It does not run at save time, which makes this explicit pass the last
+        // writer.
+        //
+        // The collection's in-memory order stays "originals, then children", which no longer
+        // matters: `OrderBy: 'LineNumber ASC'` is what it reloads by, so the parent/child grouping
+        // is what every reader sees.
         ordered.forEach((line, i) => {
             line.LineNumber = i + 1;
         });
-        this._lines = ordered;
     }
 
     /**
@@ -1301,7 +1405,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // together, are each within the original while their sum is not — and neither is in the
         // database yet for `LoadReversalContext` to have seen.
         let siblingReversed = 0;
-        for (const other of this._lines) {
+        for (const other of this.Lines.Items) {
             if (other === line) continue;
             const otherReverses = other.ReversesOrderLineID;
             if (otherReverses && uuidKey(otherReverses) === uuidKey(reverses)) {
@@ -1488,7 +1592,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const res = await rv.RunView<{ RefuseUnpricedLines: boolean }>(
             {
-                EntityName: 'MJ_BizApps_Orders: Order Company Policies',
+                EntityName: ORDER_COMPANY_POLICY_ENTITY,
                 ExtraFilter: `ID = '${this.CompanyID}'`,
                 Fields: ['RefuseUnpricedLines'],
                 ResultType: 'simple',
@@ -1599,7 +1703,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      */
     private async decidePromotions(): Promise<PromotionRunResult | null> {
         if (!this._promotionCodes.length && !this._manualDiscounts.length) return null;
-        if (!this._lines.length) return null;
+        if (!this.Lines.Count) return null;
 
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
@@ -1607,8 +1711,8 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         // Line nets from memory, mirroring OrderLineEntityServer's own arithmetic — the rows do not
         // exist yet, so LineTotalNet has not been computed.
         const lines: PromotableLine[] = [];
-        for (let i = 0; i < this._lines.length; i++) {
-            const line = this._lines[i];
+        for (let i = 0; i < this.Lines.Count; i++) {
+            const line = this.Lines.Items[i];
             const product = await this.loadProductForPricing(line.ProductID);
             const gross = Math.round(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) * 100) / 100;
             const net = Math.round(gross * (1 - Number(line.DiscountPct ?? 0)) * 100) / 100;
@@ -1717,7 +1821,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const res = await rv.RunView<{ AllowPromotionStacking: boolean; StackingMode: string }>(
             {
-                EntityName: 'MJ_BizApps_Orders: Order Company Policies',
+                EntityName: ORDER_COMPANY_POLICY_ENTITY,
                 ExtraFilter: `ID = '${this.CompanyID}'`,
                 ResultType: 'simple',
             },
@@ -2046,7 +2150,7 @@ export class OrderEntityServer extends mjBizAppsOrdersOrderHeaderEntity {
      */
     private async decideSubscriptions(): Promise<Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>> {
         const out = new Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>();
-        const subLines = await this.subscriptionLines(this._lines);
+        const subLines = await this.subscriptionLines([...this.Lines.Items]);
         if (subLines.length === 0) return out;
 
         // Settings drive whether the organization is inferred at all, so load the cache once here

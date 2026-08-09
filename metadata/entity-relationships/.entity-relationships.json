@@ -1,0 +1,31 @@
+[
+  {
+    "_comments": [
+      "Declares Order Headers -> Order Lines as a related-record collection (MJ 6.1).",
+      "",
+      "CodeGen reads RelatedRecordCollection and emits a typed `Lines` accessor onto the GENERATED",
+      "entity class, so both tiers get it: the browser can add lines to an order and save the whole",
+      "graph in one call, and OrderEntityServer inherits the same collection to run booking against.",
+      "That replaces the hand-rolled `_lines` array, the Orders.SaveOrder remote operation and the",
+      "client-draft hydration that existed only to carry lines over the wire.",
+      "",
+      "RelatedEntity and RelatedEntityJoinField are deliberately NOT set here — they are already",
+      "columns on this same row (Order Lines / OrderHeaderID). Duplicating them would create two",
+      "sources of truth with the JSON copy winning silently.",
+      "",
+      "Keyed by entity NAMES rather than the row's ID: EntityRelationship IDs are minted by CodeGen,",
+      "so a hardcoded UUID would stop matching the first time this database is rebuilt from zero —",
+      "which is routine here, since schema changes edit the baseline migration in place."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:lines-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Lines"
+    },
+    "sync": {
+      "lastModified": "2026-08-09T19:33:39.029Z",
+      "checksum": "488e55e9386d181b7f748126e844f123395804b65294e08b3c69030096abf400"
+    }
+  }
+]

@@ -10,29 +10,21 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Authority Configuration Section -->
+    <!-- Sales Rep Assignment Section -->
     <mj-collapsible-panel
-        SectionKey="authorityConfiguration"
-        SectionName="Authority Configuration"
-        Icon="fa fa-user-shield"
+        SectionKey="salesRepAssignment"
+        SectionName="Sales Rep Assignment"
+        Icon="fa fa-user"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="SalesRepUserID"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
             LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsActive"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
         ></mj-form-field>
 
     </mj-collapsible-panel>
@@ -41,7 +33,7 @@
     <mj-collapsible-panel
         SectionKey="authorityLimits"
         SectionName="Authority Limits"
-        Icon="fa fa-chart-line"
+        Icon="fa fa-lock"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -73,6 +65,14 @@
             [ShowLabel]="true"
             FieldName="AllowedProductCategoryIDs"
             Type="textarea"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IsActive"
+            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

@@ -10,13 +10,22 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Payment Configuration Section -->
+    <!-- Payment Context Section -->
     <mj-collapsible-panel
-        SectionKey="paymentConfiguration"
-        SectionName="Payment Configuration"
-        Icon="fa fa-cog"
+        SectionKey="paymentContext"
+        SectionName="Payment Context"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CompanyID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -26,6 +35,16 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Payment Provider Details Section -->
+    <mj-collapsible-panel
+        SectionKey="paymentProviderDetails"
+        SectionName="Payment Provider Details"
+        Icon="fa fa-network-wired"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -44,16 +63,6 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Provider Details Section -->
-    <mj-collapsible-panel
-        SectionKey="providerDetails"
-        SectionName="Provider Details"
-        Icon="fa fa-shield-alt"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -165,11 +174,11 @@
 
     </mj-collapsible-panel>
 
-    <!-- Transaction Context Section -->
+    <!-- Transaction Details Section -->
     <mj-collapsible-panel
-        SectionKey="transactionContext"
-        SectionName="Transaction Context"
-        Icon="fa fa-file-invoice"
+        SectionKey="transactionDetails"
+        SectionName="Transaction Details"
+        Icon="fa fa-file-invoice-dollar"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -221,18 +230,9 @@
     <mj-collapsible-panel
         SectionKey="systemMetadata"
         SectionName="System Metadata"
-        Icon="fa fa-database"
+        Icon="fa fa-cog"
         [Form]="this"
         [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CompanyID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
