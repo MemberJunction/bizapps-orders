@@ -353,7 +353,9 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         line.ServicePeriodStart = decision.EffectiveDate;
         line.ServicePeriodEnd = new Date(term.EndDate);
 
-        order.Lines = [line];
+        // Attached rather than assigned: `Lines` is a RelatedRecordCollection on the generated
+        // class, and `Add()` stamps OrderHeaderID and the LineNumber for us.
+        order.Lines.Add(line);
         order.Status = 'Confirmed';
 
         if (!(await order.Save())) {

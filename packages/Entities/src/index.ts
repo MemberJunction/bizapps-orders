@@ -25,6 +25,21 @@ export * from './generated/remote_operations';
 export * from './order-draft';
 
 /**
+ * `OrderStatusBehavior` — the order lifecycle as a table: the legal statuses, the legal MOVES
+ * between them, and the predicates every surface asks (is it editable, is it booked, does it count
+ * toward the receivable). Pure; no database, no provider. Lives here so the browser enforces the
+ * same lifecycle the server does rather than a hand-copied approximation.
+ */
+export * from './OrderStatusBehavior';
+
+/**
+ * `OrderHeaderEntity` — the shared (client + server) order subclass carrying every rule decidable
+ * without the database. `OrderEntityServer` extends it and adds persistence, so a rule written once
+ * runs in the browser before a round trip AND on the server for every other caller.
+ */
+export * from './OrderHeaderEntity';
+
+/**
  * Forces the generated entity subclasses to be loaded. Without an explicit
  * import + call, tree-shaking drops the generated entities because they are not
  * directly referenced. Import and call this from the app bootstrap so the

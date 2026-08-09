@@ -2,7 +2,7 @@
   "name": "@mj-biz-apps/orders-actions",
   "type": "module",
   "version": "5.0.0",
-  "description": "Action subclasses for BizApps Orders \u2014 the CodeGen-maintained generated set. Hand-authored server-side actions live in @mj-biz-apps/orders-server; this package is `shared` and must stay browser-safe.",
+  "description": "Action subclasses for BizApps Orders — the CodeGen-maintained generated set. Hand-authored server-side actions live in @mj-biz-apps/orders-server; this package is `shared` and must stay browser-safe.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "publishConfig": {
@@ -26,15 +26,15 @@
     "zod": "^3.25.28"
   },
   "peerDependencies": {
-    "@memberjunction/actions": "^5.50.0",
-    "@memberjunction/actions-base": "^5.50.0",
-    "@memberjunction/ai": "^5.50.0",
-    "@memberjunction/aiengine": "^5.50.0",
-    "@memberjunction/core": "^5.50.0",
-    "@memberjunction/core-entities": "^5.50.0",
-    "@memberjunction/core-entities-server": "^5.50.0",
-    "@memberjunction/global": "^5.50.0",
-    "@memberjunction/templates": "^5.50.0"
+    "@memberjunction/actions": "^6.1.0-edge.1",
+    "@memberjunction/actions-base": "^6.1.0-edge.1",
+    "@memberjunction/ai": "^6.1.0-edge.1",
+    "@memberjunction/aiengine": "^6.1.0-edge.1",
+    "@memberjunction/core": "^6.1.0-edge.1",
+    "@memberjunction/core-entities": "^6.1.0-edge.1",
+    "@memberjunction/core-entities-server": "^6.1.0-edge.1",
+    "@memberjunction/global": "^6.1.0-edge.1",
+    "@memberjunction/templates": "^6.1.0-edge.1"
   },
   "repository": {
     "type": "git",

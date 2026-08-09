@@ -99,11 +99,23 @@ const headerTerms = (ctx: IntegrationCheckContext, orderID: string) =>
        FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
   );
 
-/** Give the selling company a default, through the object model so the engine cache sees it. */
+/**
+ * Give the selling company a default.
+ *
+ * On `OrderCompanyPolicy`, not accounting's `AccountingCompanyProfile` — accounting removed that
+ * column (their issue #22) because deciding when an order is DUE is a selling decision, not an
+ * accounting one. UPSERT rather than UPDATE: a company with no policy row is the normal case (the
+ * table exists so a company can OVERRIDE the defaults), so an UPDATE would silently affect zero
+ * rows and the check would pass for the wrong reason — the walk would fall through to due-on-receipt
+ * and happen to produce the expected date for a Net0 term.
+ */
 async function setCompanyDefault(ctx: IntegrationCheckContext, companyID: string, paymentTermsTypeID: string) {
   await TxQuery(
     ctx,
-    `UPDATE ${ACCT_SCHEMA}.AccountingCompanyProfile SET DefaultPaymentTermsTypeID='${paymentTermsTypeID}' WHERE ID='${companyID}'`,
+    `IF EXISTS (SELECT 1 FROM ${ORDERS_SCHEMA}.OrderCompanyPolicy WHERE ID='${companyID}')
+       UPDATE ${ORDERS_SCHEMA}.OrderCompanyPolicy SET DefaultPaymentTermsTypeID='${paymentTermsTypeID}' WHERE ID='${companyID}';
+     ELSE
+       INSERT INTO ${ORDERS_SCHEMA}.OrderCompanyPolicy (ID, DefaultPaymentTermsTypeID) VALUES ('${companyID}', '${paymentTermsTypeID}');`,
   );
 }
 
@@ -162,7 +174,7 @@ export const PaymentTermsChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
-        // `AccountingCompanyProfile.DefaultPaymentTermsTypeID` has existed since the accounting schema
+        // `OrderCompanyPolicy.DefaultPaymentTermsTypeID` is the company-level fallback
         // was written and nothing read it until now.
         const net45 = await termsID(ctx, "Net45");
         await setCompanyDefault(ctx, Fx().CoA.ID, net45);

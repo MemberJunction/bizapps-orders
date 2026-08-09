@@ -207,8 +207,11 @@ export async function BuildOrder(
         lines.push(line);
     }
 
-    // `Lines` is the transient collection OrderEntityServer.Save persists after the header exists.
-    order.Lines = lines;
+    // `Lines` is a RelatedRecordCollection on the generated class — attached through `Add()`, which
+    // stamps OrderHeaderID and the LineNumber sequence, rather than assigned as an array.
+    for (const line of lines) {
+        order.Lines.Add(line);
+    }
     return { Order: order, Lines: lines };
 }
 

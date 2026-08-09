@@ -251,19 +251,17 @@ export function LoadSaveOrderOperation(): void {
  * back entirely on any failure. This operation's job is to set up that transition
  * correctly and to report the reason when it is refused.
  *
- * `ExpectedGrossTotal` IS ACCEPTED AND NOT YET ENFORCED — a deliberate gap, recorded
- * here rather than left to be discovered. The guard it used to drive was real and is
- * worth having: between the moment a user reads a total and the moment they press
- * Confirm, a promotion can expire or a rate can change, and without a guard the order
- * books at the new number silently. But it was implemented by running an ENTIRE second
- * booking through a rolled-back transaction purely to learn the total, which is the
- * cost this operation no longer pays.
+ * `ExpectedGrossTotal` IS ENFORCED, inside the booking transaction. Between the moment a
+ * user reads a total and the moment they press Confirm, a promotion can expire or a rate
+ * can change, and without a guard the order books at the new number silently.
  *
- * Its correct home is INSIDE the transaction below: `Save()` already computes the real
- * gross, so the comparison is one subtraction against a figure that exists anyway, and
- * a mismatch throws before the commit. That is a change to `OrderEntityServer`, so it
- * is backlogged rather than smuggled in here. Until it lands, the screen's total is
- * advisory and the engine's is authoritative.
+ * It was once implemented by running an ENTIRE second booking through a rolled-back
+ * transaction purely to learn the total, and removed because that cost was not
+ * acceptable — leaving the field accepted and read by nothing, which is worse than not
+ * offering it. It now lives where it always belonged: `OrderEntityServer.Save()` compares
+ * it against the real `TotalGross` after the lines are written, so the check is one
+ * subtraction against a figure that exists anyway, and a mismatch throws before the
+ * commit.
  */
 @RegisterClass(BaseRemotableOperation, 'Orders.ConfirmOrder')
 export class ConfirmOrderOperation extends OrdersConfirmOrderOperationBase {
@@ -325,9 +323,11 @@ export class ConfirmOrderOperation extends OrdersConfirmOrderOperationBase {
             };
         }
 
-        // `input.ExpectedGrossTotal` is read by nothing right now. See the note on this class:
-        // the guard belongs inside the booking transaction, where the real gross already exists,
-        // rather than in a whole second booking run to discover it.
+        // Hand the guard to the engine. `OrderEntityServer.Save()` compares it against the real
+        // gross INSIDE the booking transaction — after the lines are written and the rollup trigger
+        // has maintained TotalGross — and throws on a mismatch, which rolls the whole booking back.
+        // Nothing is booked at a figure the caller did not agree to.
+        order.ExpectedGrossTotal = input?.ExpectedGrossTotal ?? null;
 
         order.Status = 'Confirmed';
 

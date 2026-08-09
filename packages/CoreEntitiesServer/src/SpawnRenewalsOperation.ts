@@ -322,7 +322,8 @@ export class SpawnRenewalsOperation extends BaseRemotableOperation<SpawnRenewals
             line.UnitPrice = source.UnitPrice;
             line.DiscountPct = source.DiscountPct ?? 0;
 
-            order.Lines = [line];
+            // Attached rather than assigned — see the note in CancelSubscriptionOperation.
+            order.Lines.Add(line);
             order.Status = 'Confirmed';
 
             if (!(await order.Save())) {

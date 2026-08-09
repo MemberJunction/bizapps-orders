@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="orderAssociation"
         SectionName="Order Association"
-        Icon="fa fa-link"
+        Icon="fa fa-shopping-cart"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -89,16 +89,6 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Approval and Audit Section -->
-    <mj-collapsible-panel
-        SectionKey="approvalAndAudit"
-        SectionName="Approval and Audit"
-        Icon="fa fa-check-circle"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
@@ -107,6 +97,16 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Audit and Authorization Section -->
+    <mj-collapsible-panel
+        SectionKey="auditAndAuthorization"
+        SectionName="Audit and Authorization"
+        Icon="fa fa-shield-alt"
+        [Form]="this"
+        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"

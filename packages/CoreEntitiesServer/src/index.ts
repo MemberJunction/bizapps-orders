@@ -412,6 +412,10 @@ export { OrdersEngine, LoadOrdersEngine } from './OrdersEngine.js';
 
 // The order lifecycle (D8/D53): the legal statuses, the legal MOVES between them, and what each one
 // permits. The DB CHECK enforces the set and never enforced the moves.
+// The lifecycle table moved DOWN to @mj-biz-apps/orders-entities so the browser enforces the same
+// moves the server does — it is pure logic with no database and no provider, and a hand-copied
+// approximation in the UI is exactly how the two ends drift. Re-exported here unchanged so every
+// existing server-side importer keeps working.
 export {
     CanTransition,
     CountsTowardReceivable,
@@ -422,8 +426,8 @@ export {
     IsTerminal,
     NextStatuses,
     ORDER_STATUSES,
-} from './OrderStatusBehavior.js';
-export type { OrderStatus, TransitionVerdict } from './OrderStatusBehavior.js';
+} from '@mj-biz-apps/orders-entities';
+export type { OrderStatus, TransitionVerdict } from '@mj-biz-apps/orders-entities';
 
 // Payment terms (D83): when an order is due, resolved once at confirm and STORED — nothing
 // populated OrderHeader.DueDate before, so the collections worklist returned nothing, ever.

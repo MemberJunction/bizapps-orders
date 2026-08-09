@@ -364,7 +364,8 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             if (user?.ID) line.AllocatedByUserID = user.ID;
             lines.push(line);
         }
-        header.Lines = lines;
+        // Attached, not assigned — the collection stamps the foreign key.
+        for (const line of lines) header.Lines.Add(line);
 
         // CAPTURED FOR EVERY RAIL THAT ANSWERS IMMEDIATELY. `savePendingLines` books each allocation
         // from this collection, and a header saved Pending would persist the lines with nothing

@@ -15,7 +15,8 @@ export class mjBizAppsOrdersOrderAdjustmentAllocationFormComponent extends BaseF
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true }
+            { sectionKey: 'adjustmentDetails', sectionName: 'Adjustment Details', isExpanded: true },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }
 }

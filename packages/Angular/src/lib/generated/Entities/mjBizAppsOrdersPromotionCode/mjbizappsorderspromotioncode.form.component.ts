@@ -17,8 +17,8 @@ export class mjBizAppsOrdersPromotionCodeFormComponent extends BaseFormComponent
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'promotionDetails', sectionName: 'Promotion Details', isExpanded: true },
-            { sectionKey: 'accessControl', sectionName: 'Access Control', isExpanded: true },
-            { sectionKey: 'validityPeriod', sectionName: 'Validity Period', isExpanded: true },
+            { sectionKey: 'usageLimits', sectionName: 'Usage Limits', isExpanded: true },
+            { sectionKey: 'restrictions', sectionName: 'Restrictions', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderAdjustments', sectionName: 'Order Adjustments', isExpanded: false }
         ]);
