@@ -31,7 +31,7 @@ import {
     type InvoicePartyFacts,
     type InvoicePaymentFacts,
 } from './InvoiceBehavior.js';
-import { ORDER_HEADER_ENTITY } from './OrderDraftHydrator.js';
+import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 import { RequireUUID } from './sql-guards.js';
 

@@ -29,7 +29,7 @@ import {
     type OverdueWorklistRow,
 } from '@mj-biz-apps/orders-entities';
 
-import { ORDER_HEADER_ENTITY } from './OrderDraftHydrator.js';
+import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;

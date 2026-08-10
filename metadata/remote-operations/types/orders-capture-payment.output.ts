@@ -1,7 +1,7 @@
 /**
  * Output for `Orders.CapturePayment`.
  *
- * Mirrors `OrdersSaveOrderOutput`'s shape so a client handles both the same way, and adds
+ * Carries the payment as saved, and adds
  * `OrderEffects` — what each order looks like AFTER the payment — so a screen can show the result
  * without a second round trip.
  *
@@ -74,4 +74,22 @@ export interface OrdersCapturePaymentOutput {
     WasRetry?: boolean;
     /** Echoed back so a caller can correlate, and so a retry is legible in a log. */
     IdempotencyKey?: string | null;
+}
+
+/**
+ * A journal entry the capture will (or did) produce. Read-only everywhere in Orders.
+ *
+ * Declared here because this is now the only operation that reports entries — it moved with its last
+ * user rather than being kept alive in a shared file nobody owned.
+ */
+export interface JournalEntryPreview {
+    CompanyID: string;
+    CompanyName: string;
+    /** Which order line caused it. One entry per line, always. */
+    LineNumber?: number | null;
+    /** Set once the entry exists; null while previewing. */
+    JournalEntryID?: string | null;
+    EntryType: string;
+    Balanced: boolean;
+    Lines: Array<{ Side: 'Dr' | 'Cr'; AccountRole: string; AccountName: string; Amount: number }>;
 }

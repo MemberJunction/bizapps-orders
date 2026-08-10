@@ -26,10 +26,10 @@
           aria-label="Order type"
           [Data]="OrderTypes"
           [ValuePrimitive]="true"
-          [ngModel]="Draft.Header.OrderType ?? 'Sale'"
+          [ngModel]="Order.OrderType"
           (ngModelChange)="SetOrderType($event)" />
       } @else {
-        <span class="v">{{ Draft.Header.OrderType ?? 'Sale' }}</span>
+        <span class="v">{{ Order.OrderType }}</span>
       }
     </div>
     <div class="ed-identity__cell--wide">
@@ -50,7 +50,7 @@
           TextField="Name"
           ValueField="ID"
           [ValuePrimitive]="true"
-          [ngModel]="Draft.Header.CompanyID"
+          [ngModel]="Order.CompanyID"
           (ngModelChange)="SetOwningCompany($event)" />
       } @else {
         <span class="v">{{ OwningCompanyName }}</span>
@@ -62,10 +62,10 @@
         <input type="date" class="mj-input ed-identity__input" aria-label="Order date"
                [class.ed-identity__input--default]="IsDefault('OrderDate')"
                [title]="IsDefault('OrderDate') ? 'Defaults to today — change it if the order was taken on another date' : ''"
-               [ngModel]="DateValue(Draft.Header.OrderDate)"
+               [ngModel]="DateValue(Order.OrderDate)"
                (ngModelChange)="SetHeaderField('OrderDate', $event)" />
       } @else {
-        <span class="v">{{ Draft.Header.OrderDate ?? 'today' }}</span>
+        <span class="v">{{ DateValue(Order.OrderDate) }}</span>
       }
     </div>
     <div>
@@ -74,10 +74,10 @@
         <!-- Typing a due date is a STATED value and wins over the terms walk; clearing it hands
              resolution back. Same rule the unit price follows. -->
         <input type="date" class="mj-input ed-identity__input" aria-label="Due date"
-               [ngModel]="DateValue(Draft.Header.DueDate)"
+               [ngModel]="DateValue(Order.DueDate)"
                (ngModelChange)="SetHeaderField('DueDate', $event)" />
       } @else {
-        <span class="v">{{ Draft.Header.DueDate ?? '—' }}</span>
+        <span class="v">{{ Order.DueDate ?? '—' }}</span>
       }
     </div>
     <div>
@@ -89,10 +89,10 @@
       @if (IsEditable) {
         <input type="text" class="mj-input ed-identity__input mono" aria-label="Their PO number"
                placeholder="—"
-               [ngModel]="Draft.Header.ExternalDocumentNumber ?? ''"
+               [ngModel]="Order.ExternalDocumentNumber ?? ''"
                (ngModelChange)="SetHeaderField('ExternalDocumentNumber', $event)" />
       } @else {
-        <span class="v mono">{{ Draft.Header.ExternalDocumentNumber ?? '—' }}</span>
+        <span class="v mono">{{ Order.ExternalDocumentNumber ?? '—' }}</span>
       }
     </div>
   </div>
@@ -226,7 +226,7 @@
           </tr>
         </thead>
         <tbody>
-          @for (line of Lines; track line.ClientKey; let i = $index) {
+          @for (line of Lines; track line.ID; let i = $index) {
             <tr class="is-clickable" (click)="Open(line)">
               <td class="muted">{{ i + 1 }}</td>
 
@@ -268,7 +268,7 @@
               <td class="num" (click)="$event.stopPropagation()">
                 <input
                   class="mj-input is-num ed-input-price"
-                  [value]="line.UnitPriceWasStated ? line.UnitPrice : (PricedLine(line)?.UnitPrice ?? '')"
+                  [value]="PriceStated(line) ? line.UnitPrice : (PricedLine(line)?.UnitPrice ?? '')"
                   [disabled]="!IsEditable"
                   placeholder="resolve"
                   (change)="SetUnitPrice(line, $any($event.target).value)"
@@ -276,7 +276,7 @@
                 <mjo-price-source-badge
                   [Source]="PricedLine(line)?.PriceSource ?? null"
                   [Settled]="PricingSettled"
-                  [Overridden]="line.UnitPriceWasStated" />
+                  [Overridden]="PriceStated(line)" />
                 @if (PricedLine(line)?.Error; as why) {
                   <!--
                     A LINE WITH NO PRICE SAYS SO. Rendering nothing (or a $0.00) makes an
@@ -359,7 +359,7 @@
           code the confirm might refuse is a promise the screen cannot keep.
         -->
         <div class="mj-card-pad">
-          @for (code of Draft.PromotionCodes; track code) {
+          @for (code of PromotionCodes; track code) {
             <div class="ed-promo muted">
               <i class="fa-solid fa-circle-minus" style="color: var(--mj-text-disabled)" aria-hidden="true"></i>
               <div class="ed-promo__body">
@@ -441,7 +441,7 @@
             }
           </div>
           <mjo-stated-value Label="Terms" From="organization default">
-            {{ Draft.Header.PaymentTermsTypeID ?? '— default —' }}
+            {{ Order.PaymentTermsTypeID ?? '— default —' }}
           </mjo-stated-value>
           <div class="small muted ed-note">
             Bill-to is header-only: one order, one payer, one bill. That is why there is no
@@ -500,7 +500,7 @@
             }
           </div>
           <mjo-stated-value Label="Address">
-            {{ Draft.Header.ShipToAddressID ?? '— none —' }}
+            {{ Order.ShipToAddressID ?? '— none —' }}
           </mjo-stated-value>
           <div class="small muted ed-note">
             Each side falls back <b>independently</b>, so a line naming only a person keeps the
@@ -574,7 +574,7 @@
               ValueField="ID"
               [ValuePrimitive]="true"
               [DefaultItem]="TenderNone"
-              [ngModel]="Draft.Header.InitialPaymentTypeID ?? ''"
+              [ngModel]="Order.InitialPaymentTypeID ?? ''"
               (ngModelChange)="SetTender($event)" />
 
             <!--
@@ -604,12 +604,12 @@
             }
           </div>
 
-          @if (Draft.Header.InitialPaymentTypeID) {
+          @if (Order.InitialPaymentTypeID) {
             <div class="ed-field">
               <label class="ed-field__label" for="ed-payamt">Amount</label>
               <div class="ed-field__row">
                 <input id="ed-payamt" type="text" inputmode="decimal" class="mj-input is-num"
-                       [ngModel]="Draft.Header.InitialPaymentAmount ?? 0"
+                       [ngModel]="Order.InitialPaymentAmount"
                        (ngModelChange)="SetInitialAmount($event)" />
                 <button type="button" mjButton variant="outline" (click)="PayInFull()"
                         title="Use the order total">
@@ -630,7 +630,7 @@
             {{ SelectedTenderType?.Name ?? '— invoice on terms —' }}
           </mjo-stated-value>
           <mjo-stated-value Label="Amount">
-            {{ Draft.Header.InitialPaymentAmount | mjoMoney: { Zero: '—' } }}
+            {{ Order.InitialPaymentAmount | mjoMoney: { Zero: '—' } }}
           </mjo-stated-value>
         }
 
@@ -680,7 +680,7 @@
       </div>
       <div class="mj-card-pad">
         <mjo-stated-value Label="Due" From="set when the order confirms">
-          {{ dateOf(Draft.Header.DueDate) }}
+          {{ dateOf(Order.DueDate) }}
         </mjo-stated-value>
         <mjo-stated-value Label="Balance">{{ BalanceDue | mjoMoney }}</mjo-stated-value>
         <div class="small muted ed-note">

@@ -47,6 +47,124 @@ export interface AISkillImportMarkdownOutput {
 }
 
 /**
+ * Input for `Orders.AdvanceOrderState`.
+ *
+ * WHAT THIS IS FOR. Back-office entry of something that has ALREADY happened — a sale taken at a
+ * counter, a shipment that went out before anyone opened the system, a migration from whatever came
+ * before. The order needs to land in its final state without a human clicking through
+ * Confirmed → Posted → Fulfilled.
+ *
+ * WHAT IT IS NOT. A way to create an order. Composing one and booking it is `order.Save()` through
+ * the entity graph — set the header's `Status` to 'Confirmed', attach the lines, save, and the
+ * server subclass runs the real booking walk: per-line journal entries, subscription materialisation,
+ * entitlement grants. This operation starts where that finishes.
+ *
+ * WHY IT TAKES AN ID AND NOT AN ORDER. The order exists by the time this runs, by construction — it
+ * had to be booked to be advanceable. An earlier version took an `OrderDraft`, a hand-maintained
+ * mirror of the order entity, and created the order on the way past; the mirror drifted from the
+ * entity silently, in both directions, and it is gone.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersAdvanceOrderStateInput {
+    /** The booked order to advance. */
+    OrderHeaderID: string;
+
+    /**
+     * Where it should end up: 'Posted' or 'Fulfilled'.
+     *
+     * 'Draft', 'Quoted' and 'Confirmed' are not accepted — those are reached by saving the order
+     * itself, and Confirmed runs the booking walk on the way through, which is where that belongs.
+     * 'Voided' is not accepted either: voiding is a separate decision about an existing order, not a
+     * rung on this ladder.
+     */
+    TargetStatus: string;
+
+    /**
+     * Advance to Fulfilled even when some fulfillable lines could not be marked — a migration where
+     * the shipment records are incomplete. Default false, because an order marked Fulfilled with
+     * unshipped lines is a promise the system now claims to have kept.
+     */
+    ForceFulfillment?: boolean;
+
+    /** Recorded on the order, so the row says why it skipped the usual path. */
+    Reason?: string | null;
+}
+
+/**
+ * Output for `Orders.AdvanceOrderState`.
+ *
+ * Reports how far the order actually got, rung by rung, and what the ledger behind it looks like.
+ *
+ * A STALLED ADVANCE IS A RESULT, NOT AN ERROR. An order that reaches Posted and stops because two
+ * lines could not be marked shipped is a normal outcome of a migration against incomplete records —
+ * the caller needs to know which rung it stuck on and why, not catch an exception.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersAdvanceOrderStateOutput {
+    /** True only if the order reached `RequestedStatus`. */
+    Success: boolean;
+    Message?: string | null;
+
+    OrderHeaderID: string | null;
+    OrderNumber: string | null;
+
+    /** Where the order actually is now. */
+    Status: string | null;
+    /** Where the caller asked it to go. */
+    RequestedStatus: string;
+
+    /**
+     * Each rung attempted, whether it was taken, and — when it was not — why.
+     *
+     * Reporting only the final status would lose the distinction between "refused at the first step"
+     * and "moved two rungs and stalled on the third", which are different problems to go and fix.
+     */
+    Transitions: OrderStateTransition[];
+
+    /**
+     * Journal entries standing behind this order's lines, read back from the ledger rather than
+     * assumed. The confirm happened on an earlier call, so this operation has no first-hand knowledge
+     * of it — and an entry count of zero because nobody looked is indistinguishable from an order
+     * that never booked.
+     */
+    EntryCount: number;
+    /** False if any of those entries does not balance — a ledger defect, surfaced rather than hidden. */
+    AllBalanced: boolean;
+
+    /** Fulfillable lines that could not be marked Fulfilled. Non-zero with Success means it was forced. */
+    UnfulfilledLineCount: number;
+
+    /** Why the advance was refused outright, when it was. */
+    Blockers: BlockerResult[];
+}
+
+/** One step the order actually took. Recorded even when it was a no-op, so the trail is complete. */
+export interface OrderStateTransition {
+    From: string;
+    To: string;
+    /** False when the step was refused or skipped; `Reason` then says why. */
+    Applied: boolean;
+    Reason?: string | null;
+}
+
+/**
+ * Something that makes the operation impossible, in the words of the rule that failed.
+ *
+ * Declared here rather than alongside the operation that first needed it: that one was
+ * `Orders.SaveOrder`, which is gone, and several operations still speak this shape. Every surface
+ * that renders a refusal renders this, so it has to keep existing somewhere.
+ */
+export interface BlockerResult {
+    Code: string;
+    Message: string;
+    /** Where to go to fix it, when there is somewhere. */
+    ResolutionHint?: string | null;
+    LineNumber?: number | null;
+}
+
+/**
  * Input for `Orders.ApplyAccountCredit`.
  *
  * Spending a credit writes a ZERO-amount payment with two offsetting lines: no new
@@ -158,15 +276,21 @@ export interface CancelSubscriptionOutput {
 /**
  * Input for `Orders.CapturePayment`.
  *
- * WHY THIS OPERATION EXISTS. A payment is a HEADER plus its ALLOCATION LINES, and the two must be
- * written in one transaction. `PaymentHeaderEntityServer.Lines` is a TRANSIENT collection, not a
- * column, so CodeGen cannot emit it on the client entity and a browser `entity.Save()` has nowhere
- * to put the allocations. That is the same situation `Orders.SaveOrder` was built for, and it needs
- * the same answer: one call, one transaction.
+ * WHY THIS OPERATION EXISTS. Writing a payment header with its allocation lines in one transaction
+ * is NOT the reason — `PaymentHeader.Lines` is a related-record collection, so a browser
+ * `payment.Save()` does that on its own. What remains is everything a save cannot decide, and all of
+ * it has to happen in the same act as the write:
  *
- * A two-step create-then-allocate flow was rejected. Between the steps there would be a captured
- * payment with no allocations in the database — cash recorded against nothing — and any failure in
- * the second step would leave it there permanently.
+ *   · SETTLING with the payment provider before the money is recorded as taken. The provider is the
+ *     authority on whether the money moved; recording first and asking after is how a database ends
+ *     up holding cash that was declined.
+ *   · Recognising a RE-SUBMITTED capture as the same payment rather than a second one. A
+ *     double-clicked button must not take money twice, and only the server can tell the difference.
+ *   · Turning an OVER-PAYMENT into account credit (D68) rather than refusing it.
+ *
+ * A two-step capture-then-settle flow was rejected. Between the steps there would be a captured
+ * payment the provider knows nothing about — cash recorded against nothing — and any failure in the
+ * second step would leave it there permanently.
  *
  * NOTE ON THE FEE: it is deliberately NOT an input. A client-supplied fee is a client-supplied
  * general-ledger amount, and the client has no access to the provider's schedule. The server
@@ -268,7 +392,7 @@ export interface OrdersCapturePaymentInput {
 /**
  * Output for `Orders.CapturePayment`.
  *
- * Mirrors `OrdersSaveOrderOutput`'s shape so a client handles both the same way, and adds
+ * Carries the payment as saved, and adds
  * `OrderEffects` — what each order looks like AFTER the payment — so a screen can show the result
  * without a second round trip.
  *
@@ -344,180 +468,21 @@ export interface OrdersCapturePaymentOutput {
 }
 
 /**
- * Input for `Orders.ConfirmOrder`.
+ * A journal entry the capture will (or did) produce. Read-only everywhere in Orders.
  *
- * The irreversible step. In ONE transaction it saves the draft (if one is
- * supplied), transitions to `Confirmed`, books one journal entry per line,
- * decides and writes subscriptions, issues entitlement grants, and captures the
- * initial payment when the order carries one. Any failure rolls back everything —
- * a confirmed order without its entries is invalid state, not a partial success.
- *
- * Two call shapes:
- *   - `OrderHeaderID` — confirm an already-saved draft.
- *   - `Draft` — save and confirm together, for a caller that never persisted one.
- *
- * Shapes come from the shared block in `orders-save-order.input.ts`.
- * NO import statements — definitions are emitted verbatim.
+ * Declared here because this is now the only operation that reports entries — it moved with its last
+ * user rather than being kept alive in a shared file nobody owned.
  */
-export interface OrdersConfirmOrderInput {
-    /** Confirm an existing draft. Mutually exclusive with `Draft`. */
-    OrderHeaderID?: string;
-    /** Save-and-confirm in one call. Mutually exclusive with `OrderHeaderID`. */
-    Draft?: OrderDraftInput;
-    /**
-     * Refuse the confirm unless the gross matches this to the cent. The number the
-     * user was looking at when they pressed the button — so a price that moved
-     * underneath them (a promotion that expired mid-session, a rate that changed)
-     * stops the confirm instead of silently booking a different amount.
-     */
-    ExpectedGrossTotal?: number;
-    /**
-     * Proceed even though a sales rule requires approval, recording the approval
-     * against the acting user. Refused unless they hold the authority.
-     */
-    ApprovalOverrideReason?: string;
-}
-
-/**
- * Output for `Orders.ConfirmOrder`.
- *
- * On failure, `Blockers` carries the REASON — not a bare `false`. A rejected
- * confirm that only logs why is a rejected confirm the user cannot act on.
- *
- * NO import statements — definitions are emitted verbatim.
- */
-export interface OrdersConfirmOrderOutput {
-    Success: boolean;
-    Message?: string;
-    OrderHeaderID?: string;
-    /** Taken from the sequence inside the transaction, so a failed confirm burns no number. */
-    OrderNumber?: string;
-    Status?: string;
-    Totals?: OrderTotalsResult;
-    /** The entries that were actually created, with their IDs. */
-    JournalEntries?: JournalEntryPreview[];
-    /** What happened to the subscription, when a line carried one. */
-    SubscriptionDecisions?: SubscriptionDecisionPreview[];
-    /** Grants issued. */
-    EntitlementGrants?: EntitlementGrantPreview[];
-    /** Set when the order carried an initial-payment intent that captured. */
-    PaymentHeaderID?: string;
-    PaymentNumber?: string;
-    /** Set when a sales rule escalated instead of proceeding. */
-    ApprovalTaskID?: string;
-    /** Why the confirm was refused. Empty on success. */
-    Blockers?: BlockerResult[];
-}
-
-/**
- * Input for `Orders.CreateOrderInState`.
- *
- * WHAT THIS IS FOR. Back-office entry of something that has ALREADY happened — a sale taken at a
- * counter, a shipment that went out before anyone opened the system, a migration from whatever came
- * before. The order needs to land in its final state without a human clicking through Draft →
- * Confirmed → Posted → Fulfilled.
- *
- * WHAT IT IS NOT. A shortcut past booking. It runs the REAL confirm path — the same
- * `Orders.ConfirmOrder` machinery, the same per-line journal entries, the same subscription
- * materialisation and entitlement grants — and only then advances the status. An operation that
- * wrote `Status = 'Fulfilled'` directly would produce an order that looks complete and has no
- * ledger behind it, which is precisely the failure nothing downstream can detect: the order
- * reconciles against itself, and the money simply never existed (D17).
- *
- * NO import statements — definitions are emitted verbatim.
- */
-export interface OrdersCreateOrderInStateInput {
-    /**
-     * The order to create. Same shape `Orders.ConfirmOrder` takes, so there is one draft mapping to
-     * be right rather than two.
-     */
-    Draft: OrderDraftInput;
-
-    /**
-     * Where it should end up: 'Confirmed', 'Posted' or 'Fulfilled'.
-     *
-     * 'Draft' and 'Quoted' are not accepted — that is `Orders.SaveOrder`, and routing them here
-     * would run booking on an order that is not meant to be locked yet. 'Voided' is not accepted
-     * either: voiding is a decision about an existing order, not a state to create one in.
-     */
-    TargetStatus: string;
-
-    /**
-     * The date the thing actually happened, when it is not today. Back-dating is the normal case
-     * here — this operation exists because the event preceded the record.
-     */
-    OrderDate?: string | null;
-
-    /**
-     * Refuse if the order's gross total does not come to this. Same guard `ConfirmOrder` offers, and
-     * worth more here: a migration that silently reprices at today's rates rather than the rate the
-     * customer was charged is a defect that looks like a successful import.
-     */
-    ExpectedGrossTotal?: number | null;
-
-    /**
-     * Advance to Fulfilled even when some fulfillable lines cannot be marked — a migration where the
-     * shipment records are incomplete. Default false, because an order marked Fulfilled with unshipped
-     * lines is a promise the system now claims to have kept.
-     */
-    ForceFulfillment?: boolean;
-
-    /** Recorded on the order, so the row says why it skipped the usual path. */
-    Reason?: string | null;
-}
-
-/**
- * Output for `Orders.CreateOrderInState`.
- *
- * Mirrors `OrdersConfirmOrderOutput` and adds the lifecycle trail, because the whole point of this
- * operation is that it moved through states rather than landing in one — and a caller importing a
- * thousand orders needs to see WHERE one stopped, not just that it did.
- *
- * NO import statements — definitions are emitted verbatim.
- */
-
-/** One step the order actually took. Recorded even when it was a no-op, so the trail is complete. */
-export interface OrderStateTransition {
-    From: string;
-    To: string;
-    /** False when the step was refused or skipped; `Reason` then says why. */
-    Applied: boolean;
-    Reason?: string | null;
-}
-
-export interface OrdersCreateOrderInStateOutput {
-    Success: boolean;
-    Message?: string;
-
-    OrderHeaderID?: string | null;
-    OrderNumber?: string | null;
-    /** Where it actually ended up, which is not always where it was asked to go. */
-    Status?: string | null;
-    /** What the caller asked for, echoed so a partial result is legible without the request. */
-    RequestedStatus?: string | null;
-
-    /** Draft → Confirmed → Posted → Fulfilled, in the order taken. */
-    Transitions?: OrderStateTransition[];
-
-    Totals?: OrderTotalsResult;
-
-    /**
-     * The entries the CONFIRM produced. Present because this operation's entire justification is
-     * that it books properly — an empty list on a successful create is the defect it exists to
-     * prevent, not a formatting detail.
-     */
-    JournalEntries?: JournalEntryPreview[];
-    EntryCount?: number;
-    AllBalanced?: boolean;
-
-    /**
-     * Fulfillable lines still Pending when the target was Fulfilled. Non-zero only with
-     * ForceFulfillment, and worth surfacing: the order now claims to have shipped things it has no
-     * record of shipping.
-     */
-    UnfulfilledLineCount?: number;
-
-    Blockers?: BlockerResult[];
+export interface JournalEntryPreview {
+    CompanyID: string;
+    CompanyName: string;
+    /** Which order line caused it. One entry per line, always. */
+    LineNumber?: number | null;
+    /** Set once the entry exists; null while previewing. */
+    JournalEntryID?: string | null;
+    EntryType: string;
+    Balanced: boolean;
+    Lines: Array<{ Side: 'Dr' | 'Cr'; AccountRole: string; AccountName: string; Amount: number }>;
 }
 
 /**
@@ -789,116 +754,6 @@ export interface OrdersGetOverdueWorklistOutput {
 }
 
 /**
- * Input for `Orders.PreviewConfirm`.
- *
- * A dry run of `Orders.ConfirmOrder` that writes NOTHING: it resolves a GL
- * account for every role every line needs, runs the subscription decision,
- * resolves entitlement policy, and evaluates sales rules — then reports what
- * would happen and what would stop it.
- *
- * This exists so a user learns about an unresolvable account BEFORE pressing the
- * button rather than from a red banner after. It must stay in lock-step with
- * ConfirmOrder: an integration check asserts that what this predicts is what
- * confirming actually does, because a preview that can disagree with reality is
- * worse than no preview at all.
- *
- * Shapes come from the shared block in `orders-save-order.input.ts`.
- * NO import statements — definitions are emitted verbatim.
- */
-export interface OrdersPreviewConfirmInput {
-    /** Preview confirming an existing draft. Mutually exclusive with `Draft`. */
-    OrderHeaderID?: string;
-    /** Preview confirming an unsaved draft. Mutually exclusive with `OrderHeaderID`. */
-    Draft?: OrderDraftInput;
-}
-
-/**
- * Output for `Orders.PreviewConfirm` — everything the confirm pre-flight renders.
- *
- * `CanConfirm` is the single question the button reads. It is false when any
- * blocker is present, and a blocker names the rule that failed and where to fix
- * it. Approvals are NOT blockers: a discount over the rep's authority escalates,
- * so it appears in `Approvals` while `CanConfirm` stays true.
- *
- * NO import statements — definitions are emitted verbatim.
- */
-export interface OrdersPreviewConfirmOutput {
-    Success: boolean;
-    Message?: string;
-    /** The button's authority. False iff `Blockers` is non-empty. */
-    CanConfirm: boolean;
-    Totals?: OrderTotalsResult;
-    /** One per line, grouped by company for display. Each carries its own balanced check. */
-    JournalEntries: JournalEntryPreview[];
-    /** Whether each company's entry balances, and the count — the summary chip. */
-    EntryCount: number;
-    CompanyCount: number;
-    AllBalanced: boolean;
-    /** Extend vs create, with the proration note when a partial period scaled a quantity. */
-    SubscriptionDecisions: SubscriptionDecisionPreview[];
-    /** Grants that would issue, with resolved timing / quantity / validity policy. */
-    EntitlementGrants: EntitlementGrantPreview[];
-    /** Sales rules that would escalate. Present does NOT mean blocked. */
-    Approvals: ApprovalRequirementPreview[];
-    /** Lines that will hold the order at Posted because they must ship. */
-    FulfillmentHolds?: Array<{ LineNumber: number; ProductName: string; Quantity: number }>;
-    /** Set when the order carries an initial-payment intent that would capture. */
-    InitialPayment?: {
-        PaymentTypeName: string;
-        Amount: number;
-        ProcessingFeeAmount?: number | null;
-        InstrumentSummary?: string | null;
-    };
-    /** Why the confirm cannot proceed. Empty when `CanConfirm` is true. */
-    Blockers: BlockerResult[];
-}
-
-/**
- * Input for `Orders.PreviewOrder`.
- *
- * Runs the REAL pricing pipeline over an unsaved draft and returns the full
- * decomposition without writing anything. This is what makes continuous preview
- * honest: there is no second implementation of the pricing rules living in the
- * browser beside the engine, which is the thing that eventually disagrees.
- *
- * Shapes come from the shared block in `orders-save-order.input.ts`.
- * NO import statements — definitions are emitted verbatim.
- */
-export interface OrdersPreviewOrderInput {
-    Draft: OrderDraftInput;
-    /**
-     * Include the per-line journal-entry projection. Costs a GL-account resolution
-     * walk per line, so order entry leaves it off while typing and the Accounting
-     * tab turns it on.
-     */
-    IncludeJournalEntries?: boolean;
-}
-
-/**
- * Output for `Orders.PreviewOrder` — the decomposition the order-entry rail renders.
- *
- * `Success: false` here means the draft could not be PRICED (an unknown product, a
- * negative quantity on a non-return). It does not mean the order cannot confirm —
- * that is `Orders.PreviewConfirm`'s question, and it is asked separately because
- * resolving GL accounts and evaluating sales rules costs more than pricing does.
- *
- * NO import statements — definitions are emitted verbatim.
- */
-export interface OrdersPreviewOrderOutput {
-    Success: boolean;
-    Message?: string;
-    Lines: OrderLineResult[];
-    Totals: OrderTotalsResult;
-    Charges: ChargeResult[];
-    /** Applied AND offered-not-applied, because the second is what answers customer questions. */
-    Promotions: PromotionResult[];
-    /** Present only when the caller asked for them. */
-    JournalEntries?: JournalEntryPreview[];
-    /** Pricing-level problems. Confirm-level blockers come from PreviewConfirm. */
-    Blockers?: BlockerResult[];
-}
-
-/**
  * Input for `Orders.PreviewPrice`.
  *
  * Resolves ONE product's price through the real pipeline. The narrow sibling of
@@ -956,6 +811,133 @@ export interface PreviewPriceOutput {
 }
 
 /**
+ * Input for `Orders.PriceOrder`.
+ *
+ * Answers "what does THIS ORDER come to" — the whole order, priced through the real pipeline, with
+ * nothing persisted. The wide sibling of `Orders.PreviewPrice`, which answers for one product.
+ *
+ * WHY IT TAKES AN ORDER RATHER THAN A LIST OF LINES. A per-line answer cannot be right: promotions
+ * stack against ORDER totals and can be limited per order, charges apportion ACROSS lines, and tax
+ * computes on the DISCOUNTED amount rather than on list price. `PreviewPrice` says so itself — its
+ * result is explicitly advisory. This one is not.
+ *
+ * WHY THE SHAPE MIRRORS THE ENTITY AND IS NOT A DTO. This is deliberately the same information
+ * `BaseEntity.SerializeCompanions()` produces for `MJ.SaveEntityGraph`: the header fields that steer
+ * pricing, plus the lines. The client builds an `OrderEntity`, prices it, edits it, prices it again,
+ * and finally saves THE SAME OBJECT — no translation layer in between.
+ *
+ * This repository previously had that translation layer (`OrderDraft` plus a hydrator) and it was a
+ * parallel universe: a hand-maintained mirror of the entity that drifted from it silently, in both
+ * directions. Reintroducing a bespoke pricing DTO would rebuild it under a new name.
+ *
+ * NOTHING HERE NEEDS TO EXIST YET. `OrderHeaderID` is optional and the lines carry no keys, because
+ * the common case is an order being composed on screen that has never been saved.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface PriceOrderInput {
+    /** The order being priced, when it is already saved. Omit while composing a new one. */
+    OrderHeaderID?: string | null;
+
+    /** The selling company. Owns the price lists, the promotion policy and the stacking mode. */
+    CompanyID: string;
+
+    /** Who is buying — either may be omitted; both omitted prices at base rates. */
+    BillToPersonID?: string | null;
+    BillToOrganizationID?: string | null;
+
+    /** The date prices and tax rates are read AS OF. Defaults to today. */
+    OrderDate?: string | null;
+
+    /** Decides tax jurisdiction. Without it the order is priced untaxed. */
+    ShipToAddressID?: string | null;
+
+    /** The lines to price, in order. */
+    Lines: Array<{
+        ProductID: string;
+        Quantity: number;
+        /** Omit to have the engine resolve it. Supplying it PINS the price, exactly as on a real line. */
+        UnitPrice?: number | null;
+        DiscountPct?: number | null;
+        ServicePeriodStart?: string | null;
+        ServicePeriodEnd?: string | null;
+    }>;
+
+    /** Promotion codes the customer presented. */
+    PromotionCodes?: string[];
+
+    /** Ad-hoc discounts with a stated reason, each gated by the applying user's SalesAuthority. */
+    ManualDiscounts?: Array<{
+        LineIndex: number;
+        Amount?: number | null;
+        Percent?: number | null;
+        Reason: string;
+    }>;
+
+    /** Charges to apply — shipping, handling. Tax layers are resolved, not requested. */
+    Charges?: Array<{
+        Code: string;
+        Amount?: number | null;
+        Rate?: number | null;
+        TargetLineIndex?: number | null;
+    }>;
+}
+
+/**
+ * Output for `Orders.PriceOrder`.
+ *
+ * What the order comes to, per line and in total, plus WHY — the same decisions the booking path
+ * makes, produced by the same code, with nothing written.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface PriceOrderOutput {
+    /** False when pricing could not complete; `Message` says what stopped it. */
+    Success: boolean;
+    Message?: string | null;
+
+    /** Priced lines, positionally matching the input's `Lines`. */
+    Lines: Array<{
+        ProductID: string;
+        Quantity: number;
+        /** Resolved unless the caller pinned it. */
+        UnitPrice: number;
+        /** From promotions and manual discounts, apportioned across the order. */
+        DiscountAmount: number;
+        /** Non-tax charges apportioned onto this line. */
+        ChargeAmount: number;
+        LineTax: number;
+        LineTotalNet: number;
+        LineTotalGross: number;
+        /**
+         * How the unit price was arrived at — which list, which rule, which volume band. The same
+         * decomposition `Orders.PreviewPrice` returns, so the price badge can explain itself.
+         */
+        Components?: Array<{ Kind: string; Label: string; Amount: number }>;
+        /** Present when the line owes no tax, saying why (exempt, non-taxable, no nexus). */
+        TaxExemptReason?: string | null;
+    }>;
+
+    Totals: {
+        Net: number;
+        Discount: number;
+        Charges: number;
+        Tax: number;
+        Gross: number;
+    };
+
+    /**
+     * Codes that resolved to nothing usable, and why — 'no such code', 'not currently running',
+     * 'this customer does not qualify'.
+     *
+     * Silence is the wrong answer here: a customer who typed a code needs to be told it did nothing,
+     * and told what would make it work. The order path already carries these; exposing them means the
+     * screen can too, before the order is saved.
+     */
+    UnusableCodes: Array<{ Code: string; Reason: string }>;
+}
+
+/**
  * Input for `Orders.RefundPayment`.
  *
  * A refund is a NEW payment, never an edit of the capture — the capture happened,
@@ -1003,335 +985,6 @@ export interface RefundPaymentOutput {
         UnappliedAmount: number;
         BalanceAfter: number;
     }>;
-}
-
-/**
- * ============================================================================
- * WHY THE SHARED SHAPES LIVE IN THIS FILE
- * ============================================================================
- * CodeGen emits each operation's `InputTypeDefinition` / `OutputTypeDefinition`
- * **verbatim** into one `remote_operations.ts`, de-duplicating by exact text and
- * resolving NO imports. So a definition file cannot `import` a sibling — every
- * name it uses must be declared in some definition that also gets emitted.
- *
- * Rather than repeat the order shapes across ten files (byte-identical or the
- * de-dupe fails), the family's shared shapes are declared once, here, in the
- * definition of the operation that is their natural home: `SaveOrder` takes the
- * whole draft, so `OrderDraftInput` and everything under it IS its input.
- * TypeScript hoists interfaces, so the other operations reference these names
- * freely regardless of emission order.
- *
- * NO `import` statements in this file. Ever. They would be emitted verbatim and
- * break the generated module.
- * ============================================================================
- */
-
-/** A line as the client states it. Everything the engine derives is absent by design. */
-export interface OrderLineInput {
-    /** Client-side identity, so a preview result can be matched back to its row. Not persisted. */
-    ClientKey?: string;
-    ProductID: string;
-    Quantity: number;
-    /**
-     * Direct entry, and it WINS over every resolved price. Omit it — do not send 0 — to let the
-     * pricing pipeline resolve one; zero is a deliberate free line, not "unset".
-     */
-    UnitPrice?: number;
-    DiscountPct?: number;
-    /** Explicit service period. Omit it and an event product stamps its own dates. */
-    ServicePeriodStart?: string | null;
-    ServicePeriodEnd?: string | null;
-    /** Ship-to trio. Each side falls back to the header independently. */
-    ShipToAddressID?: string | null;
-    ShipToOrganizationID?: string | null;
-    ShipToPersonID?: string | null;
-    /** Naming a renewal target IS the statement of who the subscriber is. */
-    RenewsSubscriptionID?: string | null;
-    /** Set on a return line; the origin is then the sole authority on price, cap and product. */
-    ReversesOrderLineID?: string | null;
-    Description?: string | null;
-    /** Accounting dimension tags, propagated into this line's journal-entry lines. */
-    Dimensions?: Array<{ DimensionID: string; DimensionValueID: string }>;
-}
-
-/** A charge the caller is asserting or overriding rather than letting the engine compute. Rare. */
-export interface OrderChargeInput {
-    ChargeTypeID: string;
-    Amount: number;
-    /** Required when overriding a computed charge — who and when are stamped server-side. */
-    OverrideReason?: string | null;
-}
-
-/** A manual discount, checked against the acting user's sales authority. */
-export interface ManualDiscountInput {
-    LineClientKey?: string;
-    /** One of these, not both. */
-    Percent?: number;
-    Amount?: number;
-    Reason: string;
-}
-
-/** The header fields a caller states. Rollups are absent — triggers own them. */
-export interface OrderHeaderInput {
-    /** Omit to create; supply to update an existing DRAFT. */
-    OrderHeaderID?: string | null;
-    OrderType?: 'Sale' | 'Return' | 'Cancellation' | 'Amendment' | 'AccountCredit';
-    OrderDate?: string;
-    CompanyID: string;
-    BillToPersonID?: string | null;
-    BillToOrganizationID?: string | null;
-    BillToAddressID?: string | null;
-    ShipToPersonID?: string | null;
-    ShipToOrganizationID?: string | null;
-    ShipToAddressID?: string | null;
-    SalesRepUserID?: string | null;
-    PaymentTermsTypeID?: string | null;
-    DueDate?: string | null;
-    ExternalDocumentNumber?: string | null;
-    Description?: string | null;
-    Notes?: string | null;
-    RequestedDeliveryDate?: string | null;
-    /** Set on a reversing order. */
-    ReversesOrderHeaderID?: string | null;
-    ReversalReason?: string | null;
-    /** Where this order came from, so an LXP purchase is never inferred from a null sales rep. */
-    OriginChannel?: string | null;
-    OriginExternalID?: string | null;
-    /** Initial-payment INTENT. Becomes a real payment only when the order confirms. */
-    InitialPaymentTypeID?: string | null;
-    InitialPaymentAmount?: number;
-    /** Wallet entry to copy an instrument snapshot from. Copied, never shared. */
-    SourceCustomerPaymentMethodID?: string | null;
-}
-
-/** The whole draft as one payload — what `OrderDraft.ToInput()` produces. */
-export interface OrderDraftInput {
-    Header: OrderHeaderInput;
-    Lines: OrderLineInput[];
-    /** Codes to attempt. Losers come back as offered-not-applied rather than silently vanishing. */
-    PromotionCodes?: string[];
-    ManualDiscounts?: ManualDiscountInput[];
-    /** Only for asserting or overriding a charge; ordinary charges are computed. */
-    Charges?: OrderChargeInput[];
-}
-
-/** One step of an explanation. Every derived number carries its provenance. */
-export interface AmountComponent {
-    ComponentType: string;
-    Label: string;
-    Amount: number;
-    RunningTotal?: number;
-    /** Free-form provenance — the rule, list, band or jurisdiction that produced it. */
-    Source?: string | null;
-}
-
-/** A tax layer, kept separate from charges so the shared base is visible. */
-export interface TaxLayerResult {
-    ChargeTypeID: string;
-    Name: string;
-    JurisdictionName?: string | null;
-    Rate: number;
-    /** Every layer on one order shares this. Layers never compound. */
-    BaseAmount: number;
-    Amount: number;
-}
-
-/** Why a line taxed at zero. Four very different situations that all print as $0.00. */
-export type TaxZeroReason = 'Untaxable' | 'NoNexus' | 'Exempt' | 'NoJurisdiction';
-
-/** A priced line, as the engine sees it. */
-export interface OrderLineResult {
-    ClientKey?: string;
-    LineNumber: number;
-    ProductID: string;
-    ProductName: string;
-    /** The product's owning company — this is what anchors the line's ledger. */
-    CompanyID: string;
-    CompanyName: string;
-    Quantity: number;
-    UnitPrice: number;
-    /** Which price rule won, and how it was reached. */
-    PriceSource?: string | null;
-    ProductPriceID?: string | null;
-    UnitPriceWasStated: boolean;
-    DiscountPct: number;
-    DiscountAmount: number;
-    ListAmount: number;
-    LineTotalNet: number;
-    ChargeAmount: number;
-    LineTax: number;
-    LineTotalGross: number;
-    Taxable: boolean;
-    TaxZeroReason?: TaxZeroReason | null;
-    TaxLayers: TaxLayerResult[];
-    ServicePeriodStart?: string | null;
-    ServicePeriodEnd?: string | null;
-    /** Set when the period came from somewhere other than the caller. */
-    ServicePeriodSource?: string | null;
-    RevenueRecognitionType?: string | null;
-    RequiresFulfillment: boolean;
-    Components: AmountComponent[];
-}
-
-/** A promotion outcome — including the ones that did NOT apply. */
-export interface PromotionResult {
-    Code: string;
-    PromotionID?: string | null;
-    Name: string;
-    Scope: 'Line' | 'Order';
-    Kind: 'Percent' | 'Fixed';
-    Value: number;
-    Applied: boolean;
-    Amount: number;
-    /** Present when Applied is false — the only way to answer "why didn't my code work". */
-    NotAppliedReason?: string | null;
-    /** Order-scoped promotions must reach the lines; this is where each share went. */
-    Allocations?: Array<{ ClientKey?: string; LineNumber: number; Amount: number }>;
-}
-
-/** A computed charge. */
-export interface ChargeResult {
-    ChargeTypeID: string;
-    Name: string;
-    Sequence: number;
-    Basis: string;
-    BasisAmount?: number | null;
-    Rate?: number | null;
-    Amount: number;
-    IsTax: boolean;
-    JurisdictionName?: string | null;
-    IsOverridden: boolean;
-    ComputedAmount?: number | null;
-}
-
-/** How the taxable base was assembled — the proof that layers do not compound. */
-export interface TaxableBaseResult {
-    TaxableGoods: number;
-    UntaxableGoods: number;
-    NonTaxCharges: number;
-    Base: number;
-}
-
-/** The full decomposition. This is what the order-entry rail renders. */
-export interface OrderTotalsResult {
-    ListSubtotal: number;
-    DiscountTotal: number;
-    NetTotal: number;
-    ChargeTotal: number;
-    TaxTotal: number;
-    GrossTotal: number;
-    TaxableBase: TaxableBaseResult;
-    /** Per-company subtotals — one journal entry per line, grouped for display. */
-    ByCompany: Array<{
-        CompanyID: string;
-        CompanyName: string;
-        Net: number;
-        Charges: number;
-        Tax: number;
-        Gross: number;
-    }>;
-}
-
-/** A journal entry the order will (or did) produce. Read-only everywhere in Orders. */
-export interface JournalEntryPreview {
-    CompanyID: string;
-    CompanyName: string;
-    /** Which order line caused it. One entry per line, always. */
-    LineNumber?: number | null;
-    /** Set once the entry exists; null while previewing. */
-    JournalEntryID?: string | null;
-    EntryType: string;
-    Balanced: boolean;
-    Lines: Array<{ Side: 'Dr' | 'Cr'; AccountRole: string; AccountName: string; Amount: number }>;
-}
-
-/** What confirming will do to a subscription. */
-export interface SubscriptionDecisionPreview {
-    Action: 'Create' | 'Extend' | 'Renew' | 'None';
-    SubscriptionID?: string | null;
-    SubscriptionNumber?: string | null;
-    HolderName?: string | null;
-    BeneficiaryName?: string | null;
-    BenefitModel?: string | null;
-    CoverageThrough?: string | null;
-    /** Set when a partial first period scaled the line's quantity. */
-    ProrationFactor?: number | null;
-    ProratedLineNumber?: number | null;
-    Notes?: string | null;
-}
-
-/** A grant that will be issued, with the policy that decided its shape. */
-export interface EntitlementGrantPreview {
-    ProductEntitlementID: string;
-    EntitlementName: string;
-    BeneficiaryName?: string | null;
-    /** Resolved down the same chain taxability uses: product → category → ancestors → type. */
-    GrantTiming?: string | null;
-    QuantityMode?: string | null;
-    ValidityMode?: string | null;
-    Quantity?: number | null;
-    ValidFrom?: string | null;
-    ValidTo?: string | null;
-    Notes?: string | null;
-}
-
-/** A sales rule that will escalate rather than refuse. */
-export interface ApprovalRequirementPreview {
-    SalesRuleID: string;
-    RuleName: string;
-    Reason: string;
-    ApproverRoleName?: string | null;
-}
-
-/** Something that makes the operation impossible, in the words of the rule that failed. */
-export interface BlockerResult {
-    Code: string;
-    Message: string;
-    /** Where to go to fix it, when there is somewhere. */
-    ResolutionHint?: string | null;
-    LineNumber?: number | null;
-}
-
-/**
- * Input for `Orders.SaveOrder`.
- *
- * Creates or updates a DRAFT order and its lines in ONE transaction. It never
- * confirms — `Orders.ConfirmOrder` is the separate, deliberate step, because
- * confirming books journal entries and is not undoable.
- */
-export interface OrdersSaveOrderInput {
-    Draft: OrderDraftInput;
-    /**
-     * Return the priced result without writing. Equivalent to `Orders.PreviewOrder`,
-     * offered here so a caller holding a draft has one entry point.
-     */
-    Preview?: boolean;
-}
-
-/**
- * Output for `Orders.SaveOrder`.
- *
- * Carries the priced decomposition back, so a caller that saved does not then
- * have to preview to learn what it saved. Shapes come from the shared block in
- * `orders-save-order.input.ts` — see the note at the top of that file for why.
- *
- * NO import statements — definitions are emitted verbatim.
- */
-export interface OrdersSaveOrderOutput {
-    Success: boolean;
-    Message?: string;
-    /** Absent on a preview. */
-    OrderHeaderID?: string;
-    /** Assigned from the sequence at CONFIRM, not at draft save, so this is usually absent. */
-    OrderNumber?: string | null;
-    Status?: string;
-    /** The priced lines, in the order they were saved, each carrying its ClientKey back. */
-    Lines?: OrderLineResult[];
-    Totals?: OrderTotalsResult;
-    Charges?: ChargeResult[];
-    Promotions?: PromotionResult[];
-    /** Anything that stopped the save, stated in the words of the rule that failed. */
-    Blockers?: BlockerResult[];
 }
 
 /**
@@ -2051,6 +1704,22 @@ export class AISkillImportMarkdownOperation extends BaseRemotableOperation<AISki
 }
 
 // ============================================================
+// Orders.AdvanceOrderState — Advance Order State
+// ============================================================
+/**
+ * Advance Order State
+ * Move an already-booked order up the status ladder to Posted or Fulfilled - for back-office entry of something that has ALREADY happened: a counter sale, a shipment that went out before anyone opened the system, a migration. It refuses an order that is not yet Confirmed, because advancing one would produce an order that reads Fulfilled with no ledger behind it - the failure nothing downstream can detect, since the order reconciles perfectly against itself and the revenue simply never existed (D17). Composing and booking an order is not this operation's job: that is order.Save() through the entity graph, which runs the real booking walk on the server subclass. What a save cannot do is decide over a SET of lines - fulfillable lines are marked before the header advances, and the caller says whether an order may move with some still Pending. Advancing books nothing: Posted to Fulfilled fires no journal entry (D15).
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.AdvanceOrderState'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersAdvanceOrderStateOperation extends BaseRemotableOperation<OrdersAdvanceOrderStateInput, OrdersAdvanceOrderStateOutput> {
+    public readonly OperationKey = "Orders.AdvanceOrderState";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
 // Orders.ApplyAccountCredit — Apply Account Credit
 // ============================================================
 /**
@@ -2087,44 +1756,12 @@ export class OrdersCancelSubscriptionOperation extends BaseRemotableOperation<Ca
 // ============================================================
 /**
  * Capture Payment
- * Take a payment and allocate it, in ONE transaction. A payment is a header plus its allocation lines, and PaymentHeaderEntityServer.Lines is a TRANSIENT collection rather than a column - CodeGen cannot emit it client-side, so a browser entity.Save() has nowhere to put the allocations. Same situation Orders.SaveOrder was built for. A two-step create-then-allocate flow was rejected because between the steps there would be a captured payment with no allocations in the database: cash recorded against nothing. The fee is computed server-side and returned, never accepted as input, because a client-supplied fee is a client-supplied general-ledger amount. Over-payment is ACCEPTED and becomes spendable credit (D68) rather than being refused. Preview runs the real capture inside a transaction that always rolls back rather than modelling the arithmetic separately.
+ * Take a payment and allocate it, in ONE transaction. Writing the header with its allocation lines is no longer the reason - PaymentHeader.Lines is a related-record collection, so a browser payment.Save() does that on its own. What remains is everything a save cannot decide, and all of it must happen in the same act as the write: SETTLING with the payment provider before the money is recorded as taken, recognising a re-submitted capture as the SAME payment rather than a second one, and turning an over-payment into spendable account credit (D68) rather than refusing it. A two-step capture-then-settle flow was rejected because between the steps there would be a captured payment the provider knows nothing about: cash recorded against nothing. The fee is computed server-side and returned, never accepted as input, because a client-supplied fee is a client-supplied general-ledger amount. Preview runs the real capture inside a transaction that always rolls back rather than modelling the arithmetic separately.
  * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
  * under 'Orders.CapturePayment'. This generated base provides the typed contract only (client-safe).
  */
 export class OrdersCapturePaymentOperation extends BaseRemotableOperation<OrdersCapturePaymentInput, OrdersCapturePaymentOutput> {
     public readonly OperationKey = "Orders.CapturePayment";
-    public readonly ExecutionMode = 'Sync' as const;
-    public readonly RequiredScope = "orders:write";
-    public readonly RequiresSystemUser = false;
-}
-
-// ============================================================
-// Orders.ConfirmOrder — Confirm Order
-// ============================================================
-/**
- * Confirm Order
- * The irreversible step. In one transaction: saves the draft, transitions to Confirmed, books one journal entry per line, decides and writes subscriptions, issues entitlement grants, and captures the initial payment when the order carries one. Any failure rolls back everything — a confirmed order without its entries is invalid state, not a partial success. Accepts an expected gross total so a price that moved underneath the user stops the confirm instead of silently booking a different amount.
- * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
- * under 'Orders.ConfirmOrder'. This generated base provides the typed contract only (client-safe).
- */
-export class OrdersConfirmOrderOperation extends BaseRemotableOperation<OrdersConfirmOrderInput, OrdersConfirmOrderOutput> {
-    public readonly OperationKey = "Orders.ConfirmOrder";
-    public readonly ExecutionMode = 'Sync' as const;
-    public readonly RequiredScope = "orders:confirm";
-    public readonly RequiresSystemUser = false;
-}
-
-// ============================================================
-// Orders.CreateOrderInState — Create Order In State
-// ============================================================
-/**
- * Create Order In State
- * Create an order directly in Confirmed, Posted or Fulfilled - for back-office entry of something that has ALREADY happened: a counter sale, a shipment that went out before anyone opened the system, a migration. It delegates to the REAL Orders.ConfirmOrder rather than reimplementing it, then advances the status. The tempting implementation is one UPDATE setting Status='Fulfilled'; it would be faster, would pass any test checking the order's own fields, and would produce an order that looks complete with no ledger behind it - the failure nothing downstream can detect, because the order reconciles perfectly against itself and the revenue simply never existed (D17). Advancing books nothing: Posted to Fulfilled fires no journal entry (D15). Fulfillable lines are marked before the header advances, so an imported order cannot claim to have shipped things it has no record of shipping.
- * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
- * under 'Orders.CreateOrderInState'. This generated base provides the typed contract only (client-safe).
- */
-export class OrdersCreateOrderInStateOperation extends BaseRemotableOperation<OrdersCreateOrderInStateInput, OrdersCreateOrderInStateOutput> {
-    public readonly OperationKey = "Orders.CreateOrderInState";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
@@ -2179,38 +1816,6 @@ export class OrdersGetOverdueWorklistOperation extends BaseRemotableOperation<Or
 }
 
 // ============================================================
-// Orders.PreviewConfirm — Preview Confirm
-// ============================================================
-/**
- * Preview Confirm
- * A dry run of Orders.ConfirmOrder that writes nothing: resolves a GL account for every role every line needs, runs the subscription decision, resolves entitlement policy and evaluates sales rules, then reports what would happen and what would stop it. Exists so a user learns about an unresolvable account before pressing Confirm rather than from a failure banner after. Must stay in lock-step with ConfirmOrder — a preview that can disagree with reality is worse than no preview.
- * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
- * under 'Orders.PreviewConfirm'. This generated base provides the typed contract only (client-safe).
- */
-export class OrdersPreviewConfirmOperation extends BaseRemotableOperation<OrdersPreviewConfirmInput, OrdersPreviewConfirmOutput> {
-    public readonly OperationKey = "Orders.PreviewConfirm";
-    public readonly ExecutionMode = 'Sync' as const;
-    public readonly RequiredScope = "orders:read";
-    public readonly RequiresSystemUser = false;
-}
-
-// ============================================================
-// Orders.PreviewOrder — Preview Order
-// ============================================================
-/**
- * Preview Order
- * Run the real pricing pipeline over an unsaved draft and return the full decomposition — net, promotions (applied and offered-not-applied), charges, tax layers on their shared base, and per-company subtotals — without writing anything. This is what lets order entry show what an order will cost while it is being typed, using the engine rather than a second copy of the rules in the browser.
- * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
- * under 'Orders.PreviewOrder'. This generated base provides the typed contract only (client-safe).
- */
-export class OrdersPreviewOrderOperation extends BaseRemotableOperation<OrdersPreviewOrderInput, OrdersPreviewOrderOutput> {
-    public readonly OperationKey = "Orders.PreviewOrder";
-    public readonly ExecutionMode = 'Sync' as const;
-    public readonly RequiredScope = "orders:read";
-    public readonly RequiresSystemUser = false;
-}
-
-// ============================================================
 // Orders.PreviewPrice — Preview Price
 // ============================================================
 /**
@@ -2221,6 +1826,22 @@ export class OrdersPreviewOrderOperation extends BaseRemotableOperation<OrdersPr
  */
 export class OrdersPreviewPriceOperation extends BaseRemotableOperation<PreviewPriceInput, PreviewPriceOutput> {
     public readonly OperationKey = "Orders.PreviewPrice";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.PriceOrder — Price Order
+// ============================================================
+/**
+ * Price Order
+ * Price a whole order through the real pipeline and persist nothing — line prices, promotions, charges and tax, with the totals and the reasons any promotion code did not apply. Read-only. Powers live pricing in the order editor without saving a draft.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.PriceOrder'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersPriceOrderOperation extends BaseRemotableOperation<PriceOrderInput, PriceOrderOutput> {
+    public readonly OperationKey = "Orders.PriceOrder";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:read";
     public readonly RequiresSystemUser = false;
@@ -2239,22 +1860,6 @@ export class OrdersRefundPaymentOperation extends BaseRemotableOperation<RefundP
     public readonly OperationKey = "Orders.RefundPayment";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "payments:refund";
-    public readonly RequiresSystemUser = false;
-}
-
-// ============================================================
-// Orders.SaveOrder — Save Order
-// ============================================================
-/**
- * Save Order
- * Create or update a DRAFT order and its lines in one transaction, returning the priced decomposition. Never confirms — confirming books journal entries and is a separate, deliberate step. This is the operation that makes browser-side order entry possible at all: line, charge and promotion collections are transient properties on the server entity, so they cannot cross the entity-save boundary as scalars.
- * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
- * under 'Orders.SaveOrder'. This generated base provides the typed contract only (client-safe).
- */
-export class OrdersSaveOrderOperation extends BaseRemotableOperation<OrdersSaveOrderInput, OrdersSaveOrderOutput> {
-    public readonly OperationKey = "Orders.SaveOrder";
-    public readonly ExecutionMode = 'Sync' as const;
-    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 

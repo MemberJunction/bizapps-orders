@@ -2,9 +2,12 @@ import { ChangeDetectorRef, Component, EventEmitter, HostListener, Input, OnDest
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
-    OrderDraft,
-    type OrderDraftLine,
+    OrderHeaderEntity,
+    type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
+import { Metadata } from '@memberjunction/core';
+
+const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 
 import { ReadableSaveError } from '../../services/save-error';
 import { MJOOrdersDataService } from '../../services/orders-data.service';
@@ -46,7 +49,7 @@ export interface MJOCustomerContext {
  * `mjo-fast-entry-page` — the 80% order, in one column.
  *
  * The fast lane. One customer, a few products, one tender, keyboard-completable.
- * Escalating to the full editor hands over the SAME `OrderDraft` instance rather
+ * Escalating to the full editor hands over the SAME order entity rather
  * than a copy, which is what makes "open in full editor" lose nothing.
  *
  * THE DECOMPOSITION RAIL IS THE POINT. Every figure in it comes from
@@ -107,16 +110,17 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
      * the pre-flight review goes in front of it, because confirming books journal
      * entries and cannot be undone. The host owns that dialog.
      */
-    @Output() ConfirmRequested = new EventEmitter<OrderDraft>();
+    @Output() ConfirmRequested = new EventEmitter<OrderHeaderEntity>();
 
     /** The draft was saved. Carries the draft so the host can update a tab title. */
-    @Output() Saved = new EventEmitter<OrderDraft>();
+    @Output() Saved = new EventEmitter<OrderHeaderEntity>();
 
     /** The user asked to continue in the full editor — same instance, nothing copied. */
-    @Output() EscalateRequested = new EventEmitter<OrderDraft>();
+    @Output() EscalateRequested = new EventEmitter<OrderHeaderEntity>();
 
     /** The draft. Public so the host can hand it to the full editor unchanged. */
-    public Draft!: OrderDraft;
+    /** The order being composed — a real entity, bound directly. */
+    public Order!: OrderHeaderEntity;
 
     /** Latest preview state — result, in-flight flag and error. */
     public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
@@ -156,7 +160,6 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
      * Called by the section after a successful confirm, and by "New order" in the header.
      */
     public Reset(orderNumber?: string | null): void {
-        this.stopWatching?.();
         this.orders.CancelPending();
 
         this.Customer = null;
@@ -171,44 +174,57 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         this.Pricing = { Result: null, Loading: false, Error: null };
         this.JustBooked = orderNumber ?? null;
 
-        this.startDraft();
+        void this.startDraft();
         this.cdr.detectChanges();
         // Straight back to the first thing they will type.
         setTimeout(() => document.getElementById('mjo-customer-search')?.focus(), 0);
     }
 
     public ngOnInit(): void {
-        this.startDraft();
+        void this.startDraft();
     }
 
     /** Build a fresh draft and re-subscribe the preview. Shared by init and {@link Reset}. */
-    private startDraft(): void {
-        this.Draft = new OrderDraft({ CompanyID: this.CompanyID, OriginChannel: 'Staff' });
-        // Every mutation reschedules the preview. The service owns the debounce and
-        // the out-of-order guard, so this stays a one-liner.
-        this.stopWatching = this.Draft.Subscribe(() => {
-            // Changing anything retires the last save failure. It described a draft
-            // that no longer exists, and leaving it up means an error about the old
-            // state sits over the new one until the user saves again — which is
-            // exactly when they least want to be reading stale bad news.
-            this.SaveError = null;
-            // Touching the next order retires the last one's confirmation. A stale "booked ORD-123"
-            // sitting over a half-typed new order invites the reader to think THIS one is booked.
-            this.JustBooked = null;
-            this.orders.SchedulePricing(this.Draft, (state) => {
-                this.Pricing = state;
-                // MUST tick. This callback fires from a debounced timer + an awaited network
-                // round-trip, so it is outside anything Angular is watching: the page is created
-                // imperatively via ViewContainerRef.createComponent and runs zoneless, which means
-                // an assignment alone repaints nothing. Without this the prices land and the line
-                // stays on "— resolving…" for ever.
-                this.cdr.detectChanges();
-            });
+    private async startDraft(): Promise<void> {
+        const md = new Metadata();
+        this.Order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_ENTITY);
+        this.Order.NewRecord();
+        this.Order.CompanyID = this.CompanyID;
+        // `OriginChannel: 'Staff'` used to be set on the draft here. There is no such column on
+        // OrderHeader — the draft carried a field the server had nowhere to put, so it was silently
+        // dropped at hydration. Removed rather than reproduced.
+        void this.onEdited();
+        // `this.Order` was assigned after an await and the entire page renders from it — without a
+        // tick the form stays on its pre-load render, which looks like a page that failed to open.
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Called by every setter on this page after it mutates the order.
+     *
+     * Replaces `Draft.Subscribe`: the page knows when the user edited, because they edited through a
+     * control it owns. Retires stale messages and reschedules the preview.
+     */
+    private onEdited(): void {
+        // Changing anything retires the last save failure. It described an order that no longer
+        // exists, and leaving it up means an error about the old state sits over the new one until
+        // the user saves again — exactly when they least want to be reading stale bad news.
+        this.SaveError = null;
+        // Touching the next order retires the last one's confirmation. A stale "booked ORD-123"
+        // sitting over a half-typed new order invites the reader to think THIS one is booked.
+        this.JustBooked = null;
+        this.orders.SchedulePricing(this.Order, (state) => {
+            this.Pricing = state;
+            // MUST tick. This callback fires from a debounced timer + an awaited network round trip,
+            // so it is outside anything Angular is watching: the page is created imperatively via
+            // ViewContainerRef.createComponent and runs zoneless, which means an assignment alone
+            // repaints nothing. Without this the prices land and the line stays on "— resolving…"
+            // for ever.
+            this.cdr.detectChanges();
         });
     }
 
     public ngOnDestroy(): void {
-        this.stopWatching?.();
         this.orders.CancelPending();
     }
 
@@ -309,11 +325,9 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
      * employer's receivable, and collapsing the two would lose that.
      */
     public async ChooseCustomer(option: { ID: string; Name: string; IsOrganization: boolean; Email: string | null }): Promise<void> {
-        this.Draft.SetHeader(
-            option.IsOrganization
-                ? { BillToOrganizationID: option.ID, BillToPersonID: null }
-                : { BillToPersonID: option.ID, BillToOrganizationID: null },
-        );
+        this.Order.BillToOrganizationID = option.IsOrganization ? option.ID : null;
+        this.Order.BillToPersonID = option.IsOrganization ? null : option.ID;
+        this.onEdited();
 
         // What an order taker needs to know before quoting: what they already owe,
         // and what credit they are sitting on.
@@ -353,7 +367,9 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
      * about what is being bought, and re-typing the basket to fix a name is a punishment.
      */
     public ClearCustomer(): void {
-        this.Draft.SetHeader({ BillToOrganizationID: null, BillToPersonID: null });
+        this.Order.BillToOrganizationID = null;
+        this.Order.BillToPersonID = null;
+        this.onEdited();
         this.Customer = null;
         this.CustomerQuery = '';
         this.CustomerResults = [];
@@ -383,13 +399,19 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         setTimeout(() => (this.PickerOpen = false), 140);
     }
 
-    public AddProduct(product: MJOProductOption): void {
+    public async AddProduct(product: MJOProductOption): Promise<void> {
         // No UnitPrice — omitting it is what tells the engine to resolve one.
         // Sending the list price would register as direct entry and win over
         // whatever rule should actually have applied.
-        this.Draft.AddLine({ ProductID: product.ID, Quantity: 1 });
+        const line = await this.Order.Lines.Create();
+        line.ProductID = product.ID;
+        line.Quantity = 1;
+        this.onEdited();
         this.ProductQuery = '';
         this.PickerCursor = 0;
+        // Assigned after an await, so nothing repaints them on its own. Fast entry is the surface
+        // where that matters most: the whole point is typing the next product immediately.
+        this.cdr.detectChanges();
     }
 
     public OnPickerKey(event: KeyboardEvent): void {
@@ -419,42 +441,47 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
 
     /* ── Lines ──────────────────────────────────────────────────────────── */
 
-    public get Lines(): OrderDraftLine[] {
-        return this.Draft?.Lines ?? [];
+    public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
+        return [...(this.Order?.Lines.Items ?? [])];
     }
 
-    public ProductFor(line: OrderDraftLine): MJOProductOption | undefined {
+    public ProductFor(line: mjBizAppsOrdersOrderLineEntity): MJOProductOption | undefined {
         return this.Catalog.find((p) => p.ID === line.ProductID);
     }
 
-    public Bump(line: OrderDraftLine, delta: number): void {
-        this.Draft.UpdateLine(line.ClientKey, { Quantity: Math.max(1, line.Quantity + delta) });
+    public Bump(line: mjBizAppsOrdersOrderLineEntity, delta: number): void {
+        line.Quantity = Math.max(1, Number(line.Quantity ?? 0) + delta);
+        this.onEdited();
     }
 
-    public SetQuantity(line: OrderDraftLine, raw: string): void {
+    public SetQuantity(line: mjBizAppsOrdersOrderLineEntity, raw: string): void {
         const n = Number.parseFloat(raw);
-        this.Draft.UpdateLine(line.ClientKey, { Quantity: !Number.isFinite(n) || n <= 0 ? 1 : n });
+        line.Quantity = !Number.isFinite(n) || n <= 0 ? 1 : n;
+        this.onEdited();
     }
 
-    public Remove(line: OrderDraftLine): void {
-        this.Draft.RemoveLine(line.ClientKey);
+    public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
+        this.Order.Lines.Remove(line);
+        this.onEdited();
     }
 
     /** The priced result for a line, matched by the key the client sent. */
-    public PricedLine(line: OrderDraftLine): MJOLinePrice | undefined {
-        return this.Pricing.Result?.Lines?.find((l) => l.ClientKey === line.ClientKey);
+    public PricedLine(line: mjBizAppsOrdersOrderLineEntity): MJOLinePrice | undefined {
+        return this.Pricing.Result?.Lines?.find((l) => l.ClientKey === line.ID);
     }
 
     /* ── Codes ──────────────────────────────────────────────────────────── */
 
     public AddCode(): void {
         if (!this.CodeEntry.trim()) return;
-        this.Draft.AddPromotionCode(this.CodeEntry);
+        this.orders.PromotionCodes = [...this.orders.PromotionCodes, this.CodeEntry.trim()];
         this.CodeEntry = '';
+        this.onEdited();
     }
 
     public DropCode(code: string): void {
-        this.Draft.RemovePromotionCode(code);
+        this.orders.PromotionCodes = this.orders.PromotionCodes.filter((c) => c !== code);
+        this.onEdited();
     }
 
     /**
@@ -562,7 +589,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
      */
     public get BookingSummary(): Array<{ CompanyName: string; NetTotal: number }> {
         const byCompany = new Map<string, number>();
-        for (const line of this.Draft?.Lines ?? []) {
+        for (const line of this.Order?.Lines.Items ?? []) {
             const company = this.ProductFor(line)?.CompanyName;
             if (!company) continue;
             byCompany.set(company, (byCompany.get(company) ?? 0) + (this.PricedLine(line)?.NetAmount ?? 0));
@@ -591,10 +618,10 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
      * is no point telling someone to add a check number when they have not chosen a customer yet.
      */
     public get ConfirmBlockedReason(): string | null {
-        if (!this.Draft) return 'Nothing to confirm yet.';
+        if (!this.Order) return 'Nothing to confirm yet.';
         if (this.Saving) return 'Saving…';
 
-        const issues = this.Draft.Validate().Issues.filter((i) => i.Severity === 'error');
+        const issues = this.Order.Validate().Errors;
         if (issues.length) return issues[0].Message;
 
         if (this.RequiresReference && !this.Reference.trim()) {
@@ -658,31 +685,25 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
      */
     private applyTenderIntent(): void {
         if (this.Tender === 'terms') {
-            this.Draft.ClearInitialPayment();
+            this.Order.InitialPaymentTypeID = null;
+            this.Order.InitialPaymentAmount = 0;
             return;
         }
-        // ⚠ KNOWN GAP — the tender amount is the NET subtotal, not the gross.
+        // THE TENDER AMOUNT IS THE GROSS, and the client can finally know it.
         //
-        // `createInitialPayment` takes `InitialPaymentAmount` at face value; it has no
-        // "pay in full" intent to resolve against the total it just computed. The client
-        // used to supply the gross because the rolled-back preview had run the engine's
-        // whole walk to find it. It can no longer know that number.
-        //
-        // Harmless while no charge or tax rule is configured (gross == net, and the
-        // payment settles the order exactly). The moment tax lands, this UNDER-PAYS: the
+        // This was a documented gap: `createInitialPayment` takes `InitialPaymentAmount` at face
+        // value, and the client could only offer the NET subtotal because the only thing that ever
+        // produced a gross was a rolled-back preview that ran the whole booking walk. Harmless while
+        // no charge or tax rule was configured, and an UNDER-PAYMENT the moment tax landed — the
         // order books at gross, the payment covers net, and the difference shows up as a
         // PartiallyPaid order nobody chased.
         //
-        // The fix belongs in the engine — a pay-in-full intent it settles against the
-        // gross inside the booking transaction, where the real number exists. Backlogged;
-        // NOT worked around here, because a client-side guess at tax is how the two
-        // implementations start disagreeing.
-        this.Draft.SetInitialPayment({
-            PaymentTypeID: this.SelectedTenderType?.ID ?? null,
-            Amount: this.Pricing.Result?.Totals.NetTotal ?? 0,
-            Reference: this.Reference,
-            RequiresReference: this.RequiresReference,
-        });
+        // `Orders.PriceOrder` returns the real gross from the same engine the booking uses, so this
+        // is no longer a client-side guess at tax — which is what the gap note rightly refused to do.
+        this.Order.InitialPaymentTypeID = this.SelectedTenderType?.ID ?? null;
+        this.Order.InitialPaymentAmount = this.Pricing.Result?.Totals.GrossTotal ?? 0;
+        // The reference lives on the PaymentDetail the confirm creates, not on the order, so it
+        // stays screen state until then.
     }
 
     /** ⌘↵ / Ctrl+↵ confirms; ⌘S saves; `/` jumps to the product field. */
@@ -735,8 +756,8 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         this.Saving = true;
         this.SaveError = null;
         try {
-            const saved = await this.orders.Save(this.Draft);
-            if (saved) this.Saved.emit(this.Draft);
+            await this.orders.Save(this.Order);
+            this.Saved.emit(this.Order);
         } catch (e) {
             this.SaveError = ReadableSaveError(e);
         } finally {
@@ -748,7 +769,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     /** Ask the host to run the pre-flight and confirm. */
     public RequestConfirm(): void {
         if (!this.CanConfirm) return;
-        this.ConfirmRequested.emit(this.Draft);
+        this.ConfirmRequested.emit(this.Order);
     }
 
     /**
@@ -756,6 +777,17 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
      * copy, which is what makes escalation lose nothing.
      */
     public Escalate(): void {
-        this.EscalateRequested.emit(this.Draft);
+        this.EscalateRequested.emit(this.Order);
     }
+
+    /** Whether the user typed this line's price rather than the engine resolving one. */
+    public PriceStated(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return line.GetFieldByName('UnitPrice')?.Dirty === true;
+    }
+
+    /** Promotion codes presented but not yet saved — screen state, held by the entry service. */
+    public get PromotionCodes(): string[] {
+        return this.orders.PromotionCodes;
+    }
+
 }

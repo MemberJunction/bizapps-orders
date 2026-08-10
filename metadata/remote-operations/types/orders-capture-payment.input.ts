@@ -1,15 +1,21 @@
 /**
  * Input for `Orders.CapturePayment`.
  *
- * WHY THIS OPERATION EXISTS. A payment is a HEADER plus its ALLOCATION LINES, and the two must be
- * written in one transaction. `PaymentHeaderEntityServer.Lines` is a TRANSIENT collection, not a
- * column, so CodeGen cannot emit it on the client entity and a browser `entity.Save()` has nowhere
- * to put the allocations. That is the same situation `Orders.SaveOrder` was built for, and it needs
- * the same answer: one call, one transaction.
+ * WHY THIS OPERATION EXISTS. Writing a payment header with its allocation lines in one transaction
+ * is NOT the reason — `PaymentHeader.Lines` is a related-record collection, so a browser
+ * `payment.Save()` does that on its own. What remains is everything a save cannot decide, and all of
+ * it has to happen in the same act as the write:
  *
- * A two-step create-then-allocate flow was rejected. Between the steps there would be a captured
- * payment with no allocations in the database — cash recorded against nothing — and any failure in
- * the second step would leave it there permanently.
+ *   · SETTLING with the payment provider before the money is recorded as taken. The provider is the
+ *     authority on whether the money moved; recording first and asking after is how a database ends
+ *     up holding cash that was declined.
+ *   · Recognising a RE-SUBMITTED capture as the same payment rather than a second one. A
+ *     double-clicked button must not take money twice, and only the server can tell the difference.
+ *   · Turning an OVER-PAYMENT into account credit (D68) rather than refusing it.
+ *
+ * A two-step capture-then-settle flow was rejected. Between the steps there would be a captured
+ * payment the provider knows nothing about — cash recorded against nothing — and any failure in the
+ * second step would leave it there permanently.
  *
  * NOTE ON THE FEE: it is deliberately NOT an input. A client-supplied fee is a client-supplied
  * general-ledger amount, and the client has no access to the provider's schedule. The server

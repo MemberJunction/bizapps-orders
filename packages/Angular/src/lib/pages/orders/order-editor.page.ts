@@ -14,10 +14,12 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
-    OrderDraft,
-    type OrderDraftHeaderPayload,
-    type OrderDraftLine,
+    OrderHeaderEntity,
+    type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
+import { Metadata } from '@memberjunction/core';
+
+const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 
 import {
     MJO_ENTITIES,
@@ -87,7 +89,7 @@ export interface MJOEditorTabDef {
  * price, discount and line total, and everything else opens on click.
  *
  * REQUIRED STATE IS A RED DOT ON THE TAB, never a disabled Save with no
- * explanation. The validation comes from `OrderDraft.SectionsWithErrors`, so the
+ * explanation. The validation comes from `OrderHeaderEntity.SectionsWithErrors()`, so the
  * dot and the reason are the same source.
  *
  * CONFIRMING IS INTERCEPTED. The stepper's stage change is cancelable, and this
@@ -99,7 +101,7 @@ export interface MJOEditorTabDef {
  *
  * ```html
  * <mjo-order-editor-page
- *   [Draft]="draft"
+ *   [Order]="order"
  *   [Catalog]="products"
  *   [Status]="'Draft'"
  *   (ConfirmRequested)="openPreflight($event)" />
@@ -147,7 +149,26 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      * The order being edited. Supplied by the host — often the SAME instance fast
      * entry was working on, which is what makes escalation lossless.
      */
-    @Input() Draft!: OrderDraft;
+    /**
+     * The order being edited — a real entity, not a parallel model of one.
+     *
+     * Bound directly: the object the screen mutates is the object that gets saved, so there is no
+     * mapping layer to drift and no second definition of what an order is.
+     */
+    @Input() Order!: OrderHeaderEntity;
+
+    /** True when the chosen tender needs a reference number — read from the PaymentType, not stored. */
+    public RequiresPaymentReference = false;
+
+    /**
+     * The reference the user typed for the initial payment — a check number, wire confirmation, or
+     * transfer id.
+     *
+     * Held on the page, not the order: `OrderHeader` has no such column. It lives on the
+     * `PaymentDetail` row the order points at, which is created by the confirm, so until then this
+     * is genuinely screen state. That is exactly the kind of thing an Angular component may own.
+     */
+    public InitialPaymentReference: string | null = null;
 
     /** Catalog for the product column and the add-line picker. */
     @Input() Catalog: MJOProductOption[] = [];
@@ -193,13 +214,13 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
     @Input() JournalEntries: MJOJournalEntry[] = [];
 
     /** The user asked to confirm. The host runs the pre-flight. */
-    @Output() ConfirmRequested = new EventEmitter<OrderDraft>();
+    @Output() ConfirmRequested = new EventEmitter<OrderHeaderEntity>();
 
     /** The draft was saved. */
-    @Output() Saved = new EventEmitter<OrderDraft>();
+    @Output() Saved = new EventEmitter<OrderHeaderEntity>();
 
     /** A line was opened. The host may show it in a slide-in instead of the built-in drawer. */
-    @Output() LineOpened = new EventEmitter<OrderDraftLine>();
+    @Output() LineOpened = new EventEmitter<mjBizAppsOrdersOrderLineEntity>();
 
     /** An entry's Accounting link was followed. */
     @Output() OpenInAccounting = new EventEmitter<MJOJournalEntry>();
@@ -246,7 +267,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
 
     /** The order on screen, or null for a draft that has never been saved. */
     private get currentOrderID(): string | null {
-        return this.Draft?.Header?.OrderHeaderID ?? null;
+        return this.Order?.ID ?? null;
     }
 
     /**
@@ -261,26 +282,29 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
     public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
 
     /** The line whose drawer is open, or null. */
-    public OpenLine: OrderDraftLine | null = null;
+    public OpenLine: mjBizAppsOrdersOrderLineEntity | null = null;
 
     private stopWatching: (() => void) | null = null;
 
-    public ngOnInit(): void {
+    public async ngOnInit(): Promise<void> {
         // Tolerate a host that forgot to supply one rather than throwing: a blank
         // editor is recoverable, a crashed tab is not.
-        if (!this.Draft) this.Draft = new OrderDraft({ CompanyID: '' });
+        if (!this.Order) {
+            const md = new Metadata();
+            this.Order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_ENTITY);
+            this.Order.NewRecord();
+        }
 
         // Both callbacks MUST tick — they land from a debounced timer and an awaited network
         // round-trip, outside anything Angular is watching on an imperatively-created, zoneless
         // page. Assigning alone repaints nothing, so the decomposition stays on "— resolving…"
         // and CanConfirm never turns true. Same defect as fast-entry.page.ts.
-        this.stopWatching = this.Draft.Subscribe(() => {
-            this.orders.SchedulePricing(this.Draft, (state) => {
-                this.Pricing = state;
-                this.cdr.detectChanges();
-            });
-        });
-        void this.orders.PriceNow(this.Draft, (state) => {
+        // NO SUBSCRIBE. The draft raised a change event this page listened to in order to re-price —
+        // a loop through an observable to learn something the page already knew, because every edit
+        // arrives through a setter the page owns. `onEdited()` is called from those setters instead:
+        // simpler, and an edit path that forgets to call it fails review rather than silently
+        // ceasing to re-price.
+        void this.orders.PriceNow(this.Order, (state) => {
             this.Pricing = state;
             this.cdr.detectChanges();
         });
@@ -344,11 +368,11 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
     public get Tabs(): MJOEditorTabDef[] {
         // Same rule as `Issues`: a confirmed order carries no "still missing" state, so the red
         // dots come off with the banner rather than leaving Parties flagged on a booked order.
-        const sections = this.IsEditable ? (this.Draft?.SectionsWithErrors ?? []) : [];
+        const sections = this.IsEditable ? (this.Order?.SectionsWithErrors() ?? []) : [];
         // Charges are decided inside the confirm transaction, so a draft has no count to show.
         const chargeCount = 0;
         return [
-            { Key: 'lines', Label: 'Lines', Count: this.Draft?.LineCount ?? 0, HasError: sections.includes('lines') },
+            { Key: 'lines', Label: 'Lines', Count: this.Order?.Lines.Count ?? 0, HasError: sections.includes('lines') },
             { Key: 'parties', Label: 'Parties', HasError: sections.includes('parties') },
             { Key: 'charges', Label: 'Charges & tax', Count: chargeCount || null, HasError: sections.includes('charges') },
             { Key: 'payment', Label: 'Payment', HasError: sections.includes('payment') },
@@ -401,7 +425,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      * assigned.
      */
     private async loadPersistedDetail(): Promise<void> {
-        const orderID = this.Draft?.Header?.OrderHeaderID ?? null;
+        const orderID = this.Order?.ID ?? null;
         if (!orderID) {
             this.AppliedPayments = [];
             this.Dimensions = [];
@@ -529,7 +553,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
     /**
      * Jump to whichever tab owns an outstanding item.
      *
-     * `OrderDraftSection` includes `header`, which has no tab — those fields live in the identity
+     * `OrderEditorSection` includes `header`, which has no tab — those fields live in the identity
      * strip, which is always on screen. Navigating somewhere arbitrary for them would be worse
      * than staying put, so a header issue simply does not move you.
      */
@@ -596,35 +620,36 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         if (event.To === 'Confirmed') {
             event.Cancel = true;
             event.CancelReason = 'Use Confirm — booking is not undoable.';
-            this.ConfirmRequested.emit(this.Draft);
+            this.ConfirmRequested.emit(this.Order);
         }
     }
 
     /* ── Lines ──────────────────────────────────────────────────────────── */
 
-    public get Lines(): OrderDraftLine[] {
-        return this.Draft?.Lines ?? [];
+    public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
+        return [...(this.Order?.Lines.Items ?? [])];
     }
 
-    public ProductFor(line: OrderDraftLine): MJOProductOption | undefined {
+    public ProductFor(line: mjBizAppsOrdersOrderLineEntity): MJOProductOption | undefined {
         return this.Catalog.find((p) => p.ID === line.ProductID);
     }
 
-    public PricedLine(line: OrderDraftLine): MJOLinePrice | undefined {
-        return this.Pricing.Result?.Lines?.find((l) => l.ClientKey === line.ClientKey);
+    public PricedLine(line: mjBizAppsOrdersOrderLineEntity): MJOLinePrice | undefined {
+        return this.Pricing.Result?.Lines?.find((l) => l.ClientKey === line.ID);
     }
 
     /** What one line's discount comes to, derived rather than reported. */
-    public DiscountAmount(line: OrderDraftLine): number | null {
+    public DiscountAmount(line: mjBizAppsOrdersOrderLineEntity): number | null {
         const priced = this.PricedLine(line);
         if (!priced || priced.ExtendedAmount === null || priced.NetAmount === null) return null;
         const discount = Math.round((priced.ExtendedAmount - priced.NetAmount) * 100) / 100;
         return discount > 0 ? discount : null;
     }
 
-    public SetQuantity(line: OrderDraftLine, raw: string): void {
+    public SetQuantity(line: mjBizAppsOrdersOrderLineEntity, raw: string): void {
         const n = Number.parseFloat(raw);
-        this.Draft.UpdateLine(line.ClientKey, { Quantity: !Number.isFinite(n) || n === 0 ? 1 : n });
+        line.Quantity = !Number.isFinite(n) || n === 0 ? 1 : n;
+        this.onEdited();
     }
 
     /**
@@ -632,19 +657,27 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      * field restores resolution, which is why an empty string maps to `undefined`
      * rather than to zero.
      */
-    public SetUnitPrice(line: OrderDraftLine, raw: string): void {
+    public SetUnitPrice(line: mjBizAppsOrdersOrderLineEntity, raw: string): void {
         const trimmed = raw.trim();
         if (!trimmed) {
-            this.Draft.UpdateLine(line.ClientKey, { UnitPrice: undefined });
+            // Clearing a stated price hands the line back to the engine to resolve.
+            line.Set('UnitPrice', null);
+            this.onEdited();
             return;
         }
         const n = Number.parseFloat(trimmed.replace(/[^0-9.\-]/g, ''));
-        if (Number.isFinite(n) && n >= 0) this.Draft.UpdateLine(line.ClientKey, { UnitPrice: n });
+        if (Number.isFinite(n) && n >= 0) {
+            line.UnitPrice = n;
+            this.onEdited();
+        }
     }
 
-    public Remove(line: OrderDraftLine): void {
-        if (this.OpenLine?.ClientKey === line.ClientKey) this.OpenLine = null;
-        this.Draft.RemoveLine(line.ClientKey);
+    public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (this.OpenLine?.ID === line.ID) this.OpenLine = null;
+        // Remove() tracks the removal so a persisted line is DELETED rather than orphaned, and
+        // renumbers the survivors gap-free.
+        this.Order.Lines.Remove(line);
+        this.onEdited();
     }
 
     /* ── Adding a line ──────────────────────────────────────────────────────
@@ -731,10 +764,16 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      * helpful and would silently turn every line into a direct-entry price that
      * ignores the customer's price list.
      */
-    public AddProduct(option: MJOProductOption): void {
-        this.Draft.AddLine({ ProductID: option.ID, Quantity: 1 });
+    public async AddProduct(option: MJOProductOption): Promise<void> {
+        const line = await this.Order.Lines.Create();
+        line.ProductID = option.ID;
+        line.Quantity = 1;
+        this.onEdited();
         this.ProductQuery = '';
         this.ProductPickerOpen = false;
+        // The new line, the cleared box and the closed picker were all assigned AFTER an await, so
+        // nothing repaints them on its own. Without this the product just typed appears to vanish.
+        this.cdr.detectChanges();
     }
 
     /* ── Dismissing the pickers ─────────────────────────────────────────────
@@ -789,7 +828,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      *
      * The parties tab printed raw GUIDs through `mjo-stated-value` and had no
      * inputs at all, so an order's payer could not be set here — the one field
-     * `OrderDraft.Validate()` requires before a confirm.
+     * `OrderHeaderEntity.Validate()` requires before a confirm.
      */
 
     /** Search text per role, so bill-to and ship-to can be edited independently. */
@@ -856,8 +895,8 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         const party = match.IsOrganization
             ? { OrganizationID: match.ID, PersonID: null }
             : { PersonID: match.ID, OrganizationID: null };
-        if (role === 'bill') this.Draft.SetBillTo(party);
-        else this.Draft.SetShipTo(party);
+        this.applyParty(role, party);
+        this.onEdited();
         this.PartyLabels[role] = match.Name;
         this.PartyQuery[role] = '';
         this.PartyMatches[role] = [];
@@ -865,8 +904,8 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
 
     public ClearParty(role: MJOPartyRole): void {
         const empty = { OrganizationID: null, PersonID: null };
-        if (role === 'bill') this.Draft.SetBillTo(empty);
-        else this.Draft.SetShipTo(empty);
+        this.applyParty(role, null);
+        this.onEdited();
         this.PartyLabels[role] = null;
     }
 
@@ -880,7 +919,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
     public PartyLabels: Record<MJOPartyRole, string | null> = { bill: null, ship: null };
 
     public PartyIdFor(role: MJOPartyRole): string | null {
-        const h = this.Draft?.Header;
+        const h = this.Order;
         if (!h) return null;
         return role === 'bill' ? (h.BillToOrganizationID ?? h.BillToPersonID ?? null) : (h.ShipToOrganizationID ?? h.ShipToPersonID ?? null);
     }
@@ -900,7 +939,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
 
     /** The owning company's name, for the read-only case. */
     public get OwningCompanyName(): string {
-        const id = this.Draft?.Header.CompanyID;
+        const id = this.Order?.CompanyID;
         return this.Companies.find((c) => c.ID === id)?.Name ?? '—';
     }
 
@@ -913,12 +952,13 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      */
     public SetOwningCompany(companyID: string): void {
         if (!companyID) return;
-        this.Draft.SetHeader({ CompanyID: companyID });
+        this.Order.CompanyID = companyID;
+        this.onEdited();
     }
 
     /** The `PaymentType` row behind the chosen tender, or null for invoice-on-terms. */
     public get SelectedTenderType(): MJOTenderOption | null {
-        const id = this.Draft?.Header.InitialPaymentTypeID;
+        const id = this.Order?.InitialPaymentTypeID;
         if (!id) return null;
         return this.Tenders.find((t) => t.ID === id) ?? null;
     }
@@ -930,7 +970,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
 
     /** The reference as typed. Read from the DRAFT, so it survives a tab switch or a remount. */
     public get Reference(): string {
-        return this.Draft?.Header.InitialPaymentReference ?? '';
+        return this.InitialPaymentReference ?? '';
     }
 
     public SetReference(value: string): void {
@@ -941,7 +981,10 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         if (!paymentTypeID) {
             // Choosing the blank option means "invoice on terms" — clear the intent rather than
             // leaving an amount attached to no tender, which the server would reject.
-            this.Draft.ClearInitialPayment();
+            this.Order.InitialPaymentTypeID = null;
+            this.Order.InitialPaymentAmount = 0;
+            this.InitialPaymentReference = null;
+            this.onEdited();
             return;
         }
         // Switching tender drops a reference typed for the previous one: a check number is not a
@@ -957,14 +1000,18 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      * would have wiped a typed check number the moment the amount changed.
      */
     private restateIntent(patch: { PaymentTypeID?: string | null; Amount?: number; Reference?: string | null }): void {
-        const paymentTypeID = patch.PaymentTypeID !== undefined ? patch.PaymentTypeID : (this.Draft.Header.InitialPaymentTypeID ?? null);
+        const paymentTypeID = patch.PaymentTypeID !== undefined ? patch.PaymentTypeID : (this.Order.InitialPaymentTypeID ?? null);
         const requiresReference = this.Tenders.find((t) => t.ID === paymentTypeID)?.RequiresReference === true;
-        this.Draft.SetInitialPayment({
-            PaymentTypeID: paymentTypeID,
-            Amount: patch.Amount !== undefined ? patch.Amount : (this.Draft.Header.InitialPaymentAmount ?? 0),
-            Reference: patch.Reference !== undefined ? patch.Reference : (this.Draft.Header.InitialPaymentReference ?? null),
-            RequiresReference: requiresReference,
-        });
+        this.Order.InitialPaymentTypeID = paymentTypeID;
+        this.Order.InitialPaymentAmount =
+            patch.Amount !== undefined ? patch.Amount : (this.Order.InitialPaymentAmount ?? 0);
+        this.InitialPaymentReference =
+            patch.Reference !== undefined ? patch.Reference : (this.InitialPaymentReference ?? null);
+        // Whether this tender needs a reference is a property of the TENDER, not of the order, so it
+        // is not stored — it is looked up when the rule is evaluated. The draft carried a copy of it
+        // that could go stale against the PaymentType row.
+        this.RequiresPaymentReference = requiresReference;
+        this.onEdited();
     }
 
     public SetInitialAmount(raw: string): void {
@@ -990,7 +1037,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      * Order types, from the draft's own union rather than a list typed here — CodeGen widens that
      * union when the CHECK constraint gains a value, and a hand-copied list would not follow.
      */
-    public readonly OrderTypes: ReadonlyArray<NonNullable<OrderDraftHeaderPayload['OrderType']>> = [
+    public readonly OrderTypes: ReadonlyArray<NonNullable<OrderHeaderEntity['OrderType']>> = [
         'Sale',
         'Return',
         'Cancellation',
@@ -1002,7 +1049,8 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
     public readonly TenderNone = { ID: '', Name: '— invoice on terms —' };
 
     public SetOrderType(value: string): void {
-        this.Draft.SetHeader({ OrderType: value as OrderDraftHeaderPayload['OrderType'] });
+        this.Order.OrderType = value as OrderHeaderEntity['OrderType'];
+        this.onEdited();
     }
 
     /**
@@ -1022,8 +1070,18 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         return !this.Pricing.Loading && !!this.Pricing.Result;
     }
 
-    public DateValue(raw: string | null | undefined): string {
+    public DateValue(raw: string | Date | null | undefined): string {
         if (!raw) return '';
+        // `<input type="date">` accepts only yyyy-MM-dd. The entity hands back a real Date now
+        // rather than whatever string the draft was given, so this normalises both: a Date is
+        // formatted in LOCAL time, because toISOString() would shift a date-only value across the
+        // day boundary for anyone west of UTC and silently show yesterday.
+        if (raw instanceof Date) {
+            const y = raw.getFullYear();
+            const m = String(raw.getMonth() + 1).padStart(2, '0');
+            const d = String(raw.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
         return raw.length >= 10 ? raw.slice(0, 10) : raw;
     }
 
@@ -1034,7 +1092,9 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      * Guarded on `Draft` because the editor renders before a draft is bound in the imperative path.
      */
     public IsDefault(field: 'OrderDate' | 'OrderType'): boolean {
-        return this.Draft?.IsDefaulted(field) ?? false;
+        // A field the user has not touched. BaseEntity tracks this per field, so the draft's
+        // parallel bookkeeping is unnecessary.
+        return this.Order?.GetFieldByName(field)?.Dirty === false;
     }
 
     /** Free-text and date header fields, written straight through to the draft. */
@@ -1043,17 +1103,18 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         raw: string,
     ): void {
         const value = raw.trim();
-        this.Draft.SetHeader({ [field]: value || null } as Partial<Parameters<OrderDraft['SetHeader']>[0]>);
+        this.Order.Set(field, value || null);
+        this.onEdited();
     }
 
     /*
      * No re-pricing call here on purpose. `ngOnInit` subscribes to the draft, and every mutator
-     * above goes through `OrderDraft`, which notifies — so pricing re-runs by itself. An explicit
+     * above calls `onEdited()`, which reprices — so an explicit
      * SchedulePricing in each mutator would be a second debounce for the same change and would
      * quietly suggest the subscription is not doing its job.
      */
 
-    public Open(line: OrderDraftLine): void {
+    public Open(line: mjBizAppsOrdersOrderLineEntity): void {
         this.OpenLine = line;
         this.LineOpened.emit(line);
     }
@@ -1108,7 +1169,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      * confirmed; this checks only what the client can know for itself.
      */
     public get CanConfirm(): boolean {
-        return this.IsEditable && this.Draft?.Validate().IsValid === true;
+        return this.IsEditable && this.Order?.Validate().Success === true;
     }
 
     /** Errors worth surfacing above the tabs, so a red dot is never the only clue. */
@@ -1119,16 +1180,60 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         // on Parties, for an order already booked to the ledger. That reads as "something is wrong
         // with this order" when nothing is.
         if (!this.IsEditable) return [];
-        return this.Draft?.Validate().Issues ?? [];
+        return (this.Order?.Validate().Errors ?? []).map((e) => ({
+            Code: e.Source ?? 'INVALID',
+            Section: OrderHeaderEntity.SectionForField(e.Source),
+            Severity: 'error' as const,
+            Message: e.Message,
+        }));
     }
 
     public async SaveDraft(): Promise<void> {
-        const saved = await this.orders.Save(this.Draft);
-        if (saved) this.Saved.emit(this.Draft);
+        await this.orders.Save(this.Order);
+        this.Saved.emit(this.Order);
     }
 
     public RequestConfirm(): void {
         if (!this.CanConfirm) return;
-        this.ConfirmRequested.emit(this.Draft);
+        this.ConfirmRequested.emit(this.Order);
     }
+
+    /**
+     * Called by every setter on this page after it mutates the order.
+     *
+     * Reprices (debounced) and repaints. Both matter on a zoneless, imperatively-created page: the
+     * pricing callback lands from a timer and an awaited round trip, so assigning alone paints
+     * nothing and the strip stays on "— resolving…" while CanConfirm never turns true.
+     */
+    private onEdited(): void {
+        this.orders.SchedulePricing(this.Order, (state) => {
+            this.Pricing = state;
+            this.cdr.detectChanges();
+        });
+        this.cdr.detectChanges();
+    }
+
+    /** Apply a chosen party to the bill-to or ship-to side. Null clears it. */
+    private applyParty(role: 'bill' | 'ship', party: { PersonID?: string | null; OrganizationID?: string | null; AddressID?: string | null } | null): void {
+        if (role === 'bill') {
+            this.Order.BillToPersonID = party?.PersonID ?? null;
+            this.Order.BillToOrganizationID = party?.OrganizationID ?? null;
+        } else {
+            this.Order.ShipToPersonID = party?.PersonID ?? null;
+            this.Order.ShipToOrganizationID = party?.OrganizationID ?? null;
+            this.Order.ShipToAddressID = party?.AddressID ?? null;
+        }
+    }
+
+
+    /** Whether the user typed this line's price rather than the engine resolving one. */
+    public PriceStated(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return line.GetFieldByName('UnitPrice')?.Dirty === true;
+    }
+
+    /** Promotion codes presented but not yet saved — screen state, held by the entry service. */
+    public get PromotionCodes(): string[] {
+        return this.orders.PromotionCodes;
+    }
+
 }
