@@ -15,6 +15,7 @@
  */
 
 import { Pipe, PipeTransform } from '@angular/core';
+import type { DateCell } from '@mj-biz-apps/orders-entities';
 
 /** How a negative amount is written. */
 export type MJOMoneySign =
@@ -178,7 +179,7 @@ export function FormatRate(value: number | null | undefined): string {
  * '—' — an empty-looking cell that reads as "no date" rather than as the type mismatch it was.
  */
 export function FormatDate(
-    value: Date | string | null | undefined,
+    value: DateCell,
     options: { Short?: boolean } = {},
 ): string {
     const date = toLocalDate(value);
@@ -202,7 +203,7 @@ export function FormatDate(
  * Takes a `Date` on either side for the same reason {@link FormatDate} does.
  */
 export function DaysSince(
-    value: Date | string | null | undefined,
+    value: DateCell,
     asOf: Date | string,
 ): number {
     const from = toLocalDate(value);

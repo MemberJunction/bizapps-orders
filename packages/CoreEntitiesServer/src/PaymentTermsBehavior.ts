@@ -36,6 +36,7 @@
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */
+import { ToISODate, type DateCell } from '@mj-biz-apps/orders-entities';
 
 /** A terms record as the walk needs it. */
 export interface TermsFacts {
@@ -48,15 +49,15 @@ export interface TermsFacts {
 export interface CustomerTermsFacts extends TermsFacts {
     /** Null when the terms apply whoever is selling. */
     CompanyID: string | null;
-    StartedAt: string | null;
-    EndedAt: string | null;
+    StartedAt: DateCell;
+    EndedAt: DateCell;
     Status: string;
 }
 
 /** Everything the walk may consult, gathered by the caller. */
 export interface TermsResolutionInput {
     /** What the caller stated on the order, if anything. */
-    StatedDueDate: string | null;
+    StatedDueDate: DateCell;
     StatedPaymentTermsTypeID: string | null;
     /** The date the terms run from. */
     OrderDate: string;
@@ -83,15 +84,24 @@ export interface TermsResolution {
     WasStated: boolean;
 }
 
-/** ISO date arithmetic that does not drift across a DST boundary. */
-function dayNumber(iso: string): number {
-    const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+/**
+ * ISO date arithmetic that does not drift across a DST boundary.
+ *
+ * Takes the cell in whatever shape it arrived. The previous form split `String(iso)` on '-', which
+ * on a `Date` finds nothing to split and yields `NaN` — so every date-effective terms row silently
+ * stopped applying and the order fell through to the company default. It failed safe rather than
+ * wrong, but it still restated what a customer had negotiated.
+ */
+function dayNumber(cell: DateCell): number {
+    const iso = ToISODate(cell);
+    if (!iso) return Number.NaN;
+    const [y, m, d] = iso.split('-').map(Number);
     if (!y || !m || !d) return Number.NaN;
     return Date.UTC(y, m - 1, d);
 }
 
 /** `from` plus `days`, as `YYYY-MM-DD`. */
-export function AddDays(from: string, days: number): string | null {
+export function AddDays(from: DateCell, days: number): string | null {
     const base = dayNumber(from);
     if (Number.isNaN(base)) return null;
     return new Date(base + days * 86_400_000).toISOString().slice(0, 10);
@@ -106,7 +116,7 @@ export function AddDays(from: string, days: number): string | null {
  *
  * A row scoped to a company applies only to that company's orders; an unscoped row applies to any.
  */
-export function CustomerTermsApply(row: CustomerTermsFacts, orderDate: string, companyID: string | null): boolean {
+export function CustomerTermsApply(row: CustomerTermsFacts, orderDate: DateCell, companyID: string | null): boolean {
     if (row.Status !== 'Active') return false;
     if (row.CompanyID && companyID && row.CompanyID.toLowerCase() !== companyID.toLowerCase()) return false;
     // A row scoped to a company cannot apply to an order with no company at all.
@@ -158,7 +168,7 @@ export function ResolveDueDate(input: TermsResolutionInput): TermsResolution {
     //    to prevent, and it is also how a contracts app supplies an answer Orders cannot derive.
     if (input.StatedDueDate) {
         return {
-            DueDate: String(input.StatedDueDate).slice(0, 10),
+            DueDate: ToISODate(input.StatedDueDate),
             PaymentTermsTypeID: input.StatedPaymentTermsTypeID ?? null,
             Source: 'StatedDueDate',
             WasStated: true,

@@ -7,15 +7,23 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 import { RunView, Metadata } from '@memberjunction/core';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetSubscriptionEvents, GetSubscriptionTerms } from '../../data/orders-queries';
-import type { mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionTermEntity } from '@mj-biz-apps/orders-entities';
+import {
+    ToISODate,
+    Today,
+    type DateCell,
+    type mjBizAppsOrdersSubscriptionEventEntity,
+    type mjBizAppsOrdersSubscriptionTermEntity,
+} from '@mj-biz-apps/orders-entities';
 
 /** A subscription row. */
 interface MJOSubscriptionRow extends Record<string, unknown> {
     ID: string;
     SubscriptionNumber: string;
     Status: string;
-    StartDate: string;
-    EndDate: string;
+    // DateCell, not string: these come off a `'simple'` read, whose date columns used to arrive as
+    // ISO text and now arrive as `Date`. Read them with `ToISODate`, never `String(x).slice(0, 10)`.
+    StartDate: DateCell;
+    EndDate: DateCell;
     AutoRenew: boolean;
     Product?: string | null;
     HolderOrganization?: string | null;
@@ -376,9 +384,9 @@ export class MJOSubscriptionsPageComponent implements OnInit {
      * the calendar and answering it from the dates cannot go stale.
      */
     protected isCurrentTerm(term: mjBizAppsOrdersSubscriptionTermEntity): boolean {
-        const today = new Date().toISOString().slice(0, 10);
-        const from = term['StartDate'] ? String(term['StartDate']).slice(0, 10) : null;
-        const to = term['EndDate'] ? String(term['EndDate']).slice(0, 10) : null;
+        const today = Today();
+        const from = ToISODate(term.StartDate);
+        const to = ToISODate(term.EndDate);
         return (!from || from <= today) && (!to || to >= today);
     }
 
@@ -409,7 +417,7 @@ export class MJOSubscriptionsPageComponent implements OnInit {
      */
     public get CoveredThrough(): string {
         const ends = this.Terms
-            .map((t) => (t['EndDate'] ? String(t['EndDate']).slice(0, 10) : null))
+            .map((t) => ToISODate(t.EndDate))
             .filter((d): d is string => !!d)
             .sort();
         const furthest = ends[ends.length - 1] ?? this.Selected?.EndDate ?? null;
@@ -431,7 +439,7 @@ export class MJOSubscriptionsPageComponent implements OnInit {
 
     public get DaysToRenewal(): number {
         if (!this.Selected) return 0;
-        return -DaysSince(this.Selected.EndDate, new Date().toISOString().slice(0, 10));
+        return -DaysSince(this.Selected.EndDate, Today());
     }
 
     /** Within the lead window, and consented to. */
@@ -455,7 +463,12 @@ export class MJOSubscriptionsPageComponent implements OnInit {
 
         const periods = 12;
         const perPeriod = Math.round((amount / periods) * 100) / 100;
-        const start = new Date(String(subscription.StartDate).slice(0, 10));
+        // Through the helper, not `new Date(String(date).slice(0, 10))` — on a `Date` that inner
+        // expression is 'Mon Aug 10', and `new Date('Mon Aug 10')` is Invalid Date, which makes
+        // every month label below read 'Invalid Date'.
+        const startISO = ToISODate(subscription.StartDate);
+        if (!startISO) return [];
+        const start = new Date(`${startISO}T00:00:00`);
         const today = new Date();
 
         return Array.from({ length: periods }, (_, index) => {
@@ -488,7 +501,7 @@ export class MJOSubscriptionsPageComponent implements OnInit {
 
 
     private applyPreset(): void {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         this.Rows = this.AllRows.filter((row) => {
             switch (this.Preset) {
                 case 'active':

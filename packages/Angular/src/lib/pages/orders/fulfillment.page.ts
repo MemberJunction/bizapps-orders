@@ -5,6 +5,8 @@ import {
     OrdersFulfillOrderLinesOperation,
     OrdersGetFulfillmentQueueOperation,
     type FulfillmentQueueOrder,
+    Today,
+    type DateCell,
 } from '@mj-biz-apps/orders-entities';
 import { DaysSince, FormatDate } from '../../panels/money-format';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
@@ -29,7 +31,7 @@ interface MJOFulfillmentRow extends Record<string, unknown> {
     ShipTo: string | null;
     /** "2 of 5" — how much of this order is still outstanding. */
     Remaining: string;
-    ConfirmedAt: string | null;
+    ConfirmedAt: DateCell;
     FulfillmentStatus: string;
     /** A component from a bundle; keep it with its siblings. */
     FromBundle: boolean;
@@ -289,10 +291,10 @@ export class MJOFulfillmentPageComponent implements OnInit {
             Key: 'ConfirmedAt',
             Label: 'Waiting',
             Width: '120px',
-            Format: (r) => (r.ConfirmedAt ? FormatDate(String(r.ConfirmedAt), { Short: true }) : '—'),
+            Format: (r) => (r.ConfirmedAt ? FormatDate(r.ConfirmedAt, { Short: true }) : '—'),
             Secondary: (r) => {
                 if (!r.ConfirmedAt || r.FulfillmentStatus === 'Fulfilled') return null;
-                const days = DaysSince(String(r.ConfirmedAt), new Date().toISOString().slice(0, 10));
+                const days = DaysSince(r.ConfirmedAt, Today());
                 return days > 0 ? `${days}d waiting` : null;
             },
         },
@@ -330,7 +332,7 @@ export class MJOFulfillmentPageComponent implements OnInit {
      */
     private isLate(row: MJOFulfillmentRow): boolean {
         if (row.FulfillmentStatus !== 'Pending' || !row.ConfirmedAt) return false;
-        return DaysSince(String(row.ConfirmedAt), new Date().toISOString().slice(0, 10)) > 5;
+        return DaysSince(row.ConfirmedAt, Today()) > 5;
     }
 
     /**

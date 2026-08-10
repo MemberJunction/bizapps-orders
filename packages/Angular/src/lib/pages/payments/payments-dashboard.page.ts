@@ -6,7 +6,7 @@ import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.compo
 import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetPayments } from '../../data/orders-queries';
-import type { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { LocalDay, ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 
 /**
  * `mjo-payments-dashboard-page` — what came in, and does it tie?
@@ -265,12 +265,14 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
         for (let back = 6; back >= 0; back--) {
             const day = new Date(today);
             day.setDate(day.getDate() - back);
-            const iso = day.toISOString().slice(0, 10);
+            // LOCAL day for the key, matching the LOCAL day the label is built from — see the same
+            // note on the orders dashboard.
+            const iso = LocalDay(day);
             days.push({
                 Label: day.toLocaleDateString('en-US', { weekday: 'short' }),
                 Value: Math.round(
                     this.payments
-                        .filter((p) => String(p.PaymentDate ?? '').slice(0, 10) === iso)
+                        .filter((p) => ToISODate(p.PaymentDate) === iso)
                         .reduce((sum, p) => sum + Number(p.Amount ?? 0), 0),
                 ),
                 Current: back === 0,

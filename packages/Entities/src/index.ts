@@ -77,3 +77,13 @@ export * from './pricing/PromotionBehavior';
 export * from './pricing/ChargeEngine';
 export * from './pricing/PromotionEngine';
 export * from './pricing/OrderPricingService';
+
+/**
+ * `ToISODate` and friends — reading a date cell that may be a string or a `Date` and getting the
+ * same calendar day back, on both sides of the wire.
+ *
+ * `String(cell).slice(0, 10)` yields `'Thu Jul 30'` for a `Date`, which prints on an invoice and
+ * compares as less than nothing. Which shape a cell arrives in depends on how it was fetched, so
+ * the answer is to stop asking callers to know.
+ */
+export * from './date-cell';

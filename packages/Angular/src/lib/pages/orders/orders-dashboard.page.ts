@@ -6,7 +6,7 @@ import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../..
 import { DaysSince, FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJAlertComponent, MJEmptyStateComponent, type MJAlertVariant } from '@memberjunction/ng-ui-components';
 import { GetOrders } from '../../data/orders-queries';
-import type { mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { LocalDay, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 
 /** A queue worth someone's attention, with where it leads. */
 interface MJOQueue {
@@ -316,10 +316,13 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         for (let back = 6; back >= 0; back--) {
             const day = new Date(today);
             day.setDate(day.getDate() - back);
-            const iso = day.toISOString().slice(0, 10);
+            // LOCAL day for the key, matching the LOCAL day the label is built from. `toISOString()`
+            // here names tomorrow all evening east of the meridian, so the bar would say "Mon" and
+            // count Tuesday's orders.
+            const iso = LocalDay(day);
             days.push({
                 Label: day.toLocaleDateString('en-US', { weekday: 'short' }),
-                Value: this.orders.filter((o) => String(o.OrderDate ?? '').slice(0, 10) === iso).length,
+                Value: this.orders.filter((o) => ToISODate(o.OrderDate) === iso).length,
                 Current: back === 0,
             });
         }
