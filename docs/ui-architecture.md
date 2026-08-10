@@ -63,6 +63,23 @@ const result = await rv.RunView<OrderEntity>({
 });
 ```
 
+> **`ResultType: 'entity_object'` is load-bearing, not decoration.** `'simple'` — the default —
+> returns the **raw database shape**: no `BaseEntity` is constructed, so a `DATETIME` column arrives
+> as an ISO string, not a `Date`. `RunView<T>` takes a caller-supplied `T` with no relationship to
+> `ResultType`, so passing an entity type to a `'simple'` read compiles perfectly and is wrong at
+> runtime.
+>
+> We shipped that bug for months. `String(r.OrderDate).slice(0, 4)` read a year out of a string;
+> `o.DueDate < today` compared a date to a string; `AllocateOldestFirst` sorted payments with
+> `localeCompare`. That last one is the one to remember — it produces an **order**, not an error, so
+> every allocation still summed exactly to the payment while the oldest debt quietly stopped being
+> paid first.
+>
+> **Want entity types, ask for entity objects.** Reach for `'simple'` only when you want cheap rows
+> for an aggregate and will treat them as raw database output — `GetOrderSummary` in
+> `lib/data/orders-queries.ts` is the one place in this app that qualifies, and it types its rows
+> accordingly and says why.
+
 **Compose and save — one call, one transaction**
 
 ```typescript
