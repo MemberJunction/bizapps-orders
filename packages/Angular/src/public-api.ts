@@ -57,7 +57,8 @@ export * from './lib/panels/allocation-math';
 
 /** The seam between a draft and the engine. */
 export * from './lib/services/order-entry.service';
-export * from './lib/services/orders-data.service';
+export * from './lib/data/entity-names';
+export * from './lib/data/orders-queries';
 
 /** Screens. */
 export * from './lib/pages/orders/fast-entry.page';

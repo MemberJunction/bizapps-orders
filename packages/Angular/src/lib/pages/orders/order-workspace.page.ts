@@ -43,7 +43,7 @@ import type { TabReorder } from '../../transfer-pending/workspace-tabs/workspace
 import { MJOOrderEditorPageComponent } from './order-editor.page';
 import type { MJOOrderStage } from '../../panels/status-stepper.component';
 import { MJOOrderEntryService } from '../../services/order-entry.service';
-import { MJOOrdersDataService, type MJOCompanyOption } from '../../services/orders-data.service';
+import { type MJOCompanyOption } from '../../data/orders-queries';
 import type { MJOProductOption } from './fast-entry.page';
 import type { MJOTenderOption } from '../payments/payment-entry.page';
 import { ReadableSaveError } from '../../services/save-error';
@@ -152,7 +152,6 @@ const UNTITLED = 'New order';
 })
 export class MJOOrderWorkspacePageComponent implements OnDestroy {
     private readonly entry = inject(MJOOrderEntryService);
-    private readonly data = inject(MJOOrdersDataService);
     private readonly cdr = inject(ChangeDetectorRef);
 
     /** The company a new draft is raised against — supplied by the section. */

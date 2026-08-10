@@ -2,8 +2,9 @@ import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } fr
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
 import { MJOSummaryStripComponent, type MJOSummaryFigure } from '../../panels/summary-strip.component';
-import { MJO_ORIGIN_CHANNEL_AVAILABLE, MJOOrdersDataService, type MJOOrderRow, type MJOOrderSummary } from '../../services/orders-data.service';
+import { GetOrderSummary, GetOrders, type MJOOrderSummary } from '../../data/orders-queries';
 import { FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
+import type { mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 
 /**
  * `mjo-orders-list-page` — find any order, then work a filtered set.
@@ -65,7 +66,6 @@ import { FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
     ],
 })
 export class MJOOrdersListPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded.
      *
@@ -84,9 +84,9 @@ export class MJOOrdersListPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
     /** A row was opened. The host decides whether that is a slide-in or a tab. */
-    @Output() OrderOpened = new EventEmitter<MJOOrderRow>();
+    @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
 
-    public Rows: MJOOrderRow[] = [];
+    public Rows: mjBizAppsOrdersOrderHeaderEntity[] = [];
     public Preset = 'all';
     public Search = '';
     public Loading = false;
@@ -103,15 +103,9 @@ export class MJOOrdersListPageComponent implements OnInit {
         { Key: 'notposted', Label: 'Confirmed, not posted' },
         { Key: 'drafts', Label: 'Drafts' },
         { Key: 'credits', Label: 'Credits', Icon: 'fa-solid fa-piggy-bank' },
-        // Offered only once the column backing it exists — see
-        // MJO_ORIGIN_CHANNEL_AVAILABLE. A visible filter that throws is worse
-        // than an absent one.
-        ...(MJO_ORIGIN_CHANNEL_AVAILABLE
-            ? ([{ Key: 'lxp', Label: 'From LXP', Icon: 'fa-solid fa-graduation-cap' }] as MJOPreset[])
-            : []),
     ];
 
-    public readonly Columns: MJOColumn<MJOOrderRow>[] = [
+    public readonly Columns: MJOColumn<mjBizAppsOrdersOrderHeaderEntity>[] = [
         {
             Key: 'OrderNumber',
             Label: 'Order',
@@ -133,23 +127,6 @@ export class MJOOrdersListPageComponent implements OnInit {
             Format: (r) => (r.BillToOrganization ?? r.BillToPerson ?? '—') as string,
             Secondary: (r) => (r.Description as string) ?? null,
         },
-        // The Origin column reads the same not-yet-existent field. Left out
-        // entirely rather than shown as a column of identical 'Staff' chips,
-        // which would assert something the data cannot support.
-        ...(MJO_ORIGIN_CHANNEL_AVAILABLE
-            ? ([
-                  {
-                      Key: 'OriginChannel',
-                      Label: 'Origin',
-                      Kind: 'chip' as const,
-                      Width: '96px',
-                      HideBelow: 1000,
-                      Format: (r: MJOOrderRow) => (r.OriginChannel as string) ?? 'Staff',
-                      ChipClass: (r: MJOOrderRow) =>
-                          r.OriginChannel === 'LXP' ? 'mj-chip--violet' : 'mj-chip--outline',
-                  },
-              ] as MJOColumn<MJOOrderRow>[])
-            : []),
         {
             Key: 'Company',
             Label: 'Co.',
@@ -193,7 +170,7 @@ export class MJOOrdersListPageComponent implements OnInit {
             Width: '112px',
             Sortable: true,
             HideBelow: 560,
-            Format: (r) => FormatMoney(r.TotalGross),
+            Format: (r) => FormatMoney((r.TotalGross ?? 0)),
         },
         {
             Key: 'Balance',
@@ -204,12 +181,12 @@ export class MJOOrdersListPageComponent implements OnInit {
             // A negative balance is the customer's CREDIT, so it reads as an amount
             // they hold rather than a debt with a minus sign in front of it.
             Format: (r) =>
-                r.Balance === 0
+                (r.Balance ?? 0) === 0
                     ? '—'
-                    : r.Balance < 0
-                      ? FormatMoney(r.Balance, { Sign: 'absolute' })
-                      : FormatMoney(r.Balance),
-            Secondary: (r) => (r.Balance < 0 ? 'credit' : null),
+                    : (r.Balance ?? 0) < 0
+                      ? FormatMoney((r.Balance ?? 0), { Sign: 'absolute' })
+                      : FormatMoney((r.Balance ?? 0)),
+            Secondary: (r) => ((r.Balance ?? 0) < 0 ? 'credit' : null),
         },
         {
             Key: 'DueDate',
@@ -218,7 +195,7 @@ export class MJOOrdersListPageComponent implements OnInit {
             HideBelow: 760,
             Format: (r) => (r.DueDate ? FormatDate(r.DueDate, { Short: true }) : '—'),
             Secondary: (r) => {
-                if (!r.DueDate || r.Balance <= 0) return null;
+                if (!r.DueDate || (r.Balance ?? 0) <= 0) return null;
                 const late = DaysSince(r.DueDate, new Date().toISOString().slice(0, 10));
                 return late > 0 ? `${late}d late` : null;
             },
@@ -243,7 +220,7 @@ export class MJOOrdersListPageComponent implements OnInit {
 
     /** Counts for the chips and totals for the strip. */
     private async loadSummary(): Promise<void> {
-        this.Summary = await this.data.GetOrderSummary();
+        this.Summary = await GetOrderSummary();
         this.Presets = this.Presets.map((preset) => ({
             ...preset,
             Count: this.Summary?.Counts[preset.Key] ?? null,
@@ -286,7 +263,7 @@ export class MJOOrdersListPageComponent implements OnInit {
     private async load(): Promise<void> {
         this.Loading = true;
         try {
-            this.Rows = await this.data.GetOrders({
+            this.Rows = await GetOrders({
                 Preset: this.Preset as never,
                 Search: this.Search,
             });

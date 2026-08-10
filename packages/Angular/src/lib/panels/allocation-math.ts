@@ -17,7 +17,8 @@
 export interface MJOAllocatableOrderLike {
     ID: string;
     Balance: number;
-    DueDate?: string | null;
+    /** Either representation: an entity carries a `Date`, a wire row an ISO string. */
+    DueDate?: Date | string | null;
 }
 
 /** Order ID → amount applied. */
@@ -26,6 +27,21 @@ export type MJOAllocationMapLike = Record<string, number>;
 /** Round to cents. Every function here rounds, so remainders reach exactly zero. */
 function cents(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * A due date as a sortable number. **No due date sorts FIRST** — open longest, most easily
+ * forgotten — which is why the fallback is `-Infinity` rather than 0 or `Infinity`.
+ *
+ * This compared `(a.DueDate ?? '').localeCompare(...)`, which only ordered correctly while every
+ * value was an ISO string in the same format. A `Date` stringifies to `Mon Aug 01 2026 …`, so a
+ * mixed list sorted alphabetically by weekday name — and the oldest debt quietly stopped being paid
+ * first, with every allocation still summing to the payment.
+ */
+function dueMillis(value: Date | string | null | undefined): number {
+    if (!value) return -Infinity;
+    const time = value instanceof Date ? value.getTime() : new Date(String(value)).getTime();
+    return Number.isNaN(time) ? -Infinity : time;
 }
 
 /**
@@ -78,12 +94,7 @@ export function AllocateOldestFirst(
     const owing = orders
         .filter((order) => order.Balance > 0)
         .slice()
-        .sort((a, b) => {
-            // No due date sorts first — open longest, most easily forgotten.
-            const left = a.DueDate ?? '';
-            const right = b.DueDate ?? '';
-            return left.localeCompare(right);
-        });
+        .sort((a, b) => dueMillis(a.DueDate) - dueMillis(b.DueDate));
 
     if (!owing.length) return allocations;
 

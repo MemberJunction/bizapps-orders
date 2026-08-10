@@ -19,14 +19,14 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { MJO_ENTITIES } from '../orders-data.service';
+import { MJO_ENTITIES } from '../entity-names';
 
 const here = import.meta.dirname;
 const generated = readFileSync(
     join(here, '..', '..', '..', '..', '..', 'Entities', 'src', 'generated', 'entity_subclasses.ts'),
     'utf8',
 );
-const service = readFileSync(join(here, '..', 'orders-data.service.ts'), 'utf8');
+const queries = readFileSync(join(here, '..', 'orders-queries.ts'), 'utf8');
 
 /** Columns CodeGen emitted for an entity, read from its generated subclass. */
 function columnsOf(entityName: string): Set<string> {
@@ -42,16 +42,16 @@ const KEYWORDS = new Set([
     'DESC', 'ASC', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'LIKE', 'BETWEEN',
 ]);
 
-describe('data service query columns', () => {
+describe('orders-queries order-by columns', () => {
     it('resolves entity columns at all', () => {
         // Guards the guard — an empty set would make every check below vacuous.
         expect(columnsOf(MJO_ENTITIES.OrderHeader).size).toBeGreaterThan(10);
         expect(columnsOf(MJO_ENTITIES.Promotion).size).toBeGreaterThan(5);
     });
 
-    // Each `this.run(MJO_ENTITIES.X, filters, 'orderBy', …)` call site.
+    // Each `run(MJO_ENTITIES.X, filters, 'orderBy', …)` call site in orders-queries.ts.
     const calls = [
-        ...service.matchAll(/MJO_ENTITIES\.(\w+),\s*(\[[\s\S]*?\]|filters),[\s\S]{0,400}?'([A-Za-z_][^']*)'/g),
+        ...queries.matchAll(/MJO_ENTITIES\.(\w+),\s*(\[[\s\S]*?\]|filters),[\s\S]{0,400}?'([A-Za-z_][^']*)'/g),
     ].map((m) => ({ key: m[1], orderBy: m[3] }));
 
     it('finds the query call sites', () => {

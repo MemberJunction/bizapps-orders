@@ -81,10 +81,6 @@
       }
     </div>
     <div>
-      <span class="l">Origin</span>
-      <span class="v"><mjo-origin-chip [Channel]="OriginChannel" [ExternalID]="OriginExternalID" /></span>
-    </div>
-    <div>
       <span class="l">Their PO</span>
       @if (IsEditable) {
         <input type="text" class="mj-input ed-identity__input mono" aria-label="Their PO number"
@@ -655,11 +651,11 @@
             <tr><th>Payment</th><th>Applied</th><th class="num">Amount</th></tr>
           </thead>
           <tbody>
-            @for (line of AppliedPayments; track line['ID']) {
+            @for (line of AppliedPayments; track line.ID) {
               <tr>
-                <td class="mono small">{{ line['PaymentHeader'] ?? '—' }}</td>
-                <td class="small muted">{{ dateOf(line['AllocatedAt']) }}</td>
-                <td class="num">{{ moneyOf(line['Amount']) }}</td>
+                <td class="mono small">{{ PaymentNumberOf(line) }}</td>
+                <td class="small muted">{{ dateOf(line.AllocatedAt) }}</td>
+                <td class="num">{{ moneyOf(line.Amount) }}</td>
               </tr>
             } @empty {
               <tr><td colspan="3" class="small muted">Nothing applied yet.</td></tr>

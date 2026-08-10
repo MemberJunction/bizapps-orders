@@ -1,9 +1,11 @@
 import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
-import { MJOOrdersDataService } from '../../services/orders-data.service';
+
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
+import { GetPriceLists, GetPriceTiers, GetProductPrices, GetPromotions } from '../../data/orders-queries';
+import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersPromotionEntity } from '@mj-biz-apps/orders-entities';
 
 /**
  * `mjo-pricing-page` — price rules, and the dates that switch them over.
@@ -229,7 +231,6 @@ import { MJAlertComponent } from '@memberjunction/ng-ui-components';
     ],
 })
 export class MJOPricingPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded.
      *
@@ -247,7 +248,7 @@ export class MJOPricingPageComponent implements OnInit {
      */
     private readonly cdr = inject(ChangeDetectorRef);
 
-    public Rows: Array<Record<string, unknown>> = [];
+    public Rows: mjBizAppsOrdersProductPriceEntity[] = [];
 
     public readonly Columns: MJOColumn[] = [
         // No SKU on a price row — it belongs to the product. The price list is the
@@ -286,14 +287,14 @@ export class MJOPricingPageComponent implements OnInit {
         },
     ];
 
-    public PriceLists: Array<Record<string, unknown>> = [];
-    public Tiers: Array<Record<string, unknown>> = [];
+    public PriceLists: mjBizAppsOrdersPriceListEntity[] = [];
+    public Tiers: mjBizAppsOrdersPriceTierEntity[] = [];
 
     public async ngOnInit(): Promise<void> {
         const [rows, lists, tiers] = await Promise.all([
-            this.data.GetProductPrices(),
-            this.data.GetPriceLists(),
-            this.data.GetPriceTiers(),
+            GetProductPrices(),
+            GetPriceLists(),
+            GetPriceTiers(),
         ]);
         this.Rows = rows;
         this.PriceLists = lists;
@@ -338,13 +339,15 @@ export class MJOPricingPageComponent implements OnInit {
     }
 
     /** "5–9" or "10+" — a band with no ceiling is the last one. */
-    protected bandOf(tier: Record<string, unknown>): string {
-        const min = Number(tier['MinQuantity'] ?? 0);
-        const max = tier['MaxQuantity'];
-        return max == null || max === '' ? `${min}+` : `${min}–${Number(max)}`;
+    protected bandOf(tier: mjBizAppsOrdersPriceTierEntity): string {
+        const min = tier.MinQuantity ?? 0;
+        const max = tier.MaxQuantity;
+        // `max === ''` was also tested here. `MaxQuantity` is a number, so that arm was unreachable
+        // — a leftover from when this read an untyped row and nobody could tell.
+        return max == null ? `${min}+` : `${min}–${max}`;
     }
 
-    protected windowOf(row: Record<string, unknown>): string {
+    protected windowOf(row: mjBizAppsOrdersPriceListEntity): string {
         const from = row['EffectiveFrom'] ? FormatDate(String(row['EffectiveFrom']), { Short: true }) : '—';
         const to = row['EffectiveTo'] ? FormatDate(String(row['EffectiveTo']), { Short: true }) : 'open';
         return `${from} → ${to}`;
@@ -415,7 +418,6 @@ export class MJOPricingPageComponent implements OnInit {
     ],
 })
 export class MJOPromotionsPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded. See orders-dashboard.page.ts for the full
      * reasoning: these pages are created imperatively by the section shell, and an
@@ -424,7 +426,7 @@ export class MJOPromotionsPageComponent implements OnInit {
      */
     private readonly cdr = inject(ChangeDetectorRef);
 
-    public Rows: Array<Record<string, unknown>> = [];
+    public Rows: mjBizAppsOrdersPromotionEntity[] = [];
 
     public readonly Columns: MJOColumn[] = [
         { Key: 'Name', Label: 'Promotion', Secondary: (r) => (r['Description'] as string) ?? null },
@@ -459,7 +461,7 @@ export class MJOPromotionsPageComponent implements OnInit {
     ];
 
     public async ngOnInit(): Promise<void> {
-        this.Rows = await this.data.GetPromotions();
+        this.Rows = await GetPromotions();
         this.cdr.detectChanges();
     }
 }

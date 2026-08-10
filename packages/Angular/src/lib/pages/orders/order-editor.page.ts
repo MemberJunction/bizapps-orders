@@ -13,20 +13,13 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import {
-    OrderHeaderEntity,
-    type mjBizAppsOrdersOrderLineEntity,
-} from '@mj-biz-apps/orders-entities';
+import { OrderHeaderEntity, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersOrderLineDimensionEntity, type mjBizAppsOrdersOrderLineEntity, type mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { Metadata } from '@memberjunction/core';
 
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 
-import {
-    MJO_ENTITIES,
-    MJOOrdersDataService,
-    type MJOCompanyOption,
-    type MJOOrderRow,
-} from '../../services/orders-data.service';
+import { MJO_ENTITIES } from '../../data/entity-names';
+import { GetPaymentNumbers, GetLineDimensionsForOrder, GetOrderLines, GetOrders, GetPaymentLinesForOrder, JournalEntryViewParams, type MJOCompanyOption, RecentCustomers, SearchCustomers, SubscriptionViewParams, WasTruncated } from '../../data/orders-queries';
 import {
     MJOOrderEntryService,
     type MJOEstimatedTotals,
@@ -39,7 +32,6 @@ import { MJOJournalEntryPreviewComponent, type MJOJournalEntry } from '../../pan
 import { MJODecompositionLadderComponent, type MJOLadderRow } from '../../panels/decomposition-ladder.component';
 import {
     MJOConsequenceChipComponent,
-    MJOOriginChipComponent,
     MJOPriceSourceBadgeComponent,
     MJOStatedValueComponent,
 } from '../../panels/chips.component';
@@ -130,8 +122,7 @@ export interface MJOPartyMatch {
         MJOJournalEntryPreviewComponent,
         MJODecompositionLadderComponent,
         MJOConsequenceChipComponent,
-        MJOOriginChipComponent,
-        MJOPriceSourceBadgeComponent,
+            MJOPriceSourceBadgeComponent,
         MJOStatedValueComponent,
         MJOMoneyPipe,
     ],
@@ -140,7 +131,6 @@ export interface MJOPartyMatch {
 })
 export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy {
     private readonly orders = inject(MJOOrderEntryService);
-    private readonly data = inject(MJOOrdersDataService);
     // Required: this page is created imperatively and runs zoneless, so every assignment that
     // lands after an await or from a preview callback has to tick explicitly.
     private readonly cdr = inject(ChangeDetectorRef);
@@ -189,12 +179,6 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
     /** Document number, once the order has one. Drafts have none. */
     @Input() OrderNumber: string | null = null;
 
-    /** Where the order came from. */
-    @Input() OriginChannel: string | null = 'Staff';
-
-    /** The originating system's reference, when there is one. */
-    @Input() OriginExternalID: string | null = null;
-
     /**
      * Show this page's own Save/Confirm bar.
      *
@@ -226,10 +210,18 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
     @Output() OpenInAccounting = new EventEmitter<MJOJournalEntry>();
 
     /** Allocation lines that have landed on this order. */
-    public AppliedPayments: Array<Record<string, unknown>> = [];
+    public AppliedPayments: mjBizAppsOrdersPaymentLineEntity[] = [];
 
     /** Dimension tags across this order's lines. */
-    public Dimensions: Array<Record<string, unknown>> = [];
+    public Dimensions: mjBizAppsOrdersOrderLineDimensionEntity[] = [];
+
+    /** PaymentHeaderID (lower-cased) → its number, for the applied-payments table. */
+    public PaymentNumbers = new Map<string, string>();
+
+    /** What to show in the Payment column of an allocation row. */
+    public PaymentNumberOf(line: mjBizAppsOrdersPaymentLineEntity): string {
+        return this.PaymentNumbers.get(String(line.PaymentHeaderID ?? '').toLowerCase()) ?? '—';
+    }
 
     /** Active tab. */
     public ActiveTab: MJOEditorTab = 'lines';
@@ -436,18 +428,24 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         // saved. Dimensions hang off the SAVED lines, so those are read first and
         // their ids are what the dimension query is given.
         const [payments, savedLines, rows] = await Promise.all([
-            this.data.GetPaymentLinesForOrder(orderID),
-            this.data.GetOrderLines(orderID),
+            GetPaymentLinesForOrder(orderID),
+            GetOrderLines(orderID),
             // THE ORDER'S OWN MONEY, READ BACK. Once an order is saved its total, amount paid,
             // balance and payment status are FACTS the engine computed and triggers maintain —
             // not something to re-derive here from client-side line pricing, which knows nothing
             // about charges or tax and would disagree the moment either exists.
-            this.data.GetOrders({ OrderHeaderID: orderID, MaxRows: 1 }),
+            GetOrders({ OrderHeaderID: orderID, MaxRows: 1 }),
         ]);
-        const dimensions = await this.data.GetLineDimensionsForOrder(
+        const dimensions = await GetLineDimensionsForOrder(
             savedLines.map((line) => String(line['ID'])),
         );
         this.AppliedPayments = payments;
+        // The allocation line knows WHICH payment but not what it is called — `PaymentLine` carries
+        // no number, so the table's Payment column needs one lookup rather than a field that does
+        // not exist.
+        this.PaymentNumbers = await GetPaymentNumbers(
+            payments.map((line) => String(line.PaymentHeaderID ?? '')),
+        );
         this.Dimensions = dimensions;
         this.Persisted = rows[0] ?? null;
         this.cdr.detectChanges();
@@ -461,7 +459,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      * charges and tax and says so. After a save the engine's own figures exist, and they are
      * authoritative; nothing here should be recomputing them.
      */
-    public Persisted: MJOOrderRow | null = null;
+    public Persisted: mjBizAppsOrdersOrderHeaderEntity | null = null;
 
     /** True once this order exists in the database, so its own money can be shown. */
     public get IsPersisted(): boolean {
@@ -497,7 +495,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
     /**
      * Null while the order is a draft — an unsaved order has no payment state to report.
      *
-     * Narrowed rather than cast. `MJOOrderRow.PaymentStatus` is a plain `string` off the view,
+     * Narrowed rather than cast. `mjBizAppsOrdersOrderHeaderEntity.PaymentStatus` is a plain `string` off the view,
      * and the strip takes the union; a cast would compile and then render an unstyled chip for
      * any value the column grows later. Checking against the union means an unrecognised value
      * shows nothing at all, which is the honest outcome.
@@ -588,9 +586,9 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         const orderID = this.currentOrderID;
         if (!orderID || this.consequences.has(orderID)) return;
 
-        const lineIDs = (await this.data.GetOrderLines(orderID)).map((line) => String(line['ID']));
-        const journal = this.data.JournalEntryViewParams(lineIDs);
-        const subscriptions = this.data.SubscriptionViewParams(lineIDs);
+        const lineIDs = (await GetOrderLines(orderID)).map((line) => String(line['ID']));
+        const journal = JournalEntryViewParams(lineIDs);
+        const subscriptions = SubscriptionViewParams(lineIDs);
         // Only a real answer is remembered — see `consequences`.
         if (journal || subscriptions) {
             this.consequences.set(orderID, { Journal: journal, Subscriptions: subscriptions });
@@ -752,7 +750,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      * product" and "not in the first 200" — the second is the one that wastes an afternoon.
      */
     public get CatalogTruncated(): boolean {
-        return this.data.WasTruncated(MJO_ENTITIES.Product);
+        return WasTruncated(MJO_ENTITIES.Product);
     }
 
     /**
@@ -847,7 +845,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         if (this.PartyQuery[role].trim()) return; // already searching — do not overwrite the results
         this.PartySearching = role;
         try {
-            this.PartyMatches[role] = await this.data.RecentCustomers();
+            this.PartyMatches[role] = await RecentCustomers();
         } finally {
             this.PartySearching = null;
             this.cdr.detectChanges();
@@ -876,7 +874,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         this.partyTimer = setTimeout(async () => {
             this.PartySearching = role;
             try {
-                this.PartyMatches[role] = await this.data.SearchCustomers(q);
+                this.PartyMatches[role] = await SearchCustomers(q);
             } finally {
                 this.PartySearching = null;
                 // Lands from a timer AND an awaited request, so nothing is watching this — it has

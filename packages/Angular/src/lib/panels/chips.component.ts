@@ -97,78 +97,6 @@ export class MJOConsequenceChipComponent {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Origin chip
- * ──────────────────────────────────────────────────────────────────────────── */
-
-/** Where an order came from. */
-export type MJOOriginChannel = 'Staff' | 'LXP' | 'Renewal' | 'Migration' | string;
-
-/**
- * `mjo-origin-chip` — how an order got here.
- *
- * Origin is a first-class, filterable attribute rather than something to infer.
- * A self-serve purchase and a staff-entered order are chased, supported and
- * reported on differently, and inferring "LXP" from a null sales rep is guesswork
- * that breaks the first time someone enters an order without picking a rep.
- *
- * ## Example
- *
- * ```html
- * <mjo-origin-chip Channel="LXP" ExternalID="LH4I-88213" />
- * ```
- */
-@Component({
-    selector: 'mjo-origin-chip',
-    standalone: true,
-    imports: [CommonModule],
-    template: `
-        <span class="mj-chip" [class]="chipClass" [title]="title">
-            <i [class]="icon" aria-hidden="true"></i>
-            {{ label }}
-        </span>
-    `,
-})
-export class MJOOriginChipComponent {
-    /** The channel. Anything unrecognised renders neutrally rather than breaking. */
-    @Input() Channel: MJOOriginChannel | null = 'Staff';
-
-    /** The originating system's own reference, shown on hover. */
-    @Input() ExternalID: string | null = null;
-
-    protected get label(): string {
-        return this.Channel ?? 'Staff';
-    }
-
-    protected get title(): string {
-        return this.ExternalID ? `${this.label} · ${this.ExternalID}` : this.label;
-    }
-
-    protected get icon(): string {
-        switch (this.Channel) {
-            case 'LXP':
-                return 'fa-solid fa-graduation-cap';
-            case 'Renewal':
-                return 'fa-solid fa-rotate';
-            case 'Migration':
-                return 'fa-solid fa-right-left';
-            default:
-                return 'fa-solid fa-user';
-        }
-    }
-
-    protected get chipClass(): string {
-        switch (this.Channel) {
-            case 'LXP':
-                return 'mj-chip--violet';
-            case 'Renewal':
-                return 'mj-chip--info';
-            default:
-                return 'mj-chip--outline';
-        }
-    }
-}
-
-/* ────────────────────────────────────────────────────────────────────────────
  * Price-source badge
  * ──────────────────────────────────────────────────────────────────────────── */
 
@@ -330,7 +258,6 @@ export class MJOStatedValueComponent {
 /** Every chip component, for a consumer's `imports` array. */
 export const MJO_CHIP_COMPONENTS = [
     MJOConsequenceChipComponent,
-    MJOOriginChipComponent,
     MJOPriceSourceBadgeComponent,
     MJOStatedValueComponent,
 ] as const;

@@ -1,12 +1,13 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { OrdersApplyAccountCreditOperation } from '@mj-biz-apps/orders-entities';
+import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
-import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
+
 import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
+import { GetOrders } from '../../data/orders-queries';
 
 /**
  * `mjo-account-credit-page` — spend a credit a customer is holding.
@@ -101,7 +102,7 @@ import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@membe
                                 name="target" />
                         </label>
                         @if (Target) {
-                            <mjo-stated-value Label="Balance now">{{ Target.Balance | mjoMoney }}</mjo-stated-value>
+                            <mjo-stated-value Label="Balance now">{{ (Target.Balance ?? 0) | mjoMoney }}</mjo-stated-value>
                             <mjo-stated-value Label="After credit">{{ TargetAfter | mjoMoney }}</mjo-stated-value>
                             @if (IsCrossCompany) {
                                 <mj-alert Variant="warning" Icon="fa-solid fa-building-columns" class="mjo-cr__cross">
@@ -187,7 +188,6 @@ import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@membe
     ],
 })
 export class MJOAccountCreditPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded.
      *
@@ -208,8 +208,8 @@ export class MJOAccountCreditPageComponent implements OnInit {
     /** A credit was applied. */
     @Output() Applied = new EventEmitter<void>();
 
-    public Credits: MJOOrderRow[] = [];
-    public Targets: MJOOrderRow[] = [];
+    public Credits: mjBizAppsOrdersOrderHeaderEntity[] = [];
+    public Targets: mjBizAppsOrdersOrderHeaderEntity[] = [];
 
     /**
      * The target list with its label precomputed.
@@ -219,7 +219,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
      * order to credit without seeing what is owed on it is the whole decision.
      */
     public get TargetOptions(): Array<{ ID: string; Label: string }> {
-        return this.Targets.map((o) => ({ ID: o.ID, Label: `${o.OrderNumber} — ${this.money(o.Balance)}` }));
+        return this.Targets.map((o) => ({ ID: o.ID, Label: `${o.OrderNumber} — ${this.money((o.Balance ?? 0))}` }));
     }
     public SourceID: string | null = null;
     public TargetID: string | null = null;
@@ -227,7 +227,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
     public Busy = false;
     public Error: string | null = null;
 
-    public readonly CreditColumns: MJOColumn<MJOOrderRow>[] = [
+    public readonly CreditColumns: MJOColumn<mjBizAppsOrdersOrderHeaderEntity>[] = [
         { Key: 'OrderNumber', Label: 'Credit order', Kind: 'mono', Width: '130px' },
         {
             Key: 'Customer',
@@ -242,7 +242,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
             Label: 'Available',
             Kind: 'money',
             Width: '124px',
-            Format: (r) => FormatMoney(Math.abs(r.Balance)),
+            Format: (r) => FormatMoney(Math.abs((r.Balance ?? 0))),
         },
     ];
 
@@ -250,11 +250,11 @@ export class MJOAccountCreditPageComponent implements OnInit {
         await this.load();
     }
 
-    public get Source(): MJOOrderRow | undefined {
+    public get Source(): mjBizAppsOrdersOrderHeaderEntity | undefined {
         return this.Credits.find((c) => c.ID === this.SourceID);
     }
 
-    public get Target(): MJOOrderRow | undefined {
+    public get Target(): mjBizAppsOrdersOrderHeaderEntity | undefined {
         return this.Targets.find((t) => t.ID === this.TargetID);
     }
 
@@ -263,7 +263,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
     }
 
     public get TargetAfter(): number {
-        return Math.round(((this.Target?.Balance ?? 0) - this.Amount) * 100) / 100;
+        return Math.round(((this.Target?.Balance ?? 0) - (this.Amount ?? 0)) * 100) / 100;
     }
 
     public get IsCrossCompany(): boolean {
@@ -271,14 +271,14 @@ export class MJOAccountCreditPageComponent implements OnInit {
     }
 
     public get CanApply(): boolean {
-        return !!this.Source && !!this.Target && this.Amount > 0;
+        return !!this.Source && !!this.Target && (this.Amount ?? 0) > 0;
     }
 
     public get TotalDisplay(): string {
-        return FormatMoney(this.Credits.reduce((s, c) => s + Math.abs(c.Balance), 0));
+        return FormatMoney(this.Credits.reduce((s, c) => s + Math.abs((c.Balance ?? 0)), 0));
     }
 
-    public async SelectSource(row: MJOOrderRow): Promise<void> {
+    public async SelectSource(row: mjBizAppsOrdersOrderHeaderEntity): Promise<void> {
         await this.applySource(row);
         this.cdr.detectChanges();
     }
@@ -292,12 +292,12 @@ export class MJOAccountCreditPageComponent implements OnInit {
      * to $1,784.32 before the load finished — NG0100, which aborts the update and
      * freezes the view. One load, one render.
      */
-    private async applySource(row: MJOOrderRow): Promise<void> {
+    private async applySource(row: mjBizAppsOrdersOrderHeaderEntity): Promise<void> {
         this.SourceID = row.ID;
         // Only this customer's open orders can receive it — a credit belongs to
         // whoever earned it.
         const customerID = (row['BillToOrganizationID'] as string) ?? undefined;
-        this.Targets = await this.data.GetOrders({ Preset: 'unpaid', BillToOrganizationID: customerID });
+        this.Targets = await GetOrders({ Preset: 'unpaid', BillToOrganizationID: customerID });
         this.TargetID = this.Targets[0]?.ID ?? null;
         // Default to the most that both sides allow — the common intent.
         this.Amount = Math.min(this.Available, this.Targets[0]?.Balance ?? 0);
@@ -322,7 +322,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
             const result = await op.Execute({
                 SourceOrderHeaderID: this.SourceID!,
                 TargetOrderHeaderID: this.TargetID!,
-                Amount: this.Amount,
+                Amount: (this.Amount ?? 0),
             });
             if (result.Success && result.Output?.Success) {
                 this.Applied.emit();
@@ -355,11 +355,11 @@ export class MJOAccountCreditPageComponent implements OnInit {
      * Nothing is written to the component until every await has settled.
      */
     private async load(): Promise<void> {
-        const credits = await this.data.GetOrders({ Preset: 'credits' });
+        const credits = await GetOrders({ Preset: 'credits' });
         const first = !this.SourceID ? credits[0] : undefined;
 
         const targets = first
-            ? await this.data.GetOrders({
+            ? await GetOrders({
                   Preset: 'unpaid',
                   BillToOrganizationID: (first['BillToOrganizationID'] as string) ?? undefined,
               })

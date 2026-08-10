@@ -39,7 +39,7 @@ import type { ResourceData } from '@memberjunction/core-entities';
 
 import { MJOSectionShellComponent } from './section-shell.component';
 import { MJOOrderEntryService } from '../services/order-entry.service';
-import { MJOOrdersDataService } from '../services/orders-data.service';
+
 import type { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
 import { MJOOrderWorkspacePageComponent } from '../pages/orders/order-workspace.page';
@@ -58,6 +58,7 @@ import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/c
 import { MJOPricingPageComponent, MJOPromotionsPageComponent } from '../pages/catalog/pricing.page';
 import { MJOReturnPageComponent } from '../pages/orders/return.page';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { GetPaymentTypes, GetProductPrices, GetProducts, GetSellingCompanies } from '../data/orders-queries';
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -315,7 +316,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             this.catalogOptions(),
             this.defaultCompanyID(),
             this.tenderOptions(),
-            this.data.GetSellingCompanies(),
+            GetSellingCompanies(),
         ]);
         return { Catalog, CompanyID, Tenders, Companies };
     }
@@ -331,8 +332,8 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // is free. The rule is the indicative figure; the engine still resolves
             // the real one on the line.
             const [products, prices] = await Promise.all([
-                this.data.GetProducts({ MaxRows: 500 }),
-                this.data.GetProductPrices(),
+                GetProducts({ MaxRows: 500 }),
+                GetProductPrices(),
             ]);
             const byProduct = new Map<string, number>();
             for (const price of prices) {
@@ -366,7 +367,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
      */
     private async defaultCompanyID(): Promise<string> {
         if (this.companyCache) return this.companyCache;
-        const products = await this.data.GetProducts({ MaxRows: 1 });
+        const products = await GetProducts({ MaxRows: 1 });
         this.companyCache = String(products[0]?.['CompanyID'] ?? '');
         return this.companyCache;
     }
@@ -376,7 +377,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     /** Tenders a payment can be taken on. */
     private async tenderOptions(): Promise<Array<Record<string, unknown>>> {
         if (!this.tenderCache) {
-            const types = await this.data.GetPaymentTypes();
+            const types = await GetPaymentTypes();
             this.tenderCache = types.map((type) => ({
                 ID: String(type['ID']),
                 Code: String(type['Code'] ?? ''),
@@ -460,7 +461,6 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     /* ── Confirm ────────────────────────────────────────────────────────── */
 
     private readonly entry = inject(MJOOrderEntryService);
-    private readonly data = inject(MJOOrdersDataService);
 
     /** A confirm is in flight — the button says so and cannot be pressed twice. */
     public Confirming = false;

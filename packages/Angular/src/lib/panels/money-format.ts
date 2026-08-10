@@ -169,14 +169,20 @@ export function FormatRate(value: number | null | undefined): string {
  * ```typescript
  * FormatDate('2026-08-01')                    // 'Aug 1, 2026'
  * FormatDate('2026-08-01', { Short: true })   // 'Aug 1'
+ * FormatDate(order.OrderDate)                 // a Date off an entity works too
  * ```
+ *
+ * ACCEPTS A `Date` AS WELL AS AN ISO STRING, and that is not convenience. A date column is a `Date`
+ * on an entity and an ISO string on the wire, so a screen holds one or the other depending on how it
+ * read the row. Given a `Date`, the old string-splitting path found no '-' to split on and returned
+ * '—' — an empty-looking cell that reads as "no date" rather than as the type mismatch it was.
  */
-export function FormatDate(iso: string | null | undefined, options: { Short?: boolean } = {}): string {
-    if (!iso) return '—';
-    const [datePart] = String(iso).split('T');
-    const [y, m, d] = datePart.split('-').map(Number);
-    if (!y || !m || !d) return '—';
-    const date = new Date(y, m - 1, d);
+export function FormatDate(
+    value: Date | string | null | undefined,
+    options: { Short?: boolean } = {},
+): string {
+    const date = toLocalDate(value);
+    if (!date) return '—';
     return date.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -192,14 +198,35 @@ export function FormatDate(iso: string | null | undefined, options: { Short?: bo
  * ```typescript
  * DaysSince('2026-06-15', '2026-07-29')  // 44
  * ```
+ *
+ * Takes a `Date` on either side for the same reason {@link FormatDate} does.
  */
-export function DaysSince(iso: string | null | undefined, asOf: string): number {
-    if (!iso) return 0;
-    const parse = (s: string): number => {
-        const [y, m, d] = String(s).split('T')[0].split('-').map(Number);
-        return new Date(y, m - 1, d).getTime();
-    };
-    return Math.round((parse(asOf) - parse(iso)) / 86_400_000);
+export function DaysSince(
+    value: Date | string | null | undefined,
+    asOf: Date | string,
+): number {
+    const from = toLocalDate(value);
+    const to = toLocalDate(asOf);
+    if (!from || !to) return 0;
+    return Math.round((to.getTime() - from.getTime()) / 86_400_000);
+}
+
+/**
+ * A calendar date at LOCAL midnight, from either representation.
+ *
+ * The time-of-day is dropped on purpose: everything these helpers answer — what day is this, how
+ * many days ago was it — is a question about calendar days, and keeping the clock in would make
+ * "yesterday at 23:00" and "today at 01:00" two days apart in one timezone and one in another.
+ */
+function toLocalDate(value: Date | string | null | undefined): Date | null {
+    if (!value) return null;
+    if (value instanceof Date) {
+        if (Number.isNaN(value.getTime())) return null;
+        return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    }
+    const [y, m, d] = String(value).split('T')[0].split('-').map(Number);
+    if (!y || !m || !d) return null;
+    return new Date(y, m - 1, d);
 }
 
 /** Initials for an avatar, capped at two letters. */

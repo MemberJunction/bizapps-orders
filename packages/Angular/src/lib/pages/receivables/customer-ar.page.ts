@@ -3,9 +3,11 @@ import { CommonModule } from '@angular/common';
 import { MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
-import { MJOOrdersDataService, type MJOOrderRow, type MJOPaymentRow } from '../../services/orders-data.service';
+
 import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
+import { GetOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
+import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 
 /** A customer with a balance, as the left rail lists them. */
 interface MJOCustomerSummary {
@@ -15,7 +17,7 @@ interface MJOCustomerSummary {
     Open: number;
     Credit: number;
     Buckets: MJOAgingBuckets;
-    Orders: MJOOrderRow[];
+    Orders: mjBizAppsOrdersOrderHeaderEntity[];
 }
 
 /**
@@ -163,7 +165,7 @@ interface MJOCustomerSummary {
                                     <div class="mjo-ar__row">
                                         <span class="mono small">{{ credit.OrderNumber }}</span>
                                         <b class="mj-num mj-money--credit">
-                                            {{ money(-Math.abs(credit.Balance)) }}
+                                            {{ money(-Math.abs((credit.Balance ?? 0))) }}
                                         </b>
                                     </div>
                                 } @empty {
@@ -194,7 +196,7 @@ interface MJOCustomerSummary {
                                             <span class="mono">{{ payment.PaymentNumber }}</span>
                                             <span class="muted"> · {{ dateOf(payment.PaymentDate) }}</span>
                                         </span>
-                                        <b class="mj-num">{{ money(payment.Amount) }}</b>
+                                        <b class="mj-num">{{ money((payment.Amount ?? 0)) }}</b>
                                     </div>
                                 } @empty {
                                     <div class="small muted">
@@ -347,7 +349,6 @@ interface MJOCustomerSummary {
     ],
 })
 export class MJOCustomerARPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded. See orders-dashboard.page.ts for the full
      * reasoning: these pages are created imperatively by the section shell, and an
@@ -356,12 +357,12 @@ export class MJOCustomerARPageComponent implements OnInit {
      */
     private readonly cdr = inject(ChangeDetectorRef);
 
-    @Output() OrderOpened = new EventEmitter<MJOOrderRow>();
+    @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
 
     public Customers: MJOCustomerSummary[] = [];
     public SelectedKey: string | null = null;
 
-    public readonly Columns: MJOColumn<MJOOrderRow>[] = [
+    public readonly Columns: MJOColumn<mjBizAppsOrdersOrderHeaderEntity>[] = [
         { Key: 'OrderNumber', Label: 'Order', Kind: 'mono', Width: '116px' },
         { Key: 'Description', Label: 'Memo', Format: (r) => (r.Description as string) ?? '—' },
         { Key: 'Company', Label: 'Co.', Width: '96px', HideBelow: 1000 },
@@ -371,8 +372,8 @@ export class MJOCustomerARPageComponent implements OnInit {
             Width: '100px',
             Format: (r) => (r.DueDate ? FormatDate(r.DueDate, { Short: true }) : '—'),
         },
-        { Key: 'TotalGross', Label: 'Total', Kind: 'money', Width: '112px', Format: (r) => FormatMoney(r.TotalGross) },
-        { Key: 'Balance', Label: 'Balance', Kind: 'money', Width: '116px', Format: (r) => FormatMoney(r.Balance) },
+        { Key: 'TotalGross', Label: 'Total', Kind: 'money', Width: '112px', Format: (r) => FormatMoney((r.TotalGross ?? 0)) },
+        { Key: 'Balance', Label: 'Balance', Kind: 'money', Width: '116px', Format: (r) => FormatMoney((r.Balance ?? 0)) },
         {
             Key: 'Age',
             Label: 'Age',
@@ -387,8 +388,8 @@ export class MJOCustomerARPageComponent implements OnInit {
         await this.load();
     }
 
-    public Payments: MJOPaymentRow[] = [];
-    public Subscriptions: Array<Record<string, unknown>> = [];
+    public Payments: mjBizAppsOrdersPaymentHeaderEntity[] = [];
+    public Subscriptions: mjBizAppsOrdersSubscriptionEntity[] = [];
 
     /** Exposed for the template — `Math` is not in Angular's expression scope. */
     protected readonly Math = Math;
@@ -419,8 +420,8 @@ export class MJOCustomerARPageComponent implements OnInit {
             PersonID: selected.IsOrganization ? null : selected.Key,
         };
         const [payments, subscriptions] = await Promise.all([
-            this.data.GetPaymentsForCustomer(identity),
-            this.data.GetSubscriptionsForCustomer(identity),
+            GetPaymentsForCustomer(identity),
+            GetSubscriptionsForCustomer(identity),
         ]);
         this.Payments = payments;
         this.Subscriptions = subscriptions;
@@ -454,19 +455,29 @@ export class MJOCustomerARPageComponent implements OnInit {
     }
 
     /** Orders this customer has OVER-paid — their spendable credit. */
-    public get CreditItems(): MJOOrderRow[] {
-        return (this.Selected?.Orders ?? []).filter((o) => o.Balance < 0);
+    public get CreditItems(): mjBizAppsOrdersOrderHeaderEntity[] {
+        return (this.Selected?.Orders ?? []).filter((o) => (o.Balance ?? 0) < 0);
     }
 
     protected dateOf(value: unknown): string {
         return value ? FormatDate(String(value), { Short: true }) : '—';
     }
 
-    protected subClass(sub: Record<string, unknown>): string {
-        switch (sub['Status']) {
+    /**
+     * The chip for a subscription's state.
+     *
+     * `'Grace'` was here and is not a status this schema has — the union is
+     * Active / Paused / Canceled / Migrated / Trialing — so the warning chip could never render and
+     * a paused subscription looked exactly like a cancelled one. Paused is the state that wants
+     * attention: the customer still holds the seat and is not currently being served by it.
+     */
+    protected subClass(sub: mjBizAppsOrdersSubscriptionEntity): string {
+        switch (sub.Status) {
             case 'Active':
                 return 'mj-chip--success';
-            case 'Grace':
+            case 'Trialing':
+                return 'mj-chip--info';
+            case 'Paused':
                 return 'mj-chip--warning';
             default:
                 return 'mj-chip--outline';
@@ -483,11 +494,13 @@ export class MJOCustomerARPageComponent implements OnInit {
         return Math.round((this.Selected.Open - this.Selected.Credit) * 100) / 100;
     }
 
-    public get OpenItems(): MJOOrderRow[] {
+    public get OpenItems(): mjBizAppsOrdersOrderHeaderEntity[] {
         return (this.Selected?.Orders ?? [])
-            .filter((o) => o.Balance !== 0)
+            .filter((o) => (o.Balance ?? 0) !== 0)
             .slice()
-            .sort((a, b) => (a.DueDate ?? '').localeCompare(b.DueDate ?? ''));
+            // Undated last: an order with no due date is not "due first", and an empty string
+            // sorted ahead of every real date, which put unscheduled work at the top of an aging list.
+            .sort((a, b) => (a.DueDate?.getTime() ?? Infinity) - (b.DueDate?.getTime() ?? Infinity));
     }
 
     protected initials(name: string): string {
@@ -498,14 +511,14 @@ export class MJOCustomerARPageComponent implements OnInit {
         return FormatMoney(value);
     }
 
-    private ageLabel(row: MJOOrderRow): string {
-        if (!row.DueDate || row.Balance <= 0) return 'Current';
+    private ageLabel(row: mjBizAppsOrdersOrderHeaderEntity): string {
+        if (!row.DueDate || (row.Balance ?? 0) <= 0) return 'Current';
         const late = DaysSince(row.DueDate, new Date().toISOString().slice(0, 10));
         return late > 0 ? `${late}d` : 'Current';
     }
 
-    private ageClass(row: MJOOrderRow): string {
-        if (!row.DueDate || row.Balance <= 0) return '';
+    private ageClass(row: mjBizAppsOrdersOrderHeaderEntity): string {
+        if (!row.DueDate || (row.Balance ?? 0) <= 0) return '';
         const late = DaysSince(row.DueDate, new Date().toISOString().slice(0, 10));
         if (late > 60) return 'mj-chip--error';
         if (late > 0) return 'mj-chip--warning';
@@ -519,8 +532,8 @@ export class MJOCustomerARPageComponent implements OnInit {
      * order billed to their employer is the employer's receivable.
      */
     private async load(): Promise<void> {
-        const orders = await this.data.GetOrders({ Preset: 'all' });
-        const open = orders.filter((o) => !['Draft', 'Quoted', 'Voided'].includes(o.Status) && o.Balance !== 0);
+        const orders = await GetOrders({ Preset: 'all' });
+        const open = orders.filter((o) => !['Draft', 'Quoted', 'Voided'].includes(o.Status) && (o.Balance ?? 0) !== 0);
 
         const byCustomer = new Map<string, MJOCustomerSummary>();
         const today = new Date().toISOString().slice(0, 10);
@@ -544,16 +557,16 @@ export class MJOCustomerARPageComponent implements OnInit {
 
             existing.Orders.push(order);
 
-            if (order.Balance < 0) {
+            if ((order.Balance ?? 0) < 0) {
                 // A negative balance IS the credit — no separate instrument.
-                existing.Credit += Math.abs(order.Balance);
+                existing.Credit += Math.abs((order.Balance ?? 0));
             } else {
-                existing.Open += order.Balance;
+                existing.Open += (order.Balance ?? 0);
                 const late = order.DueDate ? DaysSince(order.DueDate, today) : 0;
-                if (late <= 0) existing.Buckets.Current += order.Balance;
-                else if (late <= 30) existing.Buckets.Days1To30 += order.Balance;
-                else if (late <= 60) existing.Buckets.Days31To60 += order.Balance;
-                else existing.Buckets.Days61Plus += order.Balance;
+                if (late <= 0) existing.Buckets.Current += (order.Balance ?? 0);
+                else if (late <= 30) existing.Buckets.Days1To30 += (order.Balance ?? 0);
+                else if (late <= 60) existing.Buckets.Days31To60 += (order.Balance ?? 0);
+                else existing.Buckets.Days61Plus += (order.Balance ?? 0);
             }
 
             byCustomer.set(key, existing);
