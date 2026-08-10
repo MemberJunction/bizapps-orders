@@ -1,21 +1,15 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
-import { MJOOrdersDataService } from '../../services/orders-data.service';
+
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
-
-/** A catalog row. */
-interface MJOProductRow extends Record<string, unknown> {
-    ID: string;
-    Name: string;
-    SKU: string;
-    Status: string;
-    ProductType?: string | null;
-    Company?: string | null;
-    ProductCategory?: string | null;
-    SubscriptionTypeID?: string | null;
-}
+import { GetChargeTypes, GetProducts, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
+import type {
+    mjBizAppsOrdersChargeTypeEntity,
+    mjBizAppsOrdersCustomerTaxExemptionEntity,
+    mjBizAppsOrdersProductEntity,
+} from '@mj-biz-apps/orders-entities';
 
 /**
  * `mjo-products-page` — the catalog, which is the behaviour root.
@@ -174,7 +168,6 @@ interface MJOProductRow extends Record<string, unknown> {
     ],
 })
 export class MJOProductsPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded.
      *
@@ -192,12 +185,12 @@ export class MJOProductsPageComponent implements OnInit {
      */
     private readonly cdr = inject(ChangeDetectorRef);
 
-    @Output() ProductOpened = new EventEmitter<MJOProductRow>();
+    @Output() ProductOpened = new EventEmitter<mjBizAppsOrdersProductEntity>();
 
-    public Rows: MJOProductRow[] = [];
+    public Rows: mjBizAppsOrdersProductEntity[] = [];
     public Search = '';
 
-    public readonly Columns: MJOColumn<MJOProductRow>[] = [
+    public readonly Columns: MJOColumn<mjBizAppsOrdersProductEntity>[] = [
         { Key: 'SKU', Label: 'SKU', Kind: 'mono', Width: '120px' },
         { Key: 'Name', Label: 'Product', Secondary: (r) => (r.ProductCategory as string) ?? null },
         { Key: 'ProductType', Label: 'Type', Width: '140px' },
@@ -248,8 +241,7 @@ export class MJOProductsPageComponent implements OnInit {
     }
 
     private async load(): Promise<void> {
-        const rows = await this.data.GetProducts({ Search: this.Search });
-        this.Rows = rows as MJOProductRow[];
+        this.Rows = await GetProducts({ Search: this.Search });
         this.cdr.detectChanges();
     }
 }
@@ -400,7 +392,7 @@ export class MJOProductsPageComponent implements OnInit {
                         @for (row of Exemptions; track row['ID']) {
                             <tr>
                                 <td class="small">{{ row['Organization'] ?? row['Person'] ?? '—' }}</td>
-                                <td class="small">{{ row['TaxJurisdiction'] ?? 'all' }}</td>
+                                <td class="small">{{ jurisdictionOf(row) }}</td>
                                 <td class="small">{{ row['TaxCategory'] ?? 'all' }}</td>
                                 <td class="small mono">{{ row['CertificateRef'] ?? '—' }}</td>
                                 <td class="small">{{ dateOf(row['CertificateExpiresAt']) }}</td>
@@ -472,7 +464,6 @@ export class MJOProductsPageComponent implements OnInit {
     ],
 })
 export class MJOChargesTaxPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded. See orders-dashboard.page.ts for the full
      * reasoning: these pages are created imperatively by the section shell, and an
@@ -481,7 +472,7 @@ export class MJOChargesTaxPageComponent implements OnInit {
      */
     private readonly cdr = inject(ChangeDetectorRef);
 
-    public Rows: Array<Record<string, unknown>> = [];
+    public Rows: mjBizAppsOrdersChargeTypeEntity[] = [];
 
     public readonly Columns: MJOColumn[] = [
         { Key: 'Sequence', Label: 'Seq', Kind: 'number', Width: '70px' },
@@ -521,17 +512,17 @@ export class MJOChargesTaxPageComponent implements OnInit {
     public Jurisdictions: Array<Record<string, unknown>> = [];
     public Rates: Array<Record<string, unknown>> = [];
     public Nexus: Array<Record<string, unknown>> = [];
-    public Exemptions: Array<Record<string, unknown>> = [];
+    public Exemptions: mjBizAppsOrdersCustomerTaxExemptionEntity[] = [];
 
     public async ngOnInit(): Promise<void> {
         // Four independent reads, so they go together rather than in sequence —
         // none of them needs another's answer.
         const [rows, jurisdictions, rates, nexus, exemptions] = await Promise.all([
-            this.data.GetChargeTypes(),
-            this.data.GetTaxJurisdictions(),
-            this.data.GetTaxRates(),
-            this.data.GetTaxNexus(),
-            this.data.GetTaxExemptions(),
+            GetChargeTypes(),
+            GetTaxJurisdictions(),
+            GetTaxRates(),
+            GetTaxNexus(),
+            GetTaxExemptions(),
         ]);
         this.Rows = rows;
         this.Jurisdictions = jurisdictions;
@@ -602,7 +593,24 @@ export class MJOChargesTaxPageComponent implements OnInit {
     }
 
     /** An expired certificate stops exempting on its own date. */
-    protected exemptionClass(row: Record<string, unknown>): string {
+    /**
+     * The jurisdiction a certificate covers, or 'all' when it genuinely covers everything.
+     *
+     * This read `row['TaxJurisdiction']` — a field `CustomerTaxExemption` does not have, since the
+     * base view joins no jurisdiction. Every row therefore fell through to the `?? 'all'` default,
+     * so a certificate scoped to ONE state was displayed as exempting the customer EVERYWHERE. That
+     * is not a blank cell; it is a wrong claim about tax scope, on the screen a tax admin uses to
+     * check exactly that. The jurisdiction names are already loaded for the table above, so the
+     * answer costs nothing but the lookup.
+     */
+    protected jurisdictionOf(row: mjBizAppsOrdersCustomerTaxExemptionEntity): string {
+        if (!row.TaxJurisdictionID) return 'all';
+        const key = String(row.TaxJurisdictionID).toLowerCase();
+        const match = this.Jurisdictions.find((j) => String(j['ID'] ?? '').toLowerCase() === key);
+        return String(match?.['Name'] ?? row.TaxJurisdictionID);
+    }
+
+    protected exemptionClass(row: mjBizAppsOrdersCustomerTaxExemptionEntity): string {
         const expires = row['CertificateExpiresAt'] ? String(row['CertificateExpiresAt']).slice(0, 10) : null;
         if (expires && expires < new Date().toISOString().slice(0, 10)) return 'mj-chip--warning';
         return row['Status'] === 'Active' ? 'mj-chip--success' : 'mj-chip--outline';

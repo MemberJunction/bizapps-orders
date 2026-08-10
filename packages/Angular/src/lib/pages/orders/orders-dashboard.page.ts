@@ -2,9 +2,11 @@ import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } fr
 import { CommonModule } from '@angular/common';
 import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.component';
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
-import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
+
 import { DaysSince, FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJAlertComponent, MJEmptyStateComponent, type MJAlertVariant } from '@memberjunction/ng-ui-components';
+import { GetOrders } from '../../data/orders-queries';
+import type { mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 
 /** A queue worth someone's attention, with where it leads. */
 interface MJOQueue {
@@ -18,7 +20,7 @@ interface MJOQueue {
 
 /** Something specific worth acting on, with the order it concerns. */
 interface MJOAttentionItem {
-    Order: MJOOrderRow;
+    Order: mjBizAppsOrdersOrderHeaderEntity;
     /** How alarmed to be — drives the mj-alert variant directly. */
     Tone: MJAlertVariant;
     Icon: string;
@@ -156,8 +158,8 @@ interface MJOAttentionItem {
                                             {{ order.Status }}
                                         </span>
                                     </td>
-                                    <td class="num" [class.mj-money--neg]="order.TotalGross < 0">
-                                        {{ order.TotalGross | mjoMoney }}
+                                    <td class="num" [class.mj-money--neg]="(order.TotalGross ?? 0) < 0">
+                                        {{ (order.TotalGross ?? 0) | mjoMoney }}
                                     </td>
                                 </tr>
                             } @empty {
@@ -268,7 +270,6 @@ interface MJOAttentionItem {
     ],
 })
 export class MJOOrdersDashboardPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
 
     /**
      * Render what was just loaded.
@@ -291,12 +292,12 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     @Output() NavigateRequested = new EventEmitter<string>();
 
     /** A row was chosen. The section routes it. */
-    @Output() OrderOpened = new EventEmitter<MJOOrderRow>();
+    @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
 
-    private orders: MJOOrderRow[] = [];
+    private orders: mjBizAppsOrdersOrderHeaderEntity[] = [];
 
     public async ngOnInit(): Promise<void> {
-        this.orders = await this.data.GetOrders({ Preset: 'all' });
+        this.orders = await GetOrders({ Preset: 'all' });
         this.cdr.detectChanges();
     }
 
@@ -326,7 +327,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     /** Newest first — what just happened, not what matters most. */
-    public get LatestOrders(): MJOOrderRow[] {
+    public get LatestOrders(): mjBizAppsOrdersOrderHeaderEntity[] {
         return [...this.orders]
             .sort((a, b) => String(b.OrderDate ?? '').localeCompare(String(a.OrderDate ?? '')))
             .slice(0, 7);
@@ -354,19 +355,19 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
                 Tone: 'error',
                 Icon: 'fa-solid fa-hourglass-half',
                 Headline: `${worst.OrderNumber} is ${days} days past due.`,
-                Detail: `${FormatMoney(worst.Balance)} from ${this.customerOf(worst)}.`,
+                Detail: `${FormatMoney((worst.Balance ?? 0))} from ${this.customerOf(worst)}.`,
             });
         }
 
         const biggestCredit = this.credits
             .slice()
-            .sort((a, b) => a.Balance - b.Balance)[0];
+            .sort((a, b) => (a.Balance ?? 0) - (b.Balance ?? 0))[0];
         if (biggestCredit) {
             items.push({
                 Order: biggestCredit,
                 Tone: 'info',
                 Icon: 'fa-solid fa-piggy-bank',
-                Headline: `${this.customerOf(biggestCredit)} is holding ${FormatMoney(Math.abs(biggestCredit.Balance))}.`,
+                Headline: `${this.customerOf(biggestCredit)} is holding ${FormatMoney(Math.abs((biggestCredit.Balance ?? 0)))}.`,
                 Detail: 'Spend it before invoicing them again.',
             });
         }
@@ -375,11 +376,11 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     /** Who the order is for, however the customer is recorded. */
-    public customerOf(order: MJOOrderRow): string {
+    public customerOf(order: mjBizAppsOrdersOrderHeaderEntity): string {
         return (order.BillToOrganization ?? order.BillToPerson ?? '—') as string;
     }
 
-    protected statusClass(order: MJOOrderRow): string {
+    protected statusClass(order: mjBizAppsOrdersOrderHeaderEntity): string {
         switch (order.Status) {
             case 'Posted':
             case 'Fulfilled':
@@ -394,28 +395,28 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     /** Named `openFrom`, not `open` — `open` is already the set of open orders. */
-    protected openFrom(event: Event, order: MJOOrderRow): void {
+    protected openFrom(event: Event, order: mjBizAppsOrdersOrderHeaderEntity): void {
         event.preventDefault();
         this.OrderOpened.emit(order);
     }
 
     /* ── Tiles ──────────────────────────────────────────────────────────── */
 
-    private get open(): MJOOrderRow[] {
+    private get open(): mjBizAppsOrdersOrderHeaderEntity[] {
         return this.orders.filter((o) => !['Draft', 'Quoted', 'Voided'].includes(o.Status));
     }
 
-    private get owing(): MJOOrderRow[] {
-        return this.open.filter((o) => o.Balance > 0);
+    private get owing(): mjBizAppsOrdersOrderHeaderEntity[] {
+        return this.open.filter((o) => (o.Balance ?? 0) > 0);
     }
 
-    private get overdue(): MJOOrderRow[] {
+    private get overdue(): mjBizAppsOrdersOrderHeaderEntity[] {
         const today = new Date().toISOString().slice(0, 10);
         return this.owing.filter((o) => o.DueDate && DaysSince(o.DueDate, today) > 0);
     }
 
-    private get credits(): MJOOrderRow[] {
-        return this.open.filter((o) => o.Balance < 0);
+    private get credits(): mjBizAppsOrdersOrderHeaderEntity[] {
+        return this.open.filter((o) => (o.Balance ?? 0) < 0);
     }
 
     public get OpenCountDisplay(): string {
@@ -423,15 +424,15 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get OpenValueDisplay(): string {
-        return `${FormatMoney(this.open.reduce((s, o) => s + o.TotalGross, 0), { Round: true })} of orders`;
+        return `${FormatMoney(this.open.reduce((s, o) => s + (o.TotalGross ?? 0), 0), { Round: true })} of orders`;
     }
 
     public get OpenBalanceDisplay(): string {
-        return FormatMoney(this.owing.reduce((s, o) => s + o.Balance, 0), { Round: true });
+        return FormatMoney(this.owing.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
     }
 
     public get OverdueValueDisplay(): string {
-        return FormatMoney(this.overdue.reduce((s, o) => s + o.Balance, 0), { Round: true });
+        return FormatMoney(this.overdue.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
     }
 
     public get OverdueDetail(): string {
@@ -440,7 +441,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get CreditsDisplay(): string {
-        const total = this.credits.reduce((s, o) => s + Math.abs(o.Balance), 0);
+        const total = this.credits.reduce((s, o) => s + Math.abs((o.Balance ?? 0)), 0);
         return FormatMoney(total, { Zero: '—' });
     }
 

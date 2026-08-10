@@ -3,9 +3,11 @@ import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
-import { MJOOrdersDataService, MJO_ENTITIES } from '../../services/orders-data.service';
+import { MJO_ENTITIES } from '../../data/entity-names';
 import { RunView, Metadata } from '@memberjunction/core';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
+import { GetSubscriptionEvents, GetSubscriptionTerms } from '../../data/orders-queries';
+import type { mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionTermEntity } from '@mj-biz-apps/orders-entities';
 
 /** A subscription row. */
 interface MJOSubscriptionRow extends Record<string, unknown> {
@@ -270,7 +272,6 @@ interface MJORecognitionPeriod {
     ],
 })
 export class MJOSubscriptionsPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded. See orders-dashboard.page.ts for the full
      * reasoning: these pages are created imperatively by the section shell, and an
@@ -343,8 +344,8 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         this.cdr.detectChanges();
     }
 
-    public Terms: Array<Record<string, unknown>> = [];
-    public Events: Array<Record<string, unknown>> = [];
+    public Terms: mjBizAppsOrdersSubscriptionTermEntity[] = [];
+    public Events: mjBizAppsOrdersSubscriptionEventEntity[] = [];
 
     public async Select(row: MJOSubscriptionRow): Promise<void> {
         this.SelectedID = row.ID;
@@ -360,8 +361,8 @@ export class MJOSubscriptionsPageComponent implements OnInit {
      */
     private async loadDetail(subscriptionID: string): Promise<void> {
         const [terms, events] = await Promise.all([
-            this.data.GetSubscriptionTerms(subscriptionID),
-            this.data.GetSubscriptionEvents(subscriptionID),
+            GetSubscriptionTerms(subscriptionID),
+            GetSubscriptionEvents(subscriptionID),
         ]);
         this.Terms = terms;
         this.Events = events;
@@ -374,14 +375,14 @@ export class MJOSubscriptionsPageComponent implements OnInit {
      * Not a stored flag — renewals append terms, so "current" is a question about
      * the calendar and answering it from the dates cannot go stale.
      */
-    protected isCurrentTerm(term: Record<string, unknown>): boolean {
+    protected isCurrentTerm(term: mjBizAppsOrdersSubscriptionTermEntity): boolean {
         const today = new Date().toISOString().slice(0, 10);
         const from = term['StartDate'] ? String(term['StartDate']).slice(0, 10) : null;
         const to = term['EndDate'] ? String(term['EndDate']).slice(0, 10) : null;
         return (!from || from <= today) && (!to || to >= today);
     }
 
-    protected termClass(term: Record<string, unknown>): string {
+    protected termClass(term: mjBizAppsOrdersSubscriptionTermEntity): string {
         if (this.isCurrentTerm(term)) return 'mj-chip--success';
         return term['Status'] === 'Canceled' ? 'mj-chip--outline' : 'mj-chip--outline';
     }

@@ -2,9 +2,11 @@ import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
 import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.component';
-import { MJOOrdersDataService, type MJOPaymentRow } from '../../services/orders-data.service';
+
 import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
+import { GetPayments } from '../../data/orders-queries';
+import type { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 
 /**
  * `mjo-payments-dashboard-page` — what came in, and does it tie?
@@ -114,7 +116,7 @@ import { MJAlertComponent } from '@memberjunction/ng-ui-components';
                                     <td><span class="mono">{{ payment.PaymentNumber }}</span></td>
                                     <td>{{ payerOf(payment) }}</td>
                                     <td>{{ payment.PaymentType ?? '—' }}</td>
-                                    <td class="num">{{ payment.Amount | mjoMoney }}</td>
+                                    <td class="num">{{ (payment.Amount ?? 0) | mjoMoney }}</td>
                                 </tr>
                             } @empty {
                                 <tr><td colspan="4" class="small muted">No payments yet.</td></tr>
@@ -195,7 +197,6 @@ import { MJAlertComponent } from '@memberjunction/ng-ui-components';
     ],
 })
 export class MJOPaymentsDashboardPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded.
      *
@@ -213,23 +214,23 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
      */
     private readonly cdr = inject(ChangeDetectorRef);
 
-    private payments: MJOPaymentRow[] = [];
+    private payments: mjBizAppsOrdersPaymentHeaderEntity[] = [];
 
     public async ngOnInit(): Promise<void> {
-        this.payments = await this.data.GetPayments({ Preset: 'all' });
+        this.payments = await GetPayments({ Preset: 'all' });
         this.cdr.detectChanges();
     }
 
-    private get captured(): MJOPaymentRow[] {
+    private get captured(): mjBizAppsOrdersPaymentHeaderEntity[] {
         return this.payments.filter((p) => p.Status === 'Captured');
     }
 
-    private get pending(): MJOPaymentRow[] {
+    private get pending(): mjBizAppsOrdersPaymentHeaderEntity[] {
         return this.payments.filter((p) => p.Status === 'Pending');
     }
 
     public get CapturedTotal(): string {
-        return FormatMoney(this.captured.reduce((s, p) => s + p.Amount, 0), { Round: true });
+        return FormatMoney(this.captured.reduce((s, p) => s + (p.Amount ?? 0), 0), { Round: true });
     }
 
     public get CapturedDetail(): string {
@@ -237,7 +238,7 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
     }
 
     public get PendingTotal(): string {
-        return FormatMoney(this.pending.reduce((s, p) => s + p.Amount, 0), { Round: true, Zero: '—' });
+        return FormatMoney(this.pending.reduce((s, p) => s + (p.Amount ?? 0), 0), { Round: true, Zero: '—' });
     }
 
     public get PendingDetail(): string {
@@ -279,14 +280,14 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
     }
 
     /** Newest first. */
-    public get LatestPayments(): MJOPaymentRow[] {
+    public get LatestPayments(): mjBizAppsOrdersPaymentHeaderEntity[] {
         return [...this.payments]
             .sort((a, b) => String(b.PaymentDate ?? '').localeCompare(String(a.PaymentDate ?? '')))
             .slice(0, 7);
     }
 
     /** Who paid, however they are recorded. */
-    public payerOf(payment: MJOPaymentRow): string {
+    public payerOf(payment: mjBizAppsOrdersPaymentHeaderEntity): string {
         return (payment.BillToOrganization ?? payment.BillToPerson ?? '—') as string;
     }
 
@@ -309,7 +310,7 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
         const totals = new Map<string, number>();
         for (const payment of this.captured) {
             const key = (payment.PaymentType as string) ?? 'Other';
-            totals.set(key, (totals.get(key) ?? 0) + payment.Amount);
+            totals.set(key, (totals.get(key) ?? 0) + (payment.Amount ?? 0));
         }
         return [...totals.entries()]
             .sort((a, b) => b[1] - a[1])
