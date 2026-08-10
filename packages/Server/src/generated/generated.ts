@@ -285,6 +285,10 @@ export class mjBizAppsOrdersCustomerPaymentMethod_ {
     @MaxLength(255)
     OwnerOrganization?: string;
         
+    @Field({nullable: true}) 
+    @MaxLength(4)
+    PaymentDetail?: string;
+        
     @Field(() => [mjBizAppsOrdersPaymentDetail_])
     mjBizAppsOrdersPaymentDetails_SourceCustomerPaymentMethodIDArray: mjBizAppsOrdersPaymentDetail_[]; // Link to mjBizAppsOrdersPaymentDetails
     
@@ -985,6 +989,10 @@ export class mjBizAppsOrdersEntitlementGrant_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     ProductEntitlement?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    Subscription?: string;
         
     @Field({nullable: true}) 
     @MaxLength(201)
@@ -1725,6 +1733,10 @@ export class mjBizAppsOrdersEventProduct_ {
         
     @Field({nullable: true}) 
     @MaxLength(255)
+    PricingDriverClass?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(255)
     VenueAddress?: string;
         
     @Field(() => Float, {nullable: true}) 
@@ -1815,6 +1827,9 @@ export class CreatemjBizAppsOrdersEventProductInput {
     @Field({ nullable: true })
     EntitlementValidityMode: string | null;
 
+    @Field({ nullable: true })
+    PricingDriverClass: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -1899,6 +1914,9 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field({ nullable: true })
     EntitlementValidityMode?: string | null;
+
+    @Field({ nullable: true })
+    PricingDriverClass?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -2211,9 +2229,17 @@ export class mjBizAppsOrdersOrderAdjustment_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field() 
+    @MaxLength(40)
+    OrderHeader: string;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     Promotion?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(60)
+    PromotionCode?: string;
         
     @Field(() => [mjBizAppsOrdersOrderAdjustmentAllocation_])
     mjBizAppsOrdersOrderAdjustmentAllocations_OrderAdjustmentIDArray: mjBizAppsOrdersOrderAdjustmentAllocation_[]; // Link to mjBizAppsOrdersOrderAdjustmentAllocations
@@ -2640,6 +2666,10 @@ export class mjBizAppsOrdersOrderCharge_ {
     _mj__UpdatedAt: Date;
         
     @Field() 
+    @MaxLength(40)
+    OrderHeader: string;
+        
+    @Field() 
     @MaxLength(200)
     ChargeType: string;
         
@@ -2889,6 +2919,10 @@ export class mjBizAppsOrdersOrderCompanyPolicy_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `ClassFactory key of this company's house BasePriceResolver, or NULL. This is where every plugin registered before this column existed was keyed (Company:<id>), so it is the level that makes those visible to metadata.`}) 
+    @MaxLength(255)
+    PricingDriverClass?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     DefaultPriceList?: string;
@@ -2918,6 +2952,9 @@ export class CreatemjBizAppsOrdersOrderCompanyPolicyInput {
     @Field({ nullable: true })
     DefaultPaymentTermsTypeID: string | null;
 
+    @Field({ nullable: true })
+    PricingDriverClass: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -2945,6 +2982,9 @@ export class UpdatemjBizAppsOrdersOrderCompanyPolicyInput {
 
     @Field({ nullable: true })
     DefaultPaymentTermsTypeID?: string | null;
+
+    @Field({ nullable: true })
+    PricingDriverClass?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -4143,6 +4183,10 @@ export class mjBizAppsOrdersOrderLine_ {
     _mj__UpdatedAt: Date;
         
     @Field() 
+    @MaxLength(40)
+    OrderHeader: string;
+        
+    @Field() 
     @MaxLength(200)
     Product: string;
         
@@ -4164,7 +4208,17 @@ export class mjBizAppsOrdersOrderLine_ {
         
     @Field({nullable: true}) 
     @MaxLength(40)
+    Subscription?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
     JournalEntry?: string;
+        
+    @Field(() => Float, {nullable: true}) 
+    _mj__Latitude?: number;
+        
+    @Field(() => Float, {nullable: true}) 
+    _mj__Longitude?: number;
         
     @Field({nullable: true}) 
     @MaxLength(36)
@@ -4869,6 +4923,18 @@ export class mjBizAppsOrdersPaymentDetail_ {
     @MaxLength(200)
     PaymentProvider?: string;
         
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    SourceCustomerPaymentMethod?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(60)
+    StoredValueAccount?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    SourceOrderHeader?: string;
+        
     @Field(() => [mjBizAppsOrdersOrderHeader_])
     mjBizAppsOrdersOrderHeaders_InitialPaymentDetailIDArray: mjBizAppsOrdersOrderHeader_[]; // Link to mjBizAppsOrdersOrderHeaders
     
@@ -5257,6 +5323,18 @@ export class mjBizAppsOrdersPaymentHeader_ {
     PaymentProvider?: string;
         
     @Field({nullable: true}) 
+    @MaxLength(100)
+    PaymentIntent?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(4)
+    PaymentDetail?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    ReversesPaymentHeader?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(40)
     JournalEntry?: string;
         
@@ -5612,6 +5690,10 @@ export class mjBizAppsOrdersPaymentIntent_ {
     PaymentProvider: string;
         
     @Field({nullable: true}) 
+    @MaxLength(40)
+    OrderHeader?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(201)
     BillToPerson?: string;
         
@@ -5841,6 +5923,14 @@ export class mjBizAppsOrdersPaymentLine_ {
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field() 
+    @MaxLength(40)
+    PaymentHeader: string;
+        
+    @Field() 
+    @MaxLength(40)
+    OrderHeader: string;
         
     @Field({nullable: true}) 
     @MaxLength(100)
@@ -7962,6 +8052,10 @@ export class mjBizAppsOrdersProductCategory_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `ClassFactory key of a BasePriceResolver subclass for every product in this category (and, unless overridden, its child categories), or NULL. See Product.PricingDriverClass for the resolution order.`}) 
+    @MaxLength(255)
+    PricingDriverClass?: string;
+        
     @Field() 
     @MaxLength(50)
     Company: string;
@@ -8026,6 +8120,9 @@ export class CreatemjBizAppsOrdersProductCategoryInput {
     @Field({ nullable: true })
     DefaultEntitlementValidityMode: string | null;
 
+    @Field({ nullable: true })
+    PricingDriverClass: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -8071,6 +8168,9 @@ export class UpdatemjBizAppsOrdersProductCategoryInput {
 
     @Field({ nullable: true })
     DefaultEntitlementValidityMode?: string | null;
+
+    @Field({ nullable: true })
+    PricingDriverClass?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -8868,6 +8968,10 @@ export class mjBizAppsOrdersProductType_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `ClassFactory key of a BasePriceResolver subclass for every product of this type, or NULL. The natural home for behaviour-wide pricing such as usage metering.`}) 
+    @MaxLength(255)
+    PricingDriverClass?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     DefaultRevenueRecognitionType?: string;
@@ -8931,6 +9035,9 @@ export class CreatemjBizAppsOrdersProductTypeInput {
     @Field({ nullable: true })
     DefaultEntitlementValidityMode?: string;
 
+    @Field({ nullable: true })
+    PricingDriverClass: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -8985,6 +9092,9 @@ export class UpdatemjBizAppsOrdersProductTypeInput {
 
     @Field({ nullable: true })
     DefaultEntitlementValidityMode?: string;
+
+    @Field({ nullable: true })
+    PricingDriverClass?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -9171,6 +9281,10 @@ export class mjBizAppsOrdersProduct_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `ClassFactory key of a BasePriceResolver subclass that prices this, or NULL for the standard metadata-driven walk. Resolved most-specific-first: product, then up the category chain, then the type, then the company policy. A client may price LOCALLY only when every level is NULL; anything else escalates to the server, because a plugin's answer cannot be reproduced from metadata.`}) 
+    @MaxLength(255)
+    PricingDriverClass?: string;
+        
     @Field() 
     @MaxLength(100)
     ProductType: string;
@@ -9293,6 +9407,9 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field({ nullable: true })
     EntitlementValidityMode: string | null;
 
+    @Field({ nullable: true })
+    PricingDriverClass: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -9359,6 +9476,9 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field({ nullable: true })
     EntitlementValidityMode?: string | null;
+
+    @Field({ nullable: true })
+    PricingDriverClass?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -11482,6 +11602,18 @@ export class mjBizAppsOrdersStoredValueTransaction_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field() 
+    @MaxLength(60)
+    StoredValueAccount: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    RelatedPayment?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    RelatedOrderHeader?: string;
+        
 }
 
 //****************************************************************************
@@ -11680,6 +11812,18 @@ export class mjBizAppsOrdersSubscriptionEvent_ {
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field() 
+    @MaxLength(40)
+    Subscription: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    RelatedPayment?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    RelatedOrderHeader?: string;
         
 }
 
@@ -12032,6 +12176,10 @@ export class mjBizAppsOrdersSubscriptionTerm_ {
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field() 
+    @MaxLength(40)
+    Subscription: string;
         
     @Field() 
     @MaxLength(200)
@@ -12768,6 +12916,14 @@ export class mjBizAppsOrdersSubscription_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     PaymentProvider?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    MigratesFromSubscription?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    MigratesToSubscription?: string;
         
     @Field({nullable: true}) 
     @MaxLength(36)

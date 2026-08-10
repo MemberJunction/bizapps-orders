@@ -47,3 +47,10 @@ export function LoadGeneratedEntities(): void {
  * applying one is an OrderAdjustment the engine derives, and the browser holds only a string.
  */
 export * from './PromotionCodesCompanion';
+
+/**
+ * `ResolvePricingDriver` — whether a product prices from metadata alone, or needs a server-side
+ * `BasePriceResolver` plugin. The decision a client makes before pricing locally; every uncertain
+ * case escalates, because a wrong price on screen is worse than a round trip.
+ */
+export * from './PricingDriverResolver';
