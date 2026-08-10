@@ -1,6 +1,6 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MJOMoneyPipe, FormatMoney } from './money-format';
+import { MJOMoneyPipe, FormatMoney, FormatDate } from './money-format';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 
 /** An open order a payment can be applied to. */
@@ -10,7 +10,13 @@ export interface MJOAllocatableOrder {
     Description?: string | null;
     CompanyID: string;
     CompanyName?: string | null;
-    DueDate?: string | null;
+    /**
+     * When it is due.
+     *
+     * `Date | string` because a caller may hold either — an entity carries a `Date`, a wire row an
+     * ISO string — and the grid renders it through `FormatDate`, which takes both.
+     */
+    DueDate?: Date | string | null;
     DaysLate?: number | null;
     Balance: number;
 }
@@ -84,7 +90,7 @@ export type MJOAllocationMap = Record<string, number>;
                             <td class="mono primary">{{ order.OrderNumber }}</td>
                             <td class="small">{{ order.Description ?? '—' }}</td>
                             <td>
-                                {{ order.DueDate ?? '—' }}
+                                {{ dueDate(order) }}
                                 @if (order.DaysLate && order.DaysLate > 0) {
                                     <div class="secondary mjo-ag__late">{{ order.DaysLate }}d late</div>
                                 }
@@ -225,6 +231,17 @@ export type MJOAllocationMap = Record<string, number>;
     ],
 })
 export class MJOAllocationGridComponent {
+    /**
+     * The due date, formatted.
+     *
+     * This cell rendered `{{ order.DueDate ?? '—' }}` — the RAW value. An ISO string printed as
+     * `2026-08-01T00:00:00.000Z` and a `Date` as `Mon Aug 01 2026 00:00:00 GMT+0000 (…)`. Neither
+     * is a date anybody wants to read while deciding which order to settle.
+     */
+    protected dueDate(order: MJOAllocatableOrder): string {
+        return FormatDate(order.DueDate);
+    }
+
     @Input() Title = 'Apply it to open orders';
 
     /** Open orders, oldest first. */

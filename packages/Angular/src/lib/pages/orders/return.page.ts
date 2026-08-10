@@ -3,13 +3,14 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe } from '../../panels/money-format';
-import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OrderHeaderEntity, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { Metadata } from '@memberjunction/core';
 
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 import { MJOOrderEntryService } from '../../services/order-entry.service';
-import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
+
 import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
+import { GetOrderLines, GetOrders } from '../../data/orders-queries';
 
 /** A line being returned, with the cap the origin imposes. */
 interface MJOReturnLine {
@@ -248,7 +249,6 @@ interface MJOReturnLine {
     ],
 })
 export class MJOReturnPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded.
      *
@@ -276,7 +276,7 @@ export class MJOReturnPageComponent implements OnInit {
     public Busy = false;
     public Error: string | null = null;
 
-    public Origin: MJOOrderRow | null = null;
+    public Origin: mjBizAppsOrdersOrderHeaderEntity | null = null;
     public Lines: MJOReturnLine[] = [];
     /** The reasons the select used to hard-code, as data. */
     public readonly ReturnReasons: readonly string[] = [
@@ -291,11 +291,11 @@ export class MJOReturnPageComponent implements OnInit {
 
     public async ngOnInit(): Promise<void> {
         if (!this.OriginOrderID) return;
-        const orders = await this.data.GetOrders({ Preset: 'all' });
+        const orders = await GetOrders({ Preset: 'all' });
         this.Origin = orders.find((o) => o.ID === this.OriginOrderID) ?? null;
         if (!this.Origin) return;
 
-        const lines = await this.data.GetOrderLines(this.Origin.ID);
+        const lines = await GetOrderLines(this.Origin.ID);
         this.Lines = lines.map((line) => {
             const net = Number(line['LineTotalNet'] ?? 0);
             const tax = Number(line['LineTax'] ?? 0);

@@ -14,8 +14,9 @@ import {
 import { AllocateOldestFirst, UnallocatedRemainder } from '../../panels/allocation-math';
 import { MJOMoneyPipe, DaysSince } from '../../panels/money-format';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
-import { MJOOrdersDataService } from '../../services/orders-data.service';
+
 import { MJDropdownComponent, MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { GetOrders, SearchCustomers } from '../../data/orders-queries';
 
 /** A tender the customer can pay with. */
 export interface MJOTenderOption {
@@ -343,7 +344,6 @@ export interface MJOTenderOption {
     ],
 })
 export class MJOPaymentEntryPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded.
      *
@@ -436,7 +436,7 @@ export class MJOPaymentEntryPageComponent implements OnInit {
             return;
         }
         this.payerTimer = setTimeout(async () => {
-            const results = await this.data.SearchCustomers(query);
+            const results = await SearchCustomers(query);
             this.PayerResults = results.map((r) => ({
                 ID: r.ID,
                 Name: r.Name,
@@ -680,7 +680,7 @@ export class MJOPaymentEntryPageComponent implements OnInit {
         const organizationID = this.Payer?.IsOrganization
             ? this.Payer.ID
             : (this.CustomerID ?? undefined);
-        const rows = (await this.data.GetOrders({
+        const rows = (await GetOrders({
             Preset: 'unpaid',
             BillToOrganizationID: organizationID,
         })).filter((row) => {
@@ -688,16 +688,17 @@ export class MJOPaymentEntryPageComponent implements OnInit {
             const key = this.Payer.IsOrganization ? 'BillToOrganizationID' : 'BillToPersonID';
             return row[key] === this.Payer.ID;
         });
-        const today = new Date().toISOString().slice(0, 10);
+        const today = new Date();
         this.OpenOrders = rows.map((row) => ({
             ID: row.ID,
             OrderNumber: row.OrderNumber,
             Description: row.Description,
             CompanyID: row.CompanyID,
-            CompanyName: (row.Company as string) ?? null,
+            CompanyName: row.Company ?? null,
             DueDate: row.DueDate,
             DaysLate: row.DueDate ? DaysSince(row.DueDate, today) : null,
-            Balance: row.Balance,
+            // A null balance is a rollup that has not been computed, not money owed.
+            Balance: row.Balance ?? 0,
         }));
         // Default the amount to everything owing — the common case is settling a
         // statement, and typing the total again is work the screen can save.

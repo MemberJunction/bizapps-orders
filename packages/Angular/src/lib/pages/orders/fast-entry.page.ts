@@ -10,13 +10,14 @@ import { Metadata } from '@memberjunction/core';
 const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 
 import { ReadableSaveError } from '../../services/save-error';
-import { MJOOrdersDataService } from '../../services/orders-data.service';
+
 import { MJOOrderEntryService, type MJOLinePrice, type MJOPricingState } from '../../services/order-entry.service';
 import { MJODecompositionLadderComponent, type MJOLadderRow } from '../../panels/decomposition-ladder.component';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import type { MJOTenderOption } from '../payments/payment-entry.page';
+import { GetOrders, RecentCustomers, SearchCustomers } from '../../data/orders-queries';
 
 /** A catalog row as the product picker shows it. */
 export interface MJOProductOption {
@@ -83,7 +84,6 @@ export interface MJOCustomerContext {
 })
 export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     private readonly orders = inject(MJOOrderEntryService);
-    private readonly data = inject(MJOOrdersDataService);
     private readonly cdr = inject(ChangeDetectorRef);
 
     /** Owning company for the draft. */
@@ -190,9 +190,6 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         this.Order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_ENTITY);
         this.Order.NewRecord();
         this.Order.CompanyID = this.CompanyID;
-        // `OriginChannel: 'Staff'` used to be set on the draft here. There is no such column on
-        // OrderHeader — the draft carried a field the server had nowhere to put, so it was silently
-        // dropped at hydration. Removed rather than reproduced.
         void this.onEdited();
         // `this.Order` was assigned after an await and the entire page renders from it — without a
         // tick the form stays on its pre-load render, which looks like a page that failed to open.
@@ -284,7 +281,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
      */
     public async OnCustomerFocus(): Promise<void> {
         if (this.CustomerQuery.trim().length >= 2 || this.CustomerResults.length) return;
-        const recents = await this.data.RecentCustomers();
+        const recents = await RecentCustomers();
         // Assign only AFTER the await, never across it — an assignment that
         // straddles the boundary produces an NG0100 that aborts the DOM write and
         // freezes the view on its pre-load render.
@@ -309,7 +306,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         this.ShowingRecents = false;
         this.CustomerSearching = true;
         this.customerTimer = setTimeout(async () => {
-            const results = await this.data.SearchCustomers(query);
+            const results = await SearchCustomers(query);
             // Assign both AFTER the await, never across it.
             this.CustomerResults = results;
             this.CustomerSearching = false;
@@ -335,19 +332,22 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         // order in the database and narrowing in the browser — so picking a customer got slower with
         // every order ever taken. The organization branch filtered server-side and the person branch
         // did not, which is why it looked intermittent.
-        const theirs = await this.data.GetOrders(
+        const theirs = await GetOrders(
             option.IsOrganization ? { BillToOrganizationID: option.ID } : { BillToPersonID: option.ID },
         );
-        const today = new Date().toISOString().slice(0, 10);
+        // Local midnight, so "overdue" means the calendar day the operator is looking at rather
+        // than a UTC instant that flips hours early or late depending on where they are.
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
         this.Customer = {
             DisplayName: option.Name,
             OrganizationName: option.IsOrganization ? option.Name : null,
             Email: option.Email,
-            OpenBalance: Math.round(theirs.filter((o) => o.Balance > 0).reduce((s, o) => s + o.Balance, 0) * 100) / 100,
+            OpenBalance: Math.round(theirs.filter((o) => (o.Balance ?? 0) > 0).reduce((s, o) => s + (o.Balance ?? 0), 0) * 100) / 100,
             AvailableCredit:
-                Math.round(Math.abs(theirs.filter((o) => o.Balance < 0).reduce((s, o) => s + o.Balance, 0)) * 100) / 100,
-            OverdueCount: theirs.filter((o) => o.Balance > 0 && o.DueDate && o.DueDate < today).length,
+                Math.round(Math.abs(theirs.filter((o) => (o.Balance ?? 0) < 0).reduce((s, o) => s + (o.Balance ?? 0), 0)) * 100) / 100,
+            OverdueCount: theirs.filter((o) => (o.Balance ?? 0) > 0 && !!o.DueDate && o.DueDate < today).length,
         };
         this.CustomerQuery = '';
         this.CustomerResults = [];
