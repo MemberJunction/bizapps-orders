@@ -115,6 +115,7 @@ export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './
 // Pricing (D69): the pure engine, the resolver walk + its plugin seam, the dry run, and the
 // write-time guard that stops an ambiguous rule set reaching an order.
 export { PreviewPriceOperation, LoadPreviewPriceOperation } from './PreviewPriceOperation.js';
+export { PriceOrderOperation } from './PriceOrderOperation.js';
 export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
 export { ProductPriceEntityServer } from './ProductPriceEntityServer.js';
 export {

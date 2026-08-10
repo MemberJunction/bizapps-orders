@@ -34,6 +34,9 @@ import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderEntity } from './generated/entity_subclasses';
 import { CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
 
+/** The order editor's sections, in the order the screen shows them. */
+export type OrderEditorSection = 'header' | 'parties' | 'lines' | 'charges' | 'payment';
+
 /** Statuses that mean the order has been booked to the ledger (plan D8). */
 const BOOKED_STATUSES = new Set(['Confirmed', 'Posted', 'Fulfilled']);
 
@@ -178,4 +181,57 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     public get IsBookedOrder(): boolean {
         return IsBooked(this.Status);
     }
+
+    /**
+     * Which editing SECTION each validation failure belongs to.
+     *
+     * The order editor shows errors against the section that owns the field — an unreachable payer
+     * lights up "parties", a bad quantity lights up "lines" — so the user is stopped at the field
+     * they can fix rather than at a rejection after the fact.
+     *
+     * This lives on the shared subclass because it is metadata-only: it reads the `Source` a
+     * `ValidationErrorInfo` already carries and maps it to a section. No database, no provider, so
+     * the browser gets it for free and the server does not need it at all.
+     *
+     * It replaces `OrderDraft.SectionsWithErrors`, which computed the same thing from a parallel
+     * model of the order that had to be kept in step with the entity by hand.
+     */
+    public static SectionForField(source: string | null | undefined): OrderEditorSection {
+        const field = (source ?? '').trim();
+        if (!field) return 'header';
+        // Companion failures arrive positionally attributed — `Lines[3].Quantity`.
+        if (/^Lines\[/i.test(field)) return 'lines';
+        switch (field) {
+            case 'BillToPersonID':
+            case 'BillToOrganizationID':
+            case 'ShipToPersonID':
+            case 'ShipToOrganizationID':
+            case 'ShipToAddressID':
+                return 'parties';
+            case 'InitialPaymentTypeID':
+            case 'InitialPaymentAmount':
+            case 'InitialPaymentReference':
+            case 'InitialPaymentDetailID':
+                return 'payment';
+            default:
+                return 'header';
+        }
+    }
+
+    /**
+     * The sections currently holding at least one error, for the editor's section chrome.
+     *
+     * Runs the real `Validate()` — the same rules the server enforces — so a section cannot light up
+     * for a reason the save would not also refuse, and cannot stay quiet for one it would.
+     */
+    public SectionsWithErrors(): OrderEditorSection[] {
+        const result = this.Validate();
+        if (result.Success) return [];
+        const sections = new Set<OrderEditorSection>();
+        for (const e of result.Errors) {
+            sections.add(OrderHeaderEntity.SectionForField(e.Source));
+        }
+        return [...sections];
+    }
+
 }
