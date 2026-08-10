@@ -216,7 +216,6 @@ export class OrderEntityServer extends OrderHeaderEntity {
     private _priceComponents = new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>();
     /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */
     private _taxReasons = new Map<number, string>();
-    private _promotionCodes: string[] = [];
     private _manualDiscounts: ManualDiscountRequest[] = [];
     private _charges: RequestedCharge[] = [];
     /**
@@ -248,33 +247,39 @@ export class OrderEntityServer extends OrderHeaderEntity {
     /** Codes that resolved to nothing usable, so the caller can tell the customer WHY. */
     private _unusableCodes: Array<{ Code: string; Reason: string }> = [];
 
-    /**
-     * Promotion codes the customer presented (D70). Set before `Save()`; resolved after the lines
-     * are priced, because a promotion's value depends on what it is discounting.
-     */
-    public get PromotionCodes(): string[] {
-        return this._promotionCodes;
-    }
-    public set PromotionCodes(value: string[]) {
-        this._promotionCodes = value ?? [];
-    }
+    // `PromotionCodes` is not declared here any more. It is a COMPANION on the shared subclass, so
+    // the browser has it too — which is the entire point: a code typed on screen used to be priced
+    // into the preview and then dropped at confirm, because only the server could hold one.
+    //
+    // Server-side callers that used to assign an array now push through the companion:
+    //     order.PromotionCodes.Codes = ['SUMMER20'];
 
-    /** Ad-hoc discounts with a stated reason, each gated by the applying user's SalesAuthority. */
-    public get ManualDiscounts(): ManualDiscountRequest[] {
+    /**
+     * Ad-hoc discounts with a stated reason, each gated by the applying user's SalesAuthority.
+     *
+     * Named `Requested…` for the same reason as {@link RequestedCharges}: `Adjustments` is the
+     * collection holding what the engine decided, and a request is not that.
+     */
+    public get RequestedDiscounts(): ManualDiscountRequest[] {
         return this._manualDiscounts;
     }
-    public set ManualDiscounts(value: ManualDiscountRequest[]) {
+    public set RequestedDiscounts(value: ManualDiscountRequest[]) {
         this._manualDiscounts = value ?? [];
     }
 
     /**
      * Charges to apply to this order (D71) — shipping, handling, tax layers. Computed AFTER
      * promotions, because a charge's basis is the discounted line.
+     *
+     * NOT named `Charges`: that is now the related-record COLLECTION on the generated class, which
+     * holds the rows the engine wrote. This is the request channel a server-side caller uses — the
+     * two meet in `drainStagedPricingRequests`, which reads staged rows into exactly this shape. A
+     * browser has only the collection, because it cannot name a charge type by code.
      */
-    public get Charges(): RequestedCharge[] {
+    public get RequestedCharges(): RequestedCharge[] {
         return this._charges;
     }
-    public set Charges(value: RequestedCharge[]) {
+    public set RequestedCharges(value: RequestedCharge[]) {
         this._charges = value ?? [];
     }
 
@@ -817,6 +822,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             await (line as OrderLineEntityServer).PrepareForSave?.();
         }
 
+        // A BROWSER ASKS FOR CHARGES AND DISCOUNTS THROUGH THE COLLECTIONS, so drain them into the
+        // request arrays before pricing runs. See `drainStagedPricingRequests` for why the rows are
+        // consumed rather than saved as they arrive.
+        await this.drainStagedPricingRequests();
+
         // PRICING, PROMOTIONS, CHARGES AND TAX — one call to the service that also answers
         // `Orders.PriceOrder`, so the number the screen shows and the number the ledger books come
         // from the same code rather than from two implementations that agree until they do not.
@@ -832,7 +842,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 OrderDate: this.OrderDate ?? null,
                 ShipToAddressID: this.ShipToAddressID ?? null,
                 Lines: [...this.Lines.Items],
-                PromotionCodes: this._promotionCodes,
+                PromotionCodes: this.PromotionCodes.Codes,
                 ManualDiscounts: this._manualDiscounts,
                 Charges: this._charges,
             },
@@ -1000,6 +1010,103 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * does, and giving the parent an ID before either row is written so the children can point at it
      * at INSERT time rather than through a later update the immutability trigger would refuse.
      */
+    /**
+     * Turn charge and adjustment rows a CLIENT staged into the engine's request arrays.
+     *
+     * ## Why this exists
+     *
+     * `Charges` and `Adjustments` are related-record collections so a browser can ask for a shipping
+     * charge or an ad-hoc discount and have it cross the wire with the order. Before them these were
+     * transient arrays only the server could fill, so once `OrderDraft` was deleted a promotion code
+     * or a manual discount typed on screen showed up in the PRICE PREVIEW and then vanished at
+     * confirm — the screen and the ledger disagreeing, silently, which is the one failure this app
+     * spends most of its guard rails preventing.
+     *
+     * ## Why the staged rows are CONSUMED rather than saved as they arrive
+     *
+     * A staged row is a REQUEST, and it is not the same object as the record the engine writes. A
+     * client can fill in three of a charge's fifteen fields — the type, an amount or rate, and a
+     * reason for an override. `BasisAmount`, the per-line allocations, the tax jurisdiction and the
+     * sequence are all decided by the pricing walk, and the allocations cannot even be written until
+     * the lines have IDs. Letting the graph write the row as it arrived would put a half-formed
+     * charge in the transaction and then need a second write to correct it — with a window in
+     * between where the order carries a charge with no basis.
+     *
+     * So the rows are read as requests and removed, and `WriteCharges` / the promotion writer produce
+     * the authoritative rows exactly as they always have. The engine is untouched by this change,
+     * which matters: it is the part with 373 integration checks against it.
+     *
+     * On the way OUT the collections mean what they say — `Charges.Load()` on a saved order returns
+     * what the engine decided. Request on the way in, record on the way out.
+     */
+    private async drainStagedPricingRequests(): Promise<void> {
+        const staged = this.Charges.Items.filter((c) => !c.IsSaved);
+        if (staged.length) {
+            const codes = await this.chargeTypeCodesByID(staged.map((c) => c.ChargeTypeID));
+            const requests: RequestedCharge[] = [];
+            for (const row of staged) {
+                const code = codes.get(String(row.ChargeTypeID ?? '').toLowerCase());
+                if (!code) {
+                    // Refused rather than dropped. A charge type that does not resolve is a request
+                    // the customer will not be billed for, and silently ignoring it is how an order
+                    // ships without its freight.
+                    throw new Error(
+                        `Charge type '${row.ChargeTypeID}' does not exist, so the charge cannot be applied.`,
+                    );
+                }
+                requests.push({
+                    Code: code,
+                    Amount: row.Amount ?? null,
+                    Rate: row.Rate ?? null,
+                    OverrideReason: row.OverrideReason ?? null,
+                    ...(row.IsOverridden ? { OverrideAmount: row.Amount ?? null } : {}),
+                });
+                this.Charges.Remove(row);
+            }
+            this._charges = [...this._charges, ...requests];
+        }
+
+        const stagedAdjustments = this.Adjustments.Items.filter((a) => !a.IsSaved);
+        for (const row of stagedAdjustments) {
+            // Only MANUAL adjustments can be staged. One naming a promotion is the engine's own
+            // output being handed back to it, which would double the discount.
+            if (row.PromotionID || row.PromotionCodeID) {
+                throw new Error(
+                    'A promotion adjustment cannot be supplied on an order — present the code and let ' +
+                        'the engine decide whether it applies, to whom, and for how much.',
+                );
+            }
+            this._manualDiscounts = [
+                ...this._manualDiscounts,
+                {
+                    OrderLineID: row.OrderLineID ?? null,
+                    Amount: row.Amount ?? null,
+                    Reason: row.Reason ?? '',
+                } as ManualDiscountRequest,
+            ];
+            this.Adjustments.Remove(row);
+        }
+    }
+
+    /** `ChargeType.ID` → `Code`, for the staged rows only. One read, not one per row. */
+    private async chargeTypeCodesByID(ids: Array<string | null | undefined>): Promise<Map<string, string>> {
+        const out = new Map<string, string>();
+        const unique = [...new Set(ids.map((i) => String(i ?? '').trim()).filter(Boolean))];
+        if (!unique.length) return out;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ ID: string; Code: string }>(
+            {
+                EntityName: CHARGE_TYPE_ENTITY,
+                ExtraFilter: `ID IN (${unique.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})`,
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser as UserInfo,
+        );
+        for (const row of res.Results ?? []) out.set(String(row.ID).toLowerCase(), row.Code);
+        return out;
+    }
+
     private async expandBundles(): Promise<void> {
         if (!this.Lines.Count) return;
 

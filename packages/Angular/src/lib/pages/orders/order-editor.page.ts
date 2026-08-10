@@ -16,16 +16,15 @@ import { FormsModule } from '@angular/forms';
 import { OrderHeaderEntity, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersOrderLineDimensionEntity, type mjBizAppsOrdersOrderLineEntity, type mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { Metadata } from '@memberjunction/core';
 
-const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { GetPaymentNumbers, GetLineDimensionsForOrder, GetOrderLines, GetOrders, GetPaymentLinesForOrder, JournalEntryViewParams, type MJOCompanyOption, RecentCustomers, SearchCustomers, SubscriptionViewParams, WasTruncated } from '../../data/orders-queries';
 import {
-    MJOOrderEntryService,
+    MJOPricingScheduler,
     type MJOEstimatedTotals,
     type MJOLinePrice,
     type MJOPricingState,
-} from '../../services/order-entry.service';
+} from '../../services/pricing-scheduler.service';
 import { MJOMoneyStripComponent, type MJOPaymentStatus } from '../../panels/money-strip.component';
 import { MJOStatusStepperComponent } from '../../panels/status-stepper.component';
 import { MJOJournalEntryPreviewComponent, type MJOJournalEntry } from '../../panels/journal-entry-preview.component';
@@ -130,7 +129,7 @@ export interface MJOPartyMatch {
     styleUrls: ['./order-editor.page.css'],
 })
 export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy {
-    private readonly orders = inject(MJOOrderEntryService);
+    private readonly orders = inject(MJOPricingScheduler);
     // Required: this page is created imperatively and runs zoneless, so every assignment that
     // lands after an await or from a preview callback has to tick explicitly.
     private readonly cdr = inject(ChangeDetectorRef);
@@ -283,7 +282,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         // editor is recoverable, a crashed tab is not.
         if (!this.Order) {
             const md = new Metadata();
-            this.Order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_ENTITY);
+            this.Order = await md.GetEntityObject<OrderHeaderEntity>(MJO_ENTITIES.OrderHeader);
             this.Order.NewRecord();
         }
 
@@ -1187,7 +1186,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
     }
 
     public async SaveDraft(): Promise<void> {
-        await this.orders.Save(this.Order);
+        await this.Order.SaveOrThrow();
         this.Saved.emit(this.Order);
     }
 
@@ -1231,7 +1230,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
 
     /** Promotion codes presented but not yet saved — screen state, held by the entry service. */
     public get PromotionCodes(): string[] {
-        return this.orders.PromotionCodes;
+        return this.Order.PromotionCodes.Codes;
     }
 
 }

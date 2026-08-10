@@ -33,6 +33,7 @@ import { BaseEntity, ValidationErrorInfo, ValidationErrorType, ValidationResult 
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderEntity } from './generated/entity_subclasses';
 import { CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
+import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 
 /** The order editor's sections, in the order the screen shows them. */
 export type OrderEditorSection = 'header' | 'parties' | 'lines' | 'charges' | 'payment';
@@ -42,6 +43,16 @@ const BOOKED_STATUSES = new Set(['Confirmed', 'Posted', 'Fulfilled']);
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Headers')
 export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
+    /**
+     * Promotion codes the customer presented, riding with the order across the wire.
+     *
+     * Registered HERE rather than on the server subclass so a browser has it: the whole point is
+     * that a code typed on screen reaches the engine. See `PromotionCodesCompanion` for why this is
+     * a companion and not a related-record collection — in short, a code has no child row, and only
+     * the engine can turn one into an `OrderAdjustment`.
+     */
+    public readonly PromotionCodes = this.RegisterCompanion(new PromotionCodesCompanion(this));
+
     /**
      * True while THIS save is the booking save, and it stays true across `ConfirmedAt` being set.
      *
@@ -232,6 +243,60 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
             sections.add(OrderHeaderEntity.SectionForField(e.Source));
         }
         return [...sections];
+    }
+
+    /**
+     * Save, or throw with the reason the engine gave.
+     *
+     * WHY THIS IS ON THE ENTITY. It was a method on an Angular service, which
+     * `docs/ui-architecture.md` names as the wrong place: "if a method on it loads, saves, validates
+     * or maps entity data, it is in the wrong place." The reason it existed at all is the boolean
+     * return — `Save()` answers true/false and leaves the reason on `LatestResult`, so every caller
+     * wrote the same three lines to turn that into something a person could read. Writing them once
+     * is right; writing them in a service is not.
+     *
+     * A non-Angular host gets this too, which is the test the guidelines actually apply.
+     *
+     * @throws The engine's own message — never a generic one. "Order ORD-000123 cannot be confirmed
+     *         without a customer" is actionable; "the order could not be saved" is not.
+     */
+    public async SaveOrThrow(): Promise<void> {
+        if (!(await this.Save())) {
+            throw new Error(this.LatestResult?.CompleteMessage?.trim() || 'The order could not be saved.');
+        }
+    }
+
+    /**
+     * Confirm — the irreversible step.
+     *
+     * Setting the status and saving IS the confirm: the server subclass sees the transition into a
+     * booked state and books — journal entries, subscriptions, entitlements, the initial payment —
+     * in one transaction, or refuses with a reason and writes nothing.
+     *
+     * There is no dry run in front of it. Every rule is enforced by the engine itself, and a browser
+     * has already run the tier-independent ones through `Validate()`, so the user is told about a
+     * missing payer without a round trip.
+     */
+    public async Confirm(): Promise<void> {
+        this.Status = 'Confirmed';
+        if (!(await this.Save())) {
+            throw new Error(this.LatestResult?.CompleteMessage?.trim() || 'The order could not be confirmed.');
+        }
+    }
+
+    /**
+     * Load this order and its lines together — the state an editor needs.
+     *
+     * Two calls and no mapping layer: the object bound to the screen is the object that will be
+     * saved. `Lines` is `Load: 'explicit'`, so it has to be asked for; asking here means no caller
+     * can forget and then wonder why an order with lines renders as empty.
+     *
+     * @returns False when the order does not exist, leaving this entity unloaded.
+     */
+    public async LoadWithLines(orderHeaderID: string): Promise<boolean> {
+        if (!(await this.Load(orderHeaderID))) return false;
+        await this.Lines.Load();
+        return true;
     }
 
 }

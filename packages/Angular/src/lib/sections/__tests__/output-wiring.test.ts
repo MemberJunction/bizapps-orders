@@ -125,11 +125,15 @@ describe('page outputs are wired to the section', () => {
         expect(missing, `primary actions point at unknown pages: ${missing.join(', ')}`).toEqual([]);
     });
 
-    it('reaches ConfirmOrder from the UI', () => {
-        // The specific regression: this is the only path to the operation that
-        // writes journal entries, and it was unreachable.
+    it('reaches the confirm from the UI', () => {
+        // The specific regression: this is the only path to the code that writes journal entries,
+        // and it was once unreachable.
+        //
+        // Matches `.Confirm()` on the ORDER rather than on a service. Confirming is
+        // `Status = 'Confirmed'` plus a save, which lives on the shared entity subclass — a service
+        // method that did it for you was the pattern `docs/ui-architecture.md` rules out.
         expect(shell).toMatch(/ConfirmRequested/);
-        expect(shell).toMatch(/entry\.Confirm\(/);
+        expect(shell).toMatch(/\.Confirm\(\)/);
     });
 
     it('confirms WITHOUT a dry run in front of it', () => {

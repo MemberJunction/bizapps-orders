@@ -38,7 +38,7 @@ import type { MJLeftNavSection } from '@memberjunction/ng-ui-components';
 import type { ResourceData } from '@memberjunction/core-entities';
 
 import { MJOSectionShellComponent } from './section-shell.component';
-import { MJOOrderEntryService } from '../services/order-entry.service';
+import { MJOPricingScheduler } from '../services/pricing-scheduler.service';
 
 import type { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
@@ -58,7 +58,22 @@ import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/c
 import { MJOPricingPageComponent, MJOPromotionsPageComponent } from '../pages/catalog/pricing.page';
 import { MJOReturnPageComponent } from '../pages/orders/return.page';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { Metadata } from '@memberjunction/core';
+import { MJO_ENTITIES } from '../data/entity-names';
 import { GetPaymentTypes, GetProductPrices, GetProducts, GetSellingCompanies } from '../data/orders-queries';
+
+/**
+ * An order and its lines, loaded together.
+ *
+ * A free function rather than a service method: it constructs an entity and asks it to load itself,
+ * which is `docs/ui-architecture.md`'s definition of work that does not belong behind an injectable.
+ */
+async function loadOrder(orderHeaderID: string): Promise<OrderHeaderEntity | null> {
+    const md = new Metadata();
+    const order = await md.GetEntityObject<OrderHeaderEntity>(MJO_ENTITIES.OrderHeader);
+    return (await order.LoadWithLines(orderHeaderID)) ? order : null;
+}
+
 import {
     BuildLeftNavSections,
     CATALOG_SUB_PAGES,
@@ -212,7 +227,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // editor — which only accepts a Draft — was handed an empty one, so
             // the screen came up blank and the click looked broken.
             if (this.PendingRecordID && (pageId === 'editor' || pageId === 'document')) {
-                const draft = await this.entry.Load(this.PendingRecordID);
+                const draft = await loadOrder(this.PendingRecordID);
                 if (draft) inputs['Draft'] = draft;
                 inputs['OrderID'] = this.PendingRecordID;
                 this.PendingRecordID = null;
@@ -460,7 +475,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
     /* ── Confirm ────────────────────────────────────────────────────────── */
 
-    private readonly entry = inject(MJOOrderEntryService);
+    private readonly entry = inject(MJOPricingScheduler);
 
     /** A confirm is in flight — the button says so and cannot be pressed twice. */
     public Confirming = false;
@@ -482,7 +497,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
      * refused with a reason. Every rule that was pre-checked is still enforced, by
      * `OrderEntityServer.ValidateAsync` and the booking walk; the difference is that
      * the refusal now reaches the user as itself rather than as a prediction of
-     * itself. `MJOOrderEntryService.Confirm` throws on refusal, and the catch below
+     * itself. `MJOPricingScheduler.Confirm` throws on refusal, and the catch below
      * puts that sentence on screen.
      *
      * A richer pre-flight can come back, but it must be built on a read-only decide
@@ -495,7 +510,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         this.cdr.detectChanges();
 
         try {
-            const output = await this.entry.Confirm(draft);
+            const output = await draft.Confirm();
 
             // A CONFIRMED ORDER OPENS IN THE EDITOR. Both lanes, one destination.
             //
@@ -535,7 +550,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
                 // cached instance, and the editor takes a `Draft` — it has neither input
                 // and no ngOnChanges, so the re-insert was a silent no-op. Only the
                 // FRESH-MOUNT path reads `PendingRecordID` and rehydrates through
-                // `MJOOrderEntryService.LoadDraft`, so the page has to be gone first.
+                // `MJOPricingScheduler.LoadDraft`, so the page has to be gone first.
                 const editor = this.mounted.get('editor');
                 if (editor) {
                     editor.destroy();
