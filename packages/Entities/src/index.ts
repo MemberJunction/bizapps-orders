@@ -17,14 +17,6 @@ export * from './generated/entity_subclasses';
 export * from './generated/remote_operations';
 
 /**
- * `OrderDraft` — the framework-free client model of an order under composition,
- * and the payload shapes the `Orders.*` remote operations accept. Lives here
- * rather than in the Angular package because it has no UI dependency and both
- * order-entry lanes plus any non-Angular host share it.
- */
-export * from './order-draft';
-
-/**
  * `OrderStatusBehavior` — the order lifecycle as a table: the legal statuses, the legal MOVES
  * between them, and the predicates every surface asks (is it editable, is it booked, does it count
  * toward the receivable). Pure; no database, no provider. Lives here so the browser enforces the

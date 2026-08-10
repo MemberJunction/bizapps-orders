@@ -3,7 +3,10 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe } from '../../panels/money-format';
-import { OrderDraft } from '@mj-biz-apps/orders-entities';
+import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { Metadata } from '@memberjunction/core';
+
+const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 import { MJOOrderEntryService } from '../../services/order-entry.service';
 import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
 import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
@@ -329,7 +332,7 @@ export class MJOReturnPageComponent implements OnInit {
      * Book the return.
      *
      * A RETURN IS AN ORDER, so it goes through the same transport everything else
-     * does: an `OrderDraft` whose lines each name the line they reverse, confirmed
+     * does: an order whose lines each name the line they reverse, confirmed
      * through `Orders.ConfirmOrder`. There is no separate return operation and
      * there should not be — the reversal rules live in the engine, and a second
      * path to them would be a second place for them to drift.
@@ -346,29 +349,26 @@ export class MJOReturnPageComponent implements OnInit {
             // The company is fixed at construction; everything else the return
             // needs is a header patch. A return belongs to the SAME customer and
             // the SAME company as the order it reverses — none of it is a choice.
-            const draft = new OrderDraft({ CompanyID: this.Origin.CompanyID });
-            draft.SetHeader({
-                BillToOrganizationID: (this.Origin['BillToOrganizationID'] as string) ?? null,
-                BillToPersonID: (this.Origin['BillToPersonID'] as string) ?? null,
-                ReversesOrderHeaderID: this.Origin.ID,
-                ReversalReason: this.Reason,
-            });
+            const md = new Metadata();
+            const draft = await md.GetEntityObject<OrderHeaderEntity>(ORDER_ENTITY);
+            draft.NewRecord();
+            draft.CompanyID = this.Origin.CompanyID;
+            draft.BillToOrganizationID = (this.Origin['BillToOrganizationID'] as string) ?? null;
+            draft.BillToPersonID = (this.Origin['BillToPersonID'] as string) ?? null;
+            draft.ReversesOrderHeaderID = this.Origin.ID;
+            draft.ReversalReason = this.Reason;
             for (const line of this.Lines.filter((l) => l.Returning > 0)) {
-                draft.AddLine({
-                    ProductID: line.ProductID,
-                    Quantity: line.Returning,
-                    // The origin line is the sole authority on price, so the
-                    // reversal states nothing and lets the engine mirror it.
-                    ReversesOrderLineID: line.LineID,
-                });
+                const reversal = await draft.Lines.Create();
+                reversal.ProductID = line.ProductID;
+                reversal.Quantity = line.Returning;
+                // The origin line is the sole authority on price, so the reversal states nothing
+                // and lets the engine mirror it — UnitPrice is deliberately left unset.
+                reversal.ReversesOrderLineID = line.LineID;
             }
 
-            const result = await this.entry.Confirm(draft);
-            if (!result?.Success) {
-                this.Error = result?.Message ?? 'The return could not be booked.';
-                return;
-            }
-            this.ReturnCreated.emit(result.OrderHeaderID ?? null);
+            // Throws with the engine's reason if refused; nothing is booked and the catch shows why.
+            await this.entry.Confirm(draft);
+            this.ReturnCreated.emit(draft.ID ?? null);
         } catch (e) {
             this.Error = e instanceof Error ? e.message : String(e);
         } finally {

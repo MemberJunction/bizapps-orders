@@ -99,7 +99,7 @@ describe('the rules the matrix encodes', () => {
 
 describe('creation and bad input', () => {
     it('allows a NEW order to be created in any legal status', () => {
-        // `Orders.CreateOrderInState` enters back-office orders directly as Confirmed or Fulfilled.
+        // Back-office entry saves an order straight at Confirmed, then advances it.
         for (const status of ORDER_STATUSES) {
             expect(CanTransition(null, status).Allowed).toBe(true);
             expect(CanTransition('', status).Allowed).toBe(true);

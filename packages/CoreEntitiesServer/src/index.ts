@@ -8,13 +8,6 @@
 export { GLAccountResolver, GLAccountResolutionError, GL_ROLE } from './GLAccountResolver.js';
 export type { GLRole, ResolverEntityIDs } from './GLAccountResolver.js';
 
-export {
-    SaveOrderOperation,
-    LoadSaveOrderOperation,
-    ConfirmOrderOperation,
-    LoadConfirmOrderOperation,
-} from './SaveOrderOperation.js';
-
 export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './GetOverdueWorklistOperation.js';
 
 // Fulfilment (D15) — a logistics fact, deliberately disconnected from revenue.
@@ -32,17 +25,7 @@ export type { FulfillableLine, FulfillmentStatus, FlipRefusal, QueueGrouping } f
 export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from './GetFulfillmentQueueOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
-export {
-    HydrateOrderDraft,
-    ORDER_HEADER_ENTITY,
-    ORDER_LINE_ENTITY,
-} from './OrderDraftHydrator.js';
-export type {
-    HydratableDraft,
-    HydratableHeader,
-    HydratableLine,
-    HydratedOrder,
-} from './OrderDraftHydrator.js';
+export { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 
 export { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 export type { JEDraft, JELineDraft, OrderLineDraft } from './OrderJournalEntryFactory.js';
@@ -109,13 +92,13 @@ export { PaymentLineEntityServer, LoadPaymentLineEntityServer } from './PaymentL
 
 export { RefundPaymentOperation, LoadRefundPaymentOperation } from './RefundPaymentOperation.js';
 export { CapturePaymentOperation, LoadCapturePaymentOperation } from './CapturePaymentOperation.js';
-export { CreateOrderInStateOperation, LoadCreateOrderInStateOperation } from './CreateOrderInStateOperation.js';
+export { AdvanceOrderStateOperation, LoadAdvanceOrderStateOperation } from './AdvanceOrderStateOperation.js';
 export type { RefundPaymentInput, RefundPaymentOutput } from './RefundPaymentOperation.js';
 export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './ApplyAccountCreditOperation.js';
 // Pricing (D69): the pure engine, the resolver walk + its plugin seam, the dry run, and the
 // write-time guard that stops an ambiguous rule set reaching an order.
 export { PreviewPriceOperation, LoadPreviewPriceOperation } from './PreviewPriceOperation.js';
-export { PriceOrderOperation } from './PriceOrderOperation.js';
+export { PriceOrderOperation, LoadPriceOrderOperation } from './PriceOrderOperation.js';
 export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
 export { ProductPriceEntityServer } from './ProductPriceEntityServer.js';
 export {

@@ -79,7 +79,7 @@ export interface TransitionVerdict {
  */
 export function CanTransition(from: string | null | undefined, to: string | null | undefined): TransitionVerdict {
     // A new order has no previous status; it may be created in any legal state. Creating one directly
-    // as Confirmed is exactly what `Orders.CreateOrderInState` does for back-office entry (D17).
+    // as Confirmed is exactly what back-office entry does: save at Confirmed, then advance (D17).
     if (from == null || from === '') {
         return IsOrderStatus(to)
             ? { Allowed: true }

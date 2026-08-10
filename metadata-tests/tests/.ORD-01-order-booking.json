@@ -2,7 +2,7 @@
   "fields": {
     "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
     "Name": "ORD-01 - Order Booking",
-    "Description": "Confirming an order writes correct, balanced double-entry into accounting's ledger, atomically (OB1-OB9). One journal entry per line, each single-company and resolved through product -> category -> company; the D25 origin pair points at the order line; a deferred product credits Deferred Revenue; a discount with no contra account nets into the sales credit; and a line whose GL role cannot resolve rejects the WHOLE confirm leaving neither entries nor a confirmed order.",
+    "Description": "Confirming an order writes correct, balanced double-entry into accounting's ledger, atomically (OB1-OB14). One journal entry per line, each single-company and resolved through product -> category -> company; the D25 origin pair points at the order line; a deferred product credits Deferred Revenue; a discount with no contra account nets into the sales credit; and a line whose GL role cannot resolve rejects the WHOLE confirm leaving neither entries nor a confirmed order. OB13 adds the ExpectedGrossTotal guard - a migration or a stale quote that silently reprices at today's rates is a defect that looks exactly like a successful import, so a moved total refuses the confirm and leaves no ledger behind. OB14 asserts a back-dated order books on the date it states, because back-office entry exists precisely because the event preceded the record.",
     "InputDefinition": {},
     "ExpectedOutcomes": {
       "summary": "3 balanced entries across 2 companies; deferred line credits 21301; discounted line credits 135 net; unresolvable line rejects the confirm with zero residue."
@@ -22,7 +22,7 @@
     "ID": "09DF952E-8497-48D0-9826-927A716A9C82"
   },
   "sync": {
-    "lastModified": "2026-08-03T06:21:58.272Z",
-    "checksum": "14a8044b9b2933a5603fc75bb0215d514199178bb88e7cfeedd39f4400020503"
+    "lastModified": "2026-08-10T01:37:50.678Z",
+    "checksum": "5c7f8fc702d4c4d26ce4b42307b909602978b4ef664879021bc70dfd58e4e6dc"
   }
 }

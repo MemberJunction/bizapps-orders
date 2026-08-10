@@ -170,7 +170,7 @@
         <span class="fe-step-hint"><kbd>↵</kbd> to add</span>
       </div>
 
-      @for (line of Lines; track line.ClientKey) {
+      @for (line of Lines; track line.ID) {
         <div class="mj-linecard">
           <div class="mj-linecard-top">
             <div class="id">
@@ -196,7 +196,7 @@
               <mjo-price-source-badge
                 [Source]="PricedLine(line)?.PriceSource ?? null"
                 [Settled]="PricingSettled"
-                [Overridden]="line.UnitPriceWasStated" />
+                [Overridden]="PriceStated(line)" />
               @if (PricedLine(line)?.Error; as why) {
                 <!-- An unpriced line SAYS SO. A blank or a $0.00 is indistinguishable
                      from a deliberately free line, and only one is what anyone meant. -->
@@ -311,7 +311,7 @@
         </div>
 
         <div class="row wrap fe-codes">
-          @for (code of Draft.PromotionCodes; track code) {
+          @for (code of PromotionCodes; track code) {
             <span
               class="mj-chip"
               [class.mj-chip--success]="CodeState(code) === 'applied'"
@@ -333,7 +333,7 @@
 
         <!-- Recording a code that did NOTHING is the only way to answer
              "why didn't my code work?" without re-running the engine by hand. -->
-        @for (code of Draft.PromotionCodes; track code) {
+        @for (code of PromotionCodes; track code) {
           @if (CodeState(code) === 'rejected' && CodeReason(code)) {
             <div class="small muted fe-code-reason">{{ code }}: {{ CodeReason(code) }}</div>
           }

@@ -1,103 +1,104 @@
 # The Orders API and UI architecture
 
-How a browser composes an order, why it cannot do so through `BaseEntity`, and where every piece
-lives. Companion to [`plans/orders-ux.md`](../plans/orders-ux.md) (the design) and
+How a browser composes an order, which parts of that are MJ's job and which are ours, and where every
+piece lives. Companion to [`docs/ui-architecture.md`](ui-architecture.md) (the binding rules for new
+UI work), [`plans/orders-ux.md`](../plans/orders-ux.md) (the design) and
 [`/mockups`](../mockups/index.html) (the approved visual).
 
 ---
 
-## 1. The problem this architecture exists to solve
+## 1. The problem this architecture used to have
 
-`OrderEntityServer.Save()` composes an order from **transient collections on the server entity**:
+For most of this app's life, `OrderEntityServer.Save()` composed an order from **transient
+collections** — `Lines`, `PromotionCodes`, `ManualDiscounts`, `Charges` — none of which was a column.
+An entity save marshals scalar fields, so none of them could cross the wire. A browser calling
+`entity.Save()` could create an order *header* and nothing else.
 
-| Property | What it holds |
-|---|---|
-| `Lines` | unsaved `OrderLine` entities to persist with the header |
-| `PromotionCodes` | codes the customer presented, resolved after the lines are priced |
-| `ManualDiscounts` | ad-hoc discounts, each gated by the applying user's sales authority |
-| `Charges` | shipping, handling and tax layers, computed after promotions |
+The answer at the time was a remote operation per write, and a hand-maintained mirror of the entity
+(`OrderDraft`) plus several hundred lines of hydrator to turn it back into entities on the far side.
+It worked, and it cost: a parallel model that drifted from the entity silently, in both directions.
 
-**None of them is a column.** An entity save marshals scalar fields, so none of these can cross that
-boundary — which means a browser calling `entity.Save()` can create an order *header* and nothing
-else. There is no arrangement of CRUD calls that composes an order correctly, and doing it as N
-sequential saves would also break the one-transaction rule that keeps a confirmed order from
-existing without its journal entries.
-
-That is the whole reason the Orders API is a set of **remote operations** rather than CRUD.
+**MJ 6.1 removed the constraint.** `DeclareRelatedRecords` makes a child collection part of the
+entity: `Lines` is declared in metadata, CodeGen emits the accessor onto the generated class, and
+`MJ.SaveEntityGraph` writes the header and its lines in ONE transaction from a plain `Save()`. The
+mirror and the hydrator are gone, and so are `Orders.SaveOrder`, `Orders.ConfirmOrder`,
+`Orders.PreviewOrder` and `Orders.PreviewConfirm`.
 
 ---
 
-## 2. The path a draft takes
+## 2. The path an order takes now
 
 ```
 BROWSER                                    SERVER
 ───────                                    ──────
-OrderDraft                    (pure TS, no Angular, no DOM)
+OrderHeaderEntity              (packages/Entities — runs on BOTH tiers)
+   │  · the shared Validate(): payer rule, has-lines rule
+   │  · SectionForField / SectionsWithErrors — which part of the form is wrong
    │
-   │ .ToInput()               → plain JSON
+   │  order.Lines.Create() / .Remove()      ← a related-record collection, not an array
+   │  order.Status = 'Confirmed'
+   │  order.Save()
    ▼
-Orders.SaveOrder ─────────────────────────► HydrateOrderDraft()
-Orders.PreviewOrder                             │  header entity
-Orders.ConfirmOrder                             │  + unsaved line entities
-                                                │  + PromotionCodes / ManualDiscounts / Charges
-                                                ▼
-                                          OrderEntityServer.Save()
+MJ.SaveEntityGraph ───────────────────────► OrderEntityServer.Save()
+                                                │  (extends OrderHeaderEntity — same rules, plus
+                                                │   everything that needs a database)
                                                 │
-                                          prices · promotes · charges · taxes
-                                          books one JE per line · subscriptions · grants
+                                          expands bundles · decides subscriptions
+                                          OrderPricingService: price · promote · charge · tax
+                                          books one JE per line · grants entitlements
 ```
 
-One hydration path, shared by every operation that writes an order. Four operations each assembling
-entities themselves would be four places for the mapping to drift from what the engine expects.
+Two subclasses, one chain. `OrderHeaderEntity` holds every rule that needs nothing but the record
+itself, so the browser refuses a bad order before a round trip and the server refuses the same order
+for the same reason. `OrderEntityServer` extends it and adds persistence — the part a browser cannot
+be trusted with and could not perform anyway.
 
-### The two rules that carry real risk
+### What is still a remote operation, and why
 
-**1. An unstated `UnitPrice` is OMITTED — never sent, never assigned as `0`.**
+An operation earns its place when it is an **act** the entity cannot express: something that decides
+over a set of rows, talks to a third party, or must be atomic with a write.
 
-The engine treats a stated price as direct entry that **wins outright** over every resolved price,
-and `0` is a legitimate free line. So assigning `0` for "the user didn't type one" suppresses price
-resolution and books a free order. This is enforced in two places and asserted in both:
+| Operation | Scope | Mode | Why it is not a save |
+|---|---|---|---|
+| `Orders.PriceOrder` | `orders:read` | Sync | Answers "what does this come to" without writing. Runs the real `OrderPricingService`, so the screen and the ledger cannot disagree. |
+| `Orders.PreviewPrice` | `orders:read` | Sync | One product's price and how it resolved. Explicitly advisory — promotions stack against order totals, so a per-line answer cannot be final. |
+| `Orders.AdvanceOrderState` | `orders:write` | Sync | Climbs the ladder above Confirmed. Marks a SET of lines fulfilled and decides whether the header may move with some still Pending. |
+| `Orders.CapturePayment` | `payments:write` | Sync | Settles with the provider before the money is recorded, recognises a re-submitted capture as the same payment, turns over-payment into credit. |
+| `Orders.RefundPayment` | `payments:refund` | Sync | A reversal payment, un-applied proportionally across what it paid. |
+| `Orders.ApplyAccountCredit` | `payments:write` | Sync | Spend a credit — a zero-amount payment with two offsetting lines. |
+| `Orders.FulfillOrderLines` | `orders:write` | Sync | Flip lines AND close the order, one act. |
+| `Orders.GetFulfillmentQueue` | `orders:read` | Sync | The shipping backlog is computed, not stored. |
+| `Orders.GetOverdueWorklist` | `orders:read` | Sync | So is overdue. |
+| `Orders.CancelSubscription` | `subscriptions:write` | Sync | Policy in, reversal out. |
+| `Orders.SpawnRenewals` | `subscriptions:write` | LongRunning | Places renewal orders at lead time. |
 
-- `OrderDraft.ToInput()` omits the key unless `UnitPriceWasStated`
-- `HydrateOrderDraft()` only assigns the field when the payload actually carried it
+Scopes are per functional area rather than one blanket scope, so a reporting integration can read
+without being able to confirm.
 
-**2. Line numbers come from ARRAY ORDER**, assigned at hydration rather than sent. Removing the
-second of three lines therefore leaves 1-2-3 rather than 1-3.
+**The test to apply before adding one:** if a plain `entity.Save()` could do it, it is not an
+operation. That test is what removed four of them.
 
-Because array positions renumber, they cannot identify a row across a round trip — so every line
-carries a **`ClientKey`**, generated client-side, never persisted, echoed back on the priced result.
-That is what lets a preview result be matched to the row that produced it.
+### The one rule about prices that carries real risk
+
+**An unstated `UnitPrice` is OMITTED — never sent, never assigned as `0`.** The engine treats a
+stated price as direct entry that **wins outright** over every resolved price, and `0` is a
+legitimate free line. Assigning `0` for "the user didn't type one" suppresses resolution and books a
+free order. `PriceOrderOperation` leaves the field untouched when the caller omits it, and says so at
+the assignment.
 
 ---
 
 ## 3. The API surface is metadata
 
-Ten `MJ: Remote Operations` rows in [`metadata/remote-operations/`](../metadata/remote-operations/),
-each with its I/O declared as a `@file:` TypeScript definition. CodeGen emits one typed base per row
-into `packages/Entities/src/generated/remote_operations.ts`.
+Each operation is a row in [`metadata/remote-operations/`](../metadata/remote-operations/) with its
+I/O declared as a `@file:` TypeScript definition. CodeGen emits one typed base per row into
+`packages/Entities/src/generated/remote_operations.ts`.
 
-**Why the Entities package:** it is the app's only browser-safe package (its sole dependency is
-`zod`), and both the Angular package and every server package already depend on it. A client imports
-an operation and calls `.Execute()` without pulling the server engine — which is the entire point of
-reaching the engine through operations.
+**Why the Entities package:** it is the app's only browser-safe package, and both the Angular package
+and every server package already depend on it. A client imports an operation and calls `.Execute()`
+without pulling the server engine.
 
-| Operation | Scope | Mode | What it does |
-|---|---|---|---|
-| `Orders.SaveOrder` | `orders:write` | Sync | Create/update a draft + lines in one transaction |
-| `Orders.PreviewOrder` | `orders:read` | Sync | Price a draft without writing |
-| `Orders.PreviewConfirm` | `orders:read` | Sync | Dry-run the confirm: accounts, subscriptions, grants, approvals |
-| `Orders.ConfirmOrder` | `orders:confirm` | Sync | The irreversible step |
-| `Orders.PreviewPrice` | `orders:read` | Sync | One product's price, and how it resolved |
-| `Orders.RefundPayment` | `payments:refund` | Sync | A reversal payment, un-applied proportionally |
-| `Orders.ApplyAccountCredit` | `payments:write` | Sync | Spend a credit — a zero-amount payment, two offsetting lines |
-| `Orders.CancelSubscription` | `subscriptions:write` | Sync | Policy in, reversal out |
-| `Orders.SpawnRenewals` | `subscriptions:write` | LongRunning | Place renewal orders at lead time |
-| `Orders.GetOverdueWorklist` | `orders:read` | Sync | Assemble collections work |
-
-Scopes are per functional area rather than one blanket scope, so a reporting integration can read
-without being able to confirm.
-
-### All ten are `GenerationType: Manual` — deliberately
+### They are all `GenerationType: Manual` — deliberately
 
 AI authoring is available and unused here. These bodies orchestrate the booking transaction, the GL
 resolution walk and the subscription decision — the places where being subtly wrong produces a
@@ -107,17 +108,21 @@ resolution walk and the subscription decision — the places where being subtly 
 
 **Definitions emit verbatim, de-duped by exact text, with no import resolution.** A definition file
 therefore cannot `import` a sibling — every name it uses must appear in some definition that is also
-emitted. So the family's shared shapes (`OrderDraftInput`, `OrderLineResult`, `OrderTotalsResult`, …)
-are declared **once**, in the definition of the operation whose input they are: `SaveOrder`.
-TypeScript hoists interfaces, so emission order is irrelevant. **Never put an `import` in a
-definition file** — it would be emitted verbatim and break the generated module.
+emitted. The family's shared shapes are declared **once**, in the definition of an operation that
+uses them: `BlockerResult` and `OrderStateTransition` in `orders-advance-order-state.output.ts`,
+`JournalEntryPreview` in `orders-capture-payment.output.ts`. TypeScript hoists interfaces, so
+emission order is irrelevant. **Never put an `import` in a definition file** — it would be emitted
+verbatim and break the generated module.
+
+> Those shapes used to live in `orders-save-order.output.ts`. When that operation was deleted, the
+> generated module stopped compiling — which is the correct failure: a shared type whose home was an
+> operation nobody calls has to move to one somebody does.
 
 **Operations carry no schema**, so CodeGen has no core/non-core partition for them the way it does
 for entities (which key on `SchemaName`). Every configured target receives the full set, so our
-generated file also contains MJ's 16 core operations. Harmless: all are `Manual`, which emits an
+generated file also contains MJ's core operations. Harmless: all are `Manual`, which emits an
 unregistered type shell — dead exported interfaces, no `@RegisterClass`, no duplicate factory
-registration. Upstream names a per-op core/non-core marker as the open decision that would remove
-the noise.
+registration.
 
 ### Adding an operation
 
@@ -128,53 +133,56 @@ the noise.
    - `CodeApprovalStatus`: `Approved` | `Pending` | `Rejected`
    - `Status`: `Active` | `Disabled` | `Pending`
 3. **Avoid `&` in any name referenced by `@lookup`** — the resolver splits on it like a query string.
-4. Push, from the `metadata` directory (that is where `.mj-sync.json` lives), with the repo root's env:
-   ```bash
-   cd metadata
-   node --env-file=../.env ../node_modules/@memberjunction/cli/bin/run.js sync push --include=remote-operations --ci
-   ```
-5. `npm run mj:codegen`, then build `packages/Entities` so the `.d.ts` is available to the server package.
-6. Write the server subclass: extend the generated base, `@RegisterClass(BaseRemotableOperation, '<key>')`,
-   implement `InternalExecute`. Register its `Load*` in `packages/Server/src/index.ts`.
+4. `npm run mj -- sync push --dir metadata`, then `npm run mj -- codegen --skipdb`, then build
+   `packages/Entities` so the `.d.ts` is available to the server package.
+5. Write the server subclass: extend the generated base, `@RegisterClass(BaseRemotableOperation, '<key>')`,
+   implement `InternalExecute`. Export a `Load*` function and call it from `packages/Server/src/index.ts` —
+   tree-shaking removes a class nobody imports, and the decorator only runs if the module is loaded.
 
 > Dispatch is **by key**, not by base class. A server subclass that does not extend the generated
 > base still receives calls — extending it is for type alignment and to avoid duplicating the I/O
 > types, not for wiring.
 
+### Removing one
+
+Deleting the row from the JSON is not enough: `mj sync push` reconciles the rows it is GIVEN, so a
+row it is never told about sits in every existing database as an Active operation with no code behind
+it. Calling one then fails at class resolution, which is the least useful moment to find out. Delete
+it with a migration — see
+[`V202608091500__v0.1.x__Retire_draft_operations.sql`](../migrations/V202608091500__v0.1.x__Retire_draft_operations.sql).
+
 ---
 
-## 4. Why preview runs the real save
+## 4. Pricing without writing
 
-`Orders.PreviewOrder` performs the **actual save inside a transaction that always rolls back**, then
-reads the computed values off the entities before they vanish.
+`Orders.PriceOrder` runs `OrderPricingService` — precisely what `OrderEntityServer.Save()` calls
+before it books — over line entities that are created and never saved. There is no second
+implementation to drift, which is the only way the number on the screen and the number in the ledger
+stay the same.
 
-A preview that reimplemented pricing would be a second copy of the rules living beside the engine,
-and the two would eventually disagree. So preview cannot drift from what confirming will do, because
-it *is* what confirming will do. This is the same isolation primitive the integration suite is built
-on, for the same reason.
-
-Three details in the implementation matter:
-
-- The rollback is in `finally`, so a failed save is still undone. A preview that left a half-written
-  order behind would be worse than no preview.
-- The draft is hydrated with `OrderHeaderID: null` even when the client is editing a saved order, so
-  previewing can never touch the persisted row. The rollback should not be the only thing standing
-  between a preview and a mutation.
-- A `transaction has been aborted` error on rollback is swallowed: SQL Server dooms a transaction on
-  a severity-16 trigger error, so by the time we ask there is nothing left to roll back. Isolation
-  still held.
+**What it replaced.** `Orders.PreviewOrder` ran the REAL save inside a transaction that always rolled
+back, then read the computed values off the entities before they vanished. The reasoning was sound —
+a preview that reimplements pricing is a second copy of the rules — but the cost was not: it fired on
+every keystroke, so composing one order ran the full booking walk (journal entries, subscription
+decisions, entitlement grants, sequence numbers) dozens of times and discarded all of it, and the
+confirm was GATED on it. Extracting the pricing walk into a service is what makes the honest version
+cheap: the decide step without the write.
 
 ### The `ExpectedGrossTotal` guard
 
-Between reading a total and pressing Confirm, a promotion can expire or a rate can change. Passing
-`ExpectedGrossTotal` makes `ConfirmOrder` refuse when the number moved, rather than booking a
-different amount silently. `OrderDraft.ConfirmableGrossTotal` supplies it — and deliberately returns
-`undefined` when the stored preview is stale, so the guard can never authorise the very amount it
-exists to catch.
+Between reading a total and pressing Confirm, a promotion can expire or a rate can change.
+`OrderEntityServer.ExpectedGrossTotal` makes the save refuse when the number moved, inside the same
+transaction that would have booked it, rather than booking a different amount silently. It is
+asserted by `order-booking.OB13`, which also checks that a refusal leaves no ledger behind — a guard
+that stopped the status but kept the entries would be worse than no guard.
 
 ---
 
 ## 5. The UI layer
+
+The binding rules for new work are in [`docs/ui-architecture.md`](ui-architecture.md). In short:
+pages bind to `BaseEntity` subclasses directly, there is no data-access service layer, and logic that
+needs only metadata belongs on the shared entity subclass so both tiers run it.
 
 ### The app is a first-class MJ `Application`
 
@@ -207,6 +215,14 @@ Angular accepts the inherited `@ViewChild`.
 Sub-pages are created once and **cached**. That is not an optimisation: an order taker who loses a
 half-entered order to a mis-click stops trusting the tool.
 
+### Rendering after an await
+
+The app is zoneless. Anything assigned to `this.*` after an `await` needs `this.cdr.detectChanges()`
+**in that body** — a tick elsewhere in the component does not repaint this assignment. Without it the
+view freezes on its pre-load render and shows empty states that read as real "no data".
+`render-after-load.test.ts` enforces this by parsing every async body in the library; it is the guard
+for a bug that shipped three times before it existed.
+
 ### Component standards
 
 Follows `@memberjunction/ng-ui-components` and `@memberjunction/ng-conversations`:
@@ -218,7 +234,7 @@ Follows `@memberjunction/ng-ui-components` and `@memberjunction/ng-conversations
 - Before/After **cancelable** event args (`Cancel: boolean`) for vetoable actions; single emitters for informational ones
 - Feature-toggle inputs that **remove** an affordance rather than disabling it
 - `--mj-<widget>-*` custom properties for theming, defaulting to semantic `--mj-*`
-- Colocated `.dom.test.ts`; `models/` for interfaces, `events/` for event args, `services/` for state
+- Colocated `.dom.test.ts`; `models/` for interfaces, `events/` for event args
 
 ### Pixel fidelity is structural
 
@@ -238,89 +254,54 @@ the palette validator; see [`mockups/PROVENANCE.md`](../mockups/PROVENANCE.md)).
 
 | Tier | What | Where | Run |
 |---|---|---|---|
-| Unit | `OrderDraft`, the IA | `packages/*/src/**/*.test.ts` | `npx vitest run` |
-| Integration | engine + operations against a real DB | `packages/IntegrationTests` | `npm run test:integration` |
+| Unit | entity rules, pure logic, the IA, the render guard | `packages/*/src/**/*.test.ts` | `npm run test:unit` |
+| Integration | engine + operations against a real database | `packages/IntegrationTests` | `npm run test:integration` |
 | Mockup fidelity | all 20 screens render + interact | `mockups/verify.mjs` | `node mockups/verify.mjs` |
 
+Integration checks are grouped into **bundles**, each mirrored by an `MJ: Tests` metadata record in
+[`metadata-tests/`](../metadata-tests/). `registry-parity.test.ts` fails when the two disagree,
+because a bundle nothing dispatches is not an error — it is silently absent coverage.
+
 `mockups/verify.mjs` is worth knowing about: it mounts every screen in jsdom and drives the real
-affordances — 52 assertions. It caught three defects that reading would not have: unguarded
-`localStorage` that throws on a `file://` origin and blanked every page, an `id` on a slot wrapper the
-shell consumes at mount, and template literals left in static HTML.
+affordances. It caught three defects that reading would not have: unguarded `localStorage` that
+throws on a `file://` origin and blanked every page, an `id` on a slot wrapper the shell consumes at
+mount, and template literals left in static HTML.
 
-### The integration check that matters most
+### The check that matters most
 
-**`Orders.PreviewConfirm` must predict what `Orders.ConfirmOrder` actually does.** A preview that can
-disagree with reality is worse than no preview, because it is trusted. This check is owed and not yet
-written.
+**`advance-order-state.ADV8` — an unbooked order is refused outright.** The tempting implementation of
+back-office entry is a single UPDATE setting `Status = 'Fulfilled'`. It is faster, it passes any
+assertion that reads the order's own fields, and applied to an order that never confirmed it produces
+something that looks complete with **no ledger behind it** — the failure nothing downstream can
+detect, because the order reconciles perfectly against itself and the revenue simply never existed.
 
 ---
 
-## 7. State of the build
+## 7. Running it in MJ Explorer
 
-Every rail item in all four sections opens a real page. `rail-coverage.test.ts` is
-the drift guard that keeps that true — it reads the rail declarations and the
-resolver's `switch` and fails when they disagree, which is a bug nobody reports
-because a mis-keyed rail item looks exactly like work in progress.
+The four sections register through `CLASS_REGISTRATIONS`, which `app.module.ts` already merges into
+Explorer's class list, and the `Application` row with its four `DefaultNavItems` is in metadata. Two
+things had to be wired for it to actually work:
 
-| Layer | State |
-|---|---|
-| **Operations** — all ten | Bodies written, registered, typecheck clean. **Never executed against a database.** |
-| **Panel library** — 13 components | Money strip, ladder, stepper, chips, price badge, stated value, aging bar, JE preview, worklist table, stat tile, bar list, allocation grid, pre-flight |
-| **Pure logic** | `money-format`, `order-stages`, `allocation-math`, `section-nav` — no Angular runtime, 86 tests |
-| **Screens** — 18 | Orders 6 · Payments 5 · Receivables 3 · Catalog 4 |
-| **Services** | `MJOOrderEntryService` (debounced preview, out-of-order guard), `MJOOrdersDataService` (reads) |
-| **Mockups** | 20 screens, `verify.mjs` renders and drives them all |
+- **The component kit has to ship.** `ngc` compiles TypeScript; a standalone `orders-kit.css`
+  referenced by no `styleUrls` is invisible to it. The package's `build` copies it into `dist`, and
+  `styles.scss` in Explorer loads it. Note it is loaded there rather than in `angular.json`'s `styles`
+  array, because entries there resolve from the workspace root and the package is hoisted — sass's
+  node importer walks up and finds it, which is how the neighbouring `ng-explorer-app` import already
+  works.
+- **The package must be BUILT, not linked.** `.mj-links.json` deliberately does not symlink client
+  packages: a second copy of `@angular/*` breaks DI in ways that surface as unrelated runtime errors.
 
-### The caveat that matters most
+## 8. Still owed
 
-**No operation has run against a database.** `SaveOrder`, `PreviewOrder`,
-`ConfirmOrder`, `PreviewConfirm` and `GetOverdueWorklist` are written, wired and
-type-clean, and have never executed. The preview-runs-the-real-save design is
-sound in principle and completely untested in practice. Integration checks over
-them are the next thing owed — above all the one that keeps the whole design
-honest:
-
-> **`Orders.PreviewConfirm` must predict what `Orders.ConfirmOrder` actually does.**
-
-### Running it in MJ Explorer
-
-The four sections register through `CLASS_REGISTRATIONS`, which `app.module.ts`
-already merges into Explorer's class list, and the `Application` row with its four
-`DefaultNavItems` is in metadata. Two things had to be wired for it to actually
-work:
-
-- **The component kit has to ship.** `ngc` compiles TypeScript; a standalone
-  `orders-kit.css` referenced by no `styleUrls` is invisible to it. The package's
-  `build` now copies it into `dist`, and `styles.scss` in Explorer loads it. Note
-  it is loaded there rather than in `angular.json`'s `styles` array, because
-  entries there resolve from the workspace root (`apps/MJExplorer`) and the
-  package is hoisted to the repo root — sass's node importer walks up and finds
-  it, which is how the neighbouring `ng-explorer-app` import already works.
-- **The package must be BUILT, not linked.** `.mj-links.json` deliberately does
-  not symlink client packages: a second copy of `@angular/*` breaks DI in ways
-  that surface as unrelated runtime errors.
-
-### Also owed
-
-- **`OrderHeader.OriginChannel`** — the schema wave. `HydrateOrderDraft` already
-  sets it defensively when the column exists, and the orders list has the filter
-  and the Origin column written. Both are gated behind
-  `MJO_ORIGIN_CHANNEL_AVAILABLE` in `orders-data.service.ts`: a filter on a column
-  that does not exist does not degrade, it makes SQL Server reject the whole
-  statement, so an ungated preset would have broken the orders list entirely
-  rather than just missing a facet. Adding the column means flipping that one
-  constant to `true`.
-- **Screens that read but do not yet write.** The catalog screens (products,
-  pricing, promotions, charges) list and explain; editing goes through the
-  generated entity forms until a reason appears to build bespoke editors.
-- **The approvals inbox.** The pre-flight names the approver role a sales rule
-  will escalate to, and there is no surface anywhere for that approver — it is a
-  task in bizapps-tasks with no UI.
-- **Empty and first-run states**, beyond the per-screen empty text: a fresh
-  install with no catalog, a customer with no history.
-- **Accessibility audit.** Fast entry's keyboard model is designed and every
-  interactive element carries a label, but focus management in overlays has not
-  been reviewed end to end.
-- **Mobile.** Basic responsive behaviour is in every screen (stated breakpoints,
-  declared column-drop order); a full optimisation pass is a later phase by
-  agreement.
+- **Screens that read but do not yet write.** The catalog screens (products, pricing, promotions,
+  charges) list and explain; editing goes through the generated entity forms until a reason appears
+  to build bespoke editors.
+- **The approvals inbox.** The pre-flight names the approver role a sales rule will escalate to, and
+  there is no surface anywhere for that approver — it is a task in bizapps-tasks with no UI.
+- **Empty and first-run states**, beyond the per-screen empty text: a fresh install with no catalog,
+  a customer with no history.
+- **Accessibility audit.** Fast entry's keyboard model is designed and every interactive element
+  carries a label, but focus management in overlays has not been reviewed end to end.
+- **Mobile.** Basic responsive behaviour is in every screen (stated breakpoints, declared column-drop
+  order); a full optimisation pass is a later phase by agreement.

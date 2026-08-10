@@ -183,3 +183,11 @@ export class PriceOrderOperation extends BaseRemotableOperation<PriceOrderInput,
         }
     }
 }
+
+/**
+ * Force the class registration. Tree-shaking removes a class nobody imports, and the decorator only
+ * runs if the module is loaded — so the server's bootstrap calls this.
+ */
+export function LoadPriceOrderOperation(): void {
+    // no-op by design
+}

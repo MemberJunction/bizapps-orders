@@ -32,13 +32,12 @@ import {
     LoadRefundPaymentOperation,
     LoadApplyAccountCreditOperation,
     LoadPreviewPriceOperation,
-    LoadSaveOrderOperation,
-    LoadConfirmOrderOperation,
+    LoadPriceOrderOperation,
     LoadGetOverdueWorklistOperation,
     LoadGetFulfillmentQueueOperation,
     LoadFulfillOrderLinesOperation,
     LoadCapturePaymentOperation,
-    LoadCreateOrderInStateOperation,
+    LoadAdvanceOrderStateOperation,
     LoadDefaultPriceResolver,
     LoadPromotionEngine,
     LoadTaxResolver,
@@ -95,13 +94,12 @@ export function LoadBizAppsOrdersServer(): void {
     LoadRefundPaymentOperation();     // the 'Orders.RefundPayment' remote operation (D17)
     LoadApplyAccountCreditOperation(); // the 'Orders.ApplyAccountCredit' remote operation (D68)
     LoadPreviewPriceOperation();       // the 'Orders.PreviewPrice' dry run (D69)
-    LoadSaveOrderOperation();          // 'Orders.SaveOrder' — the only way a browser can compose an order
-    LoadConfirmOrderOperation();       // 'Orders.ConfirmOrder' — the irreversible step (D8)
+    LoadPriceOrderOperation();         // 'Orders.PriceOrder' — what a whole order comes to, persisting nothing
     LoadGetOverdueWorklistOperation(); // 'Orders.GetOverdueWorklist' — overdue is computed, not stored
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
     LoadCapturePaymentOperation(); // 'Orders.CapturePayment' — header + allocations in ONE transaction
-    LoadCreateOrderInStateOperation(); // 'Orders.CreateOrderInState' — runs the REAL confirm, then advances
+    LoadAdvanceOrderStateOperation(); // 'Orders.AdvanceOrderState' — climbs the ladder above Confirmed (D17)
     LoadDefaultPriceResolver();        // the data-driven price resolver the walk falls back to (D69)
     LoadPromotionEngine();             // the promotion qualifier plugin seam (D70)
     LoadTaxResolver();                 // the address -> jurisdiction seam (D72)

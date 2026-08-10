@@ -107,7 +107,7 @@ const ALL_BUNDLES = [
     'bundles',
     'fulfillment',
     'capture-payment',
-    'create-in-state',
+    'advance-order-state',
     'invoicing',
     'order-status',
     'payment-terms',

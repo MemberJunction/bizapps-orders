@@ -40,7 +40,7 @@ import type { ResourceData } from '@memberjunction/core-entities';
 import { MJOSectionShellComponent } from './section-shell.component';
 import { MJOOrderEntryService } from '../services/order-entry.service';
 import { MJOOrdersDataService } from '../services/orders-data.service';
-import type { OrderDraft } from '@mj-biz-apps/orders-entities';
+import type { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
 import { MJOOrderWorkspacePageComponent } from '../pages/orders/order-workspace.page';
 import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
@@ -200,7 +200,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         try {
             // Load the shared inputs BEFORE constructing the page. A component
             // created imperatively runs `ngOnInit` on its first change detection,
-            // and fast entry builds its OrderDraft there from `CompanyID` — so an
+            // and fast entry builds its order there from `CompanyID` — so an
             // input that arrives afterwards is an input that arrives too late. The
             // draft was being built with an empty company, which made every
             // preview fail validation and left the line "resolving…" forever.
@@ -211,7 +211,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // editor — which only accepts a Draft — was handed an empty one, so
             // the screen came up blank and the click looked broken.
             if (this.PendingRecordID && (pageId === 'editor' || pageId === 'document')) {
-                const draft = await this.entry.LoadDraft(this.PendingRecordID, this.data);
+                const draft = await this.entry.Load(this.PendingRecordID);
                 if (draft) inputs['Draft'] = draft;
                 inputs['OrderID'] = this.PendingRecordID;
                 this.PendingRecordID = null;
@@ -274,7 +274,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         on<{ ID?: string } | string>('ProductOpened', (row) => this.openRecord('products', row));
 
         // The irreversible step. Straight to the engine — there is no dry run in front of it.
-        on<OrderDraft>('ConfirmRequested', (draft) => void this.Confirm(draft));
+        on<OrderHeaderEntity>('ConfirmRequested', (draft) => void this.Confirm(draft));
 
         // The order workspace confirms in place — it owns the draft, so it does not hand one back
         // for the section's pre-flight. What the section still needs is to know an order now
@@ -286,9 +286,9 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         // navigate, so "open in full editor" landed on an empty workspace and the half-typed order
         // was silently gone — the button looked like it did nothing. Fast entry and the editor were
         // designed to share one draft instance; this is the handoff that makes that true.
-        on<OrderDraft>('EscalateRequested', (draft) => {
+        on<OrderHeaderEntity>('EscalateRequested', (draft) => {
             void this.OnPageSelected('editor').then(() => {
-                const page = this.mounted.get('editor')?.instance as { AdoptDraft?: (d: OrderDraft) => void } | undefined;
+                const page = this.mounted.get('editor')?.instance as { AdoptDraft?: (d: OrderHeaderEntity) => void } | undefined;
                 page?.AdoptDraft?.(draft);
             });
         });
@@ -488,7 +488,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
      * A richer pre-flight can come back, but it must be built on a read-only decide
      * pass (the shape `Orders.PreviewPrice` already has), never on a save.
      */
-    public async Confirm(draft: OrderDraft): Promise<void> {
+    public async Confirm(draft: OrderHeaderEntity): Promise<void> {
         if (this.Confirming) return;
         this.Confirming = true;
         this.ConfirmError = null;
@@ -520,7 +520,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // they were led to press confirm again.
             this.dropStalePages();
 
-            if (output?.OrderHeaderID) {
+            if (draft.ID) {
                 // DESTROY THE EDITOR FIRST, EVEN WHEN IT IS THE ACTIVE PAGE.
                 //
                 // `dropStalePages` deliberately spares the active page — destroying what
@@ -544,7 +544,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
                 // Sets PendingRecordID and navigates; `OnPageSelected('editor')` reads it
                 // and hydrates the SAVED order — number, status, lines, payments applied.
-                this.openRecord('editor', { ID: output.OrderHeaderID });
+                this.openRecord('editor', { ID: draft.ID });
                 return;
             }
 

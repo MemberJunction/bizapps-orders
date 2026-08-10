@@ -17,6 +17,8 @@
  *   OB10 the booking debits reconcile against the order's own totals
  *   OB11 a confirm with NO CUSTOMER is refused, and books nothing
  *   OB12 a confirm with NO LINES is refused
+ *   OB13 ExpectedGrossTotal guards the price — a repriced order is refused, not booked
+ *   OB14 a back-dated order is booked on the date it states
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -40,7 +42,8 @@ import {
     TxOne,
     TxQuery,
 } from '../fixture.js';
-import { ConfirmOrder } from '../order-builder.js';
+import { BuildOrder, ConfirmOrder } from '../order-builder.js';
+import { ORDER_LINE_ENTITY } from '../entity-names.js';
 
 /** The three-line multi-company order OB1–OB6 all read from — built once per check, inside its tx. */
 async function confirmMultiCompanyOrder(ctx: IntegrationCheckContext) {
@@ -463,6 +466,82 @@ export const OrderBookingChecks: NamedCheck[] = [
                 );
             }),
     },
+    {
+        Id: 'order-booking.OB13',
+        Name: 'OB13: ExpectedGrossTotal guards the price — a repriced order is refused',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // WHY THIS GUARD EXISTS. Prices are RESOLVED at confirm, not trusted from the caller.
+                // For a migration or a quote accepted last quarter that means the order can silently
+                // book at today's rates rather than what the customer was actually charged — a defect
+                // that looks exactly like a successful import, because every figure agrees with every
+                // other figure and only the customer knows the number is wrong.
+                const f = Fx();
+                const built = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 200 }],
+                });
+                built.Order.ExpectedGrossTotal = 999;
+                built.Order.Status = 'Confirmed';
+
+                Assert(!(await built.Order.Save()), 'the mismatch must stop the confirm');
+                const message = built.Order.LatestResult?.CompleteMessage ?? '';
+                Assert(
+                    /999|expected/i.test(message),
+                    `refused for the RIGHT reason, got: ${message}`,
+                );
+
+                // All-or-none: a guard that refused the status but left the ledger behind would be
+                // worse than no guard, because the revenue would exist with no order claiming it.
+                const persisted = await TxQuery<{ Status: string }>(
+                    ctx,
+                    `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${built.Order.ID}'`,
+                );
+                Assert(
+                    persisted.length === 0 || persisted[0].Status !== 'Confirmed',
+                    `it must not persist as Confirmed: ${JSON.stringify(persisted)}`,
+                );
+                const entries = await TxQuery<{ ID: string }>(
+                    ctx,
+                    `SELECT je.ID FROM ${ACCT_SCHEMA}.vwJournalEntries je
+                      WHERE je.LinkedRecordID IN
+                            (SELECT CAST(ID AS NVARCHAR(400)) FROM ${ORDERS_SCHEMA}.OrderLine
+                              WHERE OrderHeaderID = '${built.Order.ID}')`,
+                );
+                AssertEqual(entries.length, 0, 'and books nothing');
+            }),
+    },
+    {
+        Id: 'order-booking.OB14',
+        Name: 'OB14: a back-dated order is booked on the date it states',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Back-dating is the NORMAL case for back-office entry: the event preceded the record.
+                // Defaulting to today would file last quarter's sale in this one, and the ledger would
+                // balance either way.
+                const f = Fx();
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date('2026-03-15T00:00:00Z'),
+                    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 200 }],
+                });
+                Assert(result.Saved, `the back-dated confirm must succeed: ${result.Message}`);
+
+                const header = await TxOne<{ OrderDate: string }>(
+                    ctx,
+                    `SELECT OrderDate FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${result.Order.ID}'`,
+                );
+                AssertEqual(
+                    new Date(header.OrderDate).toISOString().slice(0, 10),
+                    '2026-03-15',
+                    'the order carries the stated date',
+                );
+            }),
+    },
 ];
 
 for (const check of OrderBookingChecks) {
@@ -475,6 +554,3 @@ IntegrationCheckRegistry.Instance.RegisterLifecycle('order-booking', {
     },
     Teardown: TeardownOrdersFixture,
 });
-import {
-  ORDER_LINE_ENTITY,
-} from "../entity-names.js";

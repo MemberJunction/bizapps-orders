@@ -2,11 +2,12 @@
  * capture-payment — `Orders.CapturePayment`, the operation the UI was blocked on.
  *
  * WHY IT EXISTS
- * A payment is a HEADER plus its ALLOCATION LINES, written in one transaction.
- * `PaymentHeaderEntityServer.Lines` is a TRANSIENT collection rather than a column, so CodeGen
- * cannot emit it client-side and a browser `entity.Save()` has nowhere to put the allocations —
- * taking a payment in the UI was impossible, not merely unwired. Same problem `Orders.SaveOrder`
- * solved for orders.
+ * Writing a payment header with its allocation lines in one transaction is no longer the reason —
+ * `Lines` is a related-record collection now, so a browser `payment.Save()` does that on its own.
+ * What remains is everything a save cannot decide: SETTLING with the payment provider before the
+ * money is recorded as taken, recognising a re-submitted capture as the SAME payment rather than a
+ * second one, and turning an over-payment into account credit. Those are one act with the write, and
+ * an act is an operation.
  *
  * THE CHECKS THAT EARN THEIR KEEP
  *   · CP4 — a captured payment BOOKS. The two-step alternative would leave a payment with no

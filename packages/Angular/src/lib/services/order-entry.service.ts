@@ -1,15 +1,13 @@
 import { Injectable } from '@angular/core';
+import { Metadata } from '@memberjunction/core';
 import {
-    OrderDraft,
-    OrderDraftLine,
-    OrdersConfirmOrderOperation,
-    OrdersPreviewPriceOperation,
-    OrdersSaveOrderOperation,
-    type OrdersConfirmOrderOutput,
-    type OrdersSaveOrderOutput,
+    OrderHeaderEntity,
+    OrdersPriceOrderOperation,
     type PreviewComponent,
 } from '@mj-biz-apps/orders-entities';
-import type { MJOOrderRow, MJOOrdersDataService } from './orders-data.service';
+
+/** The entity every order screen binds to. */
+const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 
 /**
  * What the pricing pipeline said about ONE draft line.
@@ -63,6 +61,15 @@ export interface MJOEstimatedTotals {
     ListSubtotal: number;
     DiscountTotal: number;
     NetTotal: number;
+    /**
+     * What the customer actually pays — net plus charges plus tax.
+     *
+     * The client could not know this before: only a full booking walk produced it, and the only
+     * thing that ran one was a preview inside a transaction that always rolled back. `PriceOrder`
+     * returns it from the same engine the booking uses, which is what lets "pay in full" offer the
+     * real figure instead of the net subtotal.
+     */
+    GrossTotal: number;
 }
 
 export interface MJOPricingResult {
@@ -120,7 +127,7 @@ export interface MJOPricingState {
  * ## Example
  *
  * ```typescript
- * const draft = new OrderDraft({ CompanyID });
+ * const order = await md.GetEntityObject<OrderHeaderEntity>('MJ_BizApps_Orders: Orders');
  * this.stop = draft.Subscribe(() => this.orders.SchedulePricing(draft, s => this.Pricing = s));
  * ```
  */
@@ -128,6 +135,16 @@ export interface MJOPricingState {
 export class MJOOrderEntryService {
     /** Milliseconds of quiet before a pricing pass fires. */
     public DebounceMs = 350;
+
+    /**
+     * Promotion codes the customer has presented but that are not on the order yet.
+     *
+     * Angular-shaped state on purpose: a code the user is typing belongs to the SCREEN until it is
+     * saved, and the entity has no field for "codes being considered". It is handed to
+     * `Orders.PriceOrder` so the strip can show what a code would do — including refusing it with a
+     * reason — before anyone commits to it.
+     */
+    public PromotionCodes: string[] = [];
 
     private sequence = 0;
     private applied = 0;
@@ -140,7 +157,7 @@ export class MJOOrderEntryService {
      * than queueing another — the user is still typing, and only the final state
      * is worth asking about.
      */
-    public SchedulePricing(draft: OrderDraft, onState: (state: MJOPricingState) => void): void {
+    public SchedulePricing(order: OrderHeaderEntity, onState: (state: MJOPricingState) => void): void {
         if (this.timer) clearTimeout(this.timer);
 
         // Announce immediately that what is on screen no longer matches the draft,
@@ -148,29 +165,60 @@ export class MJOOrderEntryService {
         onState({ Result: null, Loading: true, Error: null });
 
         this.timer = setTimeout(() => {
-            void this.PriceNow(draft, onState);
+            void this.PriceNow(order, onState);
         }, this.DebounceMs);
     }
 
     /** Price a draft's lines immediately, bypassing the debounce. */
-    public async PriceNow(draft: OrderDraft, onState: (state: MJOPricingState) => void): Promise<void> {
-        if (!draft.LineCount) {
+    public async PriceNow(order: OrderHeaderEntity, onState: (state: MJOPricingState) => void): Promise<void> {
+        if (!order.Lines.Count) {
             onState({ Result: null, Loading: false, Error: null });
             return;
         }
 
         const issued = ++this.sequence;
         try {
-            // One round trip per line, run concurrently. Sequential would make a
-            // five-line order feel five times slower for no isolation benefit —
-            // each call is independent and reads nothing the others write.
-            const priced = await Promise.all(draft.Lines.map((line) => this.priceLine(draft, line)));
+            // ONE round trip for the WHOLE order, not one per line.
+            //
+            // This used to fan out a PreviewPrice call per line and sum the answers, which cannot be
+            // right however fast it is: promotions stack against ORDER totals, charges apportion
+            // ACROSS lines, and tax computes on the discounted amount. A per-line answer is blind to
+            // all three, which is why PreviewPrice's own description calls its result advisory.
+            //
+            // `Orders.PriceOrder` runs the same OrderPricingService the booking walk runs, so what
+            // the screen shows and what the ledger books come from one implementation.
+            const op = new OrdersPriceOrderOperation();
+            const result = await op.Execute({
+                OrderHeaderID: order.ID ?? null,
+                CompanyID: order.CompanyID,
+                BillToPersonID: order.BillToPersonID ?? null,
+                BillToOrganizationID: order.BillToOrganizationID ?? null,
+                OrderDate: order.OrderDate ? new Date(order.OrderDate).toISOString() : null,
+                ShipToAddressID: order.ShipToAddressID ?? null,
+                Lines: order.Lines.Items.map((l) => ({
+                    ProductID: l.ProductID,
+                    Quantity: Number(l.Quantity ?? 0),
+                    // A STATED price is passed through and PINS the line. An absent one is what
+                    // tells the engine to resolve — sending 0 would read as a deliberate free line.
+                    UnitPrice: l.GetFieldByName('UnitPrice')?.Dirty ? Number(l.UnitPrice) : null,
+                    DiscountPct: Number(l.DiscountPct ?? 0),
+                })),
+                PromotionCodes: this.PromotionCodes,
+            });
 
             // Discard anything overtaken by a newer request.
             if (issued <= this.applied) return;
             this.applied = issued;
 
-            onState({ Result: this.summarize(priced), Loading: false, Error: null });
+            if (!result.Success || !result.Output?.Success) {
+                onState({
+                    Result: null,
+                    Loading: false,
+                    Error: result.Output?.Message ?? result.ErrorMessage ?? 'The order could not be priced.',
+                });
+                return;
+            }
+            onState({ Result: this.summarize(order, result.Output), Loading: false, Error: null });
         } catch (e) {
             if (issued <= this.applied) return;
             this.applied = issued;
@@ -183,228 +231,108 @@ export class MJOOrderEntryService {
     }
 
     /**
-     * Resolve one line's price.
+     * Persist the order and everything on it, in one call.
      *
-     * A STATED price short-circuits the call. Direct entry wins over every resolved
-     * price at save time (`OrderDraftHydrator`: an absent `UnitPrice` is what tells
-     * the engine to resolve one), so asking the server what a line would cost when
-     * the user has already said what it costs would show a number the save will not
-     * use.
+     * `order.Save()` ships the header AND its lines as one graph — `MJ.SaveEntityGraph` carries
+     * them over the wire, the server rebuilds them as `OrderEntityServer`, and that class's `Save()`
+     * runs the booking walk. No `Orders.SaveOrder` operation, no draft, no hydrator.
+     *
+     * A REFUSED SAVE THROWS, with the reason. Returning null made a refusal indistinguishable from a
+     * success with nothing to report — the button appeared to work and no order existed. A save that
+     * fails silently is the worst outcome available on an order screen.
      */
-    private async priceLine(draft: OrderDraft, line: OrderDraftLine): Promise<MJOLinePrice> {
-        const discount = Number(line.DiscountPct ?? 0);
-        const net = (extended: number): number => round(extended * (1 - discount));
-
-        if (line.UnitPriceWasStated) {
-            const extended = round(Number(line.UnitPrice) * line.Quantity);
-            return {
-                ClientKey: line.ClientKey,
-                UnitPrice: Number(line.UnitPrice),
-                ExtendedAmount: extended,
-                NetAmount: net(extended),
-                PriceListName: null,
-                PriceSource: null,
-                Components: [],
-                WasStated: true,
-                Error: null,
-            };
+    public async Save(order: OrderHeaderEntity): Promise<void> {
+        if (!(await order.Save())) {
+            throw new Error(
+                order.LatestResult?.CompleteMessage?.trim() || 'The order could not be saved.',
+            );
         }
-
-        const unpriced = (message: string): MJOLinePrice => ({
-            ClientKey: line.ClientKey,
-            UnitPrice: null,
-            ExtendedAmount: null,
-            NetAmount: null,
-            PriceListName: null,
-            PriceSource: null,
-            Components: [],
-            WasStated: false,
-            Error: message,
-        });
-
-        if (!line.ProductID) return unpriced('Pick a product.');
-
-        const op = new OrdersPreviewPriceOperation();
-        const result = await op.Execute({
-            ProductID: line.ProductID,
-            Quantity: line.Quantity,
-            OrganizationID: draft.Header.BillToOrganizationID ?? null,
-            PersonID: draft.Header.BillToPersonID ?? null,
-        });
-
-        // TWO `Success` FLAGS, AND THE OUTER ONE IS NOT THE ANSWER.
-        // `RemoteOpResult.Success` means the operation EXECUTED; the domain outcome
-        // is `Output.Success`. A product with no price rule comes back as a
-        // successful call carrying a refusal, and reporting that as a price is how
-        // an unpriced line becomes a silent $0.00.
-        if (!result.Success) return unpriced(result.ErrorMessage ?? 'The price could not be resolved.');
-        const output = result.Output;
-        if (!output?.Success) return unpriced(output?.Message ?? 'No price is configured for this product.');
-
-        const extended = round(Number(output.ExtendedAmount ?? 0));
-        return {
-            ClientKey: line.ClientKey,
-            UnitPrice: output.UnitPrice ?? null,
-            ExtendedAmount: extended,
-            NetAmount: net(extended),
-            PriceListName: output.PriceListName ?? null,
-            // A resolved price ALWAYS has a source. A rule that belongs to no list is a
-            // base rule — which is a real answer, not a missing one.
-            PriceSource: output.PriceListName ?? 'base price',
-            Components: output.Components ?? [],
-            WasStated: false,
-            Error: null,
-        };
     }
 
-    /** Roll the per-line answers into the subtotal the screens show. */
-    private summarize(lines: MJOLinePrice[]): MJOPricingResult {
-        let list = 0;
-        let net = 0;
-        for (const line of lines) {
-            list += line.ExtendedAmount ?? 0;
-            net += line.NetAmount ?? 0;
+    /**
+     * Confirm — the irreversible step.
+     *
+     * Setting the status and saving IS the confirm: `OrderEntityServer.Save()` sees the transition
+     * into a booked state and books — journal entries, subscriptions, entitlements, the initial
+     * payment — in one transaction, or refuses with a reason and writes nothing.
+     *
+     * There is no dry run in front of it. Every rule is enforced by the engine itself, and the
+     * browser has already run the tier-independent ones through `order.Validate()` before we get
+     * here, so the user is told about a missing payer without a round trip.
+     */
+    public async Confirm(order: OrderHeaderEntity): Promise<void> {
+        order.Status = 'Confirmed';
+        if (!(await order.Save())) {
+            throw new Error(
+                order.LatestResult?.CompleteMessage?.trim() || 'The order could not be confirmed.',
+            );
         }
+    }
+
+    /**
+     * Load an order and its lines for editing.
+     *
+     * Two calls, no mapping layer: the object the screen binds to is the object that will be saved.
+     */
+    public async Load(orderHeaderID: string): Promise<OrderHeaderEntity | null> {
+        const md = new Metadata();
+        const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_ENTITY);
+        if (!(await order.Load(orderHeaderID))) return null;
+        await order.Lines.Load();
+        return order;
+    }
+
+
+    /**
+     * Turn the engine's answer into what the strip renders.
+     *
+     * Totals come from the SERVER's figures rather than being re-added here. Summing on the client
+     * is how the screen and the ledger drift: the engine apportions discounts and charges across
+     * lines with its own rounding, and a second addition in a different order lands a penny out.
+     */
+    private summarize(
+        order: OrderHeaderEntity,
+        out: {
+            Lines: Array<{
+                UnitPrice: number; DiscountAmount: number; LineTotalNet: number;
+                Components?: Array<{ Kind: string; Label: string; Amount: number }>;
+                TaxExemptReason?: string | null;
+            }>;
+            Totals: { Net: number; Discount: number; Gross: number };
+        },
+    ): MJOPricingResult {
+        const lines: MJOLinePrice[] = out.Lines.map((priced, i) => {
+            const line = order.Lines.Items[i];
+            const stated = line?.GetFieldByName('UnitPrice')?.Dirty === true;
+            const extended = round(Number(priced.UnitPrice) * Number(line?.Quantity ?? 0));
+            return {
+                // Positional: an unsaved line has no id, and the engine answers by position.
+                ClientKey: line?.ID ?? String(i),
+                ExtendedAmount: extended,
+                UnitPrice: Number(priced.UnitPrice),
+                NetAmount: Number(priced.LineTotalNet),
+                PriceListName: null,
+                Error: null,
+                // Null means "priced and found nothing", which the badge renders as *no price rule*.
+                // A resolved price with no list is base pricing, and must not read as unpriced.
+                PriceSource: priced.UnitPrice > 0 ? (stated ? 'stated' : 'base price') : null,
+                Components: (priced.Components ?? []) as unknown as PreviewComponent[],
+                WasStated: stated,
+            };
+        });
+
         return {
             Lines: lines,
             Totals: {
-                ListSubtotal: round(list),
-                DiscountTotal: round(list - net),
-                NetTotal: round(net),
+                ListSubtotal: round(out.Totals.Net + out.Totals.Discount),
+                DiscountTotal: round(out.Totals.Discount),
+                NetTotal: round(out.Totals.Net),
+                GrossTotal: round(out.Totals.Gross),
             },
-            HasUnpricedLines: lines.some((l) => l.Error !== null),
+            HasUnpricedLines: lines.some((l) => l.UnitPrice === null || l.UnitPrice === 0),
         };
     }
 
-    /** Persist a draft. Never confirms — confirming is a separate, deliberate step. */
-    public async Save(draft: OrderDraft): Promise<OrdersSaveOrderOutput | null> {
-        const op = new OrdersSaveOrderOperation();
-        const result = await op.Execute({ Draft: draft.ToInput() });
-        if (!result.Success || !result.Output?.Success) {
-            // SAY WHY. Returning null made a refused save indistinguishable from a
-            // successful one that had nothing to report — the button appeared to
-            // work and no order existed. A save that fails silently is the worst
-            // outcome available on an order screen.
-            const reason =
-                result.Output?.Blockers?.map((b) => b.Message).join(' ') ||
-                result.Output?.Message ||
-                result.ErrorMessage ||
-                'The order could not be saved.';
-            console.error(`[MJOOrderEntryService] SaveOrder refused: ${reason}`);
-            throw new Error(reason);
-        }
-
-        // Carry the assigned id back onto the draft, so the next save updates the
-        // same order rather than creating a second one.
-        if (result.Output.OrderHeaderID) {
-            draft.SetHeader({ OrderHeaderID: result.Output.OrderHeaderID });
-        }
-        return result.Output;
-    }
-
-    /**
-     * Confirm an order — the irreversible step.
-     *
-     * THIS IS THE ONLY PLACE THE ENGINE RUNS. There is no dry run in front of it any
-     * more: the confirm either books — journal entries, subscriptions, entitlements,
-     * the initial payment, all in one transaction — or it is refused with a reason,
-     * and the reason is what the screen shows. Every rule that used to be pre-checked
-     * is still enforced, by `OrderEntityServer.ValidateAsync` and the booking walk;
-     * what changed is that we let it speak for itself instead of asking it twice.
-     */
-    public async Confirm(draft: OrderDraft): Promise<OrdersConfirmOrderOutput | null> {
-        const op = new OrdersConfirmOrderOperation();
-        const result = await op.Execute({ Draft: draft.ToInput() });
-
-        // A FAILED CONFIRM MUST THROW. This used to read
-        //
-        //     return result.Success && result.Output ? result.Output : (result.Output ?? null);
-        //
-        // — a ternary whose branches are the same expression, so `Success` was evaluated and
-        // discarded. The operation returns an Output object on failure too (it carries the reason),
-        // so a rejected confirm came back looking exactly like a successful one. The workspace then
-        // stamped the tab 'Confirmed', marked it clean and moved the stage stepper, while NOTHING
-        // had been booked — and `result.Message`, the only text saying why, was dropped on the
-        // floor. That is the silent confirm: the screen said yes, the database had no order, and
-        // there was no error anywhere to find.
-        //
-        // Throwing is what the caller is already written for: it catches and renders the message.
-        // TWO `Success` FLAGS, AND THE OUTER ONE IS NOT THE ANSWER. `RemoteOpResult.Success` means
-        // the operation EXECUTED — it is true for a confirm the engine deliberately refused. The
-        // domain outcome is `Output.Success`, with the reason in `Output.Message` / `Output.Blockers`.
-        // A real rejection came back as:
-        //
-        //     { success: true, resultCode: "SUCCESS",
-        //       outputJSON: "{\"Success\":false,\"Message\":\"No GL account is linked for role
-        //                     'Accounts Receivable'...\",\"Status\":\"Draft\",\"Blockers\":[...]}" }
-        //
-        // so checking only the envelope reports a refusal as a success. Both are checked here.
-        if (!result.Success) {
-            throw new Error(result.ErrorMessage?.trim() || 'The order could not be confirmed.');
-        }
-        const output = result.Output ?? null;
-        if (output && output.Success === false) {
-            // Prefer a blocker: they are written for the person taking the order, and the top-level
-            // Message is sometimes the same sentence repeated by each layer that re-threw it.
-            const blocker = output.Blockers?.find((b) => b?.Message?.trim())?.Message?.trim();
-            const message = blocker || output.Message?.split('\n')[0]?.trim();
-            throw new Error(message || 'The order could not be confirmed.');
-        }
-
-        // CARRY THE ASSIGNED ID BACK, exactly as `Save()` does. Without it the draft that was
-        // just confirmed still believes it has never been persisted, so every screen keyed on
-        // `Draft.Header.OrderHeaderID` goes on treating a booked order as an unsaved one — the
-        // editor's `loadPersistedDetail()` early-returns, and the money strip keeps showing the
-        // pre-confirm estimate instead of the engine's own total, amount paid and balance.
-        //
-        // `Save()` had this and `Confirm()` did not, which is the kind of asymmetry that reads as
-        // correct until you notice that confirming is ALSO a save — the one that matters most.
-        if (output?.OrderHeaderID) {
-            draft.SetHeader({ OrderHeaderID: output.OrderHeaderID });
-        }
-        return output;
-    }
-
-    /**
-     * Load a SAVED order into an editable draft.
-     *
-     * Opening an existing order did nothing at all before this: the list emitted
-     * the row, the section remembered its id, and the editor — which only accepts
-     * a Draft — was handed a blank one. There was no path from an order id to
-     * something editable.
-     *
-     * Unit price is carried across explicitly. The engine resolved it once when
-     * the order was taken, and re-resolving on open would silently reprice last
-     * year's purchase at today's rules.
-     */
-    public async LoadDraft(orderHeaderID: string, data: MJOOrdersDataService): Promise<OrderDraft | null> {
-        const orders = await data.GetOrders({ MaxRows: 500 });
-        const order = orders.find((row: MJOOrderRow) => row.ID === orderHeaderID);
-        if (!order) return null;
-
-        const draft = new OrderDraft({
-            CompanyID: order.CompanyID,
-            OrderHeaderID: order.ID,
-        });
-        draft.SetHeader({
-            BillToOrganizationID: (order['BillToOrganizationID'] as string) ?? null,
-            BillToPersonID: (order['BillToPersonID'] as string) ?? null,
-            Description: order.Description ?? null,
-        });
-
-        for (const line of await data.GetOrderLines(orderHeaderID)) {
-            draft.AddLine({
-                ProductID: String(line['ProductID'] ?? ''),
-                Quantity: Number(line['Quantity'] ?? 0),
-                UnitPrice: Number(line['UnitPrice'] ?? 0),
-                DiscountPct: Number(line['DiscountPct'] ?? 0) || undefined,
-            });
-        }
-
-        return draft;
-    }
-
-    /** Cancel any pending pricing pass — call from a component's `ngOnDestroy`. */
     public CancelPending(): void {
         if (this.timer) clearTimeout(this.timer);
         this.timer = null;
