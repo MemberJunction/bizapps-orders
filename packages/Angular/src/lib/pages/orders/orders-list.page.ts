@@ -4,7 +4,7 @@ import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../..
 import { MJOSummaryStripComponent, type MJOSummaryFigure } from '../../panels/summary-strip.component';
 import { GetOrderSummary, GetOrders, type MJOOrderSummary } from '../../data/orders-queries';
 import { FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
-import type { mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { ISOYear, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 
 /**
  * `mjo-orders-list-page` — find any order, then work a filtered set.
@@ -119,7 +119,7 @@ export class MJOOrdersListPageComponent implements OnInit {
             Width: '96px',
             Sortable: true,
             Format: (r) => FormatDate(r.OrderDate, { Short: true }),
-            Secondary: (r) => String(r.OrderDate ?? '').slice(0, 4),
+            Secondary: (r) => ISOYear(r.OrderDate) ?? '',
         },
         {
             Key: 'Customer',

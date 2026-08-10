@@ -5,10 +5,12 @@ import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetChargeTypes, GetProducts, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
-import type {
-    mjBizAppsOrdersChargeTypeEntity,
-    mjBizAppsOrdersCustomerTaxExemptionEntity,
-    mjBizAppsOrdersProductEntity,
+import {
+    IsBefore,
+    Today,
+    type mjBizAppsOrdersChargeTypeEntity,
+    type mjBizAppsOrdersCustomerTaxExemptionEntity,
+    type mjBizAppsOrdersProductEntity,
 } from '@mj-biz-apps/orders-entities';
 
 /**
@@ -611,8 +613,11 @@ export class MJOChargesTaxPageComponent implements OnInit {
     }
 
     protected exemptionClass(row: mjBizAppsOrdersCustomerTaxExemptionEntity): string {
-        const expires = row['CertificateExpiresAt'] ? String(row['CertificateExpiresAt']).slice(0, 10) : null;
-        if (expires && expires < new Date().toISOString().slice(0, 10)) return 'mj-chip--warning';
+        // Read through the helper rather than String(...).slice(): `CertificateExpiresAt` is a Date
+        // on the entity, and the bracket access here means the compiler never saw the mismatch. The
+        // old form produced 'Mon Aug 10', which is never less than an ISO day, so an EXPIRED
+        // certificate kept its ordinary chip and nobody was told to collect a new one.
+        if (IsBefore(row.CertificateExpiresAt, Today())) return 'mj-chip--warning';
         return row['Status'] === 'Active' ? 'mj-chip--success' : 'mj-chip--outline';
     }
 }

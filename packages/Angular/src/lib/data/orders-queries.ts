@@ -25,12 +25,13 @@
  * that was always true and is the point.
  *
  * `ResultType: 'entity_object'` — the screens hold REAL ENTITIES, which is what
- * `docs/ui-architecture.md` asks for and also what makes the types honest. `'simple'` returns the
- * WIRE shape, where a `DATETIME` column arrives as an ISO string; the generated types say `Date`,
- * because that is what the entity carries. Declaring one and returning the other is how this code
- * came to hold `String(r.OrderDate).slice(0, 4)` to read a year and `o.DueDate < today` to compare
- * dates — both of which work only while the value is secretly a string, and both of which silently
- * produce nonsense the moment it is not.
+ * `docs/ui-architecture.md` asks for and also what makes the types honest. Declaring one shape and
+ * returning another is how this code came to hold `String(r.OrderDate).slice(0, 4)` to read a year:
+ * it works only while the value is secretly a string, and on a `Date` it yields `'Mon '`.
+ *
+ * Which shape a `'simple'` read returns is not a fact worth encoding in call sites — it used to be
+ * the raw transport value and MJ now normalizes date columns to `Date` there too. Read date cells
+ * with `ToISODate`/`IsBefore` from the entities package and the question stops needing an answer.
  *
  * The one exception is {@link GetOrderSummary}, which reduces up to 5,000 rows into six numbers and
  * has no use for entity behaviour. It reads the four columns it needs and says so.
@@ -42,6 +43,7 @@
  * @module @mj-biz-apps/orders-ng
  */
 import { Metadata, RunView, type RunViewParams, type UserInfo } from '@memberjunction/core';
+import { IsBefore, Today, type DateCell } from '@mj-biz-apps/orders-entities';
 import type {
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersCustomerTaxExemptionEntity,
@@ -188,16 +190,21 @@ function currentUser(): UserInfo | undefined {
 /**
  * The four columns {@link GetOrderSummary} reduces, as they arrive ON THE WIRE.
  *
- * Deliberately NOT the generated entity type. This is a `'simple'` read, and a `'simple'` read hands
- * back what the transport carried — a `DATETIME` is an ISO string here, not a `Date`. Naming that
- * plainly is the whole reason the old `MJOOrderRow` was a hazard: it claimed a shape nobody
- * delivered. Four fields for an arithmetic strip is not a mirror of an order.
+ * Deliberately NOT the generated entity type. Four fields for an arithmetic strip is not a mirror of
+ * an order, and claiming a shape nobody delivers is what made the old `MJOOrderRow` a hazard.
+ *
+ * `DueDate` is a {@link DateCell} rather than a `string` because what a `'simple'` read hands back
+ * has changed underneath this code once already: it used to be the raw transport value (an ISO
+ * string), and MJ now normalizes date columns on simple rows into real `Date`s to match
+ * `'entity_object'`. Either is fine — `IsBefore` reads both — but a field TYPED `string` that holds
+ * a `Date` is worse than an honest union, because the compiler then certifies the string operations
+ * that are about to go quietly wrong.
  */
 interface MJOSummaryRow {
     Status?: string;
     Balance?: number;
     TotalGross?: number;
-    DueDate?: string | null;
+    DueDate?: DateCell;
 }
 
 /**
@@ -367,7 +374,9 @@ export async function GetOrderSummary(user?: UserInfo): Promise<MJOOrderSummary>
         // work with no answer attached.
         ['Status', 'Balance', 'TotalGross', 'DueDate'],
     );
-    const today = new Date().toISOString().slice(0, 10);
+    // The operator's calendar day, not a UTC instant: an order due today is not overdue at 8pm in
+    // New York just because it is already tomorrow in London.
+    const today = Today();
     const settleable = (o: MJOSummaryRow): boolean => !['Draft', 'Quoted', 'Voided'].includes(o.Status ?? '');
 
     const credits = rows.filter((o) => settleable(o) && Number(o.Balance ?? 0) < 0);
@@ -380,7 +389,7 @@ export async function GetOrderSummary(user?: UserInfo): Promise<MJOOrderSummary>
         CreditsHeld: Math.abs(credits.reduce((sum, o) => sum + Number(o.Balance ?? 0), 0)),
         Counts: {
             all: rows.length,
-            overdue: owing.filter((o) => !!o.DueDate && String(o.DueDate).slice(0, 10) < today).length,
+            overdue: owing.filter((o) => IsBefore(o.DueDate, today)).length,
             unpaid: owing.length,
             notposted: rows.filter((o) => o.Status === 'Confirmed').length,
             drafts: rows.filter((o) => ['Draft', 'Quoted'].includes(o.Status ?? '')).length,

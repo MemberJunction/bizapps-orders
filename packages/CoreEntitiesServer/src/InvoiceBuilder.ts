@@ -33,7 +33,7 @@ import {
 } from './InvoiceBehavior.js';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
-import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
+import { LoadOrdersEngine, OrdersEngine, ToISODate } from '@mj-biz-apps/orders-entities';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_CHARGE_ENTITY = 'MJ_BizApps_Orders: Order Charges';
@@ -87,30 +87,13 @@ const str = (v: unknown): string | null => {
 const num = (v: unknown): number => Number(v ?? 0);
 
 /**
- * A calendar date as `YYYY-MM-DD`, whatever the data layer handed over.
+ * Re-exported so this file's existing importers keep resolving it here.
  *
- * `RunView` returns SQL `date` columns as JS **Date objects**, not strings. Slicing `String(date)`
- * takes the first ten characters of `Thu Jul 30 2026 00:00:00 GMT-0400` and yields `Thu Jul 30` —
- * which is not a date, parses as nothing, and prints on the invoice as a plausible-looking day with
- * no year on it. It is the exact failure shape this codebase keeps finding: readable, wrong, and
- * silent.
- *
- * The UTC components are read rather than the local ones, because a `date` column has no time and
- * the driver materialises it at midnight UTC — `getDate()` on a machine west of Greenwich returns
- * the day before.
+ * The implementation moved to `@mj-biz-apps/orders-entities` — it was correct in this file and
+ * unreachable from Angular, which is why fifteen other sites went on hand-rolling
+ * `String(cell).slice(0, 10)` and getting `'Thu Jul 30'`.
  */
-export const ToISODate = (v: unknown): string | null => {
-    if (v == null || v === '') return null;
-    if (v instanceof Date) {
-        if (Number.isNaN(v.getTime())) return null;
-        return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, '0')}-${String(v.getUTCDate()).padStart(2, '0')}`;
-    }
-    const text = String(v);
-    if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
-    const parsed = new Date(text);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed.toISOString().slice(0, 10);
-};
+export { ToISODate };
 
 /** An SQL `IN` list of quoted UUIDs, or null when there is nothing to look up. */
 function uuidList(ids: Iterable<string | null | undefined>, context: string): string | null {
