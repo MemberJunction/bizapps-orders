@@ -7491,6 +7491,46 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
         Sequence: { Field: 'LineNumber', From: 1 },
   });
 
+
+  /**
+  * Related records: MJ_BizApps_Orders: Order Adjustments
+  *
+  * Loads, validates and persists as one unit with this MJ_BizApps_Orders: Order Headers record — see
+  * guides/TRANSACTIONS_AND_BATCHING_GUIDE.md. Declared by the RelatedRecordCollection metadata on
+  * the 'MJ_BizApps_Orders: Order Headers → MJ_BizApps_Orders: Order Adjustments' relationship; edit that row, not this file.
+  *
+  */
+  public readonly Adjustments = this.DeclareRelatedRecords<mjBizAppsOrdersOrderAdjustmentEntity>({
+      Name: 'Adjustments',
+        RelatedEntity: 'MJ_BizApps_Orders: Order Adjustments',
+        RelatedEntityJoinField: 'OrderHeaderID',
+        OrderBy: 'Sequence ASC',
+        Load: 'explicit',
+        OnRemove: 'delete',
+        Source: 'database',
+        Sequence: { Field: 'Sequence', From: 1 },
+  });
+
+
+  /**
+  * Related records: MJ_BizApps_Orders: Order Charges
+  *
+  * Loads, validates and persists as one unit with this MJ_BizApps_Orders: Order Headers record — see
+  * guides/TRANSACTIONS_AND_BATCHING_GUIDE.md. Declared by the RelatedRecordCollection metadata on
+  * the 'MJ_BizApps_Orders: Order Headers → MJ_BizApps_Orders: Order Charges' relationship; edit that row, not this file.
+  *
+  */
+  public readonly Charges = this.DeclareRelatedRecords<mjBizAppsOrdersOrderChargeEntity>({
+      Name: 'Charges',
+        RelatedEntity: 'MJ_BizApps_Orders: Order Charges',
+        RelatedEntityJoinField: 'OrderHeaderID',
+        OrderBy: 'Sequence ASC',
+        Load: 'explicit',
+        OnRemove: 'delete',
+        Source: 'database',
+        Sequence: { Field: 'Sequence', From: 1 },
+  });
+
     /**
     * Loads the MJ_BizApps_Orders: Order Headers record from the database
     * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Headers record.

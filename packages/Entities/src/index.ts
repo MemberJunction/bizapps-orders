@@ -39,3 +39,11 @@ export * from './OrderHeaderEntity';
  */
 export function LoadGeneratedEntities(): void {
 }
+
+/**
+ * `PromotionCodesCompanion` — the codes a customer presented, carried with the order.
+ *
+ * A companion rather than a related-record collection because a code has no child row: the RESULT of
+ * applying one is an OrderAdjustment the engine derives, and the browser holds only a string.
+ */
+export * from './PromotionCodesCompanion';

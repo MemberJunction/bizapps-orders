@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Metadata } from '@memberjunction/core';
+import { MJO_ENTITIES } from '../data/entity-names';
 import {
     OrderHeaderEntity,
     OrdersPriceOrderOperation,
@@ -7,7 +8,6 @@ import {
 } from '@mj-biz-apps/orders-entities';
 
 /** The entity every order screen binds to. */
-const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 
 /**
  * What the pricing pipeline said about ONE draft line.
@@ -90,7 +90,7 @@ export interface MJOPricingState {
 }
 
 /**
- * `MJOOrderEntryService` — the seam between a draft and the engine.
+ * `MJOPricingScheduler` — the seam between a draft and the engine.
  *
  * Every screen that composes an order goes through here, so the debounce, the
  * out-of-order guard and the staleness bookkeeping exist once instead of in each
@@ -127,24 +127,14 @@ export interface MJOPricingState {
  * ## Example
  *
  * ```typescript
- * const order = await md.GetEntityObject<OrderHeaderEntity>('MJ_BizApps_Orders: Orders');
+ * const order = await md.GetEntityObject<OrderHeaderEntity>(MJO_ENTITIES.OrderHeader);
  * this.stop = draft.Subscribe(() => this.orders.SchedulePricing(draft, s => this.Pricing = s));
  * ```
  */
 @Injectable({ providedIn: 'root' })
-export class MJOOrderEntryService {
+export class MJOPricingScheduler {
     /** Milliseconds of quiet before a pricing pass fires. */
     public DebounceMs = 350;
-
-    /**
-     * Promotion codes the customer has presented but that are not on the order yet.
-     *
-     * Angular-shaped state on purpose: a code the user is typing belongs to the SCREEN until it is
-     * saved, and the entity has no field for "codes being considered". It is handed to
-     * `Orders.PriceOrder` so the strip can show what a code would do — including refusing it with a
-     * reason — before anyone commits to it.
-     */
-    public PromotionCodes: string[] = [];
 
     private sequence = 0;
     private applied = 0;
@@ -203,7 +193,7 @@ export class MJOOrderEntryService {
                     UnitPrice: l.GetFieldByName('UnitPrice')?.Dirty ? Number(l.UnitPrice) : null,
                     DiscountPct: Number(l.DiscountPct ?? 0),
                 })),
-                PromotionCodes: this.PromotionCodes,
+                PromotionCodes: order.PromotionCodes.Codes,
             });
 
             // Discard anything overtaken by a newer request.
@@ -230,57 +220,8 @@ export class MJOOrderEntryService {
         }
     }
 
-    /**
-     * Persist the order and everything on it, in one call.
-     *
-     * `order.Save()` ships the header AND its lines as one graph — `MJ.SaveEntityGraph` carries
-     * them over the wire, the server rebuilds them as `OrderEntityServer`, and that class's `Save()`
-     * runs the booking walk. No `Orders.SaveOrder` operation, no draft, no hydrator.
-     *
-     * A REFUSED SAVE THROWS, with the reason. Returning null made a refusal indistinguishable from a
-     * success with nothing to report — the button appeared to work and no order existed. A save that
-     * fails silently is the worst outcome available on an order screen.
-     */
-    public async Save(order: OrderHeaderEntity): Promise<void> {
-        if (!(await order.Save())) {
-            throw new Error(
-                order.LatestResult?.CompleteMessage?.trim() || 'The order could not be saved.',
-            );
-        }
-    }
 
-    /**
-     * Confirm — the irreversible step.
-     *
-     * Setting the status and saving IS the confirm: `OrderEntityServer.Save()` sees the transition
-     * into a booked state and books — journal entries, subscriptions, entitlements, the initial
-     * payment — in one transaction, or refuses with a reason and writes nothing.
-     *
-     * There is no dry run in front of it. Every rule is enforced by the engine itself, and the
-     * browser has already run the tier-independent ones through `order.Validate()` before we get
-     * here, so the user is told about a missing payer without a round trip.
-     */
-    public async Confirm(order: OrderHeaderEntity): Promise<void> {
-        order.Status = 'Confirmed';
-        if (!(await order.Save())) {
-            throw new Error(
-                order.LatestResult?.CompleteMessage?.trim() || 'The order could not be confirmed.',
-            );
-        }
-    }
 
-    /**
-     * Load an order and its lines for editing.
-     *
-     * Two calls, no mapping layer: the object the screen binds to is the object that will be saved.
-     */
-    public async Load(orderHeaderID: string): Promise<OrderHeaderEntity | null> {
-        const md = new Metadata();
-        const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_ENTITY);
-        if (!(await order.Load(orderHeaderID))) return null;
-        await order.Lines.Load();
-        return order;
-    }
 
 
     /**

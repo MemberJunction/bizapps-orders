@@ -6,11 +6,11 @@ import { MJOMoneyPipe } from '../../panels/money-format';
 import { OrderHeaderEntity, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { Metadata } from '@memberjunction/core';
 
-const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
-import { MJOOrderEntryService } from '../../services/order-entry.service';
+import { MJOPricingScheduler } from '../../services/pricing-scheduler.service';
 
 import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
 import { GetOrderLines, GetOrders } from '../../data/orders-queries';
+import { MJO_ENTITIES } from '../../data/entity-names';
 
 /** A line being returned, with the cap the origin imposes. */
 interface MJOReturnLine {
@@ -265,7 +265,7 @@ export class MJOReturnPageComponent implements OnInit {
      * first pass on, so later verify passes agree.
      */
     private readonly cdr = inject(ChangeDetectorRef);
-    private readonly entry = inject(MJOOrderEntryService);
+    private readonly entry = inject(MJOPricingScheduler);
 
     /** The order being returned against. */
     @Input() OriginOrderID: string | null = null;
@@ -350,7 +350,7 @@ export class MJOReturnPageComponent implements OnInit {
             // needs is a header patch. A return belongs to the SAME customer and
             // the SAME company as the order it reverses — none of it is a choice.
             const md = new Metadata();
-            const draft = await md.GetEntityObject<OrderHeaderEntity>(ORDER_ENTITY);
+            const draft = await md.GetEntityObject<OrderHeaderEntity>(MJO_ENTITIES.OrderHeader);
             draft.NewRecord();
             draft.CompanyID = this.Origin.CompanyID;
             draft.BillToOrganizationID = (this.Origin['BillToOrganizationID'] as string) ?? null;
@@ -367,7 +367,7 @@ export class MJOReturnPageComponent implements OnInit {
             }
 
             // Throws with the engine's reason if refused; nothing is booked and the catch shows why.
-            await this.entry.Confirm(draft);
+            await draft.Confirm();
             this.ReturnCreated.emit(draft.ID ?? null);
         } catch (e) {
             this.Error = e instanceof Error ? e.message : String(e);

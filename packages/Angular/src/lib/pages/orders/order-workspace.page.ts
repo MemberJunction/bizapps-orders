@@ -34,7 +34,6 @@ import { CommonModule } from '@angular/common';
 import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { Metadata } from '@memberjunction/core';
 
-const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 
 import { WorkspaceCardComponent } from '../../transfer-pending/workspace-tabs/workspace-card.component';
@@ -42,11 +41,25 @@ import { WorkspaceTabStore } from '../../transfer-pending/workspace-tabs/workspa
 import type { TabReorder } from '../../transfer-pending/workspace-tabs/workspace-tab-strip.component';
 import { MJOOrderEditorPageComponent } from './order-editor.page';
 import type { MJOOrderStage } from '../../panels/status-stepper.component';
-import { MJOOrderEntryService } from '../../services/order-entry.service';
+import { MJOPricingScheduler } from '../../services/pricing-scheduler.service';
 import { type MJOCompanyOption } from '../../data/orders-queries';
 import type { MJOProductOption } from './fast-entry.page';
 import type { MJOTenderOption } from '../payments/payment-entry.page';
 import { ReadableSaveError } from '../../services/save-error';
+import { MJO_ENTITIES } from '../../data/entity-names';
+
+/**
+ * An order and its lines, loaded together.
+ *
+ * A free function rather than a service method: it constructs an entity and asks it to load itself,
+ * which is `docs/ui-architecture.md`'s definition of work that does not belong behind an injectable.
+ */
+async function loadOrder(orderHeaderID: string): Promise<OrderHeaderEntity | null> {
+    const md = new Metadata();
+    const order = await md.GetEntityObject<OrderHeaderEntity>(MJO_ENTITIES.OrderHeader);
+    return (await order.LoadWithLines(orderHeaderID)) ? order : null;
+}
+
 
 /** What a tab's caption says before the customer is known. */
 const UNTITLED = 'New order';
@@ -151,7 +164,7 @@ const UNTITLED = 'New order';
     ],
 })
 export class MJOOrderWorkspacePageComponent implements OnDestroy {
-    private readonly entry = inject(MJOOrderEntryService);
+    private readonly entry = inject(MJOPricingScheduler);
     private readonly cdr = inject(ChangeDetectorRef);
 
     /** The company a new draft is raised against — supplied by the section. */
@@ -255,7 +268,7 @@ export class MJOOrderWorkspacePageComponent implements OnDestroy {
             return;
         }
         const md = new Metadata();
-        const draft = await md.GetEntityObject<OrderHeaderEntity>(ORDER_ENTITY);
+        const draft = await md.GetEntityObject<OrderHeaderEntity>(MJO_ENTITIES.OrderHeader);
         draft.NewRecord();
         draft.CompanyID = this.CompanyID;
         this.OpenTab(draft, { Label: UNTITLED, OrderNumber: null, Stage: 'Draft' });
@@ -305,7 +318,7 @@ export class MJOOrderWorkspacePageComponent implements OnDestroy {
             //
             // The entity carries OrderNumber and Status because the table does, so that whole class
             // of bug is gone rather than guarded against.
-            const draft = await this.entry.Load(orderHeaderID);
+            const draft = await loadOrder(orderHeaderID);
             if (!draft) {
                 this.Error = 'That order could not be loaded.';
                 this.cdr.detectChanges();
@@ -376,7 +389,7 @@ export class MJOOrderWorkspacePageComponent implements OnDestroy {
         this.Error = null;
         this.cdr.detectChanges();
         try {
-            await this.entry.Save(draft);
+            await draft.SaveOrThrow();
             // The order number is assigned by the save and lands on the entity itself, so it is read
             // back from the object rather than from an operation's output envelope.
             if (draft.OrderNumber) {
@@ -402,7 +415,7 @@ export class MJOOrderWorkspacePageComponent implements OnDestroy {
         try {
             // Throws with the engine's reason if the confirm is refused — nothing is booked and the
             // catch below shows why. There is no success-shaped failure to mistake for a success.
-            await this.entry.Confirm(draft);
+            await draft.Confirm();
 
             // A confirmed order is kept OPEN and read-only rather than closed: the person who just
             // took it usually needs to read the number back to the customer.

@@ -173,13 +173,13 @@ export async function BuildOrder(
     if (spec.InitialPaymentDetailID) order.InitialPaymentDetailID = spec.InitialPaymentDetailID;
     // Promotions ride the header the same way lines do — set here, resolved inside Save (D70).
     if (spec.PromotionCodes) {
-        order.PromotionCodes = spec.PromotionCodes;
+        order.PromotionCodes.Codes = spec.PromotionCodes;
     }
     if (spec.ManualDiscounts) {
-        order.ManualDiscounts = spec.ManualDiscounts;
+        order.RequestedDiscounts = spec.ManualDiscounts;
     }
     if (spec.Charges) {
-        order.Charges = spec.Charges;
+        order.RequestedCharges = spec.Charges;
     }
 
     const lines: mjBizAppsOrdersOrderLineEntity[] = [];

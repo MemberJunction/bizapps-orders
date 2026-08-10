@@ -56,7 +56,7 @@ export * from './lib/panels/allocation-grid.component';
 export * from './lib/panels/allocation-math';
 
 /** The seam between a draft and the engine. */
-export * from './lib/services/order-entry.service';
+export * from './lib/services/pricing-scheduler.service';
 export * from './lib/data/entity-names';
 export * from './lib/data/orders-queries';
 

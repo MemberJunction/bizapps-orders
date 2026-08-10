@@ -85,7 +85,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'account-credit': 11,
     pricing: 16,
     promotions: 19,
-    charges: 12,
+    charges: 14,
     tax: 15,
     composition: 10,
     returns: 12,

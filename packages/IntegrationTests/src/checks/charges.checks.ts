@@ -43,7 +43,7 @@ import {
   TxQuery,
 } from "../fixture.js";
 import { PROMOTION_CODE_ENTITY, PROMOTION_ENTITY } from "../entity-names.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 import type { OrderEntityServer, RequestedCharge } from "@mj-biz-apps/orders-core-entities-server";
 
 const ACCOUNTING = "__mj_BizAppsAccounting";
@@ -67,6 +67,16 @@ async function confirmWithCharges(
     Charges: charges,
   });
   return { Saved: result.Saved, Message: result.Message, Order: result.Order };
+}
+
+/** A charge type's ID by code — staging a row needs the ID, not the code. */
+async function chargeTypeIdFor(ctx: IntegrationCheckContext, code: string): Promise<string> {
+  const row = await TxOne<{ ID: string }>(
+    ctx,
+    `SELECT ID FROM ${ORDERS_SCHEMA}.ChargeType WHERE Code='${code}'`,
+  );
+  Assert(!!row?.ID, `the fixture must have a '${code}' charge type`);
+  return row.ID;
 }
 
 const lineSums = (ctx: IntegrationCheckContext, orderID: string) =>
@@ -384,6 +394,92 @@ export const ChargeChecks: NamedCheck[] = [
           /no charge type/i.test(order.Message),
           `the refusal should say so, got: ${order.Message}`,
         );
+      }),
+  },
+  {
+    Id: "charges.CH13",
+    Name: "CH13: a charge STAGED on the collection reaches the ledger — the browser's route",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // THE ONE THIS BUNDLE WAS MISSING. Every other check hands the engine a `RequestedCharge`
+        // through a server-side array, which a browser cannot reach. The browser stages a row on
+        // `order.Charges` and saves the graph — and for a while that path existed with nothing on
+        // the other end, so a shipping charge added on screen showed in the price preview and was
+        // simply absent from the confirmed order.
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }],
+        });
+
+        const shipping = await chargeTypeIdFor(ctx, "Shipping");
+        const staged = (await built.Order.Charges.Create()) as unknown as {
+          ChargeTypeID: string;
+          Amount: number;
+        };
+        staged.ChargeTypeID = shipping;
+        staged.Amount = 12.5;
+
+        built.Order.Status = "Confirmed";
+        Assert(
+          await built.Order.Save(),
+          `the staged charge must confirm: ${built.Order.LatestResult?.CompleteMessage ?? "no reason given"}`,
+        );
+
+        // Written as a REAL charge row by the engine, with the basis it computed — not the
+        // half-formed row the client staged.
+        const row = await TxOne<{ N: number; Amount: number; Basis: number }>(
+          ctx,
+          `SELECT COUNT(*) AS N, ISNULL(SUM(Amount),0) AS Amount, ISNULL(SUM(BasisAmount),0) AS Basis
+             FROM ${ORDERS_SCHEMA}.OrderCharge WHERE OrderHeaderID='${built.Order.ID}'
+              AND ChargeTypeID='${shipping}'`,
+        );
+        AssertEqual(Number(row.N), 1, "exactly one shipping charge — staged once, written once");
+        AssertEqual(Number(row.Amount), 12.5, "at the amount asked for");
+        Assert(Number(row.Basis) > 0, "and with a basis the ENGINE computed, not the client");
+
+        // And it reached the money, which is the whole point.
+        const sums = await lineSums(ctx, built.Order.ID);
+        AssertEqual(Number(sums.Charge), 12.5, "the charge is on the lines");
+      }),
+  },
+  {
+    Id: "charges.CH14",
+    Name: "CH14: a staged charge is written ONCE, not once by the graph and again by the engine",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // The failure this guards is double-billing. A staged row is a REQUEST — if the entity graph
+        // also saved it as it arrived, the order would carry two shipping charges: the half-formed
+        // one the client sent and the complete one the engine wrote. Both would look plausible and
+        // the total would simply be wrong.
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }],
+        });
+        const shipping = await chargeTypeIdFor(ctx, "Shipping");
+        const staged = (await built.Order.Charges.Create()) as unknown as {
+          ChargeTypeID: string;
+          Amount: number;
+        };
+        staged.ChargeTypeID = shipping;
+        staged.Amount = 7;
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), "it saves");
+
+        const all = await TxOne<{ N: number }>(
+          ctx,
+          `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OrderCharge WHERE OrderHeaderID='${built.Order.ID}'`,
+        );
+        AssertEqual(Number(all.N), 1, "one charge row, not two");
       }),
   },
 ];

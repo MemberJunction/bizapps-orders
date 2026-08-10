@@ -56,5 +56,61 @@
       "lastModified": "2026-08-09T22:52:57.941Z",
       "checksum": "bfcabc5922ad680a98754275c3f6b331bc0e8fd247872f2354de8301cc43e45b"
     }
+  },
+  {
+    "_comments": [
+      "Declares Order Headers -> Order Charges as a related-record collection (MJ 6.1).",
+      "",
+      "WHY THIS EXISTS. These were TRANSIENT arrays on OrderEntityServer (`_charges`,",
+      "`_manualDiscounts`) that only the server could populate, so the browser had no way to send",
+      "them. While `OrderDraft` existed the hydrator carried them; when the draft was deleted they",
+      "became unreachable from a browser, and a promotion code typed on screen showed a discount in",
+      "the preview that the booking never applied. Screen and ledger disagreed, silently.",
+      "",
+      "Both are real child rows with an OrderHeaderID, so the entity graph is their natural home:",
+      "the client stages what it is asking for and the engine COMPLETES each row — resolving the",
+      "charge type, computing the basis, apportioning across lines, stamping tax jurisdiction.",
+      "",
+      "OnRemove 'delete' because a charge or adjustment removed from an order is not an orphan to",
+      "keep; it never had meaning apart from the order."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:charges-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Charges"
+    },
+    "sync": {
+      "lastModified": "2026-08-10T15:34:10.834Z",
+      "checksum": "dbb08f4944581b35e35ce3456506bdda2020917d7b64dcc81e953adc6f923926"
+    }
+  },
+  {
+    "_comments": [
+      "Declares Order Headers -> Order Adjustments as a related-record collection (MJ 6.1).",
+      "",
+      "WHY THIS EXISTS. These were TRANSIENT arrays on OrderEntityServer (`_charges`,",
+      "`_manualDiscounts`) that only the server could populate, so the browser had no way to send",
+      "them. While `OrderDraft` existed the hydrator carried them; when the draft was deleted they",
+      "became unreachable from a browser, and a promotion code typed on screen showed a discount in",
+      "the preview that the booking never applied. Screen and ledger disagreed, silently.",
+      "",
+      "Both are real child rows with an OrderHeaderID, so the entity graph is their natural home:",
+      "the client stages what it is asking for and the engine COMPLETES each row — resolving the",
+      "charge type, computing the basis, apportioning across lines, stamping tax jurisdiction.",
+      "",
+      "OnRemove 'delete' because a charge or adjustment removed from an order is not an orphan to",
+      "keep; it never had meaning apart from the order."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:adjustments-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Adjustments"
+    },
+    "sync": {
+      "lastModified": "2026-08-10T15:34:10.861Z",
+      "checksum": "59ee22ef08f01d52c6e3631d5007658abc56699ce43678d9318114372f7a0f26"
+    }
   }
 ]

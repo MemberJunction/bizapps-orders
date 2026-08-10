@@ -7,17 +7,17 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { Metadata } from '@memberjunction/core';
 
-const ORDER_ENTITY = 'MJ_BizApps_Orders: Orders';
 
 import { ReadableSaveError } from '../../services/save-error';
 
-import { MJOOrderEntryService, type MJOLinePrice, type MJOPricingState } from '../../services/order-entry.service';
+import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 import { MJODecompositionLadderComponent, type MJOLadderRow } from '../../panels/decomposition-ladder.component';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import type { MJOTenderOption } from '../payments/payment-entry.page';
 import { GetOrders, RecentCustomers, SearchCustomers } from '../../data/orders-queries';
+import { MJO_ENTITIES } from '../../data/entity-names';
 
 /** A catalog row as the product picker shows it. */
 export interface MJOProductOption {
@@ -83,7 +83,7 @@ export interface MJOCustomerContext {
     styleUrls: ['./fast-entry.page.css'],
 })
 export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
-    private readonly orders = inject(MJOOrderEntryService);
+    private readonly orders = inject(MJOPricingScheduler);
     private readonly cdr = inject(ChangeDetectorRef);
 
     /** Owning company for the draft. */
@@ -187,7 +187,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     /** Build a fresh draft and re-subscribe the preview. Shared by init and {@link Reset}. */
     private async startDraft(): Promise<void> {
         const md = new Metadata();
-        this.Order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_ENTITY);
+        this.Order = await md.GetEntityObject<OrderHeaderEntity>(MJO_ENTITIES.OrderHeader);
         this.Order.NewRecord();
         this.Order.CompanyID = this.CompanyID;
         void this.onEdited();
@@ -474,13 +474,13 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
 
     public AddCode(): void {
         if (!this.CodeEntry.trim()) return;
-        this.orders.PromotionCodes = [...this.orders.PromotionCodes, this.CodeEntry.trim()];
+        this.Order.PromotionCodes.Add(this.CodeEntry.trim());
         this.CodeEntry = '';
         this.onEdited();
     }
 
     public DropCode(code: string): void {
-        this.orders.PromotionCodes = this.orders.PromotionCodes.filter((c) => c !== code);
+        this.Order.PromotionCodes.Remove(code);
         this.onEdited();
     }
 
@@ -756,7 +756,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         this.Saving = true;
         this.SaveError = null;
         try {
-            await this.orders.Save(this.Order);
+            await this.Order.SaveOrThrow();
             this.Saved.emit(this.Order);
         } catch (e) {
             this.SaveError = ReadableSaveError(e);
@@ -787,7 +787,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
 
     /** Promotion codes presented but not yet saved — screen state, held by the entry service. */
     public get PromotionCodes(): string[] {
-        return this.orders.PromotionCodes;
+        return this.Order.PromotionCodes.Codes;
     }
 
 }
