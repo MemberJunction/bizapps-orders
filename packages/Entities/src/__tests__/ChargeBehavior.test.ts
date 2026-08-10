@@ -8,7 +8,7 @@
  *     than its original net, or proportions drift as charges accumulate.
  */
 import { describe, it, expect } from 'vitest';
-import { ComputeCharges, type ChargeRequest, type ChargeableLine } from '../ChargeBehavior.js';
+import { ComputeCharges, type ChargeRequest, type ChargeableLine } from '../pricing/ChargeBehavior.js';
 
 const line = (id: string, net: number): ChargeableLine => ({ ID: id, Net: net });
 

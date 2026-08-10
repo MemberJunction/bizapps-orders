@@ -29,7 +29,7 @@ import {
     mjBizAppsOrdersOrderAdjustmentAllocationEntity,
     mjBizAppsOrdersOrderAdjustmentEntity,
     mjBizAppsOrdersOrderLineEntity,
-} from '@mj-biz-apps/orders-entities';
+} from '../generated/entity_subclasses';
 import { MJGlobal } from '@memberjunction/global';
 import { AllocateProRata, Money } from './PricingBehavior.js';
 import {

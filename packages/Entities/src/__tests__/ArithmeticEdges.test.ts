@@ -14,9 +14,9 @@
  * that does not balance.
  */
 import { describe, it, expect } from 'vitest';
-import { AllocateProRata, ComputeAmount, Money, type PriceRule } from '../PricingBehavior.js';
-import { ApplyPromotions, type PromotionContext, type PromotionRule } from '../PromotionBehavior.js';
-import { ComputeCharges, type ChargeRequest, type ChargeableLine } from '../ChargeBehavior.js';
+import { AllocateProRata, ComputeAmount, Money, type PriceRule } from '../pricing/PricingBehavior.js';
+import { ApplyPromotions, type PromotionContext, type PromotionRule } from '../pricing/PromotionBehavior.js';
+import { ComputeCharges, type ChargeRequest, type ChargeableLine } from '../pricing/ChargeBehavior.js';
 
 const sum = (xs: number[]) => Money(xs.reduce((a, b) => a + b, 0));
 

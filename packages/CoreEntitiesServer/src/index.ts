@@ -108,16 +108,16 @@ export {
     PriceResolutionError,
     ResolvePrice,
     ResolvePriceListForCustomer,
-} from './PriceResolver.js';
-export type { PriceResolutionContext, ResolvedPrice, PriceComponentDraft } from './PriceResolver.js';
+} from '@mj-biz-apps/orders-entities';
+export type { PriceResolutionContext, ResolvedPrice, PriceComponentDraft } from '@mj-biz-apps/orders-entities';
 export {
     AllocateProRata,
     ComputeAmount,
     IsRuleApplicable,
     Money,
     PickPriceRule,
-} from './PricingBehavior.js';
-export type { PriceRule, PriceTierRule, PriceContext, PricingModel, InapplicableReason, RulePick } from './PricingBehavior.js';
+} from '@mj-biz-apps/orders-entities';
+export type { PriceRule, PriceTierRule, PriceContext, PricingModel, InapplicableReason, RulePick } from '@mj-biz-apps/orders-entities';
 
 // Reversals (D16) — the pure judgement and the lookups it needs. Same split as pricing.
 export { RemainingReturnable, ValidateReversal, InheritedTerms } from './ReversalBehavior.js';
@@ -292,7 +292,7 @@ export type {
 } from './PaymentWebhookHandler.js';
 
 // Promotions (D70): the pure engine, the DB-backed resolution, and the qualifier plugin seam.
-export { ApplyPromotions, ScreenPromotion, ValuePromotion } from './PromotionBehavior.js';
+export { ApplyPromotions, ScreenPromotion, ValuePromotion } from '@mj-biz-apps/orders-entities';
 export type {
     PromotionRule,
     PromotionContext,
@@ -302,7 +302,7 @@ export type {
     PromotionRejection,
     PromotionValueKind,
     StackingMode,
-} from './PromotionBehavior.js';
+} from '@mj-biz-apps/orders-entities';
 export {
     AuthorizeManualDiscount,
     BasePromotionQualifier,
@@ -310,10 +310,10 @@ export {
     PromotionError,
     RunPromotions,
     WriteAdjustments,
-} from './PromotionEngine.js';
+} from '@mj-biz-apps/orders-entities';
 // Charges (D71): the pure engine and the DB-backed resolution. Tax is a CHARGE, which is what
 // makes multi-layer tax several rows rather than a special case.
-export { ComputeCharges } from './ChargeBehavior.js';
+export { ComputeCharges } from '@mj-biz-apps/orders-entities';
 export type {
     ChargeBasis,
     ChargeCategory,
@@ -322,15 +322,15 @@ export type {
     ComputedCharge,
     ChargeableLine,
     ComputeChargesResult,
-} from './ChargeBehavior.js';
-export { ChargeError, RunCharges, SplitChargesByLine, WriteCharges } from './ChargeEngine.js';
-export type { RequestedCharge } from './ChargeEngine.js';
+} from '@mj-biz-apps/orders-entities';
+export { ChargeError, RunCharges, SplitChargesByLine, WriteCharges } from '@mj-biz-apps/orders-entities';
+export type { RequestedCharge } from '@mj-biz-apps/orders-entities';
 
 // Tax resolution (D72): address -> jurisdictions -> rates, minus the buyer's exemptions. The
 // jurisdiction step is a SEAM — postal/city matching is enough for many deployments and is not
 // rooftop-accurate, which is where a commercial provider earns its money.
-export { BaseTaxJurisdictionResolver, DefaultTaxJurisdictionResolver, LoadTaxResolver, ResolveTax } from './TaxResolver.js';
-export type { TaxAddress, ResolvedTaxLayer, TaxResolutionResult } from './TaxResolver.js';
+export { BaseTaxJurisdictionResolver, DefaultTaxJurisdictionResolver, LoadTaxResolver, ResolveTax } from '@mj-biz-apps/orders-entities';
+export type { TaxAddress, ResolvedTaxLayer, TaxResolutionResult } from '@mj-biz-apps/orders-entities';
 
 export type {
     ManualDiscountRequest,
@@ -339,7 +339,7 @@ export type {
     PromotionQualificationContext,
     PromotionRunResult,
     RunPromotionsInput,
-} from './PromotionEngine.js';
+} from '@mj-biz-apps/orders-entities';
 export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyAccountCreditOperation.js';
 
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
@@ -392,7 +392,7 @@ export { ToISODate } from './InvoiceBuilder.js';
 // The app's lookup cache (D36/D37). Payment types, provider types, terms and charge types are read
 // on nearly every write path and change a few times a year — a per-call RunView naming one column
 // looks careful and is really a silent dependency on CodeGen having run.
-export { OrdersEngine, LoadOrdersEngine } from './OrdersEngine.js';
+export { OrdersEngine, LoadOrdersEngine } from '@mj-biz-apps/orders-entities';
 
 // The order lifecycle (D8/D53): the legal statuses, the legal MOVES between them, and what each one
 // permits. The DB CHECK enforces the set and never enforced the moves.

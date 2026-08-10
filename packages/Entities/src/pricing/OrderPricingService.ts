@@ -33,7 +33,7 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import type { mjBizAppsOrdersOrderLineEntity } from '../generated/entity_subclasses';
 import type { ComputeChargesResult } from './ChargeBehavior.js';
 import type { RequestedCharge } from './ChargeEngine.js';
 import type { ResolvedPrice } from './PriceResolver.js';
@@ -42,7 +42,15 @@ import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import { RunCharges, SplitChargesByLine } from './ChargeEngine.js';
 import { ResolvePrice } from './PriceResolver.js';
 import { AllocateProRata, LineGross, NetAfterDiscount } from './PricingBehavior.js';
-import type { OrderLineEntityServer } from './OrderLineEntityServer.js';
+/**
+ * The one thing this walk needs from the SERVER line subclass: somewhere to record the extended
+ * amount it resolved.
+ *
+ * Declared structurally rather than imported, because this file runs on both tiers now and the server
+ * subclass exists on only one of them. A nominal import would drag the whole server package into the
+ * browser's compile for a single optional property.
+ */
+type CarriesResolvedExtendedAmount = { ResolvedExtendedAmount?: number | null };
 import type { StackingMode } from './PromotionBehavior.js';
 import {
     AuthorizeManualDiscount,
@@ -478,7 +486,10 @@ export class OrderPricingService {
         // The line computes its own totals in a hook outside this class, so it needs the
         // exact figure too — otherwise it would re-derive quantity × a rounded unit rate
         // and disagree with the base computed here.
-        (line as OrderLineEntityServer).ResolvedExtendedAmount = resolved.ExtendedAmount;
+        // Set through the structural type: on the server this lands on `OrderLineEntityServer` and is
+        // read back by its own arithmetic; in the browser it is an ordinary property nobody reads, and
+        // the pricing answer is identical either way.
+        (line as unknown as CarriesResolvedExtendedAmount).ResolvedExtendedAmount = resolved.ExtendedAmount;
         this.out.PriceComponents.set(line, resolved);
     }
 

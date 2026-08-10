@@ -54,3 +54,26 @@ export * from './PromotionCodesCompanion';
  * case escalates, because a wrong price on screen is worse than a round trip.
  */
 export * from './PricingDriverResolver';
+
+/**
+ * The pricing engine — price resolution, promotions, charges and tax.
+ *
+ * Lives HERE, in the browser-safe package, rather than in the server one. It always could: the walk
+ * uses `RunView`, `IMetadataProvider` and `MJGlobal` and nothing else, all of which are
+ * network-transparent. It sat in `CoreEntitiesServer` by convention, and that convention was the only
+ * thing making a price preview cost a server round trip.
+ *
+ * ONE implementation, both tiers. That is the whole point and the constraint everything else bends
+ * to: the number the screen shows and the number the ledger books come from the same code, so they
+ * cannot drift. A second client-side pricing implementation would have been faster to write and would
+ * have been wrong within a month.
+ */
+export * from './pricing/PricingBehavior';
+export * from './pricing/PriceResolver';
+export * from './pricing/TaxResolver';
+export * from './pricing/OrdersEngine';
+export * from './pricing/ChargeBehavior';
+export * from './pricing/PromotionBehavior';
+export * from './pricing/ChargeEngine';
+export * from './pricing/PromotionEngine';
+export * from './pricing/OrderPricingService';

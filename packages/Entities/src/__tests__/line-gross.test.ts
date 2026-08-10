@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LineGross, NetAfterDiscount } from '../PricingBehavior';
+import { LineGross, NetAfterDiscount } from '../pricing/PricingBehavior';
 
 /**
  * `quantity × unitPrice` is correct ONLY for PerUnit pricing.

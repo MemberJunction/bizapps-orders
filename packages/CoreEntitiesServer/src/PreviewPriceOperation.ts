@@ -31,8 +31,8 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { PriceResolutionError, ResolvePrice, ResolvePriceListForCustomer } from './PriceResolver.js';
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
+import { PriceResolutionError, ResolvePrice, ResolvePriceListForCustomer } from '@mj-biz-apps/orders-entities';
 
 export interface PreviewPriceInput {
     ProductID: string;

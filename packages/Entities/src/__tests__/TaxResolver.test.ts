@@ -7,7 +7,7 @@
  * said" is the failure mode, so the tests assert WHERE each answer came from, not just what it was.
  */
 import { describe, it, expect } from 'vitest';
-import { ResolveTaxability } from '../TaxResolver.js';
+import { ResolveTaxability } from '../pricing/TaxResolver.js';
 
 const product = (isTaxable: boolean | null, cat: string | null = null) => ({
     IsTaxable: isTaxable,

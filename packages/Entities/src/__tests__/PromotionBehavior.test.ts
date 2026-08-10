@@ -15,7 +15,7 @@ import {
     ValuePromotion,
     type PromotionContext,
     type PromotionRule,
-} from '../PromotionBehavior.js';
+} from '../pricing/PromotionBehavior.js';
 
 const promo = (over: Partial<PromotionRule> = {}): PromotionRule => ({
     ID: 'p1',
