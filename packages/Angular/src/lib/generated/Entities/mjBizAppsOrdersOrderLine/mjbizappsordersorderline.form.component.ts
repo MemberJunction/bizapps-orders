@@ -21,6 +21,7 @@ export class mjBizAppsOrdersOrderLineFormComponent extends BaseFormComponent {
             { sectionKey: 'pricingAndFinancials', sectionName: 'Pricing and Financials', isExpanded: true },
             { sectionKey: 'shippingDetails', sectionName: 'Shipping Details', isExpanded: true },
             { sectionKey: 'subscriptionDetails', sectionName: 'Subscription Details', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLinePriceComponents', sectionName: 'Order Line Price Components', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Entitlement Grants', isExpanded: false },
