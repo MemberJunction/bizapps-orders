@@ -168,7 +168,20 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
             // the foreign key is stamped at execution time, so it is correct even though the header's
             // key is minted by this very save. Each line is still written by its own Save(), so
             // PaymentLineEntityServer's application-total check and booking guards fire unchanged.
-            if (!(await super.Save(options))) {
+            // THE HEADER ONLY, then the allocations explicitly.
+            //
+            // Letting the graph write them reads better and IS what the journal-entry path does — but
+            // it fails here, and the suite says so: `assertAllocationInvariant` and
+            // `bookPersistedLines` below both re-read PaymentLine FROM THE DATABASE by
+            // PaymentHeaderID, inside this transaction, and they found zero rows. A capture then
+            // refused itself with "it is for 100 but its 0 allocations total 0" — 61 checks.
+            //
+            // Journal entries get away with the graph because nothing downstream re-reads the lines;
+            // this path does, twice.
+            for (const line of this.Lines.Items) {
+                line.PaymentHeaderID = this.ID;
+            }
+            if (!(await super.Save({ ...options, IsGraphNodeSave: true } as EntitySaveOptions))) {
                 throw new Error(
                     `Failed to save payment ${this.PaymentNumber}: ` +
                         `${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
@@ -178,6 +191,15 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
             // The lines go down BEFORE the invariant is checked, because the check reads what is
             // actually persisted rather than what this object happens to be holding — a line that
             // silently failed to save would otherwise still count toward the total.
+
+            for (const line of this.Lines.Items) {
+                if (!(await line.Save(options))) {
+                    throw new Error(
+                        `Failed to save a payment allocation for ${this.PaymentNumber}: ` +
+                            `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    );
+                }
+            }
 
             if (capturing) {
                 // BOOK THE LINES THAT WERE ALREADY ON DISK. A payment that was saved `Pending` — the
