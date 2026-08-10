@@ -15,7 +15,7 @@
  * simplification back to `Math.max(0, …)` fails here rather than in production.
  */
 import { describe, it, expect } from 'vitest';
-import { NetAfterDiscount } from '../PricingBehavior.js';
+import { NetAfterDiscount } from '@mj-biz-apps/orders-entities';
 import { RemainingReturnable, ValidateReversal, InheritedTerms } from '../ReversalBehavior.js';
 
 const origin = (over: Partial<Parameters<typeof ValidateReversal>[1]> = {}) => ({

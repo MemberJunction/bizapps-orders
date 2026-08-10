@@ -29,8 +29,8 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
-import { OrderPricingService } from './OrderPricingService.js';
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
+import { OrderPricingService } from '@mj-biz-apps/orders-entities';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 

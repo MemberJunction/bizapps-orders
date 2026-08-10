@@ -32,8 +32,8 @@ import {
     type InvoicePaymentFacts,
 } from './InvoiceBehavior.js';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
-import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 import { RequireUUID } from './sql-guards.js';
+import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_CHARGE_ENTITY = 'MJ_BizApps_Orders: Order Charges';

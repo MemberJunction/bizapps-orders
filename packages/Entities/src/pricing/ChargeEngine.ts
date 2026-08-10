@@ -22,7 +22,7 @@ import { BaseEntity, IMetadataProvider, IRunViewProvider, RunView, UserInfo } fr
 import {
     mjBizAppsOrdersOrderChargeAllocationEntity,
     mjBizAppsOrdersOrderChargeEntity,
-} from '@mj-biz-apps/orders-entities';
+} from '../generated/entity_subclasses';
 import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 import {
     ComputeCharges,

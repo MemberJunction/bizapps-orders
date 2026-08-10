@@ -30,7 +30,7 @@
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
-import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
+import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import {
     BasePaymentProvider,
     type PaymentCredentials,

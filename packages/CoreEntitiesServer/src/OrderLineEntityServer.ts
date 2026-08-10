@@ -41,7 +41,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
-import { LineGross, NetAfterDiscount } from './PricingBehavior.js';
+import { LineGross, NetAfterDiscount } from '@mj-biz-apps/orders-entities';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';

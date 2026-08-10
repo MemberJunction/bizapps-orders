@@ -59,7 +59,7 @@ import type {
     mjBizAppsOrdersPaymentProviderTypeEntity,
     mjBizAppsOrdersPaymentTermsTypeEntity,
     mjBizAppsOrdersPaymentTypeEntity,
-} from '@mj-biz-apps/orders-entities';
+} from '../generated/entity_subclasses';
 
 /**
  * The lookup cache for BizApps Orders.

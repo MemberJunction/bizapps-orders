@@ -69,7 +69,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import type { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { RequireUUID } from './sql-guards.js';
-import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
+import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';

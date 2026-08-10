@@ -70,7 +70,7 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
-import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
+import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';

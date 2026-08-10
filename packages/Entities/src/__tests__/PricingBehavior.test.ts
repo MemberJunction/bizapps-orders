@@ -17,7 +17,7 @@ import {
     PickPriceRule,
     type PriceRule,
     type PriceTierRule,
-} from '../PricingBehavior.js';
+} from '../pricing/PricingBehavior.js';
 
 const d = (iso: string): Date => new Date(iso);
 

@@ -1,11 +1,7 @@
 import { Injectable } from '@angular/core';
-import { Metadata } from '@memberjunction/core';
+import { Metadata, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
-import {
-    OrderHeaderEntity,
-    OrdersPriceOrderOperation,
-    type PreviewComponent,
-} from '@mj-biz-apps/orders-entities';
+import { CanPriceOrderLocally, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, type PreviewComponent, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 
 /** The entity every order screen binds to. */
 
@@ -159,7 +155,33 @@ export class MJOPricingScheduler {
         }, this.DebounceMs);
     }
 
-    /** Price a draft's lines immediately, bypassing the debounce. */
+    /**
+     * Price a draft's lines immediately, bypassing the debounce.
+     *
+     * ## Locally when it can, on the server when it must
+     *
+     * `OrderPricingService` runs in this browser — it lives in the entities package and uses nothing
+     * but `RunView`, which is network-transparent. So the common order prices with no round trip at
+     * all: the metadata walk reads price rules, tiers, charge types and tax tables through the
+     * provider and answers immediately.
+     *
+     * Two things it cannot do here, and both must ESCALATE rather than be approximated:
+     *
+     *   · a **pricing plugin**. `BasePriceResolver` subclasses are server-side code, and the class
+     *     factory on this tier has none of them registered — so `ResolvePrice` would fall through to
+     *     the DEFAULT resolver and return a confident, wrong number. `CanPriceOrderLocally` reads the
+     *     `PricingDriverClass` metadata to find out before that happens.
+     *   · a **promotion code**. Whether a code still applies depends on redemption counts that change
+     *     with orders other people are placing right now. No staleness is acceptable for that, so any
+     *     code at all sends the whole pass to the server.
+     *
+     * The escalation is all-or-nothing because pricing is not per-line arithmetic: promotions stack
+     * against order totals, charges apportion across lines, tax computes on the discounted amount. An
+     * order half-priced here and half there would disagree with itself about the same totals.
+     *
+     * Either way the answer comes from ONE implementation, which is the property the whole
+     * arrangement exists to preserve.
+     */
     public async PriceNow(order: OrderHeaderEntity, onState: (state: MJOPricingState) => void): Promise<void> {
         if (!order.Lines.Count) {
             onState({ Result: null, Loading: false, Error: null });
@@ -168,6 +190,8 @@ export class MJOPricingScheduler {
 
         const issued = ++this.sequence;
         try {
+            const local = await this.priceLocally(order, issued, onState);
+            if (local) return;
             // ONE round trip for the WHOLE order, not one per line.
             //
             // This used to fan out a PreviewPrice call per line and sum the answers, which cannot be
@@ -223,6 +247,98 @@ export class MJOPricingScheduler {
 
 
 
+
+    /**
+     * Run the real pricing walk in this browser, or report that it cannot.
+     *
+     * @returns True when it priced and reported state; false when the caller must escalate.
+     */
+    private async priceLocally(
+        order: OrderHeaderEntity,
+        issued: number,
+        onState: (state: MJOPricingState) => void,
+    ): Promise<boolean> {
+        // A code sends the whole pass to the server: redemption caps and per-customer limits change
+        // with orders being placed right now, and there is no staleness that makes a cached answer
+        // safe. This is checked first because it is free.
+        if (order.PromotionCodes.Codes.length) return false;
+        if (!order.CompanyID) return false;
+
+        const md = new Metadata();
+        const provider = Metadata.Provider as unknown as IRunViewProvider;
+
+        const verdict = await CanPriceOrderLocally(
+            order.Lines.Items.map((l) => l.ProductID),
+            order.CompanyID,
+            provider,
+            md.CurrentUser,
+        );
+        if (!verdict.CanPriceLocally) return false;
+
+        // REAL LINE ENTITIES, NEVER SAVED — the same shape `Orders.PriceOrder` builds server-side,
+        // because it is the same walk. `NewRecord()` is called and `Save()` is not.
+        const lines: mjBizAppsOrdersOrderLineEntity[] = [];
+        for (const source of order.Lines.Items) {
+            const line = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(MJO_ENTITIES.OrderLine);
+            line.NewRecord();
+            line.ProductID = source.ProductID;
+            line.Quantity = Number(source.Quantity ?? 0);
+            // A STATED price PINS the line; an absent one is what tells the engine to resolve.
+            // Assigning 0 would read as a deliberate free line.
+            if (source.GetFieldByName('UnitPrice')?.Dirty) line.UnitPrice = Number(source.UnitPrice);
+            line.DiscountPct = Number(source.DiscountPct ?? 0);
+            lines.push(line);
+        }
+
+        const result = await new OrderPricingService({
+            Provider: Metadata.Provider as unknown as IMetadataProvider,
+            User: md.CurrentUser as UserInfo,
+        }).Price({
+            OrderHeaderID: order.ID ?? null,
+            CompanyID: order.CompanyID,
+            BillToPersonID: order.BillToPersonID ?? null,
+            BillToOrganizationID: order.BillToOrganizationID ?? null,
+            OrderDate: order.OrderDate ?? null,
+            ShipToAddressID: order.ShipToAddressID ?? null,
+            Lines: lines,
+            PromotionCodes: [],
+            ManualDiscounts: [],
+            Charges: [],
+        });
+
+        if (issued <= this.applied) return true; // overtaken, but it WAS handled
+        this.applied = issued;
+
+        // Read back off the entities the walk just stamped — the same fields `Orders.PriceOrder`
+        // reads before returning, so the two paths produce the same summary from the same numbers.
+        const priced = lines.map((line, i) => ({
+            UnitPrice: Number(line.UnitPrice ?? 0),
+            DiscountAmount: Number(line.DiscountAmount ?? 0),
+            LineTotalNet: Math.round((Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) - Number(line.DiscountAmount ?? 0)) * 100) / 100,
+            Components: result.PriceComponents.get(line)?.Components?.map((c) => ({
+                Kind: String((c as { Kind?: string }).Kind ?? ''),
+                Label: String((c as { Label?: string }).Label ?? ''),
+                Amount: Number((c as { Amount?: number }).Amount ?? 0),
+            })),
+            TaxExemptReason: result.TaxReasons.get(i) ?? null,
+        }));
+        const sum = (pick: (l: (typeof priced)[number]) => number) =>
+            Math.round(priced.reduce((t, l) => t + pick(l), 0) * 100) / 100;
+
+        onState({
+            Result: this.summarize(order, {
+                Lines: priced,
+                Totals: {
+                    Net: sum((l) => l.LineTotalNet),
+                    Discount: sum((l) => l.DiscountAmount),
+                    Gross: sum((l) => l.LineTotalNet),
+                },
+            }),
+            Loading: false,
+            Error: null,
+        });
+        return true;
+    }
 
     /**
      * Turn the engine's answer into what the strip renders.
