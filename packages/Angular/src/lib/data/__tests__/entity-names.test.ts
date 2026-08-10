@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { MJO_ENTITIES } from '../orders-data.service';
+import { MJO_ENTITIES } from '../entity-names';
 
 const generated = readFileSync(
     join(

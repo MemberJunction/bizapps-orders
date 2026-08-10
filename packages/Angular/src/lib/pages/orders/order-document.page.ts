@@ -1,8 +1,10 @@
 import { ChangeDetectorRef, Component, Input, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format';
-import { MJOOrdersDataService, type MJOOrderRow } from '../../services/orders-data.service';
+
 import { MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { GetOrderLines, GetOrders } from '../../data/orders-queries';
+import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 
 /** Who issued the bill. */
 export interface MJOIssuer {
@@ -269,7 +271,6 @@ export interface MJOIssuer {
     ],
 })
 export class MJOOrderDocumentPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded.
      *
@@ -293,15 +294,15 @@ export class MJOOrderDocumentPageComponent implements OnInit {
     /** The issuing company's letterhead. */
     @Input() Issuer: MJOIssuer = { Name: '', AddressLines: [] };
 
-    public Order: MJOOrderRow | null = null;
-    public Lines: Array<Record<string, unknown>> = [];
+    public Order: mjBizAppsOrdersOrderHeaderEntity | null = null;
+    public Lines: mjBizAppsOrdersOrderLineEntity[] = [];
     public readonly today = new Date().toISOString().slice(0, 10);
 
     public async ngOnInit(): Promise<void> {
         if (!this.OrderID) return;
-        const orders = await this.data.GetOrders({ Preset: 'all' });
+        const orders = await GetOrders({ Preset: 'all' });
         this.Order = orders.find((o) => o.ID === this.OrderID) ?? null;
-        if (this.Order) this.Lines = await this.data.GetOrderLines(this.Order.ID);
+        if (this.Order) this.Lines = await GetOrderLines(this.Order.ID);
         this.cdr.detectChanges();
     }
 

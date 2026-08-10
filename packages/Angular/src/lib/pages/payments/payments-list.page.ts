@@ -1,8 +1,10 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
-import { MJOOrdersDataService, type MJOPaymentRow } from '../../services/orders-data.service';
+
 import { FormatDate, FormatMoney } from '../../panels/money-format';
+import { GetPayments } from '../../data/orders-queries';
+import type { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 
 /**
  * `mjo-payments-list-page` — find any payment, and see exactly what it settled.
@@ -57,7 +59,6 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
     ],
 })
 export class MJOPaymentsListPageComponent implements OnInit {
-    private readonly data = inject(MJOOrdersDataService);
     /**
      * Render what was just loaded.
      *
@@ -75,9 +76,9 @@ export class MJOPaymentsListPageComponent implements OnInit {
      */
     private readonly cdr = inject(ChangeDetectorRef);
 
-    @Output() PaymentOpened = new EventEmitter<MJOPaymentRow>();
+    @Output() PaymentOpened = new EventEmitter<mjBizAppsOrdersPaymentHeaderEntity>();
 
-    public Rows: MJOPaymentRow[] = [];
+    public Rows: mjBizAppsOrdersPaymentHeaderEntity[] = [];
     public Preset = 'all';
     public Search = '';
 
@@ -88,7 +89,7 @@ export class MJOPaymentsListPageComponent implements OnInit {
         { Key: 'refunds', Label: 'Refunds', Icon: 'fa-solid fa-arrow-rotate-left' },
     ];
 
-    public readonly Columns: MJOColumn<MJOPaymentRow>[] = [
+    public readonly Columns: MJOColumn<mjBizAppsOrdersPaymentHeaderEntity>[] = [
         { Key: 'PaymentNumber', Label: 'Payment', Kind: 'mono', Width: '118px', Sortable: true },
         {
             Key: 'PaymentDate',
@@ -157,7 +158,7 @@ export class MJOPaymentsListPageComponent implements OnInit {
     }
 
     private async load(): Promise<void> {
-        this.Rows = await this.data.GetPayments({ Preset: this.Preset as never, Search: this.Search });
+        this.Rows = await GetPayments({ Preset: this.Preset as never, Search: this.Search });
         this.cdr.detectChanges();
     }
 }
