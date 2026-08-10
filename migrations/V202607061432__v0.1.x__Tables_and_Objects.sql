@@ -3511,8 +3511,8 @@ IF NOT EXISTS (
       SELECT 1 FROM [${mjSchema}].[Application] WHERE [ID] = 'fb80feb4-5505-49d1-93ce-2e7bd030b478'
    )
    BEGIN
-      INSERT INTO [${mjSchema}].[Application] (ID, Name, Description, SchemaAutoAddNewEntities, Path, AutoUpdatePath)
-                       VALUES ('fb80feb4-5505-49d1-93ce-2e7bd030b478', '${flyway:defaultSchema}', 'Generated for schema', '${flyway:defaultSchema}', 'mjbizappsorders', 1)
+      INSERT INTO [${mjSchema}].[Application] (ID, Name, Description, SchemaAutoAddNewEntities, Path, AutoUpdatePath, DefaultForNewUser)
+                       VALUES ('fb80feb4-5505-49d1-93ce-2e7bd030b478', '${flyway:defaultSchema}', 'Generated for schema', '${flyway:defaultSchema}', 'mjbizappsorders', 1, 0)
    END;
 
 /* Adding role UI to application ${flyway:defaultSchema} */
@@ -27968,7 +27968,7 @@ GO
             1,
             0,
             0,
-            '5C27523E-2896-4B21-99DF-15D028C18180',
+            'C040A1FC-16CE-49CB-B0E2-4F233BD0D762',
             'ID',
             0,
             0,
@@ -37859,7 +37859,7 @@ GO
             1,
             0,
             0,
-            '5C27523E-2896-4B21-99DF-15D028C18180',
+            'C040A1FC-16CE-49CB-B0E2-4F233BD0D762',
             'ID',
             0,
             0,
@@ -44854,7 +44854,7 @@ GO
             1,
             0,
             0,
-            '952B959C-B5FD-4BA0-B7A9-72250DC0DB0E',
+            'F15DE0FC-C7FC-4080-8F33-9308DECB0E46',
             'ID',
             0,
             0,
@@ -44917,7 +44917,7 @@ GO
             1,
             0,
             0,
-            '7B1157EE-A9D0-4E47-A103-4F6D7382ED65',
+            'E382FFAB-748C-4EB6-BEA9-1E8DCB7DBC3F',
             'ID',
             0,
             0,
@@ -50171,7 +50171,7 @@ UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='BE1B6707-C
    )
    BEGIN
       INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('a04984a6-5cba-4e80-95b0-8e227e2d0170', '5C27523E-2896-4B21-99DF-15D028C18180', 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD', 'JournalEntryID', 'One To Many', 1, 1, 5, GETUTCDATE(), GETUTCDATE())
+                    VALUES ('a04984a6-5cba-4e80-95b0-8e227e2d0170', 'C040A1FC-16CE-49CB-B0E2-4F233BD0D762', 'CE97BF15-F7C6-4C50-A744-A89C714A4DDD', 'JournalEntryID', 'One To Many', 1, 1, 5, GETUTCDATE(), GETUTCDATE())
    END;
                     
 /* Create Entity Relationship: MJ_BizApps_Accounting: Journal Entries -> MJ_BizApps_Orders: Order Lines (One To Many via JournalEntryID) */
@@ -50180,7 +50180,7 @@ UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='BE1B6707-C
    )
    BEGIN
       INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('0fc8a97b-0c85-425a-b26d-baef7e3b262a', '5C27523E-2896-4B21-99DF-15D028C18180', '66D82C24-9C9F-4CD6-B019-53C20274AB00', 'JournalEntryID', 'One To Many', 1, 1, 6, GETUTCDATE(), GETUTCDATE())
+                    VALUES ('0fc8a97b-0c85-425a-b26d-baef7e3b262a', 'C040A1FC-16CE-49CB-B0E2-4F233BD0D762', '66D82C24-9C9F-4CD6-B019-53C20274AB00', 'JournalEntryID', 'One To Many', 1, 1, 6, GETUTCDATE(), GETUTCDATE())
    END;
                     
 /* Create Entity Relationship: MJ_BizApps_Orders: Price Lists -> MJ_BizApps_Orders: Product Prices (One To Many via PriceListID) */
@@ -50529,7 +50529,7 @@ UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='BE1B6707-C
    )
    BEGIN
       INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('5d710b0a-5c5c-4356-bab3-d240ec7122b5', '7B1157EE-A9D0-4E47-A103-4F6D7382ED65', 'BA50DDD3-3B17-4E85-8102-D3E96BB820C9', 'DimensionValueID', 'One To Many', 1, 1, 4, GETUTCDATE(), GETUTCDATE())
+                    VALUES ('5d710b0a-5c5c-4356-bab3-d240ec7122b5', 'E382FFAB-748C-4EB6-BEA9-1E8DCB7DBC3F', 'BA50DDD3-3B17-4E85-8102-D3E96BB820C9', 'DimensionValueID', 'One To Many', 1, 1, 4, GETUTCDATE(), GETUTCDATE())
    END;
                     
 /* Create Entity Relationship: MJ_BizApps_Orders: Order Lines -> MJ_BizApps_Orders: Order Line Price Components (One To Many via OrderLineID) */
@@ -50878,7 +50878,7 @@ UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='BE1B6707-C
    )
    BEGIN
       INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('7628b762-795b-4d57-a204-94106ff7c49d', '952B959C-B5FD-4BA0-B7A9-72250DC0DB0E', 'BA50DDD3-3B17-4E85-8102-D3E96BB820C9', 'DimensionID', 'One To Many', 1, 1, 5, GETUTCDATE(), GETUTCDATE())
+                    VALUES ('7628b762-795b-4d57-a204-94106ff7c49d', 'F15DE0FC-C7FC-4080-8F33-9308DECB0E46', 'BA50DDD3-3B17-4E85-8102-D3E96BB820C9', 'DimensionID', 'One To Many', 1, 1, 5, GETUTCDATE(), GETUTCDATE())
    END;
 
 
