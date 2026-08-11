@@ -22,6 +22,7 @@ import {
     type UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { OverdueFilter } from '@mj-biz-apps/orders-entities';
 import {
     OrdersGetOverdueWorklistOperation as OrdersGetOverdueWorklistOperationBase,
     type OrdersGetOverdueWorklistInput,
@@ -105,13 +106,10 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
         const asOf = RequireDate(input?.AsOfDate ?? new Date().toISOString().slice(0, 10), 'AsOfDate');
         const maxCount = input?.MaxCount ?? 500;
 
-        const filters: string[] = [
-            // Draft and Quoted orders owe nothing yet; a voided one owes nothing ever.
-            `Status NOT IN ('Draft','Quoted','Voided')`,
-            `DueDate IS NOT NULL`,
-            `DueDate < '${asOf}'`,
-            `Balance > 0`,
-        ];
+        // ONE definition, shared with the layered base view's `IsOverdue` column. Retyping the
+        // predicate here is how this repo ended up with three statements of it that disagreed about
+        // voided orders — see the header of `overdue.ts`.
+        const filters: string[] = [OverdueFilter(asOf)];
 
         if (input?.CompanyIDs?.length) {
             const list = input.CompanyIDs.map((id) => `'${RequireUUID(id, 'CompanyIDs')}'`).join(',');
