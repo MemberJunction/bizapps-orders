@@ -35,7 +35,7 @@
     "@memberjunction/global": "^6.1.0-edge.1",
     "@memberjunction/server": "^6.1.0-edge.1",
     "@memberjunction/server-extensions-core": "^6.1.0-edge.1",
-    "@memberjunction/sqlserver-dataprovider": "^6.1.0-edge.1",
+    "@memberjunction/generic-database-provider": "^6.1.0-edge.1",
     "@memberjunction/templates": "^6.1.0-edge.1",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-entities": ">=0.1.0",

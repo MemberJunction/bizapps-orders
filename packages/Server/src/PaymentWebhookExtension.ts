@@ -44,7 +44,7 @@
 import BodyParser from 'body-parser';
 import type { Application, Request, Response } from 'express';
 import { LogError, LogStatus, Metadata, UserInfo } from '@memberjunction/core';
-import { UserCache } from '@memberjunction/sqlserver-dataprovider';
+import { UserCache } from '@memberjunction/generic-database-provider';
 import { RegisterClass } from '@memberjunction/global';
 import {
     BaseServerExtension,
