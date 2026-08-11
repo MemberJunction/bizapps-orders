@@ -139,17 +139,48 @@ describe('entity-action metadata', () => {
         bindings.forEach(check);
     });
 
-    it('ships every AfterUpdate binding with a transition filter', () => {
-        // Without one, AfterUpdate fires on EVERY save of the record. An order is saved repeatedly
-        // after confirmation — posting stamps JournalEntryID, payments move Balance — so an
-        // unfiltered send mails the customer their invoice again each time.
+    it('never leaves an AfterUpdate binding both unfiltered AND enabled', () => {
+        // THE RULE THAT ACTUALLY MATTERS, and it is weaker than the one this test first asserted.
+        //
+        // An unfiltered AfterUpdate fires on EVERY save of the record. An order is saved repeatedly
+        // after confirmation — posting stamps JournalEntryID, fulfilment moves FulfillmentStatus,
+        // payments move Balance — so an unfiltered send mails the customer their invoice each time.
+        //
+        // The first version of this test demanded a filter outright. That was wrong, and wrong in the
+        // dangerous direction: it passed against a filter whose `@lookup:` could never resolve, because
+        // it only counted filter records without checking they referenced anything real. `MJ: Action
+        // Filters` has no Name column (ID, UserDescription, UserComments, Code, CodeExplanation), no
+        // rows are seeded at 6.1.0-edge.1, and the runtime the mechanism needs is not shipped either.
+        // A test that certifies a fabricated reference is worse than no test.
+        //
+        // So: EITHER a filter OR not Active. Both halves are checkable from the repo, and the pair is
+        // exactly the safety property — an unfiltered binding may exist, it just may not fire.
         for (const b of bindings) {
             const fires = (b.relatedEntities?.['MJ: Entity Action Invocations'] ?? []).map((i) =>
                 lookupValue(i.fields.InvocationTypeID),
             );
             if (!fires.includes('AfterUpdate')) continue;
+
             const filters = b.relatedEntities?.['MJ: Entity Action Filters'] ?? [];
-            expect(filters.length, 'an unfiltered AfterUpdate binding re-fires on every save').toBeGreaterThan(0);
+            const active =
+                b.fields.Status === 'Active' ||
+                (b.relatedEntities?.['MJ: Entity Action Invocations'] ?? []).some((i) => i.fields.Status === 'Active');
+
+            expect(
+                filters.length > 0 || !active,
+                'an AfterUpdate binding that is Active must carry a transition filter, or it mails on every save',
+            ).toBe(true);
+        }
+    });
+
+    it('does not reference an ActionFilter by a column that does not exist', () => {
+        // `MJ: Action Filters` is keyed by ID and described by UserDescription; it has no Name. A
+        // `@lookup:...Name=` against it resolves to nothing, and the binding then runs unfiltered —
+        // which for an AfterUpdate send is the mail loop above.
+        for (const b of bindings) {
+            for (const f of b.relatedEntities?.['MJ: Entity Action Filters'] ?? []) {
+                expect(String(f.fields.ActionFilterID)).not.toMatch(/^@lookup:MJ: Action Filters\.Name=/);
+            }
         }
     });
 

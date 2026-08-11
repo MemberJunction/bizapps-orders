@@ -3,33 +3,37 @@
     "_comments": [
       "ORDER CONFIRMED -> SEND THE CUSTOMER THEIR DOCUMENT.",
       "",
-      "The one binding in the doc's table that can be built today, because it is the only one whose",
-      "Action already exists. 'Send Document' renders the confirmed order as its customer-facing bill,",
-      "resolves the billing contacts the order itself names, and refuses anything that is not a bill.",
-      "The other four suggestions — welcome sequence, fulfilment kickoff, provisioning notification,",
-      "save/win-back — have no Action to point at yet. A binding whose ActionID names nothing is worse",
-      "than an absent one: it looks configured.",
+      "The one binding in the doc's table whose Action already exists. 'Send Document' renders the",
+      "confirmed order as its customer-facing bill, resolves the billing contacts the order itself",
+      "names, and refuses anything that is not a bill. The other four suggestions have no Action to",
+      "point at yet, and a binding whose ActionID resolves to nothing is worse than an absent one:",
+      "it looks configured.",
       "",
       "WHY AfterUpdate AND NOT Before/Validate. Sending a bill is a side effect with an outside-world",
-      "consequence, and After* is fire-and-forget (queued, per MJ#3408). It is explicitly NOT part of",
-      "the all-or-none transaction ConfirmOrder guarantees, which is correct: a mail relay being down",
-      "must never roll back a booked order, and a booked order must never be un-booked because a PDF",
-      "failed to render.",
+      "consequence, and After* is fire-and-forget. It is explicitly NOT part of the all-or-none",
+      "transaction ConfirmOrder guarantees, which is correct in both directions: a mail relay being",
+      "down must never roll back a booked order, and a booked order must never be un-booked because a",
+      "PDF failed to render.",
       "",
-      "WHY THE FILTER IS 'changed TO value' AND NOT 'is'. An order is saved many times after it is",
-      "confirmed — posting stamps JournalEntryID, fulfilment moves FulfillmentStatus, payments move",
-      "Balance. A binding on 'Status IS Confirmed' re-fires on every one of those saves and mails the",
-      "customer their invoice again each time. The transition filter is the difference between one",
-      "invoice and one per subsequent save.",
+      "\u26d4 NO TRANSITION FILTER IS POSSIBLE ON THIS MJ VERSION, AND THAT IS WHY THIS CANNOT BE ENABLED.",
       "",
-      "SHIPPED AS 'Pending', DELIBERATELY. The engine only runs Active bindings",
-      "(GetActionsByEntityNameAndInvocationType(..., 'Active')), so this arrives wired and inert. Two",
-      "reasons: whether a company mails invoices automatically is a policy decision an operator makes,",
-      "not one a migration makes for them; and ScopeRecordID has to name a real Company row, whose ID",
-      "differs per environment, so shipping it Active and unscoped would mail every customer of every",
-      "company the moment it is pushed.",
+      "An order is saved many times AFTER it is confirmed \u2014 posting stamps JournalEntryID, fulfilment",
+      "moves FulfillmentStatus, payments move Balance. An unfiltered AfterUpdate binding therefore",
+      "fires on every one of those and mails the customer their invoice again each time.",
       "",
-      "TO TURN IT ON: set ScopeEntityID/ScopeRecordID to the Company that wants it, then Status=Active.",
+      "MJ#3408's plan text describes two seeded reusable ActionFilters ('field changed', 'field changed",
+      "to value'). They do not exist in @memberjunction/core-entities@6.1.0-edge.1: `MJ: Action Filters`",
+      "has no Name column to look one up by (ID, UserDescription, UserComments, Code, CodeExplanation),",
+      "no rows are seeded, and the runtime the real mechanism needs \u2014 ActionFilterContext, and the",
+      "DidFieldChangeToValue helper \u2014 ships in neither actions-base nor core at this version.",
+      "",
+      "So the honest state is: the binding is wired, correct, and INERT. Do not enable it by deleting",
+      "this note. Enabling it without a transition filter is not a smaller version of the feature, it",
+      "is a mail loop aimed at a customer.",
+      "",
+      "TO ENABLE, once MJ ships the filter runtime: add an EntityActionFilter whose Code tests",
+      "'Status changed to Confirmed', point ScopeEntityID/ScopeRecordID at the Company that wants it,",
+      "then set Status=Active.",
       "",
       "RE-ENTRANCY IS ALREADY HANDLED. 'Send Document' writes delivery rows, and after-hooks are guarded",
       "against an action's own write-back re-triggering it (EntitySaveOptions.OriginatingEntityActionIDs)."
@@ -50,26 +54,12 @@
           }
         }
       ],
-      "MJ: Entity Action Filters": [
-        {
-          "_comments": [
-            "The seeded reusable filter from MJ#3408. Without it AfterUpdate fires on EVERY update.",
-            "If this lookup fails to resolve, the seed did not ship in your MJ release — do NOT drop the",
-            "filter and enable the binding anyway; an unfiltered send mails the customer on every save."
-          ],
-          "fields": {
-            "ActionFilterID": "@lookup:MJ: Action Filters.Name=Field Changed To Value",
-            "Sequence": 10,
-            "Status": "Pending"
-          }
-        }
-      ],
       "MJ: Entity Action Params": [
         {
           "_comments": [
             "'Send Document' takes OrderID as its one required input. Entity Field, not Entity Object:",
-            "the action wants the id, and passing the live BaseEntity would serialize to {} — its fields",
-            "are getters — so the action would receive an empty payload with no error anywhere."
+            "the action wants the id, and passing the live BaseEntity would serialize to {} \u2014 its fields",
+            "are getters \u2014 so the action would receive an empty payload with no error anywhere."
           ],
           "fields": {
             "ActionParamID": "@lookup:MJ: Action Params.Name=OrderID&ActionID=@lookup:MJ: Actions.Name=Send Document",

@@ -124,7 +124,7 @@ one in §3's table whose Action exists today.
 
 | §3 suggestion | Action it needs | State |
 |---|---|---|
-| `OrderHeader` · `AfterUpdate` → Confirmed | **Send Document** ✔ exists | **Built**, shipped `Pending` |
+| `OrderHeader` · `AfterUpdate` → Confirmed | **Send Document** ✔ exists | **Built**, shipped `Pending` — cannot be enabled until MJ ships the filter runtime |
 | Fulfilment kickoff / welcome sequence | a flow agent, or a notify Action | Not built — nothing to bind |
 | `PaymentHeader` · `AfterCreate` (reversals) | refund/chargeback handling Action | Not built — nothing to bind |
 | `Subscription` · `AfterUpdate` → cancelled | save/win-back Action | Not built — nothing to bind |
@@ -147,15 +147,29 @@ The engine runs `Active` bindings only. Two independent reasons to arrive inert:
 Turning it on is two fields: point `ScopeEntityID`/`ScopeRecordID` at the Company, set
 `Status = Active`.
 
-### The transition filter is load-bearing
+### ⛔ The transition filter does not exist yet — which is why this cannot be enabled
 
-The binding carries the seeded **"field changed to value"** filter. Without it, `AfterUpdate` fires on
-*every* save of the order — and an order is saved repeatedly after confirmation, because posting
-stamps `JournalEntryID`, fulfilment moves `FulfillmentStatus`, and payments move `Balance`. The
-difference is one invoice versus one invoice per subsequent save.
+§1 above says #3408 seeds two reusable `ActionFilter`s ("field changed", "field changed *to* value").
+**That is plan text in MJ's repo, not something the release ships.** Checked against the installed
+packages:
 
-If that seeded filter is absent from your MJ release, the `@lookup:` will not resolve. **Do not drop
-the filter and enable the binding anyway.**
+| | |
+|---|---|
+| `MJ: Action Filters` columns | `ID`, `UserDescription`, `UserComments`, `Code`, `CodeExplanation` — **no `Name`** |
+| seeded filter rows | none |
+| `ActionFilterContext` / `DidFieldChangeToValue` | in neither `actions-base` nor `core` at `6.1.0-edge.1` |
+
+So there is no way to author a working transition filter on this version, by lookup or otherwise.
+
+That matters more than it sounds. Without one, `AfterUpdate` fires on **every** save of the order —
+and an order is saved repeatedly after confirmation, because posting stamps `JournalEntryID`,
+fulfilment moves `FulfillmentStatus`, and payments move `Balance`. An unfiltered send is not a
+smaller version of this feature; it is a mail loop aimed at a customer.
+
+The binding is therefore wired, correct, and **inert**. The guard in the test suite is deliberately
+the weaker, true property — *either* a filter *or* not Active — because the stronger one it started
+as ("every AfterUpdate must have a filter") passed against a filter whose lookup could never resolve.
+A test that certifies a fabricated reference is worse than no test.
 
 ### Guards
 
