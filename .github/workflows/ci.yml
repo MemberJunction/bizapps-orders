@@ -47,14 +47,17 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      # Must precede setup-node: `cache: 'pnpm'` needs pnpm already on PATH.
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: npm
-      - run: npm ci
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
 
       # BUILD BEFORE TESTING. `registry-parity.test.ts` imports a workspace package by NAME, whose
-      # `main` points at a `dist/` that `npm ci` does not produce — so without this the file fails
+      # `main` points at a `dist/` that `pnpm install --frozen-lockfile` does not produce — so without this the file fails
       # to RESOLVE and never executes. The suite still reported ~989 passing and a red X, which is
       # the worst shape a check can have: it looks like a known failure rather than a test that is
       # not running. Locally the same command reports 1065, and the missing 76 are exactly this file.
@@ -65,12 +68,12 @@ jobs:
       #
       # Second reason, independent of the test: CI could not previously catch a BUILD break at all.
       # package.json and package-lock.json disagreed about @types/express for 24 commits and every
-      # `npm ci` failed — nobody noticed, because the check was already red for the other reason.
+      # `pnpm install --frozen-lockfile` failed — nobody noticed, because the check was already red for the other reason.
       #
       # WHY `--continue`, AND WHY THE FAILURE IS DEFERRED TO THE LAST STEP. `orders-core-entities-server`
       # does not compile on a runner at all: it imports `@mj-biz-apps/accounting-engine-base` for
       # runtime values, and that package is unpublished — it exists here only because the mjdev
-      # dev-link puts accounting in the same npm workspace. A plain `npm run build:packages` therefore
+      # dev-link puts accounting in the same npm workspace. A plain `pnpm run build:packages` therefore
       # aborts the job on its first failing package and `npx vitest run` never executes, which puts us
       # straight back in the shape this build step was added to escape: a red X that reads like a known
       # failure but is really a thousand tests not running.
@@ -87,7 +90,7 @@ jobs:
       - name: Build app packages
         id: build
         run: |
-          if npm run build:packages -- --continue; then
+          if ppnpm run build:packages --continue; then
             echo 'ok=true' >> "$GITHUB_OUTPUT"
           else
             echo 'ok=false' >> "$GITHUB_OUTPUT"
@@ -160,7 +163,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           if [ -z "$(find .changeset -name '*.md' ! -name 'README.md' -print -quit)" ]; then
-            echo "::warning title=No changeset::This PR carries no changeset. One is required for any change to migrations/ or a published package — run 'npx changeset'."
+            echo "::warning title=No changeset::This PR carries no changeset. One is required for any change to migrations/ or a published package — run 'pnpm exec changeset'."
           fi
 
       - name: State plainly what this gate does not cover

@@ -21,9 +21,9 @@
 #   7. accounting's seed metadata (currencies, GL account roles) — booking needs both
 #
 # AFTER THIS, still by hand (they need judgement, not automation):
-#   npm run mj:codegen                     # regenerate entity metadata + SQL objects
+#   pnpm run mj:codegen                     # regenerate entity metadata + SQL objects
 #   scripts/append-codegen.sh              # append the generated SQL below the migration's banner
-#   npm run mj -- sync push --dir metadata # seed the lookup tables
+#   pnpm run mj -- sync push --dir metadata # seed the lookup tables
 #
 # Usage: scripts/rebuild-db.sh
 set -euo pipefail
@@ -136,9 +136,9 @@ $MJ sync push --dir "$ACCOUNTING_REPO/metadata"
 say "Done"
 cat <<'NEXT'
 Next, in order:
-  npm run mj:codegen
+  pnpm run mj:codegen
   scripts/append-codegen.sh
-  npm run mj -- sync push --dir metadata
-  npm run build
+  pnpm run mj -- sync push --dir metadata
+  pnpm run build
   node test-harnesses/integration.mjs
 NEXT
