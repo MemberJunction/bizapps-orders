@@ -18,10 +18,6 @@ import { join } from 'node:path';
 const REPO = join(import.meta.dirname, '..', '..', '..', '..', '..', '..');
 const appCss = readFileSync(join(REPO, 'mockups', 'assets', 'app.css'), 'utf8');
 const pkgJson = JSON.parse(readFileSync(join(REPO, 'packages', 'Angular', 'package.json'), 'utf8'));
-const explorerScss = readFileSync(
-    join(REPO, 'apps', 'MJExplorer', 'src', 'styles.scss'),
-    'utf8',
-);
 
 describe('mockup stylesheet chain', () => {
     it('imports the canonical kit rather than copying it', () => {
@@ -57,8 +53,8 @@ describe('shipped package stylesheet', () => {
         expect(pkgJson.exports).toHaveProperty('./styles/orders-kit.css');
     });
 
-    it('is actually loaded by the Explorer host', () => {
-        // Without this line every Orders screen renders unstyled in the real app.
-        expect(explorerScss).toContain('@mj-biz-apps/orders-ng/styles/orders-kit.css');
-    });
+    // The "is actually loaded by the Explorer host" check left with the in-repo
+    // MJExplorer harness (removed in the pnpm migration). Whether a HOST's
+    // styles.scss imports `@mj-biz-apps/orders-ng/styles/orders-kit.css` is the
+    // installer/dev-link wiring's contract, not observable from this repo.
 });
