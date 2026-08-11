@@ -32,6 +32,7 @@
  *   node test-harnesses/seed-demo-data.mjs --reset   # remove previous demo data first
  */
 import path from 'node:path';
+import { importAccountingPackage } from './resolve-app-packages.mjs';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import dotenv from 'dotenv';
@@ -61,9 +62,11 @@ const pool = await new sql.ConnectionPool({
     pool: { max: 10, min: 1 },
 }).connect();
 
-const { setupSQLServerClient, SQLServerProviderConfigData, UserCache } = await import(
+const { setupSQLServerClient, SQLServerProviderConfigData } = await import(
     '@memberjunction/sqlserver-dataprovider'
 );
+// UserCache moved packages in MJ #3734 (no re-export left behind).
+const { UserCache } = await import('@memberjunction/generic-database-provider');
 const provider = await setupSQLServerClient(
     new SQLServerProviderConfigData(pool, process.env.MJ_CORE_SCHEMA || '__mj'),
 );
@@ -72,7 +75,7 @@ const user = UserCache.Users.find((u) => u?.Type?.trim().toLowerCase() === 'owne
 if (!user) throw new Error('No context user in UserCache.');
 
 // Both apps' server classes — orders' subclasses book, accounting's operation writes the ledger.
-await import('@mj-biz-apps/accounting-server').then((m) => m.LoadBizAppsAccountingServer?.());
+await importAccountingPackage('@mj-biz-apps/accounting-server').then((m) => m.LoadBizAppsAccountingServer?.());
 await import('@mj-biz-apps/orders-server').then((m) => m.LoadBizAppsOrdersServer?.());
 
 const { Metadata, RunView, BaseRemotableOperation } = await import('@memberjunction/core');
@@ -314,7 +317,7 @@ for (const [source, target] of [[publisher, press], [press, publisher]]) {
 }
 
 // The engine caches accounts and links, so it must re-read them before anything books.
-const { AccountingEngineBase } = await import('@mj-biz-apps/accounting-engine-base');
+const { AccountingEngineBase } = await importAccountingPackage('@mj-biz-apps/accounting-engine-base');
 await AccountingEngineBase.Instance.Config(true, user, provider);
 
 // ─── Customers ─────────────────────────────────────────────────────────────────

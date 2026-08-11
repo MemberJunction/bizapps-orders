@@ -34,6 +34,7 @@
  *         node test-harnesses/seed-review-data.mjs --keep-existing (adds to what is there)
  */
 import path from 'node:path';
+import { importAccountingPackage } from './resolve-app-packages.mjs';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import sql from 'mssql';
@@ -53,9 +54,11 @@ const pool = await new sql.ConnectionPool({
     pool: { max: 10, min: 1 },
 }).connect();
 
-const { setupSQLServerClient, SQLServerProviderConfigData, UserCache } = await import(
+const { setupSQLServerClient, SQLServerProviderConfigData } = await import(
     '@memberjunction/sqlserver-dataprovider'
 );
+// UserCache moved packages in MJ #3734 (no re-export left behind).
+const { UserCache } = await import('@memberjunction/generic-database-provider');
 const provider = await setupSQLServerClient(
     new SQLServerProviderConfigData(pool, process.env.MJ_CORE_SCHEMA || '__mj'),
 );
@@ -63,7 +66,7 @@ await UserCache.Instance.Refresh(pool);
 const user = UserCache.Users.find((u) => u?.Type?.trim().toLowerCase() === 'owner') ?? UserCache.Users[0];
 if (!user) throw new Error('No context user in UserCache.');
 
-await import('@mj-biz-apps/accounting-server').then((m) => m.LoadBizAppsAccountingServer?.());
+await importAccountingPackage('@mj-biz-apps/accounting-server').then((m) => m.LoadBizAppsAccountingServer?.());
 await import('@mj-biz-apps/orders-server').then((m) => m.LoadBizAppsOrdersServer?.());
 
 const it = await import('@mj-biz-apps/orders-integration-tests');

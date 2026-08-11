@@ -17,6 +17,7 @@
  * Usage:  node test-harnesses/booking-live.mjs
  */
 import path from 'node:path';
+import { importAccountingPackage } from './resolve-app-packages.mjs';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import dotenv from 'dotenv';
@@ -65,10 +66,10 @@ async function main() {
     if (!user) throw new Error('No context user in UserCache.');
 
     // Register both apps' server classes — orders' subclasses + accounting's operations.
-    await import('@mj-biz-apps/accounting-server');
+    await importAccountingPackage('@mj-biz-apps/accounting-server');
     const ordersServer = await import('@mj-biz-apps/orders-server');
     ordersServer.LoadBizAppsOrdersServer?.();
-    const acctServer = await import('@mj-biz-apps/accounting-server');
+    const acctServer = await importAccountingPackage('@mj-biz-apps/accounting-server');
     acctServer.LoadBizAppsAccountingServer?.();
 
     const { Metadata, RunView } = await import('@memberjunction/core');

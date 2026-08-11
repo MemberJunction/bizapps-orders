@@ -12,6 +12,7 @@
  *   node test-harnesses/integration.mjs subscriptions.SB5   # a single check
  */
 import path from 'node:path';
+import { importAccountingPackage } from './resolve-app-packages.mjs';
 import { fileURLToPath } from 'node:url';
 import { openSync, closeSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import dotenv from 'dotenv';
@@ -151,9 +152,11 @@ const pool = await new sql.ConnectionPool({
     requestTimeout: 60_000,
 }).connect();
 
-const { setupSQLServerClient, SQLServerProviderConfigData, UserCache } = await import(
+const { setupSQLServerClient, SQLServerProviderConfigData } = await import(
     '@memberjunction/sqlserver-dataprovider'
 );
+// UserCache moved packages in MJ #3734 (no re-export left behind).
+const { UserCache } = await import('@memberjunction/generic-database-provider');
 const provider = await setupSQLServerClient(
     new SQLServerProviderConfigData(pool, process.env.MJ_CORE_SCHEMA || '__mj'),
 );
@@ -163,7 +166,7 @@ if (!user) throw new Error('No context user in UserCache.');
 
 // Both apps' server classes: orders' entity subclasses do the booking, accounting's remote
 // operation writes the ledger. Without both, the checks would exercise generated stubs.
-await import('@mj-biz-apps/accounting-server').then((m) => m.LoadBizAppsAccountingServer?.());
+await importAccountingPackage('@mj-biz-apps/accounting-server').then((m) => m.LoadBizAppsAccountingServer?.());
 await import('@mj-biz-apps/orders-server').then((m) => m.LoadBizAppsOrdersServer?.());
 
 const { IntegrationCheckRegistry } = await import('@memberjunction/testing-integration');

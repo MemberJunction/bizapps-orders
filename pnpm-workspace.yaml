@@ -10,6 +10,13 @@
 # versions, so without this every workspace link becomes a registry download.
 linkWorkspacePackages: true
 
+# pnpm 10 defaults this to true, which turns every unsatisfied peer RANGE into an
+# install instruction — including OPTIONAL peers, so the unpublished
+# @mj-biz-apps/accounting-* optional peers become fatal registry 404s and no
+# lockfile can be generated. Off: peers resolve the classic way (root
+# devDependencies + the exact Angular devDependency anchors).
+autoInstallPeers: false
+
 # Peer mismatches must not fail the install; the estate straddles 6.1.0-edge.0 and
 # 6.1.0-edge.1 peer pins. pnpm already defaults this to false — stated explicitly so
 # the reason is on the record. (Replaces npm's legacy-peer-deps, which pnpm ignores.)
