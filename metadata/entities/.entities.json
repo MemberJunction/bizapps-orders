@@ -1,0 +1,36 @@
+[
+  {
+    "_comments": [
+      "ORDER HEADERS IS A LAYERED BASE VIEW.",
+      "",
+      "CodeGen keeps writing the whole generated view — 13 display joins, a geo join keyed by a",
+      "hardcoded entity GUID, an OUTER APPLY to a generated root-ID function — under the INNER name",
+      "below. This app then owns a four-line wrapper that selects `g.*` and adds `IsOverdue`.",
+      "",
+      "WHY NOT A COMPUTED COLUMN. The predicate needs GETUTCDATE(), and PostgreSQL generated columns",
+      "must be immutable — so it would work on SQL Server and fail to port, which is exactly what D41",
+      "ruled out when it chose trigger-maintained rollups for cross-platform parity. Layering is",
+      "SQL Server only (MJ refuses it on PG rather than shipping a documented footgun), so the PG side",
+      "keeps deriving IsOverdue in code from the same shared rule.",
+      "",
+      "WHY NOT A FULLY CUSTOM VIEW. BaseViewGenerated = 0 with no GeneratedBaseViewName makes CodeGen",
+      "stop generating entirely — this app would inherit all 81 lines and hand-maintain them forever,",
+      "and a foreign key added later would silently never get its display field.",
+      "",
+      "⚠️ ADOPTING THIS ON AN EXISTING ENTITY NEEDS A SCOPED forceRegeneration. Setting",
+      "GeneratedBaseViewName is a METADATA change, so the entity never lands in CodeGen's",
+      "modified/new list, and logSQLForNewOrModifiedEntity only writes migration output for entities",
+      "in that list. CodeGen WILL create the inner view in whatever database you ran it against and",
+      "emit NOTHING — your box looks right while every other environment never receives the view, and",
+      "the outer view then selects from an object that does not exist there. See the PR body for the",
+      "exact loop."
+    ],
+    "primaryKey": {
+      "Name": "MJ_BizApps_Orders: Order Headers"
+    },
+    "fields": {
+      "BaseViewGenerated": false,
+      "GeneratedBaseViewName": "vwOrderHeadersGenerated"
+    }
+  }
+]

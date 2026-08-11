@@ -79,6 +79,7 @@ export * from './pricing/PromotionEngine';
 export * from './pricing/OrderPricingService';
 
 /**
+/**
  * `ToISODate` and friends — reading a date cell that may be a string or a `Date` and getting the
  * same calendar day back, on both sides of the wire.
  *
@@ -87,3 +88,14 @@ export * from './pricing/OrderPricingService';
  * the answer is to stop asking callers to know.
  */
 export * from './date-cell';
+
+/**
+ * `IsOverdue` / `OverdueSQL` / `OverdueFilter` — what "overdue" means, stated once.
+ *
+ * Three surfaces used to re-derive it and only one excluded a VOIDED order, so a voided order with a
+ * stale balance appeared on collections lists as money owed. The rule now lives in one module, with
+ * its TS and T-SQL halves side by side so drift shows up in a single diff.
+ *
+ * It reads days, it does not parse them — `ToISODate` above is the one place that interprets a cell.
+ */
+export * from './overdue';
