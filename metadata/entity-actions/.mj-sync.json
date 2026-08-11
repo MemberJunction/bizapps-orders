@@ -1,0 +1,26 @@
+{
+  "entity": "MJ: Entity Actions",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".orders-entity-actions.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true,
+    "relatedEntities": {
+      "MJ: Entity Action Invocations": {
+        "entity": "MJ: Entity Action Invocations",
+        "foreignKey": "EntityActionID"
+      },
+      "MJ: Entity Action Filters": {
+        "entity": "MJ: Entity Action Filters",
+        "foreignKey": "EntityActionID"
+      },
+      "MJ: Entity Action Params": {
+        "entity": "MJ: Entity Action Params",
+        "foreignKey": "EntityActionID"
+      }
+    }
+  }
+}
