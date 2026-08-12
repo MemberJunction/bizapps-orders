@@ -402,9 +402,9 @@ Editing the baseline in place is only safe because rebuilding from zero is routi
 
 ```bash
 scripts/rebuild-db.sh                      # drop → MJ core → common → accounting → orders → seed metadata
-npm run mj:codegen                         # regenerate entity metadata + SQL objects
+pnpm run mj:codegen                        # regenerate entity metadata + SQL objects
 scripts/append-codegen.sh                  # fold that output back BELOW the migration's banner
-npm run mj -- sync push --dir metadata     # this app's lookup tables
+pnpm exec mj sync push --dir metadata      # this app's lookup tables
 ```
 
 > The `append-codegen.sh` step is not optional. The generated half of the baseline — entity/field
@@ -417,7 +417,7 @@ npm run mj -- sync push --dir metadata     # this app's lookup tables
 
 Two layers, both green as of the current build.
 
-**Unit** — `npm test` per package. Pure logic only (`SubscriptionBehavior`'s term arithmetic, the
+**Unit** — `pnpm test` per package. Pure logic only (`SubscriptionBehavior`'s term arithmetic, the
 rev-rec allocators), no database.
 
 **Integration** — 82 checks across 8 bundles, driving a live database through the real stack:
@@ -445,7 +445,7 @@ node test-harnesses/integration.mjs subscriptions.SB5
 
 # the CI path — same registry, same checks, results recorded against the metadata Test records
 RUN_MUTATION_TESTS=1 MJ_INTEGRATION_TEST=1 \
-  npm run mj -- test suite --name "BizApps Orders Integration"
+  pnpm exec mj test suite --name "BizApps Orders Integration"
 ```
 
 `RUN_MUTATION_TESTS=1` is **required**: every check is mutation-class by nature, so a run without it

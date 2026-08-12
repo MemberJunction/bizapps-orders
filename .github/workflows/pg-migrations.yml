@@ -118,10 +118,7 @@ jobs:
           DB_ENCRYPT: 'false'
           DB_TRUST_SERVER_CERTIFICATE: 'true'
         run: |
-          # NB: This assumes a working `mj migrate` resolves against
-          # @memberjunction/cli installed via the workspace. If we don't yet
-          # have the CLI wired up as a dev dep we'll add it under
-          # `apps/MJAPI` (mirroring bizapps-common's pattern).
+          # `mj` resolves from @memberjunction/cli, a root devDependency.
           pnpm exec mj migrate --verbose
 
       # ─── Smoke checks ──────────────────────────────────────────────

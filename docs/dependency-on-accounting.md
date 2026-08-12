@@ -61,41 +61,47 @@ files**:
 The `peerDependencies` entries themselves already exist and are correct; only the optional markings
 come out. If a file is left with an empty `peerDependenciesMeta`, remove the key entirely.
 
-Then: `npm install` at the repo root, confirm the peers resolve from the registry with no `ERESOLVE`
-or 404, and delete this whole to-do section plus the one below it.
+Then: `pnpm install` at the repo root, confirm the peers resolve from the registry with no 404,
+regenerate `pnpm-lock.yaml`, and delete this whole to-do section plus the one below it. At that
+point `autoInstallPeers: false` in `pnpm-workspace.yaml` (and its justifying comment) can be
+revisited too — it exists precisely because the optional accounting peers are unresolvable.
 
 ### Why it is deferred rather than done
 
-Accounting is not published. npm 7+ installs peer dependencies automatically, so a *mandatory* peer
-it cannot fetch fails the entire install — verified:
+Accounting is not published. pnpm 10's default `autoInstallPeers: true` turns every peer range —
+optional or not — into an install instruction, so an unpublished peer is a fatal registry 404 and
+no lockfile can be generated. `pnpm-workspace.yaml` sets `autoInstallPeers: false` for exactly this
+reason (the reasoning is in-file). A *mandatory* peer would put us right back there: it would block
+every developer and every CI run for the sake of a manifest claim, during a build window where
+nobody can afford it. The optional marking is the lesser wrong of the two while the package is
+unpublishable, and it comes out the day that stops being true.
 
-```
-npm error code E404
-npm error 404 '@mj-biz-apps/accounting-core-entities-server@>=0.1.0' is not in this registry.
-```
-
-That would block every developer and every CI run for the sake of a manifest claim, during a build
-window where nobody can afford it. The optional marking is the lesser wrong of the two while the
-package is unpublishable, and it comes out the day that stops being true.
-
-There is no workaround flag in this repo. An earlier revision added `legacy-peer-deps=true` to a root
-`.npmrc`; it was removed deliberately. A repo-wide npm setting that silently changes resolution for
-*every* dependency is a large, invisible lever to pull for one temporary problem, and a documented
-to-do is easier to find and to close than a config file nobody reads twice.
+(Historical note: the npm-era version of this problem was npm 7+'s peer auto-install, and an
+earlier revision worked around it with `legacy-peer-deps=true` in `.npmrc` — removed deliberately,
+for the same reason we now put the pnpm setting in `pnpm-workspace.yaml` with its reasoning
+attached rather than in a config file nobody reads twice.)
 
 ### What the marking is NOT
 
-It was never a design statement. Accounting is resolved through a sibling-checkout symlink
-(`scripts/link-local-apps.mjs`) because it is unpublished, and a CI runner running `npm ci` cannot
-fetch it from the registry. A CI constraint has been wearing a dependency declaration's clothes.
+It was never a design statement. Accounting is resolved through MJ 6.x workspace linking (both
+repos materialized as members of one parent pnpm workspace) because it is unpublished, and a CI
+runner doing a registry install cannot fetch it. A CI constraint has been wearing a dependency
+declaration's clothes.
 
 ---
 
 ## Local development
 
-`.mj-links.json` declares the sibling checkout and `scripts/link-local-apps.mjs` symlinks it on
-postinstall. You need `bizapps-accounting` checked out next to this repo **and built** — run
-`npm install && npm run build` there first, or orders will not typecheck.
+Both repos are linked into one MJ 6.x parent workspace (mjdev's parent-workspace topology, or any
+pnpm workspace that lists them as members) — that is how orders resolves accounting's packages
+during development. You need `bizapps-accounting` in the same workspace **and built**, or orders
+will not typecheck.
+
+The root `test-harnesses/*.mjs` scripts are the one wrinkle: the repo root deliberately does not
+declare the unpublished accounting packages (a root declaration would make the root unresolvable
+from the registry and no lockfile could exist), so the harnesses import accounting through
+`test-harnesses/resolve-app-packages.mjs`, which resolves via `packages/IntegrationTests` — the
+package that declares them as optional peers.
 
 ## Configuration that must exist before money moves
 
@@ -113,4 +119,4 @@ Being installed is necessary and not sufficient. Accounting also has to be *conf
 
 - `plans/bizapps-orders-master.md` — D13 (intercompany), D18 (capture entry), D80/D81
 - `plans/intercompany-balancing.md` — the shape of the due-to/due-from legs
-- `.mj-links.json`, `scripts/link-local-apps.mjs` — how the sibling checkout is resolved
+- `test-harnesses/resolve-app-packages.mjs` — how the root harnesses resolve accounting
