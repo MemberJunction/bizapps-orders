@@ -66,9 +66,11 @@ async function main() {
         pool: { max: 10, min: 1 },
     }).connect();
 
-    const { setupSQLServerClient, SQLServerProviderConfigData, UserCache } = await import(
+    const { setupSQLServerClient, SQLServerProviderConfigData } = await import(
         '@memberjunction/sqlserver-dataprovider'
     );
+    // UserCache moved packages in MJ #3734 (no re-export left behind).
+    const { UserCache } = await import('@memberjunction/generic-database-provider');
     await setupSQLServerClient(new SQLServerProviderConfigData(pool, process.env.MJ_CORE_SCHEMA || '__mj'));
     await UserCache.Instance.Refresh(pool);
 
