@@ -14,6 +14,7 @@
     "build:packages": "turbo --log-order=stream build --filter=\"@mj-biz-apps/orders-*\"",
     "mj": "mj",
     "mj:migrate": "mj migrate --schema __mj_BizAppsOrders --dir ./migrations",
+    "mj:migrate:convert": "mj migrate convert --source-dir ./migrations --output-dir ./migrations-pg --schema __mj_BizAppsOrders",
     "mj:codegen": "mj codegen",
     "install:deps": "pnpm install",
     "setup": "echo 'Please run: pnpm run mj:migrate && pnpm run mj:codegen && pnpm run build'",
@@ -61,5 +62,27 @@
   "engines": {
     "node": ">=18.0.0",
     "pnpm": ">=10.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@angular/animations": "21.1.3",
+      "@angular/build": "21.1.3",
+      "@angular/cli": "21.1.3",
+      "@angular/common": "21.1.3",
+      "@angular/compiler": "21.1.3",
+      "@angular/compiler-cli": "21.1.3",
+      "@angular/core": "21.1.3",
+      "@angular/forms": "21.1.3",
+      "@angular/localize": "21.1.3",
+      "@angular/platform-browser": "21.1.3",
+      "@angular/platform-browser-dynamic": "21.1.3",
+      "@angular/router": "21.1.3",
+      "@angular-devkit/build-angular": "21.1.3",
+      "@memberjunction/core": "^6.1.0-edge.2",
+      "@memberjunction/global": "^6.1.0-edge.2",
+      "graphql": "16.14.2",
+      "type-graphql": "2.0.0-beta.3",
+      "reflect-metadata": "0.2.2"
+    }
   }
 }
