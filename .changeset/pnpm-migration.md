@@ -21,11 +21,19 @@ workspace root's devDependencies pinned the unpublished `@mj-biz-apps/accounting
 packages (for the root integration harnesses), and pnpm 10's default
 `autoInstallPeers: true` turns even optional peer ranges into fatal registry 404s. The
 root no longer declares the unpublished packages — the harnesses resolve accounting
-through `packages/IntegrationTests` (which declares them as optional peers) via
-`test-harnesses/resolve-app-packages.mjs` — and `autoInstallPeers: false` is set with the
-reasoning in-file. Accounting staying unpublished is accepted WIP: install-based CI now
-installs cleanly from a bare checkout; the build leg that needs accounting stays red until
-it publishes.
+through `packages/IntegrationTests` (which declares them as peers) via
+`test-harnesses/resolve-app-packages.mjs` — and `auto-install-peers=false` is set in
+`.npmrc` with the reasoning in-file. Accounting staying unpublished is accepted WIP:
+install-based CI now installs cleanly from a bare checkout; the build leg that needs
+accounting stays red until it publishes.
+
+**Accounting is declared as a MANDATORY peer** (the `optional: true` markings are gone) —
+it is a hard runtime requirement and the manifests now say so. With auto-install-peers
+off, an unmet mandatory peer is an install warning, not a registry 404, so this is safe
+pre-publish (see `docs/dependency-on-accounting.md`). The MJ floor moves to
+`6.1.0-edge.2`, the edge release carrying the MJ#3734 UserCache relocation this repo's
+imports were fixed for.
 
 Verified: all six packages build green as workspace members against MJ next
-(6.1.0-edge.1 + MJ#3717) alongside bizapps-common, bizapps-tasks and bizapps-accounting.
+alongside bizapps-common, bizapps-tasks and bizapps-accounting, and
+`pnpm install --frozen-lockfile` from the registry succeeds on a bare copy.
