@@ -1,6 +1,6 @@
 /**
  * Resolve @mj-biz-apps/accounting-* through packages/IntegrationTests, the
- * package that DECLARES them (as optional peers). The repo root cannot declare
+ * package that DECLARES them (as mandatory peers). The repo root cannot declare
  * them: no accounting package is published, so a root declaration makes the
  * root unresolvable from the registry and no lockfile can exist. In a dev
  * workspace (accounting materialized as a sibling) the peers are linked into
