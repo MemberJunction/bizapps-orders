@@ -45,4 +45,4 @@ CodeGen runs *after* migrations — and if the change is really about metadata (
 form layout), its home is `metadata/` and `mj sync push`, not a migration.
 
 The review test: *if a colleague pulls this branch onto a database that already has last week's
-schema and runs `npm run mj:migrate`, do they get exactly the schema this branch describes?*
+schema and runs `pnpm run mj:migrate`, do they get exactly the schema this branch describes?*

@@ -23,7 +23,7 @@ grep -q "$MARKER" "$MIGRATION" || { echo "no CODEGEN OUTPUT banner in $MIGRATION
 
 shopt -s nullglob
 GENERATED=("$GENERATED_DIR"/*.sql)
-(( ${#GENERATED[@]} )) || { echo "no CodeGen output in $GENERATED_DIR — run 'npm run mj:codegen' first" >&2; exit 1; }
+(( ${#GENERATED[@]} )) || { echo "no CodeGen output in $GENERATED_DIR — run 'pnpm run mj:codegen' first" >&2; exit 1; }
 
 # Keep the hand-authored half plus the banner; drop whatever generated tail is already there.
 BANNER_END=$(grep -n "$MARKER" "$MIGRATION" | head -1 | cut -d: -f1)
@@ -55,7 +55,7 @@ looks like, and appending it would drop the rest of the generated half.
 If this is intentional, pass --force. Otherwise rebuild the database from zero and re-run CodeGen so
 it regenerates everything:
 
-    scripts/rebuild-db.sh && npm run mj:codegen && scripts/append-codegen.sh
+    scripts/rebuild-db.sh && pnpm run mj:codegen && scripts/append-codegen.sh
 EOF
     [[ "${2:-}" == "--force" ]] || exit 1
     echo "  (--force given; proceeding anyway)" >&2
@@ -87,7 +87,7 @@ That is what a CodeGen run that died partway looks like. Appending now would bak
 installs a database whose reads fail for those entities. Re-run the whole cycle so CodeGen
 regenerates from zero:
 
-    scripts/rebuild-db.sh && npm run mj:codegen && scripts/append-codegen.sh
+    scripts/rebuild-db.sh && pnpm run mj:codegen && scripts/append-codegen.sh
 EOF
         exit 1
     fi

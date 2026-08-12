@@ -64,7 +64,7 @@ jobs:
         run: |
           CHANGESET_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} | grep -E '^\.changeset/.*\.md$' | grep -v 'README.md' || true)
           if [ -z "$CHANGESET_FILES" ]; then
-            echo "::error::Migrations were added but no changeset found. Run 'npx changeset' to create one with at least a 'minor' bump."
+            echo "::error::Migrations were added but no changeset found. Run 'pnpm exec changeset' to create one with at least a 'minor' bump."
             exit 1
           fi
 

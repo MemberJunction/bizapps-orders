@@ -97,15 +97,6 @@ module.exports = {
    */
   commands: [],
 
-  /**
-   * Open App installer layout. This distribution puts its server/client apps
-   * under apps/ (not the MJ-repo default of packages/MJAPI + packages/MJExplorer).
-   */
-  openApps: {
-    serverPackagePath: 'apps/MJAPI',
-    clientPackagePath: 'apps/MJExplorer',
-  },
-
   // ============================================================================
   // CodeGen Overrides
   // ============================================================================

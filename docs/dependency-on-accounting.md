@@ -1,9 +1,10 @@
-# `bizapps-accounting` is a hard requirement — and the manifests do not say so yet
+# `bizapps-accounting` is a hard requirement — and the manifests now say so
 
-**Short version:** BizApps Orders cannot book an order or a payment without BizApps Accounting. It is
-a hard requirement in code today. The `package.json` files still mark it `optional: true`, which is
-**wrong and known**, and there is a dated to-do below to fix it. Do not read the manifest as
-permission to run without accounting.
+**Short version:** BizApps Orders cannot book an order or a payment without BizApps Accounting. It
+is a hard requirement in code, and since the pnpm migration the manifests declare it as a
+**mandatory peer dependency**. The remaining accommodation for accounting being unpublished is
+`auto-install-peers=false` in `.npmrc` (installers don't try to fetch peers from the registry) plus
+the harness resolver shim — both come out the day accounting publishes; see the to-do below.
 
 ---
 
@@ -34,68 +35,55 @@ Both are correct. Failing loudly at the moment money would otherwise be mis-book
 
 ---
 
-## ☐ TO-DO: make the peer dependency mandatory when `bizapps-accounting` publishes
+## ✅ DONE: the peer dependencies are mandatory (pnpm migration, 2026-08)
+
+The `optional: true` markings are gone — accounting is declared as a plain mandatory
+`peerDependency` in `packages/Server`, `packages/CoreEntitiesServer` and
+`packages/IntegrationTests`. This is safe *before* accounting publishes because
+`auto-install-peers=false` (`.npmrc`) means installers never try to fetch peers from the registry:
+an unmet mandatory peer is a warning (`strict-peer-dependencies=false`), not a 404. Verified with a
+full `pnpm install --frozen-lockfile` from the registry on a bare copy.
+
+(History, for anyone reading old commits: the markings existed because the npm era auto-installed
+peers — npm 7+, and pnpm 10's `autoInstallPeers: true` default — which turned an unpublished
+mandatory peer into a fatal registry 404. Turning auto-install off removed the reason for the
+markings, so the manifests could finally tell the truth: accounting is required.)
+
+## ☐ TO-DO: when `bizapps-accounting` publishes
 
 **Trigger:** `@mj-biz-apps/accounting-*` is published to npm.
 **Owner:** whoever runs the accounting publish.
-**Why it is not done already:** see the next section.
 
-Delete the `peerDependenciesMeta` blocks that mark accounting optional — **five entries across two
-files**:
-
-```jsonc
-// packages/CoreEntitiesServer/package.json
-"peerDependenciesMeta": {
-  "@mj-biz-apps/accounting-engine-base": { "optional": true },          // ← delete
-  "@mj-biz-apps/accounting-core-entities-server": { "optional": true }  // ← delete
-}
-
-// packages/Server/package.json
-"peerDependenciesMeta": {
-  "@mj-biz-apps/accounting-server": { "optional": true },        // ← delete
-  "@mj-biz-apps/accounting-entities": { "optional": true },      // ← delete
-  "@mj-biz-apps/accounting-engine-base": { "optional": true }    // ← delete
-}
-```
-
-The `peerDependencies` entries themselves already exist and are correct; only the optional markings
-come out. If a file is left with an empty `peerDependenciesMeta`, remove the key entirely.
-
-Then: `npm install` at the repo root, confirm the peers resolve from the registry with no `ERESOLVE`
-or 404, and delete this whole to-do section plus the one below it.
-
-### Why it is deferred rather than done
-
-Accounting is not published. npm 7+ installs peer dependencies automatically, so a *mandatory* peer
-it cannot fetch fails the entire install — verified:
-
-```
-npm error code E404
-npm error 404 '@mj-biz-apps/accounting-core-entities-server@>=0.1.0' is not in this registry.
-```
-
-That would block every developer and every CI run for the sake of a manifest claim, during a build
-window where nobody can afford it. The optional marking is the lesser wrong of the two while the
-package is unpublishable, and it comes out the day that stops being true.
-
-There is no workaround flag in this repo. An earlier revision added `legacy-peer-deps=true` to a root
-`.npmrc`; it was removed deliberately. A repo-wide npm setting that silently changes resolution for
-*every* dependency is a large, invisible lever to pull for one temporary problem, and a documented
-to-do is easier to find and to close than a config file nobody reads twice.
+1. Re-declare `@mj-biz-apps/accounting-server` and `@mj-biz-apps/accounting-engine-base` in the
+   root `devDependencies` (they were removed because an unpublished root dep blocks lockfile
+   generation), and regenerate `pnpm-lock.yaml`.
+2. Delete `test-harnesses/resolve-app-packages.mjs` and return its callers to bare imports — the
+   shim exists only because the root cannot declare accounting.
+3. Flip `.npmrc` `auto-install-peers` to `true` (the common/accounting family baseline).
+4. Confirm `pnpm install --frozen-lockfile` from a bare checkout resolves everything from the
+   registry, then delete this to-do.
 
 ### What the marking is NOT
 
-It was never a design statement. Accounting is resolved through a sibling-checkout symlink
-(`scripts/link-local-apps.mjs`) because it is unpublished, and a CI runner running `npm ci` cannot
-fetch it from the registry. A CI constraint has been wearing a dependency declaration's clothes.
+It was never a design statement. Accounting is resolved through MJ 6.x workspace linking (both
+repos materialized as members of one parent pnpm workspace) because it is unpublished, and a CI
+runner doing a registry install cannot fetch it. A CI constraint has been wearing a dependency
+declaration's clothes.
 
 ---
 
 ## Local development
 
-`.mj-links.json` declares the sibling checkout and `scripts/link-local-apps.mjs` symlinks it on
-postinstall. You need `bizapps-accounting` checked out next to this repo **and built** — run
-`npm install && npm run build` there first, or orders will not typecheck.
+Both repos are linked into one MJ 6.x parent workspace (mjdev's parent-workspace topology, or any
+pnpm workspace that lists them as members) — that is how orders resolves accounting's packages
+during development. You need `bizapps-accounting` in the same workspace **and built**, or orders
+will not typecheck.
+
+The root `test-harnesses/*.mjs` scripts are the one wrinkle: the repo root deliberately does not
+declare the unpublished accounting packages (a root declaration would make the root unresolvable
+from the registry and no lockfile could exist), so the harnesses import accounting through
+`test-harnesses/resolve-app-packages.mjs`, which resolves via `packages/IntegrationTests` — the
+package that declares them as peers.
 
 ## Configuration that must exist before money moves
 
@@ -113,4 +101,4 @@ Being installed is necessary and not sufficient. Accounting also has to be *conf
 
 - `plans/bizapps-orders-master.md` — D13 (intercompany), D18 (capture entry), D80/D81
 - `plans/intercompany-balancing.md` — the shape of the due-to/due-from legs
-- `.mj-links.json`, `scripts/link-local-apps.mjs` — how the sibling checkout is resolved
+- `test-harnesses/resolve-app-packages.mjs` — how the root harnesses resolve accounting

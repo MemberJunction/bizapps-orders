@@ -23,6 +23,7 @@
  * rather than what the fixture happens to contain. It is a preview, not a test: nothing asserts on it.
  */
 import path from 'node:path';
+import { importAccountingPackage } from './resolve-app-packages.mjs';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
@@ -65,19 +66,21 @@ async function main() {
         pool: { max: 10, min: 1 },
     }).connect();
 
-    const { setupSQLServerClient, SQLServerProviderConfigData, UserCache } = await import(
+    const { setupSQLServerClient, SQLServerProviderConfigData } = await import(
         '@memberjunction/sqlserver-dataprovider'
     );
+    // UserCache moved packages in MJ #3734 (no re-export left behind).
+    const { UserCache } = await import('@memberjunction/generic-database-provider');
     await setupSQLServerClient(new SQLServerProviderConfigData(pool, process.env.MJ_CORE_SCHEMA || '__mj'));
     await UserCache.Instance.Refresh(pool);
 
     const user = UserCache.Users.find((u) => u?.Type?.trim().toLowerCase() === 'owner') ?? UserCache.Users[0];
     if (!user) throw new Error('No context user in UserCache.');
 
-    await import('@mj-biz-apps/accounting-server');
+    await importAccountingPackage('@mj-biz-apps/accounting-server');
     const ordersServer = await import('@mj-biz-apps/orders-server');
     ordersServer.LoadBizAppsOrdersServer?.();
-    const acctServer = await import('@mj-biz-apps/accounting-server');
+    const acctServer = await importAccountingPackage('@mj-biz-apps/accounting-server');
     acctServer.LoadBizAppsAccountingServer?.();
 
     const { Metadata } = await import('@memberjunction/core');
