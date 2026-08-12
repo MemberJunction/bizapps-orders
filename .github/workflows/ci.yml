@@ -90,7 +90,7 @@ jobs:
       - name: Build app packages
         id: build
         run: |
-          if ppnpm run build:packages --continue; then
+          if pnpm run build:packages --continue; then
             echo 'ok=true' >> "$GITHUB_OUTPUT"
           else
             echo 'ok=false' >> "$GITHUB_OUTPUT"
