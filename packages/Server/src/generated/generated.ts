@@ -3268,6 +3268,9 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(36)
     RootReversesOrderHeaderID?: string;
         
+    @Field(() => Int) 
+    IsOverdue: number;
+        
     @Field(() => [mjBizAppsOrdersOrderLine_])
     mjBizAppsOrdersOrderLines_OrderHeaderIDArray: mjBizAppsOrdersOrderLine_[]; // Link to mjBizAppsOrdersOrderLines
     
