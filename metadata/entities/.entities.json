@@ -26,11 +26,15 @@
       "exact loop."
     ],
     "primaryKey": {
-      "Name": "MJ_BizApps_Orders: Order Headers"
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers"
     },
     "fields": {
       "BaseViewGenerated": false,
       "GeneratedBaseViewName": "vwOrderHeadersGenerated"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T16:13:08.477Z",
+      "checksum": "e2c757a1b32295b7a6ab146cf576ec5022fc4f40f30cfdd2f66281e460d50372"
     }
   }
 ]
