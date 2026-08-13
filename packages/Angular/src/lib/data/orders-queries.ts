@@ -723,7 +723,13 @@ export async function GetSubscriptionEvents(
 export async function GetProducts(
     options: { Search?: string; MaxRows?: number; User?: UserInfo } = {},
 ): Promise<mjBizAppsOrdersProductEntity[]> {
-    const filters = [`Status = 'Active'`];
+    const filters = [
+        `Status = 'Active'`,
+        // Leftover IT-ORD-* fixture rows from the retired prefix-and-sweep catalog. They sort
+        // first by name, often have no price, and made Fast Entry refuse with "no price rule".
+        // The live catalog is ORD-WORLD (natural names). Keep this filter as a leftover guard.
+        `Name NOT LIKE 'IT-ORD-%'`,
+    ];
     if (options.Search?.trim()) {
         const escaped = likeText(options.Search);
         filters.push(`(Name LIKE '%${escaped}%' OR SKU LIKE '%${escaped}%')`);

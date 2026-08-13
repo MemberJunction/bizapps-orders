@@ -11,7 +11,7 @@
     "./checks/*": "./dist/checks/*.js"
   },
   "scripts": {
-    "build": "tsc && tsc-alias -f",
+    "build": "tsc && tsc-alias -f && node -e \"const fs=require('fs');const p=require('path');const s='src/world/data';const d='dist/world/data';fs.mkdirSync(d,{recursive:true});for (const f of fs.readdirSync(s)) fs.copyFileSync(p.join(s,f),p.join(d,f));\"",
     "test": "vitest run"
   },
   "author": "MemberJunction.com",
@@ -33,6 +33,7 @@
     "@memberjunction/testing-integration": "^6.1.0-edge.1",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-server": ">=0.1.0",
+    "@mj-biz-apps/common-entities": ">=0.1.0",
     "@memberjunction/actions": "^6.1.0-edge.1",
     "@memberjunction/actions-base": "^6.1.0-edge.1",
     "@memberjunction/core-entities": "^6.1.0-edge.1"

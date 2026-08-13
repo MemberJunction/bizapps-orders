@@ -1,0 +1,11 @@
+Key,Code,Name,Region,PostalFrom,PostalTo,City,Rate
+CA,CA-STATE,California,CA,,,,0.0725
+CA-SANTACLARA,CA-SCL,Santa Clara County,CA,95000,95199,,0.01875
+CA-SANMATEO,CA-SMT,San Mateo County,CA,94000,94499,,0.02125
+DC,DC-STATE,District of Columbia,DC,,,,0.06
+MD,MD-STATE,Maryland,MD,,,,0.06
+VA,VA-STATE,Virginia,VA,,,,0.053
+VA-NOVA,VA-NOVA,Northern Virginia,VA,22000,22299,,0.007
+NY,NY-STATE,New York,NY,,,,0.04
+NY-NYC,NY-NYC,New York City,NY,10001,10299,,0.045
+NY-MCTD,NY-MCTD,Metropolitan Commuter Transportation District,NY,10001,10299,,0.00375

@@ -28,6 +28,7 @@ import {
 // packages to register the code under test. Those pull in @memberjunction/server's config loader and
 // would need a full server environment for what is a pure wiring test. `index.ts` is verified by
 // reading it instead, below.
+import '../checks/catalog-world.checks.js';
 import '../checks/order-booking.checks.js';
 import '../checks/revenue-recognition.checks.js';
 import '../checks/subscriptions.checks.js';
@@ -72,6 +73,7 @@ const registry = IntegrationCheckRegistry.Instance;
  * moment you confirm the metadata and the dispatcher know about it too.
  */
 const EXPECTED_BUNDLES: Record<string, number> = {
+    'catalog-world': 1,
     'order-booking': 14,
     'revenue-recognition': 7,
     subscriptions: 12,
