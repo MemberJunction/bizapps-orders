@@ -15,17 +15,17 @@
       "down must never roll back a booked order, and a booked order must never be un-booked because a",
       "PDF failed to render.",
       "",
-      "\u26d4 NO TRANSITION FILTER IS POSSIBLE ON THIS MJ VERSION, AND THAT IS WHY THIS CANNOT BE ENABLED.",
+      "⛔ NO TRANSITION FILTER IS POSSIBLE ON THIS MJ VERSION, AND THAT IS WHY THIS CANNOT BE ENABLED.",
       "",
-      "An order is saved many times AFTER it is confirmed \u2014 posting stamps JournalEntryID, fulfilment",
+      "An order is saved many times AFTER it is confirmed — posting stamps JournalEntryID, fulfilment",
       "moves FulfillmentStatus, payments move Balance. An unfiltered AfterUpdate binding therefore",
       "fires on every one of those and mails the customer their invoice again each time.",
       "",
       "MJ#3408's plan text describes two seeded reusable ActionFilters ('field changed', 'field changed",
       "to value'). They do not exist in @memberjunction/core-entities@6.1.0-edge.1: `MJ: Action Filters`",
       "has no Name column to look one up by (ID, UserDescription, UserComments, Code, CodeExplanation),",
-      "no rows are seeded, and the runtime the real mechanism needs \u2014 ActionFilterContext, and the",
-      "DidFieldChangeToValue helper \u2014 ships in neither actions-base nor core at this version.",
+      "no rows are seeded, and the runtime the real mechanism needs — ActionFilterContext, and the",
+      "DidFieldChangeToValue helper — ships in neither actions-base nor core at this version.",
       "",
       "So the honest state is: the binding is wired, correct, and INERT. Do not enable it by deleting",
       "this note. Enabling it without a transition filter is not a smaller version of the feature, it",
@@ -49,8 +49,16 @@
       "MJ: Entity Action Invocations": [
         {
           "fields": {
+            "EntityActionID": "@parent:ID",
             "InvocationTypeID": "@lookup:MJ: Entity Action Invocation Types.Name=AfterUpdate",
             "Status": "Pending"
+          },
+          "primaryKey": {
+            "ID": "C83C49ED-9B1F-467C-86B4-A2985458FD37"
+          },
+          "sync": {
+            "lastModified": "2026-08-13T16:13:08.585Z",
+            "checksum": "e676e705b9df95c04050287cd669d6495d22eda2ffd75d990f7480e5ffc75a3c"
           }
         }
       ],
@@ -58,17 +66,32 @@
         {
           "_comments": [
             "'Send Document' takes OrderID as its one required input. Entity Field, not Entity Object:",
-            "the action wants the id, and passing the live BaseEntity would serialize to {} \u2014 its fields",
-            "are getters \u2014 so the action would receive an empty payload with no error anywhere."
+            "the action wants the id, and passing the live BaseEntity would serialize to {} — its fields",
+            "are getters — so the action would receive an empty payload with no error anywhere."
           ],
           "fields": {
+            "EntityActionID": "@parent:ID",
             "ActionParamID": "@lookup:MJ: Action Params.Name=OrderID&ActionID=@lookup:MJ: Actions.Name=Send Document",
             "ValueType": "Entity Field",
             "Value": "ID",
             "Comments": "The confirmed order being billed."
+          },
+          "primaryKey": {
+            "ID": "E94976F1-F40E-4BCC-8053-A6E4D4B2F730"
+          },
+          "sync": {
+            "lastModified": "2026-08-13T16:13:08.548Z",
+            "checksum": "ba887562d4d38075b8a0f45f4e230396cf640ab99e397f0a4a3c8eb7ea7a032c"
           }
         }
       ]
+    },
+    "primaryKey": {
+      "ID": "90365AD6-79C4-44EB-A474-AF2C96AC2D9F"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T16:13:08.507Z",
+      "checksum": "3d39228e510c4ac07b7f9d8c2a8b43242e87f9b0e0631f295af7dda697e20220"
     }
   }
 ]
