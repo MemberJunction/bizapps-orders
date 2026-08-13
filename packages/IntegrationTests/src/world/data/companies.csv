@@ -1,0 +1,4 @@
+Code,Name,EntityType,Linked,Notes
+BCP,Blue Cypress Press,LegalEntity,1,Home selling company — fully GL-linked
+HH,Harbor House,Subsidiary,1,Second company for multi-company and intercompany orders
+ORPHAN,Orphan Ledger,Subsidiary,0,Accounts exist but no GL links — confirms that include its products must refuse

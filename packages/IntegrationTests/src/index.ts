@@ -12,7 +12,8 @@
  * there is no drift between "what `mj test` runs" and "what the standalone runner runs".
  *
  * BUNDLES
- *   order-booking        OB1–OB9   confirm → one balanced JE per line, atomically
+ *   catalog-world        CW1       commit ORD-WORLD (people, orgs, catalog, GL) from CSV
+ *   order-booking        OB1–OB14  confirm → one balanced JE per line, atomically
  *   revenue-recognition  RR1–RR7   forward-dated release schedules (D14/D43)
  *   subscriptions        SB1–SB12  SubscriptionType rules → Subscription + terms (D45/D46)
  *   subscription-cancellation SC1–SC10  Orders.CancelSubscription: policy → reversal (design §5)
@@ -54,13 +55,19 @@ import '@mj-biz-apps/accounting-server';
 import '@mj-biz-apps/orders-server';
 import { LoadBizAppsAccountingServer } from '@mj-biz-apps/accounting-server';
 import { LoadBizAppsOrdersServer } from '@mj-biz-apps/orders-server';
+import { LoadGeneratedEntities as LoadCommonEntities } from '@mj-biz-apps/common-entities';
 
 LoadBizAppsAccountingServer();
 LoadBizAppsOrdersServer();
+// People / Organizations / Addresses / Relationships — without this, ClassFactory falls back to
+// a raw BaseEntity and Common's own Save path never runs (see line-subscriber.checks.ts).
+LoadCommonEntities();
 
 export * from './fixture.js';
 export * from './order-builder.js';
 export * from './payment-builder.js';
+export * from './world/world.js';
+export * from './checks/catalog-world.checks.js';
 export * from './checks/order-booking.checks.js';
 export * from './checks/revenue-recognition.checks.js';
 export * from './checks/subscriptions.checks.js';

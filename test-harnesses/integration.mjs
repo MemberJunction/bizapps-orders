@@ -89,6 +89,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 
 /** Bundles in dependency-free order — each owns its own fixture, so order is presentational. */
 const ALL_BUNDLES = [
+    'catalog-world',
     'order-booking',
     'revenue-recognition',
     'subscriptions',

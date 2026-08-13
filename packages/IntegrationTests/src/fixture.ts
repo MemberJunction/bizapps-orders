@@ -8,15 +8,14 @@
  * transaction surface. Every check we care about is SERVER transport, so that constraint doesn't
  * bind us and we take the stronger option:
  *
- *   - The FIXTURE (companies, GL accounts + links, product catalog) is created ONCE per bundle and
- *     COMMITTED. It is inert reference data — nothing books against it until a check runs.
+ *   - The WORLD (companies, GL, people, orgs, catalog, prices) is the committed ORD-WORLD loaded
+ *     from CSV by ORD-00 / {@link CreateOrdersFixture}. Natural keys, no IT-ORD prefix.
  *   - Every MUTATING check runs inside its own provider transaction and ROLLS BACK. Orders, journal
  *     entries, payments and subscription terms never reach disk, so teardown never has to fight the
  *     immutability triggers or the cross-app FKs. The booking path opens its own transaction and
  *     accounting's CreateJournalEntries opens another inside that; the probe confirmed the resulting
  *     3-deep savepoint nesting commits and rolls back correctly.
- *   - Teardown is therefore a plain FK-ordered sweep of the fixture. No `DISABLE TRIGGER`, and a
- *     mid-run crash leaves nothing but the catalog rows.
+ *   - Teardown of the world is a no-op: the catalog is shared with Explorer and the rest of the suite.
  *
  * THE ONE RULE THAT FOLLOWS: **every query goes through the provider** ({@link TxQuery}), never
  * through `ctx.Pool`. Two independent reasons, either sufficient:
@@ -31,10 +30,12 @@
  *   USED BY: every bundle under ./checks
  */
 import { randomUUID } from 'node:crypto';
-import { BaseEntity, CompositeKey, Metadata, RunView } from '@memberjunction/core';
+import { BaseEntity, CompositeKey, Metadata } from '@memberjunction/core';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
-import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
+import { LoadWorld } from './world/load-world.js';
+import { SetWorld } from './world/world.js';
+import { FindId, FindRows, Quote } from './world/entity-io.js';
 
 export const ORDERS_SCHEMA = '__mj_BizAppsOrders';
 export const ACCT_SCHEMA = '__mj_BizAppsAccounting';
@@ -71,25 +72,6 @@ export {
     PROMOTION_CODE_ENTITY,
     PROMOTION_TARGET_ENTITY,
 } from './entity-names.js';
-
-const FIXTURE_TAG = '(bizapps-orders integration test — safe to delete)';
-
-/** The GL account shape each fixture company gets. Codes mirror accounting's starter chart. */
-const FIXTURE_ACCOUNTS = [
-    { Key: 'AR', Code: '11201', Name: 'Accounts Receivable', Type: 'Asset' },
-    { Key: 'Sales', Code: '40100', Name: 'Sales Revenue', Type: 'Revenue' },
-    { Key: 'Deferred', Code: '21301', Name: 'Deferred Revenue', Type: 'Liability' },
-    // Cash is a BASELINE requirement, not a payments-only nicety: once capture books
-    // `Dr Cash / Cr AR` (D18), any order carrying an initial payment fails to confirm without it.
-    // That is correct — you cannot book cash with no cash account — but it makes the Cash link part
-    // of the minimum setup for using the feature at all.
-    { Key: 'Cash', Code: '10100', Name: 'Cash — Operating', Type: 'Asset' },
-    // Charges book to their OWN accounts (D71) — shipping is revenue, tax is a liability you owe a
-    // jurisdiction. Both resolve through GLAccountLink on the charge TYPE, so the role name used to
-    // link them is a lookup key rather than a claim about what the account is.
-    { Key: 'Shipping', Code: '40200', Name: 'Shipping Revenue', Type: 'Revenue' },
-    { Key: 'TaxPayable', Code: '21500', Name: 'Sales Tax Payable', Type: 'Liability' },
-] as const;
 
 export interface FixtureCompany {
     ID: string;
@@ -325,451 +307,78 @@ export async function OutsideTransaction(
  * these checks about the ORDERS path rather than accounting's own setup flow.
  */
 export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise<OrdersFixture> {
-    const run = `IT-ORD-${randomUUID().slice(0, 8).toUpperCase()}`;
-    const md = new Metadata();
-    const rv = new RunView();
+    const world = await LoadWorld(ctx);
+    SetWorld(world);
 
-    const currency = await rv.RunView<{ Code: string }>(
-        { EntityName: 'MJ_BizApps_Accounting: Currencies', Fields: ['Code'], MaxRows: 1, ResultType: 'simple' },
-        ctx.User,
-    );
-    const currencyCode = currency.Results?.[0]?.Code;
-    Assert(
-        currencyCode != null,
-        'no currencies in __mj_BizAppsAccounting — push the accounting app metadata before running this suite',
-    );
-
-    const companyEntity = md.Entities.find((e) => e.Name === 'MJ: Companies');
-    Assert(companyEntity != null, "entity 'MJ: Companies' not found — is MJ core metadata loaded?");
-
-    const roleRows = await PoolQuery<{ ID: string; Name: string }>(
-        ctx,
-        `SELECT ID, Name FROM ${ACCT_SCHEMA}.GLAccountRole`,
-    );
-    const roleID = new Map(roleRows.map((r) => [r.Name, r.ID]));
+    const requireProduct = (mnemonic: string): string => {
+        const id = world.ProductMnemonics[mnemonic];
+        Assert(id != null, `ORD-WORLD product mnemonic '${mnemonic}' was not loaded`);
+        return id;
+    };
 
     const fixture: OrdersFixture = {
-        Run: run,
-        CurrencyCode: currencyCode!,
-        CompanyEntityID: companyEntity!.ID,
-        CoA: await createCompany(ctx, run, 'Co A', currencyCode!),
-        CoB: await createCompany(ctx, run, 'Co B', currencyCode!),
-        CoC: await createCompany(ctx, run, 'Co C (unlinked)', currencyCode!),
-        RevRecTypeIDs: await codeMap(ctx, `${ORDERS_SCHEMA}.RevenueRecognitionType`),
-        SubscriptionTypeIDs: await codeMap(ctx, `${ORDERS_SCHEMA}.SubscriptionType`),
-        PaymentTypeIDs: await codeMap(ctx, `${ORDERS_SCHEMA}.PaymentType`),
-        ProductTypeIDs: { Simple: '', Subscription: '', Event: '', GiftCard: '' },
-        // A FUTURE, fixed event window. Fixed rather than relative so a recognition date can be
-        // asserted exactly; future so the deferral is real rather than already-earned.
-        Event: { StartsAt: new Date('2027-04-15T09:00:00Z'), EndsAt: new Date('2027-04-17T17:00:00Z') },
-        Customers: { OrganizationID: '', SecondOrganizationID: '', PersonID: '' },
-        Products: {},
-        Entitlements: {},
-        // Populated below, once the jurisdictions and addresses exist.
-        Tax: { JurisdictionIDs: new Map(), AddressIDs: new Map() },
+        Run: 'ORD-WORLD',
+        CurrencyCode: world.CurrencyCode,
+        CompanyEntityID: world.CompanyEntityID,
+        CoA: {
+            ID: world.Companies.BCP.ID,
+            Name: world.Companies.BCP.Name,
+            Accounts: world.Companies.BCP.Accounts,
+        },
+        CoB: {
+            ID: world.Companies.HH.ID,
+            Name: world.Companies.HH.Name,
+            Accounts: world.Companies.HH.Accounts,
+        },
+        CoC: {
+            ID: world.Companies.ORPHAN.ID,
+            Name: world.Companies.ORPHAN.Name,
+            Accounts: world.Companies.ORPHAN.Accounts,
+        },
+        RevRecTypeIDs: world.RevRecTypeIDs,
+        SubscriptionTypeIDs: world.SubscriptionTypeIDs,
+        PaymentTypeIDs: world.PaymentTypeIDs,
+        ProductTypeIDs: {
+            Simple: world.ProductTypeIDs.Service,
+            Subscription: world.ProductTypeIDs.Membership,
+            Event: world.ProductTypeIDs.Event,
+            GiftCard: world.ProductTypeIDs.GiftCard,
+        },
+        Event: world.Event,
+        Customers: {
+            OrganizationID: world.Organizations.RIV,
+            SecondOrganizationID: world.Organizations.NGS,
+            PersonID: world.People['jordan.blake@example.com'],
+        },
+        Products: {
+            WidgetA: requireProduct('WidgetA'),
+            GiftCardA: requireProduct('GiftCardA'),
+            BundleA: requireProduct('BundleA'),
+            BundlePartX: requireProduct('BundlePartX'),
+            BundlePartY: requireProduct('BundlePartY'),
+            WidgetB: requireProduct('WidgetB'),
+            WidgetC: requireProduct('WidgetC'),
+            EventA: requireProduct('EventA'),
+            DeferredA: requireProduct('DeferredA'),
+            SubRolling: requireProduct('SubRolling'),
+            SubCalendar: requireProduct('SubCalendar'),
+            SubFiscal: requireProduct('SubFiscal'),
+            SubSeat: requireProduct('SubSeat'),
+            SubMonthly: requireProduct('SubMonthly'),
+            EventTicket: requireProduct('EventTicket'),
+            EventTicketB: requireProduct('EventTicketB'),
+        },
+        Entitlements: { ...world.Entitlements },
+        Tax: {
+            JurisdictionIDs: new Map(Object.entries(world.Jurisdictions)),
+            AddressIDs: new Map(Object.entries(world.Addresses)),
+        },
     };
-
-    fixture.Customers = {
-        OrganizationID: await createOrganization(ctx, run, 'Buyer Org'),
-        SecondOrganizationID: await createOrganization(ctx, run, 'Other Org'),
-        PersonID: await createPerson(ctx, run),
-    };
-
-    // Company-level GL links (D12: defaults start at the company level). CoC gets none — that is
-    // the point of CoC, and the reason `product-c` must roll a confirm back.
-    for (const co of [fixture.CoA, fixture.CoB]) {
-        for (const [role, key] of [
-            ['Accounts Receivable', 'AR'],
-            ['Sales', 'Sales'],
-            ['Deferred Revenue', 'Deferred'],
-            ['Cash', 'Cash'],
-        ] as const) {
-            const rid = roleID.get(role);
-            Assert(rid != null, `GL account role '${role}' missing — push accounting metadata first`);
-            await PoolQuery(
-                ctx,
-                `INSERT INTO ${ACCT_SCHEMA}.GLAccountLink (ID, GLAccountID, GLAccountRoleID, EntityID, RecordID, Status)
-                 VALUES ('${randomUUID()}','${co.Accounts[key]}','${rid}','${fixture.CompanyEntityID}','${co.ID}','Active')`,
-            );
-        }
-    }
-
-    // CHARGE-TYPE GL links (D71). These belong in the FIXTURE rather than in a check, because
-    // `AccountingEngineBase` caches links in-process and is refreshed once here — a link inserted
-    // inside a check's rolled-back transaction is invisible to the cache, so the charge would refuse
-    // to book for a reason that has nothing to do with what the check is testing.
-    const chargeTypeEntityRows = await PoolQuery<{ ID: string }>(
-        ctx,
-        `SELECT ID FROM __mj.Entity WHERE Name = 'MJ_BizApps_Orders: Charge Types'`,
-    );
-    const chargeTypeEntityID = chargeTypeEntityRows[0]?.ID;
-    if (chargeTypeEntityID) {
-        // CLEAR ANY PRE-EXISTING ONES FIRST. Every other link this fixture writes is scoped to a
-        // company it just created, so it cannot collide with anything. These are the exception: they
-        // are keyed by CHARGE TYPE, which is application metadata shared by every run. A leftover set
-        // — from an interrupted run, or from `seed-review-data.mjs`, which commits deliberately —
-        // leaves TWO active links per charge type, and resolution can then post this run's shipping
-        // and tax to another run's accounts.
-        //
-        // That is not theoretical: it is what made composition's CX8 report a stranded receivable of
-        // 2,902.59 belonging to a company the test had never heard of. Deleting first also makes
-        // setup idempotent, which it was not.
-        await PoolQuery(
-            ctx,
-            `DELETE FROM ${ACCT_SCHEMA}.GLAccountLink WHERE EntityID = '${chargeTypeEntityID}'`,
-        );
-        const salesRoleID = roleID.get('Sales');
-        for (const co of [fixture.CoA, fixture.CoB]) {
-            for (const [code, key] of [
-                ['Shipping', 'Shipping'],
-                ['Handling', 'Shipping'],
-                ['SalesTax', 'TaxPayable'],
-                ['VAT', 'TaxPayable'],
-            ] as const) {
-                const ctRows = await PoolQuery<{ ID: string }>(
-                    ctx,
-                    `SELECT ID FROM ${ORDERS_SCHEMA}.ChargeType WHERE Code = '${code}'`,
-                );
-                const ctID = ctRows[0]?.ID;
-                if (!ctID) continue;
-                await PoolQuery(
-                    ctx,
-                    `INSERT INTO ${ACCT_SCHEMA}.GLAccountLink (ID, GLAccountID, GLAccountRoleID, EntityID, RecordID, Status)
-                     VALUES ('${randomUUID()}','${co.Accounts[key]}','${salesRoleID}','${chargeTypeEntityID}','${ctID}','Active')`,
-                );
-            }
-        }
-    }
-
-    // ── REAL US TAX GEOGRAPHY (D73) ───────────────────────────────────────────
-    // Layered on purpose: a jurisdiction row matches on the fields it SPECIFIES, so a state row
-    // (RegionCode only) and a county row (RegionCode + postal range) both match a Santa Clara
-    // address and produce TWO charges. That is how real US sales tax works and it is why tax is
-    // modelled as a charge rather than as one number.
-    const authorityID = randomUUID();
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${ACCT_SCHEMA}.TaxAuthority (ID, Code, Name, CountryCode, IsActive)
-         VALUES ('${authorityID}', '${run}-US', '${run} US Tax Authorities', 'US', 1)`,
-    );
-
-    // key, code, name, region, postalFrom, postalTo, city, rate  (rate is the LAYER, not the total)
-    const JURISDICTIONS: Array<[string, string, string, string | null, string | null, string | null, string | null, number]> = [
-        // California: 7.25% statewide, then district taxes by county. Neighbouring counties differ
-        // by a quarter point, which is the whole argument for resolving below state level.
-        ['CA',            'CA-STATE',      'California',             'CA', null,    null,    null, 0.0725],
-        ['CA-SANTACLARA', 'CA-SCL',        'Santa Clara County',     'CA', '95000', '95199', null, 0.01875],
-        ['CA-SANMATEO',   'CA-SMT',        'San Mateo County',       'CA', '94000', '94499', null, 0.02125],
-        // Flat states — one layer, no locals.
-        ['DC',            'DC-STATE',      'District of Columbia',   'DC', null,    null,    null, 0.06],
-        ['MD',            'MD-STATE',      'Maryland',               'MD', null,    null,    null, 0.06],
-        // Virginia: 5.3% base, Northern Virginia adds 0.7%.
-        ['VA',            'VA-STATE',      'Virginia',               'VA', null,    null,    null, 0.053],
-        ['VA-NOVA',       'VA-NOVA',       'Northern Virginia',      'VA', '22000', '22299', null, 0.007],
-        // New York: state + city + a transit district, three separate layers.
-        ['NY',            'NY-STATE',      'New York',               'NY', null,    null,    null, 0.04],
-        ['NY-NYC',        'NY-NYC',        'New York City',          'NY', '10001', '10299', null, 0.045],
-        ['NY-MCTD',       'NY-MCTD',       'Metropolitan Commuter Transportation District', 'NY', '10001', '10299', null, 0.00375],
-    ];
-
-    for (const [key, code, name, region, from, to, city, rate] of JURISDICTIONS) {
-        const jid = randomUUID();
-        fixture.Tax.JurisdictionIDs.set(key, jid);
-        const q = (v: string | null) => (v == null ? 'NULL' : `'${v}'`);
-        await PoolQuery(
-            ctx,
-            `INSERT INTO ${ACCT_SCHEMA}.TaxJurisdiction
-               (ID, TaxAuthorityID, Code, Name, CountryCode, RegionCode, PostalCodeStart, PostalCodeEnd, CityName, IsActive)
-             VALUES ('${jid}','${authorityID}','${run}-${code}','${run} ${name}','US',${q(region)},${q(from)},${q(to)},${q(city)},1)`,
-        );
-        // Standard rate for every jurisdiction.
-        await PoolQuery(
-            ctx,
-            `INSERT INTO ${ACCT_SCHEMA}.TaxRate (ID, TaxJurisdictionID, TaxCategory, Rate, EffectiveFrom, Source)
-             VALUES ('${randomUUID()}','${jid}','Standard',${rate},'2020-01-01','Manual')`,
-        );
-    }
-
-    // A CATEGORY-SPECIFIC rate: Maryland zero-rates the 'Reduced' category while taxing everything
-    // else at 6%. Proves the resolver picks the product's own category over the Standard fallback —
-    // a distinction worth three-fold errors when it is wrong.
-    //
-    // 'Reduced' rather than a name like 'Publications' because accounting's CK_TaxRate_Category
-    // enumerates exactly five values in DDL. That is too narrow for real product taxability —
-    // groceries, prescription drugs, digital goods, clothing and publications are each taxed
-    // differently in different states — and it is the same shape as the Source enum that was
-    // dropped for the same reason. Marcelo has offered to promote it to a first-class lookup; until
-    // then the fixture speaks the vocabulary that exists.
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${ACCT_SCHEMA}.TaxRate (ID, TaxJurisdictionID, TaxCategory, Rate, EffectiveFrom, Source)
-         VALUES ('${randomUUID()}','${fixture.Tax.JurisdictionIDs.get('MD')}','Reduced',0.0,'2020-01-01','Manual')`,
-    );
-
-    // Ship-to addresses, one per jurisdiction shape.
-    const ADDRESSES: Array<[string, string, string, string, string]> = [
-        ['SantaClara', '1 Innovation Way', 'San Jose',      'CA', '95110'],
-        ['SanMateo',   '2 Peninsula Ave',  'San Mateo',     'CA', '94401'],
-        ['DC',         '3 Capitol St',     'Washington',    'DC', '20001'],
-        ['Maryland',   '4 Bay Rd',         'Annapolis',     'MD', '21401'],
-        ['NoVA',       '5 Beltway Dr',     'Arlington',     'VA', '22201'],
-        ['Richmond',   '6 James River Rd', 'Richmond',      'VA', '23219'],
-        ['NYC',        '7 Broadway',       'New York',      'NY', '10013'],
-    ];
-    for (const [key, line1, city, state, zip] of ADDRESSES) {
-        const aid = randomUUID();
-        fixture.Tax.AddressIDs.set(key, aid);
-        await PoolQuery(
-            ctx,
-            `INSERT INTO ${COMMON_SCHEMA}.Address (ID, Line1, City, StateProvince, PostalCode, Country)
-             VALUES ('${aid}','${line1}','${city}','${state}','${zip}','US')`,
-        );
-    }
-
-    // NEXUS: CoA collects in California, DC and Maryland — and deliberately NOT in New York or
-    // Virginia. Without a gap there is no way to prove the commonest reason a correct system
-    // charges nothing: we have no obligation there.
-    for (const key of ['CA', 'CA-SANTACLARA', 'CA-SANMATEO', 'DC', 'MD']) {
-        await PoolQuery(
-            ctx,
-            `INSERT INTO ${ACCT_SCHEMA}.CompanyTaxNexus
-               (ID, CompanyID, TaxJurisdictionID, NexusType, RegistrationNumber, RegisteredFrom, Status)
-             VALUES ('${randomUUID()}','${fixture.CoA.ID}','${fixture.Tax.JurisdictionIDs.get(key)}',
-                     'Economic','${run}-REG','2020-01-01','Active')`,
-        );
-    }
-
-    Assert(fixture.RevRecTypeIDs.size >= 3, 'revenue recognition types missing — push the orders app metadata');
-    Assert(fixture.SubscriptionTypeIDs.size >= 4, 'subscription types missing — push the orders app metadata');
-
-    const rr = (code: string) => {
-        const id = fixture.RevRecTypeIDs.get(code);
-        Assert(id != null, `RevenueRecognitionType '${code}' not found`);
-        return id!;
-    };
-
-    fixture.ProductTypeIDs.Simple = await createProductType(ctx, run, 'Service');
-    // A SUBSCRIPTION type's grants follow the TERM, not the order date (D76). Seeding this here rather
-    // than per product is what makes the walk's terminating answer the right one for the whole type.
-    fixture.ProductTypeIDs.Subscription = await createProductType(ctx, run, 'Subscription', {
-        DefaultEntitlementValidityMode: 'SubscriptionTerm',
-    });
-    // The extension pointers are what make this type an EVENT type rather than a label: they name
-    // the IsA children that carry event data (BO-D37).
-    fixture.ProductTypeIDs.Event = await createProductType(ctx, run, 'Event', {
-        ProductExtensionEntity: 'MJ_BizApps_Orders: Event Products',
-        OrderLineExtensionEntity: 'MJ_BizApps_Orders: Event Order Lines',
-        DefaultRevenueRecognitionTypeID: rr('AllBackEnd'),
-        // A ticket grants access for the length of the EVENT, whenever the ticket was bought.
-        DefaultEntitlementValidityMode: 'EventWindow',
-    });
-
-    // GIFT CARD. The Code — not the name — is what `GiftCardEngine` and the journal-entry factory
-    // key on (D4), so this type is only a gift-card type because of it. UpFront rev-rec is
-    // deliberate: the factory routes a gift-card line to the liability role and skips the
-    // recognition schedule entirely, so the type's rev-rec rule must never get a chance to fire.
-    fixture.ProductTypeIDs.GiftCard = await createProductType(ctx, run, 'Gift Card', {
-        Code: 'GiftCard',
-        DefaultRevenueRecognitionTypeID: rr('UpFront'),
-    });
-
-    const catA = await createCategory(ctx, run, fixture.CoA.ID, 'Cat A');
-    const catB = await createCategory(ctx, run, fixture.CoB.ID, 'Cat B');
-    const catC = await createCategory(ctx, run, fixture.CoC.ID, 'Cat C');
-
-    const st = (code: string) => {
-        const id = fixture.SubscriptionTypeIDs.get(code);
-        Assert(id != null, `SubscriptionType '${code}' not found`);
-        return id!;
-    };
-
-    fixture.Products = {
-        /** Co A, UpFront, no subscription — the plain revenue line. */
-        WidgetA: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Simple, catA, 'Widget A', rr('UpFront')),
-        /**
-         * A GIFT CARD. Selling it issues a StoredValueAccount and books a LIABILITY, not revenue —
-         * the money is in but the goods are owed, and they are owed on some future order.
-         */
-        GiftCardA: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.GiftCard, catA, 'Gift Card A', rr('UpFront')),
-        /**
-         * A BUNDLE (D32/D41/D45). Selling it expands into component lines under a rollup parent:
-         * the parent is customer-facing and contributes nothing, the children carry the money.
-         */
-        BundleA: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Simple, catA, 'Bundle A', rr('UpFront')),
-        /** First component of Bundle A — worth 3x the second, so allocation has something to weight by. */
-        BundlePartX: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Simple, catA, 'Bundle Part X', rr('UpFront')),
-        /** Second component of Bundle A. */
-        BundlePartY: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Simple, catA, 'Bundle Part Y', rr('UpFront')),
-        /** Co B, UpFront — same shape in the second company, for multi-company orders. */
-        WidgetB: await createProduct(ctx, run, fixture.CoB.ID, fixture.ProductTypeIDs.Simple, catB, 'Widget B', rr('UpFront')),
-        /** Co C, UpFront, but CoC has NO GL links — every confirm containing it must roll back whole. */
-        WidgetC: await createProduct(ctx, run, fixture.CoC.ID, fixture.ProductTypeIDs.Simple, catC, 'Widget C', rr('UpFront')),
-        /** Deferred until the end date, no subscription — an EVENT. Proves deferred rev-rec without a term. */
-        EventA: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Event A', rr('AllBackEnd')),
-        /** Straight-line over the service period, no subscription — recognition anchored to the ORDER LINE. */
-        DeferredA: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Deferred A', rr('EvenOverTime')),
-        /** Annual rolling, monthly recognition — term starts the day it is bought; repeat purchase EXTENDS. */
-        SubRolling: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Rolling', rr('EvenOverTime'), st('AnnualRolling')),
-        /** Jan-1 anchored with PRORATION — the anchor + partial-period path. */
-        SubCalendar: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Calendar', rr('EvenOverTime'), st('CalendarYear')),
-        /** Jul-1 anchored, ChargeFull, QUARTERLY recognition, RejectDuplicate — the opposite corner of every axis. */
-        SubFiscal: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Fiscal', rr('EvenOverTime'), st('FiscalYearJul')),
-        /** A SEAT: the org holds and pays, a named person benefits (D62 NamedIndividual). */
-        SubSeat: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Seat', rr('EvenOverTime'), st('CorporateSeat')),
-        /** Monthly rolling subscription — the short-cadence case. */
-        SubMonthly: await createProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Subscription, catA, 'Sub Monthly', rr('EvenOverTime'), st('MonthlyRolling')),
-        /**
-         * A REAL event ticket: an Event-typed product with an `EventProduct` extension row carrying
-         * the event dates. Unlike `EventA` above — which only borrows the AllBackEnd rev-rec rule and
-         * needs its service period hand-set — this one has the dates on the EVENT, so the order line
-         * needs none (D-EVENT).
-         */
-        EventTicket: await createEventProduct(ctx, run, fixture.CoA.ID, fixture.ProductTypeIDs.Event, catA, 'Conference Ticket', rr('AllBackEnd'), fixture.Event),
-        /** A second ticket to the same event, owned by Co B — events crossing companies. */
-        EventTicketB: await createEventProduct(ctx, run, fixture.CoB.ID, fixture.ProductTypeIDs.Event, catB, 'Conference Ticket B', rr('AllBackEnd'), fixture.Event),
-    };
-
-    // ── ENTITLEMENT TEMPLATES (D27/D76) ───────────────────────────────────────
-    // One per validity mode, because the modes are where the behaviour lives. Note that WidgetA
-    // carries TWO templates with DIFFERENT windows — the case a policy resolved purely from the
-    // product could not express, and the reason ValidityMode sits on the template.
-    fixture.Entitlements = {
-        /** Uncountable, perpetual: the shape of a digital download or a lifetime feature flag. */
-        WidgetSupport: await addEntitlement(ctx, fixture.Products.WidgetA, {
-            Code: 'WIDGET-SUPPORT',
-            EntitlementType: 'Feature',
-            ValidityMode: 'Perpetual',
-        }),
-        /** Countable, and time-boxed independently of its sibling above. */
-        WidgetForum: await addEntitlement(ctx, fixture.Products.WidgetA, {
-            Code: 'WIDGET-FORUM',
-            EntitlementType: 'ResourceQuantity',
-            Quantity: 5,
-            UnitOfMeasure: 'Seat',
-            ValidityMode: 'FixedDuration',
-            ValidityDurationDays: 90,
-        }),
-        /** Follows the TERM, so a cancelled year revokes one grant and leaves the rest of history. */
-        SubSeats: await addEntitlement(ctx, fixture.Products.SubRolling, {
-            Code: 'SUB-SEATS',
-            EntitlementType: 'ResourceQuantity',
-            Quantity: 3,
-            UnitOfMeasure: 'Seat',
-            ValidityMode: 'SubscriptionTerm',
-        }),
-        /** Opens an hour early and closes a day late — the online-event case. */
-        TicketAccess: await addEntitlement(ctx, fixture.Products.EventTicket, {
-            Code: 'TICKET-ACCESS',
-            EntitlementType: 'AccessLevel',
-            ValidityMode: 'EventWindow',
-            AccessLeadHours: 1,
-            AccessLagHours: 24,
-        }),
-        /**
-         * On the PRORATING product, so a fractional line quantity reaches the quantity rule. That is
-         * where round-up actually matters: a half-year of a 4-seat product is 2.33 seats, and handing
-         * the customer two is a support ticket while handing them three is nothing.
-         */
-        ProratedSeats: await addEntitlement(ctx, fixture.Products.SubCalendar, {
-            Code: 'PRORATED-SEATS',
-            EntitlementType: 'ResourceQuantity',
-            Quantity: 4,
-            UnitOfMeasure: 'Seat',
-            ValidityMode: 'SubscriptionTerm',
-        }),
-        /** Deliberately SILENT on validity, so the product/category/type walk has to answer. */
-        DeferredAccess: await addEntitlement(ctx, fixture.Products.DeferredA, {
-            Code: 'DEFERRED-ACCESS',
-            EntitlementType: 'Feature',
-            ValidityMode: null,
-        }),
-    };
-
-
-    // The GL links we just wrote are invisible to booking until the accounting engine reloads.
-    // `AccountingEngineBase` is a BaseEngine: it caches accounts, roles and links in-process on
-    // first use, which is right for production (links change rarely) and fatal for a suite that
-    // creates a NEW company per bundle. Without this, bundle 1 passes — its fixture existed before
-    // the lazy first load — and every bundle after it fails with "no GL account is linked",
-    // pointing at the app when the fault is entirely the test harness's.
-    await AccountingEngineBase.Instance.Config(true, ctx.User, ctx.Provider);
 
     currentFixture = fixture;
     return fixture;
 }
 
-async function codeMap(ctx: IntegrationCheckContext, table: string): Promise<Map<string, string>> {
-    const rows = await PoolQuery<{ ID: string; Code: string }>(ctx, `SELECT ID, Code FROM ${table}`);
-    return new Map(rows.map((r) => [r.Code, r.ID]));
-}
-
-async function createCompany(
-    ctx: IntegrationCheckContext,
-    run: string,
-    label: string,
-    currencyCode: string,
-): Promise<FixtureCompany> {
-    const id = randomUUID();
-    const name = `${run} ${label}`;
-    await PoolQuery(
-        ctx,
-        `INSERT INTO __mj.Company (ID, Name, Description) VALUES ('${id}','${name}','${FIXTURE_TAG}')`,
-    );
-
-    // Accounting refuses to number journal entries for a company with no AccountingCompanyProfile
-    // (spAssignNextJournalEntryNumber enforces it), so booking would fail without this row.
-    // CompanyCode is short and unique-constrained; the UUID head keeps parallel runs from colliding.
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${ACCT_SCHEMA}.AccountingCompanyProfile
-            (ID, CompanyCode, FunctionalCurrencyCode, EntityType, OperatingTimeZone, IsActive)
-         VALUES ('${id}','${id.slice(0, 8).toUpperCase()}','${currencyCode}','Subsidiary','UTC',1)`,
-    );
-
-    const accounts: Record<string, string> = {};
-    for (const a of FIXTURE_ACCOUNTS) {
-        accounts[a.Key] = randomUUID();
-        await PoolQuery(
-            ctx,
-            `INSERT INTO ${ACCT_SCHEMA}.GLAccount (ID, CompanyID, Code, Name, AccountType, IsActive)
-             VALUES ('${accounts[a.Key]}','${id}','${a.Code}','${a.Name}','${a.Type}',1)`,
-        );
-    }
-    return { ID: id, Name: name, Accounts: accounts };
-}
-
-async function createOrganization(ctx: IntegrationCheckContext, run: string, label: string): Promise<string> {
-    const id = randomUUID();
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${COMMON_SCHEMA}.Organization (ID, Name) VALUES ('${id}','${run} ${label}')`,
-    );
-    return id;
-}
-
-async function createPerson(ctx: IntegrationCheckContext, run: string): Promise<string> {
-    const id = randomUUID();
-    await PoolQuery(
-        ctx,
-        `INSERT INTO ${COMMON_SCHEMA}.Person (ID, FirstName, LastName) VALUES ('${id}','Integration','${run}')`,
-    );
-    return id;
-}
-
-/**
- * Price a product THROUGH THE OBJECT MODEL, once.
- *
- * TWO THINGS THIS BUYS, and the first is the reason it exists at all.
- *
- * `ProductPriceEntityServer.ValidateAsync` enforces the AMBIGUITY GUARD: no two active rules may share
- * a product, price list, fee type and priority, because the engine refuses to pick between them rather
- * than take whichever the database returned first (D69). Thirteen raw-SQL prices across this suite
- * walked straight past that guard, which is why ambiguity kept surfacing at CONFIRM time — far from the
- * rule that caused it — instead of loudly here.
- *
- * And it is IDEMPOTENT by product, because a check that prices the same product twice creates exactly
- * the collision the guard exists to catch. Guarding here beats making every caller remember.
- */
 export async function CreateProductPrice(
     ctx: IntegrationCheckContext,
     productID: string,
@@ -786,15 +395,22 @@ export async function CreateProductPrice(
         PackageQuantity?: number | null;
     } = {},
 ): Promise<string | null> {
-    const existing = await TxQuery<{ ID: string }>(
+    const feeType = opts.FeeType ?? 'Standard';
+    const priority = opts.Priority ?? 0;
+    const listClause = opts.PriceListID
+        ? `PriceListID = '${Quote(opts.PriceListID)}'`
+        : 'PriceListID IS NULL';
+    const existing = await FindRows<{ ID: string }>(
         ctx,
-        `SELECT ID FROM ${ORDERS_SCHEMA}.ProductPrice
-          WHERE ProductID='${productID}' AND Status='Active'
-            AND FeeType='${(opts.FeeType ?? 'Standard').replace(/'/g, "''")}'
-            AND Priority=${opts.Priority ?? 0}
-            AND ${opts.PriceListID ? `PriceListID='${opts.PriceListID}'` : 'PriceListID IS NULL'}`,
+        PRODUCT_PRICE_ENTITY,
+        `ProductID = '${Quote(productID)}' AND Status = 'Active' AND FeeType = '${Quote(feeType)}' AND Priority = ${priority} AND ${listClause}`,
+        ['ID'],
     );
-    if (existing.length) return existing[0].ID;
+    if (existing.length) {
+        // Update the amount inside this transaction so a check that says "price this at 100"
+        // actually gets 100. Rollback restores the committed world price.
+        return upsertViaEntity(ctx, PRODUCT_PRICE_ENTITY, existing[0].ID, { Amount: amount });
+    }
 
     return createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
         ProductID: productID,
@@ -833,15 +449,17 @@ export async function CreatePromotion(
     },
 ): Promise<string> {
     const code = opts.Code ?? `IT-${randomUUID().slice(0, 6).toUpperCase()}`;
-    const type = await TxOne<{ ID: string }>(
+    const typeID = await FindId(
         ctx,
-        `SELECT ID FROM ${ORDERS_SCHEMA}.PromotionType WHERE Code='${opts.Kind ?? 'PercentOff'}'`,
+        'MJ_BizApps_Orders: Promotion Types',
+        `Code = '${Quote(opts.Kind ?? 'PercentOff')}'`,
     );
+    Assert(!!typeID, `Promotion Type '${opts.Kind ?? 'PercentOff'}' missing — push orders metadata`);
 
     const promotionID = await createViaEntity(ctx, PROMOTION_ENTITY, {
         Code: code,
         Name: code,
-        PromotionTypeID: type.ID,
+        PromotionTypeID: typeID,
         Value: opts.Value,
         AppliesAt: opts.AppliesAt ?? 'Either',
         Status: 'Active',
@@ -1096,192 +714,8 @@ export async function CreateBundleItem(
     });
 }
 
-async function createProductType(
-    ctx: IntegrationCheckContext,
-    run: string,
-    label: string,
-    opts: {
-        /**
-         * `ProductType.Code`. Usually left unset — the fixture's types are per-run and identified by
-         * ID. It matters for GiftCard, where the CODE is the discriminator the engine keys on (D4),
-         * so a gift-card type without one is just a service with a suggestive name.
-         */
-        Code?: string;
-        ProductExtensionEntity?: string;
-        OrderLineExtensionEntity?: string;
-        DefaultRevenueRecognitionTypeID?: string;
-        /** Entitlement policy backstops (D76). Left to the entity's own defaults when not stated. */
-        DefaultEntitlementGrantTiming?: string;
-        DefaultEntitlementQuantityMode?: string;
-        DefaultEntitlementValidityMode?: string;
-    } = {},
-): Promise<string> {
-    // A CODED TYPE IS GLOBAL REFERENCE DATA, not per-run. `UQ_ProductType_Code` is a unique INDEX,
-    // so only one row may carry Code='GiftCard' across the whole database — which is correct, since
-    // the code is what the engine keys behaviour on (D4) and two different meanings for one code
-    // would be a bug waiting to happen. Runs therefore SHARE it: look it up, create it only if this
-    // is the first run to need it. Uncoded types stay per-run, distinguished by their Name.
-    if (opts.Code) {
-        const existing = await TxMaybeOne<{ ID: string }>(
-            ctx,
-            `SELECT ID FROM ${ORDERS_SCHEMA}.ProductType WHERE Code = '${opts.Code}'`,
-        );
-        if (existing?.ID) return existing.ID;
-    }
-
-    // The three policy columns are NOT NULL with database defaults. Passing `undefined` leaves them
-    // to the entity rather than writing a value, which is the point: the fixture should exercise the
-    // defaults a real caller gets, not paper over them.
-    return createViaEntity(ctx, PRODUCT_TYPE_ENTITY, {
-        Name: `${run} ${label}`,
-        Code: opts.Code,
-        RequiresFulfillment: false,
-        IsActive: true,
-        ProductExtensionEntity: opts.ProductExtensionEntity,
-        OrderLineExtensionEntity: opts.OrderLineExtensionEntity,
-        DefaultRevenueRecognitionTypeID: opts.DefaultRevenueRecognitionTypeID,
-        DefaultEntitlementGrantTiming: opts.DefaultEntitlementGrantTiming ?? 'OnConfirm',
-        DefaultEntitlementQuantityMode: opts.DefaultEntitlementQuantityMode ?? 'PerUnit',
-        DefaultEntitlementValidityMode: opts.DefaultEntitlementValidityMode ?? 'Perpetual',
-    });
-}
-
-/**
- * Attach an entitlement TEMPLATE to a product (D27/D76).
- *
- * Returns the template ID so a check can assert against the grants it produced. `ValidityMode` here
- * overrides the product/category/type walk, which is the point of having it on the template: one
- * product can grant a perpetual download and ninety days of forum access at the same time.
- */
-async function addEntitlement(
-    ctx: IntegrationCheckContext,
-    productID: string,
-    opts: {
-        Code: string;
-        EntitlementType?: 'Feature' | 'AccessLevel' | 'ResourceQuantity' | 'Custom';
-        Quantity?: number | null;
-        UnitOfMeasure?: string;
-        ValidityMode?: string | null;
-        ValidityDurationDays?: number | null;
-        AccessLeadHours?: number | null;
-        AccessLagHours?: number | null;
-    },
-): Promise<string> {
-    return createViaEntity(ctx, PRODUCT_ENTITLEMENT_ENTITY, {
-        ProductID: productID,
-        EntitlementType: opts.EntitlementType ?? 'Feature',
-        Code: opts.Code,
-        Name: opts.Code,
-        Quantity: opts.Quantity ?? null,
-        UnitOfMeasure: opts.UnitOfMeasure ?? null,
-        IsActive: true,
-        ValidityMode: opts.ValidityMode ?? null,
-        ValidityDurationDays: opts.ValidityDurationDays ?? null,
-        AccessLeadHours: opts.AccessLeadHours ?? null,
-        AccessLagHours: opts.AccessLagHours ?? null,
-    });
-}
-
-async function createCategory(
-    ctx: IntegrationCheckContext,
-    run: string,
-    companyID: string,
-    label: string,
-): Promise<string> {
-    return createViaEntity(ctx, PRODUCT_CATEGORY_ENTITY, {
-        CompanyID: companyID,
-        Name: `${run} ${label}`,
-        IsActive: true,
-    });
-}
-
-async function createProduct(
-    ctx: IntegrationCheckContext,
-    run: string,
-    companyID: string,
-    productTypeID: string,
-    categoryID: string,
-    label: string,
-    revRecTypeID: string,
-    subscriptionTypeID?: string,
-): Promise<string> {
-    return createViaEntity(ctx, PRODUCT_ENTITY, {
-        CompanyID: companyID,
-        ProductTypeID: productTypeID,
-        ProductCategoryID: categoryID,
-        Name: `${run} ${label}`,
-        Status: 'Active',
-        RevenueRecognitionTypeID: revRecTypeID,
-        SubscriptionTypeID: subscriptionTypeID,
-    });
-}
-
-/**
- * Create an EVENT PRODUCT — the IsA child — in one save.
- *
- * HOW IS-A ACTUALLY WORKS, since this was got wrong twice. You do NOT create the parent Product and
- * then attach an extension row to it. You create the CHILD and set BOTH its own fields and its
- * parent's; `BaseEntity` splits them using `EntityInfo.ParentEntityFieldNames`, saves the parent
- * first, and gives the child the parent's primary key (BO-D37). That identity IS the relationship.
- *
- * The earlier note here claimed BaseEntity "cannot express that" — it can. What made it look
- * otherwise is that on @memberjunction/core 5.49.0 a failed PARENT save returns false with
- * LatestResult null and an empty ResultHistory, because every result was written to the parent
- * object, which callers have no reference to. So forgetting a NOT NULL parent column — Name,
- * CompanyID, Status — produced a silent false and looked like a framework limitation. MJ PR #3280
- * fixes the diagnostics and ships in v5.50.0; the save path itself was never broken.
- */
-async function createEventProduct(
-    ctx: IntegrationCheckContext,
-    run: string,
-    companyID: string,
-    productTypeID: string,
-    categoryID: string,
-    label: string,
-    revRecTypeID: string,
-    event: { StartsAt: Date; EndsAt: Date },
-): Promise<string> {
-    return createViaEntity(ctx, EVENT_PRODUCT_ENTITY, {
-        // ── the child's own columns ──
-        EventStartsAt: event.StartsAt,
-        EventEndsAt: event.EndsAt,
-        VenueName: `${run} Convention Center`,
-        Capacity: 500,
-        RequiresAttendeeInfo: true,
-        // ── the PARENT's columns, routed up the IS-A chain ──
-        CompanyID: companyID,
-        ProductTypeID: productTypeID,
-        ProductCategoryID: categoryID,
-        Name: `${run} ${label}`,
-        Status: 'Active',
-        RevenueRecognitionTypeID: revRecTypeID,
-    });
-}
-
-// ─── Teardown ──────────────────────────────────────────────────────────────────────────────────
-
-/**
- * Sweep the fixture. Best-effort by contract (a check failure must still clean up), so every
- * statement is individually caught.
- *
- * Because mutating checks roll back, in the normal case there is no booked history here at all —
- * this is a catalog sweep. The order/JE/payment deletes are kept as a safety net for the abnormal
- * case (a check that somehow committed, or a future non-transactional check), and are ordered so
- * they'd succeed if they ever have work to do.
- */
-export async function TeardownOrdersFixture(ctx: IntegrationCheckContext): Promise<void> {
-    const f = currentFixture;
-    if (!f) {
-        return;
-    }
-
-    for (const statement of teardownStatements([f.CoA.ID, f.CoB.ID, f.CoC.ID], f.Run)) {
-        try {
-            await PoolQuery(ctx, statement);
-        } catch (e) {
-            console.warn(`      teardown warn: ${String((e as Error).message).split('\n')[0]}`);
-        }
-    }
+export async function TeardownOrdersFixture(_ctx: IntegrationCheckContext): Promise<void> {
+    // The world stays. ORD-WORLD is shared by every bundle and by Explorer.
     currentFixture = undefined;
 }
 

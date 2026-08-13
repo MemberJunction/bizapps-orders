@@ -1,0 +1,9 @@
+CompanyCode,AccountKey,Role
+BCP,AR,Accounts Receivable
+BCP,Sales,Sales
+BCP,Deferred,Deferred Revenue
+BCP,Cash,Cash
+HH,AR,Accounts Receivable
+HH,Sales,Sales
+HH,Deferred,Deferred Revenue
+HH,Cash,Cash

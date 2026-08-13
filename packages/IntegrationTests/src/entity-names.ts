@@ -66,10 +66,20 @@ export const GL_ACCOUNT_ROLE_ENTITY = 'MJ_BizApps_Accounting: GL Account Roles';
 export const GL_ACCOUNT_LINK_ENTITY = 'MJ_BizApps_Accounting: GL Account Links';
 export const INTERCOMPANY_ACCOUNT_MATCH_ENTITY = 'MJ_BizApps_Accounting: Intercompany Account Matches';
 export const COMPANY_TAX_NEXUS_ENTITY = 'MJ_BizApps_Accounting: Company Tax Nexus';
+export const COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Company Profiles';
+export const TAX_AUTHORITY_ENTITY = 'MJ_BizApps_Accounting: Tax Authorities';
+export const TAX_JURISDICTION_ENTITY = 'MJ_BizApps_Accounting: Tax Jurisdictions';
+export const TAX_RATE_ENTITY = 'MJ_BizApps_Accounting: Tax Rates';
 
-// ── Common (dots, not underscores — see the header) ───────────────────────────────────────────────
+// ── Common ───────────────────────────────────────────────────────────────────────────────────────
 export const PERSON_ENTITY = 'MJ_BizApps_Common: People';
+export const ORGANIZATION_ENTITY = 'MJ_BizApps_Common: Organizations';
+export const ORGANIZATION_TYPE_ENTITY = 'MJ_BizApps_Common: Organization Types';
 export const RELATIONSHIP_ENTITY = 'MJ_BizApps_Common: Relationships';
+export const RELATIONSHIP_TYPE_ENTITY = 'MJ_BizApps_Common: Relationship Types';
+export const ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
+
+export const COMPANY_ENTITY = 'MJ: Companies';
 
 /**
  * Every name above, for the parity check that asserts each one resolves against live metadata.
@@ -111,6 +121,15 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     GL_ACCOUNT_LINK_ENTITY,
     INTERCOMPANY_ACCOUNT_MATCH_ENTITY,
     COMPANY_TAX_NEXUS_ENTITY,
+    COMPANY_PROFILE_ENTITY,
+    TAX_AUTHORITY_ENTITY,
+    TAX_JURISDICTION_ENTITY,
+    TAX_RATE_ENTITY,
     PERSON_ENTITY,
+    ORGANIZATION_ENTITY,
+    ORGANIZATION_TYPE_ENTITY,
     RELATIONSHIP_ENTITY,
+    RELATIONSHIP_TYPE_ENTITY,
+    ADDRESS_ENTITY,
+    COMPANY_ENTITY,
 ];

@@ -1,0 +1,11 @@
+CompanyCode,Code,Name
+BCP,BOOKS,Books
+BCP,EVENTS,Events
+BCP,MEMBERSHIPS,Memberships
+BCP,SERVICES,Services
+BCP,BUNDLES,Bundles
+BCP,GIFTS,Gift Cards
+HH,BOOKS,Books
+HH,EVENTS,Events
+HH,MEMBERSHIPS,Memberships
+ORPHAN,MISC,Unlinked

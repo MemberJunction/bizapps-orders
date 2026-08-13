@@ -1,0 +1,21 @@
+CompanyCode,Key,Code,Name,AccountType
+BCP,AR,11201,Accounts Receivable,Asset
+BCP,Sales,40100,Sales Revenue,Revenue
+BCP,Deferred,21301,Deferred Revenue,Liability
+BCP,Cash,10100,Cash — Operating,Asset
+BCP,Shipping,40200,Shipping Revenue,Revenue
+BCP,TaxPayable,21500,Sales Tax Payable,Liability
+BCP,DueTo,21900,Due To Affiliates,Liability
+BCP,DueFrom,11900,Due From Affiliates,Asset
+HH,AR,11201,Accounts Receivable,Asset
+HH,Sales,40100,Sales Revenue,Revenue
+HH,Deferred,21301,Deferred Revenue,Liability
+HH,Cash,10100,Cash — Operating,Asset
+HH,Shipping,40200,Shipping Revenue,Revenue
+HH,TaxPayable,21500,Sales Tax Payable,Liability
+HH,DueTo,21900,Due To Affiliates,Liability
+HH,DueFrom,11900,Due From Affiliates,Asset
+ORPHAN,AR,11201,Accounts Receivable,Asset
+ORPHAN,Sales,40100,Sales Revenue,Revenue
+ORPHAN,Deferred,21301,Deferred Revenue,Liability
+ORPHAN,Cash,10100,Cash — Operating,Asset
