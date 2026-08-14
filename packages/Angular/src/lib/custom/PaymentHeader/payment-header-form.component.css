@@ -1,6 +1,6 @@
 /* ============================================================================
-   BizApps Orders — Custom Product Form Component Styles
-   Matches mockups/catalog/product-form-mockup.html using MJ semantic tokens.
+   BizApps Orders — Custom Payment Header Form Component Styles
+   Uses MemberJunction semantic tokens for dark and light theme harmony.
    ============================================================================ */
 
 /* ── 1. Hero Identity Header Card ─────────────────────────────────────────── */
@@ -31,14 +31,19 @@
     width: 52px;
     height: 52px;
     border-radius: var(--mj-radius-md, 8px);
-    background: linear-gradient(135deg, var(--mj-brand-primary, #0076b6) 0%, #005a8a 100%);
+    background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
     color: #ffffff;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 22px;
-    box-shadow: 0 4px 10px rgba(0, 118, 182, 0.25);
+    box-shadow: 0 4px 10px rgba(22, 163, 74, 0.25);
     flex-shrink: 0;
+}
+
+.mjo-record-avatar--reversal {
+    background: linear-gradient(135deg, #9333ea 0%, #7e22ce 100%);
+    box-shadow: 0 4px 10px rgba(147, 51, 234, 0.25);
 }
 
 .mjo-record-title-area {
@@ -86,15 +91,28 @@
     border-radius: var(--mj-radius-sm, 4px);
 }
 
-.mjo-isa-subtype-chip {
+.mjo-tender-chip {
     display: inline-flex;
     align-items: center;
     gap: 5px;
     font-size: var(--mj-text-xs, 11.5px);
     font-weight: var(--mj-font-semibold, 600);
-    color: #a78bfa;
-    background: rgba(124, 58, 237, 0.12);
-    border: 1px solid rgba(124, 58, 237, 0.35);
+    color: #0284c7;
+    background: rgba(2, 132, 199, 0.12);
+    border: 1px solid rgba(2, 132, 199, 0.35);
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-full, 9999px);
+}
+
+.mjo-reversal-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--mj-text-xs, 11.5px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: #c084fc;
+    background: rgba(147, 51, 234, 0.15);
+    border: 1px solid rgba(147, 51, 234, 0.35);
     padding: 2px 8px;
     border-radius: var(--mj-radius-full, 9999px);
 }
@@ -130,6 +148,18 @@
     color: var(--mj-status-warning-text, #b45309);
     background: var(--mj-status-warning-bg, rgba(245, 158, 11, 0.12));
     border-color: var(--mj-status-warning-border, rgba(245, 158, 11, 0.35));
+}
+
+.mjo-status-chip--error {
+    color: var(--mj-status-error-text, #dc2626);
+    background: var(--mj-status-error-bg, rgba(239, 68, 68, 0.12));
+    border-color: var(--mj-status-error-border, rgba(239, 68, 68, 0.35));
+}
+
+.mjo-status-chip--purple {
+    color: #c084fc;
+    background: rgba(147, 51, 234, 0.12);
+    border-color: rgba(147, 51, 234, 0.35);
 }
 
 .mjo-status-chip--inactive {
@@ -176,16 +206,20 @@
 }
 
 .mjo-stat-val.mjo-money {
+    color: var(--mj-status-success-text, #15803d);
+}
+
+.mjo-stat-val.mjo-net {
     color: var(--mj-brand-primary, #0076b6);
 }
 
-/* ── 3. Dynamic IS-A Subtype Extension Banner ─────────────────────────────── */
-.mjo-extension-banner {
+/* ── 3. Reversal Banner ────────────────────────────────────────────────────── */
+.mjo-reversal-banner {
     display: flex;
     align-items: flex-start;
     gap: var(--mj-space-3, 12px);
-    background: rgba(124, 58, 237, 0.12);
-    border: 1px solid rgba(124, 58, 237, 0.35);
+    background: rgba(147, 51, 234, 0.12);
+    border: 1px solid rgba(147, 51, 234, 0.35);
     border-radius: var(--mj-radius-md, 8px);
     padding: var(--mj-space-3, 12px) var(--mj-space-4, 16px);
     margin-bottom: var(--mj-space-4, 16px);
@@ -194,29 +228,14 @@
     line-height: 1.45;
 }
 
-.mjo-extension-banner i {
+.mjo-reversal-banner i {
     font-size: 16px;
     margin-top: 2px;
-    color: #a78bfa;
+    color: #c084fc;
     flex-shrink: 0;
 }
 
-.mjo-extension-banner code {
-    font-family: var(--mj-font-family-mono, monospace);
-    font-size: 12px;
-    background: rgba(124, 58, 237, 0.22);
-    padding: 1px 5px;
-    border-radius: 4px;
-    color: #c4b5fd;
-}
-
-/* ── 4. Panel Child Grids & Field Layouts ──────────────────────────────────── */
-.mjo-panel-fields-grid {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: var(--mj-space-3, 12px);
-}
-
+/* ── 4. Subgrid Wrapper ───────────────────────────────────────────────────── */
 .mjo-subgrid-wrap {
     margin-top: var(--mj-space-3, 12px);
     border-top: 1px solid var(--mj-border-default, #f1f5f9);
@@ -243,7 +262,7 @@
     color: var(--mj-text-secondary, #475569);
 }
 
-/* ── 5. Responsive Adjustments ─────────────────────────────────────────────── */
+/* ── 5. Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 1100px) {
     .mjo-record-summary-bar {
         grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

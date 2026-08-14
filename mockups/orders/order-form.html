@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>One order form — MJ Orders</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<style>
+  :root {
+    --mj-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mj-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --mj-bg-page: #0b1220;
+    --mj-bg-surface: #152033;
+    --mj-bg-surface-card: #1b2940;
+    --mj-bg-surface-sunken: #101a2c;
+    --mj-bg-surface-hover: #22324c;
+    --mj-bg-surface-active: #2a3d5c;
+    --mj-bg-overlay: rgba(2, 6, 23, 0.62);
+    --mj-text-primary: #e8eef8;
+    --mj-text-secondary: #b4c0d4;
+    --mj-text-muted: #8b9bb3;
+    --mj-text-disabled: #667892;
+    --mj-text-inverse: #0b1220;
+    --mj-text-link: #7eb8e6;
+    --mj-border-default: #2c3e5a;
+    --mj-border-subtle: #22324c;
+    --mj-border-strong: #3d5476;
+    --mj-border-focus: #5aa4dc;
+    --mj-brand-primary: #4f9ad4;
+    --mj-brand-primary-hover: #6aaddc;
+    --mj-brand-on-primary: #071018;
+    --mj-status-success: #34d399;
+    --mj-status-success-bg: color-mix(in srgb, #34d399 14%, var(--mj-bg-surface));
+    --mj-status-success-text: #86efac;
+    --mj-status-warning: #fbbf24;
+    --mj-status-warning-bg: color-mix(in srgb, #fbbf24 14%, var(--mj-bg-surface));
+    --mj-status-warning-text: #fde68a;
+    --mj-status-error: #f87171;
+    --mj-status-error-bg: color-mix(in srgb, #f87171 14%, var(--mj-bg-surface));
+    --mj-status-error-text: #fecaca;
+    --mj-status-info: #60a5fa;
+    --mj-status-info-bg: color-mix(in srgb, #60a5fa 14%, var(--mj-bg-surface));
+    --mj-nav: #071018;
+  }
+
+  html[data-theme="light"] {
+    color-scheme: light;
+    --mj-nav: #092340;
+    --mj-brand-on-primary: #fff;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: var(--mj-font-sans);
+    background: var(--mj-bg-page);
+    color: var(--mj-text-primary);
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  .mono { font-family: var(--mj-font-mono); }
+  .muted { color: var(--mj-text-muted); }
+  .num { font-variant-numeric: tabular-nums; text-align: right; }
+  .strong { font-weight: 600; }
+
+  /* ── Explorer chrome ── */
+  .topnav {
+    height: 48px; display: flex; align-items: center; gap: 16px;
+    padding: 0 16px; background: var(--mj-nav); color: #fff;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+  }
+  .topnav .mark {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: var(--mj-brand-primary); display: grid; place-items: center;
+    font-size: 11px; font-weight: 800; color: var(--mj-brand-on-primary);
+  }
+  .topnav .brand { font-weight: 700; font-size: 14px; letter-spacing: -.01em; }
+  .topnav .app {
+    font-size: 12px; padding: 3px 8px; border-radius: 999px;
+    background: rgba(255,255,255,.1); color: rgba(255,255,255,.85);
+  }
+  .topnav .spacer { flex: 1; }
+  .topnav .ghost {
+    background: transparent; border: 1px solid rgba(255,255,255,.18);
+    color: #fff; border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer;
+  }
+
+  .workspace { max-width: 1280px; margin: 0 auto; padding: 20px 20px 72px; }
+
+  /* ── Thesis ── */
+  .thesis {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 12px 14px; margin-bottom: 16px;
+    border: 1px solid color-mix(in srgb, var(--mj-brand-primary) 35%, var(--mj-border-default));
+    background: color-mix(in srgb, var(--mj-brand-primary) 10%, var(--mj-bg-surface));
+    border-radius: 12px; font-size: 13px; line-height: 1.45;
+  }
+  .thesis i { color: var(--mj-brand-primary); margin-top: 2px; }
+  .thesis strong { display: block; margin-bottom: 2px; }
+  .thesis .trade { color: var(--mj-text-muted); margin-top: 4px; font-size: 12px; }
+
+  /* ── Record header ── */
+  .hdr {
+    background: var(--mj-bg-surface);
+    border: 1px solid var(--mj-border-default);
+    border-radius: 14px;
+    padding: 16px 18px 14px;
+  }
+  .hdr-top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+  .who { display: flex; gap: 12px; align-items: center; }
+  .avatar {
+    width: 44px; height: 44px; border-radius: 10px;
+    background: color-mix(in srgb, var(--mj-brand-primary) 22%, var(--mj-bg-surface-card));
+    color: var(--mj-brand-primary); display: grid; place-items: center; font-size: 18px;
+  }
+  h1 { margin: 0; font-size: 20px; letter-spacing: -.02em; display: flex; align-items: center; gap: 10px; }
+  .sub { margin-top: 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12.5px; color: var(--mj-text-secondary); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-card); color: var(--mj-text-secondary);
+  }
+  .chip--ok { color: var(--mj-status-success-text); background: var(--mj-status-success-bg); border-color: color-mix(in srgb, var(--mj-status-success) 35%, transparent); }
+  .chip--draft { color: var(--mj-status-warning-text); background: var(--mj-status-warning-bg); border-color: color-mix(in srgb, var(--mj-status-warning) 35%, transparent); }
+  .chip--entity { color: var(--mj-brand-primary); background: color-mix(in srgb, var(--mj-brand-primary) 14%, transparent); border-color: color-mix(in srgb, var(--mj-brand-primary) 30%, transparent); }
+
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 7px 13px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    border: 1px solid var(--mj-border-strong); background: var(--mj-bg-surface-card);
+    color: var(--mj-text-primary); cursor: default;
+  }
+  .btn--primary { background: var(--mj-brand-primary); color: var(--mj-brand-on-primary); border-color: transparent; }
+  .btn--ghost { background: transparent; }
+  .btn.is-off { opacity: .45; }
+
+  .facts {
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0; margin-top: 14px;
+    border: 1px solid var(--mj-border-subtle); border-radius: 10px; overflow: hidden;
+    background: var(--mj-bg-surface-sunken);
+  }
+  .fact { padding: 9px 12px; border-right: 1px solid var(--mj-border-subtle); }
+  .fact:last-child { border-right: none; }
+  .fact .l { display: block; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--mj-text-muted); margin-bottom: 3px; }
+  .fact .v { font-size: 13px; font-weight: 550; }
+
+  .stage-row { display: flex; align-items: center; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
+  .stepper { display: flex; align-items: center; gap: 0; font-size: 12px; }
+  .step { display: flex; align-items: center; gap: 6px; color: var(--mj-text-muted); }
+  .step .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mj-border-strong); }
+  .step.is-done { color: var(--mj-status-success-text); }
+  .step.is-done .dot { background: var(--mj-status-success); }
+  .step.is-now { color: var(--mj-text-primary); font-weight: 600; }
+  .step.is-now .dot { background: var(--mj-brand-primary); box-shadow: 0 0 0 4px color-mix(in srgb, var(--mj-brand-primary) 25%, transparent); }
+  .step + .step::before { content: ''; width: 22px; height: 1px; background: var(--mj-border-strong); margin: 0 8px; }
+
+  .money {
+    margin-left: auto; display: flex; gap: 18px; font-size: 12.5px;
+    padding: 6px 10px; border-radius: 8px; background: var(--mj-bg-surface-sunken);
+    border: 1px solid var(--mj-border-subtle);
+  }
+  .money .k { color: var(--mj-text-muted); font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  .money .n { font-variant-numeric: tabular-nums; font-weight: 650; }
+
+  /* ── Party strip — always on ── */
+  .parties {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px;
+  }
+  .party {
+    display: flex; gap: 10px; align-items: center;
+    padding: 10px 12px; border-radius: 10px; cursor: pointer;
+    border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-card);
+    text-align: left; width: 100%;
+  }
+  .party:hover { border-color: var(--mj-border-strong); background: var(--mj-bg-surface-hover); }
+  .party.is-on {
+    border-color: color-mix(in srgb, var(--mj-brand-primary) 55%, var(--mj-border-default));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mj-brand-primary) 40%, transparent);
+  }
+  .party .ic {
+    width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center;
+    background: var(--mj-bg-surface-sunken); color: var(--mj-brand-primary); flex: 0 0 auto;
+  }
+  .party .role { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--mj-text-muted); }
+  .party .nm { font-size: 13.5px; font-weight: 600; }
+  .party .ad { font-size: 12px; color: var(--mj-text-muted); }
+  .party .same { font-size: 11px; color: var(--mj-text-link); font-weight: 600; }
+
+  /* ── Context tabs + pane ── */
+  .context { margin-top: 16px; }
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--mj-border-default); }
+  .tab {
+    background: transparent; border: 0; border-bottom: 2px solid transparent;
+    padding: 8px 12px; font-size: 13px; font-weight: 550; color: var(--mj-text-muted);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 7px; margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--mj-text-primary); }
+  .tab.is-on { color: var(--mj-text-primary); border-bottom-color: var(--mj-brand-primary); }
+  .tab .n {
+    font-size: 10px; font-weight: 700; min-width: 16px; height: 16px; padding: 0 5px;
+    border-radius: 999px; display: inline-grid; place-items: center;
+    background: var(--mj-bg-surface-sunken); color: var(--mj-text-secondary);
+  }
+  .tab .err { width: 7px; height: 7px; border-radius: 50%; background: var(--mj-status-error); }
+
+  .pane {
+    display: none; padding: 14px 0 4px;
+  }
+  .pane.is-on { display: block; }
+  .pane-card {
+    background: var(--mj-bg-surface);
+    border: 1px solid var(--mj-border-default);
+    border-radius: 12px; padding: 14px 16px;
+  }
+  .grid-2 { display: grid; grid-template-columns: 1.2fr .8fr; gap: 14px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .field .l { font-size: 11px; font-weight: 650; color: var(--mj-text-muted); margin-bottom: 4px; }
+  .field .box {
+    border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-sunken);
+    border-radius: 8px; padding: 8px 10px; font-size: 13px;
+  }
+  .search {
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-sunken);
+    border-radius: 8px; padding: 8px 10px; color: var(--mj-text-muted);
+  }
+  .ar { display: flex; gap: 18px; }
+  .ar .k { font-size: 11px; color: var(--mj-text-muted); }
+  .ar .n { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .note { font-size: 12px; color: var(--mj-text-muted); line-height: 1.45; }
+
+  /* ── Lines — always ── */
+  .lines {
+    margin-top: 18px;
+    background: var(--mj-bg-surface);
+    border: 1px solid var(--mj-border-default);
+    border-radius: 14px; overflow: hidden;
+  }
+  .lines-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid var(--mj-border-subtle);
+  }
+  .lines-head h2 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .01em; }
+  .add {
+    display: flex; align-items: center; gap: 8px; flex: 1; max-width: 420px;
+    border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-sunken);
+    border-radius: 8px; padding: 6px 10px; color: var(--mj-text-muted); font-size: 13px;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--mj-text-muted); font-weight: 700; padding: 8px 12px;
+    border-bottom: 1px solid var(--mj-border-subtle); background: var(--mj-bg-surface-card);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--mj-border-subtle); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tfoot td { background: var(--mj-bg-surface-card); font-weight: 600; }
+  .sku { font-family: var(--mj-font-mono); font-size: 11px; color: var(--mj-text-muted); }
+  .empty { padding: 28px 16px; text-align: center; color: var(--mj-text-muted); }
+  .empty i { font-size: 22px; margin-bottom: 8px; display: block; color: var(--mj-brand-primary); }
+
+  .todo {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 10px; font-size: 12.5px; color: var(--mj-status-error-text);
+  }
+  .todo button {
+    background: var(--mj-status-error-bg); border: 1px solid color-mix(in srgb, var(--mj-status-error) 35%, transparent);
+    color: var(--mj-status-error-text); border-radius: 999px; padding: 2px 8px; cursor: pointer; font-size: 12px;
+  }
+
+  .mode {
+    display: flex; gap: 6px; align-items: center; font-size: 12px;
+  }
+  .mode button {
+    border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-card);
+    border-radius: 999px; padding: 4px 10px; cursor: pointer; color: var(--mj-text-secondary);
+  }
+  .mode button.is-on { background: var(--mj-brand-primary); color: var(--mj-brand-on-primary); border-color: transparent; }
+
+  @media (max-width: 900px) {
+    .facts { grid-template-columns: repeat(3, 1fr); }
+    .parties, .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .money { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topnav">
+  <div class="mark">MJ</div>
+  <div class="brand">MemberJunction</div>
+  <span class="app">Orders</span>
+  <div class="spacer"></div>
+  <div class="mode">
+    <span class="muted" style="margin-right:4px">Show</span>
+    <button type="button" id="btn-existing" class="is-on" onclick="setMode('existing')">Existing · ORD-000018</button>
+    <button type="button" id="btn-new" onclick="setMode('new')">New draft</button>
+  </div>
+  <button class="ghost" type="button" onclick="toggleTheme()"><i class="fa-solid fa-circle-half-stroke"></i> Theme</button>
+</header>
+
+<main class="workspace">
+
+  <div class="thesis">
+    <i class="fa-solid fa-lightbulb"></i>
+    <div>
+      <strong>Thesis — one record, one form.</strong>
+      Fast Entry and the editor are the same job at different zoom. This is that job as an Explorer
+      record form: anyone who opens <code>MJ_BizApps_Orders: Order Headers</code> gets it — new or saved.
+      Dashboard just calls <code>NavigationService.OpenEntityRecord</code>. No private tab stack.
+      <div class="trade">Tradeoff: the 12-second phone order loses a dedicated wizard. It gains a Bill-to tab that <em>is</em> that wizard, with lines already on the page.</div>
+    </div>
+  </div>
+
+  <section class="hdr">
+    <div class="hdr-top">
+      <div class="who">
+        <div class="avatar"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+        <div>
+          <h1>
+            <span id="title">ORD-000018</span>
+            <span class="chip chip--entity">Order Header</span>
+            <span class="chip chip--ok" id="status-chip"><i class="fa-solid fa-circle-check"></i> Confirmed</span>
+          </h1>
+          <div class="sub" id="subtitle">Jane Chen · Meridian Association · Blue Cypress Press</div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn btn--ghost" type="button"><i class="fa-regular fa-clock"></i> History</button>
+        <button class="btn" type="button" id="btn-save"><i class="fa-regular fa-floppy-disk"></i> Save</button>
+        <button class="btn btn--primary" type="button" id="btn-confirm"><i class="fa-solid fa-check"></i> Confirm</button>
+      </div>
+    </div>
+
+    <div class="facts">
+      <div class="fact"><span class="l">Type</span><span class="v">Standard</span></div>
+      <div class="fact"><span class="l">Selling as</span><span class="v">Blue Cypress Press</span></div>
+      <div class="fact"><span class="l">Order date</span><span class="v">Aug 13, 2026</span></div>
+      <div class="fact"><span class="l">Due</span><span class="v" id="due">Net 30 · Sep 12</span></div>
+      <div class="fact"><span class="l">Their PO</span><span class="v mono" id="po">PO-4419</span></div>
+      <div class="fact"><span class="l">Payment</span><span class="v" id="paystat">Paid · Check 4419</span></div>
+    </div>
+
+    <div class="stage-row">
+      <div class="stepper" id="stepper">
+        <span class="step is-done"><span class="dot"></span>Draft</span>
+        <span class="step is-now"><span class="dot"></span>Confirmed</span>
+        <span class="step"><span class="dot"></span>Fulfilled</span>
+        <span class="step"><span class="dot"></span>Closed</span>
+      </div>
+      <div class="money">
+        <div><div class="k">Total</div><div class="n" id="m-total">$240.00</div></div>
+        <div><div class="k">Paid</div><div class="n" id="m-paid">$240.00</div></div>
+        <div><div class="k">Balance</div><div class="n" id="m-bal">$0.00</div></div>
+      </div>
+    </div>
+
+    <div class="parties">
+      <button class="party is-on" type="button" data-tab="bill" onclick="showTab('bill')">
+        <span class="ic"><i class="fa-solid fa-file-invoice-dollar"></i></span>
+        <span>
+          <span class="role">Bill to</span>
+          <div class="nm" id="bill-name">Meridian Association</div>
+          <div class="ad" id="bill-ad">Jane Chen · Net 30 · 200 Meridian Plaza, Austin TX</div>
+        </span>
+      </button>
+      <button class="party" type="button" data-tab="ship" onclick="showTab('ship')">
+        <span class="ic"><i class="fa-solid fa-truck-fast"></i></span>
+        <span>
+          <span class="role">Ship to</span>
+          <div class="nm" id="ship-name">Same as bill to</div>
+          <div class="ad" id="ship-ad">One click when it is the payer. Override per line if a kit ships elsewhere.</div>
+        </span>
+      </button>
+    </div>
+
+    <div class="todo" id="todo" hidden>
+      <i class="fa-solid fa-circle-exclamation"></i>
+      <span>2 before you can confirm</span>
+      <button type="button" onclick="showTab('bill')">Need a bill-to party</button>
+      <button type="button" onclick="document.getElementById('lines').scrollIntoView({behavior:'smooth'})">Need a line</button>
+    </div>
+  </section>
+
+  <section class="context">
+    <div class="tabs">
+      <button class="tab is-on" data-tab="bill" type="button" onclick="showTab('bill')">Bill to</button>
+      <button class="tab" data-tab="ship" type="button" onclick="showTab('ship')">Ship to</button>
+      <button class="tab" data-tab="payment" type="button" onclick="showTab('payment')">Payment</button>
+      <button class="tab" data-tab="charges" type="button" onclick="showTab('charges')">Charges <span class="n" id="n-charges">0</span></button>
+      <button class="tab" data-tab="accounting" type="button" onclick="showTab('accounting')">Accounting</button>
+      <button class="tab" data-tab="subs" type="button" onclick="showTab('subs')">Subscriptions <span class="n" id="n-subs">1</span></button>
+      <button class="tab" data-tab="journal" type="button" onclick="showTab('journal')">Journal</button>
+    </div>
+
+    <div class="pane is-on" data-pane="bill">
+      <div class="grid-2">
+        <div class="pane-card">
+          <div class="field" style="margin-bottom:12px">
+            <div class="l">Who pays</div>
+            <div class="box" id="bill-box">
+              <strong>Meridian Association</strong>
+              <div class="muted" style="margin-top:2px">Jane Chen · jane.chen@meridian.org · inferred employee since 2019</div>
+            </div>
+          </div>
+          <div class="grid-3">
+            <div class="field"><div class="l">Terms</div><div class="box">Net 30 · org default</div></div>
+            <div class="field"><div class="l">Bill-to address</div><div class="box">200 Meridian Plaza, Austin TX</div></div>
+            <div class="field"><div class="l">Tax exemption</div><div class="box">None on file</div></div>
+          </div>
+          <p class="note" style="margin:12px 0 0">Bill-to is header-only. One order, one payer, one bill. There is no line-level counterpart.</p>
+        </div>
+        <div class="pane-card">
+          <div class="l" style="margin-bottom:8px">On the phone — know this first</div>
+          <div class="ar">
+            <div><div class="k">Open balance</div><div class="n">$0.00</div></div>
+            <div><div class="k">Credit</div><div class="n">—</div></div>
+            <div><div class="k">Overdue</div><div class="n">0</div></div>
+          </div>
+          <p class="note" style="margin:12px 0 0">Lifted from Fast Entry. An overdue invoice is something to know while they are still on the phone, not after the order books.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="pane" data-pane="ship">
+      <div class="pane-card">
+        <div class="grid-2">
+          <div>
+            <div class="field" style="margin-bottom:12px">
+              <div class="l">Who receives</div>
+              <div class="box"><strong>Same as bill to</strong><div class="muted" style="margin-top:2px">Meridian Association · 200 Meridian Plaza</div></div>
+            </div>
+            <p class="note">Each side falls back independently, so a line that names only a person keeps the header organization. For a membership there is nothing to ship — the same fields say who the line is <em>for</em>.</p>
+          </div>
+          <div>
+            <div class="field"><div class="l">Line overrides</div>
+              <div class="box note">None on this order. A kit that ships to a chapter office would override ship-to on that line only.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pane" data-pane="payment">
+      <div class="grid-2">
+        <div class="pane-card">
+          <div class="l" style="margin-bottom:8px">Initial tender — intent until confirm</div>
+          <div class="grid-3">
+            <div class="field"><div class="l">Type</div><div class="box">Check</div></div>
+            <div class="field"><div class="l">Reference</div><div class="box mono">4419</div></div>
+            <div class="field"><div class="l">Amount</div><div class="box num">$240.00</div></div>
+          </div>
+          <p class="note" style="margin:12px 0 0">This is what Fast Entry collected in the footer. On confirm it becomes a Payment Header + Detail in the same transaction as the booking.</p>
+        </div>
+        <div class="pane-card">
+          <div class="l" style="margin-bottom:8px">Applied</div>
+          <div class="box">PAY-000041 · Check 4419 · $240.00 · Applied in full</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pane" data-pane="charges">
+      <div class="pane-card note">No order-level charges. Tax is decided at confirm and will land here as charge rows (state / county / city), not as a special case.</div>
+    </div>
+
+    <div class="pane" data-pane="accounting">
+      <div class="grid-3">
+        <div class="pane-card"><div class="l">AR</div><div class="box">12000 · Trade Receivable · BCP</div></div>
+        <div class="pane-card"><div class="l">Revenue</div><div class="box">41000 · Membership dues · DEMO</div></div>
+        <div class="pane-card"><div class="l">Deferred</div><div class="box">23000 · Unearned membership</div></div>
+      </div>
+    </div>
+
+    <div class="pane" data-pane="subs">
+      <div class="pane-card">
+        <strong>1 subscription will start on confirm</strong>
+        <div class="muted" style="margin-top:4px">Institutional Membership · Calendar Year (Jan 1 anchor) · 12 seats · accrues to Jane Chen, held by Meridian Association</div>
+      </div>
+    </div>
+
+    <div class="pane" data-pane="journal">
+      <div class="pane-card note">Journal entries appear after confirm. Booking + 12 monthly recognition entries for the membership sit here as read-only accounting records — they are not edited from the order.</div>
+    </div>
+  </section>
+
+  <section class="lines" id="lines">
+    <div class="lines-head">
+      <h2><i class="fa-solid fa-list-ol" style="color:var(--mj-brand-primary);margin-right:6px"></i> Lines</h2>
+      <div class="add"><i class="fa-solid fa-magnifying-glass"></i> Add a product — name or SKU</div>
+    </div>
+    <div id="lines-body">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:36px">#</th>
+            <th>Product</th>
+            <th style="width:72px">Co.</th>
+            <th class="num" style="width:70px">Qty</th>
+            <th class="num" style="width:110px">Unit</th>
+            <th class="num" style="width:90px">Discount</th>
+            <th class="num" style="width:110px">Line net</th>
+            <th class="num" style="width:80px">Tax</th>
+            <th style="width:36px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="muted">1</td>
+            <td>
+              <div class="strong">Institutional Membership</div>
+              <div class="sku">MEM-INST</div>
+              <div style="margin-top:4px"><span class="chip">Subscription</span></div>
+            </td>
+            <td><span class="chip">DEMO</span></td>
+            <td class="num">12</td>
+            <td class="num">$20.00</td>
+            <td class="num muted">—</td>
+            <td class="num strong">$240.00</td>
+            <td class="num muted">—</td>
+            <td></td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="6">Net before tax &amp; charges</td>
+            <td class="num">$240.00</td>
+            <td class="num muted">—</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+  const emptyLines = `<div class="empty"><i class="fa-solid fa-cart-plus"></i>No lines yet. Search the catalogue above — this is the order.</div>`;
+  const existingLines = document.getElementById('lines-body').innerHTML;
+
+  function showTab(key) {
+    document.querySelectorAll('.tab').forEach(el => el.classList.toggle('is-on', el.dataset.tab === key));
+    document.querySelectorAll('.pane').forEach(el => el.classList.toggle('is-on', el.dataset.pane === key));
+    document.querySelectorAll('.party').forEach(el => el.classList.toggle('is-on', el.dataset.tab === key));
+  }
+
+  function setMode(mode) {
+    const isNew = mode === 'new';
+    document.getElementById('btn-new').classList.toggle('is-on', isNew);
+    document.getElementById('btn-existing').classList.toggle('is-on', !isNew);
+    document.getElementById('title').textContent = isNew ? 'New order' : 'ORD-000018';
+    document.getElementById('status-chip').className = 'chip ' + (isNew ? 'chip--draft' : 'chip--ok');
+    document.getElementById('status-chip').innerHTML = isNew
+      ? '<i class="fa-solid fa-pen"></i> Draft'
+      : '<i class="fa-solid fa-circle-check"></i> Confirmed';
+    document.getElementById('subtitle').textContent = isNew
+      ? 'No party yet · Blue Cypress Press · today'
+      : 'Jane Chen · Meridian Association · Blue Cypress Press';
+    document.getElementById('due').textContent = isNew ? '—' : 'Net 30 · Sep 12';
+    document.getElementById('po').textContent = isNew ? '—' : 'PO-4419';
+    document.getElementById('paystat').textContent = isNew ? 'No tender' : 'Paid · Check 4419';
+    document.getElementById('m-total').textContent = isNew ? '—' : '$240.00';
+    document.getElementById('m-paid').textContent = isNew ? '—' : '$240.00';
+    document.getElementById('m-bal').textContent = isNew ? '—' : '$0.00';
+    document.getElementById('bill-name').textContent = isNew ? 'Choose who pays' : 'Meridian Association';
+    document.getElementById('bill-ad').textContent = isNew ? 'Search a person or organization — this is Fast Entry’s first step' : 'Jane Chen · Net 30 · 200 Meridian Plaza, Austin TX';
+    document.getElementById('ship-name').textContent = isNew ? 'Same as bill to' : 'Same as bill to';
+    document.getElementById('bill-box').innerHTML = isNew
+      ? '<div class="search"><i class="fa-solid fa-magnifying-glass"></i> Find a person or organization…</div>'
+      : '<strong>Meridian Association</strong><div class="muted" style="margin-top:2px">Jane Chen · jane.chen@meridian.org · inferred employee since 2019</div>';
+    document.getElementById('todo').hidden = !isNew;
+    document.getElementById('btn-confirm').classList.toggle('is-off', isNew);
+    document.getElementById('n-charges').textContent = '0';
+    document.getElementById('n-subs').textContent = isNew ? '0' : '1';
+    document.getElementById('lines-body').innerHTML = isNew ? emptyLines : existingLines;
+    document.getElementById('stepper').innerHTML = isNew
+      ? '<span class="step is-now"><span class="dot"></span>Draft</span><span class="step"><span class="dot"></span>Confirmed</span><span class="step"><span class="dot"></span>Fulfilled</span><span class="step"><span class="dot"></span>Closed</span>'
+      : '<span class="step is-done"><span class="dot"></span>Draft</span><span class="step is-now"><span class="dot"></span>Confirmed</span><span class="step"><span class="dot"></span>Fulfilled</span><span class="step"><span class="dot"></span>Closed</span>';
+    showTab('bill');
+  }
+
+  function toggleTheme() {
+    const el = document.documentElement;
+    el.dataset.theme = el.dataset.theme === 'dark' ? 'light' : 'dark';
+  }
+</script>
+</body>
+</html>

@@ -19,6 +19,7 @@
  *   OB12 a confirm with NO LINES is refused
  *   OB13 ExpectedGrossTotal guards the price — a repriced order is refused, not booked
  *   OB14 a back-dated order is booked on the date it states
+ *   OB15 confirm-after-draft with lines not loaded still books memberships
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -42,8 +43,10 @@ import {
     TxOne,
     TxQuery,
 } from '../fixture.js';
+import { Metadata } from '@memberjunction/core';
+import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
-import { ORDER_LINE_ENTITY } from '../entity-names.js';
+import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from '../entity-names.js';
 
 /** The three-line multi-company order OB1–OB6 all read from — built once per check, inside its tx. */
 async function confirmMultiCompanyOrder(ctx: IntegrationCheckContext) {
@@ -540,6 +543,46 @@ export const OrderBookingChecks: NamedCheck[] = [
                     '2026-03-15',
                     'the order carries the stated date',
                 );
+            }),
+    },
+    {
+        Id: 'order-booking.OB15',
+        Name: 'OB15: confirm-after-draft still books when Lines were not reloaded',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // THE FORM PATH. Save a draft with a membership, then Load ONLY the header
+                // (what GraphQL does after save) and confirm. Two defects hid here:
+                //   · an unloaded Lines collection created no term → EvenOverTime refused
+                //   · writing prorated qty AFTER Status=Confirmed hit trigger 51003
+                //     (ROLLBACK inside INSERT-EXEC)
+                const f = Fx();
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 1, UnitPrice: 1200 }],
+                });
+                Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
+
+                const md = new Metadata();
+                const reloaded = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
+                Assert(await reloaded.Load(draft.Order.ID), 'header reload must succeed');
+                Assert(!reloaded.Lines.IsLoaded, 'the collection must still be unloaded — that is the case');
+
+                reloaded.Status = 'Confirmed';
+                Assert(
+                    await reloaded.Save(),
+                    `confirm-after-draft must succeed: ${reloaded.LatestResult?.CompleteMessage ?? ''}`,
+                );
+                AssertEqual(reloaded.Status, 'Confirmed', 'the order is booked');
+
+                const term = await TxQuery<{ ID: string }>(
+                    ctx,
+                    `SELECT t.ID FROM ${ORDERS_SCHEMA}.SubscriptionTerm t
+                      INNER JOIN ${ORDERS_SCHEMA}.OrderLine l ON l.ID = t.OrderLineID
+                     WHERE l.OrderHeaderID = '${reloaded.ID}'`,
+                );
+                Assert(term.length > 0, 'the membership must have a term — that is the service period');
             }),
     },
 ];

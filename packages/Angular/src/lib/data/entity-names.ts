@@ -17,7 +17,9 @@
 export const MJO_ENTITIES = {
     OrderHeader: 'MJ_BizApps_Orders: Order Headers',
     OrderLine: 'MJ_BizApps_Orders: Order Lines',
+    OrderCharge: 'MJ_BizApps_Orders: Order Charges',
     PaymentHeader: 'MJ_BizApps_Orders: Payment Headers',
+    PaymentDetail: 'MJ_BizApps_Orders: Payment Details',
     PaymentLine: 'MJ_BizApps_Orders: Payment Lines',
     Product: 'MJ_BizApps_Orders: Products',
     ProductType: 'MJ_BizApps_Orders: Product Types',
@@ -44,6 +46,7 @@ export const MJO_ENTITIES = {
 export const MJO_COMMON_ENTITIES = {
     Organization: 'MJ_BizApps_Common: Organizations',
     Person: 'MJ_BizApps_Common: People',
+    Address: 'MJ_BizApps_Common: Addresses',
 } as const;
 
 /**

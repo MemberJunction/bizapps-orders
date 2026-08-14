@@ -39,6 +39,9 @@ export { CLASS_REGISTRATIONS } from './lib/generated/class-registrations-manifes
 export { GeneratedFormsModule } from './lib/generated/generated-forms.module';
 export { CustomFormsModule } from './lib/custom/custom-forms.module';
 export { BizAppsProductFormComponent } from './lib/custom/Product/product-form.component';
+export { BizAppsOrderHeaderFormComponent } from './lib/custom/OrderHeader/order-header-form.component';
+export { BizAppsSubscriptionFormComponent } from './lib/custom/Subscription/subscription-form.component';
+export { BizAppsPaymentHeaderFormComponent } from './lib/custom/PaymentHeader/payment-header-form.component';
 
 /** Explorer sections — the four top-level tabs of the Orders application. */
 export {

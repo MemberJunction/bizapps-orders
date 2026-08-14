@@ -11,14 +11,21 @@ import { FormsModule } from '@angular/forms';
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
-import { MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJButtonDirective, MJTabNavComponent } from '@memberjunction/ng-ui-components';
 
 // Custom Form Components
 import { BizAppsProductFormComponent, LoadProductFormComponent } from './Product/product-form.component';
+import { BizAppsOrderHeaderFormComponent, LoadOrderHeaderFormComponent } from './OrderHeader/order-header-form.component';
+import { MJOOrderLinesEditorComponent } from './OrderHeader/order-lines-editor.component';
+import { BizAppsSubscriptionFormComponent, LoadSubscriptionFormComponent } from './Subscription/subscription-form.component';
+import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } from './PaymentHeader/payment-header-form.component';
 
 @NgModule({
     declarations: [
         BizAppsProductFormComponent,
+        BizAppsOrderHeaderFormComponent,
+        BizAppsSubscriptionFormComponent,
+        BizAppsPaymentHeaderFormComponent,
     ],
     imports: [
         CommonModule,
@@ -27,9 +34,14 @@ import { BizAppsProductFormComponent, LoadProductFormComponent } from './Product
         EntityViewerModule,
         LinkDirectivesModule,
         MJButtonDirective,
+        MJTabNavComponent,
+        MJOOrderLinesEditorComponent,
     ],
     exports: [
         BizAppsProductFormComponent,
+        BizAppsOrderHeaderFormComponent,
+        BizAppsSubscriptionFormComponent,
+        BizAppsPaymentHeaderFormComponent,
     ],
 })
 export class CustomFormsModule {}
@@ -37,4 +49,7 @@ export class CustomFormsModule {}
 /** Tree-shaking prevention anchor function */
 export function LoadCustomForms(): void {
     LoadProductFormComponent();
+    LoadOrderHeaderFormComponent();
+    LoadSubscriptionFormComponent();
+    LoadPaymentHeaderFormComponent();
 }

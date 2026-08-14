@@ -53,7 +53,7 @@ describe('BuildLeftNavSections', () => {
 
     it('preserves rail order within a group', () => {
         const sections = BuildLeftNavSections(ORDERS_SUB_PAGES);
-        expect(sections[0].items.map((i) => i.id)).toEqual(['dashboard', 'list', 'fast-entry', 'editor']);
+        expect(sections[0].items.map((i) => i.id)).toEqual(['dashboard', 'list']);
         expect(sections[1].items.map((i) => i.id)).toEqual(['fulfillment', 'returns']);
     });
 

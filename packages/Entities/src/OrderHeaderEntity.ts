@@ -140,8 +140,13 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      */
     public override NewRecord(newValues?: FieldValueCollection): boolean {
         const created = super.NewRecord(newValues);
-        if (created && this.OrderDate == null) {
-            this.OrderDate = new Date();
+        if (created) {
+            if (this.OrderDate == null) {
+                this.OrderDate = new Date();
+            }
+            if (!this.Status) {
+                this.Status = 'Draft';
+            }
         }
         return created;
     }
@@ -327,10 +332,29 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * missing payer without a round trip.
      */
     public async Confirm(): Promise<void> {
+        await this.EnsureLinesLoaded();
         this.Status = 'Confirmed';
         if (!(await this.Save())) {
             throw new Error(this.LatestResult?.CompleteMessage?.trim() || 'The order could not be confirmed.');
         }
+    }
+
+    /**
+     * Populate `Lines` from the database when this header is saved and the collection is empty.
+     *
+     * WHY THIS IS HERE, NOT ON THE FORM. Changing Status to Confirmed and pressing Save is a
+     * legal confirm — Fast Entry's `Confirm()` is the same two statements. After a draft save the
+     * GraphQL form reloads the HEADER only, so `Lines` is an unloaded explicit collection: empty
+     * in memory, full on disk. Booking that walks `this.Lines.Items` then sees no memberships,
+     * creates no terms, and EvenOverTime refuses for want of a service period.
+     *
+     * A read, not a write — safe on both tiers. The server Save path calls this before the
+     * transactional booking walk so every caller (form, Confirm(), API, fixture) gets the same
+     * answer. Does nothing when the header is new or the collection is already loaded.
+     */
+    public async EnsureLinesLoaded(): Promise<void> {
+        if (!this.IsSaved || this.Lines.IsLoaded) return;
+        await this.Lines.Load();
     }
 
     /**
