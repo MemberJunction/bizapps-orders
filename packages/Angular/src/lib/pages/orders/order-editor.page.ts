@@ -153,11 +153,9 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
      * The reference the user typed for the initial payment — a check number, wire confirmation, or
      * transfer id.
      *
-     * Held on the page, not the order: `OrderHeader` has no such column. It lives on the
-     * `PaymentDetail` row the order points at, which is created by the confirm, so until then this
-     * is genuinely screen state. That is exactly the kind of thing an Angular component may own.
+     * Backed by `Order.InitialPaymentReference` (companion). There is no column — confirm
+     * turns it into a `PaymentDetail` — but it has to ride the save, so it cannot stay page-only.
      */
-    public InitialPaymentReference: string | null = null;
 
     /** Catalog for the product column and the add-line picker. */
     @Input() Catalog: MJOProductOption[] = [];
@@ -967,7 +965,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
 
     /** The reference as typed. Read from the DRAFT, so it survives a tab switch or a remount. */
     public get Reference(): string {
-        return this.InitialPaymentReference ?? '';
+        return this.Order?.InitialPaymentReference ?? '';
     }
 
     public SetReference(value: string): void {
@@ -980,7 +978,7 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
             // leaving an amount attached to no tender, which the server would reject.
             this.Order.InitialPaymentTypeID = null;
             this.Order.InitialPaymentAmount = 0;
-            this.InitialPaymentReference = null;
+            this.Order.InitialPaymentReference = null;
             this.onEdited();
             return;
         }
@@ -1002,8 +1000,8 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
         this.Order.InitialPaymentTypeID = paymentTypeID;
         this.Order.InitialPaymentAmount =
             patch.Amount !== undefined ? patch.Amount : (this.Order.InitialPaymentAmount ?? 0);
-        this.InitialPaymentReference =
-            patch.Reference !== undefined ? patch.Reference : (this.InitialPaymentReference ?? null);
+        this.Order.InitialPaymentReference =
+            patch.Reference !== undefined ? patch.Reference : (this.Order.InitialPaymentReference ?? null);
         // Whether this tender needs a reference is a property of the TENDER, not of the order, so it
         // is not stored — it is looked up when the rule is evaluated. The draft carried a copy of it
         // that could go stale against the PaymentType row.

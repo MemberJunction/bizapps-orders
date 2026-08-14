@@ -1,0 +1,36 @@
+Email,FirstName,LastName,Title,OrgCode,RelationshipType
+nora.calhoun@riverside.org,Nora,Calhoun,Director,RIV,Employee
+james.whitaker@riverside.org,James,Whitaker,Acquisitions Librarian,RIV,Employee
+elena.voss@riverside.org,Elena,Voss,Children's Librarian,RIV,Employee
+ben.okada@riverside.org,Ben,Okada,Circulation,RIV,Employee
+ruth.perez@riverside.org,Ruth,Perez,Archivist,RIV,Employee
+priya.shah@northgate-schools.edu,Priya,Shah,Superintendent,NGS,Employee
+marcus.hale@northgate-schools.edu,Marcus,Hale,Curriculum Director,NGS,Employee
+tess.okonkwo@northgate-schools.edu,Tess,Okonkwo,PTA Chair,NGS,Volunteer
+leo.brandt@northgate-schools.edu,Leo,Brandt,Athletic Director,NGS,Employee
+ami.foster@northgate-schools.edu,Ami,Foster,School Librarian,NGS,Employee
+helen.cho@summit.edu,Helen,Cho,Provost,SUM,Employee
+owen.briggs@summit.edu,Owen,Briggs,Bookstore Manager,SUM,Employee
+nadia.idris@summit.edu,Nadia,Idris,Alumni Director,SUM,Employee
+carlos.mendez@summit.edu,Carlos,Mendez,Conference Chair,SUM,Employee
+june.park@summit.edu,June,Park,Registrar,SUM,Employee
+dana.ruiz@atlasathletics.com,Dana,Ruiz,Head Coach,ATL,Employee
+theo.park@atlasathletics.com,Theo,Park,Team Captain,ATL,Member
+mei.lin@atlasathletics.com,Mei,Lin,Parent Liaison,ATL,Member
+greg.shaw@atlasathletics.com,Greg,Shaw,Trainer,ATL,Employee
+amal.rahman@westfieldmed.org,Amal,Rahman,Physician,WFM,Employee
+claire.bennett@westfieldmed.org,Claire,Bennett,Practice Administrator,WFM,Employee
+devon.ellis@westfieldmed.org,Devon,Ellis,CME Coordinator,WFM,Employee
+pat.nguyen@westfieldmed.org,Pat,Nguyen,Billing,WFM,Employee
+lydia.grant@harboryc.org,Lydia,Grant,Commodore,HYC,Member
+sam.ortiz@harboryc.org,Sam,Ortiz,Treasurer,HYC,Member
+iris.cole@harboryc.org,Iris,Cole,Membership Chair,HYC,Member
+vic.nguyen@cedarpine.tax,Vic,Nguyen,Partner,CAP,Employee
+riley.cho@cedarpine.tax,Riley,Cho,Staff Accountant,CAP,Employee
+morgan.adebayo@cedarpine.tax,Morgan,Adebayo,Bookkeeper,CAP,Employee
+maya.ellison@brightline.tv,Maya,Ellison,Editor,BLM,Employee
+kit.navarro@brightline.tv,Kit,Navarro,Producer,BLM,Employee
+ash.reed@brightline.tv,Ash,Reed,Researcher,BLM,Employee
+jordan.blake@example.com,Jordan,Blake,Independent Buyer,,
+samira.qureshi@example.com,Samira,Qureshi,Independent Buyer,,
+chris.pell@example.com,Chris,Pell,Independent Buyer,,

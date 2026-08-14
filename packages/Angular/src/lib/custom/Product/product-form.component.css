@@ -1,0 +1,27 @@
+/* Extension banner for IS-A Subtype Panel */
+.mjo-extension-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mj-space-3, 12px);
+    background: var(--mj-status-info-bg, #eff6ff);
+    border: 1px solid var(--mj-status-info-border, #bfdbfe);
+    border-radius: var(--mj-radius-md, 8px);
+    padding: var(--mj-space-3, 12px) var(--mj-space-4, 16px);
+    margin-bottom: var(--mj-space-4, 16px);
+    font-size: 13px;
+    color: var(--mj-status-info-text, #1e40af);
+}
+
+.mjo-extension-banner i {
+    font-size: 16px;
+    margin-top: 2px;
+    color: var(--mj-status-info, #3b82f6);
+}
+
+.mjo-extension-banner code {
+    font-family: var(--mj-font-mono, monospace);
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.05);
+    padding: 1px 5px;
+    border-radius: 4px;
+}

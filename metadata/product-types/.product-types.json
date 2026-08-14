@@ -1,0 +1,237 @@
+[
+  {
+    "fields": {
+      "Code": "Event",
+      "Name": "Event",
+      "Description": "A dated occurrence — conference, workshop, webinar. Recognition defaults to All Back End on the event date. Carries Event Product / Event Order Line IsA extensions (venue, capacity, attendee).",
+      "RequiresFulfillment": 0,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=AllBackEnd",
+      "DefaultIsTaxable": 1,
+      "ProductExtensionEntity": "MJ_BizApps_Orders: Event Products",
+      "OrderLineExtensionEntity": "MJ_BizApps_Orders: Event Order Lines",
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementQuantityMode": "PerUnit",
+      "DefaultEntitlementValidityMode": "EventWindow"
+    },
+    "primaryKey": {
+      "ID": "9EFE875F-C8BE-47A6-8E7B-633FA2587094"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T23:45:45.980Z",
+      "checksum": "92aabbaa7922b2addeb770c42f8698ce7842a3e8a676a5f8f34aeeea1da1cba7"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Membership",
+      "Name": "Membership",
+      "Description": "Continuing membership. Recognition even-over-time; default subscription type is Annual Rolling. Grants follow the subscription term.",
+      "RequiresFulfillment": 0,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=EvenOverTime",
+      "DefaultIsTaxable": 1,
+      "DefaultSubscriptionTypeID": "@lookup:MJ_BizApps_Orders: Subscription Types.Code=AnnualRolling",
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementQuantityMode": "Flat",
+      "DefaultEntitlementValidityMode": "SubscriptionTerm"
+    },
+    "primaryKey": {
+      "ID": "9A783463-F0E6-450E-B7AD-DD3EFD1F0DAF"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T23:45:46.180Z",
+      "checksum": "335b6eb39d20ab86bbbe915f145b54f9c75a21faa8d079ad03946aaf5fdbe46e"
+    }
+  },
+  {
+    "fields": {
+      "Code": "PhysicalGood",
+      "Name": "Physical Good",
+      "Description": "A shippable item. Holds the order at Posted until a fulfiller marks the line Fulfilled. Recognition is up front at booking.",
+      "RequiresFulfillment": 1,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=UpFront",
+      "DefaultIsTaxable": 1,
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementQuantityMode": "PerUnit",
+      "DefaultEntitlementValidityMode": "Perpetual"
+    },
+    "primaryKey": {
+      "ID": "0AFB4A94-E2B4-4D99-AA16-8295C7DDE935"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T23:45:46.006Z",
+      "checksum": "4f6f391d97c7b13183969aad8ab6d9adfb0be6c7d45141b1c708f83fe4bf9d83"
+    }
+  },
+  {
+    "fields": {
+      "Code": "DigitalGood",
+      "Name": "Digital Good",
+      "Description": "A downloadable or electronically delivered item. No fulfillment hold. Recognition up front; entitlements perpetual.",
+      "RequiresFulfillment": 0,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=UpFront",
+      "DefaultIsTaxable": 1,
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementQuantityMode": "PerUnit",
+      "DefaultEntitlementValidityMode": "Perpetual"
+    },
+    "primaryKey": {
+      "ID": "5246A777-D6F5-4FAC-97FA-39EB66F67108"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T23:45:46.033Z",
+      "checksum": "5c6746af8c7df0c4a8af969e4d7882fd9beb4b379eda4c40939d9a2f5792333c"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Service",
+      "Name": "Service",
+      "Description": "Professional or consulting work billed as a product. Recognition up front unless a product overrides it.",
+      "RequiresFulfillment": 0,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=UpFront",
+      "DefaultIsTaxable": 1,
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementQuantityMode": "PerUnit",
+      "DefaultEntitlementValidityMode": "Perpetual"
+    },
+    "primaryKey": {
+      "ID": "0BAC2F28-FB02-461E-9A1A-AD9DE1F46AB9"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T23:45:46.058Z",
+      "checksum": "c26310b8bcdde4cf23712b0db2cdb30bee311f06e7bc59a64ba9cac20775ad2a"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Donation",
+      "Name": "Donation",
+      "Description": "A contribution. Untaxable by default. Recognition up front.",
+      "RequiresFulfillment": 0,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=UpFront",
+      "DefaultIsTaxable": 0,
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementQuantityMode": "Flat",
+      "DefaultEntitlementValidityMode": "Perpetual"
+    },
+    "primaryKey": {
+      "ID": "BB82ECBC-3501-4F58-9D7F-C92858AD0B78"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T23:45:46.084Z",
+      "checksum": "a7f8cfcafb61a82de44f76ecde14ccd7f3d7c07708748e1f2c7e4a157064086a"
+    }
+  },
+  {
+    "fields": {
+      "Code": "GiftCard",
+      "Name": "Gift Card",
+      "Description": "Stored value issued as a liability. Untaxable at sale; redemption is a later tender. Recognition up front of the liability, not revenue.",
+      "RequiresFulfillment": 0,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=UpFront",
+      "DefaultIsTaxable": 0,
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementQuantityMode": "PerUnit",
+      "DefaultEntitlementValidityMode": "Perpetual"
+    },
+    "primaryKey": {
+      "ID": "63E5834B-E089-45EC-9F0B-798EA16B715D"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T23:45:46.108Z",
+      "checksum": "ba12dea131d46f0313e85fea548b452b725aa92fee080b1ee2bd70e56a3d2679"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Bundle",
+      "Name": "Bundle",
+      "Description": "A kit that expands into component lines at booking. The parent is a rollup and contributes zero; children carry the money.",
+      "RequiresFulfillment": 0,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=UpFront",
+      "DefaultIsTaxable": 1,
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementQuantityMode": "PerUnit",
+      "DefaultEntitlementValidityMode": "Perpetual"
+    },
+    "primaryKey": {
+      "ID": "684D1004-2F29-4E20-AF05-8480F27C96E5"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T23:45:46.132Z",
+      "checksum": "52ae4e7ccb5035c6b09a6d804672bcd8064e7f9f102a55cbaf6682798b722893"
+    }
+  },
+  {
+    "fields": {
+      "Code": "AddOn",
+      "Name": "Add-On / Fee",
+      "Description": "An ancillary fee sold alongside another product. Recognition up front.",
+      "RequiresFulfillment": 0,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=UpFront",
+      "DefaultIsTaxable": 1,
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementQuantityMode": "PerUnit",
+      "DefaultEntitlementValidityMode": "Perpetual"
+    },
+    "primaryKey": {
+      "ID": "48FF67F1-4BD7-4F30-9317-28C9712186DA"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T23:45:46.154Z",
+      "checksum": "0260d4a54ccf59f6216280961e23edc2457132acff05c5d40f8b9cbf5a2d93a0"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Subscription",
+      "Name": "Subscription",
+      "Description": "Recurring billed value that is not a membership (software, content access). Recognition even-over-time; default type is Annual Rolling.",
+      "RequiresFulfillment": 0,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=EvenOverTime",
+      "DefaultIsTaxable": 1,
+      "DefaultSubscriptionTypeID": "@lookup:MJ_BizApps_Orders: Subscription Types.Code=AnnualRolling",
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnConfirm",
+      "DefaultEntitlementQuantityMode": "Flat",
+      "DefaultEntitlementValidityMode": "SubscriptionTerm"
+    },
+    "primaryKey": {
+      "ID": "D9EBF401-B286-4077-8181-13DD5892512C"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T23:45:46.202Z",
+      "checksum": "8d6ffe12e00825bc19e45617cd2a755780c1c7f35bc6161946b67b6937634283"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Usage",
+      "Name": "Usage",
+      "Description": "Metered consumption billed as a product. Recognition up front per increment. Pricing models (tiered / volume) live on Product Price, not here.",
+      "RequiresFulfillment": 0,
+      "DefaultRevenueRecognitionTypeID": "@lookup:MJ_BizApps_Orders: Revenue Recognition Types.Code=UpFront",
+      "DefaultIsTaxable": 1,
+      "IsActive": 1,
+      "DefaultEntitlementGrantTiming": "OnPaidInFull",
+      "DefaultEntitlementQuantityMode": "PerUnit",
+      "DefaultEntitlementValidityMode": "FixedDuration"
+    },
+    "primaryKey": {
+      "ID": "0FFE0B1A-BE4F-4494-99E9-2F27A35034B8"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T23:45:46.230Z",
+      "checksum": "0a3226c9103895a610bbf5f278455b820c5aa83b4bb8b24903e4269b876e7ae1"
+    }
+  }
+]

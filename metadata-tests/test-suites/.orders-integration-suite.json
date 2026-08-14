@@ -13,6 +13,17 @@
         {
           "fields": {
             "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-00 - Catalog World",
+            "Sequence": 0,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "0FCA881C-9171-4645-9458-7CAFB91C6466"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
             "TestID": "@lookup:MJ: Tests.Name=ORD-01 - Order Booking",
             "Sequence": 1,
             "Status": "Active"

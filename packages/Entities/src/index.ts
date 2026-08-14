@@ -30,6 +30,8 @@ export * from './OrderStatusBehavior';
  * runs in the browser before a round trip AND on the server for every other caller.
  */
 export * from './OrderHeaderEntity';
+export * from './save-populated-fields';
+export * from './InitialPaymentIntentCompanion';
 
 /**
  * Forces the generated entity subclasses to be loaded. Without an explicit
