@@ -13,6 +13,10 @@ import '@mj-biz-apps/orders-entities';
 // Import generated form components (triggers @RegisterClass for form components)
 import './lib/generated/generated-forms.module';
 
+// Import custom form components (loaded AFTER generated to override via @RegisterClass priority)
+import './lib/custom/custom-forms.module';
+import { LoadCustomForms } from './lib/custom/custom-forms.module';
+
 // Import generated class registrations manifest
 import { CLASS_REGISTRATIONS } from './lib/generated/class-registrations-manifest';
 
@@ -33,6 +37,8 @@ import {
 // Re-export for consumers
 export { CLASS_REGISTRATIONS } from './lib/generated/class-registrations-manifest';
 export { GeneratedFormsModule } from './lib/generated/generated-forms.module';
+export { CustomFormsModule } from './lib/custom/custom-forms.module';
+export { BizAppsProductFormComponent } from './lib/custom/Product/product-form.component';
 
 /** Explorer sections — the four top-level tabs of the Orders application. */
 export {
@@ -101,4 +107,5 @@ export type { OrdersSubPage, OrdersNavBadges } from './lib/sections/section-nav.
 export function LoadBizAppsOrdersClient(): void {
     void [OrdersSectionResource, PaymentsSectionResource, ReceivablesSectionResource, CatalogSectionResource];
     void CLASS_REGISTRATIONS;
+    LoadCustomForms();
 }

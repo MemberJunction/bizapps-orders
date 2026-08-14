@@ -1,0 +1,1266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Custom Form Mockup — MemberJunction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+
+<style>
+  :root {
+    --mj-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --mj-font-mono: 'JetBrains Mono', monospace;
+    --mj-radius-sm: 6px;
+    --mj-radius-md: 10px;
+    --mj-radius-lg: 14px;
+    --mj-radius-full: 9999px;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--mj-font-sans);
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+    color: var(--mj-text-primary, #0f172a);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Host Shell Simulation */
+  .mj-app-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .mj-top-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 52px;
+    background: #092340;
+    color: #ffffff;
+    padding: 0 var(--mj-space-4, 16px);
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .mj-top-nav .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+  }
+
+  .mj-top-nav .brand .badge {
+    background: #0076b6;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-full);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .mj-top-nav .type-selector-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.1);
+    padding: 4px 12px;
+    border-radius: var(--mj-radius-md);
+    font-size: 12.5px;
+  }
+
+  .mj-top-nav .type-selector-bar select {
+    background: #092340;
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.25);
+    padding: 4px 8px;
+    border-radius: var(--mj-radius-sm);
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* Main Workspace / Record Container */
+  .mj-record-workspace {
+    max-width: 1320px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 24px 20px 80px;
+    box-sizing: border-box;
+  }
+
+  /* Record Form Header */
+  .record-header-card {
+    background: #ffffff;
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-lg);
+    padding: 20px 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    margin-bottom: 20px;
+  }
+
+  .record-header-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .record-identity {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .record-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: var(--mj-radius-md);
+    background: linear-gradient(135deg, #0076b6 0%, #005a8a 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 4px 10px rgba(0, 118, 182, 0.25);
+  }
+
+  .record-title-area h1 {
+    margin: 0 0 4px;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--mj-text-primary, #0f172a);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .record-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .entity-chip {
+    font-size: 11px;
+    font-weight: 600;
+    color: #0076b6;
+    background: #e6f3f9;
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-sm);
+  }
+
+  .sku-badge {
+    font-family: var(--mj-font-mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--mj-text-secondary, #475569);
+    background: var(--mj-bg-surface-sunken, #f1f5f9);
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    padding: 1px 7px;
+    border-radius: var(--mj-radius-sm);
+  }
+
+  .isa-subtype-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #7c3aed;
+    background: #f5f3ff;
+    border: 1px solid #ddd6fe;
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-full);
+  }
+
+  .status-chip-active {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #15803d;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    padding: 2px 9px;
+    border-radius: var(--mj-radius-full);
+  }
+
+  .status-chip-active::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #22c55e;
+  }
+
+  .record-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: var(--mj-radius-md);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s ease-in-out;
+  }
+
+  .btn-primary {
+    background: #0076b6;
+    color: #ffffff;
+  }
+  .btn-primary:hover {
+    background: #006aa3;
+  }
+
+  .btn-outline {
+    background: #ffffff;
+    color: var(--mj-text-primary, #0f172a);
+    border-color: var(--mj-border-default, #cbd5e1);
+  }
+  .btn-outline:hover {
+    background: var(--mj-bg-surface-hover, #f8fafc);
+  }
+
+  .btn-icon {
+    padding: 8px 10px;
+    color: var(--mj-text-secondary, #64748b);
+  }
+  .btn-icon:hover {
+    color: var(--mj-text-primary, #0f172a);
+    background: var(--mj-bg-surface-hover, #f1f5f9);
+  }
+
+  /* Form Quick Stats Summary Bar */
+  .record-summary-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--mj-border-default, #f1f5f9);
+  }
+
+  .stat-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-label {
+    font-size: 11.5px;
+    color: var(--mj-text-muted, #64748b);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .stat-val {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--mj-text-primary, #0f172a);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat-val.money {
+    color: #0076b6;
+  }
+
+  /* Panels Layout */
+  .panels-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Collapsible Panel */
+  .mj-panel {
+    background: #ffffff;
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-lg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    overflow: hidden;
+    transition: box-shadow 0.15s ease;
+  }
+
+  .mj-panel:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  }
+
+  .mj-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    background: #ffffff;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid transparent;
+  }
+
+  .mj-panel.is-open .mj-panel-header {
+    border-bottom-color: var(--mj-border-default, #f1f5f9);
+  }
+
+  .panel-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--mj-text-primary, #0f172a);
+  }
+
+  .panel-title i {
+    color: #0076b6;
+    width: 18px;
+    text-align: center;
+  }
+
+  .panel-title .badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: var(--mj-radius-full);
+    background: #e2e8f0;
+    color: #475569;
+  }
+
+  .panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-chevron {
+    color: var(--mj-text-muted, #94a3b8);
+    transition: transform 0.2s ease;
+    font-size: 12px;
+  }
+
+  .mj-panel.is-open .panel-chevron {
+    transform: rotate(180deg);
+  }
+
+  .mj-panel-body {
+    padding: 20px;
+    display: none;
+  }
+
+  .mj-panel.is-open .mj-panel-body {
+    display: block;
+  }
+
+  /* Subtype Extension Highlight Panel */
+  .mj-panel.extension-panel {
+    border-color: #c4b5fd;
+    background: linear-gradient(180deg, #faf5ff 0%, #ffffff 60px);
+  }
+
+  .mj-panel.extension-panel .panel-title i {
+    color: #7c3aed;
+  }
+
+  .extension-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    background: #f5f3ff;
+    border: 1px solid #ddd6fe;
+    border-radius: var(--mj-radius-md);
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    color: #5b21b6;
+  }
+
+  .extension-banner i {
+    font-size: 16px;
+    margin-top: 2px;
+    color: #7c3aed;
+  }
+
+  /* Form Fields Grid */
+  .fields-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 24px;
+  }
+
+  .fields-grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px 24px;
+  }
+
+  .fields-grid-4 {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px 24px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .field-group.full-width {
+    grid-column: 1 / -1;
+  }
+
+  .field-label {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--mj-text-secondary, #334155);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .field-label .required {
+    color: #ef4444;
+  }
+
+  .field-control {
+    font-family: inherit;
+    font-size: 13.5px;
+    padding: 8px 12px;
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    border-radius: var(--mj-radius-sm);
+    background: #ffffff;
+    color: var(--mj-text-primary, #0f172a);
+    box-sizing: border-box;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .field-control:focus {
+    border-color: #0076b6;
+    box-shadow: 0 0 0 3px rgba(0, 118, 182, 0.15);
+  }
+
+  .field-control[readonly], .field-control:disabled {
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+    color: var(--mj-text-secondary, #475569);
+    cursor: default;
+  }
+
+  textarea.field-control {
+    min-height: 72px;
+    resize: vertical;
+  }
+
+  .input-with-icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .input-with-icon i {
+    position: absolute;
+    left: 12px;
+    color: var(--mj-text-muted, #94a3b8);
+    font-size: 13px;
+    pointer-events: none;
+  }
+
+  .input-with-icon .field-control {
+    padding-left: 34px;
+  }
+
+  .checkbox-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--mj-text-primary, #0f172a);
+    cursor: pointer;
+    padding: 6px 0;
+  }
+
+  .checkbox-control input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #0076b6;
+    cursor: pointer;
+  }
+
+  .field-hint {
+    font-size: 11.5px;
+    color: var(--mj-text-muted, #64748b);
+  }
+
+  /* Embedded Sub-Tables (Natural Child Subtypes: Prices, Entitlements, Bundles) */
+  .sub-table-wrap {
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-md);
+    overflow: hidden;
+    margin-top: 10px;
+  }
+
+  .sub-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    text-align: left;
+  }
+
+  .sub-table th {
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+    color: var(--mj-text-secondary, #475569);
+    font-weight: 600;
+    font-size: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--mj-border-default, #e2e8f0);
+  }
+
+  .sub-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--mj-border-default, #f1f5f9);
+    color: var(--mj-text-primary, #0f172a);
+    vertical-align: middle;
+  }
+
+  .sub-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .sub-table tbody tr:hover {
+    background: var(--mj-bg-surface-hover, #f8fafc);
+  }
+
+  .sub-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+
+  .table-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--mj-text-primary, #0f172a);
+  }
+
+  /* Address Card in Venue Field */
+  .address-linked-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-sm);
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+
+  .address-linked-card .addr-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .address-linked-card .addr-info i {
+    color: #0076b6;
+  }
+
+  /* Responsive Adjustments */
+  @media (max-width: 900px) {
+    .fields-grid-4, .fields-grid-3 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 640px) {
+    .fields-grid-4, .fields-grid-3, .fields-grid-2 {
+      grid-template-columns: 1fr;
+    }
+    .record-header-top {
+      flex-direction: column;
+    }
+    .record-actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+  }
+</style>
+</head>
+<body>
+
+<div class="mj-app-shell">
+
+  <!-- Top Simulation Header Bar -->
+  <header class="mj-top-nav">
+    <div class="brand">
+      <i class="fa-solid fa-cube"></i>
+      <span>MemberJunction Explorer</span>
+      <span class="badge">Custom Form Mockup</span>
+    </div>
+
+    <!-- Live Type Switcher to demonstrate conditional IsA subtype rendering -->
+    <div class="type-selector-bar">
+      <span><i class="fa-solid fa-wand-magic-sparkles"></i> <strong>Switch Product Type:</strong></span>
+      <select id="typePicker" onchange="switchProductType(this.value)">
+        <option value="event" selected>Conference / Event Ticket (Has EventProduct IsA Subtype)</option>
+        <option value="subscription">SaaS Subscription (Recurring Terms)</option>
+        <option value="physical">Physical Book / Merchandise (Requires Fulfillment)</option>
+        <option value="digital">Digital Asset / License (Immediate Perpetual)</option>
+      </select>
+    </div>
+
+    <div>
+      <span style="font-size:12px; opacity:0.85;"><i class="fa-solid fa-user-circle"></i> admin@memberjunction.org</span>
+    </div>
+  </header>
+
+  <!-- Record Container Workspace -->
+  <main class="mj-record-workspace">
+
+    <!-- ── 1. Standard MemberJunction Record Form Header ── -->
+    <div class="record-header-card">
+      <div class="record-header-top">
+        <div class="record-identity">
+          <div class="record-avatar" id="prodAvatar">
+            <i class="fa-solid fa-ticket"></i>
+          </div>
+          <div class="record-title-area">
+            <h1 id="prodTitle">
+              2026 Annual AI Leadership Summit - All Access Pass
+            </h1>
+            <div class="record-badges">
+              <span class="entity-chip"><i class="fa-solid fa-database"></i> MJ_BizApps_Orders: Products</span>
+              <span class="sku-badge" id="prodSku">SKU: CONF-2026-ALLPASS</span>
+              <span class="isa-subtype-chip" id="isaSubtypeBadge">
+                <i class="fa-solid fa-diagram-project"></i> IsA Subtype: EventProduct
+              </span>
+              <span class="status-chip-active" id="prodStatus">Active</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="record-actions">
+          <button class="btn btn-outline btn-icon" title="Toggle Favorite"><i class="fa-regular fa-star"></i></button>
+          <button class="btn btn-outline btn-icon" title="View Audit History"><i class="fa-solid fa-clock-rotate-left"></i></button>
+          <button class="btn btn-outline btn-icon" title="List Management"><i class="fa-solid fa-list-check"></i></button>
+          <button class="btn btn-outline" onclick="toggleEditMode()"><i class="fa-solid fa-pen"></i> Edit Record</button>
+          <button class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+        </div>
+      </div>
+
+      <!-- Quick Summary Metric Strip -->
+      <div class="record-summary-bar">
+        <div class="stat-block">
+          <span class="stat-label">Standalone Selling Price</span>
+          <span class="stat-val money" id="statPrice">$895.00</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Product Type</span>
+          <span class="stat-val" id="statType">Conference Ticket</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Revenue Recognition</span>
+          <span class="stat-val" id="statRevRec">Deferred (Event Date)</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Capacity / Stock</span>
+          <span class="stat-val" id="statCapacity">500 Attendees</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Active Price Rules</span>
+          <span class="stat-val">3 Price Lists</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── 2. Collapsible Panels Container ── -->
+    <div class="panels-container">
+
+      <!-- Panel 1: Product Identification -->
+      <div class="mj-panel is-open" id="panel-ident">
+        <div class="mj-panel-header" onclick="togglePanel('panel-ident')">
+          <div class="panel-title">
+            <i class="fa-solid fa-tag"></i>
+            <span>Product Identification</span>
+          </div>
+          <div class="panel-actions">
+            <i class="fa-solid fa-chevron-down panel-chevron"></i>
+          </div>
+        </div>
+        <div class="mj-panel-body">
+          <div class="fields-grid-2">
+            <div class="field-group">
+              <label class="field-label">Product Name <span class="required">*</span></label>
+              <input type="text" class="field-control" id="fldName" value="2026 Annual AI Leadership Summit - All Access Pass">
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">SKU / Code <span class="required">*</span></label>
+              <input type="text" class="field-control" id="fldSku" value="CONF-2026-ALLPASS">
+            </div>
+
+            <div class="field-group full-width">
+              <label class="field-label">Description</label>
+              <textarea class="field-control" id="fldDesc">Full in-person 3-day pass for the 2026 Global AI Leadership Summit, including all keynote sessions, hands-on workshop tracks, networking receptions, and 1-year access to post-event video recordings.</textarea>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Operating Company <span class="required">*</span></label>
+              <select class="field-control">
+                <option selected>Global Events & Media Corp</option>
+                <option>TechEd Software LLC</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Catalog Status</label>
+              <select class="field-control">
+                <option selected>Active</option>
+                <option>Draft</option>
+                <option>Retired</option>
+                <option>Archived</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 2: Product Classification & Lifecycle -->
+      <div class="mj-panel is-open" id="panel-class">
+        <div class="mj-panel-header" onclick="togglePanel('panel-class')">
+          <div class="panel-title">
+            <i class="fa-solid fa-sitemap"></i>
+            <span>Product Classification &amp; Lifecycle</span>
+          </div>
+          <div class="panel-actions">
+            <i class="fa-solid fa-chevron-down panel-chevron"></i>
+          </div>
+        </div>
+        <div class="mj-panel-body">
+          <div class="fields-grid-3">
+            <div class="field-group">
+              <label class="field-label">Product Type <span class="required">*</span></label>
+              <input type="text" class="field-control" id="fldTypeDisplay" value="Conference Ticket" readonly>
+              <span class="field-hint">Defines recognition, taxability, and IsA extension</span>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Product Category</label>
+              <select class="field-control" id="fldCategory">
+                <option selected>Events &amp; Conferences</option>
+                <option>SaaS Subscriptions</option>
+                <option>Publications &amp; Books</option>
+                <option>Professional Services</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Successor Product</label>
+              <input type="text" class="field-control" placeholder="Select replacement product…" value="">
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Available From (Catalog Start)</label>
+              <div class="input-with-icon">
+                <i class="fa-regular fa-calendar"></i>
+                <input type="date" class="field-control" value="2026-01-01">
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Available To (Catalog Expiry)</label>
+              <div class="input-with-icon">
+                <i class="fa-regular fa-calendar"></i>
+                <input type="date" class="field-control" value="2026-10-15">
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Pricing Driver Class</label>
+              <input type="text" class="field-control" value="TieredVolumePriceDriver" placeholder="Custom pricing plugin…">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Panel 3: Dynamic IsA Subtype Extension (EventProduct) ── -->
+      <div class="mj-panel is-open extension-panel" id="panel-event-ext">
+        <div class="mj-panel-header" onclick="togglePanel('panel-event-ext')">
+          <div class="panel-title">
+            <i class="fa-solid fa-calendar-check"></i>
+            <span>Event &amp; Venue Details (IsA Extension: EventProduct)</span>
+            <span class="badge" style="background:#ede9fe; color:#6d28d9;">Subtype Extension</span>
+          </div>
+          <div class="panel-actions">
+            <i class="fa-solid fa-chevron-down panel-chevron"></i>
+          </div>
+        </div>
+        <div class="mj-panel-body">
+          <div class="extension-banner">
+            <i class="fa-solid fa-circle-info"></i>
+            <div>
+              <strong>Dynamic IS-A Extension Active:</strong> Because Product Type is <em>Conference Ticket</em>, this record is linked to <code>__mj_BizAppsOrders.EventProduct</code> (sharing primary key <code>ID</code>). These attributes dictate event schedules, attendee roster requirements, and deferred service period end dates.
+            </div>
+          </div>
+
+          <div class="fields-grid-3">
+            <div class="field-group">
+              <label class="field-label">Event Starts At <span class="required">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-regular fa-clock"></i>
+                <input type="datetime-local" class="field-control" value="2026-10-12T09:00">
+              </div>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Event Ends At <span class="required">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-regular fa-clock"></i>
+                <input type="datetime-local" class="field-control" value="2026-10-14T17:00">
+              </div>
+              <span class="field-hint">Service period end for revenue recognition</span>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Total Capacity Limit</label>
+              <input type="number" class="field-control" value="500" placeholder="Unlimited if empty">
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Venue Display Name</label>
+              <input type="text" class="field-control" value="San Francisco Moscone Center West">
+            </div>
+
+            <div class="field-group full-width">
+              <label class="field-label">Venue Physical Address (Linked Address Record)</label>
+              <div class="address-linked-card">
+                <div class="addr-info">
+                  <i class="fa-solid fa-location-dot"></i>
+                  <span><strong>Moscone Center West:</strong> 800 Howard St, San Francisco, CA 94103, USA</span>
+                </div>
+                <button class="btn btn-outline" style="padding:4px 10px; font-size:12px;"><i class="fa-solid fa-arrow-up-right-from-square"></i> Open Address</button>
+              </div>
+            </div>
+
+            <div class="field-group full-width">
+              <label class="checkbox-control">
+                <input type="checkbox" checked>
+                <span><strong>Requires Attendee Information:</strong> Orders with this item require per-line attendee registration (Name &amp; Email via <code>EventOrderLine</code>).</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 4: Pricing, Lists & Volume Tiers (Natural Sub-types) -->
+      <div class="mj-panel is-open" id="panel-pricing">
+        <div class="mj-panel-header" onclick="togglePanel('panel-pricing')">
+          <div class="panel-title">
+            <i class="fa-solid fa-dollar-sign"></i>
+            <span>Product Pricing, Price Lists &amp; Volume Tiers</span>
+            <span class="badge">3 Lists</span>
+          </div>
+          <div class="panel-actions">
+            <i class="fa-solid fa-chevron-down panel-chevron"></i>
+          </div>
+        </div>
+        <div class="mj-panel-body">
+          <div class="fields-grid-3" style="margin-bottom: 20px;">
+            <div class="field-group">
+              <label class="field-label">Standalone Selling Price (SSP) <span class="required">*</span></label>
+              <div class="input-with-icon">
+                <i class="fa-solid fa-dollar-sign"></i>
+                <input type="text" class="field-control" value="895.00" style="font-weight:700;">
+              </div>
+              <span class="field-hint">Benchmark price used for ASC 606 revenue allocation</span>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Currency</label>
+              <select class="field-control">
+                <option selected>USD ($)</option>
+                <option>EUR (€)</option>
+                <option>GBP (£)</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Taxability Policy</label>
+              <label class="checkbox-control" style="margin-top: 4px;">
+                <input type="checkbox" checked>
+                <span><strong>Is Taxable</strong> (Category: Admissions/Events)</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Price Lists Child Table -->
+          <div class="table-toolbar">
+            <span class="table-title"><i class="fa-solid fa-tags"></i> Active Price Rules (<code>__mj_BizAppsOrders.ProductPrice</code>)</span>
+            <button class="btn btn-outline" style="padding:4px 10px; font-size:12px;"><i class="fa-solid fa-plus"></i> Add Price Rule</button>
+          </div>
+
+          <div class="sub-table-wrap">
+            <table class="sub-table">
+              <thead>
+                <tr>
+                  <th>Price List</th>
+                  <th>Customer Tier / Scope</th>
+                  <th>Min Qty</th>
+                  <th>Max Qty</th>
+                  <th>Valid Window</th>
+                  <th class="num">Unit Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Standard Retail</strong></td>
+                  <td>General Public</td>
+                  <td>1</td>
+                  <td>—</td>
+                  <td>Always</td>
+                  <td class="num"><strong>$895.00</strong></td>
+                </tr>
+                <tr>
+                  <td><strong>Early Bird Registration</strong></td>
+                  <td>All Customers</td>
+                  <td>1</td>
+                  <td>—</td>
+                  <td>Until 2026-06-30</td>
+                  <td class="num"><span style="color:#15803d; font-weight:700;">$695.00</span></td>
+                </tr>
+                <tr>
+                  <td><strong>Corporate Group (5+)</strong></td>
+                  <td>Corporate Accounts</td>
+                  <td>5</td>
+                  <td>—</td>
+                  <td>Always</td>
+                  <td class="num"><span style="color:#0076b6; font-weight:700;">$595.00</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 5: Subscription & Entitlements -->
+      <div class="mj-panel is-open" id="panel-entitlements">
+        <div class="mj-panel-header" onclick="togglePanel('panel-entitlements')">
+          <div class="panel-title">
+            <i class="fa-solid fa-key"></i>
+            <span>Entitlement Grants &amp; Subscriptions</span>
+            <span class="badge">4 Entitlements</span>
+          </div>
+          <div class="panel-actions">
+            <i class="fa-solid fa-chevron-down panel-chevron"></i>
+          </div>
+        </div>
+        <div class="mj-panel-body">
+          <div class="fields-grid-3" style="margin-bottom: 20px;">
+            <div class="field-group">
+              <label class="field-label">Grant Timing</label>
+              <select class="field-control">
+                <option selected>OnConfirm (At order confirmation)</option>
+                <option>OnPaidInFull (When cash is captured)</option>
+                <option>OnActivation (Manual provisioning)</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Grant Quantity Mode</label>
+              <select class="field-control">
+                <option selected>PerUnit (1 pass = 1 attendee seat)</option>
+                <option>Flat (Fixed quantity regardless of lines)</option>
+              </select>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Grant Validity Mode</label>
+              <select class="field-control">
+                <option selected>EventWindow (Valid for duration of event)</option>
+                <option>Perpetual (Never expires)</option>
+                <option>SubscriptionTerm (Follows billing cycle)</option>
+                <option>FixedDuration (e.g. 30 days)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Entitlements Table -->
+          <div class="table-toolbar">
+            <span class="table-title"><i class="fa-solid fa-shield-halved"></i> Granted Entitlements (<code>__mj_BizAppsOrders.ProductEntitlement</code>)</span>
+            <button class="btn btn-outline" style="padding:4px 10px; font-size:12px;"><i class="fa-solid fa-plus"></i> Grant Entitlement</button>
+          </div>
+
+          <div class="sub-table-wrap">
+            <table class="sub-table">
+              <thead>
+                <tr>
+                  <th>Entitlement Name</th>
+                  <th>Permission / Capability</th>
+                  <th>Quantity Granted</th>
+                  <th>Access Method</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Summit Main Hall Admission</strong></td>
+                  <td>Keynote &amp; General Sessions Access</td>
+                  <td>1 Seat / Unit</td>
+                  <td>QR Code Badge Scan</td>
+                </tr>
+                <tr>
+                  <td><strong>Technical Workshops Track</strong></td>
+                  <td>Access to all Breakout Classrooms</td>
+                  <td>1 Seat / Unit</td>
+                  <td>Badge Scan</td>
+                </tr>
+                <tr>
+                  <td><strong>Speaker &amp; VIP Reception</strong></td>
+                  <td>Evening Networking Dinner Access</td>
+                  <td>1 Ticket / Unit</td>
+                  <td>VIP Wristband</td>
+                </tr>
+                <tr>
+                  <td><strong>Post-Summit Video Portal</strong></td>
+                  <td>Full Session Recordings Streaming</td>
+                  <td>1 User License</td>
+                  <td>Web Login (1 Year)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 6: Financial & Accounting (GL Resolution & Rev-Rec) -->
+      <div class="mj-panel is-open" id="panel-accounting">
+        <div class="mj-panel-header" onclick="togglePanel('panel-accounting')">
+          <div class="panel-title">
+            <i class="fa-solid fa-scale-balanced"></i>
+            <span>Financial &amp; General Ledger Resolution</span>
+          </div>
+          <div class="panel-actions">
+            <i class="fa-solid fa-chevron-down panel-chevron"></i>
+          </div>
+        </div>
+        <div class="mj-panel-body">
+          <div class="fields-grid-3">
+            <div class="field-group">
+              <label class="field-label">Revenue Recognition Rule <span class="required">*</span></label>
+              <select class="field-control" id="fldRevRec">
+                <option selected>Deferred - Event Date Release</option>
+                <option>Immediate (Earned at Confirmation)</option>
+                <option>Straight-Line Monthly (12 Months)</option>
+                <option>Milestone Delivery</option>
+              </select>
+              <span class="field-hint">Deferred until 2026-10-14, then released to Sales</span>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Sales Revenue GL Account</label>
+              <input type="text" class="field-control" value="4010 - Conference Ticket Revenue" readonly>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Deferred Revenue GL Account</label>
+              <input type="text" class="field-control" value="2200 - Deferred Conference Receipts" readonly>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 7: Bundle Components (Included Sub-Products) -->
+      <div class="mj-panel is-open" id="panel-bundle">
+        <div class="mj-panel-header" onclick="togglePanel('panel-bundle')">
+          <div class="panel-title">
+            <i class="fa-solid fa-boxes-packing"></i>
+            <span>Bundle Components &amp; Kit Items</span>
+            <span class="badge">Optional</span>
+          </div>
+          <div class="panel-actions">
+            <i class="fa-solid fa-chevron-down panel-chevron"></i>
+          </div>
+        </div>
+        <div class="mj-panel-body">
+          <div class="table-toolbar">
+            <span class="table-title"><i class="fa-solid fa-layer-group"></i> Component Bundle Items (<code>__mj_BizAppsOrders.ProductBundleItem</code>)</span>
+            <button class="btn btn-outline" style="padding:4px 10px; font-size:12px;"><i class="fa-solid fa-plus"></i> Add Bundle Component</button>
+          </div>
+
+          <div class="sub-table-wrap">
+            <table class="sub-table">
+              <thead>
+                <tr>
+                  <th>Component Product</th>
+                  <th>SKU</th>
+                  <th>Default Qty</th>
+                  <th>Pricing Option</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>AI Leadership Conference Lanyard &amp; Materials</strong></td>
+                  <td><code>MERCH-SUMMIT-KIT</code></td>
+                  <td>1</td>
+                  <td>Included (Free)</td>
+                </tr>
+                <tr>
+                  <td><strong>Official 2026 AI Summit T-Shirt (M/L/XL)</strong></td>
+                  <td><code>MERCH-TSHIRT-2026</code></td>
+                  <td>1</td>
+                  <td>Included (Free)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 8: System Metadata -->
+      <div class="mj-panel" id="panel-meta">
+        <div class="mj-panel-header" onclick="togglePanel('panel-meta')">
+          <div class="panel-title">
+            <i class="fa-solid fa-database"></i>
+            <span>System Metadata</span>
+          </div>
+          <div class="panel-actions">
+            <i class="fa-solid fa-chevron-down panel-chevron"></i>
+          </div>
+        </div>
+        <div class="mj-panel-body">
+          <div class="fields-grid-3">
+            <div class="field-group">
+              <label class="field-label">Record Primary Key (UUID)</label>
+              <input type="text" class="field-control" value="e819b164-884e-4f27-a065-bf6e43152c90" readonly style="font-family:var(--mj-font-mono); font-size:12px;">
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Created At</label>
+              <input type="text" class="field-control" value="2026-01-15 14:23:10 UTC" readonly>
+            </div>
+
+            <div class="field-group">
+              <label class="field-label">Last Updated At</label>
+              <input type="text" class="field-control" value="2026-08-10 19:44:02 UTC" readonly>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  // Panel expand / collapse toggle
+  function togglePanel(panelId) {
+    const panel = document.getElementById(panelId);
+    if (panel) {
+      panel.classList.toggle('is-open');
+    }
+  }
+
+  // Interactive Switcher to demonstrate how the custom Product Form handles different Product Types & IsA Subtypes
+  function switchProductType(type) {
+    const eventExtPanel = document.getElementById('panel-event-ext');
+    const isaBadge = document.getElementById('isaSubtypeBadge');
+    const avatar = document.getElementById('prodAvatar');
+    const title = document.getElementById('prodTitle');
+    const sku = document.getElementById('prodSku');
+    const typeDisplay = document.getElementById('fldTypeDisplay');
+    const statType = document.getElementById('statType');
+    const statPrice = document.getElementById('statPrice');
+    const statCapacity = document.getElementById('statCapacity');
+    const statRevRec = document.getElementById('statRevRec');
+
+    if (type === 'event') {
+      eventExtPanel.style.display = 'block';
+      isaBadge.style.display = 'inline-flex';
+      isaBadge.innerHTML = '<i class="fa-solid fa-diagram-project"></i> IsA Subtype: EventProduct';
+      avatar.innerHTML = '<i class="fa-solid fa-ticket"></i>';
+      title.innerText = '2026 Annual AI Leadership Summit - All Access Pass';
+      sku.innerText = 'SKU: CONF-2026-ALLPASS';
+      typeDisplay.value = 'Conference Ticket';
+      statType.innerText = 'Conference Ticket';
+      statPrice.innerText = '$895.00';
+      statCapacity.innerText = '500 Attendees';
+      statRevRec.innerText = 'Deferred (Event Date)';
+      document.getElementById('fldName').value = '2026 Annual AI Leadership Summit - All Access Pass';
+      document.getElementById('fldSku').value = 'CONF-2026-ALLPASS';
+    } else if (type === 'subscription') {
+      eventExtPanel.style.display = 'none';
+      isaBadge.style.display = 'inline-flex';
+      isaBadge.innerHTML = '<i class="fa-solid fa-repeat"></i> Recurring: Monthly/Annual';
+      avatar.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i>';
+      title.innerText = 'Enterprise Analytics Pro (Monthly)';
+      sku.innerText = 'SKU: SUB-ENT-PRO-M';
+      typeDisplay.value = 'SaaS Subscription';
+      statType.innerText = 'SaaS Subscription';
+      statPrice.innerText = '$149.00 / mo';
+      statCapacity.innerText = 'Unlimited (Digital)';
+      statRevRec.innerText = 'Straight-Line (Monthly)';
+      document.getElementById('fldName').value = 'Enterprise Analytics Pro (Monthly)';
+      document.getElementById('fldSku').value = 'SUB-ENT-PRO-M';
+    } else if (type === 'physical') {
+      eventExtPanel.style.display = 'none';
+      isaBadge.style.display = 'none';
+      avatar.innerHTML = '<i class="fa-solid fa-box-archive"></i>';
+      title.innerText = 'Enterprise Architecture Handbook (Hardcover)';
+      sku.innerText = 'SKU: BOOK-ARCH-2026';
+      typeDisplay.value = 'Physical Book / Goods';
+      statType.innerText = 'Physical Goods';
+      statPrice.innerText = '$79.95';
+      statCapacity.innerText = 'Warehouse Stock: 1,240';
+      statRevRec.innerText = 'Immediate (Shipped)';
+      document.getElementById('fldName').value = 'Enterprise Architecture Handbook (Hardcover)';
+      document.getElementById('fldSku').value = 'BOOK-ARCH-2026';
+    } else if (type === 'digital') {
+      eventExtPanel.style.display = 'none';
+      isaBadge.style.display = 'none';
+      avatar.innerHTML = '<i class="fa-solid fa-file-arrow-down"></i>';
+      title.innerText = 'API Developer Toolkit - Perpetual License';
+      sku.innerText = 'SKU: LIC-DEV-TOOLKIT';
+      typeDisplay.value = 'Digital Asset';
+      statType.innerText = 'Digital Asset';
+      statPrice.innerText = '$299.00';
+      statCapacity.innerText = 'Unlimited (Instant Download)';
+      statRevRec.innerText = 'Immediate (OnConfirm)';
+      document.getElementById('fldName').value = 'API Developer Toolkit - Perpetual License';
+      document.getElementById('fldSku').value = 'LIC-DEV-TOOLKIT';
+    }
+  }
+
+  function toggleEditMode() {
+    alert('Mockup: In the live Angular form, clicking Edit Record transitions all fields from read-only display to full interactive controls and validates dirty state before Save.');
+  }
+</script>
+
+</body>
+</html>
