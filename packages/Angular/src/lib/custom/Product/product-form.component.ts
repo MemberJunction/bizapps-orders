@@ -57,7 +57,6 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
             { sectionKey: 'productEntitlements', sectionName: 'Entitlement Grants & Subscriptions', isExpanded: true },
             { sectionKey: 'financialAndAccounting', sectionName: 'Financial & General Ledger Resolution', isExpanded: true },
             { sectionKey: 'productBundleItems', sectionName: 'Bundle Components & Kit Items', isExpanded: false },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
         ]);
 
         await this.syncSubtypeExtension();

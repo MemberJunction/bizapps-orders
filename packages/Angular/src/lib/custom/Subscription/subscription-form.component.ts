@@ -21,7 +21,6 @@ import { mjBizAppsOrdersSubscriptionFormComponent } from '../../generated/Entiti
  * 5. Accounting & Linked Journal Entries: Revenue recognition ledger entries.
  * 6. Subscription Details & Technical Links: Product, Company, and originating Order Line ID.
  * 7. Subscription Events Log: Chronological lifecycle audit trail.
- * 8. System Metadata: System IDs and timestamps.
  */
 @RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Subscriptions')
 @Component({
@@ -44,7 +43,6 @@ export class BizAppsSubscriptionFormComponent extends mjBizAppsOrdersSubscriptio
             { sectionKey: 'accountingAndJournalEntries', sectionName: 'Accounting & Linked Journal Entries', isExpanded: true },
             { sectionKey: 'subscriptionDetails', sectionName: 'Subscription Details & Entity Links', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events Log', isExpanded: false },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
         ]);
     }
 
