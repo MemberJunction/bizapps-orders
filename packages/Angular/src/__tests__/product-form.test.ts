@@ -5,6 +5,7 @@ import { BaseFormComponent } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersProductEntity, mjBizAppsOrdersEventProductEntity } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersProductFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
 import { BizAppsProductFormComponent } from '../lib/custom/Product/product-form.component';
+import { BizAppsProductPricingWidgetComponent } from '../lib/custom/Product/widgets/product-pricing-widget.component';
 import '../public-api';
 
 describe('BizAppsProductFormComponent Custom Form Registration & Getters', () => {
@@ -58,15 +59,7 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
 
         // Subscription
         instance.record = { ProductType: 'SaaS Pro Monthly', SubscriptionTypeID: 'sub-1', ISAChild: null } as unknown as mjBizAppsOrdersProductEntity;
-        expect(instance.ProductAvatarIcon).toBe('fa-solid fa-arrows-rotate');
-
-        // Physical
-        instance.record = { ProductType: 'Physical Book Hardcover', SubscriptionTypeID: null, ISAChild: null } as unknown as mjBizAppsOrdersProductEntity;
-        expect(instance.ProductAvatarIcon).toBe('fa-solid fa-box-archive');
-
-        // Digital
-        instance.record = { ProductType: 'Digital License Key', SubscriptionTypeID: null, ISAChild: null } as unknown as mjBizAppsOrdersProductEntity;
-        expect(instance.ProductAvatarIcon).toBe('fa-solid fa-file-arrow-down');
+        expect(instance.ProductAvatarIcon).toBe('fa-solid fa-repeat');
     });
 
     it('formats standalone selling price and status badges', () => {
@@ -79,7 +72,7 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
             ISAChild: null,
         } as unknown as mjBizAppsOrdersProductEntity;
 
-        expect(instance.FormattedSSP).toBe('$895.00');
+        expect(instance.FormattedBasePrice).toBe('$895.00');
         expect(instance.StatusBadgeClass).toContain('mjo-status-chip--active');
 
         instance.record = {
@@ -89,21 +82,52 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
             ISAChild: null,
         } as unknown as mjBizAppsOrdersProductEntity;
 
-        expect(instance.FormattedSSP).toBe('—');
+        expect(instance.FormattedBasePrice).toBe('$0.00');
         expect(instance.StatusBadgeClass).toContain('mjo-status-chip--draft');
     });
 
-    it('formats capacity for event and digital products', () => {
+    it('simulates volume pricing in BizAppsProductPricingWidgetComponent', () => {
+        const widget = new BizAppsProductPricingWidgetComponent();
+        widget.Product = {
+            StandaloneSellingPrice: 1200,
+            IsSaved: true,
+            ID: 'prod-1',
+        } as unknown as mjBizAppsOrdersProductEntity;
+
+        widget.SimQuantity = 25;
+        widget.RecalculateSimulation();
+        expect(widget.SimResult.DiscountPercent).toBe(15);
+        expect(widget.SimResult.UnitPrice).toBe(1020);
+        expect(widget.SimResult.TotalAmount).toBe(25500);
+
+        widget.SimQuantity = 50;
+        widget.RecalculateSimulation();
+        expect(widget.SimResult.DiscountPercent).toBe(25);
+        expect(widget.SimResult.UnitPrice).toBe(900);
+        expect(widget.SimResult.TotalAmount).toBe(45000);
+        expect(widget.SimResult.TotalSavings).toBe(15000);
+    });
+
+    it('OnFormNavigate dispatches record navigation to NavigationService when present', () => {
         const instance = Object.create(BizAppsProductFormComponent.prototype) as BizAppsProductFormComponent;
+        instance.Navigate = { emit: () => {} } as any;
 
-        // Event with capacity
-        instance.record = { ProductType: 'Conference Ticket', ISAChild: null } as unknown as mjBizAppsOrdersProductEntity;
-        instance.EventProductChild = { Capacity: 500 } as unknown as mjBizAppsOrdersEventProductEntity;
-        expect(instance.FormattedCapacity).toBe('500 Attendees');
+        let openedEntity = '';
+        let openedKey: any = null;
+        (instance as any).navigationService = {
+            OpenEntityRecord: (entityName: string, pkey: any) => {
+                openedEntity = entityName;
+                openedKey = pkey;
+            }
+        };
 
-        // Subscription
-        instance.record = { ProductType: 'SaaS Plan', SubscriptionTypeID: 'sub-1', ISAChild: null } as unknown as mjBizAppsOrdersProductEntity;
-        instance.EventProductChild = null;
-        expect(instance.FormattedCapacity).toBe('Unlimited (Digital)');
+        instance.OnFormNavigate({
+            Kind: 'record',
+            EntityName: 'MJ_BizApps_Orders: Product Categories',
+            PrimaryKey: { ToURLSegment: () => 'cat-123' } as any,
+        });
+
+        expect(openedEntity).toBe('MJ_BizApps_Orders: Product Categories');
+        expect(openedKey.ToURLSegment()).toBe('cat-123');
     });
 });

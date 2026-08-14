@@ -1,0 +1,65 @@
+<div class="mjo-pricing-widget-wrap">
+    <!-- Live Quantity Simulator Box -->
+    <div class="mjo-simulator-card">
+        <div class="mjo-sim-header">
+            <div class="mjo-sim-title">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                <span>Live Quantity Pricing Simulator</span>
+            </div>
+            <div class="mjo-sim-base">
+                Base List: <strong>{{ FormattedBasePrice }}</strong>
+            </div>
+        </div>
+
+        <div class="mjo-slider-row">
+            <input type="range" class="mjo-range-slider" min="1" max="100" [value]="SimQuantity" (input)="OnSliderChange($event)">
+            <span class="mjo-qty-badge">{{ SimQuantity }} {{ SimQuantity === 1 ? 'Unit' : 'Units' }}</span>
+        </div>
+
+        <div class="mjo-sim-grid">
+            <div class="mjo-sim-metric">
+                <span class="mjo-metric-label">Matched Tier</span>
+                <span class="mjo-metric-val">{{ SimResult.MatchedBand }}</span>
+            </div>
+            <div class="mjo-sim-metric">
+                <span class="mjo-metric-label">Effective Unit Price</span>
+                <span class="mjo-metric-val">
+                    {{ FormatCurrency(SimResult.UnitPrice) }}
+                    @if (SimResult.DiscountPercent > 0) {
+                        <span class="mjo-disc-tag">({{ SimResult.DiscountPercent }}% off)</span>
+                    }
+                </span>
+            </div>
+            <div class="mjo-sim-metric">
+                <span class="mjo-metric-label">Total Contract</span>
+                <span class="mjo-metric-val mjo-val--brand">{{ FormatCurrency(SimResult.TotalAmount) }}</span>
+            </div>
+            <div class="mjo-sim-metric">
+                <span class="mjo-metric-label">Customer Total Savings</span>
+                <span class="mjo-metric-val mjo-val--green">{{ FormatCurrency(SimResult.TotalSavings) }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Price Rules Grid -->
+    <div class="mjo-price-rules-panel">
+        <div class="mjo-panel-head">
+            <div class="mjo-panel-title">
+                <i class="fa-solid fa-tags"></i>
+                <span>Price Lists &amp; Custom Volume Tiers</span>
+            </div>
+        </div>
+
+        @if (ProductPricesViewParams) {
+            <div class="mjo-grid-container">
+                <mj-explorer-entity-data-grid
+                    [Params]="ProductPricesViewParams"
+                    [AllowLoad]="true"
+                    [ShowToolbar]="true"
+                    [ShowNewButton]="true"
+                    (Navigate)="Navigate.emit($event)">
+                </mj-explorer-entity-data-grid>
+            </div>
+        }
+    </div>
+</div>

@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Form (Left-Nav Responsive Workspace) — MemberJunction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+
+<style>
+  :root {
+    --mj-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --mj-font-mono: 'JetBrains Mono', monospace;
+    --mj-radius-sm: 6px;
+    --mj-radius-md: 10px;
+    --mj-radius-lg: 14px;
+    --mj-radius-full: 9999px;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--mj-font-sans);
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+    color: var(--mj-text-primary, #0f172a);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body.dark-mode {
+    --mj-bg-surface-sunken: #090d16;
+    --mj-bg-surface-card: #111827;
+    --mj-bg-surface: #1e293b;
+    --mj-text-primary: #f8fafc;
+    --mj-text-muted: #94a3b8;
+    --mj-border-default: #334155;
+    background: #090d16;
+    color: #f8fafc;
+  }
+
+  .mj-app-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  .mj-top-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 52px;
+    background: #092340;
+    color: #ffffff;
+    padding: 0 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+
+  .mj-top-nav .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 700;
+    font-size: 15px;
+  }
+
+  .mj-top-nav .brand .badge {
+    background: #0076b6;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-full);
+    text-transform: uppercase;
+  }
+
+  .theme-toggle-btn {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 5px 10px;
+    border-radius: var(--mj-radius-sm);
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .mj-record-workspace {
+    max-width: 1380px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 20px 20px 80px;
+    box-sizing: border-box;
+  }
+
+  /* Record Form Header Card */
+  .record-header-card {
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-lg);
+    padding: 20px 24px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    margin-bottom: 20px;
+  }
+
+  .record-header-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .record-identity {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .record-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: var(--mj-radius-md);
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(2, 132, 199, 0.25);
+  }
+
+  .record-title-area h1 {
+    margin: 0 0 6px 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--mj-text-primary, #0f172a);
+  }
+
+  .record-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .mjo-entity-chip {
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-sm);
+    font-family: var(--mj-font-mono);
+  }
+
+  body.dark-mode .mjo-entity-chip { background: #334155; color: #cbd5e1; }
+
+  .mjo-code-badge {
+    background: #092340;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-sm);
+    font-family: var(--mj-font-mono);
+  }
+
+  .mjo-type-chip {
+    background: #e0f2fe;
+    color: #0369a1;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-sm);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .mjo-status-chip {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-full);
+  }
+
+  .mjo-status-chip--active { background: #dcfce7; color: #15803d; }
+
+  .record-summary-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--mj-border-default, #f1f5f9);
+  }
+
+  .stat-block { display: flex; flex-direction: column; gap: 3px; }
+  .stat-label { font-size: 11px; font-weight: 600; color: var(--mj-text-muted, #64748b); text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat-val { font-size: 14px; font-weight: 700; color: var(--mj-text-primary, #0f172a); font-family: var(--mj-font-mono); }
+
+  /* ================================================================
+     TWO-COLUMN WORKSPACE: LEFT NAV + MAIN CONTENT PANE
+     ================================================================ */
+  .workspace-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  /* Left Nav Rail Component */
+  .product-left-nav {
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-lg);
+    padding: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    position: sticky;
+    top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .nav-group-title {
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--mj-text-muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 8px 12px 4px;
+  }
+
+  .nav-item-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 10px 14px;
+    background: transparent;
+    border: none;
+    border-radius: var(--mj-radius-md);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--mj-text-secondary, #475569);
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s ease;
+    box-sizing: border-box;
+  }
+
+  .nav-item-btn:hover {
+    background: var(--mj-bg-surface-sunken, #f1f5f9);
+    color: var(--mj-text-primary, #0f172a);
+  }
+
+  .nav-item-btn.active {
+    background: #0076b6;
+    color: #ffffff;
+    box-shadow: 0 2px 5px rgba(0, 118, 182, 0.25);
+  }
+
+  .nav-item-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .nav-item-left i {
+    font-size: 14px;
+    width: 18px;
+    text-align: center;
+  }
+
+  .nav-item-btn .nav-badge {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: var(--mj-radius-full);
+    background: rgba(0, 0, 0, 0.07);
+  }
+
+  .nav-item-btn.active .nav-badge {
+    background: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+  }
+
+  /* Responsive switch on tablet/mobile */
+  @media (max-width: 960px) {
+    .workspace-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .product-left-nav {
+      position: static;
+      flex-direction: row;
+      overflow-x: auto;
+      padding: 6px;
+      gap: 6px;
+    }
+
+    .nav-group-title { display: none; }
+    .nav-item-btn { width: auto; white-space: nowrap; }
+  }
+
+  /* Specialized Product Profile Extension Banner */
+  .profile-ext-banner {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: var(--mj-radius-md);
+    padding: 14px 18px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  body.dark-mode .profile-ext-banner { background: #1e293b; border-color: #334155; }
+
+  /* Modular Droppable Widget Cards */
+  .widget-card {
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-lg);
+    margin-bottom: 16px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+  }
+
+  .widget-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    background: var(--mj-bg-surface-header, #f8fafc);
+    border-bottom: 1px solid var(--mj-border-default, #e2e8f0);
+  }
+
+  body.dark-mode .widget-card-header { background: #1e293b; }
+
+  .widget-card-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--mj-text-primary, #0f172a);
+  }
+
+  .widget-card-title i { color: #0076b6; font-size: 15px; }
+
+  .widget-card-body { padding: 20px; }
+
+  /* Fields */
+  .fields-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+  }
+
+  .field-group { display: flex; flex-direction: column; gap: 6px; }
+  .field-group label { font-size: 12px; font-weight: 600; color: var(--mj-text-muted, #64748b); }
+  .field-group input, .field-group select, .field-group textarea {
+    padding: 8px 12px;
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    border-radius: var(--mj-radius-sm);
+    font-family: inherit;
+    font-size: 13px;
+    background: var(--mj-bg-surface, #ffffff);
+    color: var(--mj-text-primary, #0f172a);
+    box-sizing: border-box;
+  }
+
+  /* Interactive Simulator Box */
+  .simulator-box {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: var(--mj-radius-md);
+    padding: 18px;
+    margin-bottom: 18px;
+  }
+
+  body.dark-mode .simulator-box { background: rgba(14, 165, 233, 0.08); border-color: rgba(14, 165, 233, 0.3); }
+
+  .sim-result-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .sim-card { background: #ffffff; border: 1px solid #e0f2fe; border-radius: var(--mj-radius-sm); padding: 10px 14px; }
+  body.dark-mode .sim-card { background: #1e293b; border-color: #334155; }
+  .sim-card .label { font-size: 11px; font-weight: 600; color: #64748b; margin-bottom: 3px; }
+  .sim-card .val { font-size: 15px; font-weight: 700; font-family: var(--mj-font-mono); color: #0f172a; }
+  body.dark-mode .sim-card .val { color: #f8fafc; }
+
+  /* Table */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .data-table th {
+    text-align: left; padding: 10px 14px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+    font-size: 11.5px; font-weight: 700; color: #64748b; text-transform: uppercase;
+  }
+  body.dark-mode .data-table th { background: #1e293b; border-color: #334155; color: #cbd5e1; }
+  .data-table td { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; color: #0f172a; }
+  body.dark-mode .data-table td { border-color: #334155; color: #f8fafc; }
+  .data-table tr:hover td { background: #f8fafc; }
+  body.dark-mode .data-table tr:hover td { background: #1e293b; }
+</style>
+</head>
+<body>
+
+<div class="mj-app-shell">
+  <!-- Top Nav Bar -->
+  <header class="mj-top-nav">
+    <div class="brand">
+      <i class="fa-solid fa-box-open"></i>
+      <span>MemberJunction Product Hub</span>
+      <span class="badge">Left-Nav Workspace Form</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <button class="theme-toggle-btn" onclick="toggleDarkMode()">
+        <i class="fa-solid fa-moon"></i> Toggle Dark
+      </button>
+    </div>
+  </header>
+
+  <!-- Workspace Container -->
+  <main class="mj-record-workspace">
+
+    <!-- ================================================================
+         1. HERO IDENTITY HEADER CARD
+         ================================================================ -->
+    <div class="record-header-card">
+      <div class="record-header-top">
+        <div class="record-identity">
+          <div class="record-avatar">
+            <i class="fa-solid fa-cube"></i>
+          </div>
+          <div class="record-title-area">
+            <h1>Enterprise Cloud Security Suite (Annual Platform)</h1>
+            <div class="record-badges">
+              <span class="mjo-entity-chip"><i class="fa-solid fa-database"></i> MJ_BizApps_Orders: Products</span>
+              <span class="mjo-code-badge">SKU-SEC-ENT-2026</span>
+              <span class="mjo-type-chip"><i class="fa-solid fa-repeat"></i> Subscription Service</span>
+              <span class="mjo-status-chip mjo-status-chip--active"><i class="fa-solid fa-circle-check"></i> Active in Catalog</span>
+              <span class="mjo-type-chip"><i class="fa-solid fa-cloud-arrow-up"></i> Specialized Profile: SaaS Cloud Service</span>
+            </div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button style="padding: 8px 14px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: 600; cursor: pointer;">Preview Invoice Line</button>
+          <button style="padding: 8px 14px; background: #0076b6; color: #fff; border: none; border-radius: 6px; font-weight: 600; cursor: pointer;">Save Product</button>
+        </div>
+      </div>
+
+      <!-- Live Summary Bar -->
+      <div class="record-summary-bar">
+        <div class="stat-block">
+          <span class="stat-label">Base List Price</span>
+          <span class="stat-val">$1,200.00 / yr</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Margin Floor</span>
+          <span class="stat-val" style="color: #16a34a;">42.5% Target Margin</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Price Lists Assigned</span>
+          <span class="stat-val">3 Partner Tiers</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Active Promotions</span>
+          <span class="stat-val" style="color: #db2777;">2 Eligible Campaigns</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Tax Category</span>
+          <span class="stat-val">Digital SaaS (Taxable)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         2. TWO-COLUMN RESPONSIVE WORKSPACE (LEFT NAV + ACTIVE PANE)
+         ================================================================ -->
+    <div class="workspace-layout">
+
+      <!-- LEFT NAVIGATION RAIL -->
+      <aside class="product-left-nav">
+        <div class="nav-group-title">Catalog Specifications</div>
+
+        <button class="nav-item-btn active" id="navOverview" onclick="switchNavPane('overview')">
+          <span class="nav-item-left">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>Overview &amp; Profile</span>
+          </span>
+        </button>
+
+        <button class="nav-item-btn" id="navPricing" onclick="switchNavPane('pricing')">
+          <span class="nav-item-left">
+            <i class="fa-solid fa-tags"></i>
+            <span>Pricing &amp; Tiers</span>
+          </span>
+          <span class="nav-badge">3 Rules</span>
+        </button>
+
+        <button class="nav-item-btn" id="navPromos" onclick="switchNavPane('promos')">
+          <span class="nav-item-left">
+            <i class="fa-solid fa-ticket"></i>
+            <span>Promotions &amp; Discounts</span>
+          </span>
+          <span class="nav-badge">2 Active</span>
+        </button>
+
+        <div class="nav-group-title" style="margin-top: 8px;">Operations &amp; Finance</div>
+
+        <button class="nav-item-btn" id="navAccounting" onclick="switchNavPane('accounting')">
+          <span class="nav-item-left">
+            <i class="fa-solid fa-scale-balanced"></i>
+            <span>Tax &amp; Accounting GL</span>
+          </span>
+        </button>
+
+        <button class="nav-item-btn" id="navFulfillment" onclick="switchNavPane('fulfillment')">
+          <span class="nav-item-left">
+            <i class="fa-solid fa-truck-fast"></i>
+            <span>Delivery &amp; Fulfillment</span>
+          </span>
+        </button>
+
+        <button class="nav-item-btn" id="navSubscriptions" onclick="switchNavPane('subscriptions')">
+          <span class="nav-item-left">
+            <i class="fa-solid fa-arrows-rotate"></i>
+            <span>Subscription &amp; Grants</span>
+          </span>
+          <span class="nav-badge">Annual</span>
+        </button>
+      </aside>
+
+      <!-- ACTIVE CONTENT WORKSPACE AREA -->
+      <section class="workspace-content">
+
+        <!-- ============================================================
+             PANE 1: OVERVIEW & SPECIALIZED PROFILE
+             ============================================================ -->
+        <div id="paneOverview">
+          <!-- Specialized Product Profile Banner -->
+          <div class="profile-ext-banner">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <i class="fa-solid fa-cloud-arrow-up" style="font-size: 24px; color: #0284c7;"></i>
+              <div>
+                <div style="font-weight: 700; font-size: 13.5px; color: #0369a1;">SaaS Cloud Product Profile Active</div>
+                <div style="font-size: 12px; color: #64748b;">Specialized profile parameters mounted seamlessly for cloud tenant provisioning and seat concurrency.</div>
+              </div>
+            </div>
+            <span class="mjo-type-chip">Auto-Provisioning: Enabled</span>
+          </div>
+
+          <!-- Droppable Widget: Core Specifications -->
+          <div class="widget-card">
+            <div class="widget-card-header">
+              <div class="widget-card-title">
+                <i class="fa-solid fa-cube"></i>
+                <span>Core Product Specifications (<code>bizapps-product-core-widget</code>)</span>
+              </div>
+            </div>
+            <div class="widget-card-body">
+              <div class="fields-grid">
+                <div class="field-group">
+                  <label>Product Name</label>
+                  <input type="text" value="Enterprise Cloud Security Suite (Annual Platform)">
+                </div>
+                <div class="field-group">
+                  <label>SKU / Item Number</label>
+                  <input type="text" value="SKU-SEC-ENT-2026">
+                </div>
+                <div class="field-group">
+                  <label>Product Category</label>
+                  <select><option selected>Cloud Security &amp; Compliance</option><option>Professional Services</option><option>Hardware Appliances</option></select>
+                </div>
+                <div class="field-group">
+                  <label>Product Type</label>
+                  <select><option selected>Subscription (Recurring Billing)</option><option>One-Time Good</option><option>Service</option></select>
+                </div>
+                <div class="field-group">
+                  <label>Status</label>
+                  <select><option selected>Active</option><option>Draft</option><option>Archived</option></select>
+                </div>
+                <div class="field-group">
+                  <label>Owning Legal Company</label>
+                  <select><option selected>Acme North America Inc.</option><option>Acme Europe Ltd.</option></select>
+                </div>
+              </div>
+              <div class="field-group" style="margin-top: 16px;">
+                <label>Product Description &amp; Customer Value Proposition</label>
+                <textarea rows="3">Comprehensive enterprise cloud threat detection, zero-trust perimeter enforcement, and audit compliance logging suite with 99.99% uptime SLA.</textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             PANE 2: PRICING & VOLUME TIERS (WITH LIVE SIMULATOR)
+             ============================================================ -->
+        <div id="panePricing" style="display: none;">
+          <div class="widget-card">
+            <div class="widget-card-header">
+              <div class="widget-card-title">
+                <i class="fa-solid fa-calculator"></i>
+                <span>Interactive Price Rules &amp; Tier Simulator (<code>bizapps-product-pricing-widget</code>)</span>
+              </div>
+              <button style="padding: 4px 10px; background: #0076b6; color: #fff; border: none; border-radius: 4px; font-size: 12px; font-weight: 600; cursor: pointer;">
+                + Add Price Rule
+              </button>
+            </div>
+            <div class="widget-card-body">
+              <!-- Simulator Box -->
+              <div class="simulator-box">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                  <span style="font-size: 13px; font-weight: 700; color: #0369a1;"><i class="fa-solid fa-wand-magic-sparkles"></i> Live Quantity Price Simulator</span>
+                  <span style="font-size: 12px; font-weight: 600; color: #64748b;">Base: $1,200.00 / seat</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 14px;">
+                  <input type="range" id="prodQtySlider" min="1" max="100" value="25" oninput="updateProdSim()" style="flex: 1; accent-color: #0076b6;">
+                  <span id="prodQtyVal" style="font-family: var(--mj-font-mono); font-weight: 700; font-size: 14px; min-width: 80px; text-align: center;">25 Seats</span>
+                </div>
+                <div class="sim-result-grid">
+                  <div class="sim-card">
+                    <div class="label">Matched Band</div>
+                    <div class="val" id="prodBandVal">Tier 2 (20–49 Seats)</div>
+                  </div>
+                  <div class="sim-card">
+                    <div class="label">Discounted Unit Price</div>
+                    <div class="val" id="prodUnitVal">$1,020.00 (15% off)</div>
+                  </div>
+                  <div class="sim-card">
+                    <div class="label">Annual Contract Total</div>
+                    <div class="val" style="color: #0284c7;" id="prodTotalVal">$25,500.00</div>
+                  </div>
+                  <div class="sim-card">
+                    <div class="label">Estimated Gross Margin</div>
+                    <div class="val" style="color: #16a34a;">46.2% ($11,781)</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Active Price Rules Table -->
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Price List</th>
+                    <th>Quantity Band</th>
+                    <th>Discount / Price</th>
+                    <th>Currency</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Global Partner Wholesale</strong></td>
+                    <td>20 – 49 Seats</td>
+                    <td>15.0% Off Base ($1,020.00)</td>
+                    <td>USD</td>
+                    <td>100</td>
+                    <td><span class="mjo-status-chip mjo-status-chip--active">Active</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Global Partner Wholesale</strong></td>
+                    <td>50+ Seats</td>
+                    <td>25.0% Off Base ($900.00)</td>
+                    <td>USD</td>
+                    <td>100</td>
+                    <td><span class="mjo-status-chip mjo-status-chip--active">Active</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>Direct Enterprise Standard</strong></td>
+                    <td>1+ Seats (Base)</td>
+                    <td>Fixed Rate: $1,200.00</td>
+                    <td>USD</td>
+                    <td>50</td>
+                    <td><span class="mjo-status-chip mjo-status-chip--active">Active</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             PANE 3: PROMOTIONS & CAMPAIGNS
+             ============================================================ -->
+        <div id="panePromos" style="display: none;">
+          <div class="widget-card">
+            <div class="widget-card-header">
+              <div class="widget-card-title">
+                <i class="fa-solid fa-gift"></i>
+                <span>Applicable Promotions &amp; Discounts (<code>bizapps-product-promotions-widget</code>)</span>
+              </div>
+            </div>
+            <div class="widget-card-body" style="padding: 0;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Campaign Name</th>
+                    <th>Discount Value</th>
+                    <th>Stacking Rule</th>
+                    <th>Coupon Code Required</th>
+                    <th>Active Window</th>
+                    <th>Redemptions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Q3 Enterprise Cloud Expansion</strong></td>
+                    <td>20.0% Off Line</td>
+                    <td>Additive (Layers with wholesale)</td>
+                    <td><code>CLOUD20-SUMMER</code></td>
+                    <td>Jul 1 – Sep 30, 2026</td>
+                    <td>42 / 100 claimed</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Annual Upfront Payment Incentive</strong></td>
+                    <td>5.0% Early Discount</td>
+                    <td>Sequential</td>
+                    <td><em>Automatic</em></td>
+                    <td>Jan 1 – Dec 31, 2026</td>
+                    <td>128 claimed</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             PANE 4: TAX & ACCOUNTING GL
+             ============================================================ -->
+        <div id="paneAccounting" style="display: none;">
+          <div class="widget-card">
+            <div class="widget-card-header">
+              <div class="widget-card-title">
+                <i class="fa-solid fa-scale-balanced"></i>
+                <span>Taxability &amp; General Ledger Role Links (<code>bizapps-product-accounting-widget</code>)</span>
+              </div>
+            </div>
+            <div class="widget-card-body">
+              <div class="fields-grid">
+                <div class="field-group">
+                  <label>Taxability Status</label>
+                  <select><option selected>Taxable (Standard SaaS Tax Rules)</option><option>Exempt / Zero-Rated</option></select>
+                </div>
+                <div class="field-group">
+                  <label>Tax Code</label>
+                  <input type="text" value="SW-SAAS-DIGITAL-01">
+                </div>
+                <div class="field-group">
+                  <label>Revenue GL Account Role</label>
+                  <input type="text" value="SubscriptionRevenueRole → GL 40000">
+                </div>
+                <div class="field-group">
+                  <label>Deferred Revenue Account Role</label>
+                  <input type="text" value="DeferredRevenueLiabilityRole → GL 22000">
+                </div>
+                <div class="field-group">
+                  <label>Receivable Account Role</label>
+                  <input type="text" value="CustomerReceivableRole → GL 11000">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             PANE 5: DELIVERY & FULFILLMENT
+             ============================================================ -->
+        <div id="paneFulfillment" style="display: none;">
+          <div class="widget-card">
+            <div class="widget-card-header">
+              <div class="widget-card-title">
+                <i class="fa-solid fa-truck-fast"></i>
+                <span>Delivery &amp; Fulfillment Protocol (<code>bizapps-product-fulfillment-widget</code>)</span>
+              </div>
+            </div>
+            <div class="widget-card-body">
+              <div class="fields-grid">
+                <div class="field-group">
+                  <label>Fulfillment Method</label>
+                  <select><option selected>Digital Provisioning / Webhook</option><option>Physical Parcel Shipping</option><option>Manual Staff Assignment</option></select>
+                </div>
+                <div class="field-group">
+                  <label>Track Inventory?</label>
+                  <select><option selected>No — Unlimited Digital Seats</option><option>Yes — Warehouse Stock</option></select>
+                </div>
+                <div class="field-group">
+                  <label>Automatic Grant Upon Confirmation?</label>
+                  <select><option selected>Yes — Instant API Webhook Trigger</option><option>No — Await Payment Capture</option></select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================================
+             PANE 6: SUBSCRIPTIONS & GRANTS
+             ============================================================ -->
+        <div id="paneSubscriptions" style="display: none;">
+          <div class="widget-card">
+            <div class="widget-card-header">
+              <div class="widget-card-title">
+                <i class="fa-solid fa-arrows-rotate"></i>
+                <span>Recurring Term Defaults &amp; Entitlement Grants (<code>bizapps-product-subscription-widget</code>)</span>
+              </div>
+            </div>
+            <div class="widget-card-body">
+              <div class="fields-grid">
+                <div class="field-group">
+                  <label>Default Billing Cycle</label>
+                  <select><option selected>Annual (12 Months)</option><option>Monthly</option><option>Quarterly</option></select>
+                </div>
+                <div class="field-group">
+                  <label>Default Auto-Renew</label>
+                  <select><option selected>Enabled (Auto-Renew ON)</option><option>Disabled (Manual Extension)</option></select>
+                </div>
+                <div class="field-group">
+                  <label>Renewal Notification Lead Days</label>
+                  <input type="number" value="30">
+                </div>
+                <div class="field-group">
+                  <label>Entitlement Granted</label>
+                  <input type="text" value="EnterprisePlatformRole:FullAdmin">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  function switchNavPane(pane) {
+    const panes = ['overview', 'pricing', 'promos', 'accounting', 'fulfillment', 'subscriptions'];
+    panes.forEach(p => {
+      document.getElementById('nav' + capitalize(p)).classList.remove('active');
+      document.getElementById('pane' + capitalize(p)).style.display = 'none';
+    });
+
+    document.getElementById('nav' + capitalize(pane)).classList.add('active');
+    document.getElementById('pane' + capitalize(pane)).style.display = 'block';
+  }
+
+  function capitalize(s) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  function updateProdSim() {
+    const qty = parseInt(document.getElementById('prodQtySlider').value, 10);
+    document.getElementById('prodQtyVal').innerText = qty + ' Seats';
+
+    let unit = 1200.0;
+    let band = 'Tier 1 (1–19 Seats)';
+    if (qty >= 50) {
+      unit = 900.0; band = 'Tier 3 (50+ Seats)';
+    } else if (qty >= 20) {
+      unit = 1020.0; band = 'Tier 2 (20–49 Seats)';
+    }
+
+    const discountPct = ((1200.0 - unit) / 1200.0) * 100.0;
+    const total = qty * unit;
+    document.getElementById('prodBandVal').innerText = band;
+    document.getElementById('prodUnitVal').innerText = '$' + unit.toFixed(2) + ' (' + discountPct.toFixed(0) + '% off)';
+    document.getElementById('prodTotalVal').innerText = '$' + total.toLocaleString('en-US', { minimumFractionDigits: 2 });
+  }
+
+  function toggleDarkMode() {
+    document.body.classList.toggle('dark-mode');
+  }
+</script>
+</body>
+</html>

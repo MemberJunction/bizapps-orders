@@ -230,27 +230,45 @@
     </mj-collapsible-panel>
 
     <!-- ========================================
-         5. ACCOUNTING & LINKED JOURNAL ENTRIES
+         5. DEFERRED REVENUE & REV-REC SCHEDULE
          ======================================== -->
     <mj-collapsible-panel
         SectionKey="accountingAndJournalEntries"
-        SectionName="Accounting &amp; Linked Journal Entries"
-        Icon="fa fa-scale-balanced"
-        Variant="related-entity"
+        SectionName="Deferred Revenue &amp; Rev-Rec Schedule"
+        Icon="fa fa-chart-waterfall"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('accountingAndJournalEntries')"
+        [BadgeCount]="RevRecJournalEntries.length"
         [DefaultExpanded]="true">
-        @if (record.IsSaved && SubscriptionJournalEntryParams) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="SubscriptionJournalEntryParams"
-                [AllowLoad]="IsSectionExpanded('accountingAndJournalEntries')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('accountingAndJournalEntries', $event.totalRowCount)">
-            </mj-explorer-entity-data-grid>
-        </div>
+        @if (record.IsSaved) {
+            <div style="margin-bottom: var(--mj-space-3, 12px); display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; gap: 6px;">
+                    <button type="button" class="mjo-toggle-btn" [class.mjo-toggle-btn--active]="ActiveAccountingView === 'waterfall'" (click)="ActiveAccountingView = 'waterfall'">
+                        <i class="fa-solid fa-chart-line"></i> Rev-Rec Waterfall Schedule
+                    </button>
+                    <button type="button" class="mjo-toggle-btn" [class.mjo-toggle-btn--active]="ActiveAccountingView === 'grid'" (click)="ActiveAccountingView = 'grid'">
+                        <i class="fa-solid fa-table"></i> All Journal Entries
+                    </button>
+                </div>
+            </div>
+
+            @if (ActiveAccountingView === 'waterfall') {
+                <mj-deferred-revenue-waterfall
+                    [JournalEntries]="RevRecJournalEntries"
+                    [Title]="'Subscription Deferred Revenue Waterfall'"
+                    (JournalEntrySelected)="OnJournalEntrySelected($event)">
+                </mj-deferred-revenue-waterfall>
+            } @else if (SubscriptionJournalEntryParams) {
+                <div>
+                    <mj-explorer-entity-data-grid
+                        [Params]="SubscriptionJournalEntryParams"
+                        [AllowLoad]="true"
+                        [ShowToolbar]="false"
+                        (Navigate)="OnFormNavigate($event)"
+                        (AfterDataLoad)="SetSectionRowCount('accountingAndJournalEntries', $event.totalRowCount)">
+                    </mj-explorer-entity-data-grid>
+                </div>
+            }
         }
     </mj-collapsible-panel>
 
@@ -342,6 +360,43 @@
         </div>
         }
     </mj-collapsible-panel>
+
+    <!-- ========================================
+         8. SYSTEM METADATA
+         ======================================== -->
+    @if (!EditMode) {
+    <mj-collapsible-panel
+        SectionKey="systemMetadata"
+        SectionName="System Metadata"
+        Icon="fa fa-database"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ID"
+            Type="textbox"
+            [EditMode]="false"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="__mj_CreatedAt"
+            Type="textbox"
+            [EditMode]="false"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="__mj_UpdatedAt"
+            Type="textbox"
+            [EditMode]="false"
+            [FormContext]="formContext"
+        ></mj-form-field>
+    </mj-collapsible-panel>
+    }
 
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 

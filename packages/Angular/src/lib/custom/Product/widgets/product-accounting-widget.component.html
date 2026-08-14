@@ -1,0 +1,47 @@
+<div class="mjo-acct-widget-wrap">
+    <div class="mjo-acct-card">
+        <div class="mjo-card-head">
+            <i class="fa-solid fa-scale-balanced"></i>
+            <span>General Ledger &amp; Revenue Recognition Classification</span>
+        </div>
+        <div class="mjo-card-body">
+            <mj-form-field 
+                [Record]="Product"
+                [ShowLabel]="true"
+                FieldName="RevenueRecognitionTypeID"
+                Type="textbox"
+                [EditMode]="EditMode"
+                [FormContext]="FormContext"
+                LinkType="Record"
+                (Navigate)="Navigate.emit($event)"
+            ></mj-form-field>
+            <mj-form-field 
+                [Record]="Product"
+                [ShowLabel]="true"
+                FieldName="IsTaxable"
+                Type="checkbox"
+                [EditMode]="EditMode"
+                [FormContext]="FormContext"
+                (Navigate)="Navigate.emit($event)"
+            ></mj-form-field>
+            <mj-form-field 
+                [Record]="Product"
+                [ShowLabel]="true"
+                FieldName="TaxCategory"
+                Type="textbox"
+                [EditMode]="EditMode"
+                [FormContext]="FormContext"
+                (Navigate)="Navigate.emit($event)"
+            ></mj-form-field>
+            <mj-form-field 
+                [Record]="Product"
+                [ShowLabel]="true"
+                FieldName="StandaloneSellingPrice"
+                Type="number"
+                [EditMode]="EditMode"
+                [FormContext]="FormContext"
+                (Navigate)="Navigate.emit($event)"
+            ></mj-form-field>
+        </div>
+    </div>
+</div>

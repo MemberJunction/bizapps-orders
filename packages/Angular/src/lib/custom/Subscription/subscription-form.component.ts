@@ -1,7 +1,12 @@
 import { Component } from '@angular/core';
-import type { RunViewParams } from '@memberjunction/core';
+import { CompositeKey, Metadata, RunView, type RunViewParams } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
+import { NavigationService } from '@memberjunction/ng-shared';
+import { inject } from '@angular/core';
+import type { FormNavigationEvent } from '@memberjunction/ng-base-forms';
+import { DispatchFormNavigation } from '../form-navigation-helper';
 import {
     mjBizAppsOrdersSubscriptionEntity,
 } from '@mj-biz-apps/orders-entities';
@@ -18,9 +23,10 @@ import { mjBizAppsOrdersSubscriptionFormComponent } from '../../generated/Entiti
  * 2. Stakeholders & Assignment: Holder organization (payer) vs Beneficiary person (user).
  * 3. Renewal & Lifecycle Settings: Auto-renew rules, lead days, migration links, and dates.
  * 4. Granted Entitlements: Unlocked software permissions, seats, and license grants.
- * 5. Accounting & Linked Journal Entries: Revenue recognition ledger entries.
+ * 5. Deferred Revenue & Rev-Rec Schedule: ASC 606 recognition waterfall widget and linked ledger entries.
  * 6. Subscription Details & Technical Links: Product, Company, and originating Order Line ID.
  * 7. Subscription Events Log: Chronological lifecycle audit trail.
+ * 8. System Metadata: System IDs and timestamps.
  */
 @RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Subscriptions')
 @Component({
@@ -32,6 +38,17 @@ import { mjBizAppsOrdersSubscriptionFormComponent } from '../../generated/Entiti
 export class BizAppsSubscriptionFormComponent extends mjBizAppsOrdersSubscriptionFormComponent {
     public declare record: mjBizAppsOrdersSubscriptionEntity;
 
+    public RevRecJournalEntries: mjBizAppsAccountingJournalEntryEntity[] = [];
+    public RevRecLoading = false;
+    public ActiveAccountingView: 'waterfall' | 'grid' = 'waterfall';
+
+    protected navigationService = inject(NavigationService, { optional: true });
+
+    override OnFormNavigate(event: FormNavigationEvent): void {
+        this.Navigate.emit(event);
+        DispatchFormNavigation(event, this.navigationService);
+    }
+
     override async ngOnInit(): Promise<void> {
         await super.ngOnInit();
 
@@ -40,10 +57,49 @@ export class BizAppsSubscriptionFormComponent extends mjBizAppsOrdersSubscriptio
             { sectionKey: 'stakeholders', sectionName: 'Stakeholders & Benefit Assignment', isExpanded: true },
             { sectionKey: 'renewalAndLifecycle', sectionName: 'Renewal & Lifecycle Settings', isExpanded: true },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Granted Entitlements', isExpanded: true },
-            { sectionKey: 'accountingAndJournalEntries', sectionName: 'Accounting & Linked Journal Entries', isExpanded: true },
+            { sectionKey: 'accountingAndJournalEntries', sectionName: 'Deferred Revenue & Rev-Rec Schedule', isExpanded: true },
             { sectionKey: 'subscriptionDetails', sectionName: 'Subscription Details & Entity Links', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events Log', isExpanded: false },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
         ]);
+
+        if (this.record?.IsSaved && this.record?.ID) {
+            await this.LoadRevRecJournalEntries();
+        }
+    }
+
+    /**
+     * Loads revenue recognition Journal Entries linked to this subscription or its terms.
+     */
+    public async LoadRevRecJournalEntries(): Promise<void> {
+        if (!this.record?.ID) return;
+        this.RevRecLoading = true;
+        try {
+            const rv = new RunView();
+            const filters: string[] = [];
+            if (this.record.OrderLineID) {
+                filters.push(`LinkedRecordID = '${this.record.OrderLineID}'`);
+            }
+            filters.push(`LinkedRecordID = '${this.record.ID}'`);
+
+            const res = await rv.RunView<mjBizAppsAccountingJournalEntryEntity>(
+                {
+                    EntityName: 'MJ_BizApps_Accounting: Journal Entries',
+                    ExtraFilter: filters.join(' OR '),
+                    OrderBy: 'EffectiveDate ASC',
+                    MaxRows: 200,
+                    ResultType: 'entity_object',
+                },
+                new Metadata().CurrentUser,
+            );
+
+            if (res.Success && res.Results) {
+                this.RevRecJournalEntries = res.Results;
+            }
+        } finally {
+            this.RevRecLoading = false;
+            this.cdr.detectChanges();
+        }
     }
 
     /**
@@ -125,12 +181,23 @@ export class BizAppsSubscriptionFormComponent extends mjBizAppsOrdersSubscriptio
         };
     }
 
+    public OnJournalEntrySelected(je: mjBizAppsAccountingJournalEntryEntity): void {
+        const pk = new CompositeKey();
+        pk.LoadFromSingleKeyValuePair('ID', je.ID);
+        this.OnFormNavigate({
+            Kind: 'record',
+            EntityName: 'MJ_BizApps_Accounting: Journal Entries',
+            PrimaryKey: pk,
+        });
+    }
+
     /**
      * Called when a child record or related widget mutates data.
      */
     public async OnWidgetDataChanged(): Promise<void> {
         if (!this.record.Dirty) {
             await this.record.InnerLoad(this.record.PrimaryKey);
+            await this.LoadRevRecJournalEntries();
             this.cdr.detectChanges();
         }
     }

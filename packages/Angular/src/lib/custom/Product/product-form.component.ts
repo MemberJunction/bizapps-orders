@@ -1,7 +1,10 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { RegisterClass } from '@memberjunction/global';
-import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { Metadata } from '@memberjunction/core';
+import { UserInfoEngine } from '@memberjunction/core-entities';
+import { NavigationService } from '@memberjunction/ng-shared';
+import { DispatchFormNavigation } from '../form-navigation-helper';
 import {
     mjBizAppsOrdersProductEntity,
     mjBizAppsOrdersEventProductEntity,
@@ -11,24 +14,25 @@ import {
 import { mjBizAppsOrdersProductFormComponent } from '../../generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
 import { FormatMoney } from '../../panels/money-format';
 
+export type ProductFormPane = 'overview' | 'pricing' | 'promos' | 'accounting' | 'fulfillment' | 'subscriptions' | 'bundles' | 'systemMetadata';
+
+const ACTIVE_PANE_SETTING = 'mj.orders.productForm.activePane';
+
 /**
- * Custom Product form component overriding the CodeGen-generated form.
+ * Custom Product form component with Responsive Left Navigation and Droppable Widgets.
  *
  * Extends the generated form component so it wins @RegisterClass priority in
  * MemberJunction's ClassFactory.
  *
- * Key capabilities:
- * 1. Product Hero Identity Header: Dynamic type-aware avatar, title, entity/SKU/IsA/status
+ * Structure:
+ * 1. Product Hero Identity Header: Dynamic type-aware avatar, title, entity/SKU/status
  *    badge strip, and live 5-metric summary bar (SSP, Type, Rev-Rec, Capacity, Price Lists).
- * 2. Dynamic IS-A Subtype Extension: Inspects the product's ProductType.
- *    If the ProductType has a ProductExtensionEntity (e.g. 'MJ_BizApps_Orders: Event Products'),
- *    the form automatically binds and surfaces the EventProduct subtype's fields
- *    (EventStartsAt, EventEndsAt, VenueName, VenueAddressID, Capacity, RequiresAttendeeInfo).
- * 3. Integrated Child Entities: Provides dedicated collapsible panels and data grids for
- *    natural child records: Product Prices (price lists / volume tiers), Product Entitlements,
- *    and Product Bundle Items.
- * 4. Standard MJ Form Architecture: Uses record-form-container, collapsible panels, and form fields
- *    with complete keyboard navigation, audit history, and dirty tracking.
+ * 2. Responsive Left Navigation Workspace: Replaces heavy accordion stacking with a clean
+ *    left navigation rail permitting instant navigation between modular droppable widgets.
+ * 3. Dynamic Specialized Profile: Automatically mounts domain-specific fields (such as
+ *    EventProduct dates, venue, capacity, attendee requirements) using clean business terminology.
+ * 4. Modular Encapsulated Sub-Widgets: Pricing Simulator, Promotion manager, Tax & GL links,
+ *    Delivery protocol, and Subscription defaults.
  */
 @RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Products')
 @Component({
@@ -40,11 +44,15 @@ import { FormatMoney } from '../../panels/money-format';
 export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormComponent {
     public declare record: mjBizAppsOrdersProductEntity;
 
-    /** Loaded or initialized EventProduct IS-A child entity (if applicable) */
+    public ActivePane: ProductFormPane = 'overview';
+
+    /** Loaded or initialized EventProduct specialized profile child entity (if applicable) */
     public EventProductChild: mjBizAppsOrdersEventProductEntity | null = null;
     public EventProductLoading = false;
     public ProductTypeRecord: mjBizAppsOrdersProductTypeEntity | null = null;
     public RevenueRecRecord: mjBizAppsOrdersRevenueRecognitionTypeEntity | null = null;
+
+    protected navigationService = inject(NavigationService, { optional: true });
 
     override async ngOnInit(): Promise<void> {
         await super.ngOnInit();
@@ -52,24 +60,37 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
         this.initSections([
             { sectionKey: 'productIdentification', sectionName: 'Product Identification', isExpanded: true },
             { sectionKey: 'productClassification', sectionName: 'Product Classification & Lifecycle', isExpanded: true },
-            { sectionKey: 'eventDetailsExtension', sectionName: 'Event & Venue Details (IsA Extension: EventProduct)', isExpanded: true },
+            { sectionKey: 'eventDetailsExtension', sectionName: 'Event & Venue Details', isExpanded: true },
             { sectionKey: 'productPrices', sectionName: 'Product Pricing, Price Lists & Volume Tiers', isExpanded: true },
             { sectionKey: 'productEntitlements', sectionName: 'Entitlement Grants & Subscriptions', isExpanded: true },
             { sectionKey: 'financialAndAccounting', sectionName: 'Financial & General Ledger Resolution', isExpanded: true },
             { sectionKey: 'productBundleItems', sectionName: 'Bundle Components & Kit Items', isExpanded: false },
         ]);
 
+        const savedPane = UserInfoEngine.Instance.GetSetting(ACTIVE_PANE_SETTING);
+        if (savedPane && this.isValidPane(savedPane)) {
+            this.ActivePane = savedPane;
+        }
+
         await this.syncSubtypeExtension();
     }
 
+    public SelectPane(pane: ProductFormPane): void {
+        this.ActivePane = pane;
+        UserInfoEngine.Instance.SetSettingDebounced(ACTIVE_PANE_SETTING, pane);
+    }
+
+    private isValidPane(val: string): val is ProductFormPane {
+        return ['overview', 'pricing', 'promos', 'accounting', 'fulfillment', 'subscriptions', 'bundles', 'systemMetadata'].includes(val);
+    }
+
     /**
-     * Determines whether the current product's type specifies an EventProduct extension.
+     * Determines whether the current product's type specifies an EventProduct specialized profile.
      */
     public get HasEventExtension(): boolean {
         if (this.ProductTypeRecord?.ProductExtensionEntity === 'MJ_BizApps_Orders: Event Products') {
             return true;
         }
-        // Fallback: check virtual ProductType name or auto-chained child
         const typeName = (this.record?.ProductType as string) ?? this.ProductTypeRecord?.Name ?? '';
         return typeName.toLowerCase().includes('event') || typeName.toLowerCase().includes('conference') || typeName.toLowerCase().includes('summit') || this.record?.ISAChild != null;
     }
@@ -101,30 +122,49 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
     }
 
     /**
-     * Returns the type-tailored FontAwesome icon for the product hero avatar.
+     * Resolves the venue and timing summary for Event products.
      */
-    public get ProductAvatarIcon(): string {
-        const typeName = (this.ProductTypeName).toLowerCase();
-        if (this.HasEventExtension || typeName.includes('event') || typeName.includes('conference') || typeName.includes('summit') || typeName.includes('ticket')) {
-            return 'fa-solid fa-ticket';
-        }
-        if (this.record?.SubscriptionTypeID || typeName.includes('sub') || typeName.includes('saas') || typeName.includes('recurring')) {
-            return 'fa-solid fa-arrows-rotate';
-        }
-        if (typeName.includes('physical') || typeName.includes('book') || typeName.includes('merch') || typeName.includes('good')) {
-            return 'fa-solid fa-box-archive';
-        }
-        if (typeName.includes('digital') || typeName.includes('license') || typeName.includes('asset') || typeName.includes('download')) {
-            return 'fa-solid fa-file-arrow-down';
-        }
-        return 'fa-solid fa-cube';
+    public get EventScheduleSummary(): string {
+        if (!this.HasEventExtension) return '—';
+        const venue = this.EventProductChild?.VenueName || 'Venue TBD';
+        const start = this.EventProductChild?.EventStartsAt
+            ? new Date(this.EventProductChild.EventStartsAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            : 'Date TBD';
+        return `${venue} · ${start}`;
     }
 
     /**
-     * Returns the status chip CSS class reflecting catalog lifecycle.
+     * Formats the base price into currency.
+     */
+    public get FormattedBasePrice(): string {
+        return FormatMoney(this.record?.StandaloneSellingPrice || 0);
+    }
+
+    /**
+     * FontAwesome icon reflecting the specific product category or type.
+     */
+    public get ProductAvatarIcon(): string {
+        const typeName = this.ProductTypeName.toLowerCase();
+        if (typeName.includes('event') || typeName.includes('conference') || typeName.includes('summit')) {
+            return 'fa-solid fa-ticket';
+        }
+        if (typeName.includes('subscription') || typeName.includes('saas') || typeName.includes('recurring')) {
+            return 'fa-solid fa-repeat';
+        }
+        if (typeName.includes('service') || typeName.includes('consulting')) {
+            return 'fa-solid fa-handshake-angle';
+        }
+        if (typeName.includes('digital') || typeName.includes('course')) {
+            return 'fa-solid fa-graduation-cap';
+        }
+        return 'fa-solid fa-box-open';
+    }
+
+    /**
+     * Returns the CSS class for the status pill badge.
      */
     public get StatusBadgeClass(): string {
-        const status = this.record?.Status ?? 'Draft';
+        const status: mjBizAppsOrdersProductEntity['Status'] | undefined = this.record?.Status;
         switch (status) {
             case 'Active':
                 return 'mjo-status-chip mjo-status-chip--active';
@@ -139,90 +179,73 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
     }
 
     /**
-     * Formatted Standalone Selling Price for the summary metric bar.
+     * Synchronizes and initializes the specialized profile child entity (e.g. EventProduct).
      */
-    public get FormattedSSP(): string {
-        if (this.record?.StandaloneSellingPrice == null) return '—';
-        return FormatMoney(this.record.StandaloneSellingPrice);
-    }
-
-    /**
-     * Formatted capacity or stock description for the summary metric bar.
-     */
-    public get FormattedCapacity(): string {
-        if (this.HasEventExtension) {
-            if (this.EventProductChild?.Capacity != null && this.EventProductChild.Capacity > 0) {
-                return `${this.EventProductChild.Capacity.toLocaleString()} Attendees`;
-            }
-            return 'Unlimited (Event)';
-        }
-        if (this.record?.SubscriptionTypeID) {
-            return 'Unlimited (Digital)';
-        }
-        return '—';
-    }
-
-    /**
-     * Inspects the product's type and ensures the IS-A child entity is loaded and available.
-     */
-    public async syncSubtypeExtension(): Promise<void> {
+    private async syncSubtypeExtension(): Promise<void> {
         if (!this.record) return;
 
         const md = new Metadata();
 
-        // 1. Resolve ProductType metadata if available
-        if (this.record.ProductTypeID && !this.ProductTypeRecord) {
+        // 1. Resolve ProductType record if needed
+        if (this.record.ProductTypeID && (!this.ProductTypeRecord || this.ProductTypeRecord.ID !== this.record.ProductTypeID)) {
             try {
-                const pt = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>('MJ_BizApps_Orders: Product Types');
-                const loaded = await pt.Load(this.record.ProductTypeID);
-                if (loaded) {
+                const pt = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>('MJ_BizApps_Orders: Product Types', md.CurrentUser);
+                if (await pt.Load(this.record.ProductTypeID)) {
                     this.ProductTypeRecord = pt;
                 }
-            } catch {
-                // Ignore failure to load lookup; fallback logic applies
+            } catch (err) {
+                console.warn('Could not load ProductType for product form:', err);
             }
         }
 
-        // 2. Resolve RevenueRecognitionType metadata if available
-        if (this.record.RevenueRecognitionTypeID && !this.RevenueRecRecord) {
+        // 2. Resolve RevenueRecognitionType record if needed
+        if (this.record.RevenueRecognitionTypeID && (!this.RevenueRecRecord || this.RevenueRecRecord.ID !== this.record.RevenueRecognitionTypeID)) {
             try {
-                const rr = await md.GetEntityObject<mjBizAppsOrdersRevenueRecognitionTypeEntity>('MJ_BizApps_Orders: Revenue Recognition Types');
-                const loaded = await rr.Load(this.record.RevenueRecognitionTypeID);
-                if (loaded) {
-                    this.RevenueRecRecord = rr;
+                const rrt = await md.GetEntityObject<mjBizAppsOrdersRevenueRecognitionTypeEntity>('MJ_BizApps_Orders: Revenue Recognition Types', md.CurrentUser);
+                if (await rrt.Load(this.record.RevenueRecognitionTypeID)) {
+                    this.RevenueRecRecord = rrt;
                 }
-            } catch {
-                // Ignore failure to load lookup; fallback logic applies
+            } catch (err) {
+                console.warn('Could not load RevenueRecognitionType for product form:', err);
             }
         }
 
-        // 3. Resolve or initialize the IS-A child entity
-        if (this.record.ISAChild && this.record.ISAChild.EntityInfo?.Name === 'MJ_BizApps_Orders: Event Products') {
-            this.EventProductChild = this.record.ISAChild as mjBizAppsOrdersEventProductEntity;
-        } else if (this.HasEventExtension && this.record.ID) {
+        // 3. Mount EventProduct specialized profile if applicable
+        if (this.HasEventExtension && !this.EventProductChild) {
             this.EventProductLoading = true;
             try {
-                const ep = await md.GetEntityObject<mjBizAppsOrdersEventProductEntity>('MJ_BizApps_Orders: Event Products');
-                if (this.record.IsSaved) {
-                    const loaded = await ep.Load(this.record.ID);
-                    if (loaded) {
+                if (this.record.ISAChild && this.record.ISAChild.EntityInfo.Name === 'MJ_BizApps_Orders: Event Products') {
+                    this.EventProductChild = this.record.ISAChild as mjBizAppsOrdersEventProductEntity;
+                } else if (this.record.IsSaved && this.record.ID) {
+                    const ep = await md.GetEntityObject<mjBizAppsOrdersEventProductEntity>('MJ_BizApps_Orders: Event Products', md.CurrentUser);
+                    if (await ep.Load(this.record.ID)) {
                         this.EventProductChild = ep;
                     } else {
-                        // Extension row doesn't exist yet: initialize with matching PK
-                        ep.NewRecord();
-                        ep.Set('ID', this.record.ID);
+                        await ep.NewRecord();
+                        ep.ID = this.record.ID;
                         this.EventProductChild = ep;
                     }
                 } else {
-                    ep.NewRecord();
-                    ep.Set('ID', this.record.ID);
+                    const ep = await md.GetEntityObject<mjBizAppsOrdersEventProductEntity>('MJ_BizApps_Orders: Event Products', md.CurrentUser);
+                    await ep.NewRecord();
                     this.EventProductChild = ep;
                 }
+            } catch (err) {
+                console.error('Failed to initialize EventProduct specialized profile:', err);
             } finally {
                 this.EventProductLoading = false;
-                this.cdr.markForCheck();
+                this.cdr.detectChanges();
             }
         }
+    }
+
+    /**
+     * Handles navigation requests from record links, sub-widgets, and related grids.
+     * Dispatches directly to NavigationService.OpenEntityRecord to open in Explorer tabs.
+     */
+    override OnFormNavigate(event: FormNavigationEvent): void {
+        this.Navigate.emit(event);
+        DispatchFormNavigation(event, this.navigationService);
     }
 
     /**
@@ -231,6 +254,7 @@ export class BizAppsProductFormComponent extends mjBizAppsOrdersProductFormCompo
     public async OnWidgetDataChanged(): Promise<void> {
         if (!this.record.Dirty) {
             await this.record.InnerLoad(this.record.PrimaryKey);
+            await this.syncSubtypeExtension();
             this.cdr.detectChanges();
         }
     }

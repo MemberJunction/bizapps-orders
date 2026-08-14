@@ -1,0 +1,31 @@
+<div class="mjo-promotions-widget-wrap">
+    <div class="mjo-promo-banner">
+        <div class="mjo-promo-info">
+            <i class="fa-solid fa-ticket"></i>
+            <div>
+                <strong>Active Campaign Stacking:</strong> Promotions layer on top of base and price list discounts according to the sequence priority rules defined below.
+            </div>
+        </div>
+    </div>
+
+    <div class="mjo-promo-panel">
+        <div class="mjo-panel-head">
+            <div class="mjo-panel-title">
+                <i class="fa-solid fa-gift"></i>
+                <span>Active Promotions &amp; Discount Rules</span>
+            </div>
+        </div>
+
+        @if (PromotionsViewParams) {
+            <div class="mjo-grid-container">
+                <mj-explorer-entity-data-grid
+                    [Params]="PromotionsViewParams"
+                    [AllowLoad]="true"
+                    [ShowToolbar]="true"
+                    [ShowNewButton]="true"
+                    (Navigate)="Navigate.emit($event)">
+                </mj-explorer-entity-data-grid>
+            </div>
+        }
+    </div>
+</div>

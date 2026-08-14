@@ -39,6 +39,13 @@ export { CLASS_REGISTRATIONS } from './lib/generated/class-registrations-manifes
 export { GeneratedFormsModule } from './lib/generated/generated-forms.module';
 export { CustomFormsModule } from './lib/custom/custom-forms.module';
 export { BizAppsProductFormComponent } from './lib/custom/Product/product-form.component';
+export { BizAppsProductPricingWidgetComponent } from './lib/custom/Product/widgets/product-pricing-widget.component';
+export { BizAppsProductPromotionsWidgetComponent } from './lib/custom/Product/widgets/product-promotions-widget.component';
+export { BizAppsProductAccountingWidgetComponent } from './lib/custom/Product/widgets/product-accounting-widget.component';
+export { BizAppsProductFulfillmentWidgetComponent } from './lib/custom/Product/widgets/product-fulfillment-widget.component';
+export { BizAppsProductSubscriptionWidgetComponent } from './lib/custom/Product/widgets/product-subscription-widget.component';
+export { BizAppsPriceListFormComponent } from './lib/custom/PriceList/price-list-form.component';
+export { BizAppsPromotionFormComponent } from './lib/custom/Promotion/promotion-form.component';
 export { BizAppsOrderHeaderFormComponent } from './lib/custom/OrderHeader/order-header-form.component';
 export { BizAppsSubscriptionFormComponent } from './lib/custom/Subscription/subscription-form.component';
 export { BizAppsPaymentHeaderFormComponent } from './lib/custom/PaymentHeader/payment-header-form.component';

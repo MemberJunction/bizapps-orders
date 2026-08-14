@@ -205,10 +205,21 @@
                                 <span class="mjo-oh-switch__n">{{ RollupJournalCount }}</span>
                             }
                         </button>
+                        <button type="button" [class.is-on]="AccountingView === 'waterfall'" (click)="SetAccountingView('waterfall')">
+                            <i class="fa-solid fa-chart-line"></i> Rev-Rec Waterfall
+                        </button>
                     </div>
                 </div>
 
-                @if (AccountingView === 'summary') {
+                @if (AccountingView === 'waterfall') {
+                    <div style="padding: 12px 0;">
+                        <mj-deferred-revenue-waterfall
+                            [JournalEntries]="RevRecJournalEntries"
+                            [Title]="'Order Rev-Rec &amp; Deferred Revenue Schedule'"
+                            (JournalEntrySelected)="OnJournalEntrySelected($event)">
+                        </mj-deferred-revenue-waterfall>
+                    </div>
+                } @else if (AccountingView === 'summary') {
                     @if (RollupLoading) {
                         <div class="mjo-oh-hint">Rolling up journals…</div>
                     } @else if (RollupError) {
@@ -260,8 +271,8 @@
                                     <tfoot>
                                         <tr>
                                             <th>Total</th>
-                                            <th class="is-num">{{ RollupAmount(card.TotalDebit) }}</th>
-                                            <th class="is-num">{{ RollupAmount(card.TotalCredit) }}</th>
+                                            <td class="is-num">{{ RollupAmount(card.TotalDebit) }}</td>
+                                            <td class="is-num">{{ RollupAmount(card.TotalCredit) }}</td>
                                         </tr>
                                     </tfoot>
                                 </table>

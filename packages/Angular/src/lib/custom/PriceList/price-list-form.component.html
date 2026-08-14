@@ -1,0 +1,208 @@
+@if (record) {
+<mj-record-form-container [Record]="record" [FormComponent]="this"
+    (Navigate)="OnFormNavigate($event)"
+    (DeleteRequested)="OnDeleteRequested()"
+    (FavoriteToggled)="OnFavoriteToggled()"
+    (HistoryRequested)="OnHistoryRequested()"
+    (ListManagementRequested)="OnListManagementRequested()">
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="before-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+    <!-- ================================================================
+         HERO IDENTITY HEADER CARD & SUMMARY METRIC STRIP
+         ================================================================ -->
+    <div class="mjo-record-header-card">
+        <div class="mjo-record-header-top">
+            <div class="mjo-record-identity">
+                <div class="mjo-record-avatar">
+                    <i class="fa-solid fa-tags"></i>
+                </div>
+                <div class="mjo-record-title-area">
+                    <h1 class="mjo-record-title">
+                        {{ record.Name || 'New Price List' }}
+                    </h1>
+                    <div class="mjo-record-badges">
+                        <span class="mjo-entity-chip"><i class="fa-solid fa-database"></i> MJ_BizApps_Orders: Price Lists</span>
+                        <span class="mjo-sku-badge">{{ record.Code || 'CODE TBD' }}</span>
+                        <span [class]="StatusBadgeClass">{{ record.Status || 'Active' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Metric Strip -->
+        <div class="mjo-record-summary-bar">
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Validity Window</span>
+                <span class="mjo-stat-val">{{ FormattedValidityWindow }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Product Overrides</span>
+                <span class="mjo-stat-val">{{ GetSectionRowCount('mJBizAppsOrdersProductPrices') || 0 }} Rules</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Assigned Accounts</span>
+                <span class="mjo-stat-val">{{ GetSectionRowCount('mJBizAppsOrdersPriceListAssignments') || 0 }} Assigned</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Lifecycle Status</span>
+                <span class="mjo-stat-val">{{ record.Status || 'Active' }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         1. LIVE INTERACTIVE VOLUME & TIER SIMULATOR
+         ================================================================ -->
+    <mj-collapsible-panel
+        SectionKey="pricingSimulator"
+        SectionName="Live Interactive Volume &amp; Tier Simulator"
+        Icon="fa fa-calculator"
+        [Form]="this"
+        [FormContext]="formContext"
+        [DefaultExpanded]="true">
+
+        <div class="mjo-sim-box">
+            <div class="mjo-sim-controls">
+                <div class="mjo-sim-input-group">
+                    <label>Test Base Price ($)</label>
+                    <input type="number" [value]="SimBasePrice" (input)="OnSimBasePriceChange($event)" style="width: 120px;">
+                </div>
+                <div class="mjo-sim-input-group" style="flex: 1;">
+                    <label>Test Quantity Range: <strong>{{ SimQuantity }} Units</strong></label>
+                    <input type="range" min="1" max="150" [value]="SimQuantity" (input)="OnSimQtyChange($event)" style="width: 100%; accent-color: #0076b6;">
+                </div>
+                <div class="mjo-sim-mode-toggle">
+                    <button type="button" class="mjo-mode-btn" [class.active]="SimCalculationMode === 'volume'" (click)="SetSimMode('volume')">
+                        Volume Mode (All Units)
+                    </button>
+                    <button type="button" class="mjo-mode-btn" [class.active]="SimCalculationMode === 'tiered'" (click)="SetSimMode('tiered')">
+                        Graduated Tiered Mode
+                    </button>
+                </div>
+            </div>
+
+            <div class="mjo-sim-results-grid">
+                <div class="mjo-sim-card">
+                    <span class="label">Effective Unit Price</span>
+                    <span class="val">${{ SimResult.EffectiveUnitPrice.toFixed(2) }}</span>
+                </div>
+                <div class="mjo-sim-card">
+                    <span class="label">Total Order Amount</span>
+                    <span class="val mjo-val--brand">${{ SimResult.TotalOrderAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}</span>
+                </div>
+                <div class="mjo-sim-card">
+                    <span class="label">Effective Discount</span>
+                    <span class="val mjo-val--green">{{ SimResult.DiscountPercent.toFixed(1) }}% Off</span>
+                </div>
+                <div class="mjo-sim-card">
+                    <span class="label">Total Customer Savings</span>
+                    <span class="val mjo-val--green">${{ SimResult.SavingsAmount.toFixed(2) }}</span>
+                </div>
+            </div>
+        </div>
+    </mj-collapsible-panel>
+
+    <!-- ================================================================
+         2. GENERAL INFORMATION
+         ================================================================ -->
+    <mj-collapsible-panel
+        SectionKey="generalInformation"
+        SectionName="General Information"
+        Icon="fa fa-info-circle"
+        [Form]="this"
+        [FormContext]="formContext"
+        [DefaultExpanded]="true">
+
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Name" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Code" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Status" Type="select" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Description" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+    </mj-collapsible-panel>
+
+    <!-- ================================================================
+         3. VALIDITY PERIOD
+         ================================================================ -->
+    <mj-collapsible-panel
+        SectionKey="validityPeriod"
+        SectionName="Validity &amp; Schedule Window"
+        Icon="fa fa-calendar"
+        [Form]="this"
+        [FormContext]="formContext">
+
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="EffectiveFrom" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="EffectiveTo" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+    </mj-collapsible-panel>
+
+    <!-- ================================================================
+         4. PRODUCT PRICES & VOLUME TIERS (RELATED GRID)
+         ================================================================ -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersProductPrices"
+        SectionName="Product Prices &amp; Tier Rules"
+        Icon="fa fa-list-numeric"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersProductPrices')"
+        [DefaultExpanded]="true">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Prices','PriceListID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Prices')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductPrices')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductPrices', $event.totalRowCount)">
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- ================================================================
+         5. ASSIGNED ORGANIZATIONS & ACCOUNTS (RELATED GRID)
+         ================================================================ -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPriceListAssignments"
+        SectionName="Assigned Organizations &amp; Accounts"
+        Icon="fa fa-building-user"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPriceListAssignments')"
+        [DefaultExpanded]="true">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Price List Assignments','PriceListID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Price List Assignments')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPriceListAssignments')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPriceListAssignments', $event.totalRowCount)">
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- ================================================================
+         6. SYSTEM METADATA
+         ================================================================ -->
+    @if (!EditMode) {
+    <mj-collapsible-panel
+        SectionKey="systemMetadata"
+        SectionName="System Metadata"
+        Icon="fa fa-database"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ID" Type="textbox" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="__mj_CreatedAt" Type="textbox" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="__mj_UpdatedAt" Type="textbox" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+    </mj-collapsible-panel>
+    }
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+</mj-record-form-container>
+}

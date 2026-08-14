@@ -10,7 +10,11 @@
     "strict": true,
     "skipLibCheck": true,
     "types": [],
-    "lib": ["es2022", "dom"]
+    "lib": ["es2022", "dom"],
+    "baseUrl": ".",
+    "paths": {
+      "@mj-biz-apps/accounting-ng": ["../bizapps-accounting/packages/Angular/dist/public-api"]
+    }
   },
   "angularCompilerOptions": {
     "skipTemplateCodegen": true,
