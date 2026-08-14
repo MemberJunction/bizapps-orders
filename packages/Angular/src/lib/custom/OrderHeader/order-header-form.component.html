@@ -136,6 +136,7 @@
                         [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Details')"
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
+                        [Height]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
                 } @else {
@@ -166,6 +167,7 @@
                         [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Charges')"
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
+                        [Height]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
                 }
@@ -179,6 +181,7 @@
                         [Params]="JournalParams"
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
+                        [Height]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
                 }
@@ -192,6 +195,7 @@
                         [Params]="SubscriptionParams"
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
+                        [Height]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
                 }

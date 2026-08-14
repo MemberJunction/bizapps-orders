@@ -284,6 +284,11 @@
 
 .mjo-oh-tabpane { margin-top: var(--mj-space-3); }
 
+.mjo-oh-tabpane mj-explorer-entity-data-grid {
+    display: block;
+    min-height: 240px;
+}
+
 .mjo-oh-hint {
     margin-top: var(--mj-space-2);
     font-size: var(--mj-text-sm);

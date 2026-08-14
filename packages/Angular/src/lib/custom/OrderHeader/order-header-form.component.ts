@@ -62,6 +62,9 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public ExpandedParty: OrderFormParty | null = null;
     public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
 
+    /** Related lists in the header tabs have no parent height to fill — pin them like related-entity panels. */
+    public readonly RelatedGridHeight = 400;
+
     public get ContextTabs(): TabConfig[] {
         return OrderFormTabs(!!this.record?.IsSaved);
     }
