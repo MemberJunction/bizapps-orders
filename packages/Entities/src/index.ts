@@ -31,6 +31,7 @@ export * from './OrderStatusBehavior';
  */
 export * from './OrderHeaderEntity';
 export * from './save-populated-fields';
+export * from './InitialPaymentIntentCompanion';
 
 /**
  * Forces the generated entity subclasses to be loaded. Without an explicit

@@ -34,6 +34,7 @@ import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderEntity } from './generated/entity_subclasses';
 import { CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
+import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
 
 /** The order editor's sections, in the order the screen shows them. */
@@ -53,6 +54,20 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * the engine can turn one into an `OrderAdjustment`.
      */
     public readonly PromotionCodes = this.RegisterCompanion(new PromotionCodesCompanion(this));
+
+    /**
+     * Check / wire / transfer number typed at entry. Not a column — it rides as a companion
+     * and `OrderEntityServer.createInitialPayment` turns it into a `PaymentDetail`.
+     */
+    public readonly InitialPaymentIntent = this.RegisterCompanion(new InitialPaymentIntentCompanion(this));
+
+    public get InitialPaymentReference(): string | null {
+        return this.InitialPaymentIntent.Reference;
+    }
+
+    public set InitialPaymentReference(value: string | null) {
+        this.InitialPaymentIntent.Reference = value;
+    }
 
     /**
      * True while THIS save is the booking save, and it stays true across `ConfirmedAt` being set.

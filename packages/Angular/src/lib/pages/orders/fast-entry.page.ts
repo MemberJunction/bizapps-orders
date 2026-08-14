@@ -212,6 +212,8 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         this.JustBooked = null;
         this.orders.SchedulePricing(this.Order, (state) => {
             this.Pricing = state;
+            // Re-state the tender now that the gross is known — amount is taken from this result.
+            if (this.Order) this.applyTenderIntent();
             // MUST tick. This callback fires from a debounced timer + an awaited network round trip,
             // so it is outside anything Angular is watching: the page is created imperatively via
             // ViewContainerRef.createComponent and runs zoneless, which means an assignment alone
@@ -687,6 +689,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         if (this.Tender === 'terms') {
             this.Order.InitialPaymentTypeID = null;
             this.Order.InitialPaymentAmount = 0;
+            this.Order.InitialPaymentReference = null;
             return;
         }
         // THE TENDER AMOUNT IS THE GROSS, and the client can finally know it.
@@ -702,8 +705,7 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         // is no longer a client-side guess at tax — which is what the gap note rightly refused to do.
         this.Order.InitialPaymentTypeID = this.SelectedTenderType?.ID ?? null;
         this.Order.InitialPaymentAmount = this.Pricing.Result?.Totals.GrossTotal ?? 0;
-        // The reference lives on the PaymentDetail the confirm creates, not on the order, so it
-        // stays screen state until then.
+        this.Order.InitialPaymentReference = this.RequiresReference ? this.Reference.trim() || null : null;
     }
 
     /** ⌘↵ / Ctrl+↵ confirms; ⌘S saves; `/` jumps to the product field. */

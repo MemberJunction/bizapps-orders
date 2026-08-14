@@ -2287,8 +2287,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
     /**
      * Refuse the confirm when the initial tender needs a reference and none reached us.
      *
-     * "None reached us" means no `InitialPaymentDetailID`, or one whose `ReferenceNumber` is blank —
-     * an instrument row with an empty reference is the same failure wearing a foreign key.
+     * "None reached us" means no typed `InitialPaymentReference`, no `InitialPaymentDetailID`,
+     * or a detail whose `ReferenceNumber` is blank — an instrument row with an empty reference
+     * is the same failure wearing a foreign key.
      */
     private async requireReferenceWhenTenderDemandsOne(
         provider: IMetadataProvider,
@@ -2298,8 +2299,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const loaded = await type.Load(this.InitialPaymentTypeID as string);
         if (!loaded || !type.RequiresReference) return;
 
-        let reference: string | null = null;
-        if (this.InitialPaymentDetailID) {
+        let reference: string | null = (this.InitialPaymentReference ?? '').trim() || null;
+        if (!reference && this.InitialPaymentDetailID) {
             const detail = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(PAYMENT_DETAIL_ENTITY, user);
             if (await detail.Load(this.InitialPaymentDetailID)) {
                 reference = (detail.ReferenceNumber ?? '').trim() || null;
@@ -2331,9 +2332,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // caught by that three times.
         await this.requireReferenceWhenTenderDemandsOne(provider, user);
 
-        // Copy the intent instrument so the payment owns its own row (D39).
+        // The payment owns its own instrument row (D39). Prefer a typed reference from the
+        // companion (Fast Entry / editor) and fall back to copying a pre-built detail (fixtures).
         let paymentDetailID: string | null = null;
-        if (this.InitialPaymentDetailID) {
+        if (this.InitialPaymentReference) {
+            paymentDetailID = await this.createPaymentDetailFromReference(options);
+        } else if (this.InitialPaymentDetailID) {
             paymentDetailID = await this.copyPaymentDetail(this.InitialPaymentDetailID, options);
         }
 
@@ -2371,6 +2375,26 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     `${payment.LatestResult?.CompleteMessage ?? 'unknown error'}`,
             );
         }
+    }
+
+    /** Mint a PaymentDetail from the typed check / wire / transfer number. */
+    private async createPaymentDetailFromReference(options?: EntitySaveOptions): Promise<string> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const detail = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(
+            PAYMENT_DETAIL_ENTITY,
+            this.ContextCurrentUser,
+        );
+        detail.NewRecord();
+        detail.CompanyID = this.CompanyID;
+        detail.PaymentTypeID = this.InitialPaymentTypeID as string;
+        detail.ReferenceNumber = this.InitialPaymentReference;
+        if (!(await detail.Save(options))) {
+            throw new Error(
+                `Failed to record the payment reference for order ${this.OrderNumber}: ` +
+                    `${detail.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+        return detail.ID;
     }
 
     /** Duplicate a PaymentDetail so each host owns its own immutable snapshot (D39). */
