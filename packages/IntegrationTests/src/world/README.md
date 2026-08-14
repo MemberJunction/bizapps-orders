@@ -33,6 +33,10 @@ something to inherit.
 Dimensions (`DEPT`, `LOC`) and their values are world data. They are **not** attached to the links
 yet — attaching a required dimension without a matching order-line tag would refuse the confirm.
 
+Intercompany: every company that already has Due To (21900) and Due From (11900) is meshed in both
+directions — BCP ↔ HH and any leftover DEMO sellers that have those accounts. Orphan Ledger is
+left unpaired so the missing-pair refuse path stays real.
+
 ## Adding a product
 
 1. A row in `data/products.csv` (and `event-products.csv` if it is an Event).
