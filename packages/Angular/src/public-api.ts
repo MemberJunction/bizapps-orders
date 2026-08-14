@@ -48,6 +48,7 @@ export { BizAppsPriceListFormComponent } from './lib/custom/PriceList/price-list
 export { BizAppsPromotionFormComponent } from './lib/custom/Promotion/promotion-form.component';
 export { BizAppsOrderHeaderFormComponent } from './lib/custom/OrderHeader/order-header-form.component';
 export { BizAppsSubscriptionFormComponent } from './lib/custom/Subscription/subscription-form.component';
+export { BizAppsSubscriptionTermFormComponent } from './lib/custom/SubscriptionTerm/subscription-term-form.component';
 export { BizAppsPaymentHeaderFormComponent } from './lib/custom/PaymentHeader/payment-header-form.component';
 
 /** Explorer sections — the four top-level tabs of the Orders application. */

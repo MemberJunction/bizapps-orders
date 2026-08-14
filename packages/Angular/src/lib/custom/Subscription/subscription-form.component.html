@@ -9,47 +9,43 @@
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="before-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 
     <!-- ================================================================
-         HERO IDENTITY HEADER CARD & SUMMARY METRIC STRIP
+         SUBSCRIPTION HERO IDENTITY HEADER CARD
          ================================================================ -->
-    <div class="mjo-record-header-card">
-        <div class="mjo-record-header-top">
-            <div class="mjo-record-identity">
-                <div class="mjo-record-avatar">
-                    <i [class]="SubscriptionAvatarIcon"></i>
+    <div class="mjo-sub-hero-card">
+        <div class="mjo-sub-hero-main">
+            <div class="mjo-sub-avatar">
+                <i [class]="SubscriptionAvatarIcon" aria-hidden="true"></i>
+            </div>
+            <div class="mjo-sub-hero-info">
+                <div class="mjo-sub-hero-title-row">
+                    <span class="mjo-sub-number">{{ record.SubscriptionNumber || 'New Subscription' }}</span>
+                    <span [class]="StatusBadgeClass">{{ record.Status || 'Active' }}</span>
+                    <span [class]="AutoRenewBadgeClass">
+                        <i class="fa-solid fa-arrows-rotate"></i> {{ record.AutoRenew ? 'Auto-Renews' : 'Manual Renewal' }}
+                    </span>
                 </div>
-                <div class="mjo-record-title-area">
-                    <h1 class="mjo-record-title">
-                        {{ record.SubscriptionNumber || 'New Subscription' }} · {{ record.Product || 'Subscription Product' }}
-                    </h1>
-                    <div class="mjo-record-badges">
-                        <span class="mjo-entity-chip"><i class="fa-solid fa-database"></i> MJ_BizApps_Orders: Subscriptions</span>
-                        <span class="mjo-sku-badge">№ {{ record.SubscriptionNumber || '—' }}</span>
-                        @if (record.SubscriptionType) {
-                            <span class="mjo-type-chip">
-                                <i class="fa-solid fa-repeat"></i> {{ record.SubscriptionType }}
-                            </span>
-                        }
-                        <span [class]="AutoRenewBadgeClass">
-                            <i class="fa-solid fa-rotate"></i> Auto-Renew {{ record.AutoRenew ? 'ON' : 'OFF' }}
+                <div class="mjo-sub-hero-sub-row">
+                    <span class="mjo-sub-meta-item">
+                        <i class="fa-solid fa-calendar-days"></i> Coverage: <strong>{{ FormattedCoverageWindow }}</strong>
+                    </span>
+                    @if (record.CompanyID) {
+                        <span class="mjo-sub-meta-item">
+                            <i class="fa-solid fa-building"></i> {{ record.Company || record.CompanyID }}
                         </span>
-                        <span [class]="StatusBadgeClass">{{ record.Status || 'Active' }}</span>
-                    </div>
+                    }
+                    @if (record.ProductID) {
+                        <span class="mjo-sub-meta-item">
+                            <i class="fa-solid fa-cube"></i> {{ record.Product || record.ProductID }}
+                        </span>
+                    }
                 </div>
             </div>
         </div>
 
-        <!-- Quick Summary Metric Strip -->
-        <div class="mjo-record-summary-bar">
+        <!-- Stakeholders Strip -->
+        <div class="mjo-sub-hero-stats">
             <div class="mjo-stat-block">
-                <span class="mjo-stat-label">Coverage Window</span>
-                <span class="mjo-stat-val">{{ FormattedCoverageWindow }}</span>
-            </div>
-            <div class="mjo-stat-block">
-                <span class="mjo-stat-label">Product</span>
-                <span class="mjo-stat-val">{{ record.Product || '—' }}</span>
-            </div>
-            <div class="mjo-stat-block">
-                <span class="mjo-stat-label">Holder (Payer / Org)</span>
+                <span class="mjo-stat-label">Holder (Payer)</span>
                 <span class="mjo-stat-val">{{ HolderDisplayName }}</span>
             </div>
             <div class="mjo-stat-block">
@@ -58,347 +54,478 @@
             </div>
             <div class="mjo-stat-block">
                 <span class="mjo-stat-label">Coverage Terms</span>
-                <span class="mjo-stat-val">{{ GetSectionRowCount('mJBizAppsOrdersSubscriptionTerms') || 0 }} Cycles Appended</span>
+                <span class="mjo-stat-val">{{ SubscriptionTerms.length || GetSectionRowCount('mJBizAppsOrdersSubscriptionTerms') || 0 }} Cycles Appended</span>
             </div>
         </div>
     </div>
 
-    <!-- ========================================
-         1. COVERAGE TERMS & CYCLES (PRIMARY VIEW)
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersSubscriptionTerms"
-        SectionName="Coverage Terms &amp; Cycles"
-        Icon="fa fa-calendar-check"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionTerms')"
-        [DefaultExpanded]="true">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Terms','SubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Terms')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionTerms')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionTerms', $event.totalRowCount)">
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
+    <!-- ================================================================
+         TWO-COLUMN RESPONSIVE WORKSPACE: LEFT NAV + ACTIVE PANE
+         ================================================================ -->
+    <div class="mjo-sub-workspace">
 
-    <!-- ========================================
-         2. STAKEHOLDERS & BENEFIT ASSIGNMENT
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="stakeholders"
-        SectionName="Stakeholders &amp; Benefit Assignment"
-        Icon="fa fa-users"
-        [Form]="this"
-        [FormContext]="formContext">
+        <!-- RESPONSIVE LEFT NAVIGATION RAIL -->
+        <aside class="mjo-sub-left-nav" role="navigation" aria-label="Subscription workspace sections">
+            <div class="mjo-nav-group-title">Subscription Cycles</div>
 
-        <div class="mjo-info-banner">
-            <i class="fa-solid fa-user-group" aria-hidden="true"></i>
-            <div>
-                <strong>Holder and Beneficiary are separated by design:</strong> The <em>Holder</em> owns and finances the subscription, while the <em>Beneficiary</em> holds the entitlement rights. This distinction governs duplicate prevention and concurrency checks.
-            </div>
-        </div>
-
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="HolderOrganizationID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="BeneficiaryPersonID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-    </mj-collapsible-panel>
-
-    <!-- ========================================
-         3. RENEWAL & LIFECYCLE SETTINGS
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="renewalAndLifecycle"
-        SectionName="Renewal &amp; Lifecycle Settings"
-        Icon="fa fa-redo"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="AutoRenew"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="RenewalLeadDays"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="StartDate"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="EndDate"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="TrialEndDate"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CanceledAt"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="MigratesFromSubscriptionID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="MigratesToSubscriptionID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-    </mj-collapsible-panel>
-
-    <!-- ========================================
-         4. GRANTED ENTITLEMENTS (RELATED GRID)
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersEntitlementGrants"
-        SectionName="Granted Entitlements"
-        Icon="fa fa-key"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersEntitlementGrants')"
-        [DefaultExpanded]="true">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Grants','SubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Grants')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersEntitlementGrants')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersEntitlementGrants', $event.totalRowCount)">
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- ========================================
-         5. DEFERRED REVENUE & REV-REC SCHEDULE
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="accountingAndJournalEntries"
-        SectionName="Deferred Revenue &amp; Rev-Rec Schedule"
-        Icon="fa fa-chart-waterfall"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="RevRecJournalEntries.length"
-        [DefaultExpanded]="true">
-        @if (record.IsSaved) {
-            <div style="margin-bottom: var(--mj-space-3, 12px); display: flex; align-items: center; justify-content: space-between;">
-                <div style="display: flex; gap: 6px;">
-                    <button type="button" class="mjo-toggle-btn" [class.mjo-toggle-btn--active]="ActiveAccountingView === 'waterfall'" (click)="ActiveAccountingView = 'waterfall'">
-                        <i class="fa-solid fa-chart-line"></i> Rev-Rec Waterfall Schedule
-                    </button>
-                    <button type="button" class="mjo-toggle-btn" [class.mjo-toggle-btn--active]="ActiveAccountingView === 'grid'" (click)="ActiveAccountingView = 'grid'">
-                        <i class="fa-solid fa-table"></i> All Journal Entries
-                    </button>
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'terms'" (click)="SelectPane('terms')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-calendar-check"></i>
+                    <span>Coverage Terms</span>
                 </div>
-            </div>
+                @if (SubscriptionTerms.length > 0) {
+                    <span class="mjo-nav-badge">{{ SubscriptionTerms.length }}</span>
+                }
+            </button>
 
-            @if (ActiveAccountingView === 'waterfall') {
-                <mj-deferred-revenue-waterfall
-                    [JournalEntries]="RevRecJournalEntries"
-                    [Title]="'Subscription Deferred Revenue Waterfall'"
-                    (JournalEntrySelected)="OnJournalEntrySelected($event)">
-                </mj-deferred-revenue-waterfall>
-            } @else if (SubscriptionJournalEntryParams) {
-                <div>
-                    <mj-explorer-entity-data-grid
-                        [Params]="SubscriptionJournalEntryParams"
-                        [AllowLoad]="true"
-                        [ShowToolbar]="false"
-                        (Navigate)="OnFormNavigate($event)"
-                        (AfterDataLoad)="SetSectionRowCount('accountingAndJournalEntries', $event.totalRowCount)">
-                    </mj-explorer-entity-data-grid>
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'revRec'" (click)="SelectPane('revRec')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-chart-waterfall"></i>
+                    <span>Deferred Revenue &amp; Rev-Rec</span>
+                </div>
+                @if (RevRecJournalEntries.length > 0) {
+                    <span class="mjo-nav-badge mjo-nav-badge--info">{{ RevRecJournalEntries.length }}</span>
+                }
+            </button>
+
+            <div class="mjo-nav-group-title">Contract &amp; Stakeholders</div>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'stakeholders'" (click)="SelectPane('stakeholders')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-users"></i>
+                    <span>Stakeholders &amp; Assignment</span>
+                </div>
+            </button>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'renewal'" (click)="SelectPane('renewal')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span>Renewal &amp; Lifecycle</span>
+                </div>
+            </button>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'entitlements'" (click)="SelectPane('entitlements')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-key"></i>
+                    <span>Granted Entitlements</span>
+                </div>
+            </button>
+
+            <div class="mjo-nav-group-title">Context &amp; Audit</div>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'details'" (click)="SelectPane('details')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-cube"></i>
+                    <span>Subscription Details</span>
+                </div>
+            </button>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'events'" (click)="SelectPane('events')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-history"></i>
+                    <span>Subscription Events Log</span>
+                </div>
+            </button>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'systemMetadata'" (click)="SelectPane('systemMetadata')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-shield-alt"></i>
+                    <span>System Metadata</span>
+                </div>
+            </button>
+        </aside>
+
+        <!-- MAIN WORKSPACE CONTENT PANE -->
+        <main class="mjo-sub-workspace-content">
+
+            <!-- PANE 1: COVERAGE TERMS & CYCLES -->
+            @if (ActivePane === 'terms') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-calendar-check"></i> Coverage Terms &amp; Cycles</h2>
+                            <p class="mjo-pane-desc">Contiguous subscription coverage periods, renewal milestones, term pricing, and proration.</p>
+                        </div>
+                        <div class="mjo-toggle-strip">
+                            <button type="button" class="mjo-toggle-btn" [class.mjo-toggle-btn--active]="TermsViewMode === 'cards'" (click)="TermsViewMode = 'cards'">
+                                <i class="fa-solid fa-layer-group"></i> Visual Deck
+                            </button>
+                            <button type="button" class="mjo-toggle-btn" [class.mjo-toggle-btn--active]="TermsViewMode === 'grid'" (click)="TermsViewMode = 'grid'">
+                                <i class="fa-solid fa-table"></i> Data Grid
+                            </button>
+                        </div>
+                    </div>
+
+                    @if (TermsViewMode === 'cards') {
+                        @if (SubscriptionTerms.length === 0) {
+                            <div class="mjo-empty-state">
+                                <i class="fa-solid fa-calendar-xmark"></i>
+                                <span>No coverage terms materialized yet for this subscription.</span>
+                            </div>
+                        } @else {
+                            <div class="mjo-terms-deck-grid">
+                                @for (term of SubscriptionTerms; track term.ID; let i = $index) {
+                                    <div class="mjo-term-card">
+                                        <div class="mjo-term-card-head">
+                                            <div class="mjo-term-pill" [ngClass]="GetTermBadgeClass(i)">
+                                                <i class="fa-solid fa-circle-dot"></i> Term {{ term.TermNumber || (i + 1) }}
+                                            </div>
+                                            <div class="mjo-term-badges">
+                                                <span [class]="GetTermStatusClass(term.Status)">{{ term.Status || 'Active' }}</span>
+                                                @if (term.IsProrated) {
+                                                    <span class="mjo-prorated-chip">
+                                                        <i class="fa-solid fa-percent"></i> {{ term.ProrationFactor ? (term.ProrationFactor * 100).toFixed(0) + '%' : 'Prorated' }}
+                                                    </span>
+                                                }
+                                            </div>
+                                        </div>
+
+                                        <div class="mjo-term-amount">
+                                            {{ FormatMoney(term.Amount) }}
+                                        </div>
+
+                                        <div class="mjo-term-dates">
+                                            <i class="fa-regular fa-calendar"></i>
+                                            <span>{{ FormatDateRange(term.StartDate, term.EndDate) }}</span>
+                                        </div>
+
+                                        <div class="mjo-term-actions">
+                                            <button type="button" class="mjo-open-term-btn" (click)="OnOpenTerm(term)">
+                                                <span>View Term Details &amp; Waterfall</span>
+                                                <i class="fa-solid fa-arrow-right"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    } @else {
+                        <div class="mjo-grid-pane">
+                            <mj-explorer-entity-data-grid
+                                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Terms','SubscriptionID')"
+                                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Terms')"
+                                [AllowLoad]="true"
+                                [ShowToolbar]="false"
+                                (Navigate)="OnFormNavigate($event)"
+                                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionTerms', $event.totalRowCount)">
+                            </mj-explorer-entity-data-grid>
+                        </div>
+                    }
                 </div>
             }
-        }
-    </mj-collapsible-panel>
 
-    <!-- ========================================
-         6. SUBSCRIPTION DETAILS & ENTITY LINKS
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="subscriptionDetails"
-        SectionName="Subscription Details &amp; Entity Links"
-        Icon="fa fa-info-circle"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="SubscriptionNumber"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProductID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="SubscriptionTypeID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="CompanyID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="OrderLineID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-    </mj-collapsible-panel>
+            <!-- PANE 2: DEFERRED REVENUE & REV-REC SCHEDULE -->
+            @if (ActivePane === 'revRec') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-chart-waterfall"></i> Deferred Revenue &amp; Rev-Rec Schedule</h2>
+                            <p class="mjo-pane-desc">ASC 606 recognition rollforward schedules across all active and historical terms.</p>
+                        </div>
+                        <div class="mjo-toggle-strip">
+                            <button type="button" class="mjo-toggle-btn" [class.mjo-toggle-btn--active]="ActiveAccountingView === 'waterfall'" (click)="ActiveAccountingView = 'waterfall'">
+                                <i class="fa-solid fa-chart-line"></i> Waterfall Schedule
+                            </button>
+                            <button type="button" class="mjo-toggle-btn" [class.mjo-toggle-btn--active]="ActiveAccountingView === 'grid'" (click)="ActiveAccountingView = 'grid'">
+                                <i class="fa-solid fa-table"></i> All Journal Entries
+                            </button>
+                        </div>
+                    </div>
 
-    <!-- ========================================
-         7. SUBSCRIPTION EVENTS LOG
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersSubscriptionEvents"
-        SectionName="Subscription Events Log"
-        Icon="fa fa-history"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionEvents')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Events','SubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Events')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionEvents')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionEvents', $event.totalRowCount)">
-            </mj-explorer-entity-data-grid>
-        </div>
-        }
-    </mj-collapsible-panel>
+                    @if (ActiveAccountingView === 'waterfall') {
+                        <mj-deferred-revenue-waterfall
+                            [JournalEntries]="RevRecJournalEntries"
+                            [Title]="'Subscription Deferred Revenue Waterfall'"
+                            [TermLookup]="SubscriptionTermLookup"
+                            (JournalEntrySelected)="OnJournalEntrySelected($event)">
+                        </mj-deferred-revenue-waterfall>
+                    } @else if (SubscriptionJournalEntryParams) {
+                        <div class="mjo-grid-pane">
+                            <mj-explorer-entity-data-grid
+                                [Params]="SubscriptionJournalEntryParams"
+                                [AllowLoad]="true"
+                                [ShowToolbar]="false"
+                                (Navigate)="OnFormNavigate($event)">
+                            </mj-explorer-entity-data-grid>
+                        </div>
+                    }
+                </div>
+            }
 
-    <!-- ========================================
-         8. SYSTEM METADATA
-         ======================================== -->
-    @if (!EditMode) {
-    <mj-collapsible-panel
-        SectionKey="systemMetadata"
-        SectionName="System Metadata"
-        Icon="fa fa-database"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ID"
-            Type="textbox"
-            [EditMode]="false"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="__mj_CreatedAt"
-            Type="textbox"
-            [EditMode]="false"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="__mj_UpdatedAt"
-            Type="textbox"
-            [EditMode]="false"
-            [FormContext]="formContext"
-        ></mj-form-field>
-    </mj-collapsible-panel>
-    }
+            <!-- PANE 3: STAKEHOLDERS & BENEFIT ASSIGNMENT -->
+            @if (ActivePane === 'stakeholders') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-users"></i> Stakeholders &amp; Benefit Assignment</h2>
+                            <p class="mjo-pane-desc">Separation between paying owner entity and beneficiary end-user.</p>
+                        </div>
+                    </div>
 
-    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+                    <div class="mjo-info-banner">
+                        <i class="fa-solid fa-user-group" aria-hidden="true"></i>
+                        <div>
+                            <strong>Holder and Beneficiary are separated by design:</strong> The <em>Holder</em> owns and finances the subscription, while the <em>Beneficiary</em> holds the entitlement rights. This distinction governs duplicate prevention and concurrency checks.
+                        </div>
+                    </div>
 
+                    <div class="mjo-fields-grid">
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="HolderOrganizationID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            LinkType="Record"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="BeneficiaryPersonID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            LinkType="Record"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                    </div>
+                </div>
+            }
+
+            <!-- PANE 4: RENEWAL & LIFECYCLE SETTINGS -->
+            @if (ActivePane === 'renewal') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-arrows-rotate"></i> Renewal &amp; Lifecycle Settings</h2>
+                            <p class="mjo-pane-desc">Automatic renewal rules, lead days, migration chaining, and cancellation dates.</p>
+                        </div>
+                    </div>
+
+                    <div class="mjo-fields-grid">
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="AutoRenew"
+                            Type="checkbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="RenewalLeadDays"
+                            Type="number"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="StartDate"
+                            Type="datepicker"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="EndDate"
+                            Type="datepicker"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="CanceledAt"
+                            Type="datepicker"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="MigratesFromSubscriptionID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            LinkType="Record"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="MigratesToSubscriptionID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            LinkType="Record"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                    </div>
+                </div>
+            }
+
+            <!-- PANE 5: GRANTED ENTITLEMENTS -->
+            @if (ActivePane === 'entitlements') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-key"></i> Granted Entitlements</h2>
+                            <p class="mjo-pane-desc">Software permissions, license keys, and seats granted by this subscription.</p>
+                        </div>
+                    </div>
+
+                    <div class="mjo-grid-pane">
+                        <mj-explorer-entity-data-grid
+                            [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Grants','SubscriptionID')"
+                            [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Grants')"
+                            [AllowLoad]="true"
+                            [ShowToolbar]="false"
+                            (Navigate)="OnFormNavigate($event)">
+                        </mj-explorer-entity-data-grid>
+                    </div>
+                </div>
+            }
+
+            <!-- PANE 6: SUBSCRIPTION DETAILS & ENTITY LINKS -->
+            @if (ActivePane === 'details') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-cube"></i> Subscription Details &amp; Entity Links</h2>
+                            <p class="mjo-pane-desc">Product catalog link, Company owner, and originating Order Line ID.</p>
+                        </div>
+                    </div>
+
+                    <div class="mjo-fields-grid">
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="ProductID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            LinkType="Record"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="CompanyID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            LinkType="Record"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="OrderLineID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            LinkType="Record"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="Status"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="SubscriptionNumber"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                    </div>
+                </div>
+            }
+
+            <!-- PANE 7: SUBSCRIPTION EVENTS LOG -->
+            @if (ActivePane === 'events') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-history"></i> Subscription Events Log</h2>
+                            <p class="mjo-pane-desc">Complete immutable audit trail of subscription transitions, renewals, and lifecycle events.</p>
+                        </div>
+                    </div>
+
+                    <div class="mjo-grid-pane">
+                        <mj-explorer-entity-data-grid
+                            [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Events','SubscriptionID')"
+                            [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Events')"
+                            [AllowLoad]="true"
+                            [ShowToolbar]="false"
+                            (Navigate)="OnFormNavigate($event)">
+                        </mj-explorer-entity-data-grid>
+                    </div>
+                </div>
+            }
+
+            <!-- PANE 8: SYSTEM METADATA -->
+            @if (ActivePane === 'systemMetadata') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-shield-alt"></i> System Metadata</h2>
+                            <p class="mjo-pane-desc">System identifiers, schema integrity, and database timestamps.</p>
+                        </div>
+                    </div>
+
+                    <div class="mjo-fields-grid">
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="ID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="__mj_CreatedAt"
+                            Type="datepicker"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="__mj_UpdatedAt"
+                            Type="datepicker"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                    </div>
+                </div>
+            }
+
+        </main>
+    </div>
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 </mj-record-form-container>
 }

@@ -361,7 +361,25 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             }, new Metadata().CurrentUser);
 
             if (jeRes.Success && jeRes.Results) {
-                this.RevRecJournalEntries = jeRes.Results;
+                await Promise.all(
+                    jeRes.Results.map(async (je) => {
+                        try {
+                            if (je.Lines && typeof je.Lines.Load === 'function') {
+                                await je.Lines.Load();
+                            }
+                        } catch {
+                            // ignore line load error
+                        }
+                    })
+                );
+
+                const recognitionEntries = jeRes.Results.filter(je => {
+                    const desc = (je.Description || '').toLowerCase();
+                    const typeStr = (je.EntryType || '').toLowerCase();
+                    return desc.includes('recognize') || typeStr.includes('recognition');
+                });
+
+                this.RevRecJournalEntries = recognitionEntries.length > 0 ? recognitionEntries : jeRes.Results;
             }
         } catch {
             this.RevRecJournalEntries = [];

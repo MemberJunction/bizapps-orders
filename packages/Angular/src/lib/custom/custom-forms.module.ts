@@ -26,6 +26,7 @@ import { BizAppsPromotionFormComponent, LoadPromotionFormComponent } from './Pro
 import { BizAppsOrderHeaderFormComponent, LoadOrderHeaderFormComponent } from './OrderHeader/order-header-form.component';
 import { MJOOrderLinesEditorComponent } from './OrderHeader/order-lines-editor.component';
 import { BizAppsSubscriptionFormComponent, LoadSubscriptionFormComponent } from './Subscription/subscription-form.component';
+import { BizAppsSubscriptionTermFormComponent, LoadSubscriptionTermFormComponent } from './SubscriptionTerm/subscription-term-form.component';
 import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } from './PaymentHeader/payment-header-form.component';
 
 @NgModule({
@@ -40,6 +41,7 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
         BizAppsPromotionFormComponent,
         BizAppsOrderHeaderFormComponent,
         BizAppsSubscriptionFormComponent,
+        BizAppsSubscriptionTermFormComponent,
         BizAppsPaymentHeaderFormComponent,
     ],
     imports: [
@@ -64,6 +66,7 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
         BizAppsPromotionFormComponent,
         BizAppsOrderHeaderFormComponent,
         BizAppsSubscriptionFormComponent,
+        BizAppsSubscriptionTermFormComponent,
         BizAppsPaymentHeaderFormComponent,
     ],
 })
@@ -76,5 +79,6 @@ export function LoadCustomForms(): void {
     LoadPromotionFormComponent();
     LoadOrderHeaderFormComponent();
     LoadSubscriptionFormComponent();
+    LoadSubscriptionTermFormComponent();
     LoadPaymentHeaderFormComponent();
 }
