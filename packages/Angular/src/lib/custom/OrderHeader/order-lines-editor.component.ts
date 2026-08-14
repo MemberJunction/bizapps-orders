@@ -9,11 +9,10 @@ import {
     type BaseEntityEvent,
     type IMetadataProvider,
 } from '@memberjunction/core';
-import { UserInfoEngine } from '@memberjunction/core-entities';
 import { UUIDsEqual } from '@memberjunction/global';
 import {
+    BaseFormComponent,
     BaseFormsModule,
-    DIALOG_FORM_CONFIG,
     type EntityFormConfig,
     type FormNavigationEvent,
 } from '@memberjunction/ng-base-forms';
@@ -28,14 +27,10 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 import { GetCatalogOptions, type MJOProductOption } from '../../data/orders-queries';
 import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 import {
-    ExtensionEntityLabel,
-    SimpleExtensionFields,
-    type LineExtensionField,
+    ExtensionCollapsedHint,
+    ExtensionToggleLabel,
 } from './line-extension-fields';
-
-export type LineExtensionMode = 'simple' | 'extended';
-
-const EXTENSION_MODE_SETTING = 'mj.orders.orderLine.extensionMode';
+import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
 
 /**
  * Inline catalog picker + line cards for an order header.
@@ -43,6 +38,8 @@ const EXTENSION_MODE_SETTING = 'mj.orders.orderLine.extensionMode';
  * Lines are `Order.Lines.Create()` children — or, when the product type
  * declares an `OrderLineExtensionEntity`, the IS-A child is created and its
  * parent is added to `Lines`. The leaf is saved after the header graph save.
+ * The extension form is embedded without Simple/Extended chrome. Newly added
+ * lines start expanded; existing lines stay collapsed behind a disclosure.
  */
 @Component({
     standalone: true,
@@ -65,6 +62,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     private _order: OrderHeaderEntity | null = null;
     private saveSub: Subscription | null = null;
     private readonly extensions = new Map<string, BaseEntity>();
+    private readonly expandedLineIds = new Set<string>();
 
     @Input() public Provider: IMetadataProvider | null = null;
     @Input() public EditMode = true;
@@ -89,13 +87,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public PickerOpen = false;
     public CatalogError: string | null = null;
     public ExtensionError: string | null = null;
-    public ExtensionMode: LineExtensionMode = readExtensionMode();
-
-    public readonly ExtensionFormConfig: EntityFormConfig = {
-        ...DIALOG_FORM_CONFIG,
-        EnableRecordLinks: false,
-        CollapsibleSections: true,
-    };
 
     public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
         return [...(this._order?.Lines.Items ?? [])];
@@ -147,7 +138,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public async AddProduct(product: MJOProductOption): Promise<void> {
-        if (!this._order) return;
+        if (!this.EditMode || !this._order) return;
         if (product.OrderLineExtensionEntity) {
             await this.addExtendedLine(product);
         } else {
@@ -161,11 +152,13 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public Bump(line: mjBizAppsOrdersOrderLineEntity, delta: number): void {
+        if (!this.EditMode) return;
         line.Quantity = Math.max(1, Number(line.Quantity ?? 0) + delta);
         this.schedulePricing();
     }
 
     public SetQuantity(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode) return;
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) return;
         const n = Number.parseFloat(target.value);
@@ -174,7 +167,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (!this.EditMode) return;
         this.extensions.delete(line.ID);
+        this.expandedLineIds.delete(line.ID);
         this._order?.Lines.Remove(line);
         this.schedulePricing();
     }
@@ -202,26 +197,34 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.Navigate.emit(event);
     }
 
+    public OnExtensionFormCreated(form: BaseFormComponent): void {
+        form.showEmptyFields = true;
+        this.cdr.detectChanges();
+    }
+
     public ExtensionFor(line: mjBizAppsOrdersOrderLineEntity): BaseEntity | null {
         return this.extensions.get(line.ID) ?? null;
     }
 
-    public ExtensionLabelFor(line: mjBizAppsOrdersOrderLineEntity): string {
-        const name =
-            this.ExtensionFor(line)?.EntityInfo.Name ??
-            this.ProductFor(line)?.OrderLineExtensionEntity ??
-            '';
-        return ExtensionEntityLabel(name);
+    public ExtensionFormConfigFor(line: mjBizAppsOrdersOrderLineEntity): EntityFormConfig {
+        return CachedExtensionFormConfig(this.extensionEntityName(line));
     }
 
-    public SimpleFieldsFor(line: mjBizAppsOrdersOrderLineEntity): LineExtensionField[] {
-        const ext = this.ExtensionFor(line);
-        return ext ? SimpleExtensionFields(ext) : [];
+    public IsExtensionOpen(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.expandedLineIds.has(line.ID);
     }
 
-    public SetExtensionMode(mode: LineExtensionMode): void {
-        this.ExtensionMode = mode;
-        UserInfoEngine.Instance.SetSettingDebounced(EXTENSION_MODE_SETTING, mode);
+    public ToggleExtension(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (this.expandedLineIds.has(line.ID)) this.expandedLineIds.delete(line.ID);
+        else this.expandedLineIds.add(line.ID);
+    }
+
+    public ExtensionLabel(line: mjBizAppsOrdersOrderLineEntity): string {
+        return ExtensionToggleLabel(this.extensionEntityName(line));
+    }
+
+    public ExtensionHint(line: mjBizAppsOrdersOrderLineEntity): string {
+        return ExtensionCollapsedHint(this.extensionEntityName(line));
     }
 
     public ngOnDestroy(): void {
@@ -255,6 +258,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     private unbindOrder(): void {
         this.saveSub?.unsubscribe();
         this.saveSub = null;
+        this.expandedLineIds.clear();
+        this.extensions.clear();
     }
 
     private async addPlainLine(product: MJOProductOption): Promise<void> {
@@ -266,6 +271,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     private async addExtendedLine(product: MJOProductOption): Promise<void> {
         if (!this._order || !product.OrderLineExtensionEntity) return;
+        CachedExtensionEntityInfo(this.metadata, product.OrderLineExtensionEntity);
         const ext = await this.metadata.GetEntityObject(
             product.OrderLineExtensionEntity,
             this.metadata.CurrentUser,
@@ -280,6 +286,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         parent.Quantity = 1;
         this._order.Lines.Add(parent);
         this.extensions.set(parent.ID, ext);
+        this.expandedLineIds.add(parent.ID);
     }
 
     private async hydrateExtensions(): Promise<void> {
@@ -300,15 +307,13 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     private async loadExtensionFor(line: mjBizAppsOrdersOrderLineEntity): Promise<BaseEntity | null> {
         const extName = this.ProductFor(line)?.OrderLineExtensionEntity;
         if (!extName) return null;
+        CachedExtensionEntityInfo(this.metadata, extName);
         if (line.ISAChild?.EntityInfo.Name === extName) return line.ISAChild;
         if (!line.IsSaved) return null;
 
         const ext = await this.metadata.GetEntityObject(extName, this.metadata.CurrentUser);
         if (await ext.InnerLoad(CompositeKey.FromID(line.ID))) return ext;
 
-        // Child row is missing. NewRecord would also NewRecord the parent and try
-        // to INSERT the Order Line again — hydrate the parent from the line we
-        // already have so the later leaf save is an UPDATE + child INSERT.
         ext.NewRecord(new FieldValueCollection([{ FieldName: 'ID', Value: line.ID }]));
         const parent = ext.ISAParent;
         if (parent) {
@@ -327,6 +332,14 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             }
         }
         this.cdr.detectChanges();
+    }
+
+    private extensionEntityName(line: mjBizAppsOrdersOrderLineEntity): string {
+        return (
+            this.ExtensionFor(line)?.EntityInfo.Name ??
+            this.ProductFor(line)?.OrderLineExtensionEntity ??
+            ''
+        );
     }
 
     private async loadCatalog(): Promise<void> {
@@ -351,12 +364,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
 function isOrderLine(entity: BaseEntity | null): entity is mjBizAppsOrdersOrderLineEntity {
     return entity != null && entity.EntityInfo.Name === MJO_ENTITIES.OrderLine;
-}
-
-function readExtensionMode(): LineExtensionMode {
-    return UserInfoEngine.Instance.GetSetting(EXTENSION_MODE_SETTING) === 'extended'
-        ? 'extended'
-        : 'simple';
 }
 
 function isSuccessfulSaveEvent(

@@ -14,13 +14,17 @@
                     </div>
                 </div>
 
-                <div class="mjo-ol-qty">
-                    <button type="button" (click)="Bump(line, -1)" aria-label="Decrease quantity">−</button>
-                    <input
-                        [value]="line.Quantity"
-                        (change)="SetQuantity(line, $event)"
-                        aria-label="Quantity">
-                    <button type="button" (click)="Bump(line, 1)" aria-label="Increase quantity">+</button>
+                <div class="mjo-ol-qty" [class.is-locked]="!EditMode">
+                    @if (EditMode) {
+                        <button type="button" (click)="Bump(line, -1)" aria-label="Decrease quantity">−</button>
+                        <input
+                            [value]="line.Quantity"
+                            (change)="SetQuantity(line, $event)"
+                            aria-label="Quantity">
+                        <button type="button" (click)="Bump(line, 1)" aria-label="Increase quantity">+</button>
+                    } @else {
+                        <span class="mjo-ol-qty__value">{{ line.Quantity }}</span>
+                    }
                 </div>
 
                 <div class="mjo-ol-card__price">
@@ -36,13 +40,15 @@
 
                 <div class="mjo-ol-card__tot">{{ PricedLine(line)?.NetAmount | mjoMoney }}</div>
 
-                <button
-                    type="button"
-                    class="mjo-ol-iconbtn"
-                    (click)="Remove(line)"
-                    [attr.aria-label]="'Remove ' + (ProductFor(line)?.Name ?? 'line')">
-                    <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
-                </button>
+                @if (EditMode) {
+                    <button
+                        type="button"
+                        class="mjo-ol-iconbtn"
+                        (click)="Remove(line)"
+                        [attr.aria-label]="'Remove ' + (ProductFor(line)?.Name ?? 'line')">
+                        <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                    </button>
+                }
             </div>
 
             <div class="mjo-ol-card__conseq">
@@ -60,62 +66,34 @@
             </div>
 
             @if (ExtensionFor(line); as ext) {
-                <div class="mjo-ol-ext">
-                    <div class="mjo-ol-ext__bar">
-                        <span class="mjo-ol-ext__label">
-                            <i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i>
-                            {{ ExtensionLabelFor(line) }}
-                        </span>
-                        <div class="mjo-ol-ext__modes" role="group" aria-label="Line extension mode">
-                            <button
-                                type="button"
-                                class="mjo-ol-mode"
-                                [class.is-on]="ExtensionMode === 'simple'"
-                                (click)="SetExtensionMode('simple')">
-                                Simple
-                            </button>
-                            <button
-                                type="button"
-                                class="mjo-ol-mode"
-                                [class.is-on]="ExtensionMode === 'extended'"
-                                (click)="SetExtensionMode('extended')">
-                                Extended
-                            </button>
-                        </div>
-                    </div>
-
-                    @if (ExtensionMode === 'simple') {
-                        @if (SimpleFieldsFor(line).length === 0) {
-                            <div class="mjo-ol-ext__empty">
-                                Nothing required for this product type — switch to Extended for optional details.
-                            </div>
-                        } @else {
-                            <div class="mjo-ol-ext__fields">
-                                @for (field of SimpleFieldsFor(line); track field.Name) {
-                                    <div class="mjo-ol-ext__field">
-                                        <mj-form-field
-                                            [Record]="ext"
-                                            [ShowLabel]="true"
-                                            [FieldName]="field.Name"
-                                            [Type]="field.Type"
-                                            [LinkType]="field.LinkType"
-                                            [EditMode]="EditMode"
-                                            (Navigate)="OnExtensionNavigate($event)">
-                                        </mj-form-field>
-                                    </div>
-                                }
-                            </div>
+                <div class="mjo-ol-ext" [class.is-open]="IsExtensionOpen(line)">
+                    <button
+                        type="button"
+                        class="mjo-ol-ext__toggle"
+                        (click)="ToggleExtension(line)"
+                        [attr.aria-expanded]="IsExtensionOpen(line)"
+                        [attr.aria-controls]="'mjo-ol-ext-' + line.ID">
+                        <i class="fa-solid fa-chevron-right mjo-ol-ext__chev" aria-hidden="true"></i>
+                        <span class="mjo-ol-ext__label">{{ ExtensionLabel(line) }}</span>
+                        @if (!IsExtensionOpen(line)) {
+                            <span class="mjo-ol-ext__hint">{{ ExtensionHint(line) }}</span>
                         }
-                    } @else {
-                        <div class="mjo-ol-ext__embed">
+                    </button>
+                    <div
+                        class="mjo-ol-ext__body"
+                        [id]="'mjo-ol-ext-' + line.ID"
+                        [attr.inert]="IsExtensionOpen(line) ? null : ''"
+                        [attr.aria-hidden]="!IsExtensionOpen(line)">
+                        <div class="mjo-ol-ext__clip">
                             <mj-entity-form-host
                                 [Record]="ext"
                                 [EditMode]="EditMode"
-                                [Config]="ExtensionFormConfig"
+                                [Config]="ExtensionFormConfigFor(line)"
+                                (FormCreated)="OnExtensionFormCreated($event)"
                                 (Navigate)="OnExtensionNavigate($event)">
                             </mj-entity-form-host>
                         </div>
-                    }
+                    </div>
                 </div>
             }
         </div>
@@ -131,6 +109,7 @@
         <div class="mjo-ol-ext-err">{{ ExtensionError }}</div>
     }
 
+    @if (EditMode) {
     <div class="mj-typeahead mjo-ol-picker">
         <div class="mjo-search">
             <i class="fa-solid fa-plus" aria-hidden="true"></i>
@@ -177,4 +156,5 @@
             </div>
         }
     </div>
+    }
 </div>

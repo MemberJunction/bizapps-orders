@@ -1055,7 +1055,22 @@ export function CatalogOptionFrom(
  * order taker the item is free. The engine still resolves the real price on
  * the line.
  */
+let catalogCache: MJOProductOption[] | null = null;
+let catalogLoad: Promise<MJOProductOption[]> | null = null;
+
+/** Catalog picker rows, loaded once per session. */
 export async function GetCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
+    if (catalogCache) return catalogCache;
+    if (catalogLoad) return catalogLoad;
+    catalogLoad = loadCatalogOptions(user).then((rows) => {
+        catalogCache = rows;
+        catalogLoad = null;
+        return rows;
+    });
+    return catalogLoad;
+}
+
+async function loadCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
     const [products, prices, types] = await Promise.all([
         GetProducts({ MaxRows: 500, User: user }),
         GetProductPrices(user),

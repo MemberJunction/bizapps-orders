@@ -92,6 +92,29 @@ export function ExtensionEntityLabel(entityName: string): string {
     return colon >= 0 ? trimmed.slice(colon + 1).trim() : trimmed;
 }
 
+/**
+ * Toggle caption on a line card: "Event Order Lines" → "Event details".
+ * Generic extension entities keep a "details" suffix so the control reads
+ * as a disclosure, not as a second product name.
+ */
+export function ExtensionToggleLabel(entityName: string): string {
+    const label = ExtensionEntityLabel(entityName);
+    const withoutLines = label.replace(/\s*Order Lines\s*$/i, '').trim();
+    return withoutLines ? `${withoutLines} details` : 'Details';
+}
+
+/** One-line hint shown on a collapsed extension toggle. */
+export function ExtensionCollapsedHint(entityName: string): string {
+    const label = ExtensionEntityLabel(entityName).toLowerCase();
+    if (label.includes('event')) return 'Person · dietary · notes';
+    return 'More';
+}
+
+/** New lines start open; existing (already persisted) lines stay collapsed. */
+export function ShouldAutoExpandExtension(isNewLine: boolean): boolean {
+    return isNewLine;
+}
+
 /** `<mj-form-field>` Type for a SQL / value-list field. */
 export function FormTypeForField(field: ExtensionFieldSource): LineExtensionFieldType {
     const valueList = (field.ValueListType ?? '').toLowerCase();

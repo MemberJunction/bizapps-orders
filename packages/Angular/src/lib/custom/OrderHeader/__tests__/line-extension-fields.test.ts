@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+    ExtensionCollapsedHint,
     ExtensionEntityLabel,
+    ExtensionToggleLabel,
     FormTypeForField,
     LinkTypeForField,
     SelectSimpleExtensionFields,
+    ShouldAutoExpandExtension,
     type ExtensionFieldSource,
 } from '../line-extension-fields';
 
@@ -95,5 +98,27 @@ describe('ExtensionEntityLabel', () => {
     it('strips the schema prefix', () => {
         expect(ExtensionEntityLabel('MJ_BizApps_Orders: Event Order Lines')).toBe('Event Order Lines');
         expect(ExtensionEntityLabel('Event Order Lines')).toBe('Event Order Lines');
+    });
+});
+
+describe('ExtensionToggleLabel', () => {
+    it('turns an Order Lines entity name into a details caption', () => {
+        expect(ExtensionToggleLabel('MJ_BizApps_Orders: Event Order Lines')).toBe('Event details');
+        expect(ExtensionToggleLabel('Subscription Order Lines')).toBe('Subscription details');
+        expect(ExtensionToggleLabel('Seat Assignment')).toBe('Seat Assignment details');
+    });
+});
+
+describe('ExtensionCollapsedHint', () => {
+    it('names the event organizer fields on event lines', () => {
+        expect(ExtensionCollapsedHint('MJ_BizApps_Orders: Event Order Lines')).toBe('Person · dietary · notes');
+        expect(ExtensionCollapsedHint('Something Else')).toBe('More');
+    });
+});
+
+describe('ShouldAutoExpandExtension', () => {
+    it('opens only a newly added line', () => {
+        expect(ShouldAutoExpandExtension(true)).toBe(true);
+        expect(ShouldAutoExpandExtension(false)).toBe(false);
     });
 });

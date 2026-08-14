@@ -82,4 +82,26 @@ describe('order header link wiring', () => {
         expect(header).not.toContain('href="#"');
         expect(lines).not.toContain('href="#"');
     });
+
+    it('gates quantity, remove, picker and the extension form on the order EditMode', () => {
+        const lines = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),
+            'utf8',
+        );
+        expect(lines).toContain('[class.is-locked]="!EditMode"');
+        expect(lines).toContain('@if (EditMode)');
+        expect(lines).toContain('[EditMode]="EditMode"');
+        expect(lines).toContain('mjo-ol-picker');
+    });
+
+    it('keeps existing line extensions collapsed behind a disclosure', () => {
+        const lines = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),
+            'utf8',
+        );
+        expect(lines).toContain('mjo-ol-ext__toggle');
+        expect(lines).toContain('[attr.aria-expanded]="IsExtensionOpen(line)"');
+        expect(lines).toContain('[class.is-open]="IsExtensionOpen(line)"');
+        expect(lines).toContain('ToggleExtension(line)');
+    });
 });

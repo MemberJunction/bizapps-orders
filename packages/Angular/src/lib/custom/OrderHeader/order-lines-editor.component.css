@@ -13,6 +13,10 @@
     padding: var(--mj-space-3);
 }
 
+.mjo-ol-card:has(.mjo-ol-ext.is-open) {
+    padding-bottom: var(--mj-space-1);
+}
+
 .mjo-ol-card__top {
     display: flex;
     align-items: flex-start;
@@ -77,6 +81,21 @@
     font: inherit;
     font-variant-numeric: tabular-nums;
     color: inherit;
+}
+
+.mjo-ol-qty.is-locked {
+    border-color: var(--mj-border-default);
+    background: transparent;
+}
+
+.mjo-ol-qty__value {
+    min-width: 46px;
+    padding: 0 10px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-variant-numeric: tabular-nums;
 }
 
 .mjo-ol-card__price {
@@ -240,82 +259,125 @@
 }
 
 .mjo-ol-ext {
-    margin-top: var(--mj-space-3);
-    padding-top: var(--mj-space-3);
+    margin-top: var(--mj-space-2);
+    padding-top: var(--mj-space-1);
     border-top: 1px dashed var(--mj-border-subtle);
 }
 
-.mjo-ol-ext__bar {
+.mjo-ol-ext__toggle {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: var(--mj-space-2);
-    flex-wrap: wrap;
+    width: 100%;
+    padding: var(--mj-space-1) 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    border-radius: var(--mj-radius-sm);
+}
+
+.mjo-ol-ext__toggle:hover {
+    color: var(--mj-text-primary);
+}
+
+.mjo-ol-ext__toggle:focus-visible {
+    outline: 2px solid var(--mj-border-focus);
+    outline-offset: 2px;
+}
+
+.mjo-ol-ext__chev {
+    flex: none;
+    width: 12px;
+    font-size: 10px;
+    color: var(--mj-text-muted);
+    transition: transform 160ms ease;
+}
+
+.mjo-ol-ext.is-open .mjo-ol-ext__chev {
+    transform: rotate(90deg);
 }
 
 .mjo-ol-ext__label {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
     font-size: var(--mj-text-xs);
     font-weight: var(--mj-font-semibold);
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    color: var(--mj-text-secondary);
+    letter-spacing: 0.01em;
+}
+
+.mjo-ol-ext__hint {
+    margin-left: auto;
+    font-size: var(--mj-text-xs);
     color: var(--mj-text-muted);
-}
-
-.mjo-ol-ext__modes {
-    display: inline-flex;
-    border: 1px solid var(--mj-border-default);
-    border-radius: var(--mj-radius-full);
+    white-space: nowrap;
     overflow: hidden;
-    background: var(--mj-bg-surface-sunken);
+    text-overflow: ellipsis;
 }
 
-.mjo-ol-mode {
+.mjo-ol-ext__body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 180ms ease;
+}
+
+.mjo-ol-ext.is-open .mjo-ol-ext__body {
+    grid-template-rows: 1fr;
+}
+
+.mjo-ol-ext__clip {
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* Flatten the embedded extension form so its fields sit in the line card. */
+.mjo-ol-ext ::ng-deep mj-record-form-container,
+.mjo-ol-ext ::ng-deep .mj-record-form-container,
+.mjo-ol-ext ::ng-deep .mj-forms-container {
+    display: block;
+    padding: 0;
+    margin: 0;
     border: 0;
     background: transparent;
-    color: var(--mj-text-secondary);
-    font: inherit;
-    font-size: 11px;
-    font-weight: var(--mj-font-semibold);
-    padding: 4px 10px;
-    cursor: pointer;
+    box-shadow: none;
 }
 
-.mjo-ol-mode.is-on {
-    background: color-mix(in srgb, var(--mj-brand-primary) 14%, var(--mj-bg-surface));
-    color: var(--mj-brand-primary);
+.mjo-ol-ext ::ng-deep .mj-forms-toolbar,
+.mjo-ol-ext ::ng-deep mj-form-toolbar {
+    display: none;
 }
 
-.mjo-ol-ext__empty {
-    margin-top: var(--mj-space-2);
-    font-size: var(--mj-text-xs);
-    color: var(--mj-text-secondary);
+.mjo-ol-ext ::ng-deep .mj-forms-panel {
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    margin: 0;
+    padding: 0;
 }
 
-.mjo-ol-ext__fields {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--mj-space-2);
-    margin-top: var(--mj-space-2);
+.mjo-ol-ext ::ng-deep mj-collapsible-panel + mj-collapsible-panel .mj-forms-panel {
+    margin-top: calc(-1 * var(--mj-space-1));
 }
 
-.mjo-ol-ext__field {
-    min-width: 0;
+.mjo-ol-ext ::ng-deep .mj-forms-panel-header {
+    display: none;
 }
 
-.mjo-ol-ext__embed {
-    margin-top: var(--mj-space-2);
-    max-height: 420px;
-    overflow: auto;
-    border: 1px solid var(--mj-border-subtle);
-    border-radius: var(--mj-radius-md);
-    background: var(--mj-bg-surface-card);
+.mjo-ol-ext ::ng-deep .mj-forms-panel-body,
+.mjo-ol-ext ::ng-deep .mj-forms-panel-content {
+    max-height: none;
+    overflow: visible;
+    padding: 0;
+    margin: 0;
+}
+
+.mjo-ol-ext ::ng-deep mj-form-field:last-child,
+.mjo-ol-ext ::ng-deep .mj-form-field:last-child {
+    margin-bottom: 0;
 }
 
 @media (max-width: 720px) {
     .mjo-ol-card__top { flex-wrap: wrap; }
     .mjo-ol-card__price, .mjo-ol-card__tot { width: auto; }
-    .mjo-ol-ext__fields { grid-template-columns: 1fr; }
 }
