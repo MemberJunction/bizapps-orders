@@ -1,0 +1,117 @@
+[
+  {
+    "_comments": [
+      "Form chrome: Bill-To Orders on a Person are the primary commercial relationship.",
+      "Ship-To / Sold-To / line-level hang-ons stay Auto so the ranker can park them in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Order Headers&RelatedEntityJoinField=BillToPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T20:00:36.543Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Form chrome: Bill-To Orders on an Organization stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Order Headers&RelatedEntityJoinField=BillToOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T20:00:36.579Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Form chrome: Bill-To Payment Headers on a Person stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Payment Headers&RelatedEntityJoinField=BillToPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T20:00:36.613Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Form chrome: Bill-To Payment Headers on an Organization stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Payment Headers&RelatedEntityJoinField=BillToOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T20:00:36.635Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Form chrome: Subscriptions held by an Organization stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Subscriptions&RelatedEntityJoinField=HolderOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T20:00:36.677Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Form chrome: Subscriptions where this Person is the beneficiary stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Subscriptions&RelatedEntityJoinField=BeneficiaryPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T20:00:36.657Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  }
+]

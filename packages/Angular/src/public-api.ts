@@ -16,6 +16,7 @@ import './lib/generated/generated-forms.module';
 // Import custom form components (loaded AFTER generated to override via @RegisterClass priority)
 import './lib/custom/custom-forms.module';
 import { LoadCustomForms } from './lib/custom/custom-forms.module';
+import './lib/form-panels/party-headers.module';
 
 // Import generated class registrations manifest
 import { CLASS_REGISTRATIONS } from './lib/generated/class-registrations-manifest';

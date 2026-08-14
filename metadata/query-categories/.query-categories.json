@@ -1,0 +1,17 @@
+[
+  {
+    "fields": {
+      "Name": "Orders",
+      "ParentID": null,
+      "Description": "BizApps Orders stored queries — party lifetime, worklists, and other read-only aggregates that should not be re-implemented as ad-hoc RunViews.",
+      "UserID": "@lookup:MJ: Users.Name=System"
+    },
+    "primaryKey": {
+      "ID": "D6586F51-1F67-4F50-BA28-7DB8A98BD4D2"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T20:41:01.264Z",
+      "checksum": "7c595c2ad24d7ac1cf1cd5e678d680b625288379d1ec39becce993679a61b885"
+    }
+  }
+]
