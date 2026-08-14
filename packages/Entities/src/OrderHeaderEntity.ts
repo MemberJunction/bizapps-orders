@@ -29,11 +29,12 @@
  *
  * @module @mj-biz-apps/orders-entities
  */
-import { BaseEntity, ValidationErrorInfo, ValidationErrorType, ValidationResult } from '@memberjunction/core';
+import { BaseEntity, ValidationErrorInfo, ValidationErrorType, ValidationResult, type FieldValueCollection } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderEntity } from './generated/entity_subclasses';
 import { CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
+import { IsSavePopulatedFieldError } from './save-populated-fields';
 
 /** The order editor's sections, in the order the screen shows them. */
 export type OrderEditorSection = 'header' | 'parties' | 'lines' | 'charges' | 'payment';
@@ -122,8 +123,17 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * `Validate()` runs here too and its failures arrive attributed by position (`Lines[3].Quantity`).
      * That replaces a hand-written loop that only existed on the server.
      */
+    public override NewRecord(newValues?: FieldValueCollection): boolean {
+        const created = super.NewRecord(newValues);
+        if (created && this.OrderDate == null) {
+            this.OrderDate = new Date();
+        }
+        return created;
+    }
+
     public override Validate(): ValidationResult {
         const result = super.Validate();
+        this.dropSavePopulatedFieldErrors(result);
 
         const verdict = this.statusTransitionVerdict();
         if (!verdict.Allowed) {
@@ -186,6 +196,30 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         }
 
         return result;
+    }
+
+    /**
+     * `super.Validate()` includes generated NOT NULL checks for fields this save
+     * is about to fill in (`OrderNumber`, each new line's `UnitPrice` / `CompanyID`
+     * / `LineNumber`). Fast Entry and the editor gate confirm on `Validate()`, so
+     * those checks disabled the button on every complete unsaved order.
+     *
+     * Same reason `OrderEntityServer.Save()` refuses to run the full `Validate()`
+     * before it mints the number. After the first save the values exist, so an
+     * empty one is a real error and is kept.
+     */
+    private dropSavePopulatedFieldErrors(result: ValidationResult): void {
+        const kept = result.Errors.filter(
+            (error) =>
+                !IsSavePopulatedFieldError(
+                    error.Source ?? '',
+                    this.IsSaved,
+                    (index) => this.Lines.Items[index]?.IsSaved === true,
+                ),
+        );
+        if (kept.length === result.Errors.length) return;
+        result.Errors = kept;
+        result.Success = kept.every((error) => error.Type !== ValidationErrorType.Failure);
     }
 
     /** Whether this order is booked to the ledger right now. */
