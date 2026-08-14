@@ -26,6 +26,9 @@ const checks: NamedCheck[] = [
             Assert(!!world.Companies.BCP, 'Blue Cypress Press missing');
             Assert(!!world.Companies.HH, 'Harbor House missing');
             Assert(!!world.Companies.ORPHAN, 'Orphan Ledger missing');
+            Assert(!!world.Companies.DEMO, 'DEMO Publishing Co missing');
+            Assert(!!world.Companies.DEMO.Accounts.DueTo, 'DEMO has no Due To account');
+            Assert(!!world.Companies.BCP.Accounts.DueFrom, 'BCP has no Due From account');
             Assert(!!world.Companies.BCP.Accounts.AR, 'BCP has no AR account');
             Assert(!!world.Companies.BCP.Accounts.Sales, 'BCP has no Sales account');
             Assert(!!world.Companies.BCP.Accounts.Cash, 'BCP has no Cash account');

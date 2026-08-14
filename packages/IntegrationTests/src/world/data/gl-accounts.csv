@@ -15,6 +15,18 @@ HH,Shipping,40200,Shipping Revenue,Revenue
 HH,TaxPayable,21500,Sales Tax Payable,Liability
 HH,DueTo,21900,Due To Affiliates,Liability
 HH,DueFrom,11900,Due From Affiliates,Asset
+DEMO,AR,11201,Accounts Receivable,Asset
+DEMO,Sales,40100,Sales Revenue,Revenue
+DEMO,Deferred,21301,Deferred Revenue,Liability
+DEMO,Cash,10100,Cash — Operating,Asset
+DEMO,DueTo,21900,Due To Affiliates,Liability
+DEMO,DueFrom,11900,Due From Affiliates,Asset
+PARTNER,AR,11201,Accounts Receivable,Asset
+PARTNER,Sales,40100,Sales Revenue,Revenue
+PARTNER,Deferred,21301,Deferred Revenue,Liability
+PARTNER,Cash,10100,Cash — Operating,Asset
+PARTNER,DueTo,21900,Due To Affiliates,Liability
+PARTNER,DueFrom,11900,Due From Affiliates,Asset
 ORPHAN,AR,11201,Accounts Receivable,Asset
 ORPHAN,Sales,40100,Sales Revenue,Revenue
 ORPHAN,Deferred,21301,Deferred Revenue,Liability

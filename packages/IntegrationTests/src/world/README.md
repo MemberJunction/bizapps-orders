@@ -17,9 +17,11 @@ Everything else in this folder is tenant/world data: selling companies, GL, peop
 
 | Code   | Name                | Role                                      |
 | ------ | ------------------- | ----------------------------------------- |
-| BCP    | Blue Cypress Press  | Home seller — fully GL-linked             |
-| HH     | Harbor House        | Second company — multi-company / interco  |
-| ORPHAN | Orphan Ledger       | Accounts exist, **no** GL links — refuse  |
+| BCP     | Blue Cypress Press  | Home seller — fully GL-linked             |
+| HH      | Harbor House        | Second company — multi-company / interco  |
+| DEMO    | DEMO Publishing Co  | Demo seller still in the catalog          |
+| PARTNER | DEMO Partner Press  | Second demo seller                        |
+| ORPHAN  | Orphan Ledger       | Accounts exist, **no** GL links — refuse  |
 
 ## GL hierarchy
 
@@ -33,9 +35,8 @@ something to inherit.
 Dimensions (`DEPT`, `LOC`) and their values are world data. They are **not** attached to the links
 yet — attaching a required dimension without a matching order-line tag would refuse the confirm.
 
-Intercompany: every company that already has Due To (21900) and Due From (11900) is meshed in both
-directions — BCP ↔ HH and any leftover DEMO sellers that have those accounts. Orphan Ledger is
-left unpaired so the missing-pair refuse path stays real.
+Intercompany pairs are declared in `intercompany-matches.csv` and saved through BaseEntity.
+Orphan Ledger is not in that file, so the missing-pair refuse path stays real.
 
 ## Adding a product
 

@@ -18,3 +18,11 @@ HH,Cash,Cash,Company,
 HH,Sales,Sales,ProductType,PhysicalGood
 HH,Sales,Sales,ProductType,Event
 HH,Sales,Sales,ProductType,Membership
+DEMO,AR,Accounts Receivable,Company,
+DEMO,Sales,Sales,Company,
+DEMO,Deferred,Deferred Revenue,Company,
+DEMO,Cash,Cash,Company,
+PARTNER,AR,Accounts Receivable,Company,
+PARTNER,Sales,Sales,Company,
+PARTNER,Deferred,Deferred Revenue,Company,
+PARTNER,Cash,Cash,Company,

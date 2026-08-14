@@ -140,7 +140,7 @@ async function loadCompanies(ctx: IntegrationCheckContext, world: WorldState, cu
         const id = await Upsert(
             ctx,
             COMPANY_PROFILE_ENTITY,
-            `CompanyCode = '${Quote(row.Code)}'`,
+            `Name = '${Quote(row.Name)}'`,
             {
                 Name: row.Name,
                 Description: WORLD_TAG,
@@ -311,44 +311,25 @@ async function loadChargeTypeLinks(
 }
 
 async function loadIntercompany(ctx: IntegrationCheckContext, world: WorldState): Promise<void> {
-    // Mesh every company that already has both Due To / Due From accounts — world companies
-    // plus leftover DEMO sellers. ORPHAN has neither, so it stays unpaired on purpose.
-    const dues = await FindRows<{ ID: string; CompanyID: string; Code: string }>(
-        ctx,
-        GL_ACCOUNT_ENTITY,
-        `Code IN ('21900', '11900')`,
-        ['ID', 'CompanyID', 'Code'],
-    );
-    const byCompany = new Map<string, { DueTo?: string; DueFrom?: string }>();
-    for (const row of dues) {
-        const key = row.CompanyID.toLowerCase();
-        const slot = byCompany.get(key) ?? {};
-        if (row.Code === '21900') slot.DueTo = row.ID;
-        if (row.Code === '11900') slot.DueFrom = row.ID;
-        byCompany.set(key, slot);
-    }
-    const companyIDs = [...byCompany.entries()]
-        .filter(([, accounts]) => !!accounts.DueTo && !!accounts.DueFrom)
-        .map(([id]) => id);
-
-    for (const src of companyIDs) {
-        for (const tgt of companyIDs) {
-            if (src === tgt) continue;
-            const source = byCompany.get(src);
-            const target = byCompany.get(tgt);
-            await Upsert(
-                ctx,
-                INTERCOMPANY_ACCOUNT_MATCH_ENTITY,
-                `SourceCompanyID = '${src}' AND TargetCompanyID = '${tgt}' AND Status = 'Active'`,
-                {
-                    SourceCompanyID: src,
-                    TargetCompanyID: tgt,
-                    DueToGLAccountID: source?.DueTo,
-                    DueFromGLAccountID: target?.DueFrom,
-                    Status: 'Active',
-                },
-            );
-        }
+    for (const row of ReadCsv(join(DATA, 'intercompany-matches.csv'))) {
+        const source = world.Companies[row.Source];
+        const target = world.Companies[row.Target];
+        Assert(!!source, `intercompany-matches.csv: unknown source ${row.Source}`);
+        Assert(!!target, `intercompany-matches.csv: unknown target ${row.Target}`);
+        Assert(!!source.Accounts.DueTo, `intercompany-matches.csv: ${row.Source} has no DueTo account`);
+        Assert(!!target.Accounts.DueFrom, `intercompany-matches.csv: ${row.Target} has no DueFrom account`);
+        await Upsert(
+            ctx,
+            INTERCOMPANY_ACCOUNT_MATCH_ENTITY,
+            `SourceCompanyID = '${source.ID}' AND TargetCompanyID = '${target.ID}' AND Status = 'Active'`,
+            {
+                SourceCompanyID: source.ID,
+                TargetCompanyID: target.ID,
+                DueToGLAccountID: source.Accounts.DueTo,
+                DueFromGLAccountID: target.Accounts.DueFrom,
+                Status: 'Active',
+            },
+        );
     }
 }
 
