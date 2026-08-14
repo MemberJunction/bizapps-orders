@@ -548,7 +548,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         result.Success = false;
         result.Type = this.IsSaved ? 'update' : 'create';
         result.Message = err instanceof Error ? err.message : String(err);
-        result.Error = err;
+        // Do not also set `Error` to the same Error — CompleteMessage concatenates
+        // Message + Error.message and the user sees the refusal twice.
         result.OriginalValues = this.Fields.map(f => ({ FieldName: f.Name, Value: f.OldValue }));
         result.NewValues = this.Fields.map(f => ({ FieldName: f.Name, Value: f.Value }));
         result.StartedAt = new Date();
