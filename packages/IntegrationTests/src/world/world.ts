@@ -22,6 +22,8 @@ export interface WorldState {
     Entitlements: Record<string, string>;
     Addresses: Record<string, string>;
     Jurisdictions: Record<string, string>;
+    Dimensions: Record<string, string>;
+    DimensionValues: Record<string, string>;
     RevRecTypeIDs: Map<string, string>;
     SubscriptionTypeIDs: Map<string, string>;
     PaymentTypeIDs: Map<string, string>;

@@ -21,6 +21,18 @@ Everything else in this folder is tenant/world data: selling companies, GL, peop
 | HH     | Harbor House        | Second company — multi-company / interco  |
 | ORPHAN | Orphan Ledger       | Accounts exist, **no** GL links — refuse  |
 
+## GL hierarchy
+
+Most specific wins: **product → category tree → product type → company**.
+
+`gl-links.csv` rows name a `Level` (`Company` / `ProductType` / `Category` / `Product`). AR is
+linked at each selling company so a confirm can book without per-product wiring. Sales is also
+linked at the product-type level (and a couple of category / product overrides) so the walk has
+something to inherit.
+
+Dimensions (`DEPT`, `LOC`) and their values are world data. They are **not** attached to the links
+yet — attaching a required dimension without a matching order-line tag would refuse the confirm.
+
 ## Adding a product
 
 1. A row in `data/products.csv` (and `event-products.csv` if it is an Event).

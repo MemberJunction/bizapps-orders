@@ -70,6 +70,8 @@ export const COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Company
 export const TAX_AUTHORITY_ENTITY = 'MJ_BizApps_Accounting: Tax Authorities';
 export const TAX_JURISDICTION_ENTITY = 'MJ_BizApps_Accounting: Tax Jurisdictions';
 export const TAX_RATE_ENTITY = 'MJ_BizApps_Accounting: Tax Rates';
+export const DIMENSION_ENTITY = 'MJ_BizApps_Accounting: Dimensions';
+export const DIMENSION_VALUE_ENTITY = 'MJ_BizApps_Accounting: Dimension Values';
 
 // ── Common ───────────────────────────────────────────────────────────────────────────────────────
 export const PERSON_ENTITY = 'MJ_BizApps_Common: People';
@@ -125,6 +127,8 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     TAX_AUTHORITY_ENTITY,
     TAX_JURISDICTION_ENTITY,
     TAX_RATE_ENTITY,
+    DIMENSION_ENTITY,
+    DIMENSION_VALUE_ENTITY,
     PERSON_ENTITY,
     ORGANIZATION_ENTITY,
     ORGANIZATION_TYPE_ENTITY,

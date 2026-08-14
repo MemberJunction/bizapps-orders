@@ -24,11 +24,16 @@ import { GLAccountResolver, type ResolverEntityIDs } from './GLAccountResolver.j
 
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
+const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const COMPANY_ENTITY = 'MJ: Companies';
 
 /** The subset of `AccountingEngineBase` used here, declared structurally so there is no type import. */
 export interface AccountingEngineSurface {
-    ConfigEx(options: { contextUser?: UserInfo; provider?: IMetadataProvider }): Promise<unknown>;
+    ConfigEx(options: {
+        forceRefresh?: boolean;
+        contextUser?: UserInfo;
+        provider?: IMetadataProvider;
+    }): Promise<unknown>;
     ResolveLinkedAccount(
         entityId: string,
         recordId: string,
@@ -69,6 +74,7 @@ export function ResolverEntities(): ResolverEntityIDs {
     return {
         Product: EntityIDFor(PRODUCT_ENTITY),
         ProductCategory: EntityIDFor(PRODUCT_CATEGORY_ENTITY),
+        ProductType: EntityIDFor(PRODUCT_TYPE_ENTITY),
         Company: EntityIDFor(COMPANY_ENTITY),
     };
 }
@@ -79,7 +85,12 @@ export async function LoadAccountingEngine(
     user: UserInfo,
 ): Promise<AccountingEngineSurface> {
     const engine = (AccountingEngineBase as unknown as { Instance: AccountingEngineSurface }).Instance;
-    await engine.ConfigEx({ contextUser: user, provider });
+    // Force a refresh. ORD-WORLD (and any other process) writes links through BaseEntity
+    // in a different Node process than MJAPI; those events never reach this cache, so a
+    // Config(false) after startup keeps serving an empty link set and every confirm
+    // reports "No GL account is linked for role 'Accounts Receivable'". Reloading a few
+    // dozen link rows on a booking is cheaper than a silent miss.
+    await engine.ConfigEx({ forceRefresh: true, contextUser: user, provider });
     return engine;
 }
 

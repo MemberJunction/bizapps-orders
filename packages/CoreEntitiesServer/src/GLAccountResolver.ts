@@ -6,7 +6,12 @@
  * primitive — `AccountingEngineBase.ResolveLinkedAccount(entityId, recordId, role, asOfDate)` —
  * and this class implements the precedence over it:
  *
- *     Product  →  its ProductCategory  →  that category's ancestors  →  the line's Company
+ *     Product  →  its ProductCategory  →  that category's ancestors
+ *              →  its ProductType  →  the line's Company
+ *
+ * Company is the last resort (the accounting-org default). Product Type sits above
+ * the company default so a type can name Sales once and every product of that type
+ * inherits it, while a category or product can still override.
  *
  * Most specific wins; the first link found at any level ends the walk. Nothing resolves → we
  * FAIL LOUDLY (plan D5: "fail loudly" — never silently book to a default account).
@@ -22,6 +27,7 @@
  *   CALLER:    OrderJournalEntryFactory (./OrderJournalEntryFactory.ts)
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
+import { UUIDsEqual } from '@memberjunction/global';
 
 /** GL account roles this app books against (seeded by accounting's metadata). */
 export const GL_ROLE = {
@@ -59,6 +65,7 @@ export type GLRole = (typeof GL_ROLE)[keyof typeof GL_ROLE];
 export interface ResolverEntityIDs {
     Product: string;
     ProductCategory: string;
+    ProductType: string;
     Company: string;
 }
 
@@ -102,7 +109,7 @@ export class GLAccountResolver {
     ) {}
 
     /**
-     * Walk product → category → ancestors → company for `role`.
+     * Walk product → category → ancestors → product type → company for `role`.
      *
      * @param expectedCompanyID the order line's company; the resolved account must belong to it
      * @returns the resolved GL account UUID
@@ -119,11 +126,16 @@ export class GLAccountResolver {
         productCategoryID: string | null,
         expectedCompanyID: string,
         asOf: Date,
+        productTypeID?: string | null,
     ): Promise<string> {
+        const company = expectedCompanyID;
         const hit =
-            (productID ? this._resolveLink(this._entityIDs.Product, productID, role, asOf) : null) ??
-            (await this.resolveUpCategoryTree(role, productCategoryID, asOf)) ??
-            this._resolveLink(this._entityIDs.Company, expectedCompanyID, role, asOf);
+            (productID ? this._resolveLink(this._entityIDs.Product, productID, role, asOf, company) : null) ??
+            (await this.resolveUpCategoryTree(role, productCategoryID, asOf, company)) ??
+            (productTypeID
+                ? this._resolveLink(this._entityIDs.ProductType, productTypeID, role, asOf, company)
+                : null) ??
+            this._resolveLink(this._entityIDs.Company, expectedCompanyID, role, asOf, company);
 
         if (!hit) {
             throw new GLAccountResolutionError(
@@ -131,8 +143,8 @@ export class GLAccountResolver {
                 productID,
                 productID
                     ? `No GL account is linked for role '${role}'. Checked the product, its category ` +
-                      `tree, and the company default for company ${expectedCompanyID}. Link an account ` +
-                      `for this role (product, category, or company level) before booking.`
+                      `tree, its product type, and the company default for company ${expectedCompanyID}. ` +
+                      `Link an account for this role (product, category, product type, or company) before booking.`
                     : `No GL account is linked for role '${role}' at the company level for company ` +
                       `${expectedCompanyID}. This role is resolved company-wide (there is no product ` +
                       `involved), so link an account to the company before booking.`,
@@ -140,7 +152,7 @@ export class GLAccountResolver {
         }
 
         // Plan D6 — hard block. Accounting takes no CompanyID; the account IS the company.
-        if (hit.CompanyID !== expectedCompanyID) {
+        if (!UUIDsEqual(hit.CompanyID, expectedCompanyID)) {
             throw new GLAccountResolutionError(
                 role,
                 productID,
@@ -174,7 +186,7 @@ export class GLAccountResolver {
     ): Promise<string | null> {
         const hit = this._resolveLink(entityID, recordID, role, asOf, expectedCompanyID);
         if (!hit) return null;
-        if (hit.CompanyID !== expectedCompanyID) {
+        if (!UUIDsEqual(hit.CompanyID, expectedCompanyID)) {
             throw new GLAccountResolutionError(
                 role,
                 recordID,
@@ -190,6 +202,7 @@ export class GLAccountResolver {
         role: GLRole,
         startCategoryID: string | null,
         asOf: Date,
+        forCompanyID: string,
     ): Promise<{ GLAccountID: string; CompanyID: string } | null> {
         if (!startCategoryID) return null;
         await this.ensureCategoriesLoaded();
@@ -199,7 +212,7 @@ export class GLAccountResolver {
 
         while (current && !seen.has(current)) {
             seen.add(current); // cycle guard — the DB CHECK blocks self-parenting, not longer loops
-            const hit = this._resolveLink(this._entityIDs.ProductCategory, current, role, asOf);
+            const hit = this._resolveLink(this._entityIDs.ProductCategory, current, role, asOf, forCompanyID);
             if (hit) return hit;
             current = this._categoryParent.get(current) ?? null;
         }

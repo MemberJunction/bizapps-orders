@@ -37,6 +37,8 @@ import {
     TAX_AUTHORITY_ENTITY,
     TAX_JURISDICTION_ENTITY,
     TAX_RATE_ENTITY,
+    DIMENSION_ENTITY,
+    DIMENSION_VALUE_ENTITY,
 } from '../entity-names.js';
 
 const WORLD_TAG = 'ORD-WORLD';
@@ -47,6 +49,9 @@ export async function LoadWorld(ctx: IntegrationCheckContext): Promise<WorldStat
     const companyEntity = md.EntityByName(COMPANY_ENTITY);
     Assert(!!companyEntity, `${COMPANY_ENTITY} not in metadata`);
     const chargeTypeEntity = md.EntityByName('MJ_BizApps_Orders: Charge Types');
+    const productTypeEntity = md.EntityByName(PRODUCT_TYPE_ENTITY);
+    const productCategoryEntity = md.EntityByName(PRODUCT_CATEGORY_ENTITY);
+    const productEntity = md.EntityByName(PRODUCT_ENTITY);
 
     const currency = await FindRows<{ ID: string; Code: string }>(
         ctx,
@@ -70,6 +75,8 @@ export async function LoadWorld(ctx: IntegrationCheckContext): Promise<WorldStat
         Entitlements: {},
         Addresses: {},
         Jurisdictions: {},
+        Dimensions: {},
+        DimensionValues: {},
         RevRecTypeIDs: await codeMap(ctx, 'MJ_BizApps_Orders: Revenue Recognition Types'),
         SubscriptionTypeIDs: await codeMap(ctx, 'MJ_BizApps_Orders: Subscription Types'),
         PaymentTypeIDs: await codeMap(ctx, 'MJ_BizApps_Orders: Payment Types'),
@@ -85,7 +92,7 @@ export async function LoadWorld(ctx: IntegrationCheckContext): Promise<WorldStat
 
     await loadCompanies(ctx, world, currencyCode);
     await loadGLAccounts(ctx, world);
-    await loadGLLinks(ctx, world);
+    await loadDimensions(ctx, world);
     await loadChargeTypeLinks(ctx, world, chargeTypeEntity?.ID);
     await loadIntercompany(ctx, world);
     await loadOrganizations(ctx, world);
@@ -95,6 +102,12 @@ export async function LoadWorld(ctx: IntegrationCheckContext): Promise<WorldStat
     await loadCategories(ctx, world);
     await loadProducts(ctx, world);
     await loadEventProducts(ctx, world);
+    await loadGLLinks(ctx, world, {
+        CompanyEntityID: world.CompanyEntityID,
+        ProductTypeEntityID: productTypeEntity?.ID,
+        ProductCategoryEntityID: productCategoryEntity?.ID,
+        ProductEntityID: productEntity?.ID,
+    });
     await loadPrices(ctx, world);
     await loadBundles(ctx, world);
     await loadEntitlements(ctx, world);
@@ -162,7 +175,42 @@ async function loadGLAccounts(ctx: IntegrationCheckContext, world: WorldState): 
     }
 }
 
-async function loadGLLinks(ctx: IntegrationCheckContext, world: WorldState): Promise<void> {
+async function loadDimensions(ctx: IntegrationCheckContext, world: WorldState): Promise<void> {
+    for (const row of ReadCsv(join(DATA, 'dimensions.csv'))) {
+        const id = await Upsert(ctx, DIMENSION_ENTITY, `Code = '${Quote(row.Code)}'`, {
+            Code: row.Code,
+            Name: row.Name,
+            Description: row.Description || WORLD_TAG,
+            IsActive: true,
+        });
+        world.Dimensions[row.Code] = id;
+    }
+    for (const row of ReadCsv(join(DATA, 'dimension-values.csv'))) {
+        const dimensionID = world.Dimensions[row.DimensionCode];
+        Assert(!!dimensionID, `dimension-values.csv: unknown dimension ${row.DimensionCode}`);
+        const id = await Upsert(
+            ctx,
+            DIMENSION_VALUE_ENTITY,
+            `DimensionID = '${dimensionID}' AND Code = '${Quote(row.Code)}'`,
+            {
+                DimensionID: dimensionID,
+                Code: row.Code,
+                Name: row.Name,
+                IsActive: true,
+            },
+        );
+        world.DimensionValues[`${row.DimensionCode}:${row.Code}`] = id;
+    }
+}
+
+interface LinkEntities {
+    CompanyEntityID: string;
+    ProductTypeEntityID: string | undefined;
+    ProductCategoryEntityID: string | undefined;
+    ProductEntityID: string | undefined;
+}
+
+async function loadGLLinks(ctx: IntegrationCheckContext, world: WorldState, entities: LinkEntities): Promise<void> {
     const roles = await FindRows<{ ID: string; Name: string }>(ctx, GL_ACCOUNT_ROLE_ENTITY, '', ['ID', 'Name']);
     const roleID = new Map(roles.map((r) => [r.Name, r.ID]));
     for (const row of ReadCsv(join(DATA, 'gl-links.csv'))) {
@@ -172,18 +220,51 @@ async function loadGLLinks(ctx: IntegrationCheckContext, world: WorldState): Pro
         Assert(!!accountID, `gl-links.csv: no account ${row.AccountKey} on ${row.CompanyCode}`);
         const rid = roleID.get(row.Role);
         Assert(!!rid, `GL role '${row.Role}' missing — push accounting metadata`);
+        const target = resolveLinkTarget(world, entities, row);
         await Upsert(
             ctx,
             GL_ACCOUNT_LINK_ENTITY,
-            `EntityID = '${world.CompanyEntityID}' AND RecordID = '${company.ID}' AND GLAccountRoleID = '${rid}'`,
+            `EntityID = '${target.EntityID}' AND RecordID = '${target.RecordID}' AND GLAccountRoleID = '${rid}' AND GLAccountID = '${accountID}'`,
             {
                 GLAccountID: accountID,
                 GLAccountRoleID: rid,
-                EntityID: world.CompanyEntityID,
-                RecordID: company.ID,
+                EntityID: target.EntityID,
+                RecordID: target.RecordID,
                 Status: 'Active',
             },
         );
+    }
+}
+
+function resolveLinkTarget(
+    world: WorldState,
+    entities: LinkEntities,
+    row: Record<string, string>,
+): { EntityID: string; RecordID: string } {
+    const company = world.Companies[row.CompanyCode];
+    switch (row.Level) {
+        case 'Company':
+            return { EntityID: entities.CompanyEntityID, RecordID: company.ID };
+        case 'ProductType': {
+            Assert(!!entities.ProductTypeEntityID, 'Product Types entity missing');
+            const typeID = world.ProductTypeIDs[row.Target];
+            Assert(!!typeID, `gl-links.csv: unknown product type ${row.Target}`);
+            return { EntityID: entities.ProductTypeEntityID, RecordID: typeID };
+        }
+        case 'Category': {
+            Assert(!!entities.ProductCategoryEntityID, 'Product Categories entity missing');
+            const catID = world.Categories[`${row.CompanyCode}:${row.Target}`];
+            Assert(!!catID, `gl-links.csv: unknown category ${row.CompanyCode}:${row.Target}`);
+            return { EntityID: entities.ProductCategoryEntityID, RecordID: catID };
+        }
+        case 'Product': {
+            Assert(!!entities.ProductEntityID, 'Products entity missing');
+            const productID = world.Products[row.Target];
+            Assert(!!productID, `gl-links.csv: unknown product ${row.Target}`);
+            return { EntityID: entities.ProductEntityID, RecordID: productID };
+        }
+        default:
+            throw new Error(`gl-links.csv: unknown Level '${row.Level}'`);
     }
 }
 

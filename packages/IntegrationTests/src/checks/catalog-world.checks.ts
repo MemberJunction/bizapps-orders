@@ -50,6 +50,9 @@ const checks: NamedCheck[] = [
             Assert(!!world.RevRecTypeIDs.get('UpFront'), 'RevRec UpFront missing');
             Assert(!!world.Addresses.SantaClara, 'Santa Clara ship-to missing');
             Assert(!!world.Jurisdictions.CA, 'CA tax jurisdiction missing');
+            Assert(!!world.Dimensions.DEPT, 'Department dimension missing');
+            Assert(!!world.DimensionValues['DEPT:EDIT'], 'Editorial department missing');
+            Assert(!!world.DimensionValues['LOC:HQ'], 'HQ location missing');
 
             // Capture so later bundles in the same process can Fx() without reloading.
             World();

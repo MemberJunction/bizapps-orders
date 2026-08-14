@@ -238,7 +238,14 @@ export class OrderJournalEntryFactory {
         const charges = money(Math.abs(line.ChargeAmount ?? 0));
 
         const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]) =>
-            this._resolver.Resolve(role, product.ID, product.ProductCategoryID, companyID, asOf);
+            this._resolver.Resolve(
+                role,
+                product.ID,
+                product.ProductCategoryID,
+                companyID,
+                asOf,
+                product.ProductTypeID,
+            );
 
         const arAccount = await resolve(GL_ROLE.AccountsReceivable);
         const salesAccount = await resolve(GL_ROLE.Sales);

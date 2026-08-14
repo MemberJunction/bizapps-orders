@@ -1,9 +1,20 @@
-CompanyCode,AccountKey,Role
-BCP,AR,Accounts Receivable
-BCP,Sales,Sales
-BCP,Deferred,Deferred Revenue
-BCP,Cash,Cash
-HH,AR,Accounts Receivable
-HH,Sales,Sales
-HH,Deferred,Deferred Revenue
-HH,Cash,Cash
+CompanyCode,AccountKey,Role,Level,Target
+BCP,AR,Accounts Receivable,Company,
+BCP,Sales,Sales,Company,
+BCP,Deferred,Deferred Revenue,Company,
+BCP,Cash,Cash,Company,
+BCP,Sales,Sales,ProductType,PhysicalGood
+BCP,Sales,Sales,ProductType,Event
+BCP,Sales,Sales,ProductType,Membership
+BCP,Sales,Sales,ProductType,Service
+BCP,Sales,Sales,ProductType,GiftCard
+BCP,Sales,Sales,ProductType,Bundle
+BCP,Sales,Sales,Category,EVENTS
+BCP,Sales,Sales,Product,STYLE-HB
+HH,AR,Accounts Receivable,Company,
+HH,Sales,Sales,Company,
+HH,Deferred,Deferred Revenue,Company,
+HH,Cash,Cash,Company,
+HH,Sales,Sales,ProductType,PhysicalGood
+HH,Sales,Sales,ProductType,Event
+HH,Sales,Sales,ProductType,Membership
