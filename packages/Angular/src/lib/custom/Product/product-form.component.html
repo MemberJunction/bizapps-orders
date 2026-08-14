@@ -1,3 +1,4 @@
+@if (record) {
 <mj-record-form-container [Record]="record" [FormComponent]="this"
     (Navigate)="OnFormNavigate($event)"
     (DeleteRequested)="OnDeleteRequested()"
@@ -6,6 +7,62 @@
     (ListManagementRequested)="OnListManagementRequested()">
 
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="before-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+    <!-- ================================================================
+         HERO IDENTITY HEADER CARD & SUMMARY METRIC STRIP (From Mockup)
+         ================================================================ -->
+    <div class="mjo-record-header-card">
+        <div class="mjo-record-header-top">
+            <div class="mjo-record-identity">
+                <div class="mjo-record-avatar">
+                    <i [class]="ProductAvatarIcon"></i>
+                </div>
+                <div class="mjo-record-title-area">
+                    <h1 class="mjo-record-title">
+                        {{ record.Name || 'New Product' }}
+                    </h1>
+                    <div class="mjo-record-badges">
+                        <span class="mjo-entity-chip"><i class="fa-solid fa-database"></i> MJ_BizApps_Orders: Products</span>
+                        <span class="mjo-sku-badge">SKU: {{ record.SKU || '—' }}</span>
+                        @if (HasEventExtension) {
+                            <span class="mjo-isa-subtype-chip">
+                                <i class="fa-solid fa-diagram-project"></i> IsA Subtype: EventProduct
+                            </span>
+                        } @else if (record.SubscriptionTypeID) {
+                            <span class="mjo-isa-subtype-chip">
+                                <i class="fa-solid fa-repeat"></i> Recurring: {{ record.SubscriptionType || 'Subscription' }}
+                            </span>
+                        }
+                        <span [class]="StatusBadgeClass">{{ record.Status || 'Draft' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Summary Metric Strip -->
+        <div class="mjo-record-summary-bar">
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Standalone Selling Price (SSP)</span>
+                <span class="mjo-stat-val mjo-money">{{ FormattedSSP }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Product Type</span>
+                <span class="mjo-stat-val">{{ ProductTypeName }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Revenue Recognition</span>
+                <span class="mjo-stat-val">{{ RevenueRecognitionName }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Capacity / Stock</span>
+                <span class="mjo-stat-val">{{ FormattedCapacity }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Active Price Rules</span>
+                <span class="mjo-stat-val">{{ GetSectionRowCount('productPrices') || 0 }} Price Lists</span>
+            </div>
+        </div>
+    </div>
 
     <!-- ========================================
          1. PRODUCT IDENTIFICATION PANEL
@@ -60,12 +117,12 @@
     </mj-collapsible-panel>
 
     <!-- ========================================
-         2. PRODUCT CLASSIFICATION PANEL
+         2. PRODUCT CLASSIFICATION & LIFECYCLE PANEL
          ======================================== -->
     <mj-collapsible-panel
         SectionKey="productClassification"
-        SectionName="Product Classification"
-        Icon="fa fa-list-ul"
+        SectionName="Product Classification &amp; Lifecycle"
+        Icon="fa fa-sitemap"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -95,6 +152,30 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="AvailableFrom"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="AvailableTo"
+            Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="PricingDriverClass"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
     </mj-collapsible-panel>
 
     <!-- ========================================
@@ -104,7 +185,7 @@
     @if (HasEventExtension && EventProductChild) {
     <mj-collapsible-panel
         SectionKey="eventDetailsExtension"
-        SectionName="Event &amp; Venue Details (EventProduct Subtype)"
+        SectionName="Event &amp; Venue Details (IsA Extension: EventProduct)"
         Icon="fa fa-calendar-check"
         Variant="inherited"
         InheritedFromEntity="MJ_BizApps_Orders: Event Products"
@@ -114,7 +195,7 @@
         <div class="mjo-extension-banner">
             <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
             <div>
-                <strong>Dynamic IS-A Extension:</strong> Configured through <code>EventProduct</code> (shares primary key <code>ID</code>). These attributes dictate event schedules, attendee roster requirements, and deferred service periods.
+                <strong>Dynamic IS-A Extension Active:</strong> Because Product Type is <em>{{ ProductTypeName }}</em>, this record is linked to <code>__mj_BizAppsOrders.EventProduct</code> (sharing primary key <code>ID</code>). These attributes dictate event schedules, attendee roster requirements, and deferred service period end dates.
             </div>
         </div>
 
@@ -131,6 +212,14 @@
             [ShowLabel]="true"
             FieldName="EventEndsAt"
             Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="EventProductChild"
+            [ShowLabel]="true"
+            FieldName="Capacity"
+            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -154,14 +243,6 @@
         <mj-form-field 
             [Record]="EventProductChild"
             [ShowLabel]="true"
-            FieldName="Capacity"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="EventProductChild"
-            [ShowLabel]="true"
             FieldName="RequiresAttendeeInfo"
             Type="checkbox"
             [EditMode]="EditMode"
@@ -171,175 +252,51 @@
     }
 
     <!-- ========================================
-         4. FINANCIAL AND ACCOUNTING PANEL
+         4. PRODUCT PRICING, PRICE LISTS & VOLUME TIERS
          ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="financialAndAccounting"
-        SectionName="Financial and Accounting"
-        Icon="fa fa-dollar-sign"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="StandaloneSellingPrice"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="RevenueRecognitionTypeID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="IsTaxable"
-            Type="checkbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="TaxCategory"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PricingDriverClass"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-    </mj-collapsible-panel>
-
-    <!-- ========================================
-         5. CATALOG LIFECYCLE PANEL
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="catalogLifecycle"
-        SectionName="Catalog Lifecycle"
-        Icon="fa fa-calendar"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="AvailableFrom"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="AvailableTo"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-    </mj-collapsible-panel>
-
-    <!-- ========================================
-         6. SUBSCRIPTION AND ENTITLEMENTS PANEL
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="subscriptionAndEntitlements"
-        SectionName="Subscription and Entitlements"
-        Icon="fa fa-key"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="SubscriptionTypeID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="EntitlementGrantTiming"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="EntitlementQuantityMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="EntitlementValidityMode"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-    </mj-collapsible-panel>
-
-    <!-- ========================================
-         7. SYSTEM METADATA PANEL
-         ======================================== -->
-    @if (!EditMode) {
-    <mj-collapsible-panel
-        SectionKey="systemMetadata"
-        SectionName="System Metadata"
-        Icon="fa fa-cog"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="__mj_CreatedAt"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="__mj_UpdatedAt"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-    </mj-collapsible-panel>
-    }
-
-    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
-
-    <!-- ========================================
-         8. RELATED ENTITY GRIDS
-         ======================================== -->
-
-    <!-- Product Prices (Price Lists & Volume Tiers) -->
     <mj-collapsible-panel
         SectionKey="productPrices"
-        SectionName="Product Prices &amp; Price Lists"
-        Icon="fa fa-tags"
+        SectionName="Product Pricing, Price Lists &amp; Volume Tiers"
+        Icon="fa fa-dollar-sign"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
         [BadgeCount]="GetSectionRowCount('productPrices')"
         [DefaultExpanded]="true">
+        
+        <div class="mjo-panel-fields-grid">
+            <mj-form-field 
+                [Record]="record"
+                [ShowLabel]="true"
+                FieldName="StandaloneSellingPrice"
+                Type="number"
+                [EditMode]="EditMode"
+                [FormContext]="formContext"
+            ></mj-form-field>
+            <mj-form-field 
+                [Record]="record"
+                [ShowLabel]="true"
+                FieldName="IsTaxable"
+                Type="checkbox"
+                [EditMode]="EditMode"
+                [FormContext]="formContext"
+            ></mj-form-field>
+            <mj-form-field 
+                [Record]="record"
+                [ShowLabel]="true"
+                FieldName="TaxCategory"
+                Type="textbox"
+                [EditMode]="EditMode"
+                [FormContext]="formContext"
+            ></mj-form-field>
+        </div>
+
         @if (record.IsSaved) {
-        <div>
+        <div class="mjo-subgrid-wrap">
+            <div class="mjo-subgrid-title">
+                <i class="fa-solid fa-tags"></i>
+                <span>Active Price Rules (<code>__mj_BizAppsOrders.ProductPrice</code>)</span>
+            </div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Prices','ProductID')"
                 [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Prices')"
@@ -352,18 +309,61 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Product Entitlements -->
+    <!-- ========================================
+         5. ENTITLEMENT GRANTS & SUBSCRIPTIONS
+         ======================================== -->
     <mj-collapsible-panel
         SectionKey="productEntitlements"
-        SectionName="Granted Entitlements"
-        Icon="fa fa-shield-halved"
+        SectionName="Entitlement Grants &amp; Subscriptions"
+        Icon="fa fa-key"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
         [BadgeCount]="GetSectionRowCount('productEntitlements')"
         [DefaultExpanded]="true">
+
+        <div class="mjo-panel-fields-grid">
+            <mj-form-field 
+                [Record]="record"
+                [ShowLabel]="true"
+                FieldName="SubscriptionTypeID"
+                Type="textbox"
+                [EditMode]="EditMode"
+                [FormContext]="formContext"
+                LinkType="Record"
+            ></mj-form-field>
+            <mj-form-field 
+                [Record]="record"
+                [ShowLabel]="true"
+                FieldName="EntitlementGrantTiming"
+                Type="select"
+                [EditMode]="EditMode"
+                [FormContext]="formContext"
+            ></mj-form-field>
+            <mj-form-field 
+                [Record]="record"
+                [ShowLabel]="true"
+                FieldName="EntitlementQuantityMode"
+                Type="select"
+                [EditMode]="EditMode"
+                [FormContext]="formContext"
+            ></mj-form-field>
+            <mj-form-field 
+                [Record]="record"
+                [ShowLabel]="true"
+                FieldName="EntitlementValidityMode"
+                Type="select"
+                [EditMode]="EditMode"
+                [FormContext]="formContext"
+            ></mj-form-field>
+        </div>
+
         @if (record.IsSaved) {
-        <div>
+        <div class="mjo-subgrid-wrap">
+            <div class="mjo-subgrid-title">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>Granted Entitlements (<code>__mj_BizAppsOrders.ProductEntitlement</code>)</span>
+            </div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Entitlements','ProductID')"
                 [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Entitlements')"
@@ -376,7 +376,29 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Product Bundle Items -->
+    <!-- ========================================
+         6. FINANCIAL & GENERAL LEDGER RESOLUTION
+         ======================================== -->
+    <mj-collapsible-panel
+        SectionKey="financialAndAccounting"
+        SectionName="Financial &amp; General Ledger Resolution"
+        Icon="fa fa-scale-balanced"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RevenueRecognitionTypeID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+    </mj-collapsible-panel>
+
+    <!-- ========================================
+         7. BUNDLE COMPONENTS & KIT ITEMS
+         ======================================== -->
     <mj-collapsible-panel
         SectionKey="productBundleItems"
         SectionName="Bundle Components &amp; Kit Items"
@@ -387,7 +409,11 @@
         [BadgeCount]="GetSectionRowCount('productBundleItems')"
         [DefaultExpanded]="false">
         @if (record.IsSaved) {
-        <div>
+        <div class="mjo-subgrid-wrap">
+            <div class="mjo-subgrid-title">
+                <i class="fa-solid fa-layer-group"></i>
+                <span>Component Bundle Items (<code>__mj_BizAppsOrders.ProductBundleItem</code>)</span>
+            </div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Bundle Items','BundleProductID')"
                 [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Bundle Items')"
@@ -400,6 +426,44 @@
         }
     </mj-collapsible-panel>
 
+    <!-- ========================================
+         8. SYSTEM METADATA PANEL
+         ======================================== -->
+    @if (!EditMode) {
+    <mj-collapsible-panel
+        SectionKey="systemMetadata"
+        SectionName="System Metadata"
+        Icon="fa fa-database"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ID"
+            Type="textbox"
+            [EditMode]="false"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="__mj_CreatedAt"
+            Type="textbox"
+            [EditMode]="false"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="__mj_UpdatedAt"
+            Type="textbox"
+            [EditMode]="false"
+            [FormContext]="formContext"
+        ></mj-form-field>
+    </mj-collapsible-panel>
+    }
+
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 
 </mj-record-form-container>
+}
