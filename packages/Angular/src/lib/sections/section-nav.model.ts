@@ -51,8 +51,6 @@ export interface OrdersNavBadges {
 export const ORDERS_SUB_PAGES: OrdersSubPage[] = [
     { Id: 'dashboard', Label: 'Dashboard', Icon: 'fa-solid fa-gauge-high', Description: 'Is today normal?' },
     { Id: 'list', Label: 'All orders', Icon: 'fa-solid fa-table-list' },
-    { Id: 'fast-entry', Label: 'Fast entry', Icon: 'fa-solid fa-bolt', Description: 'The 80% order, one column' },
-    { Id: 'editor', Label: 'Order editor', Icon: 'fa-solid fa-pen-ruler', Description: 'Depth, in five tabs' },
     { Id: 'fulfillment', Label: 'Fulfillment queue', Icon: 'fa-solid fa-dolly', Group: 'Work' },
     { Id: 'returns', Label: 'Returns', Icon: 'fa-solid fa-rotate-left', Group: 'Work' },
 ];

@@ -748,6 +748,45 @@ export async function GetProductPrices(user?: UserInfo): Promise<mjBizAppsOrders
     return run<mjBizAppsOrdersProductPriceEntity>(MJO_ENTITIES.ProductPrice, [], 'Priority DESC', undefined, user);
 }
 
+/** A catalog row as the product picker shows it. */
+export interface MJOProductOption {
+    ID: string;
+    Name: string;
+    SKU: string;
+    TypeName: string;
+    CompanyName: string;
+    ListPrice: number;
+    Taxable: boolean;
+}
+
+/**
+ * Products the picker can add, with an indicative list price.
+ *
+ * The figure comes from the PRICE RULES, not `StandaloneSellingPrice`: SSP is
+ * null for anything priced by a rule, and rendering that as $0.00 tells an
+ * order taker the item is free. The engine still resolves the real price on
+ * the line.
+ */
+export async function GetCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
+    const [products, prices] = await Promise.all([
+        GetProducts({ MaxRows: 500, User: user }),
+        GetProductPrices(user),
+    ]);
+    const byProduct = new Map<string, number>();
+    for (const price of prices) {
+        if (!byProduct.has(price.ProductID)) byProduct.set(price.ProductID, price.Amount);
+    }
+    return products.map((product) => ({
+        ID: product.ID,
+        Name: product.Name,
+        SKU: product.SKU ?? '',
+        TypeName: product.ProductType ?? '',
+        CompanyName: product.Company ?? '',
+        ListPrice: product.StandaloneSellingPrice || byProduct.get(product.ID) || 0,
+        Taxable: !!product.IsTaxable,
+    }));
+}
+
 /** Promotions, newest window first. */
 export async function GetPromotions(user?: UserInfo): Promise<mjBizAppsOrdersPromotionEntity[]> {
     return run<mjBizAppsOrdersPromotionEntity>(

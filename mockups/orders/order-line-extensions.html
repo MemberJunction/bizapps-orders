@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Order form — parties &amp; line extensions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<style>
+  :root { --mj-font-sans: Inter, system-ui, sans-serif; }
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --mj-bg-page: #0b1220; --mj-bg-surface: #152033; --mj-bg-surface-card: #1b2940;
+    --mj-bg-surface-sunken: #101a2c; --mj-bg-surface-hover: #22324c;
+    --mj-text-primary: #e8eef8; --mj-text-secondary: #b4c0d4; --mj-text-muted: #8b9bb3;
+    --mj-text-link: #7eb8e6; --mj-border-default: #2c3e5a; --mj-border-subtle: #22324c;
+    --mj-border-strong: #3d5476; --mj-brand-primary: #4f9ad4;
+    --mj-status-warning-text: #fde68a; --mj-status-warning-bg: color-mix(in srgb, #fbbf24 14%, var(--mj-bg-surface));
+    --mj-status-warning-border: color-mix(in srgb, #fbbf24 35%, transparent);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; font-family: var(--mj-font-sans);
+    background: var(--mj-bg-page); color: var(--mj-text-primary);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 80px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  .lede { color: var(--mj-text-secondary); font-size: 13.5px; line-height: 1.5; margin: 0 0 22px; }
+  .note {
+    font-size: 13px; line-height: 1.5; padding: 12px 14px; margin: 0 0 22px;
+    border: 1px solid color-mix(in srgb, var(--mj-brand-primary) 35%, var(--mj-border-default));
+    background: color-mix(in srgb, var(--mj-brand-primary) 10%, var(--mj-bg-surface));
+    border-radius: 12px;
+  }
+  .note code { font-size: 12px; }
+  h2 { font-size: 14px; margin: 28px 0 10px; letter-spacing: .01em; }
+  .card {
+    background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+    border-radius: 14px; padding: 14px 16px;
+  }
+  .kicker {
+    font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--mj-text-muted);
+  }
+  .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .party {
+    border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-card);
+    border-radius: 10px; padding: 10px 12px;
+  }
+  .party.is-on {
+    border-color: color-mix(in srgb, var(--mj-brand-primary) 55%, var(--mj-border-default));
+  }
+  .field { margin-top: 10px; }
+  .field .l { font-size: 11px; font-weight: 650; color: var(--mj-text-muted); margin-bottom: 4px; }
+  .box, select, input {
+    width: 100%; border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-sunken);
+    border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13px; color: inherit;
+  }
+  .people { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .person {
+    display: flex; align-items: center; gap: 8px; text-align: left;
+    border: 1px solid var(--mj-border-subtle); background: var(--mj-bg-surface);
+    border-radius: 8px; padding: 7px 10px; color: inherit; cursor: pointer; font: inherit;
+  }
+  .person.is-on {
+    border-color: var(--mj-brand-primary);
+    background: color-mix(in srgb, var(--mj-brand-primary) 12%, var(--mj-bg-surface));
+  }
+  .person .who { flex: 1; }
+  .person .nm { font-size: 13px; font-weight: 600; }
+  .person .em { font-size: 11.5px; color: var(--mj-text-muted); }
+  .ghost {
+    margin-top: 8px; background: transparent; border: 0; color: var(--mj-text-link);
+    font: inherit; font-size: 12.5px; cursor: pointer; padding: 0;
+  }
+  .line {
+    border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-card);
+    border-radius: 10px; padding: 12px; margin-top: 10px;
+  }
+  .line-top { display: flex; justify-content: space-between; gap: 12px; }
+  .nm { font-weight: 650; }
+  .meta { font-size: 12px; color: var(--mj-text-muted); margin-top: 2px; }
+  .amt { font-variant-numeric: tabular-nums; font-weight: 650; }
+  .ext {
+    margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--mj-border-subtle);
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+  .stated {
+    font-size: 12px; color: var(--mj-text-secondary); margin-top: 8px;
+    display: flex; gap: 6px; align-items: baseline;
+  }
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid var(--mj-border-default);
+    background: var(--mj-bg-surface-sunken); color: var(--mj-text-secondary);
+  }
+  .todo {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 8px;
+    color: var(--mj-status-warning-text); font-size: 12px;
+  }
+  @media (max-width: 720px) {
+    .parties, .ext { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <h1>Parties and line extensions</h1>
+  <p class="lede">
+    The form stays dumb. Who is at the org, what an event line needs, and the membership window
+    are facts the entity already knows. This is how they surface — not new screens.
+  </p>
+
+  <div class="note">
+    <strong>Where the logic lives.</strong>
+    Bill-to person shortlist = people related to the chosen org (Common <code>Relationship</code>),
+    read on the shared entity — no transaction. Membership service period is computed at confirm
+    inside <code>OrderEntityServer</code>. Event attendee rows are the IS-A
+    <code>Event Order Line</code> (same ID as the line). Check-in is operational, not entry.
+  </div>
+
+  <h2>1 · Bill to — org first, then people of that org</h2>
+  <div class="card">
+    <div class="parties">
+      <div class="party is-on">
+        <div class="kicker">Bill to</div>
+        <div class="nm" style="margin-top:4px">Meridian Association</div>
+        <div class="meta">Organization · Net 30</div>
+
+        <div class="field">
+          <div class="l">Who at Meridian</div>
+          <div class="people">
+            <button type="button" class="person is-on">
+              <span class="who">
+                <span class="nm">Jane Chen</span>
+                <span class="em">jane.chen@meridian.org · employee since 2019</span>
+              </span>
+              <i class="fa-solid fa-check" style="color:var(--mj-brand-primary)"></i>
+            </button>
+            <button type="button" class="person">
+              <span class="who">
+                <span class="nm">Marcus Hale</span>
+                <span class="em">marcus.hale@meridian.org · finance</span>
+              </span>
+            </button>
+          </div>
+          <button type="button" class="ghost">Not on this list — search everyone</button>
+        </div>
+      </div>
+      <div class="party">
+        <div class="kicker">Ship to</div>
+        <div class="nm" style="margin-top:4px">Same as bill to</div>
+        <div class="meta">Jane Chen · Meridian Association</div>
+        <p class="meta" style="margin-top:12px;line-height:1.45">
+          Ship-to uses the same pattern when it is not “same”. People of the ship-to org first.
+          A line can still override for a kit that ships to a chapter.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <h2>2 · Lines — weave the IS-A extension into the card, only when the product has one</h2>
+  <div class="card">
+    <div class="line">
+      <div class="line-top">
+        <div>
+          <div class="nm">Annual Conference Ticket 2027</div>
+          <div class="meta">CONF-2027 · Event · Apr 15–17, 2027</div>
+          <span class="chip">Needs attendee</span>
+        </div>
+        <div class="amt">$275.00</div>
+      </div>
+      <div class="ext">
+        <div class="field">
+          <div class="l">Attendee name</div>
+          <input value="Jane Chen" aria-label="Attendee name">
+        </div>
+        <div class="field">
+          <div class="l">Attendee email</div>
+          <input value="jane.chen@meridian.org" aria-label="Attendee email">
+        </div>
+      </div>
+      <div class="stated">
+        <i class="fa-solid fa-calendar-day" style="color:var(--mj-brand-primary)"></i>
+        Service period is the event’s own dates. The line does not ask for them.
+      </div>
+    </div>
+
+    <div class="line">
+      <div class="line-top">
+        <div>
+          <div class="nm">Institutional Membership</div>
+          <div class="meta">MEM-INST · Membership · Calendar year</div>
+        </div>
+        <div class="amt">$1,200.00</div>
+      </div>
+      <div class="stated">
+        <i class="fa-solid fa-rotate" style="color:var(--mj-brand-primary)"></i>
+        Term Jul 1 → Dec 31 2026 (prorated) is decided at confirm. No date fields on the card.
+      </div>
+    </div>
+
+    <div class="line">
+      <div class="line-top">
+        <div>
+          <div class="nm">Style Guide Print Run</div>
+          <div class="meta">SKU-104 · Goods</div>
+        </div>
+        <div class="amt">$48.00</div>
+      </div>
+      <div class="stated">No extension entity on this product type — the card stays a line.</div>
+    </div>
+  </div>
+
+  <h2>3 · What we will not put in the form</h2>
+  <div class="card" style="font-size:13px;color:var(--mj-text-secondary);line-height:1.55">
+    <ul>
+      <li><strong>Check-in</strong> lives on Event Order Line but is a door-scan, not order entry.</li>
+      <li><strong>Service period</strong> for events comes from Event Product; for memberships from the term the server writes at confirm.</li>
+      <li><strong>Qty &gt; 1 tickets</strong> — one attendee block per unit, or a “same attendee” toggle. Build that when we wire the extension, not as a second grid.</li>
+    </ul>
+  </div>
+</main>
+</body>
+</html>

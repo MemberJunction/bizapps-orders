@@ -404,15 +404,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
         try {
             await dbProvider.BeginTransaction();
 
-            if (booking) {
-                this.ConfirmedAt = new Date();
-            }
-
-            // The order IS the receivable, so its number is an A/R document number — assigned
-            // gap-consciously from OrderSequence before the first insert (D30).
-            if (!this.IsSaved && !this.OrderNumber) {
-                this.OrderNumber = await this.assignOrderNumber();
-            }
+            // Capture BEFORE any header write. A draft that is being confirmed already has a PK
+            // and persisted lines; a brand-new confirm does not. The two paths write lines at
+            // different times — see persistPreparedLines below.
 
             // THE HEADER ONLY — `IsGraphNodeSave` is what makes that true, and it is load-bearing.
             //
@@ -449,10 +443,33 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // lines, subscription decisions settle the quantities, and each line is priced. None of
             // it writes a row, and none of it needs the header's key — the collection stamps the
             // foreign key itself.
+            // A form that saved the draft and then confirmed reloads the HEADER only.
+            // `EnsureLinesLoaded` is the shared (non-transactional) read; booking is the
+            // only caller that MUST have the collection before it decides subscriptions.
+            if (booking) await this.EnsureLinesLoaded();
+
             await this.expandBundles();
             const decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine> =
                 booking ? await this.decideSubscriptions() : new Map();
             await this.prepareLines(decisions);
+
+            // CONFIRM-AFTER-DRAFT: the lines already exist. `prepareLines` just prorated them
+            // (membership qty 1 → 0.3836). If the header flips to Confirmed first, trigger 51003
+            // freezes Quantity/LineTotal* and the UPDATE rolls back inside INSERT-EXEC — the
+            // error that names neither the line nor the rule. Write those updates WHILE the
+            // header is still Draft. A brand-new confirm INSERTs lines after the header; the
+            // trigger is UPDATE/DELETE only, so that path is safe.
+            const headerAlreadyPersisted = this.IsSaved;
+            if (booking && headerAlreadyPersisted) {
+                await this.persistPreparedLines(options, decisions);
+            }
+
+            if (booking) {
+                this.ConfirmedAt = new Date();
+            }
+            if (!headerAlreadyPersisted && !this.OrderNumber) {
+                this.OrderNumber = await this.assignOrderNumber();
+            }
 
             const savedHeader = await super.Save({ ...options, IsGraphNodeSave: true } as EntitySaveOptions);
             if (!savedHeader) {
@@ -461,10 +478,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
 
-            // Bundle expansion, subscription decisions and pricing all happened BEFORE the header
-            // save — see the note there. What is left is the writing.
-            await this.savePendingLines(options, decisions);
-            await this.savePriceComponents(options);
+            if (!headerAlreadyPersisted || !booking) {
+                await this.persistPreparedLines(options, decisions);
+            }
 
             // THE PRICE THE CALLER WAS SHOWN STILL HOLDS — checked here, inside the transaction,
             // where the real gross already exists.
@@ -879,6 +895,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private resolvedExtendedFor(line: mjBizAppsOrdersOrderLineEntity): number | null {
         return this._priceComponents.get(line)?.ExtendedAmount ?? null;
+    }
+
+    /** Persist priced lines and the component/charge rows that need their IDs. */
+    private async persistPreparedLines(
+        options?: EntitySaveOptions,
+        decisions?: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
+    ): Promise<void> {
+        await this.savePendingLines(options, decisions);
+        await this.savePriceComponents(options);
     }
 
     private async savePendingLines(

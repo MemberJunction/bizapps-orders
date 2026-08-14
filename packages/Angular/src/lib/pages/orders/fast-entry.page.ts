@@ -16,19 +16,10 @@ import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../..
 import { MJOMoneyPipe, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import type { MJOTenderOption } from '../payments/payment-entry.page';
-import { GetOrders, RecentCustomers, SearchCustomers } from '../../data/orders-queries';
+import { GetOrders, RecentCustomers, SearchCustomers, type MJOProductOption } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 
-/** A catalog row as the product picker shows it. */
-export interface MJOProductOption {
-    ID: string;
-    Name: string;
-    SKU: string;
-    TypeName: string;
-    CompanyName: string;
-    ListPrice: number;
-    Taxable: boolean;
-}
+export type { MJOProductOption } from '../../data/orders-queries';
 
 /** The customer, and what an order taker needs to know before quoting. */
 export interface MJOCustomerContext {

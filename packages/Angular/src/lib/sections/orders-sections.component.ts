@@ -41,8 +41,6 @@ import { MJOSectionShellComponent } from './section-shell.component';
 import { MJOPricingScheduler } from '../services/pricing-scheduler.service';
 
 import type { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
-import { MJOFastEntryPageComponent } from '../pages/orders/fast-entry.page';
-import { MJOOrderWorkspacePageComponent } from '../pages/orders/order-workspace.page';
 import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
 import { MJOOrdersDashboardPageComponent } from '../pages/orders/orders-dashboard.page';
 import { MJOFulfillmentPageComponent } from '../pages/orders/fulfillment.page';
@@ -58,9 +56,9 @@ import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/c
 import { MJOPricingPageComponent, MJOPromotionsPageComponent } from '../pages/catalog/pricing.page';
 import { MJOReturnPageComponent } from '../pages/orders/return.page';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
-import { Metadata } from '@memberjunction/core';
+import { CompositeKey, Metadata } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { GetPaymentTypes, GetProductPrices, GetProducts, GetSellingCompanies } from '../data/orders-queries';
+import { GetCatalogOptions, GetPaymentTypes, GetProducts, GetSellingCompanies, type MJOProductOption } from '../data/orders-queries';
 
 /**
  * An order and its lines, loaded together.
@@ -285,9 +283,9 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
         // Opening a record routes to the page that shows it. Each carries its id,
         // which the destination reads on activation.
-        on<{ ID?: string } | string>('OrderOpened', (row) => this.openRecord('editor', row));
+        on<{ ID?: string } | string>('OrderOpened', (row) => this.openEntity(MJO_ENTITIES.OrderHeader, row));
         on<{ ID?: string } | string>('PaymentOpened', (row) => this.openRecord('entry', row));
-        on<{ ID?: string } | string>('ProductOpened', (row) => this.openRecord('products', row));
+        on<{ ID?: string } | string>('ProductOpened', (row) => this.openEntity(MJO_ENTITIES.Product, row));
 
         // The irreversible step. Straight to the engine — there is no dry run in front of it.
         on<OrderHeaderEntity>('ConfirmRequested', (draft) => void this.Confirm(draft));
@@ -303,10 +301,9 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         // was silently gone — the button looked like it did nothing. Fast entry and the editor were
         // designed to share one draft instance; this is the handoff that makes that true.
         on<OrderHeaderEntity>('EscalateRequested', (draft) => {
-            void this.OnPageSelected('editor').then(() => {
-                const page = this.mounted.get('editor')?.instance as { AdoptDraft?: (d: OrderHeaderEntity) => void } | undefined;
-                page?.AdoptDraft?.(draft);
-            });
+            if (draft.ID) {
+                this.navigationService.OpenEntityRecord(MJO_ENTITIES.OrderHeader, CompositeKey.FromID(draft.ID));
+            }
         });
 
         // Pages are cached rather than destroyed on rail changes, so these live as
@@ -336,37 +333,12 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         return { Catalog, CompanyID, Tenders, Companies };
     }
 
-    private catalogCache: Array<Record<string, unknown>> | null = null;
+    private catalogCache: MJOProductOption[] | null = null;
 
     /** The product picker's options, shaped as it expects them. */
-    private async catalogOptions(): Promise<Array<Record<string, unknown>>> {
+    private async catalogOptions(): Promise<MJOProductOption[]> {
         if (!this.catalogCache) {
-            // The list price shown in the picker comes from the PRICE RULES, not
-            // from the product: StandaloneSellingPrice is null for anything priced
-            // by a rule, and rendering that as $0.00 tells an order taker the item
-            // is free. The rule is the indicative figure; the engine still resolves
-            // the real one on the line.
-            const [products, prices] = await Promise.all([
-                GetProducts({ MaxRows: 500 }),
-                GetProductPrices(),
-            ]);
-            const byProduct = new Map<string, number>();
-            for (const price of prices) {
-                const id = String(price['ProductID'] ?? '');
-                if (id && !byProduct.has(id)) byProduct.set(id, Number(price['Amount'] ?? 0));
-            }
-            this.catalogCache = products.map((product) => ({
-                ID: String(product['ID']),
-                Name: String(product['Name'] ?? ''),
-                SKU: String(product['SKU'] ?? ''),
-                TypeName: String(product['ProductType'] ?? ''),
-                CompanyName: String(product['Company'] ?? ''),
-                ListPrice:
-                    Number(product['StandaloneSellingPrice'] ?? 0) ||
-                    byProduct.get(String(product['ID'])) ||
-                    0,
-                Taxable: !!product['IsTaxable'],
-            }));
+            this.catalogCache = await GetCatalogOptions();
         }
         return this.catalogCache;
     }
@@ -408,6 +380,13 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     protected openRecord(pageId: string, row: { ID?: string } | string): void {
         this.PendingRecordID = typeof row === 'string' ? row : (row?.ID ?? null);
         this.OnPageSelected(pageId);
+    }
+
+    /** Open an entity record in Explorer — same path as the generated form host. */
+    protected openEntity(entityName: string, row: { ID?: string } | string): void {
+        const id = typeof row === 'string' ? row : row?.ID;
+        if (!id) return;
+        this.navigationService.OpenEntityRecord(entityName, CompositeKey.FromID(id));
     }
 
     /** Set when a page was opened for a specific record. */
@@ -536,30 +515,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             this.dropStalePages();
 
             if (draft.ID) {
-                // DESTROY THE EDITOR FIRST, EVEN WHEN IT IS THE ACTIVE PAGE.
-                //
-                // `dropStalePages` deliberately spares the active page — destroying what
-                // someone is looking at mid-interaction is worse than a stale read. Here
-                // that rule is wrong, and it fails in exactly the way this branch keeps
-                // finding: confirming from the editor left the SAME component instance on
-                // screen, still holding its pre-confirm draft, so the order read
-                // "BALANCE $560.00 · Unpaid" while the database said Paid, AmountPaid 560,
-                // balance 0. The money was right and the screen was not.
-                //
-                // `openRecord` alone could not fix it. It sets `OrderID`/`RecordID` on the
-                // cached instance, and the editor takes a `Draft` — it has neither input
-                // and no ngOnChanges, so the re-insert was a silent no-op. Only the
-                // FRESH-MOUNT path reads `PendingRecordID` and rehydrates through
-                // `MJOPricingScheduler.LoadDraft`, so the page has to be gone first.
-                const editor = this.mounted.get('editor');
-                if (editor) {
-                    editor.destroy();
-                    this.mounted.delete('editor');
-                }
-
-                // Sets PendingRecordID and navigates; `OnPageSelected('editor')` reads it
-                // and hydrates the SAVED order — number, status, lines, payments applied.
-                this.openRecord('editor', { ID: draft.ID });
+                this.navigationService.OpenEntityRecord(MJO_ENTITIES.OrderHeader, CompositeKey.FromID(draft.ID));
                 return;
             }
 
@@ -731,7 +687,11 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 export class OrdersSectionResource extends MJOSectionBaseComponent {
     /** Taking an order is what someone arrives at this section to do. */
     protected override get primaryAction() {
-        return { Label: 'New order', Icon: 'fa-solid fa-plus', PageId: 'fast-entry' };
+        return { Label: 'New order', Icon: 'fa-solid fa-plus', PageId: 'list' };
+    }
+
+    public override StartPrimary(): void {
+        this.navigationService.OpenNewEntityRecord(MJO_ENTITIES.OrderHeader);
     }
 
     protected get subPages(): OrdersSubPage[] {
@@ -748,19 +708,11 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
     }
 
     /**
-     * Fast entry and the editor are live; the rest still render the "not built
-     * yet" notice rather than a blank pane.
+     * Dashboard, list, fulfillment, and returns. New/existing orders open as
+     * Explorer record tabs via NavigationService, not as rail pages.
      */
     protected resolvePage(pageId: string): Type<unknown> | null {
         switch (pageId) {
-            case 'fast-entry':
-                return MJOFastEntryPageComponent;
-            case 'editor':
-                // The WORKSPACE, not the bare editor: the editor is presentational and needs a
-                // Draft, and opening it with no record handed it none — which is what made the
-                // full order screen render a form with every field blank. The workspace owns the
-                // drafts and binds the editor properly.
-                return MJOOrderWorkspacePageComponent;
             case 'list':
                 return MJOOrdersListPageComponent;
             case 'dashboard':
