@@ -1,0 +1,541 @@
+[
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Charge Types"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Charge Types"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Customer Payment Methods"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Customer Payment Methods"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Customer Payment Terms"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Customer Payment Terms"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Customer Tax Exemptions"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Customer Tax Exemptions"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Entitlement Grants"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Grants"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Event Order Lines"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Event Products"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Order Adjustment Allocations"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Adjustment Allocations"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Order Adjustments"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Adjustments"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Order Charge Allocations"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Charge Allocations"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Order Charges"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Charges"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Order Company Policies"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Company Policies"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Order Headers"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Order Line Dimensions"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Dimensions"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Order Line Price Components"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Price Components"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Order Lines"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Order Sequences"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Sequences"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Payment Details"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Details"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Payment Headers"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Headers"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Payment Intents"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Intents"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Payment Lines"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Lines"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Payment Provider Types"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Provider Types"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Payment Providers"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Providers"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Payment Sequences"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Sequences"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Payment Terms Types"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Terms Types"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Payment Types"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Types"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Price List Assignments"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Price List Assignments"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Price Lists"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Price Lists"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Price Tiers"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Price Tiers"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Product Bundle Items"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Bundle Items"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Product Categories"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Product Entitlements"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Entitlements"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Product Prices"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Prices"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Product Types"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Types"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Products"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Promotion Codes"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Promotion Codes"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Promotion Targets"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Promotion Targets"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Promotion Types"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Promotion Types"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Promotions"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Promotions"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Revenue Recognition Types"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Revenue Recognition Types"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Sales Authorities"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Sales Authorities"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Sales Rules"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Sales Rules"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Stored Value Accounts"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Stored Value Accounts"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Stored Value Transactions"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Stored Value Transactions"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Subscription Events"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Events"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Subscription Sequences"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Sequences"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Subscription Terms"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Terms"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Subscription Types"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Types"
+    }
+  },
+  {
+    "_comments": [
+      "Lock DisplayName to the unprefixed entity title so CodeGen form SectionName and Explorer chrome stay human."
+    ],
+    "fields": {
+      "DisplayName": "Subscriptions"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscriptions"
+    }
+  }
+]

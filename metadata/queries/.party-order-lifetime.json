@@ -1,0 +1,24 @@
+[
+  {
+    "fields": {
+      "Name": "Party Order Lifetime",
+      "CategoryID": "@lookup:MJ: Query Categories.Name=Orders",
+      "UserQuestion": "What is this person or organization's order lifetime — counts, LTV, and years as a customer?",
+      "Description": "Single-row party header stats: non-voided order count, open/overdue counts, lifetime gross, first order date, years as customer, and active subscription count. Used by the Person and Organization form headers so those figures are one indexed aggregate instead of four count RunViews plus extra money queries.",
+      "SQL": "@file:SQL/party-order-lifetime.sql",
+      "TechnicalDescription": "Nunjucks-parameterized. PartyKind (person|organization) selects the bill-to / subscription join column; PartyID is the party UUID and is always passed through the sqlString filter. Aggregates __mj_BizAppsOrders.vwOrderHeaders (Status <> Voided) and vwSubscriptions (Status = Active). Returns one row even when the party has no orders.",
+      "Status": "Approved",
+      "QualityRank": 8,
+      "ExecutionCostRank": 2,
+      "UsesTemplate": true
+    },
+    "relatedEntities": {},
+    "primaryKey": {
+      "ID": "8FCC8439-03ED-4426-A289-C9B8973D6560"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T20:42:51.432Z",
+      "checksum": "6110dbeda8c68309f77640ab706332c31ec3e188c54b73a70da0872a8556a2bd"
+    }
+  }
+]

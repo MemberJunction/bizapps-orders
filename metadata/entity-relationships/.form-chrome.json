@@ -1,0 +1,318 @@
+[
+  {
+    "_comments": [
+      "Form chrome: Bill-To Orders on a Person are the primary commercial relationship.",
+      "Ship-To / Sold-To / line-level hang-ons stay Auto so the ranker can park them in More."
+    ],
+    "fields": {
+      "DisplayName": "Orders",
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Order Headers&RelatedEntityJoinField=BillToPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T21:36:13.318Z",
+      "checksum": "e6870e59fd50cc83ac4c89b0f46afe8a53c5340c247e48de2ceb98ed85e0b37a"
+    }
+  },
+  {
+    "_comments": [
+      "Form chrome: Bill-To Orders on an Organization stay first-class."
+    ],
+    "fields": {
+      "DisplayName": "Orders",
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Order Headers&RelatedEntityJoinField=BillToOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T21:36:13.357Z",
+      "checksum": "e6870e59fd50cc83ac4c89b0f46afe8a53c5340c247e48de2ceb98ed85e0b37a"
+    }
+  },
+  {
+    "_comments": [
+      "Form chrome: Bill-To Payment Headers on a Person stay first-class."
+    ],
+    "fields": {
+      "DisplayName": "Payments",
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Payment Headers&RelatedEntityJoinField=BillToPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T21:36:13.586Z",
+      "checksum": "0447ea93e30e6d017d073fd4887d28f974d0ebe86dd2589587924b204ba56b0c"
+    }
+  },
+  {
+    "_comments": [
+      "Form chrome: Bill-To Payment Headers on an Organization stay first-class."
+    ],
+    "fields": {
+      "DisplayName": "Payments",
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Payment Headers&RelatedEntityJoinField=BillToOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T21:36:13.402Z",
+      "checksum": "0447ea93e30e6d017d073fd4887d28f974d0ebe86dd2589587924b204ba56b0c"
+    }
+  },
+  {
+    "_comments": [
+      "Form chrome: Subscriptions held by an Organization stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Subscriptions&RelatedEntityJoinField=HolderOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T20:00:36.677Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Form chrome: Subscriptions where this Person is the beneficiary stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Subscriptions&RelatedEntityJoinField=BeneficiaryPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T20:00:36.657Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Line-level Order Lines do not belong on a Person form — the header is enough."
+    ],
+    "fields": {
+      "DisplayInForm": false
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Order Lines&RelatedEntityJoinField=ShipToPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T21:36:13.465Z",
+      "checksum": "70c7c4f3f7ec6122a8bcc73162078bdd3837fcb105653e419d43d5b8046fd804"
+    }
+  },
+  {
+    "_comments": [
+      "Line-level Order Lines do not belong on an Organization form."
+    ],
+    "fields": {
+      "DisplayInForm": false
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Order Lines&RelatedEntityJoinField=ShipToOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T21:36:13.517Z",
+      "checksum": "70c7c4f3f7ec6122a8bcc73162078bdd3837fcb105653e419d43d5b8046fd804"
+    }
+  },
+  {
+    "_comments": [
+      "Event Order Lines (attendee) are not a Person-form surface."
+    ],
+    "fields": {
+      "DisplayInForm": false
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Event Order Lines&RelatedEntityJoinField=PersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T21:36:13.623Z",
+      "checksum": "70c7c4f3f7ec6122a8bcc73162078bdd3837fcb105653e419d43d5b8046fd804"
+    }
+  },
+  {
+    "_comments": [
+      "Party-form overflow: stored value, payment methods, entitlements, and promo codes belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Stored Value Accounts&RelatedEntityJoinField=BeneficiaryPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T22:04:26.317Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Party-form overflow: stored value belongs in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Stored Value Accounts&RelatedEntityJoinField=BeneficiaryOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T22:04:26.380Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Party-form overflow: customer payment methods belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Customer Payment Methods&RelatedEntityJoinField=OwnerPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T22:04:26.417Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Party-form overflow: customer payment methods belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Customer Payment Methods&RelatedEntityJoinField=OwnerOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T22:04:26.455Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Party-form overflow: entitlement grants belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Entitlement Grants&RelatedEntityJoinField=BeneficiaryPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T22:04:26.492Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Party-form overflow: entitlement grants belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Entitlement Grants&RelatedEntityJoinField=BeneficiaryOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T22:04:26.524Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Party-form overflow: promotion codes belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Promotion Codes&RelatedEntityJoinField=AssignedPersonID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T22:04:26.559Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Party-form overflow: promotion codes belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Promotion Codes&RelatedEntityJoinField=AssignedOrganizationID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T22:04:26.592Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  }
+]
