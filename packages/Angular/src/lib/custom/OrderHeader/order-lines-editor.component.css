@@ -22,9 +22,16 @@
 .mjo-ol-card__id { flex: 1; min-width: 0; }
 
 .mjo-ol-card__name {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
     font-size: var(--mj-text-sm);
     font-weight: var(--mj-font-semibold);
     color: var(--mj-text-link);
+    text-align: left;
+    cursor: pointer;
     text-decoration: none;
 }
 
@@ -227,7 +234,88 @@
     font-weight: var(--mj-font-semibold);
 }
 
+.mjo-ol-ext-err {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-status-error-text);
+}
+
+.mjo-ol-ext {
+    margin-top: var(--mj-space-3);
+    padding-top: var(--mj-space-3);
+    border-top: 1px dashed var(--mj-border-subtle);
+}
+
+.mjo-ol-ext__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mj-space-2);
+    flex-wrap: wrap;
+}
+
+.mjo-ol-ext__label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--mj-text-xs);
+    font-weight: var(--mj-font-semibold);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--mj-text-muted);
+}
+
+.mjo-ol-ext__modes {
+    display: inline-flex;
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-full);
+    overflow: hidden;
+    background: var(--mj-bg-surface-sunken);
+}
+
+.mjo-ol-mode {
+    border: 0;
+    background: transparent;
+    color: var(--mj-text-secondary);
+    font: inherit;
+    font-size: 11px;
+    font-weight: var(--mj-font-semibold);
+    padding: 4px 10px;
+    cursor: pointer;
+}
+
+.mjo-ol-mode.is-on {
+    background: color-mix(in srgb, var(--mj-brand-primary) 14%, var(--mj-bg-surface));
+    color: var(--mj-brand-primary);
+}
+
+.mjo-ol-ext__empty {
+    margin-top: var(--mj-space-2);
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-secondary);
+}
+
+.mjo-ol-ext__fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--mj-space-2);
+    margin-top: var(--mj-space-2);
+}
+
+.mjo-ol-ext__field {
+    min-width: 0;
+}
+
+.mjo-ol-ext__embed {
+    margin-top: var(--mj-space-2);
+    max-height: 420px;
+    overflow: auto;
+    border: 1px solid var(--mj-border-subtle);
+    border-radius: var(--mj-radius-md);
+    background: var(--mj-bg-surface-card);
+}
+
 @media (max-width: 720px) {
     .mjo-ol-card__top { flex-wrap: wrap; }
     .mjo-ol-card__price, .mjo-ol-card__tot { width: auto; }
+    .mjo-ol-ext__fields { grid-template-columns: 1fr; }
 }

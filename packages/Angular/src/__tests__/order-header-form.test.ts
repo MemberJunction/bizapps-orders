@@ -1,4 +1,6 @@
 import '@angular/compiler';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
@@ -10,6 +12,8 @@ import {
     OrderFormTabs,
 } from '../lib/custom/OrderHeader/order-header-form.component';
 import '../public-api';
+
+const here = import.meta.dirname;
 
 describe('BizAppsOrderHeaderFormComponent', () => {
     it('subclasses the generated order header form', () => {
@@ -51,5 +55,31 @@ describe('BizAppsOrderHeaderFormComponent', () => {
     it('does not put bill-to or ship-to on the header tab strip', () => {
         expect(OrderFormTabs(true).map((tab) => tab.key)).not.toContain('bill');
         expect(OrderFormTabs(true).map((tab) => tab.key)).not.toContain('ship');
+    });
+});
+
+describe('order header link wiring', () => {
+    it('relays every form-field Navigate to the host (Explorer maps that to OpenEntityRecord)', () => {
+        const html = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-header-form.component.html'),
+            'utf8',
+        );
+        const fields = [...html.matchAll(/<mj-form-field\b[^>]*>/g)].map((m) => m[0]);
+        expect(fields.length).toBeGreaterThan(0);
+        const missing = fields.filter((tag) => !tag.includes('(Navigate)="OnFormNavigate($event)"'));
+        expect(missing).toEqual([]);
+    });
+
+    it('does not use hash hrefs for party or product names', () => {
+        const header = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-header-form.component.html'),
+            'utf8',
+        );
+        const lines = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),
+            'utf8',
+        );
+        expect(header).not.toContain('href="#"');
+        expect(lines).not.toContain('href="#"');
     });
 });

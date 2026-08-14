@@ -236,6 +236,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public OpenBillTo(event: Event): void {
+        event.preventDefault();
         event.stopPropagation();
         if (this.record?.BillToOrganizationID) {
             this.openRecord(MJO_COMMON_ENTITIES.Organization, this.record.BillToOrganizationID);
@@ -247,6 +248,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public OpenShipTo(event: Event): void {
+        event.preventDefault();
         event.stopPropagation();
         if (this.record?.ShipToOrganizationID) {
             this.openRecord(MJO_COMMON_ENTITIES.Organization, this.record.ShipToOrganizationID);

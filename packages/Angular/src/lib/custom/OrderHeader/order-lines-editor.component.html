@@ -3,9 +3,9 @@
         <div class="mjo-ol-card">
             <div class="mjo-ol-card__top">
                 <div class="mjo-ol-card__id">
-                    <a href="#" class="mjo-ol-card__name" (click)="OpenProduct(line, $event)">
+                    <button type="button" class="mjo-ol-card__name" (click)="OpenProduct(line, $event)">
                         {{ ProductFor(line)?.Name ?? 'Product' }}
-                    </a>
+                    </button>
                     <div class="mjo-ol-card__meta">
                         {{ ProductFor(line)?.SKU }}
                         @if (ProductFor(line)?.TypeName) {
@@ -58,6 +58,66 @@
                     }
                 }
             </div>
+
+            @if (ExtensionFor(line); as ext) {
+                <div class="mjo-ol-ext">
+                    <div class="mjo-ol-ext__bar">
+                        <span class="mjo-ol-ext__label">
+                            <i class="fa-solid fa-puzzle-piece" aria-hidden="true"></i>
+                            {{ ExtensionLabelFor(line) }}
+                        </span>
+                        <div class="mjo-ol-ext__modes" role="group" aria-label="Line extension mode">
+                            <button
+                                type="button"
+                                class="mjo-ol-mode"
+                                [class.is-on]="ExtensionMode === 'simple'"
+                                (click)="SetExtensionMode('simple')">
+                                Simple
+                            </button>
+                            <button
+                                type="button"
+                                class="mjo-ol-mode"
+                                [class.is-on]="ExtensionMode === 'extended'"
+                                (click)="SetExtensionMode('extended')">
+                                Extended
+                            </button>
+                        </div>
+                    </div>
+
+                    @if (ExtensionMode === 'simple') {
+                        @if (SimpleFieldsFor(line).length === 0) {
+                            <div class="mjo-ol-ext__empty">
+                                Nothing required for this product type — switch to Extended for optional details.
+                            </div>
+                        } @else {
+                            <div class="mjo-ol-ext__fields">
+                                @for (field of SimpleFieldsFor(line); track field.Name) {
+                                    <div class="mjo-ol-ext__field">
+                                        <mj-form-field
+                                            [Record]="ext"
+                                            [ShowLabel]="true"
+                                            [FieldName]="field.Name"
+                                            [Type]="field.Type"
+                                            [LinkType]="field.LinkType"
+                                            [EditMode]="EditMode"
+                                            (Navigate)="OnExtensionNavigate($event)">
+                                        </mj-form-field>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    } @else {
+                        <div class="mjo-ol-ext__embed">
+                            <mj-entity-form-host
+                                [Record]="ext"
+                                [EditMode]="EditMode"
+                                [Config]="ExtensionFormConfig"
+                                (Navigate)="OnExtensionNavigate($event)">
+                            </mj-entity-form-host>
+                        </div>
+                    }
+                </div>
+            }
         </div>
     } @empty {
         <div class="mjo-ol-empty">
@@ -65,6 +125,10 @@
             <div class="mjo-ol-empty__title">Nothing on this order yet</div>
             <div>Search the catalog to add the first line.</div>
         </div>
+    }
+
+    @if (ExtensionError) {
+        <div class="mjo-ol-ext-err">{{ ExtensionError }}</div>
     }
 
     <div class="mj-typeahead mjo-ol-picker">

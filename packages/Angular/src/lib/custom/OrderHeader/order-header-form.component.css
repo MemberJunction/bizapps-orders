@@ -191,6 +191,18 @@
     cursor: pointer;
 }
 
+.mjo-oh-bubble__name.mjo-oh-link {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
 .mjo-oh-bubble__hit:hover { background: var(--mj-bg-surface-hover); }
 
 .mjo-oh-bubble__ic {

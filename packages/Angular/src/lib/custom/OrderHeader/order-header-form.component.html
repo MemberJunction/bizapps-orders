@@ -40,65 +40,75 @@
 
         <div class="mjo-oh-facts">
             <div class="mjo-oh-fact">
-                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderType" Type="select" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
+                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderType" Type="select" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
             </div>
             <div class="mjo-oh-fact">
-                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="CompanyID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record"></mj-form-field>
+                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="CompanyID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
             </div>
             <div class="mjo-oh-fact">
-                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
+                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
             </div>
         </div>
 
         <div class="mjo-oh-parties">
             <div class="mjo-oh-bubble" [class.is-open]="ExpandedParty === 'bill'" [class.is-needed]="NeedsBillTo">
-                <button type="button" class="mjo-oh-bubble__hit" (click)="ToggleParty('bill')">
+                <div
+                    class="mjo-oh-bubble__hit"
+                    role="button"
+                    tabindex="0"
+                    [attr.aria-expanded]="ExpandedParty === 'bill'"
+                    (click)="ToggleParty('bill')"
+                    (keydown.enter)="ToggleParty('bill')"
+                    (keydown.space)="ToggleParty('bill'); $event.preventDefault()">
                     <span class="mjo-oh-bubble__ic"><i class="fa-solid fa-file-invoice-dollar"></i></span>
                     <span class="mjo-oh-bubble__copy">
                         <span class="mjo-oh-bubble__role">Bill to</span>
-                        <span class="mjo-oh-bubble__name">
-                            @if (hasBillTo) {
-                                <a href="#" class="mjo-oh-link" (click)="OpenBillTo($event)">{{ BillToName }}</a>
-                            } @else {
-                                {{ BillToName }}
-                            }
-                        </span>
+                        @if (hasBillTo) {
+                            <button type="button" class="mjo-oh-link mjo-oh-bubble__name" (click)="OpenBillTo($event)">{{ BillToName }}</button>
+                        } @else {
+                            <span class="mjo-oh-bubble__name">{{ BillToName }}</span>
+                        }
                         <span class="mjo-oh-bubble__detail">{{ BillToDetail }}</span>
                     </span>
                     <i class="fa-solid mjo-oh-bubble__chev" [class.fa-chevron-up]="ExpandedParty === 'bill'" [class.fa-chevron-down]="ExpandedParty !== 'bill'"></i>
-                </button>
+                </div>
                 @if (ExpandedParty === 'bill') {
                     <div class="mjo-oh-bubble__edit">
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToOrganizationID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record"></mj-form-field>
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record"></mj-form-field>
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToAddressID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record"></mj-form-field>
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentTermsTypeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToOrganizationID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToAddressID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentTermsTypeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     </div>
                 }
             </div>
 
             <div class="mjo-oh-bubble" [class.is-open]="ExpandedParty === 'ship'">
-                <button type="button" class="mjo-oh-bubble__hit" (click)="ToggleParty('ship')">
+                <div
+                    class="mjo-oh-bubble__hit"
+                    role="button"
+                    tabindex="0"
+                    [attr.aria-expanded]="ExpandedParty === 'ship'"
+                    (click)="ToggleParty('ship')"
+                    (keydown.enter)="ToggleParty('ship')"
+                    (keydown.space)="ToggleParty('ship'); $event.preventDefault()">
                     <span class="mjo-oh-bubble__ic"><i class="fa-solid fa-truck-fast"></i></span>
                     <span class="mjo-oh-bubble__copy">
                         <span class="mjo-oh-bubble__role">Ship to</span>
-                        <span class="mjo-oh-bubble__name">
-                            @if (ShipToIsSame) {
-                                {{ ShipToName }}
-                            } @else {
-                                <a href="#" class="mjo-oh-link" (click)="OpenShipTo($event)">{{ ShipToName }}</a>
-                            }
-                        </span>
+                        @if (ShipToIsSame) {
+                            <span class="mjo-oh-bubble__name">{{ ShipToName }}</span>
+                        } @else {
+                            <button type="button" class="mjo-oh-link mjo-oh-bubble__name" (click)="OpenShipTo($event)">{{ ShipToName }}</button>
+                        }
                         <span class="mjo-oh-bubble__detail">{{ ShipToDetail }}</span>
                     </span>
                     <i class="fa-solid mjo-oh-bubble__chev" [class.fa-chevron-up]="ExpandedParty === 'ship'" [class.fa-chevron-down]="ExpandedParty !== 'ship'"></i>
-                </button>
+                </div>
                 @if (ExpandedParty === 'ship') {
                     <div class="mjo-oh-bubble__edit">
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToOrganizationID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record"></mj-form-field>
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record"></mj-form-field>
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToAddressID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record"></mj-form-field>
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="RequestedDeliveryDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToOrganizationID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToAddressID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="RequestedDeliveryDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     </div>
                 }
             </div>
@@ -127,8 +137,8 @@
         @if (ActiveTab === 'payment') {
             <div class="mjo-oh-tabpane">
                 <div class="mjo-oh-fields">
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentTypeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record"></mj-form-field>
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentAmount" Type="number" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentTypeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentAmount" Type="number" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                 </div>
                 @if (record.IsSaved && PaymentParams) {
                     <mj-explorer-entity-data-grid
@@ -148,13 +158,13 @@
         @if (ActiveTab === 'details') {
             <div class="mjo-oh-tabpane">
                 <div class="mjo-oh-fields">
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="DueDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ExternalDocumentNumber" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentStatus" Type="select" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Status" Type="select" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="SalesRepUserID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record"></mj-form-field>
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Description" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Notes" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="DueDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ExternalDocumentNumber" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentStatus" Type="select" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Status" Type="select" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="SalesRepUserID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Description" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Notes" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                 </div>
             </div>
         }
@@ -301,8 +311,9 @@
         [DefaultExpanded]="true">
         <mjo-order-lines-editor
             [Order]="record"
+            [EditMode]="EditMode"
             (PricingChanged)="OnPricingChanged($event)"
-            (ProductOpened)="OpenProduct($event)">
+            (Navigate)="OnFormNavigate($event)">
         </mjo-order-lines-editor>
     </mj-collapsible-panel>
 

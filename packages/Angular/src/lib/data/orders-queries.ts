@@ -1017,9 +1017,34 @@ export interface MJOProductOption {
     Name: string;
     SKU: string;
     TypeName: string;
+    ProductTypeID: string;
+    /** MJ entity name of the IS-A Order Line extension, when the type has one. */
+    OrderLineExtensionEntity: string | null;
     CompanyName: string;
     ListPrice: number;
     Taxable: boolean;
+}
+
+/** Flatten a product + its type into the picker row. */
+export function CatalogOptionFrom(
+    product: Pick<
+        mjBizAppsOrdersProductEntity,
+        'ID' | 'Name' | 'SKU' | 'ProductType' | 'ProductTypeID' | 'Company' | 'StandaloneSellingPrice' | 'IsTaxable'
+    >,
+    type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
+    listPrice: number,
+): MJOProductOption {
+    return {
+        ID: product.ID,
+        Name: product.Name,
+        SKU: product.SKU ?? '',
+        TypeName: product.ProductType ?? '',
+        ProductTypeID: product.ProductTypeID,
+        OrderLineExtensionEntity: type?.OrderLineExtensionEntity ?? null,
+        CompanyName: product.Company ?? '',
+        ListPrice: product.StandaloneSellingPrice || listPrice || 0,
+        Taxable: !!product.IsTaxable,
+    };
 }
 
 /**
@@ -1031,23 +1056,19 @@ export interface MJOProductOption {
  * the line.
  */
 export async function GetCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
-    const [products, prices] = await Promise.all([
+    const [products, prices, types] = await Promise.all([
         GetProducts({ MaxRows: 500, User: user }),
         GetProductPrices(user),
+        GetProductTypes(user),
     ]);
     const byProduct = new Map<string, number>();
     for (const price of prices) {
         if (!byProduct.has(price.ProductID)) byProduct.set(price.ProductID, price.Amount);
     }
-    return products.map((product) => ({
-        ID: product.ID,
-        Name: product.Name,
-        SKU: product.SKU ?? '',
-        TypeName: product.ProductType ?? '',
-        CompanyName: product.Company ?? '',
-        ListPrice: product.StandaloneSellingPrice || byProduct.get(product.ID) || 0,
-        Taxable: !!product.IsTaxable,
-    }));
+    const typesById = new Map(types.map((type) => [type.ID, type]));
+    return products.map((product) =>
+        CatalogOptionFrom(product, typesById.get(product.ProductTypeID), byProduct.get(product.ID) ?? 0),
+    );
 }
 
 /** Promotions, newest window first. */
