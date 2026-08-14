@@ -705,7 +705,9 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
         // is no longer a client-side guess at tax — which is what the gap note rightly refused to do.
         this.Order.InitialPaymentTypeID = this.SelectedTenderType?.ID ?? null;
         this.Order.InitialPaymentAmount = this.Pricing.Result?.Totals.GrossTotal ?? 0;
-        this.Order.InitialPaymentReference = this.RequiresReference ? this.Reference.trim() || null : null;
+        // Always copy the typed number. Gating on RequiresReference wiped it when the
+        // tender catalog had not loaded yet (pricing callback) and confirm then saw nothing.
+        this.Order.InitialPaymentReference = this.Reference.trim() || null;
     }
 
     /** ⌘↵ / Ctrl+↵ confirms; ⌘S saves; `/` jumps to the product field. */
@@ -771,6 +773,8 @@ export class MJOFastEntryPageComponent implements OnInit, OnDestroy {
     /** Ask the host to run the pre-flight and confirm. */
     public RequestConfirm(): void {
         if (!this.CanConfirm) return;
+        // Last chance: bind the typed check number onto the order before the save ships.
+        this.applyTenderIntent();
         this.ConfirmRequested.emit(this.Order);
     }
 
