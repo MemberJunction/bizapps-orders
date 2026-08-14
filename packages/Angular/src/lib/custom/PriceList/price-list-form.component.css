@@ -1,0 +1,234 @@
+/* ============================================================================
+   BizApps Orders — Custom Price List Form Component Styles
+   ============================================================================ */
+
+/* ── 1. Hero Identity Header Card ─────────────────────────────────────────── */
+.mjo-record-header-card {
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-lg, 12px);
+    padding: var(--mj-space-4, 16px) var(--mj-space-5, 20px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    margin-bottom: var(--mj-space-4, 16px);
+}
+
+.mjo-record-header-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--mj-space-4, 16px);
+    flex-wrap: wrap;
+}
+
+.mjo-record-identity {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-4, 16px);
+}
+
+.mjo-record-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: var(--mj-radius-md, 8px);
+    background: linear-gradient(135deg, #0076b6 0%, #092340 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 4px 10px rgba(0, 118, 182, 0.25);
+    flex-shrink: 0;
+}
+
+.mjo-record-title-area {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-2, 6px);
+}
+
+.mjo-record-title {
+    margin: 0;
+    font-size: var(--mj-text-lg, 18px);
+    font-weight: var(--mj-font-bold, 700);
+    color: var(--mj-text-primary, #0f172a);
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+}
+
+.mjo-record-badges {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2, 8px);
+    flex-wrap: wrap;
+}
+
+.mjo-entity-chip {
+    font-size: var(--mj-text-xs, 11.5px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-brand-primary, #0076b6);
+    background: var(--mj-status-info-bg, rgba(0, 118, 182, 0.12));
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-sm, 4px);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.mjo-sku-badge {
+    font-family: var(--mj-font-family-mono, monospace);
+    font-size: var(--mj-text-xs, 11.5px);
+    font-weight: 500;
+    color: var(--mj-text-secondary, #475569);
+    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.04));
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    padding: 1px 7px;
+    border-radius: var(--mj-radius-sm, 4px);
+}
+
+.mjo-status-chip {
+    font-size: var(--mj-text-xs, 11.5px);
+    font-weight: var(--mj-font-bold, 700);
+    padding: 2px 10px;
+    border-radius: var(--mj-radius-full, 9999px);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.mjo-status-chip--active {
+    background: var(--mj-color-success-100, #dcfce7);
+    color: var(--mj-color-success-700, #15803d);
+    border: 1px solid var(--mj-color-success-300, #86efac);
+}
+
+.mjo-status-chip--inactive {
+    background: var(--mj-bg-surface-sunken, #f1f5f9);
+    color: var(--mj-text-muted, #64748b);
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+}
+
+.mjo-record-summary-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: var(--mj-space-3, 12px);
+    margin-top: var(--mj-space-3, 14px);
+    padding-top: var(--mj-space-3, 14px);
+    border-top: 1px solid var(--mj-border-default, #f1f5f9);
+}
+
+.mjo-stat-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mjo-stat-label {
+    font-size: var(--mj-text-xs, 10.5px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-text-muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.mjo-stat-val {
+    font-size: var(--mj-text-sm, 13.5px);
+    font-weight: var(--mj-font-bold, 700);
+    font-family: var(--mj-font-family-mono, monospace);
+    color: var(--mj-text-primary, #0f172a);
+}
+
+/* ── 2. Live Simulator Panel ───────────────────────────────────────────────── */
+.mjo-sim-box {
+    background: var(--mj-status-info-bg, rgba(0, 118, 182, 0.05));
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    border-radius: var(--mj-radius-lg, 10px);
+    padding: var(--mj-space-4, 16px);
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-4, 16px);
+}
+
+.mjo-sim-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-4, 16px);
+    flex-wrap: wrap;
+}
+
+.mjo-sim-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mjo-sim-input-group label {
+    font-size: var(--mj-text-xs, 11.5px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-text-secondary, #475569);
+}
+
+.mjo-sim-input-group input[type="number"] {
+    padding: 6px 10px;
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    border-radius: var(--mj-radius-sm, 6px);
+    font-size: var(--mj-text-sm, 13px);
+    font-weight: var(--mj-font-semibold, 600);
+}
+
+.mjo-sim-mode-toggle {
+    display: flex;
+    gap: 4px;
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    border-radius: var(--mj-radius-md, 8px);
+    padding: 3px;
+}
+
+.mjo-mode-btn {
+    padding: 5px 10px;
+    border: none;
+    border-radius: var(--mj-radius-sm, 6px);
+    background: transparent;
+    font-size: var(--mj-text-xs, 11.5px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-text-muted, #64748b);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.mjo-mode-btn.active {
+    background: var(--mj-brand-primary, #0076b6);
+    color: #ffffff;
+}
+
+.mjo-sim-results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--mj-space-3, 12px);
+}
+
+.mjo-sim-card {
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-sm, 6px);
+    padding: var(--mj-space-2, 8px) var(--mj-space-3, 12px);
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.mjo-sim-card .label {
+    font-size: var(--mj-text-xs, 11px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-text-muted, #64748b);
+    text-transform: uppercase;
+}
+
+.mjo-sim-card .val {
+    font-size: var(--mj-text-md, 14px);
+    font-weight: var(--mj-font-bold, 700);
+    font-family: var(--mj-font-mono, monospace);
+    color: var(--mj-text-primary, #0f172a);
+}
+
+.mjo-val--brand { color: var(--mj-brand-primary, #0076b6); }
+.mjo-val--green { color: var(--mj-color-success-700, #15803d); }

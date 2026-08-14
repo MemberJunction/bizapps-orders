@@ -1,7 +1,9 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import type { RunViewParams } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
+import { NavigationService } from '@memberjunction/ng-shared';
+import { DispatchFormNavigation } from '../form-navigation-helper';
 import {
     mjBizAppsOrdersPaymentHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
@@ -35,6 +37,13 @@ import { FormatMoney } from '../../panels/money-format';
 })
 export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHeaderFormComponent {
     public declare record: mjBizAppsOrdersPaymentHeaderEntity;
+
+    protected navigationService = inject(NavigationService, { optional: true });
+
+    override OnFormNavigate(event: FormNavigationEvent): void {
+        this.Navigate.emit(event);
+        DispatchFormNavigation(event, this.navigationService);
+    }
 
     override async ngOnInit(): Promise<void> {
         await super.ngOnInit();

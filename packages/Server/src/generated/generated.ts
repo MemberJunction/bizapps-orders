@@ -278,7 +278,7 @@ export class mjBizAppsOrdersCustomerPaymentMethod_ {
     _mj__UpdatedAt: Date;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     OwnerPerson?: string;
         
     @Field({nullable: true}) 
@@ -729,7 +729,7 @@ export class mjBizAppsOrdersCustomerTaxExemption_ {
     Organization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     Person?: string;
         
 }
@@ -995,7 +995,7 @@ export class mjBizAppsOrdersEntitlementGrant_ {
     Subscription?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     BeneficiaryPerson?: string;
         
     @Field({nullable: true}) 
@@ -1211,14 +1211,6 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @MaxLength(36)
     ID: string;
         
-    @Field({nullable: true, description: `Attendee full name.`}) 
-    @MaxLength(300)
-    AttendeeName?: string;
-        
-    @Field({nullable: true, description: `Attendee email.`}) 
-    @MaxLength(255)
-    AttendeeEmail?: string;
-        
     @Field({nullable: true, description: `UTC timestamp the attendee checked in.`}) 
     CheckInAt?: Date;
         
@@ -1227,6 +1219,22 @@ export class mjBizAppsOrdersEventOrderLine_ {
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field({description: `FK to __mj_BizAppsCommon.Person — the attendee. Required for a new event line; check-in is separate and optional.`}) 
+    @MaxLength(36)
+    PersonID: string;
+        
+    @Field({nullable: true, description: `Dietary preferences for the attendee (vegetarian, kosher, etc.). Shown to conference organizers.`}) 
+    @MaxLength(500)
+    DietaryPreferences?: string;
+        
+    @Field({nullable: true, description: `Food or other allergies conference organizers should know about.`}) 
+    @MaxLength(500)
+    Allergies?: string;
+        
+    @Field({nullable: true, description: `Free-form notes for conference organizers about this attendee.`}) 
+    @MaxLength(2000)
+    Comments?: string;
         
     @Field() 
     @MaxLength(36)
@@ -1327,6 +1335,10 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @MaxLength(36)
     JournalEntryID?: string;
         
+    @Field() 
+    @MaxLength(100)
+    Person: string;
+        
 }
 
 //****************************************************************************
@@ -1338,13 +1350,19 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
     ID?: string;
 
     @Field({ nullable: true })
-    AttendeeName: string | null;
-
-    @Field({ nullable: true })
-    AttendeeEmail: string | null;
-
-    @Field({ nullable: true })
     CheckInAt: Date | null;
+
+    @Field({ nullable: true })
+    PersonID?: string;
+
+    @Field({ nullable: true })
+    DietaryPreferences: string | null;
+
+    @Field({ nullable: true })
+    Allergies: string | null;
+
+    @Field({ nullable: true })
+    Comments: string | null;
 
     @Field({ nullable: true })
     OrderHeaderID?: string;
@@ -1444,13 +1462,19 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
     ID: string;
 
     @Field({ nullable: true })
-    AttendeeName?: string | null;
-
-    @Field({ nullable: true })
-    AttendeeEmail?: string | null;
-
-    @Field({ nullable: true })
     CheckInAt?: Date | null;
+
+    @Field({ nullable: true })
+    PersonID?: string;
+
+    @Field({ nullable: true })
+    DietaryPreferences?: string | null;
+
+    @Field({ nullable: true })
+    Allergies?: string | null;
+
+    @Field({ nullable: true })
+    Comments?: string | null;
 
     @Field({ nullable: true })
     OrderHeaderID?: string;
@@ -1745,6 +1769,9 @@ export class mjBizAppsOrdersEventProduct_ {
     @Field(() => Float, {nullable: true}) 
     _mj__Longitude?: number;
         
+    @Field(() => Float, {nullable: true}) 
+    MaxQuantityPerLine?: number;
+        
 }
 
 //****************************************************************************
@@ -1829,6 +1856,9 @@ export class CreatemjBizAppsOrdersEventProductInput {
 
     @Field({ nullable: true })
     PricingDriverClass: string | null;
+
+    @Field(() => Float, { nullable: true })
+    MaxQuantityPerLine: number | null;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -1917,6 +1947,9 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field({ nullable: true })
     PricingDriverClass?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    MaxQuantityPerLine?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -3211,7 +3244,7 @@ export class mjBizAppsOrdersOrderHeader_ {
     Company: string;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     BillToPerson?: string;
         
     @Field({nullable: true}) 
@@ -3235,7 +3268,7 @@ export class mjBizAppsOrdersOrderHeader_ {
     ShipToOrganization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     ShipToPerson?: string;
         
     @Field({nullable: true}) 
@@ -4202,7 +4235,7 @@ export class mjBizAppsOrdersOrderLine_ {
     ShipToOrganization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     ShipToPerson?: string;
         
     @Field({nullable: true}) 
@@ -5310,7 +5343,7 @@ export class mjBizAppsOrdersPaymentHeader_ {
     ReceivingCompany: string;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     BillToPerson?: string;
         
     @Field({nullable: true}) 
@@ -5697,7 +5730,7 @@ export class mjBizAppsOrdersPaymentIntent_ {
     OrderHeader?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     BillToPerson?: string;
         
     @Field({nullable: true}) 
@@ -7241,7 +7274,7 @@ export class mjBizAppsOrdersPriceListAssignment_ {
     Organization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     Person?: string;
         
 }
@@ -9288,6 +9321,9 @@ export class mjBizAppsOrdersProduct_ {
     @MaxLength(255)
     PricingDriverClass?: string;
         
+    @Field(() => Float, {nullable: true, description: `Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).`}) 
+    MaxQuantityPerLine?: number;
+        
     @Field() 
     @MaxLength(100)
     ProductType: string;
@@ -9413,6 +9449,9 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field({ nullable: true })
     PricingDriverClass: string | null;
 
+    @Field(() => Float, { nullable: true })
+    MaxQuantityPerLine: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -9482,6 +9521,9 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field({ nullable: true })
     PricingDriverClass?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    MaxQuantityPerLine?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -9729,7 +9771,7 @@ export class mjBizAppsOrdersPromotionCode_ {
     AssignedOrganization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     AssignedPerson?: string;
         
     @Field(() => [mjBizAppsOrdersOrderAdjustment_])
@@ -11362,7 +11404,7 @@ export class mjBizAppsOrdersStoredValueAccount_ {
     IssuingCompany: string;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     BeneficiaryPerson?: string;
         
     @Field({nullable: true}) 
@@ -12913,7 +12955,7 @@ export class mjBizAppsOrdersSubscription_ {
     HolderOrganization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(201)
+    @MaxLength(100)
     BeneficiaryPerson?: string;
         
     @Field({nullable: true}) 

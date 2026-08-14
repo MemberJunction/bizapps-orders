@@ -1,0 +1,202 @@
+@if (record) {
+<mj-record-form-container [Record]="record" [FormComponent]="this"
+    (Navigate)="OnFormNavigate($event)"
+    (DeleteRequested)="OnDeleteRequested()"
+    (FavoriteToggled)="OnFavoriteToggled()"
+    (HistoryRequested)="OnHistoryRequested()"
+    (ListManagementRequested)="OnListManagementRequested()">
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="before-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+    <!-- ================================================================
+         HERO IDENTITY HEADER CARD & SUMMARY METRIC STRIP
+         ================================================================ -->
+    <div class="mjo-record-header-card">
+        <div class="mjo-record-header-top">
+            <div class="mjo-record-identity">
+                <div class="mjo-record-avatar">
+                    <i class="fa-solid fa-ticket"></i>
+                </div>
+                <div class="mjo-record-title-area">
+                    <h1 class="mjo-record-title">
+                        {{ record.Name || 'New Campaign & Promotion' }}
+                    </h1>
+                    <div class="mjo-record-badges">
+                        <span class="mjo-entity-chip"><i class="fa-solid fa-database"></i> MJ_BizApps_Orders: Promotions</span>
+                        <span class="mjo-sku-badge">{{ record.Code || 'PROMO CODE TBD' }}</span>
+                        <span class="mjo-value-chip"><i class="fa-solid fa-percent"></i> {{ FormattedValue }}</span>
+                        <span class="mjo-stack-chip"><i class="fa-solid fa-layer-group"></i> {{ StackingBadgeLabel }}</span>
+                        <span [class]="StatusBadgeClass">{{ record.Status || 'Active' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Metric Strip -->
+        <div class="mjo-record-summary-bar">
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Discount Value</span>
+                <span class="mjo-stat-val">{{ FormattedValue }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Active Schedule</span>
+                <span class="mjo-stat-val">{{ FormattedScheduleWindow }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Max Redemptions</span>
+                <span class="mjo-stat-val">{{ record.MaxRedemptions ? (record.MaxRedemptions + ' Uses') : 'Unlimited' }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Redemptions / Customer</span>
+                <span class="mjo-stat-val">{{ record.MaxRedemptionsPerCustomer ? (record.MaxRedemptionsPerCustomer + ' Max') : 'Unlimited' }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Coupon Codes Issued</span>
+                <span class="mjo-stat-val">{{ GetSectionRowCount('mJBizAppsOrdersPromotionCodes') || 0 }} Codes</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         1. PROMOTION DETAILS
+         ================================================================ -->
+    <mj-collapsible-panel
+        SectionKey="promotionDetails"
+        SectionName="Promotion Core Details &amp; Discount Value"
+        Icon="fa fa-ticket"
+        [Form]="this"
+        [FormContext]="formContext"
+        [DefaultExpanded]="true">
+
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Name" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Code" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PromotionTypeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Value" Type="number" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Status" Type="select" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="CompanyID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Description" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+    </mj-collapsible-panel>
+
+    <!-- ================================================================
+         2. TERMS & CONDITIONS
+         ================================================================ -->
+    <mj-collapsible-panel
+        SectionKey="termsAndConditions"
+        SectionName="Qualification Rules &amp; Stacking Order"
+        Icon="fa fa-file-contract"
+        [Form]="this"
+        [FormContext]="formContext"
+        [DefaultExpanded]="true">
+
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="AppliesAt" Type="select" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="AllowsStacking" Type="checkbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="StackSequence" Type="number" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="MinimumOrderAmount" Type="number" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="MinimumQuantity" Type="number" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="QualifierKey" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+    </mj-collapsible-panel>
+
+    <!-- ================================================================
+         3. USAGE LIMITS
+         ================================================================ -->
+    <mj-collapsible-panel
+        SectionKey="usageLimits"
+        SectionName="Usage Limits &amp; Redemption Caps"
+        Icon="fa fa-gauge-high"
+        [Form]="this"
+        [FormContext]="formContext"
+        [DefaultExpanded]="true">
+
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="MaxRedemptions" Type="number" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="MaxRedemptionsPerCustomer" Type="number" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+    </mj-collapsible-panel>
+
+    <!-- ================================================================
+         4. SCHEDULE & STATUS
+         ================================================================ -->
+    <mj-collapsible-panel
+        SectionKey="scheduleAndStatus"
+        SectionName="Campaign Schedule &amp; Active Window"
+        Icon="fa fa-calendar-days"
+        [Form]="this"
+        [FormContext]="formContext"
+        [DefaultExpanded]="true">
+
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="EffectiveFrom" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="EffectiveTo" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="RecurrenceMonths" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="RecurrenceDaysOfWeek" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+    </mj-collapsible-panel>
+
+    <!-- ================================================================
+         5. ISSUED PROMOTION / COUPON CODES (RELATED GRID)
+         ================================================================ -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPromotionCodes"
+        SectionName="Issued Coupon Codes &amp; Keys"
+        Icon="fa fa-key"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPromotionCodes')"
+        [DefaultExpanded]="true">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Codes','PromotionID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Codes')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionCodes')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionCodes', $event.totalRowCount)">
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- ================================================================
+         6. PROMOTION TARGETS & CRITERIA (RELATED GRID)
+         ================================================================ -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPromotionTargets"
+        SectionName="Target Product Categories &amp; Rules"
+        Icon="fa fa-bullseye"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPromotionTargets')"
+        [DefaultExpanded]="true">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Targets','PromotionID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionTargets')"
+                [ShowToolbar]="false"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionTargets', $event.totalRowCount)">
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- ================================================================
+         7. SYSTEM METADATA
+         ================================================================ -->
+    @if (!EditMode) {
+    <mj-collapsible-panel
+        SectionKey="systemMetadata"
+        SectionName="System Metadata"
+        Icon="fa fa-database"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ID" Type="textbox" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="__mj_CreatedAt" Type="textbox" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="__mj_UpdatedAt" Type="textbox" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+    </mj-collapsible-panel>
+    }
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+</mj-record-form-container>
+}

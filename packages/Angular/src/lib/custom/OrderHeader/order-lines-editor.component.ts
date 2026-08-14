@@ -1,21 +1,46 @@
 import { ChangeDetectorRef, Component, EventEmitter, Input, OnDestroy, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import {
+    BaseEntity,
+    CompositeKey,
+    FieldValueCollection,
+    Metadata,
+    type BaseEntityEvent,
+    type IMetadataProvider,
+} from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
+import {
+    BaseFormComponent,
+    BaseFormsModule,
+    type EntityFormConfig,
+    type FormNavigationEvent,
+} from '@memberjunction/ng-base-forms';
 import {
     OrderHeaderEntity,
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
+import type { Subscription } from 'rxjs';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe } from '../../panels/money-format';
+import { MJO_ENTITIES } from '../../data/entity-names';
 import { GetCatalogOptions, type MJOProductOption } from '../../data/orders-queries';
+import { ClampLineQuantity } from '@mj-biz-apps/orders-entities';
 import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
+import {
+    ExtensionCollapsedHint,
+    ExtensionToggleLabel,
+} from './line-extension-fields';
+import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
 
 /**
  * Inline catalog picker + line cards for an order header.
  *
- * Lines are `Order.Lines.Create()` children. They persist with the header on
- * the next Save — there is no "save first, then add products" step.
+ * Lines are `Order.Lines.Create()` children — or, when the product type
+ * declares an `OrderLineExtensionEntity`, the IS-A child is created and its
+ * parent is added to `Lines`. The leaf is saved after the header graph save.
+ * The extension form is embedded without Simple/Extended chrome. Newly added
+ * lines start expanded; existing lines stay collapsed behind a disclosure.
  */
 @Component({
     standalone: true,
@@ -23,6 +48,7 @@ import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '..
     imports: [
         CommonModule,
         FormsModule,
+        BaseFormsModule,
         MJOConsequenceChipComponent,
         MJOPriceSourceBadgeComponent,
         MJOMoneyPipe,
@@ -35,9 +61,16 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     private readonly cdr = inject(ChangeDetectorRef);
 
     private _order: OrderHeaderEntity | null = null;
+    private saveSub: Subscription | null = null;
+    private readonly extensions = new Map<string, BaseEntity>();
+    private readonly expandedLineIds = new Set<string>();
+
+    @Input() public Provider: IMetadataProvider | null = null;
+    @Input() public EditMode = true;
 
     @Input()
     public set Order(value: OrderHeaderEntity | null) {
+        this.unbindOrder();
         this._order = value;
         if (value) void this.onOrderBound();
     }
@@ -46,7 +79,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     @Output() public PricingChanged = new EventEmitter<MJOPricingState>();
-    @Output() public ProductOpened = new EventEmitter<string>();
+    @Output() public Navigate = new EventEmitter<FormNavigationEvent>();
 
     public Catalog: MJOProductOption[] = [];
     public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
@@ -54,6 +87,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public PickerCursor = 0;
     public PickerOpen = false;
     public CatalogError: string | null = null;
+    public ExtensionError: string | null = null;
 
     public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
         return [...(this._order?.Lines.Items ?? [])];
@@ -105,10 +139,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public async AddProduct(product: MJOProductOption): Promise<void> {
-        if (!this._order) return;
-        const line = await this._order.Lines.Create();
-        line.ProductID = product.ID;
-        line.Quantity = 1;
+        if (!this.EditMode || !this._order) return;
+        if (product.OrderLineExtensionEntity) {
+            await this.addExtendedLine(product);
+        } else {
+            await this.addPlainLine(product);
+        }
         this.ProductQuery = '';
         this.PickerCursor = 0;
         this.PickerOpen = false;
@@ -117,19 +153,32 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public Bump(line: mjBizAppsOrdersOrderLineEntity, delta: number): void {
-        line.Quantity = Math.max(1, Number(line.Quantity ?? 0) + delta);
+        if (!this.EditMode) return;
+        line.Quantity = this.clampQuantity(line, Number(line.Quantity ?? 0) + delta);
         this.schedulePricing();
     }
 
     public SetQuantity(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode) return;
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) return;
-        const n = Number.parseFloat(target.value);
-        line.Quantity = !Number.isFinite(n) || n <= 0 ? 1 : n;
+        line.Quantity = this.clampQuantity(line, Number.parseFloat(target.value));
         this.schedulePricing();
     }
 
+    public QuantityAtMax(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        const max = this.ProductFor(line)?.MaxQuantityPerLine;
+        return max != null && max > 0 && Number(line.Quantity ?? 0) >= max;
+    }
+
+    public QuantityCappedToOne(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.ProductFor(line)?.MaxQuantityPerLine === 1;
+    }
+
     public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (!this.EditMode) return;
+        this.extensions.delete(line.ID);
+        this.expandedLineIds.delete(line.ID);
         this._order?.Lines.Remove(line);
         this.schedulePricing();
     }
@@ -145,25 +194,170 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public OpenProduct(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
         event.preventDefault();
         event.stopPropagation();
-        if (line.ProductID) this.ProductOpened.emit(line.ProductID);
+        if (!line.ProductID) return;
+        this.Navigate.emit({
+            Kind: 'record',
+            EntityName: MJO_ENTITIES.Product,
+            PrimaryKey: CompositeKey.FromID(line.ProductID),
+        });
+    }
+
+    public OnExtensionNavigate(event: FormNavigationEvent): void {
+        this.Navigate.emit(event);
+    }
+
+    public OnExtensionFormCreated(form: BaseFormComponent): void {
+        form.showEmptyFields = true;
+        this.cdr.detectChanges();
+    }
+
+    public ExtensionFor(line: mjBizAppsOrdersOrderLineEntity): BaseEntity | null {
+        return this.extensions.get(line.ID) ?? null;
+    }
+
+    public ExtensionFormConfigFor(line: mjBizAppsOrdersOrderLineEntity): EntityFormConfig {
+        return CachedExtensionFormConfig(this.extensionEntityName(line));
+    }
+
+    public IsExtensionOpen(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.expandedLineIds.has(line.ID);
+    }
+
+    public ToggleExtension(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (this.expandedLineIds.has(line.ID)) this.expandedLineIds.delete(line.ID);
+        else this.expandedLineIds.add(line.ID);
+    }
+
+    public ExtensionLabel(line: mjBizAppsOrdersOrderLineEntity): string {
+        return ExtensionToggleLabel(this.extensionEntityName(line));
+    }
+
+    public ExtensionHint(line: mjBizAppsOrdersOrderLineEntity): string {
+        return ExtensionCollapsedHint(this.extensionEntityName(line));
     }
 
     public ngOnDestroy(): void {
+        this.unbindOrder();
         this.pricing.CancelPending();
     }
 
+    private get metadata(): IMetadataProvider {
+        return this.Provider ?? Metadata.Provider;
+    }
+
     private async onOrderBound(): Promise<void> {
+        this.bindOrderEvents();
         if (this.Catalog.length === 0) await this.loadCatalog();
         if (this._order && !this._order.Lines.IsLoaded && this._order.IsSaved) {
             await this._order.Lines.Load();
         }
+        await this.hydrateExtensions();
         this.schedulePricing();
         this.cdr.detectChanges();
     }
 
+    private bindOrderEvents(): void {
+        if (!this._order) return;
+        this.saveSub = this._order.RegisterEventHandler((event) => {
+            if (!isSuccessfulSaveEvent(event.type, event.payload)) return;
+            void this.persistExtensions();
+        });
+    }
+
+    private unbindOrder(): void {
+        this.saveSub?.unsubscribe();
+        this.saveSub = null;
+        this.expandedLineIds.clear();
+        this.extensions.clear();
+    }
+
+    private async addPlainLine(product: MJOProductOption): Promise<void> {
+        if (!this._order) return;
+        const line = await this._order.Lines.Create();
+        line.ProductID = product.ID;
+        line.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
+    }
+
+    private async addExtendedLine(product: MJOProductOption): Promise<void> {
+        if (!this._order || !product.OrderLineExtensionEntity) return;
+        CachedExtensionEntityInfo(this.metadata, product.OrderLineExtensionEntity);
+        const ext = await this.metadata.GetEntityObject(
+            product.OrderLineExtensionEntity,
+            this.metadata.CurrentUser,
+        );
+        ext.NewRecord();
+        const parent = ext.ISAParent;
+        if (!isOrderLine(parent)) {
+            await this.addPlainLine(product);
+            return;
+        }
+        parent.ProductID = product.ID;
+        parent.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
+        this._order.Lines.Add(parent);
+        this.extensions.set(parent.ID, ext);
+        this.expandedLineIds.add(parent.ID);
+    }
+
+    private async hydrateExtensions(): Promise<void> {
+        const next = new Map<string, BaseEntity>();
+        for (const line of this.Lines) {
+            const kept = this.extensions.get(line.ID);
+            if (kept) {
+                next.set(line.ID, kept);
+                continue;
+            }
+            const ext = await this.loadExtensionFor(line);
+            if (ext) next.set(line.ID, ext);
+        }
+        this.extensions.clear();
+        for (const [id, ext] of next) this.extensions.set(id, ext);
+    }
+
+    private async loadExtensionFor(line: mjBizAppsOrdersOrderLineEntity): Promise<BaseEntity | null> {
+        const extName = this.ProductFor(line)?.OrderLineExtensionEntity;
+        if (!extName) return null;
+        CachedExtensionEntityInfo(this.metadata, extName);
+        if (line.ISAChild?.EntityInfo.Name === extName) return line.ISAChild;
+        if (!line.IsSaved) return null;
+
+        const ext = await this.metadata.GetEntityObject(extName, this.metadata.CurrentUser);
+        if (await ext.InnerLoad(CompositeKey.FromID(line.ID))) return ext;
+
+        ext.NewRecord(new FieldValueCollection([{ FieldName: 'ID', Value: line.ID }]));
+        const parent = ext.ISAParent;
+        if (parent) {
+            await parent.LoadFromData(line.GetAll(), true);
+        }
+        return ext;
+    }
+
+    private async persistExtensions(): Promise<void> {
+        this.ExtensionError = null;
+        for (const ext of this.extensions.values()) {
+            if (ext.IsSaved && !ext.Dirty) continue;
+            const saved = await ext.Save();
+            if (!saved) {
+                this.ExtensionError = ext.LatestResult?.CompleteMessage ?? 'Failed to save line extension';
+            }
+        }
+        this.cdr.detectChanges();
+    }
+
+    private clampQuantity(line: mjBizAppsOrdersOrderLineEntity, quantity: number): number {
+        return ClampLineQuantity(quantity, this.ProductFor(line)?.MaxQuantityPerLine);
+    }
+
+    private extensionEntityName(line: mjBizAppsOrdersOrderLineEntity): string {
+        return (
+            this.ExtensionFor(line)?.EntityInfo.Name ??
+            this.ProductFor(line)?.OrderLineExtensionEntity ??
+            ''
+        );
+    }
+
     private async loadCatalog(): Promise<void> {
         try {
-            this.Catalog = await GetCatalogOptions();
+            this.Catalog = await GetCatalogOptions(this.metadata.CurrentUser);
             this.CatalogError = null;
         } catch (error) {
             this.Catalog = [];
@@ -179,4 +373,18 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             this.cdr.detectChanges();
         });
     }
+}
+
+function isOrderLine(entity: BaseEntity | null): entity is mjBizAppsOrdersOrderLineEntity {
+    return entity != null && entity.EntityInfo.Name === MJO_ENTITIES.OrderLine;
+}
+
+function isSuccessfulSaveEvent(
+    type: BaseEntityEvent['type'],
+    payload: BaseEntityEvent['payload'],
+): boolean {
+    if (type !== 'save' && type !== 'graph_save') return false;
+    if (payload == null || typeof payload !== 'object') return true;
+    if (!('Success' in payload)) return true;
+    return payload.Success !== false;
 }

@@ -12,6 +12,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+    CanOfferConfirm,
     CanTransition,
     CountsTowardReceivable,
     IsBooked,
@@ -153,6 +154,17 @@ describe('what a status permits', () => {
         expect(IsDeliverable('Voided')).toBe(false);
         expect(IsDeliverable('Quoted')).toBe(true);
         expect(IsDeliverable('Confirmed')).toBe(true);
+    });
+
+    it('offers Confirm only from Draft, Quoted, or a brand-new row', () => {
+        expect(CanOfferConfirm(null).Allowed).toBe(true);
+        expect(CanOfferConfirm('Draft').Allowed).toBe(true);
+        expect(CanOfferConfirm('Quoted').Allowed).toBe(true);
+        expect(CanOfferConfirm('Confirmed').Allowed).toBe(false);
+        expect(CanOfferConfirm('Posted').Allowed).toBe(false);
+        expect(CanOfferConfirm('Fulfilled').Allowed).toBe(false);
+        expect(CanOfferConfirm('Voided').Allowed).toBe(false);
+        expect(CanOfferConfirm('Confirmed').Reason).toMatch(/already booked/i);
     });
 
     it('has exactly one terminal status', () => {

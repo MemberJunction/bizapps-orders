@@ -1,109 +1,152 @@
 /* ============================================================================
-   BizApps Orders — Custom Subscription Form Component Styles
-   Uses MemberJunction semantic tokens for dark and light theme harmony.
+   BizApps Orders — Custom Subscription Form Component (Responsive Left-Nav Layout)
    ============================================================================ */
 
 /* ── 1. Hero Identity Header Card ─────────────────────────────────────────── */
-.mjo-record-header-card {
+.mjo-sub-hero-card {
     background: var(--mj-bg-surface-card, #ffffff);
     border: 1px solid var(--mj-border-default, #e2e8f0);
     border-radius: var(--mj-radius-lg, 12px);
     padding: var(--mj-space-4, 16px) var(--mj-space-5, 20px);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
     margin-bottom: var(--mj-space-4, 16px);
-}
-
-.mjo-record-header-top {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--mj-space-4, 16px);
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: var(--mj-space-3, 14px);
 }
 
-.mjo-record-identity {
+.mjo-sub-hero-main {
     display: flex;
     align-items: center;
     gap: var(--mj-space-4, 16px);
 }
 
-.mjo-record-avatar {
-    width: 52px;
-    height: 52px;
+.mjo-sub-avatar {
+    width: 48px;
+    height: 48px;
     border-radius: var(--mj-radius-md, 8px);
-    background: linear-gradient(135deg, #0d9488 0%, #0f766e 100%);
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
     color: #ffffff;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 22px;
-    box-shadow: 0 4px 10px rgba(13, 148, 136, 0.25);
+    font-size: 20px;
+    box-shadow: 0 4px 10px rgba(2, 132, 199, 0.25);
     flex-shrink: 0;
 }
 
-.mjo-record-title-area {
+.mjo-sub-hero-info {
     display: flex;
     flex-direction: column;
-    gap: var(--mj-space-2, 6px);
+    gap: 4px;
+    flex: 1;
 }
 
-.mjo-record-title {
-    margin: 0;
-    font-size: var(--mj-text-lg, 18px);
-    font-weight: var(--mj-font-bold, 700);
-    color: var(--mj-text-primary, #0f172a);
-    letter-spacing: -0.01em;
-    line-height: 1.25;
-}
-
-.mjo-record-badges {
+.mjo-sub-hero-title-row {
     display: flex;
     align-items: center;
-    gap: var(--mj-space-2, 8px);
+    gap: 8px;
     flex-wrap: wrap;
 }
 
-.mjo-entity-chip {
-    font-size: var(--mj-text-xs, 11.5px);
-    font-weight: var(--mj-font-semibold, 600);
-    color: var(--mj-brand-primary, #0076b6);
-    background: var(--mj-status-info-bg, rgba(0, 118, 182, 0.12));
-    padding: 2px 8px;
-    border-radius: var(--mj-radius-sm, 4px);
-    display: inline-flex;
+.mjo-sub-number {
+    font-size: var(--mj-text-lg, 18px);
+    font-weight: var(--mj-font-bold, 700);
+    color: var(--mj-text-primary, #0f172a);
+    font-family: var(--mj-font-mono, monospace);
+}
+
+.mjo-sub-hero-sub-row {
+    display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: var(--mj-text-xs, 12px);
+    color: var(--mj-text-muted, #64748b);
 }
 
-.mjo-sku-badge {
-    font-family: var(--mj-font-family-mono, monospace);
-    font-size: var(--mj-text-xs, 11.5px);
-    font-weight: 500;
-    color: var(--mj-text-secondary, #475569);
-    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.04));
-    border: 1px solid var(--mj-border-default, #cbd5e1);
-    padding: 1px 7px;
-    border-radius: var(--mj-radius-sm, 4px);
-}
-
-.mjo-type-chip {
+.mjo-sub-meta-item {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    font-size: var(--mj-text-xs, 11.5px);
+}
+
+.mjo-sub-hero-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--mj-space-3, 12px);
+    padding-top: var(--mj-space-3, 12px);
+    border-top: 1px solid var(--mj-border-default, #e2e8f0);
+}
+
+.mjo-stat-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mjo-stat-label {
+    font-size: var(--mj-text-xs, 11px);
     font-weight: var(--mj-font-semibold, 600);
-    color: #0284c7;
-    background: rgba(2, 132, 199, 0.12);
-    border: 1px solid rgba(2, 132, 199, 0.35);
+    color: var(--mj-text-muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.mjo-stat-val {
+    font-size: var(--mj-text-sm, 14px);
+    font-weight: var(--mj-font-bold, 700);
+    color: var(--mj-text-primary, #0f172a);
+}
+
+/* ── 2. Badges & Chips ─────────────────────────────────────────────────────── */
+.mjo-status-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: var(--mj-font-semibold, 600);
     padding: 2px 8px;
     border-radius: var(--mj-radius-full, 9999px);
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    color: var(--mj-text-secondary, #475569);
+    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.04));
+}
+
+.mjo-status-chip--active {
+    color: var(--mj-status-success-text, #15803d);
+    background: var(--mj-status-success-bg, rgba(34, 197, 94, 0.12));
+    border-color: var(--mj-status-success-border, rgba(34, 197, 94, 0.35));
+}
+
+.mjo-status-chip--info {
+    color: #0284c7;
+    background: rgba(2, 132, 199, 0.12);
+    border-color: rgba(2, 132, 199, 0.35);
+}
+
+.mjo-status-chip--warning {
+    color: var(--mj-status-warning-text, #b45309);
+    background: var(--mj-status-warning-bg, rgba(245, 158, 11, 0.12));
+    border-color: var(--mj-status-warning-border, rgba(245, 158, 11, 0.35));
+}
+
+.mjo-status-chip--secondary {
+    color: var(--mj-text-secondary, #475569);
+    background: rgba(100, 116, 139, 0.12);
+    border-color: rgba(100, 116, 139, 0.35);
+}
+
+.mjo-status-chip--inactive {
+    color: var(--mj-text-muted, #64748b);
+    background: rgba(0, 0, 0, 0.04);
 }
 
 .mjo-renew-chip {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    font-size: var(--mj-text-xs, 11.5px);
+    font-size: 11px;
     font-weight: var(--mj-font-semibold, 600);
     padding: 2px 8px;
     border-radius: var(--mj-radius-full, 9999px);
@@ -121,155 +164,380 @@
     background: rgba(0, 0, 0, 0.04);
 }
 
-.mjo-status-chip {
+.mjo-prorated-chip {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    font-size: var(--mj-text-xs, 11.5px);
-    font-weight: var(--mj-font-semibold, 600);
-    padding: 2px 9px;
-    border-radius: var(--mj-radius-full, 9999px);
-    border: 1px solid var(--mj-border-default, #cbd5e1);
-    color: var(--mj-text-secondary, #475569);
-    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.04));
+    gap: 4px;
+    font-size: 10.5px;
+    font-weight: var(--mj-font-bold, 700);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: #d97706;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.35);
 }
 
-.mjo-status-chip--active {
-    color: var(--mj-status-success-text, #15803d);
-    background: var(--mj-status-success-bg, rgba(34, 197, 94, 0.12));
-    border-color: var(--mj-status-success-border, rgba(34, 197, 94, 0.35));
-}
-
-.mjo-status-chip--active::before {
-    content: '';
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #22c55e;
-}
-
-.mjo-status-chip--warning {
-    color: var(--mj-status-warning-text, #b45309);
-    background: var(--mj-status-warning-bg, rgba(245, 158, 11, 0.12));
-    border-color: var(--mj-status-warning-border, rgba(245, 158, 11, 0.35));
-}
-
-.mjo-status-chip--info {
-    color: #0284c7;
-    background: rgba(2, 132, 199, 0.12);
-    border-color: rgba(2, 132, 199, 0.35);
-}
-
-.mjo-status-chip--draft {
-    color: var(--mj-status-warning-text, #b45309);
-    background: var(--mj-status-warning-bg, rgba(245, 158, 11, 0.12));
-    border-color: var(--mj-status-warning-border, rgba(245, 158, 11, 0.35));
-}
-
-.mjo-status-chip--inactive {
-    color: var(--mj-text-muted, #64748b);
-    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.04));
-}
-
-/* ── 2. Quick Summary Metric Strip ─────────────────────────────────────────── */
-.mjo-record-summary-bar {
+/* ── 3. Two-Column Workspace Layout ────────────────────────────────────────── */
+.mjo-sub-workspace {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: var(--mj-space-3, 12px);
-    margin-top: var(--mj-space-4, 16px);
-    padding-top: var(--mj-space-4, 16px);
-    border-top: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.08));
+    grid-template-columns: 240px minmax(0, 1fr);
+    gap: var(--mj-space-4, 16px);
+    align-items: start;
 }
 
-.mjo-stat-block {
+/* Left Navigation Rail */
+.mjo-sub-left-nav {
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-lg, 10px);
+    padding: 8px;
     display: flex;
     flex-direction: column;
     gap: 3px;
+    position: sticky;
+    top: 16px;
+}
+
+.mjo-nav-group-title {
+    font-size: 10px;
+    font-weight: var(--mj-font-bold, 700);
+    color: var(--mj-text-muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 6px 10px 2px;
+}
+
+.mjo-nav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    border-radius: var(--mj-radius-md, 6px);
+    font-family: inherit;
+    font-size: var(--mj-text-xs, 12.5px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-text-secondary, #475569);
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s ease;
+    box-sizing: border-box;
+}
+
+.mjo-nav-btn:hover {
+    background: var(--mj-bg-surface-sunken, #f1f5f9);
+    color: var(--mj-text-primary, #0f172a);
+}
+
+.mjo-nav-btn.active {
+    background: var(--mj-brand-primary, #0076b6);
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(0, 118, 182, 0.25);
+}
+
+.mjo-nav-btn-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     min-width: 0;
 }
 
-.mjo-stat-label {
-    font-size: var(--mj-text-xs, 11px);
-    color: var(--mj-text-muted, #64748b);
-    font-weight: var(--mj-font-semibold, 600);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+.mjo-nav-btn-left span {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.mjo-stat-val {
-    font-size: 15px;
+.mjo-nav-badge {
+    font-size: 10px;
+    font-weight: var(--mj-font-bold, 700);
+    padding: 1px 6px;
+    border-radius: var(--mj-radius-full, 9999px);
+    background: var(--mj-bg-surface-sunken, #e2e8f0);
+    color: var(--mj-text-secondary, #475569);
+}
+
+.mjo-nav-btn.active .mjo-nav-badge {
+    background: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+}
+
+.mjo-nav-badge--info {
+    background: rgba(2, 132, 199, 0.15);
+    color: #0284c7;
+}
+
+/* ── 4. Main Workspace Content Pane ────────────────────────────────────────── */
+.mjo-sub-workspace-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-4, 16px);
+    min-width: 0;
+}
+
+.mjo-pane-card {
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-lg, 10px);
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.mjo-pane-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    border-bottom: 1px solid var(--mj-border-default, #f1f5f9);
+    padding-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.mjo-pane-title-area {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mjo-pane-title {
+    margin: 0;
+    font-size: var(--mj-text-md, 15px);
     font-weight: var(--mj-font-bold, 700);
     color: var(--mj-text-primary, #0f172a);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 7px;
 }
 
-/* ── 3. Explanatory Banner ─────────────────────────────────────────────────── */
+.mjo-pane-title i {
+    color: var(--mj-brand-primary, #0076b6);
+}
+
+.mjo-pane-desc {
+    margin: 0;
+    font-size: var(--mj-text-xs, 12px);
+    color: var(--mj-text-muted, #64748b);
+}
+
+.mjo-toggle-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mjo-toggle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: var(--mj-font-semibold, 600);
+    border-radius: var(--mj-radius-sm, 6px);
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    background: var(--mj-bg-surface-card, #ffffff);
+    color: var(--mj-text-secondary, #475569);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.mjo-toggle-btn:hover {
+    border-color: var(--mj-brand-primary, #0076b6);
+    color: var(--mj-brand-primary, #0076b6);
+}
+
+.mjo-toggle-btn--active {
+    background: var(--mj-brand-primary, #0076b6);
+    color: #ffffff !important;
+    border-color: var(--mj-brand-primary, #0076b6);
+}
+
+/* ── 5. Visual Terms Deck Cards ────────────────────────────────────────────── */
+.mjo-terms-deck-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--mj-space-3, 12px);
+}
+
+.mjo-term-card {
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-md, 8px);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.mjo-term-card:hover {
+    border-color: var(--mj-brand-primary, #0076b6);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.08);
+}
+
+.mjo-term-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+}
+
+.mjo-term-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: var(--mj-font-bold, 700);
+    padding: 2px 8px;
+    border-radius: 4px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.mjo-term-color--t1 {
+    background: rgba(6, 182, 212, 0.15);
+    color: #0284c7;
+    border: 1px solid rgba(6, 182, 212, 0.35);
+}
+.mjo-term-color--t2 {
+    background: rgba(168, 85, 247, 0.15);
+    color: #9333ea;
+    border: 1px solid rgba(168, 85, 247, 0.35);
+}
+.mjo-term-color--t3 {
+    background: rgba(34, 197, 94, 0.15);
+    color: #16a34a;
+    border: 1px solid rgba(34, 197, 94, 0.35);
+}
+.mjo-term-color--t4 {
+    background: rgba(245, 158, 11, 0.15);
+    color: #d97706;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+}
+.mjo-term-color--t5 {
+    background: rgba(244, 63, 94, 0.15);
+    color: #e11d48;
+    border: 1px solid rgba(244, 63, 94, 0.35);
+}
+
+.mjo-term-badges {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mjo-term-amount {
+    font-size: 16px;
+    font-weight: var(--mj-font-bold, 700);
+    font-family: var(--mj-font-mono, monospace);
+    color: var(--mj-text-primary, #0f172a);
+}
+
+.mjo-term-dates {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--mj-text-muted, #64748b);
+}
+
+.mjo-term-dates i {
+    color: var(--mj-brand-primary, #0076b6);
+}
+
+.mjo-term-actions {
+    margin-top: 4px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--mj-border-default, #e2e8f0);
+}
+
+.mjo-open-term-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    border-radius: var(--mj-radius-sm, 6px);
+    padding: 6px 10px;
+    font-size: 11.5px;
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-brand-primary, #0076b6);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.mjo-open-term-btn:hover {
+    background: var(--mj-brand-primary, #0076b6);
+    color: #ffffff;
+    border-color: var(--mj-brand-primary, #0076b6);
+}
+
+.mjo-empty-state {
+    padding: 32px;
+    text-align: center;
+    color: var(--mj-text-muted, #64748b);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.mjo-fields-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+}
+
+.mjo-grid-pane {
+    width: 100%;
+    min-width: 0;
+}
+
+/* ── 6. Explanatory Banner ─────────────────────────────────────────────────── */
 .mjo-info-banner {
     display: flex;
     align-items: flex-start;
     gap: var(--mj-space-3, 12px);
-    background: rgba(2, 132, 199, 0.1);
-    border: 1px solid rgba(2, 132, 199, 0.3);
+    background: rgba(2, 132, 199, 0.08);
+    border: 1px solid rgba(2, 132, 199, 0.25);
     border-radius: var(--mj-radius-md, 8px);
     padding: var(--mj-space-3, 12px) var(--mj-space-4, 16px);
-    margin-bottom: var(--mj-space-4, 16px);
     font-size: 13px;
-    color: var(--mj-text-primary, #e2e8f0);
+    color: var(--mj-text-primary, #0f172a);
     line-height: 1.45;
 }
 
 .mjo-info-banner i {
     font-size: 16px;
     margin-top: 2px;
-    color: #38bdf8;
+    color: #0284c7;
     flex-shrink: 0;
 }
 
-/* ── 4. Subgrid Wrapper ───────────────────────────────────────────────────── */
-.mjo-subgrid-wrap {
-    margin-top: var(--mj-space-3, 12px);
-    border-top: 1px solid var(--mj-border-default, #f1f5f9);
-    padding-top: var(--mj-space-3, 12px);
-}
-
-.mjo-subgrid-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    font-weight: var(--mj-font-semibold, 600);
-    color: var(--mj-text-primary, #0f172a);
-    margin-bottom: var(--mj-space-2, 8px);
-}
-
-.mjo-subgrid-title i {
-    color: var(--mj-brand-primary, #0076b6);
-}
-
-.mjo-subgrid-title code {
-    font-family: var(--mj-font-family-mono, monospace);
-    font-size: 12px;
-    color: var(--mj-text-secondary, #475569);
-}
-
-/* ── 5. Responsive ─────────────────────────────────────────────────────────── */
-@media (max-width: 1100px) {
-    .mjo-record-summary-bar {
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+/* ── 7. Responsive Breakpoints ─────────────────────────────────────────────── */
+@media (max-width: 900px) {
+    .mjo-sub-workspace {
+        grid-template-columns: 1fr;
     }
-}
-
-@media (max-width: 768px) {
-    .mjo-record-header-top {
-        flex-direction: column;
+    .mjo-sub-left-nav {
+        position: static;
+        flex-direction: row;
+        overflow-x: auto;
+        padding: 6px;
     }
-    .mjo-record-summary-bar {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+    .mjo-nav-group-title {
+        display: none;
+    }
+    .mjo-nav-btn {
+        width: auto;
+        white-space: nowrap;
     }
 }

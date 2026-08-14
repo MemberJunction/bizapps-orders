@@ -46,12 +46,6 @@ const CONSEQUENCE_ICONS: Record<MJOConsequenceKind, string> = {
     note: 'fa-solid fa-circle-info',
 };
 
-const CONSEQUENCE_CLASSES: Partial<Record<MJOConsequenceKind, string>> = {
-    subscription: 'is-sub',
-    event: 'is-event',
-    deferred: 'is-defer',
-};
-
 /**
  * `mjo-consequence-chip` — a fact the engine derived about a line.
  *
@@ -74,11 +68,38 @@ const CONSEQUENCE_CLASSES: Partial<Record<MJOConsequenceKind, string>> = {
     standalone: true,
     imports: [CommonModule],
     template: `
-        <span class="mj-consequence" [class]="toneClass" [title]="Tooltip ?? ''">
+        <span
+            class="mj-consequence"
+            [class.is-sub]="Kind === 'subscription'"
+            [class.is-event]="Kind === 'event'"
+            [class.is-defer]="Kind === 'deferred'"
+            [title]="Tooltip ?? ''">
             <i [class]="icon" aria-hidden="true"></i>
             <ng-content></ng-content>
         </span>
     `,
+    styles: [`
+        :host { display: inline-flex; }
+        .mj-consequence {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: var(--mj-text-xs);
+            color: var(--mj-text-secondary);
+            background: var(--mj-bg-surface-sunken);
+            border: 1px solid var(--mj-border-subtle);
+            border-radius: var(--mj-radius-sm);
+            padding: 3px 8px;
+            line-height: 1.2;
+        }
+        .mj-consequence i {
+            font-size: 10px;
+            color: var(--mj-text-muted);
+        }
+        .mj-consequence.is-sub i { color: var(--mj-status-info); }
+        .mj-consequence.is-event i { color: var(--mj-status-info); }
+        .mj-consequence.is-defer i { color: var(--mj-status-warning); }
+    `],
 })
 export class MJOConsequenceChipComponent {
     /** Which consequence this is. Drives icon and tint. */
@@ -89,10 +110,6 @@ export class MJOConsequenceChipComponent {
 
     protected get icon(): string {
         return CONSEQUENCE_ICONS[this.Kind] ?? CONSEQUENCE_ICONS.note;
-    }
-
-    protected get toneClass(): string {
-        return CONSEQUENCE_CLASSES[this.Kind] ?? '';
     }
 }
 

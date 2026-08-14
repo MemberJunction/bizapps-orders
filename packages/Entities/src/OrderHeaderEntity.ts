@@ -32,7 +32,7 @@
 import { BaseEntity, ValidationErrorInfo, ValidationErrorType, ValidationResult, type FieldValueCollection } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderEntity } from './generated/entity_subclasses';
-import { CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
+import { CanOfferConfirm, CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
@@ -318,6 +318,33 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         if (!(await this.Save())) {
             throw new Error(this.LatestResult?.CompleteMessage?.trim() || 'The order could not be saved.');
         }
+    }
+
+    /**
+     * Whether the Confirm verb should be offered, and why not if it shouldn't.
+     *
+     * Status-only half is {@link CanOfferConfirm}. This adds the two facts the
+     * screen already knows: a payer, and at least one line. The UI stays dumb —
+     * it asks this, then calls {@link Confirm}.
+     */
+    public ConfirmEligibility(): TransitionVerdict {
+        const from = this.IsSaved
+            ? ((this.GetFieldByName('Status')?.OldValue as string | undefined) ?? this.Status)
+            : this.Status || 'Draft';
+        const status = CanOfferConfirm(from);
+        if (!status.Allowed) return status;
+        if (!this.BillToPersonID && !this.BillToOrganizationID) {
+            return { Allowed: false, Reason: 'Need a bill-to party.' };
+        }
+        if (this.Lines.Count === 0 && (!this.IsSaved || this.Lines.IsLoaded)) {
+            return { Allowed: false, Reason: 'Need a line.' };
+        }
+        return { Allowed: true };
+    }
+
+    /** True when {@link Confirm} is a legal next move from what is on this object. */
+    public get CanConfirm(): boolean {
+        return this.ConfirmEligibility().Allowed;
     }
 
     /**

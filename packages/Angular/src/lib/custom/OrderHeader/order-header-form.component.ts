@@ -1,14 +1,16 @@
-import { Component } from '@angular/core';
-import { CompositeKey } from '@memberjunction/core';
+import { Component, inject, ChangeDetectorRef } from '@angular/core';
+import { CompositeKey, Metadata, RunView } from '@memberjunction/core';
 import type { RunViewParams } from '@memberjunction/core';
 import { UserInfoEngine } from '@memberjunction/core-entities';
-import { RegisterClass } from '@memberjunction/global';
-import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
+import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
+import { NavigationService } from '@memberjunction/ng-shared';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
-import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OrderHeaderEntity, type mjBizAppsOrdersPaymentTypeEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
 import {
     GetOrderJournalRollup,
+    GetPaymentTypes,
     GetSellingCompanies,
     JournalEntryViewParams,
     SubscriptionViewParams,
@@ -17,6 +19,8 @@ import {
 import { FormatMoney } from '../../panels/money-format';
 import { mjBizAppsOrdersOrderHeaderFormComponent } from '../../generated/Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component';
 import type { MJOPricingState } from '../../services/pricing-scheduler.service';
+import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
+import { DispatchFormNavigation } from '../form-navigation-helper';
 
 /** Tabs that exist while the order is still being composed. */
 export type OrderFormNewTab = 'payment' | 'details';
@@ -29,7 +33,7 @@ export type OrderFormContextTab = OrderFormNewTab | OrderFormSavedTab;
 export type OrderFormParty = 'bill' | 'ship';
 
 /** Accounting tab shows one view at a time — a mode switch, not a second tab strip. */
-export type OrderAccountingView = 'summary' | 'detail';
+export type OrderAccountingView = 'summary' | 'detail' | 'waterfall';
 
 const CONTEXT_TAB_SETTING = 'mj.orders.orderForm.contextTab';
 const EXPANDED_PARTY_SETTING = 'mj.orders.orderForm.expandedParty';
@@ -83,8 +87,19 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public RollupCards: OrderJournalCard[] = [];
     public RollupJournalCount = 0;
 
+    public Confirming = false;
+    public ConfirmError: string | null = null;
+    public PaymentTypes: mjBizAppsOrdersPaymentTypeEntity[] = [];
+
     public get ContextTabs(): TabConfig[] {
         return OrderFormTabs(!!this.record?.IsSaved);
+    }
+
+    protected navigationService = inject(NavigationService, { optional: true });
+
+    override OnFormNavigate(event: FormNavigationEvent): void {
+        this.Navigate.emit(event);
+        DispatchFormNavigation(event, this.navigationService);
     }
 
     override async ngOnInit(): Promise<void> {
@@ -101,6 +116,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         }
         await this.ensureLinesLoaded();
         await this.defaultSellingCompany();
+        await this.loadPaymentTypes();
         await this.refreshAccountingIfNeeded();
         this.cdr.detectChanges();
     }
@@ -119,6 +135,56 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public JumpToBill(): void {
         this.ExpandedParty = 'bill';
+    }
+
+    public JumpToPayment(): void {
+        this.ActiveTab = 'payment';
+        UserInfoEngine.Instance.SetSettingDebounced(CONTEXT_TAB_SETTING, 'payment');
+    }
+
+    public get PaymentRequiresReference(): boolean {
+        const id = this.record?.InitialPaymentTypeID;
+        if (!id) return false;
+        return this.PaymentTypes.some((type) => UUIDsEqual(type.ID, id) && type.RequiresReference);
+    }
+
+    public get PaymentReference(): string {
+        return this.record?.InitialPaymentReference ?? '';
+    }
+
+    public SetPaymentReference(value: string): void {
+        if (!this.record) return;
+        this.record.InitialPaymentReference = value;
+        this.ConfirmError = null;
+    }
+
+    public get ShowConfirm(): boolean {
+        return !!this.record && this.record.ConfirmEligibility().Allowed && !this.NeedsPaymentReference;
+    }
+
+    public get NeedsPaymentReference(): boolean {
+        return this.PaymentRequiresReference && !this.record?.InitialPaymentReference;
+    }
+
+    public get ConfirmBlockedReason(): string | null {
+        if (!this.record || this.record.IsBookedOrder) return null;
+        if (this.NeedsPaymentReference) return 'Need a check / ACH reference.';
+        const verdict = this.record.ConfirmEligibility();
+        return verdict.Allowed ? null : (verdict.Reason ?? 'Cannot confirm this order.');
+    }
+
+    public async RunConfirm(): Promise<void> {
+        if (!this.record || this.Confirming || !this.ShowConfirm) return;
+        this.Confirming = true;
+        this.ConfirmError = null;
+        try {
+            await this.record.Confirm();
+        } catch (error) {
+            this.ConfirmError = error instanceof Error ? error.message : String(error);
+        } finally {
+            this.Confirming = false;
+            this.cdr.detectChanges();
+        }
     }
 
     public SetAccountingView(view: OrderAccountingView): void {
@@ -236,6 +302,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public OpenBillTo(event: Event): void {
+        event.preventDefault();
         event.stopPropagation();
         if (this.record?.BillToOrganizationID) {
             this.openRecord(MJO_COMMON_ENTITIES.Organization, this.record.BillToOrganizationID);
@@ -247,6 +314,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public OpenShipTo(event: Event): void {
+        event.preventDefault();
         event.stopPropagation();
         if (this.record?.ShipToOrganizationID) {
             this.openRecord(MJO_COMMON_ENTITIES.Organization, this.record.ShipToOrganizationID);
@@ -307,9 +375,89 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return this.ContextTabs.some((tab) => tab.key === key);
     }
 
+    public RevRecJournalEntries: mjBizAppsAccountingJournalEntryEntity[] = [];
+
+    private async loadPaymentTypes(): Promise<void> {
+        try {
+            this.PaymentTypes = await GetPaymentTypes(this.ProviderToUse?.CurrentUser);
+        } catch {
+            this.PaymentTypes = [];
+        }
+    }
+
     private async refreshAccountingIfNeeded(): Promise<void> {
         if (this.ActiveTab !== 'accounting' || !this.record?.IsSaved) return;
-        await this.loadOrderJournalRollup();
+        await Promise.all([
+            this.loadOrderJournalRollup(),
+            this.loadRevRecJournalEntries(),
+        ]);
+    }
+
+    private async loadRevRecJournalEntries(): Promise<void> {
+        if (this.lineIDs.length === 0) {
+            this.RevRecJournalEntries = [];
+            return;
+        }
+
+        try {
+            const rv = new RunView();
+            const quotedLineIds = this.lineIDs.map(id => `'${id}'`).join(',');
+            
+            // 1. Fetch any subscription terms tied to these order lines
+            const termsRes = await rv.RunView<{ ID: string }>({
+                EntityName: 'MJ_BizApps_Orders: Subscription Terms',
+                ExtraFilter: `OrderLineID IN (${quotedLineIds})`,
+                Fields: ['ID'],
+                MaxRows: 200,
+                ResultType: 'simple',
+            }, new Metadata().CurrentUser);
+
+            const termIds = (termsRes.Success && termsRes.Results) ? termsRes.Results.map(t => `'${t.ID}'`) : [];
+            const allOrigins = [quotedLineIds, ...termIds].filter(Boolean).join(',');
+
+            // 2. Fetch Journal Entries matching order lines or their subscription terms
+            const jeRes = await rv.RunView<mjBizAppsAccountingJournalEntryEntity>({
+                EntityName: 'MJ_BizApps_Accounting: Journal Entries',
+                ExtraFilter: `LinkedRecordID IN (${allOrigins})`,
+                OrderBy: 'EffectiveDate ASC',
+                MaxRows: 500,
+                ResultType: 'entity_object',
+            }, new Metadata().CurrentUser);
+
+            if (jeRes.Success && jeRes.Results) {
+                await Promise.all(
+                    jeRes.Results.map(async (je) => {
+                        try {
+                            if (je.Lines && typeof je.Lines.Load === 'function') {
+                                await je.Lines.Load();
+                            }
+                        } catch {
+                            // ignore line load error
+                        }
+                    })
+                );
+
+                const recognitionEntries = jeRes.Results.filter(je => {
+                    const desc = (je.Description || '').toLowerCase();
+                    const typeStr = (je.EntryType || '').toLowerCase();
+                    return desc.includes('recognize') || typeStr.includes('recognition');
+                });
+
+                this.RevRecJournalEntries = recognitionEntries.length > 0 ? recognitionEntries : jeRes.Results;
+            }
+        } catch {
+            this.RevRecJournalEntries = [];
+        }
+    }
+
+    public OnJournalEntrySelected(je: mjBizAppsAccountingJournalEntryEntity): void {
+        const pk = new CompositeKey();
+        pk.LoadFromSingleKeyValuePair('ID', je.ID);
+        this.OnFormNavigate({
+            Kind: 'record',
+            EntityName: 'MJ_BizApps_Accounting: Journal Entries',
+            PrimaryKey: pk,
+        });
     }
 
     private async loadOrderJournalRollup(): Promise<void> {
