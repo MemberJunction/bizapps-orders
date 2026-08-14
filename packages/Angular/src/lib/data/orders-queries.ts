@@ -43,6 +43,7 @@
  * @module @mj-biz-apps/orders-ng
  */
 import { Metadata, RunView, type RunViewParams, type UserInfo } from '@memberjunction/core';
+import { NetLines, type NetGroup, type NettableLine } from '@mj-biz-apps/accounting-engine-base';
 import { IsBefore, Today, type DateCell } from '@mj-biz-apps/orders-entities';
 import type {
     mjBizAppsOrdersChargeTypeEntity,
@@ -492,6 +493,268 @@ export function JournalEntryViewParams(orderLineIDs: string[]): RunViewParams | 
         OrderBy: '__mj_CreatedAt DESC',
         ResultType: 'entity_object',
     };
+}
+
+/** A dimension tag on a rolled-up journal line, already labeled. */
+export interface OrderJournalDimension {
+    Name: string;
+    Value: string;
+}
+
+/** One row of the display-only order journal (NetLines over every line JE). */
+export interface OrderJournalRollupRow {
+    Key: string;
+    CompanyID: string;
+    Company: string;
+    GLAccountID: string;
+    AccountCode: string;
+    AccountName: string;
+    Dimensions: OrderJournalDimension[];
+    Side: NetGroup['side'];
+    Debit: number;
+    Credit: number;
+    SourceLineCount: number;
+}
+
+/** One company's books — a real JE is single-company, so the rollup is too. */
+export interface OrderJournalCard {
+    CompanyID: string;
+    Company: string;
+    Rows: OrderJournalRollupRow[];
+    TotalDebit: number;
+    TotalCredit: number;
+}
+
+/** The order-level JE is a UI aggregation of the per-line journals — never a stored row. */
+export interface OrderJournalRollup {
+    Cards: OrderJournalCard[];
+    TotalDebit: number;
+    TotalCredit: number;
+    JournalCount: number;
+}
+
+interface JournalHeaderRow {
+    ID: string;
+    CompanyID: string;
+    Company: string;
+}
+
+interface JournalLineRow {
+    ID: string;
+    JournalEntryID: string;
+    GLAccountID: string;
+    GLAccount: string;
+    DebitAmount: number | null;
+    CreditAmount: number | null;
+}
+
+interface JournalLineDimRow {
+    JournalEntryLineID: string;
+    DimensionID: string;
+    DimensionValueID: string;
+    Dimension: string;
+    DimensionValue: string;
+}
+
+interface GLAccountRow {
+    ID: string;
+    Code: string;
+    Name: string;
+}
+
+interface RollupLabels {
+    Company: Record<string, string>;
+    Account: Record<string, { Code: string; Name: string }>;
+    Dimension: Record<string, string>;
+    DimensionValue: Record<string, string>;
+}
+
+const EMPTY_ROLLUP: OrderJournalRollup = { Cards: [], TotalDebit: 0, TotalCredit: 0, JournalCount: 0 };
+
+/**
+ * Turn NetLines groups into display rows. Pure — the form never nets itself.
+ *
+ * Preserves {@link NetLines} order (company, then every debit, then every credit).
+ * Labels are looked up by lowercased id so SQL Server / PostgreSQL UUID casing cannot split a key.
+ */
+export function PresentOrderJournalRollup(groups: NetGroup[], labels: RollupLabels): OrderJournalRollupRow[] {
+    return groups.map((group) => {
+        const amount = Math.abs(group.net);
+        const account = labels.Account[group.glAccountId.toLowerCase()];
+        return {
+            Key: `${group.companyId}#${group.glAccountId}#${group.dimKey}`,
+            CompanyID: group.companyId,
+            Company: labels.Company[group.companyId.toLowerCase()] || group.companyId,
+            GLAccountID: group.glAccountId,
+            AccountCode: account?.Code ?? '',
+            AccountName: account?.Name || group.glAccountId,
+            Dimensions: presentDimensions(group.dims, labels),
+            Side: group.side,
+            Debit: group.side === 'Debit' ? amount : 0,
+            Credit: group.side === 'Credit' ? amount : 0,
+            SourceLineCount: group.sourceLineCount,
+        };
+    });
+}
+
+/** Split a flat rollup into one card per company, keeping NetLines order inside each. */
+export function GroupOrderJournalByCompany(rows: OrderJournalRollupRow[]): OrderJournalCard[] {
+    const cards: OrderJournalCard[] = [];
+    const index = new Map<string, OrderJournalCard>();
+    for (const row of rows) {
+        const key = row.CompanyID.toLowerCase();
+        let card = index.get(key);
+        if (!card) {
+            card = {
+                CompanyID: row.CompanyID,
+                Company: row.Company,
+                Rows: [],
+                TotalDebit: 0,
+                TotalCredit: 0,
+            };
+            index.set(key, card);
+            cards.push(card);
+        }
+        card.Rows.push(row);
+        card.TotalDebit += row.Debit;
+        card.TotalCredit += row.Credit;
+    }
+    return cards;
+}
+
+/**
+ * The order-level journal: every line JE rolled up with {@link NetLines}.
+ *
+ * This is a DISPLAY aggregation. Orders books one JE per line; there is no stored
+ * "order journal" row.
+ */
+export async function GetOrderJournalRollup(
+    orderLineIDs: string[],
+    user?: UserInfo,
+): Promise<OrderJournalRollup> {
+    const journals = await loadJournalsForOrderLines(orderLineIDs, user);
+    if (journals.length === 0) return EMPTY_ROLLUP;
+
+    const { lines, dims } = await loadJournalLinesAndDims(journals.map((j) => j.ID), user);
+    const accounts = await loadGLAccounts(lines.map((line) => line.GLAccountID), user);
+    const nettable = toNettableLines(journals, lines, dims);
+    const rows = PresentOrderJournalRollup(NetLines(nettable), rollupLabels(journals, lines, dims, accounts));
+    const cards = GroupOrderJournalByCompany(rows);
+    return {
+        Cards: cards,
+        TotalDebit: cards.reduce((sum, card) => sum + card.TotalDebit, 0),
+        TotalCredit: cards.reduce((sum, card) => sum + card.TotalCredit, 0),
+        JournalCount: journals.length,
+    };
+}
+
+function presentDimensions(dims: NetGroup['dims'], labels: RollupLabels): OrderJournalDimension[] {
+    return dims.map((dim) => ({
+        Name: labels.Dimension[dim.DimensionID.toLowerCase()] || dim.DimensionID,
+        Value: labels.DimensionValue[dim.DimensionValueID.toLowerCase()] || dim.DimensionValueID,
+    }));
+}
+
+async function loadJournalsForOrderLines(orderLineIDs: string[], user?: UserInfo): Promise<JournalHeaderRow[]> {
+    const list = uuidList(orderLineIDs);
+    if (!list) return [];
+    return runRows<JournalHeaderRow>(
+        MJO_ACCOUNTING_ENTITIES.JournalEntry,
+        [`LinkedRecordID IN (${list})`],
+        '__mj_CreatedAt DESC',
+        500,
+        user,
+        ['ID', 'CompanyID', 'Company'],
+    );
+}
+
+async function loadJournalLinesAndDims(
+    journalIDs: string[],
+    user?: UserInfo,
+): Promise<{ lines: JournalLineRow[]; dims: JournalLineDimRow[] }> {
+    const jeList = uuidList(journalIDs);
+    if (!jeList) return { lines: [], dims: [] };
+
+    const lines = await runRows<JournalLineRow>(
+        MJO_ACCOUNTING_ENTITIES.JournalEntryLine,
+        [`JournalEntryID IN (${jeList})`],
+        'LineNumber',
+        2000,
+        user,
+        ['ID', 'JournalEntryID', 'GLAccountID', 'GLAccount', 'DebitAmount', 'CreditAmount'],
+    );
+    const lineList = uuidList(lines.map((line) => line.ID));
+    if (!lineList) return { lines, dims: [] };
+
+    const dims = await runRows<JournalLineDimRow>(
+        MJO_ACCOUNTING_ENTITIES.JournalEntryLineDimension,
+        [`JournalEntryLineID IN (${lineList})`],
+        'DimensionID',
+        2000,
+        user,
+        ['JournalEntryLineID', 'DimensionID', 'DimensionValueID', 'Dimension', 'DimensionValue'],
+    );
+    return { lines, dims };
+}
+
+async function loadGLAccounts(ids: string[], user?: UserInfo): Promise<GLAccountRow[]> {
+    const list = uuidList(ids);
+    if (!list) return [];
+    return runRows<GLAccountRow>(
+        MJO_ACCOUNTING_ENTITIES.GLAccount,
+        [`ID IN (${list})`],
+        'Code',
+        500,
+        user,
+        ['ID', 'Code', 'Name'],
+    );
+}
+
+function toNettableLines(
+    journals: JournalHeaderRow[],
+    lines: JournalLineRow[],
+    dims: JournalLineDimRow[],
+): NettableLine[] {
+    const companyByJE = new Map(journals.map((j) => [j.ID.toLowerCase(), j.CompanyID]));
+    const dimsByLine = new Map<string, NettableLine['dims']>();
+    for (const dim of dims) {
+        const existing = dimsByLine.get(dim.JournalEntryLineID) ?? [];
+        existing.push({ DimensionID: dim.DimensionID, DimensionValueID: dim.DimensionValueID });
+        dimsByLine.set(dim.JournalEntryLineID, existing);
+    }
+    return lines.map((line) => ({
+        companyId: companyByJE.get(line.JournalEntryID.toLowerCase()) ?? '',
+        glAccountId: line.GLAccountID,
+        debit: line.DebitAmount ?? 0,
+        credit: line.CreditAmount ?? 0,
+        dims: dimsByLine.get(line.ID) ?? [],
+    }));
+}
+
+function rollupLabels(
+    journals: JournalHeaderRow[],
+    lines: JournalLineRow[],
+    dims: JournalLineDimRow[],
+    accounts: GLAccountRow[],
+): RollupLabels {
+    const Company: Record<string, string> = {};
+    for (const journal of journals) {
+        Company[journal.CompanyID.toLowerCase()] = journal.Company;
+    }
+    const Account: Record<string, { Code: string; Name: string }> = {};
+    for (const line of lines) {
+        Account[line.GLAccountID.toLowerCase()] = { Code: '', Name: line.GLAccount };
+    }
+    for (const account of accounts) {
+        Account[account.ID.toLowerCase()] = { Code: account.Code, Name: account.Name || Account[account.ID.toLowerCase()]?.Name || '' };
+    }
+    const Dimension: Record<string, string> = {};
+    const DimensionValue: Record<string, string> = {};
+    for (const dim of dims) {
+        Dimension[dim.DimensionID.toLowerCase()] = dim.Dimension;
+        DimensionValue[dim.DimensionValueID.toLowerCase()] = dim.DimensionValue;
+    }
+    return { Company, Account, Dimension, DimensionValue };
 }
 
 /** What this order started, as grid params. Null when the order has no lines. */

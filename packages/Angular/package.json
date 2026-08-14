@@ -19,6 +19,7 @@
   "author": "MemberJunction.com",
   "license": "ISC",
   "dependencies": {
+    "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/orders-entities": "5.0.0",
     "ag-grid-angular": "^35.0.1",
     "ag-grid-community": "^35.0.1"

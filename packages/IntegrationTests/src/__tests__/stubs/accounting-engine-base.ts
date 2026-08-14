@@ -22,6 +22,37 @@
  * `mj test`, neither of which reads the vitest config. If that ever changes, this stub has to go.
  */
 
+export interface DimRef {
+    DimensionID: string;
+    DimensionValueID: string;
+}
+
+export interface NettableLine {
+    companyId: string;
+    glAccountId: string;
+    debit: number;
+    credit: number;
+    dims: DimRef[];
+}
+
+export interface NetGroup {
+    companyId: string;
+    glAccountId: string;
+    dims: DimRef[];
+    dimKey: string;
+    net: number;
+    side: 'Debit' | 'Credit';
+    sourceLineCount: number;
+}
+
+/** Throws rather than no-oping: a caller reaching this in anger should find out immediately. */
+export function NetLines(_lines: NettableLine[]): NetGroup[] {
+    throw new Error(
+        'NetLines is stubbed for the unit suite and must not be called. The real function lives in ' +
+            '@mj-biz-apps/accounting-engine-base; run the integration suite if you need it.',
+    );
+}
+
 /** Throws rather than no-oping: a caller reaching this in anger should find out immediately. */
 export class AccountingEngineBase {
     public static get Instance(): AccountingEngineBase {

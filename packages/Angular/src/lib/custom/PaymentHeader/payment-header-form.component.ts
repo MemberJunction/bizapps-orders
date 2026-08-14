@@ -49,7 +49,6 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
             { sectionKey: 'mJBizAppsOrdersStoredValueTransactions', sectionName: 'Stored Value & Account Credit Transactions', isExpanded: false },
             { sectionKey: 'notesAndMetadata', sectionName: 'Memo & Internal Notes', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Billing Events', isExpanded: false },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
         ]);
     }
 

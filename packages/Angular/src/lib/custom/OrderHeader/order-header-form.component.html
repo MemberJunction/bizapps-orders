@@ -164,9 +164,9 @@
                 @if (ChargeParams) {
                     <mj-explorer-entity-data-grid
                         [Params]="ChargeParams"
-                        [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Charges')"
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
+                        [ShowNewButton]="false"
                         [Height]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
@@ -176,14 +176,99 @@
 
         @if (ActiveTab === 'accounting' && record.IsSaved) {
             <div class="mjo-oh-tabpane">
-                @if (JournalParams) {
+                <div class="mjo-oh-acct__bar">
+                    <div>
+                        <h2>{{ AccountingView === 'summary' ? 'Order journal' : 'Line journals' }}</h2>
+                        <p>
+                            @if (AccountingView === 'summary') {
+                                What this order booked, as one entry per company — not a stored row
+                            } @else {
+                                One stored journal per order line — open a row to drill in
+                            }
+                        </p>
+                    </div>
+                    <div class="mjo-oh-switch" role="group" aria-label="Accounting view">
+                        <button type="button" [class.is-on]="AccountingView === 'summary'" (click)="SetAccountingView('summary')">Rolled up</button>
+                        <button type="button" [class.is-on]="AccountingView === 'detail'" (click)="SetAccountingView('detail')">
+                            By line
+                            @if (RollupJournalCount) {
+                                <span class="mjo-oh-switch__n">{{ RollupJournalCount }}</span>
+                            }
+                        </button>
+                    </div>
+                </div>
+
+                @if (AccountingView === 'summary') {
+                    @if (RollupLoading) {
+                        <div class="mjo-oh-hint">Rolling up journals…</div>
+                    } @else if (RollupError) {
+                        <div class="mjo-oh-hint">{{ RollupError }}</div>
+                    } @else if (RollupCards.length === 0) {
+                        <div class="mjo-oh-hint">No journals yet — they appear when the order is confirmed.</div>
+                    } @else {
+                        @for (card of RollupCards; track card.CompanyID) {
+                            <article class="mjo-oh-jecard">
+                                <header class="mjo-oh-jecard__head">
+                                    <div>
+                                        <span class="mjo-oh-jecard__co">{{ card.Company }}</span>
+                                        <span class="mjo-oh-jecard__sub">{{ card.Rows.length }} {{ card.Rows.length === 1 ? 'line' : 'lines' }}</span>
+                                    </div>
+                                    <span class="mjo-oh-chip" [class.mjo-oh-chip--ok]="CardIsBalanced(card)">
+                                        {{ CardIsBalanced(card) ? 'Balanced' : 'Out of balance' }}
+                                    </span>
+                                </header>
+                                <table class="mjo-oh-je__table">
+                                    <thead>
+                                        <tr>
+                                            <th>Account</th>
+                                            <th class="is-num">Debit</th>
+                                            <th class="is-num">Credit</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @for (row of card.Rows; track row.Key) {
+                                            <tr>
+                                                <td>
+                                                    <div class="mjo-oh-acctline">
+                                                        @if (row.AccountCode) {
+                                                            <span class="mjo-oh-acctline__code">{{ row.AccountCode }}</span>
+                                                        }
+                                                        <span class="mjo-oh-acctline__name">{{ row.AccountName }}</span>
+                                                    </div>
+                                                    <div class="mjo-oh-acctline__meta">
+                                                        @for (dim of row.Dimensions; track dim.Name + dim.Value) {
+                                                            <span class="mjo-oh-dim">{{ dim.Name }} · {{ dim.Value }}</span>
+                                                        }
+                                                        <span class="mjo-oh-je__src">{{ SourceLineLabel(row.SourceLineCount) }}</span>
+                                                    </div>
+                                                </td>
+                                                <td class="is-num" [class.is-quiet]="!row.Debit">{{ RollupAmount(row.Debit) }}</td>
+                                                <td class="is-num" [class.is-quiet]="!row.Credit">{{ RollupAmount(row.Credit) }}</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <th>Total</th>
+                                            <th class="is-num">{{ RollupAmount(card.TotalDebit) }}</th>
+                                            <th class="is-num">{{ RollupAmount(card.TotalCredit) }}</th>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </article>
+                        }
+                    }
+                } @else if (JournalParams) {
                     <mj-explorer-entity-data-grid
                         [Params]="JournalParams"
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
+                        [ShowNewButton]="false"
                         [Height]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
+                } @else {
+                    <div class="mjo-oh-hint">No line journals until this order has saved lines.</div>
                 }
             </div>
         }
@@ -195,6 +280,7 @@
                         [Params]="SubscriptionParams"
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
+                        [ShowNewButton]="false"
                         [Height]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
@@ -218,20 +304,6 @@
             (PricingChanged)="OnPricingChanged($event)"
             (ProductOpened)="OpenProduct($event)">
         </mjo-order-lines-editor>
-    </mj-collapsible-panel>
-
-    <mj-collapsible-panel
-        SectionKey="systemMetadata"
-        SectionName="System Metadata"
-        Icon="fa fa-clock"
-        [Form]="this"
-        [FormContext]="formContext"
-        [DefaultExpanded]="false">
-        <div class="mjo-oh-fields">
-            <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
-            <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="__mj_CreatedAt" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
-            <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="__mj_UpdatedAt" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
-        </div>
     </mj-collapsible-panel>
 
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>

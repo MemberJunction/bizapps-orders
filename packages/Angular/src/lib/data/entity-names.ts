@@ -67,4 +67,7 @@ export const MJO_ACCOUNTING_ENTITIES = {
      * CanCreate nor CanUpdate).
      */
     JournalEntry: 'MJ_BizApps_Accounting: Journal Entries',
+    JournalEntryLine: 'MJ_BizApps_Accounting: Journal Entry Lines',
+    JournalEntryLineDimension: 'MJ_BizApps_Accounting: Journal Entry Line Dimensions',
+    GLAccount: 'MJ_BizApps_Accounting: GL Accounts',
 } as const;

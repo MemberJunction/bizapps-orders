@@ -7,7 +7,13 @@ import { BaseFormComponent } from '@memberjunction/ng-base-forms';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
 import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
-import { GetSellingCompanies, JournalEntryViewParams, SubscriptionViewParams } from '../../data/orders-queries';
+import {
+    GetOrderJournalRollup,
+    GetSellingCompanies,
+    JournalEntryViewParams,
+    SubscriptionViewParams,
+    type OrderJournalCard,
+} from '../../data/orders-queries';
 import { FormatMoney } from '../../panels/money-format';
 import { mjBizAppsOrdersOrderHeaderFormComponent } from '../../generated/Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component';
 import type { MJOPricingState } from '../../services/pricing-scheduler.service';
@@ -22,8 +28,12 @@ export type OrderFormContextTab = OrderFormNewTab | OrderFormSavedTab;
 
 export type OrderFormParty = 'bill' | 'ship';
 
+/** Accounting tab shows one view at a time — a mode switch, not a second tab strip. */
+export type OrderAccountingView = 'summary' | 'detail';
+
 const CONTEXT_TAB_SETTING = 'mj.orders.orderForm.contextTab';
 const EXPANDED_PARTY_SETTING = 'mj.orders.orderForm.expandedParty';
+const ACCOUNTING_VIEW_SETTING = 'mj.orders.orderForm.accountingView';
 
 export const ORDER_FORM_NEW_TABS: TabConfig[] = [
     { key: 'payment', label: 'Payment', icon: 'fa-solid fa-money-check-dollar' },
@@ -65,6 +75,14 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     /** Related lists in the header tabs have no parent height to fill — pin them like related-entity panels. */
     public readonly RelatedGridHeight = 400;
 
+    public AccountingView: OrderAccountingView = 'summary';
+
+    /** Display-only rollup of every line journal. Never a stored JE. */
+    public RollupLoading = false;
+    public RollupError: string | null = null;
+    public RollupCards: OrderJournalCard[] = [];
+    public RollupJournalCount = 0;
+
     public get ContextTabs(): TabConfig[] {
         return OrderFormTabs(!!this.record?.IsSaved);
     }
@@ -73,7 +91,6 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Lines', isExpanded: true },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
         ]);
         this.restorePrefs();
         this.clampPrefsToVisibleTabs();
@@ -84,6 +101,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         }
         await this.ensureLinesLoaded();
         await this.defaultSellingCompany();
+        await this.refreshAccountingIfNeeded();
         this.cdr.detectChanges();
     }
 
@@ -91,6 +109,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         if (!this.isVisibleTab(key)) return;
         this.ActiveTab = this.ActiveTab === key ? null : key;
         UserInfoEngine.Instance.SetSettingDebounced(CONTEXT_TAB_SETTING, this.ActiveTab ?? '');
+        void this.refreshAccountingIfNeeded();
     }
 
     public ToggleParty(party: OrderFormParty): void {
@@ -100,6 +119,21 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public JumpToBill(): void {
         this.ExpandedParty = 'bill';
+    }
+
+    public SetAccountingView(view: OrderAccountingView): void {
+        if (this.AccountingView === view) return;
+        this.AccountingView = view;
+        UserInfoEngine.Instance.SetSettingDebounced(ACCOUNTING_VIEW_SETTING, view);
+        if (view === 'summary') void this.refreshAccountingIfNeeded();
+    }
+
+    public CardIsBalanced(card: OrderJournalCard): boolean {
+        return Math.abs(card.TotalDebit - card.TotalCredit) < 0.005;
+    }
+
+    public SourceLineLabel(count: number): string {
+        return count === 1 ? '1 source line' : `${count} source lines`;
     }
 
     public get HeaderTitle(): string {
@@ -175,6 +209,10 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public get TotalLabel(): string {
         return this.record?.IsSaved ? 'Total' : 'Subtotal';
+    }
+
+    public RollupAmount(value: number): string {
+        return value ? FormatMoney(value) : '';
     }
 
     public Money(kind: 'total' | 'paid' | 'balance'): string {
@@ -257,6 +295,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         } else {
             this.ExpandedParty = null;
         }
+        const view = UserInfoEngine.Instance.GetSetting(ACCOUNTING_VIEW_SETTING);
+        if (view === 'summary' || view === 'detail') this.AccountingView = view;
     }
 
     private clampPrefsToVisibleTabs(): void {
@@ -265,6 +305,29 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     private isVisibleTab(key: string): key is OrderFormContextTab {
         return this.ContextTabs.some((tab) => tab.key === key);
+    }
+
+    private async refreshAccountingIfNeeded(): Promise<void> {
+        if (this.ActiveTab !== 'accounting' || !this.record?.IsSaved) return;
+        await this.loadOrderJournalRollup();
+    }
+
+    private async loadOrderJournalRollup(): Promise<void> {
+        this.RollupLoading = true;
+        this.RollupError = null;
+        this.cdr.detectChanges();
+        try {
+            const rollup = await GetOrderJournalRollup(this.lineIDs);
+            this.RollupCards = rollup.Cards;
+            this.RollupJournalCount = rollup.JournalCount;
+        } catch (error) {
+            this.RollupCards = [];
+            this.RollupJournalCount = 0;
+            this.RollupError = error instanceof Error ? error.message : 'Could not roll up the journals.';
+        } finally {
+            this.RollupLoading = false;
+            this.cdr.detectChanges();
+        }
     }
 
     private async ensureLinesLoaded(): Promise<void> {
