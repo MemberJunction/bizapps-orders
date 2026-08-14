@@ -1023,13 +1023,15 @@ export interface MJOProductOption {
     CompanyName: string;
     ListPrice: number;
     Taxable: boolean;
+    /** NULL = no cap. 1 = one unit per line (conference tickets). */
+    MaxQuantityPerLine: number | null;
 }
 
 /** Flatten a product + its type into the picker row. */
 export function CatalogOptionFrom(
     product: Pick<
         mjBizAppsOrdersProductEntity,
-        'ID' | 'Name' | 'SKU' | 'ProductType' | 'ProductTypeID' | 'Company' | 'StandaloneSellingPrice' | 'IsTaxable'
+        'ID' | 'Name' | 'SKU' | 'ProductType' | 'ProductTypeID' | 'Company' | 'StandaloneSellingPrice' | 'IsTaxable' | 'MaxQuantityPerLine'
     >,
     type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
     listPrice: number,
@@ -1044,7 +1046,13 @@ export function CatalogOptionFrom(
         CompanyName: product.Company ?? '',
         ListPrice: product.StandaloneSellingPrice || listPrice || 0,
         Taxable: !!product.IsTaxable,
+        MaxQuantityPerLine: readMaxQuantityPerLine(product),
     };
+}
+
+function readMaxQuantityPerLine(product: { MaxQuantityPerLine?: number | null }): number | null {
+    const value = product.MaxQuantityPerLine;
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 /**

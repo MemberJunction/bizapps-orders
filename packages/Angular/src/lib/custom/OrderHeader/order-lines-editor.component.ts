@@ -25,6 +25,7 @@ import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../..
 import { MJOMoneyPipe } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { GetCatalogOptions, type MJOProductOption } from '../../data/orders-queries';
+import { ClampLineQuantity } from '@mj-biz-apps/orders-entities';
 import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 import {
     ExtensionCollapsedHint,
@@ -153,7 +154,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     public Bump(line: mjBizAppsOrdersOrderLineEntity, delta: number): void {
         if (!this.EditMode) return;
-        line.Quantity = Math.max(1, Number(line.Quantity ?? 0) + delta);
+        line.Quantity = this.clampQuantity(line, Number(line.Quantity ?? 0) + delta);
         this.schedulePricing();
     }
 
@@ -161,9 +162,17 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (!this.EditMode) return;
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) return;
-        const n = Number.parseFloat(target.value);
-        line.Quantity = !Number.isFinite(n) || n <= 0 ? 1 : n;
+        line.Quantity = this.clampQuantity(line, Number.parseFloat(target.value));
         this.schedulePricing();
+    }
+
+    public QuantityAtMax(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        const max = this.ProductFor(line)?.MaxQuantityPerLine;
+        return max != null && max > 0 && Number(line.Quantity ?? 0) >= max;
+    }
+
+    public QuantityCappedToOne(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.ProductFor(line)?.MaxQuantityPerLine === 1;
     }
 
     public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
@@ -266,7 +275,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (!this._order) return;
         const line = await this._order.Lines.Create();
         line.ProductID = product.ID;
-        line.Quantity = 1;
+        line.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
     }
 
     private async addExtendedLine(product: MJOProductOption): Promise<void> {
@@ -283,7 +292,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             return;
         }
         parent.ProductID = product.ID;
-        parent.Quantity = 1;
+        parent.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
         this._order.Lines.Add(parent);
         this.extensions.set(parent.ID, ext);
         this.expandedLineIds.add(parent.ID);
@@ -332,6 +341,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             }
         }
         this.cdr.detectChanges();
+    }
+
+    private clampQuantity(line: mjBizAppsOrdersOrderLineEntity, quantity: number): number {
+        return ClampLineQuantity(quantity, this.ProductFor(line)?.MaxQuantityPerLine);
     }
 
     private extensionEntityName(line: mjBizAppsOrdersOrderLineEntity): string {

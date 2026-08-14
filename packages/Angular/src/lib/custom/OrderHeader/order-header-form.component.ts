@@ -2,14 +2,15 @@ import { Component, inject, ChangeDetectorRef } from '@angular/core';
 import { CompositeKey, Metadata, RunView } from '@memberjunction/core';
 import type { RunViewParams } from '@memberjunction/core';
 import { UserInfoEngine } from '@memberjunction/core-entities';
-import { RegisterClass } from '@memberjunction/global';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
-import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OrderHeaderEntity, type mjBizAppsOrdersPaymentTypeEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
 import {
     GetOrderJournalRollup,
+    GetPaymentTypes,
     GetSellingCompanies,
     JournalEntryViewParams,
     SubscriptionViewParams,
@@ -86,6 +87,10 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public RollupCards: OrderJournalCard[] = [];
     public RollupJournalCount = 0;
 
+    public Confirming = false;
+    public ConfirmError: string | null = null;
+    public PaymentTypes: mjBizAppsOrdersPaymentTypeEntity[] = [];
+
     public get ContextTabs(): TabConfig[] {
         return OrderFormTabs(!!this.record?.IsSaved);
     }
@@ -111,6 +116,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         }
         await this.ensureLinesLoaded();
         await this.defaultSellingCompany();
+        await this.loadPaymentTypes();
         await this.refreshAccountingIfNeeded();
         this.cdr.detectChanges();
     }
@@ -129,6 +135,56 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public JumpToBill(): void {
         this.ExpandedParty = 'bill';
+    }
+
+    public JumpToPayment(): void {
+        this.ActiveTab = 'payment';
+        UserInfoEngine.Instance.SetSettingDebounced(CONTEXT_TAB_SETTING, 'payment');
+    }
+
+    public get PaymentRequiresReference(): boolean {
+        const id = this.record?.InitialPaymentTypeID;
+        if (!id) return false;
+        return this.PaymentTypes.some((type) => UUIDsEqual(type.ID, id) && type.RequiresReference);
+    }
+
+    public get PaymentReference(): string {
+        return this.record?.InitialPaymentReference ?? '';
+    }
+
+    public SetPaymentReference(value: string): void {
+        if (!this.record) return;
+        this.record.InitialPaymentReference = value;
+        this.ConfirmError = null;
+    }
+
+    public get ShowConfirm(): boolean {
+        return !!this.record && this.record.ConfirmEligibility().Allowed && !this.NeedsPaymentReference;
+    }
+
+    public get NeedsPaymentReference(): boolean {
+        return this.PaymentRequiresReference && !this.record?.InitialPaymentReference;
+    }
+
+    public get ConfirmBlockedReason(): string | null {
+        if (!this.record || this.record.IsBookedOrder) return null;
+        if (this.NeedsPaymentReference) return 'Need a check / ACH reference.';
+        const verdict = this.record.ConfirmEligibility();
+        return verdict.Allowed ? null : (verdict.Reason ?? 'Cannot confirm this order.');
+    }
+
+    public async RunConfirm(): Promise<void> {
+        if (!this.record || this.Confirming || !this.ShowConfirm) return;
+        this.Confirming = true;
+        this.ConfirmError = null;
+        try {
+            await this.record.Confirm();
+        } catch (error) {
+            this.ConfirmError = error instanceof Error ? error.message : String(error);
+        } finally {
+            this.Confirming = false;
+            this.cdr.detectChanges();
+        }
     }
 
     public SetAccountingView(view: OrderAccountingView): void {
@@ -320,6 +376,14 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public RevRecJournalEntries: mjBizAppsAccountingJournalEntryEntity[] = [];
+
+    private async loadPaymentTypes(): Promise<void> {
+        try {
+            this.PaymentTypes = await GetPaymentTypes(this.ProviderToUse?.CurrentUser);
+        } catch {
+            this.PaymentTypes = [];
+        }
+    }
 
     private async refreshAccountingIfNeeded(): Promise<void> {
         if (this.ActiveTab !== 'accounting' || !this.record?.IsSaved) return;

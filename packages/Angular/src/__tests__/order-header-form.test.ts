@@ -88,10 +88,22 @@ describe('order header link wiring', () => {
             join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),
             'utf8',
         );
-        expect(lines).toContain('[class.is-locked]="!EditMode"');
+        expect(lines).toContain('[class.is-locked]="!EditMode || QuantityCappedToOne(line)"');
         expect(lines).toContain('@if (EditMode)');
         expect(lines).toContain('[EditMode]="EditMode"');
         expect(lines).toContain('mjo-ol-picker');
+    });
+
+    it('offers Confirm as a verb and does not let Status be edited', () => {
+        const header = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-header-form.component.html'),
+            'utf8',
+        );
+        expect(header).toContain('RunConfirm()');
+        expect(header).toContain('Confirm order');
+        expect(header).toContain('Check / ACH reference');
+        expect(header).toMatch(/FieldName="Status"[\s\S]*?\[EditMode\]="false"/);
+        expect(header).toMatch(/FieldName="PaymentStatus"[\s\S]*?\[EditMode\]="false"/);
     });
 
     it('keeps existing line extensions collapsed behind a disclosure', () => {

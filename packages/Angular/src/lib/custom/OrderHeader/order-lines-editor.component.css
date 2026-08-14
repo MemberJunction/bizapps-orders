@@ -67,9 +67,14 @@
     font-size: 11px;
 }
 
-.mjo-ol-qty button:hover {
+.mjo-ol-qty button:hover:not(:disabled) {
     background: var(--mj-bg-surface-hover);
     color: var(--mj-text-primary);
+}
+
+.mjo-ol-qty button:disabled {
+    cursor: default;
+    color: var(--mj-text-disabled);
 }
 
 .mjo-ol-qty input {

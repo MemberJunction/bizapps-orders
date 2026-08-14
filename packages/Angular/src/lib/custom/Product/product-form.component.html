@@ -181,6 +181,15 @@
                             <mj-form-field 
                                 [Record]="record"
                                 [ShowLabel]="true"
+                                FieldName="MaxQuantityPerLine"
+                                Type="numerictextbox"
+                                [EditMode]="EditMode"
+                                [FormContext]="formContext"
+                                (Navigate)="OnFormNavigate($event)"
+                            ></mj-form-field>
+                            <mj-form-field 
+                                [Record]="record"
+                                [ShowLabel]="true"
                                 FieldName="ProductCategoryID"
                                 Type="textbox"
                                 [EditMode]="EditMode"

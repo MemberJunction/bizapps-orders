@@ -124,6 +124,23 @@ export function IsEditable(status: string): boolean {
 }
 
 /**
+ * May the Confirm *verb* be offered from this status?
+ *
+ * Separate from `CanTransition(from, 'Confirmed')` because a brand-new row may be
+ * *created* as Confirmed (back-office entry) but the on-screen verb is only for
+ * Draft and Quoted — the two states a person is still composing.
+ */
+export function CanOfferConfirm(status: string | null | undefined): TransitionVerdict {
+    if (status == null || status === '') {
+        return { Allowed: true };
+    }
+    if (IsBooked(status)) {
+        return { Allowed: false, Reason: 'This order is already booked.' };
+    }
+    return CanTransition(status, 'Confirmed');
+}
+
+/**
  * The order has booked — journal entries exist and the receivable is real.
  *
  * This is the test for "does this order owe money", used by the collections worklist and by anything

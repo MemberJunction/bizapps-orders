@@ -735,6 +735,10 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: __mj_Longitude
         * * Display Name: Longitude
         * * SQL Data Type: decimal(10, 6)`),
+    MaxQuantityPerLine: z.number().nullable().describe(`
+        * * Field Name: MaxQuantityPerLine
+        * * Display Name: Max Quantity Per Line
+        * * SQL Data Type: decimal(18, 4)`),
 });
 
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
@@ -3340,6 +3344,11 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Pricing Driver Class
         * * SQL Data Type: nvarchar(255)
         * * Description: ClassFactory key of a BasePriceResolver subclass that prices this, or NULL for the standard metadata-driven walk. Resolved most-specific-first: product, then up the category chain, then the type, then the company policy. A client may price LOCALLY only when every level is NULL; anything else escalates to the server, because a plugin's answer cannot be reproduced from metadata.`),
+    MaxQuantityPerLine: z.number().nullable().describe(`
+        * * Field Name: MaxQuantityPerLine
+        * * Display Name: Max Quantity Per Line
+        * * SQL Data Type: decimal(18, 4)
+        * * Description: Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).`),
     ProductType: z.string().describe(`
         * * Field Name: ProductType
         * * Display Name: Product Type Name
@@ -3358,7 +3367,7 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * SQL Data Type: nvarchar(200)`),
     RevenueRecognitionType: z.string().describe(`
         * * Field Name: RevenueRecognitionType
-        * * Display Name: Revenue Recognition Type Name
+        * * Display Name: Revenue Recognition Name
         * * SQL Data Type: nvarchar(200)`),
     SubscriptionType: z.string().nullable().describe(`
         * * Field Name: SubscriptionType
@@ -6879,6 +6888,19 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     get __mj_Longitude(): number | null {
         return this.Get('__mj_Longitude');
     }
+
+    /**
+    * * Field Name: MaxQuantityPerLine
+    * * Display Name: Max Quantity Per Line
+    * * SQL Data Type: decimal(18, 4)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get MaxQuantityPerLine(): number | null {
+        return this.Get('MaxQuantityPerLine');
+    }
+    set MaxQuantityPerLine(value: number | null) {
+        this.Set('MaxQuantityPerLine', value);
+    }
 }
 
 
@@ -8977,6 +8999,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * Validate() method override for MJ_BizApps_Orders: Order Lines entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * DiscountAmount: Enforces that the discount amount cannot be negative, ensuring that discounts always reduce or maintain the price rather than increasing it.
     * * DiscountPct: Discount percentage must be a value between 0 and 1 (inclusive), representing a range of 0% to 100%.
     * * Quantity: The quantity specified for the line item must not be zero.
     * * UnitPrice: The unit price for any item must be zero or greater. Negative prices are not allowed.
@@ -8991,6 +9014,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     */
     public override Validate(): ValidationResult {
         const result = super.Validate();
+        this.ValidateDiscountAmountNotNegative(result);
         this.ValidateDiscountPctRange(result);
         this.ValidateQuantityNotZero(result);
         this.ValidateUnitPriceIsNonNegative(result);
@@ -9002,6 +9026,23 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
+    }
+
+    /**
+    * Enforces that the discount amount cannot be negative, ensuring that discounts always reduce or maintain the price rather than increasing it.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateDiscountAmountNotNegative(result: ValidationResult) {
+    	if (this.DiscountAmount < 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"DiscountAmount",
+    			"Discount amount cannot be negative.",
+    			this.DiscountAmount,
+    			ValidationErrorType.Failure
+    		));
+    	}
     }
 
     /**
@@ -14483,6 +14524,19 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
 
     /**
+    * * Field Name: MaxQuantityPerLine
+    * * Display Name: Max Quantity Per Line
+    * * SQL Data Type: decimal(18, 4)
+    * * Description: Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).
+    */
+    get MaxQuantityPerLine(): number | null {
+        return this.Get('MaxQuantityPerLine');
+    }
+    set MaxQuantityPerLine(value: number | null) {
+        this.Set('MaxQuantityPerLine', value);
+    }
+
+    /**
     * * Field Name: ProductType
     * * Display Name: Product Type Name
     * * SQL Data Type: nvarchar(100)
@@ -14520,7 +14574,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
 
     /**
     * * Field Name: RevenueRecognitionType
-    * * Display Name: Revenue Recognition Type Name
+    * * Display Name: Revenue Recognition Name
     * * SQL Data Type: nvarchar(200)
     */
     get RevenueRecognitionType(): string {

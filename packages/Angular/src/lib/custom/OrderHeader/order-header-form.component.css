@@ -24,6 +24,29 @@
     flex-wrap: wrap;
 }
 
+.mjo-oh-hero__aside {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mj-space-4);
+    flex-wrap: wrap;
+}
+
+.mjo-oh-confirm {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--mj-space-1);
+    min-width: 11rem;
+}
+
+.mjo-oh-confirm__hint {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+    text-align: right;
+    max-width: 14rem;
+    line-height: 1.35;
+}
+
 .mjo-oh-who {
     display: flex;
     align-items: center;
@@ -288,6 +311,29 @@
 }
 
 .mjo-oh-todo button { cursor: pointer; }
+
+.mjo-oh-todo--err {
+    color: var(--mj-status-error-text);
+}
+
+.mjo-oh-ref {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: var(--mj-space-3);
+}
+
+.mjo-oh-ref__label {
+    font-size: var(--mj-text-xs);
+    font-weight: var(--mj-font-bold);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--mj-text-muted);
+}
+
+.mjo-oh-ref .mj-input {
+    max-width: 22rem;
+}
 
 .mjo-oh-tabs {
     display: block;

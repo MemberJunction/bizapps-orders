@@ -22,19 +22,35 @@
                     <div class="mjo-oh-sub">{{ HeaderSubtitle }}</div>
                 </div>
             </div>
-            <div class="mjo-oh-money">
-                <div>
-                    <span class="mjo-oh-kicker">{{ TotalLabel }}</span>
-                    <span class="mjo-oh-amt">{{ Money('total') }}</span>
+            <div class="mjo-oh-hero__aside">
+                <div class="mjo-oh-money">
+                    <div>
+                        <span class="mjo-oh-kicker">{{ TotalLabel }}</span>
+                        <span class="mjo-oh-amt">{{ Money('total') }}</span>
+                    </div>
+                    <div>
+                        <span class="mjo-oh-kicker">Paid</span>
+                        <span class="mjo-oh-amt">{{ Money('paid') }}</span>
+                    </div>
+                    <div>
+                        <span class="mjo-oh-kicker">Balance</span>
+                        <span class="mjo-oh-amt">{{ Money('balance') }}</span>
+                    </div>
                 </div>
-                <div>
-                    <span class="mjo-oh-kicker">Paid</span>
-                    <span class="mjo-oh-amt">{{ Money('paid') }}</span>
-                </div>
-                <div>
-                    <span class="mjo-oh-kicker">Balance</span>
-                    <span class="mjo-oh-amt">{{ Money('balance') }}</span>
-                </div>
+                @if (ShowConfirm) {
+                    <div class="mjo-oh-confirm">
+                        <button
+                            type="button"
+                            mjButton
+                            variant="primary"
+                            [disabled]="Confirming"
+                            (click)="RunConfirm()">
+                            <i class="fa-solid" [class.fa-check]="!Confirming" [class.fa-circle-notch]="Confirming" [class.fa-spin]="Confirming" aria-hidden="true"></i>
+                            {{ Confirming ? 'Booking…' : 'Confirm order' }}
+                        </button>
+                        <span class="mjo-oh-confirm__hint">Books the receivable. This cannot be undone.</span>
+                    </div>
+                }
             </div>
         </div>
 
@@ -114,16 +130,24 @@
             </div>
         </div>
 
-        @if (NeedsBillTo || NeedsLine) {
+        @if (ConfirmBlockedReason) {
             <div class="mjo-oh-todo">
                 <i class="fa-solid fa-circle-exclamation"></i>
                 <span>Before this can be confirmed</span>
                 @if (NeedsBillTo) {
                     <button type="button" (click)="JumpToBill()">Need a bill-to party</button>
+                } @else if (NeedsPaymentReference) {
+                    <button type="button" (click)="JumpToPayment()">Need a check / ACH reference</button>
+                } @else {
+                    <span class="mjo-oh-todo__hint">{{ ConfirmBlockedReason }}</span>
                 }
-                @if (NeedsLine) {
-                    <span class="mjo-oh-todo__hint">Need a line</span>
-                }
+            </div>
+        }
+
+        @if (ConfirmError) {
+            <div class="mjo-oh-todo mjo-oh-todo--err" role="alert">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>{{ ConfirmError }}</span>
             </div>
         }
 
@@ -139,6 +163,19 @@
                 <div class="mjo-oh-fields">
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentTypeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentAmount" Type="number" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    @if (PaymentRequiresReference) {
+                        <label class="mjo-oh-ref">
+                            <span class="mjo-oh-ref__label">Check / ACH reference</span>
+                            <input
+                                class="mj-input"
+                                [ngModel]="PaymentReference"
+                                (ngModelChange)="SetPaymentReference($event)"
+                                [disabled]="!EditMode"
+                                placeholder="Check number or confirmation ID"
+                                autocomplete="off"
+                                aria-label="Check or ACH reference">
+                        </label>
+                    }
                 </div>
                 @if (record.IsSaved && PaymentParams) {
                     <mj-explorer-entity-data-grid
@@ -160,8 +197,8 @@
                 <div class="mjo-oh-fields">
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="DueDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ExternalDocumentNumber" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentStatus" Type="select" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Status" Type="select" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentStatus" Type="select" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Status" Type="select" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="SalesRepUserID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Description" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Notes" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>

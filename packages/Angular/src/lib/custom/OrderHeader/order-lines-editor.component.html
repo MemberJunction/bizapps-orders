@@ -14,14 +14,14 @@
                     </div>
                 </div>
 
-                <div class="mjo-ol-qty" [class.is-locked]="!EditMode">
-                    @if (EditMode) {
+                <div class="mjo-ol-qty" [class.is-locked]="!EditMode || QuantityCappedToOne(line)">
+                    @if (EditMode && !QuantityCappedToOne(line)) {
                         <button type="button" (click)="Bump(line, -1)" aria-label="Decrease quantity">−</button>
                         <input
                             [value]="line.Quantity"
                             (change)="SetQuantity(line, $event)"
                             aria-label="Quantity">
-                        <button type="button" (click)="Bump(line, 1)" aria-label="Increase quantity">+</button>
+                        <button type="button" (click)="Bump(line, 1)" [disabled]="QuantityAtMax(line)" aria-label="Increase quantity">+</button>
                     } @else {
                         <span class="mjo-ol-qty__value">{{ line.Quantity }}</span>
                     }

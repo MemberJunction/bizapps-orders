@@ -1769,6 +1769,9 @@ export class mjBizAppsOrdersEventProduct_ {
     @Field(() => Float, {nullable: true}) 
     _mj__Longitude?: number;
         
+    @Field(() => Float, {nullable: true}) 
+    MaxQuantityPerLine?: number;
+        
 }
 
 //****************************************************************************
@@ -1853,6 +1856,9 @@ export class CreatemjBizAppsOrdersEventProductInput {
 
     @Field({ nullable: true })
     PricingDriverClass: string | null;
+
+    @Field(() => Float, { nullable: true })
+    MaxQuantityPerLine: number | null;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -1941,6 +1947,9 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field({ nullable: true })
     PricingDriverClass?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    MaxQuantityPerLine?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -9312,6 +9321,9 @@ export class mjBizAppsOrdersProduct_ {
     @MaxLength(255)
     PricingDriverClass?: string;
         
+    @Field(() => Float, {nullable: true, description: `Maximum quantity allowed on a single order line. NULL = no cap. Set to 1 for products that are one person / one unit per line (e.g. conference tickets).`}) 
+    MaxQuantityPerLine?: number;
+        
     @Field() 
     @MaxLength(100)
     ProductType: string;
@@ -9437,6 +9449,9 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field({ nullable: true })
     PricingDriverClass: string | null;
 
+    @Field(() => Float, { nullable: true })
+    MaxQuantityPerLine: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -9506,6 +9521,9 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field({ nullable: true })
     PricingDriverClass?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    MaxQuantityPerLine?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

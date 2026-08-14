@@ -23,6 +23,7 @@ export * from './generated/remote_operations';
  * same lifecycle the server does rather than a hand-copied approximation.
  */
 export * from './OrderStatusBehavior';
+export * from './line-quantity';
 
 /**
  * `OrderHeaderEntity` — the shared (client + server) order subclass carrying every rule decidable

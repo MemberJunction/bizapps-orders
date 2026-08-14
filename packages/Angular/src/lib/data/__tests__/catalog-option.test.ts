@@ -13,6 +13,7 @@ describe('CatalogOptionFrom', () => {
                 Company: 'Meridian',
                 StandaloneSellingPrice: 0,
                 IsTaxable: true,
+                MaxQuantityPerLine: 1,
             },
             { OrderLineExtensionEntity: 'MJ_BizApps_Orders: Event Order Lines' },
             450,
@@ -22,6 +23,7 @@ describe('CatalogOptionFrom', () => {
         expect(option.OrderLineExtensionEntity).toBe('MJ_BizApps_Orders: Event Order Lines');
         expect(option.ListPrice).toBe(450);
         expect(option.Taxable).toBe(true);
+        expect(option.MaxQuantityPerLine).toBe(1);
     });
 
     it('leaves OrderLineExtensionEntity null when the type is missing', () => {
@@ -35,6 +37,7 @@ describe('CatalogOptionFrom', () => {
                 Company: 'Meridian',
                 StandaloneSellingPrice: 1,
                 IsTaxable: false,
+                MaxQuantityPerLine: null,
             },
             undefined,
             0,
@@ -53,6 +56,7 @@ describe('CatalogOptionFrom', () => {
                 Company: 'Meridian',
                 StandaloneSellingPrice: 12,
                 IsTaxable: false,
+                MaxQuantityPerLine: null,
             },
             { OrderLineExtensionEntity: null },
             0,
