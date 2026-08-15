@@ -51,6 +51,8 @@ interface TimelineItem {
     TimeAgo: string;
     Icon: string;
     Tone: 'info' | 'success' | 'warning' | 'primary';
+    EntityName?: string;
+    RecordID?: string;
 }
 
 @Component({
@@ -159,22 +161,18 @@ interface TimelineItem {
                             }
                         </div>
 
-                        <!-- AI Expansion / Growth Signal -->
-                        <div class="mjo-ai-box">
-                            <div class="mjo-ai-box__header">
-                                <i class="fa-solid fa-wand-magic-sparkles"></i>
-                                <span>AI Copilot Expansion Signal</span>
+                        <div class="mjo-chart__footer">
+                            <div class="mjo-chart__metric">
+                                <span class="mjo-chart__metric-label">Active Licenses</span>
+                                <span class="mjo-chart__metric-val mjo-chart__metric-val--success">{{ Subscriptions.length }} Active</span>
                             </div>
-                            <p class="mjo-ai-box__text">
-                                {{ AiExpansionText }}
-                            </p>
-                            <div class="mjo-ai-box__actions">
-                                <button type="button" class="mjo-btn mjo-btn--primary mjo-btn--sm" (click)="OnActionClick('quote')">
-                                    Draft Expansion Quote
-                                </button>
-                                <button type="button" class="mjo-btn mjo-btn--ghost mjo-btn--sm" (click)="DismissAiCard()">
-                                    Dismiss
-                                </button>
+                            <div class="mjo-chart__metric">
+                                <span class="mjo-chart__metric-label">Billing Cycle</span>
+                                <span class="mjo-chart__metric-val">{{ Subscriptions.length > 0 ? (Subscriptions[0].SubscriptionType || 'Annual') : '—' }}</span>
+                            </div>
+                            <div class="mjo-chart__metric">
+                                <span class="mjo-chart__metric-label">Renewal</span>
+                                <span class="mjo-chart__metric-val">{{ Subscriptions.length > 0 && Subscriptions[0].AutoRenew ? 'Auto-Renew' : 'Manual' }}</span>
                             </div>
                         </div>
                     </mj-card>
@@ -243,16 +241,30 @@ interface TimelineItem {
                              [AllowMaximize]="true">
                         
                         <div class="mjo-timeline">
-                            @for (item of Timeline; track item.Title) {
-                                <div class="mjo-timeline__item">
-                                    <div class="mjo-timeline__icon mjo-timeline__icon--{{ item.Tone }}">
-                                        <i [class]="item.Icon"></i>
+                            @if (Timeline.length > 0) {
+                                @for (item of Timeline; track item.Title + item.TimeAgo) {
+                                    <div class="mjo-timeline__item"
+                                         [class.mjo-timeline__item--clickable]="!!item.EntityName && !!item.RecordID"
+                                         (click)="OnTimelineItemClick(item)">
+                                        <div class="mjo-timeline__icon mjo-timeline__icon--{{ item.Tone }}">
+                                            <i [class]="item.Icon"></i>
+                                        </div>
+                                        <div class="mjo-timeline__content">
+                                            <h5>{{ item.Title }}</h5>
+                                            <p>{{ item.Subtitle }}</p>
+                                            <span class="mjo-timeline__time">{{ item.TimeAgo }}</span>
+                                        </div>
+                                        @if (item.EntityName && item.RecordID) {
+                                            <div class="mjo-timeline__arrow">
+                                                <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                                            </div>
+                                        }
                                     </div>
-                                    <div class="mjo-timeline__content">
-                                        <h5>{{ item.Title }}</h5>
-                                        <p>{{ item.Subtitle }}</p>
-                                        <span class="mjo-timeline__time">{{ item.TimeAgo }}</span>
-                                    </div>
+                                }
+                            } @else {
+                                <div class="mjo-empty-state">
+                                    <i class="fa-solid fa-bolt-lightning"></i>
+                                    <p>No recent touchpoints recorded.</p>
                                 </div>
                             }
                         </div>
@@ -563,13 +575,44 @@ interface TimelineItem {
         .mjo-timeline {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 6px;
+            max-height: 220px;
+            overflow-y: auto;
+            padding-right: 4px;
+            scrollbar-width: thin;
+        }
+
+        .mjo-timeline::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .mjo-timeline::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .mjo-timeline::-webkit-scrollbar-thumb {
+            background: var(--mj-border-default, #2a3852);
+            border-radius: 4px;
         }
 
         .mjo-timeline__item {
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             gap: 10px;
+            padding: 8px 10px;
+            border-radius: var(--mj-radius-md, 8px);
+            border: 1px solid transparent;
+            transition: all 0.15s ease;
+        }
+
+        .mjo-timeline__item--clickable {
+            cursor: pointer;
+        }
+
+        .mjo-timeline__item--clickable:hover {
+            background: var(--mj-bg-surface-sunken, #090e17);
+            border-color: var(--mj-border-default, #2a3852);
+            transform: translateX(2px);
         }
 
         .mjo-timeline__icon {
@@ -590,17 +633,28 @@ interface TimelineItem {
         .mjo-timeline__icon--warning { color: #f59e0b; }
         .mjo-timeline__icon--primary { color: #818cf8; }
 
+        .mjo-timeline__content {
+            flex: 1;
+            min-width: 0;
+        }
+
         .mjo-timeline__content h5 {
             font-size: 12px;
             font-weight: 600;
             color: var(--mj-text-primary);
             margin: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .mjo-timeline__content p {
             font-size: 11px;
             color: var(--mj-text-secondary);
             margin: 2px 0 0 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .mjo-timeline__time {
@@ -608,6 +662,19 @@ interface TimelineItem {
             color: var(--mj-text-muted);
             display: block;
             margin-top: 1px;
+        }
+
+        .mjo-timeline__arrow {
+            font-size: 10px;
+            color: var(--mj-text-muted);
+            opacity: 0;
+            transition: opacity 0.15s ease, color 0.15s ease;
+            flex-shrink: 0;
+        }
+
+        .mjo-timeline__item--clickable:hover .mjo-timeline__arrow {
+            opacity: 1;
+            color: var(--mj-brand-primary, #38bdf8);
         }
 
         /* ── Badges & Buttons ── */
@@ -687,7 +754,6 @@ export class PartyOrdersOverviewComponent implements OnInit {
     public SpendMonths: MonthSpend[] = [];
     public AvgOrderValue = 0;
     public LifetimeValue = 0;
-    public AiExpansionText = 'Seat utilization is trending high across this account. Recommend reviewing multi-year expansion options.';
     public Timeline: TimelineItem[] = [];
 
     public async ngOnInit(): Promise<void> {
@@ -884,37 +950,59 @@ export class PartyOrdersOverviewComponent implements OnInit {
         const list: TimelineItem[] = [];
 
         if (this.Orders.length > 0) {
-            const first = this.Orders[0];
-            list.push({
-                Title: `Order ${first.OrderNumber} ${first.Status || 'Confirmed'}`,
-                Subtitle: `${this.FormatCurrency(first.TotalGross)} • ${first.PaymentStatus || 'Paid'}`,
-                TimeAgo: this.FormatDate(first.OrderDate),
-                Icon: 'fa-solid fa-cart-shopping',
-                Tone: 'success',
+            this.Orders.forEach(ord => {
+                list.push({
+                    Title: `Order ${ord.OrderNumber} ${ord.Status || 'Confirmed'}`,
+                    Subtitle: `${this.FormatCurrency(ord.TotalGross)} • ${ord.PaymentStatus || 'Paid'}`,
+                    TimeAgo: this.FormatDate(ord.OrderDate),
+                    Icon: 'fa-solid fa-cart-shopping',
+                    Tone: 'success',
+                    EntityName: MJO_ENTITIES.OrderHeader,
+                    RecordID: ord.ID,
+                });
             });
         }
 
         if (this.Subscriptions.length > 0) {
-            const sub = this.Subscriptions[0];
-            const name = sub.Product || sub.SubscriptionType || ('Subscription #' + sub.SubscriptionNumber);
-            list.push({
-                Title: `Subscription Active: ${name}`,
-                Subtitle: sub.EndDate ? `Renewal scheduled for ${this.FormatDate(sub.EndDate)}` : 'Active Term',
-                TimeAgo: 'Active',
-                Icon: 'fa-solid fa-rotate',
-                Tone: 'primary',
+            this.Subscriptions.forEach(sub => {
+                const name = sub.Product || sub.SubscriptionType || ('Subscription #' + sub.SubscriptionNumber);
+                list.push({
+                    Title: `Subscription Active: ${name}`,
+                    Subtitle: sub.EndDate ? `Renews ${this.FormatDate(sub.EndDate)}` : 'Active Term',
+                    TimeAgo: sub.StartDate ? this.FormatDate(sub.StartDate) : 'Active',
+                    Icon: 'fa-solid fa-rotate',
+                    Tone: 'primary',
+                    EntityName: MJO_ENTITIES.Subscription,
+                    RecordID: sub.ID,
+                });
             });
         }
 
-        list.push({
-            Title: 'Invoice Reconciled via ACH',
-            Subtitle: 'Payment settled and matched automatically.',
-            TimeAgo: 'Automated',
-            Icon: 'fa-solid fa-file-invoice-dollar',
-            Tone: 'info',
-        });
+        if (list.length === 0) {
+            list.push({
+                Title: 'Account Provisioned',
+                Subtitle: 'Customer record active and synchronized.',
+                TimeAgo: 'Initial',
+                Icon: 'fa-solid fa-circle-check',
+                Tone: 'info',
+            });
+        }
 
         this.Timeline = list;
+    }
+
+    public OnTimelineItemClick(item: TimelineItem): void {
+        if (!item.EntityName || !item.RecordID) return;
+        const pk = CompositeKey.FromID(item.RecordID);
+        if (this.navigationService) {
+            this.navigationService.OpenEntityRecord(item.EntityName, pk);
+        } else if (this.FormComponent) {
+            this.FormComponent.OnFormNavigate({
+                Kind: 'record',
+                EntityName: item.EntityName,
+                PrimaryKey: pk,
+            });
+        }
     }
 
     public OnOrderClick(orderId: string): void {
@@ -949,11 +1037,6 @@ export class PartyOrdersOverviewComponent implements OnInit {
         if (action === 'quote' && this.navigationService) {
             this.navigationService.OpenEntityRecord(MJO_ENTITIES.OrderHeader, CompositeKey.FromID('new'));
         }
-    }
-
-    public DismissAiCard(): void {
-        this.AiExpansionText = 'Recommendation acknowledged. Monitoring account usage trends.';
-        this.cdr.detectChanges();
     }
 
     public FormatCurrency(val: number | null | undefined): string {
