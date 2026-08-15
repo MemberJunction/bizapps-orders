@@ -1,0 +1,13 @@
+{
+  "reason": "Seven migrations have no PostgreSQL counterpart, including a 90k-line tables-and-objects migration — the largest single file in the fleet.",
+  "note": "DEBT, recorded so it is visible rather than silent. Removing an entry means writing the port and replaying it against a real PostgreSQL instance. Adding one is not a way to skip that work.",
+  "unported": [
+    "B202607061431__v0.1.x__Schema_and_Types.sql",
+    "V202607061432__v0.1.x__Tables_and_Objects.sql",
+    "V202608131541__v0.1.x__OrderHeaders_layered_inner_view.sql",
+    "V202608131542__v0.1.x__OrderHeaders_IsOverdue_outer_view.sql",
+    "V202608141400__v0.1.x__EventOrderLine_Person.sql",
+    "V202608141500__v0.1.x__EventOrderLine_Organizer_Notes.sql",
+    "V202608141800__v0.1.x__Product_MaxQuantityPerLine.sql"
+  ]
+}
