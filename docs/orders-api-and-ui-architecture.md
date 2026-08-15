@@ -292,7 +292,23 @@ things had to be wired for it to actually work:
 - **The package must be BUILT, not linked.** `.mj-links.json` deliberately does not symlink client
   packages: a second copy of `@angular/*` breaks DI in ways that surface as unrelated runtime errors.
 
-## 8. Still owed
+## 8. Order Header form — parties and New from a party
+
+The Order Header form is two party cards plus lines. **Ship To** sits on the
+left and starts expanded. **Bill To** is a slim rail on the right; selecting
+it expands that card and collapses Ship To (exclusive expand). Same person or
+org can be both parties.
+
+**New** from a Person or Organization Orders grid prefills every join field
+that filters the grid (`NewRecordValuesForJoinFields`), not only the first
+FK. Explorer puts those values on
+`/record/MJ_BizApps_Orders: Order Headers/new?NewRecordValues=BillToPersonID|<id>||ShipToPersonID|<id>`
+(org fields equivalently), so refresh and share still open an order linked
+back to that party.
+
+---
+
+## 9. Still owed
 
 - **Screens that read but do not yet write.** The catalog screens (products, pricing, promotions,
   charges) list and explain; editing goes through the generated entity forms until a reason appears

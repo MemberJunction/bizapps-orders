@@ -103,7 +103,7 @@ Tax tables (`ProductTaxCategory`, `OrderLineTaxLine`) land with the tax build (D
 | **Entities** | `@mj-biz-apps/orders-entities` | Strongly-typed entity classes with Zod validation |
 | **Actions** | `@mj-biz-apps/orders-actions` | Server-side action handlers (webhook processing, scheduled work) |
 | **Server** | `@mj-biz-apps/orders-server` | GraphQL resolvers, remote operations (`Orders.ConfirmOrder`, `Orders.RefundPayment`), the server `OrdersEngine`, the `OrderJournalEntryFactory`, and pluggable `PaymentProvider` implementations |
-| **Angular** | `@mj-biz-apps/orders-ng` | UI components, form overrides, custom widgets (forms-first, D33) |
+| **Angular** | `@mj-biz-apps/orders-ng` | UI components, form overrides, custom widgets (forms-first, D33). The Order Header form puts **Ship To** on the left (starts expanded) and **Bill To** as a slim rail that takes the width when selected. Person and Organization **Orders** grids pass every filter join field as `NewRecordValues` so **New** opens an order already linked to that party (`BillToPersonID` + `ShipToPersonID`, or the org equivalents). |
 | **Core Entities Server** | `@mj-biz-apps/orders-core-entities-server` | Server-only entity subclasses — the Order `Save()` override that books on lock, numbering, totals & balance maintenance |
 
 ---
