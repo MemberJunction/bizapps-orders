@@ -36,5 +36,145 @@
       "lastModified": "2026-08-13T16:13:08.477Z",
       "checksum": "e2c757a1b32295b7a6ab146cf576ec5022fc4f40f30cfdd2f66281e460d50372"
     }
+  },
+  {
+    "_comments": [
+      "Payment Headers use generated form + header/journal contributions.",
+      "Related grids stay on (Lines first-class; satellites in More)."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Headers"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.513Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Subscriptions use generated form + header/terms/rev-rec contributions.",
+      "Related grids stay on (Terms and Entitlements first-class; the rest in More)."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscriptions"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.484Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Subscription Terms use generated form + header/rev-rec contributions."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Terms"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.175Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Products use generated form + header and domain widgets as contributions."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.084Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Price Lists use generated form + header and volume simulator."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Price Lists"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.119Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Promotions use generated form + identity header."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Promotions"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.151Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
   }
 ]

@@ -1,5 +1,4 @@
 import { Component, inject } from '@angular/core';
-import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { DispatchFormNavigation } from '../form-navigation-helper';
@@ -29,7 +28,6 @@ export interface PriceListSimResult {
  * 4. Product Prices & Volume Tiers (Related entity data grid).
  * 5. Customer & Organization Assignments (Related entity data grid).
  */
-@RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Price Lists')
 @Component({
     standalone: false,
     selector: 'bizapps-price-list-form',

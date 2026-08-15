@@ -1,0 +1,48 @@
+<mj-collapsible-panel
+    SectionKey="terms"
+    SectionName="Coverage Terms"
+    Icon="fa-solid fa-calendar-check"
+    Variant="related-entity"
+    [Form]="FormComponent"
+    [FormContext]="FormContext"
+    [DefaultExpanded]="true">
+    <div class="mjo-terms-toolbar">
+        <button type="button" mjButton variant="flat" size="sm" (click)="ViewMode = ViewMode === 'cards' ? 'grid' : 'cards'">
+            <i class="fa-solid" [class.fa-table]="ViewMode === 'cards'" [class.fa-layer-group]="ViewMode === 'grid'" aria-hidden="true"></i>
+            {{ ViewMode === 'cards' ? 'Grid' : 'Cards' }}
+        </button>
+    </div>
+    @if (ViewMode === 'cards') {
+        @if (Terms.length === 0) {
+            <div class="mjo-term-empty">
+                <i class="fa-solid fa-calendar-xmark" aria-hidden="true"></i>
+                <span>No coverage terms yet.</span>
+            </div>
+        } @else {
+            <div class="mjo-terms-deck">
+                @for (term of Terms; track term.ID; let i = $index) {
+                    <article class="mjo-term-card">
+                        <div class="mjo-term-card__head">
+                            <strong [class]="TermTone(i)">Term {{ term.TermNumber || (i + 1) }}</strong>
+                            <span [class]="TermStatusClass(term.Status)">{{ term.Status || 'Active' }}</span>
+                        </div>
+                        <div class="mjo-term-card__amount">{{ TermAmount(term.Amount) }}</div>
+                        <div class="mjo-term-card__dates">{{ TermDates(term.StartDate, term.EndDate) }}</div>
+                        <button type="button" class="mjo-term-card__open" (click)="OpenTerm(term)">
+                            Open term
+                        </button>
+                    </article>
+                }
+            </div>
+        }
+    } @else if (Record.IsSaved) {
+        <mj-explorer-entity-data-grid
+            [Params]="FormComponent.BuildRelationshipViewParamsByEntityName(TermEntity, 'SubscriptionID')"
+            [NewRecordValues]="FormComponent.NewRecordValues(TermEntity)"
+            [AllowLoad]="FormComponent.IsSectionExpanded(SectionKey)"
+            [ShowToolbar]="true"
+            (Navigate)="FormComponent.OnFormNavigate($event)"
+            (AfterDataLoad)="OnDataLoad($event)">
+        </mj-explorer-entity-data-grid>
+    }
+</mj-collapsible-panel>

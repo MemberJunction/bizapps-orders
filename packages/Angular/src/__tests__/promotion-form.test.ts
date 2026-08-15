@@ -1,10 +1,11 @@
 import '@angular/compiler';
 import { describe, it, expect } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
-import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersPromotionEntity } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersPromotionFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersPromotion/mjbizappsorderspromotion.form.component';
 import { BizAppsPromotionFormComponent } from '../lib/custom/Promotion/promotion-form.component';
+import { PromotionHeaderPanel } from '../lib/form-panels/promotion-header.panel';
 import '../public-api';
 
 describe('BizAppsPromotionFormComponent Custom Form Registration & Getters', () => {
@@ -12,24 +13,22 @@ describe('BizAppsPromotionFormComponent Custom Form Registration & Getters', () 
         expect(BizAppsPromotionFormComponent.prototype instanceof mjBizAppsOrdersPromotionFormComponent).toBe(true);
     });
 
-    it('registers with BaseFormComponent under key "MJ_BizApps_Orders: Promotions"', () => {
-        const registrations = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
-            BaseFormComponent,
-            'MJ_BizApps_Orders: Promotions'
-        );
-        expect(registrations.length).toBeGreaterThanOrEqual(1);
-
-        const customReg = registrations.find(r => r.SubClass === BizAppsPromotionFormComponent);
-        expect(customReg).toBeDefined();
-    });
-
-    it('wins ClassFactory lookup priority over the generated component', () => {
+    it('leaves the generated Promotion form as the registered form', () => {
         const activeReg = MJGlobal.Instance.ClassFactory.GetRegistration(
             BaseFormComponent,
             'MJ_BizApps_Orders: Promotions'
         );
-        expect(activeReg).toBeDefined();
-        expect(activeReg?.SubClass).toBe(BizAppsPromotionFormComponent);
+        expect(activeReg?.SubClass).toBe(mjBizAppsOrdersPromotionFormComponent);
+        const customReg = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
+            BaseFormComponent,
+            'MJ_BizApps_Orders: Promotions'
+        ).find(r => r.SubClass === BizAppsPromotionFormComponent);
+        expect(customReg).toBeUndefined();
+    });
+
+    it('registers the identity header as a form contribution', () => {
+        const regs = MJGlobal.Instance.ClassFactory.GetAllRegistrations(BaseFormPanel);
+        expect(regs.some(r => r.SubClass === PromotionHeaderPanel)).toBe(true);
     });
 
     it('formats discount values and status badges correctly', () => {

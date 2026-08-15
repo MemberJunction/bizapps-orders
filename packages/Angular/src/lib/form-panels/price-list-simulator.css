@@ -1,0 +1,34 @@
+.mjo-sim {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-4);
+}
+
+.mjo-sim__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--mj-space-4);
+    align-items: flex-end;
+}
+
+.mjo-sim__field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--mj-text-secondary);
+    font-size: var(--mj-text-sm);
+}
+
+.mjo-sim__field--grow {
+    flex: 1;
+    min-width: 12rem;
+}
+
+.mjo-sim__field input[type='range'] {
+    accent-color: var(--mj-brand-primary);
+}
+
+.mjo-sim__modes {
+    display: flex;
+    gap: var(--mj-space-2);
+}

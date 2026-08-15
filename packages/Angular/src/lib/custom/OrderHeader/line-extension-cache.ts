@@ -34,8 +34,7 @@ export function CachedExtensionEntityInfo(
  * Embed config for an extension form. Section visibility is decided here at
  * runtime — never by editing the CodeGen form template. `orderLines` is the
  * key CodeGen uses for the IS-A parent field panel; `systemMetadata` is the
- * audit timestamps. `HideInheritedSections` still covers a template that
- * happens to tag the parent panel `Variant="inherited"`.
+ * audit timestamps.
  */
 export function CachedExtensionFormConfig(entityName: string): EntityFormConfig {
     const key = cacheKey(entityName);
@@ -45,7 +44,6 @@ export function CachedExtensionFormConfig(entityName: string): EntityFormConfig 
         ...DIALOG_FORM_CONFIG,
         Toolbar: null,
         ShowRelatedEntities: false,
-        HideInheritedSections: true,
         HiddenSectionKeys: ['systemMetadata', 'orderLines'],
         CollapsibleSections: false,
         EnableRecordLinks: true,

@@ -17,6 +17,7 @@ import './lib/generated/generated-forms.module';
 import './lib/custom/custom-forms.module';
 import { LoadCustomForms } from './lib/custom/custom-forms.module';
 import './lib/form-panels/party-headers.module';
+import './lib/form-panels/document-forms.module';
 
 // Import generated class registrations manifest
 import { CLASS_REGISTRATIONS } from './lib/generated/class-registrations-manifest';

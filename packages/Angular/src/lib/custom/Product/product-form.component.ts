@@ -1,5 +1,4 @@
 import { Component, inject } from '@angular/core';
-import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { Metadata } from '@memberjunction/core';
 import { UserInfoEngine } from '@memberjunction/core-entities';
@@ -34,7 +33,6 @@ const ACTIVE_PANE_SETTING = 'mj.orders.productForm.activePane';
  * 4. Modular Encapsulated Sub-Widgets: Pricing Simulator, Promotion manager, Tax & GL links,
  *    Delivery protocol, and Subscription defaults.
  */
-@RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Products')
 @Component({
     standalone: false,
     selector: 'bizapps-product-form',

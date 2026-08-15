@@ -19,7 +19,6 @@ describe('CachedExtensionFormConfig', () => {
     it('embeds without toolbar or inherited parent sections', () => {
         const config = CachedExtensionFormConfig('MJ_BizApps_Orders: Event Order Lines');
         expect(config.Toolbar).toBeNull();
-        expect(config.HideInheritedSections).toBe(true);
         expect(config.HiddenSectionKeys).toEqual(['systemMetadata', 'orderLines']);
         expect(config.ShowRelatedEntities).toBe(false);
         expect(config.CollapsibleSections).toBe(false);

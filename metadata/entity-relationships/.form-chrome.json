@@ -314,5 +314,502 @@
       "lastModified": "2026-08-14T22:04:26.592Z",
       "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
     }
+  },
+  {
+    "_comments": [
+      "Payment form: allocations (lines) are the document body — always first-class."
+    ],
+    "fields": {
+      "DisplayName": "Allocations",
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Payment Headers&RelatedEntity=MJ_BizApps_Orders: Payment Lines&RelatedEntityJoinField=PaymentHeaderID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.588Z",
+      "checksum": "bf158a8279b3bf8df5892800b4572972ad0800437c1535e56732e098f6dc1ea8"
+    }
+  },
+  {
+    "_comments": [
+      "Payment form: reversing payments belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Payment Headers&RelatedEntity=MJ_BizApps_Orders: Payment Headers&RelatedEntityJoinField=ReversesPaymentHeaderID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.614Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Payment form: stored-value movements belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Payment Headers&RelatedEntity=MJ_BizApps_Orders: Stored Value Transactions&RelatedEntityJoinField=RelatedPaymentID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.637Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Payment form: subscription billing events belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Payment Headers&RelatedEntity=MJ_BizApps_Orders: Subscription Events&RelatedEntityJoinField=RelatedPaymentID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.678Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Subscription form: coverage terms are the document body — always first-class."
+    ],
+    "fields": {
+      "DisplayName": "Coverage Terms",
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Subscriptions&RelatedEntity=MJ_BizApps_Orders: Subscription Terms&RelatedEntityJoinField=SubscriptionID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.699Z",
+      "checksum": "2be00bdd6bacce35c26e5fd2f2ed252f50be958f5511050f47cf45acc0e60d90"
+    }
+  },
+  {
+    "_comments": [
+      "Subscription form: entitlement grants stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Subscriptions&RelatedEntity=MJ_BizApps_Orders: Entitlement Grants&RelatedEntityJoinField=SubscriptionID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.742Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Subscription form: events log belongs in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Subscriptions&RelatedEntity=MJ_BizApps_Orders: Subscription Events&RelatedEntityJoinField=SubscriptionID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.720Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Subscription form: migrate-to is an audit hang-on — More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Subscriptions&RelatedEntity=MJ_BizApps_Orders: Subscriptions&RelatedEntityJoinField=MigratesToSubscriptionID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.762Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Subscription form: migrate-from is an audit hang-on — More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Subscriptions&RelatedEntity=MJ_BizApps_Orders: Subscriptions&RelatedEntityJoinField=MigratesFromSubscriptionID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.799Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Subscription form: originating order line is a pointer, not a child collection — More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Subscriptions&RelatedEntity=MJ_BizApps_Orders: Order Lines&RelatedEntityJoinField=SubscriptionID"
+    },
+    "sync": {
+      "lastModified": "2026-08-14T23:01:34.781Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Term form: entitlement grants stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Subscription Terms&RelatedEntity=MJ_BizApps_Orders: Entitlement Grants&RelatedEntityJoinField=SubscriptionTermID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.259Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Product form: prices stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Product Prices&RelatedEntityJoinField=ProductID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.279Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Product form: entitlements stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Product Entitlements&RelatedEntityJoinField=ProductID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.296Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Product form: order lines belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Order Lines&RelatedEntityJoinField=ProductID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.393Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Product form: subscriptions spawned from this catalog item belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Subscriptions&RelatedEntityJoinField=ProductID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.336Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Price list form: product prices stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Price Lists&RelatedEntity=MJ_BizApps_Orders: Product Prices&RelatedEntityJoinField=PriceListID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.356Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Price list form: assignments stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Price Lists&RelatedEntity=MJ_BizApps_Orders: Price List Assignments&RelatedEntityJoinField=PriceListID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.375Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Price list form: company policies belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Price Lists&RelatedEntity=MJ_BizApps_Orders: Order Company Policies&RelatedEntityJoinField=DefaultPriceListID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.411Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Product form: this product's kit components stay first-class."
+    ],
+    "fields": {
+      "DisplayName": "Bundle Items",
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Product Bundle Items&RelatedEntityJoinField=BundleProductID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.430Z",
+      "checksum": "024b48ca85ae401a2d7383e884af7d08d3592062466d4afd40f67d35e64094ba"
+    }
+  },
+  {
+    "_comments": [
+      "Product form: kits that include this product belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Product Bundle Items&RelatedEntityJoinField=ComponentProductID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.448Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Product form: successor replacements belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Products&RelatedEntityJoinField=SuccessorProductID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.465Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Product form: order lines that exploded this bundle belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Order Lines&RelatedEntityJoinField=SourceBundleProductID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.482Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Product form: promotions targeting this SKU belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Promotion Targets&RelatedEntityJoinField=ProductID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.501Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Promotion form: coupon codes stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Promotions&RelatedEntity=MJ_BizApps_Orders: Promotion Codes&RelatedEntityJoinField=PromotionID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.533Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Promotion form: targets stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Promotions&RelatedEntity=MJ_BizApps_Orders: Promotion Targets&RelatedEntityJoinField=PromotionID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.552Z",
+      "checksum": "dfbee5e4d99c8f863047c61ab997e4357345b819e6934792df571d5ef7183eb9"
+    }
+  },
+  {
+    "_comments": [
+      "Promotion form: historical order redemptions belong in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "FormRole": "Detail"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Promotions&RelatedEntity=MJ_BizApps_Orders: Order Adjustments&RelatedEntityJoinField=PromotionID"
+    },
+    "sync": {
+      "lastModified": "2026-08-15T01:23:08.568Z",
+      "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
   }
 ]

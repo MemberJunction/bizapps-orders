@@ -1,6 +1,5 @@
 import { Component, OnChanges, SimpleChanges } from '@angular/core';
 import { CompositeKey, Metadata, RunView, type RunViewParams } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
@@ -23,7 +22,6 @@ const ACTIVE_PANE_SETTING = 'mj.orders.subscriptionTermForm.activePane';
  * Scopes the Deferred Revenue Waterfall widget specifically to this single term's
  * revenue recognition schedule entries and provides instant drill-downs.
  */
-@RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Subscription Terms')
 @Component({
     standalone: false,
     selector: 'bizapps-subscription-term-form',

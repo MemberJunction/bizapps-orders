@@ -1,10 +1,11 @@
 import '@angular/compiler';
 import { describe, it, expect } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
-import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersPriceListEntity } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersPriceListFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersPriceList/mjbizappsorderspricelist.form.component';
 import { BizAppsPriceListFormComponent } from '../lib/custom/PriceList/price-list-form.component';
+import { PriceListHeaderPanel } from '../lib/form-panels/price-list-header.panel';
 import '../public-api';
 
 describe('BizAppsPriceListFormComponent Custom Form Registration & Pricing Simulator', () => {
@@ -12,24 +13,22 @@ describe('BizAppsPriceListFormComponent Custom Form Registration & Pricing Simul
         expect(BizAppsPriceListFormComponent.prototype instanceof mjBizAppsOrdersPriceListFormComponent).toBe(true);
     });
 
-    it('registers with BaseFormComponent under key "MJ_BizApps_Orders: Price Lists"', () => {
-        const registrations = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
-            BaseFormComponent,
-            'MJ_BizApps_Orders: Price Lists'
-        );
-        expect(registrations.length).toBeGreaterThanOrEqual(1);
-
-        const customReg = registrations.find(r => r.SubClass === BizAppsPriceListFormComponent);
-        expect(customReg).toBeDefined();
-    });
-
-    it('wins ClassFactory lookup priority over the generated component', () => {
+    it('leaves the generated Price List form as the registered form', () => {
         const activeReg = MJGlobal.Instance.ClassFactory.GetRegistration(
             BaseFormComponent,
             'MJ_BizApps_Orders: Price Lists'
         );
-        expect(activeReg).toBeDefined();
-        expect(activeReg?.SubClass).toBe(BizAppsPriceListFormComponent);
+        expect(activeReg?.SubClass).toBe(mjBizAppsOrdersPriceListFormComponent);
+        const customReg = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
+            BaseFormComponent,
+            'MJ_BizApps_Orders: Price Lists'
+        ).find(r => r.SubClass === BizAppsPriceListFormComponent);
+        expect(customReg).toBeUndefined();
+    });
+
+    it('registers the identity header as a form contribution', () => {
+        const regs = MJGlobal.Instance.ClassFactory.GetAllRegistrations(BaseFormPanel);
+        expect(regs.some(r => r.SubClass === PriceListHeaderPanel)).toBe(true);
     });
 
     it('calculates volume pricing mode accurately', () => {

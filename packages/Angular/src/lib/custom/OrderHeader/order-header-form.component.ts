@@ -104,6 +104,10 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     override async ngOnInit(): Promise<void> {
         await super.ngOnInit();
+        // Full-page order is a compose surface. Related hang-ons (Event Order
+        // Lines, line-level FKs, etc.) stay off the form — dialogs already
+        // hide them via DIALOG_FORM_CONFIG.
+        this.Config = { ...(this.Config ?? {}), ShowRelatedEntities: false };
         this.initSections([
             { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Lines', isExpanded: true },
         ]);
