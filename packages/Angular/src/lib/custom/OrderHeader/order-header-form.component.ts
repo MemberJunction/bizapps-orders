@@ -73,7 +73,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public declare record: OrderHeaderEntity;
 
     public ActiveTab: OrderFormContextTab | null = null;
-    public ExpandedParty: OrderFormParty | null = null;
+    public ExpandedParty: OrderFormParty = 'ship';
     public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
 
     /** Related lists in the header tabs have no parent height to fill — pin them like related-entity panels. */
@@ -116,7 +116,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         if (!this.record?.IsSaved) {
             // Compose the order, don't reopen last session's payment pane over the catalog.
             this.ActiveTab = null;
-            this.ExpandedParty = null;
+            this.ExpandedParty = 'ship';
         }
         await this.ensureLinesLoaded();
         await this.defaultSellingCompany();
@@ -132,9 +132,10 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         void this.refreshAccountingIfNeeded();
     }
 
-    public ToggleParty(party: OrderFormParty): void {
-        this.ExpandedParty = this.ExpandedParty === party ? null : party;
-        UserInfoEngine.Instance.SetSettingDebounced(EXPANDED_PARTY_SETTING, this.ExpandedParty ?? '');
+    public SelectParty(party: OrderFormParty): void {
+        if (this.ExpandedParty === party) return;
+        this.ExpandedParty = party;
+        UserInfoEngine.Instance.SetSettingDebounced(EXPANDED_PARTY_SETTING, party);
     }
 
     public JumpToBill(): void {
@@ -363,9 +364,9 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         if (tab && this.isVisibleTab(tab)) this.ActiveTab = tab;
         if (this.record?.IsSaved) {
             const party = UserInfoEngine.Instance.GetSetting(EXPANDED_PARTY_SETTING);
-            if (party === 'bill' || party === 'ship') this.ExpandedParty = party;
+            this.ExpandedParty = party === 'bill' ? 'bill' : 'ship';
         } else {
-            this.ExpandedParty = null;
+            this.ExpandedParty = 'ship';
         }
         const view = UserInfoEngine.Instance.GetSetting(ACCOUNTING_VIEW_SETTING);
         if (view === 'summary' || view === 'detail') this.AccountingView = view;

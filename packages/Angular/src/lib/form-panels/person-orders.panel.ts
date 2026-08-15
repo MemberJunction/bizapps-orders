@@ -38,7 +38,7 @@ const SECTION_KEY = 'orders';
             @if (Record.IsSaved) {
                 <mj-explorer-entity-data-grid
                     [Params]="FormComponent.BuildRelationshipViewParamsForJoinFields(OrderEntity, JoinFields)"
-                    [NewRecordValues]="NewValues"
+                    [NewRecordValues]="FormComponent.NewRecordValuesForJoinFields(OrderEntity, JoinFields)"
                     [AllowLoad]="FormComponent.IsSectionExpanded(SectionKey)"
                     [ShowToolbar]="true"
                     (Navigate)="FormComponent.OnFormNavigate($event)"
@@ -52,14 +52,6 @@ export class OrdersPersonOrdersPanel extends BaseFormPanel<mjBizAppsCommonPerson
     public readonly OrderEntity = MJO_ENTITIES.OrderHeader;
     public readonly JoinFields = JOIN_FIELDS;
     public readonly SectionKey = SECTION_KEY;
-
-    public get NewValues(): Record<string, unknown> {
-        const rel = this.FormComponent.GetEntityRelationshipByRelatedEntityName(
-            this.OrderEntity,
-            JOIN_FIELDS[0],
-        );
-        return rel ? this.FormComponent.NewRecordValuesByEntityRelationship(rel) : { BillToPersonID: this.Record.ID };
-    }
 
     public OnDataLoad(event: AfterDataLoadEventArgs): void {
         this.FormComponent.SetSectionRowCount(SECTION_KEY, event.totalRowCount);
