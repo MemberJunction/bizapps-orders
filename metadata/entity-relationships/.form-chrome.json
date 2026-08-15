@@ -8,7 +8,14 @@
       "DisplayName": "Orders",
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary",
+          "join": {
+            "mode": "any",
+            "fields": [
+              "BillToPersonID",
+              "ShipToPersonID"
+            ]
+          }
         }
       }
     },
@@ -28,7 +35,14 @@
       "DisplayName": "Orders",
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary",
+          "join": {
+            "mode": "any",
+            "fields": [
+              "BillToOrganizationID",
+              "ShipToOrganizationID"
+            ]
+          }
         }
       }
     },
@@ -48,7 +62,7 @@
       "DisplayName": "Payments",
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -68,7 +82,7 @@
       "DisplayName": "Payments",
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -87,7 +101,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -106,7 +120,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -120,7 +134,7 @@
   },
   {
     "_comments": [
-      "Line-level Order Lines do not belong on a Person form — the header is enough."
+      "Line-level Order Lines do not belong on a Person form \u2014 the header is enough."
     ],
     "fields": {
       "DisplayInForm": false
@@ -170,7 +184,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "None"
         }
       }
     },
@@ -189,7 +203,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "None"
         }
       }
     },
@@ -208,7 +222,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -227,7 +241,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -246,7 +260,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "None"
         }
       }
     },
@@ -265,7 +279,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "None"
         }
       }
     },
@@ -284,7 +298,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "None"
         }
       }
     },
@@ -303,7 +317,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "None"
         }
       }
     },
@@ -317,13 +331,13 @@
   },
   {
     "_comments": [
-      "Payment form: allocations (lines) are the document body — always first-class."
+      "Payment form: allocations (lines) are the document body \u2014 always first-class."
     ],
     "fields": {
       "DisplayName": "Allocations",
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -342,7 +356,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -361,7 +375,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -380,7 +394,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -394,13 +408,13 @@
   },
   {
     "_comments": [
-      "Subscription form: coverage terms are the document body — always first-class."
+      "Subscription form: coverage terms are the document body \u2014 always first-class."
     ],
     "fields": {
       "DisplayName": "Coverage Terms",
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -419,7 +433,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -438,7 +452,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -452,12 +466,12 @@
   },
   {
     "_comments": [
-      "Subscription form: migrate-to is an audit hang-on — More."
+      "Subscription form: migrate-to is an audit hang-on \u2014 More."
     ],
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -471,12 +485,12 @@
   },
   {
     "_comments": [
-      "Subscription form: migrate-from is an audit hang-on — More."
+      "Subscription form: migrate-from is an audit hang-on \u2014 More."
     ],
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -490,12 +504,12 @@
   },
   {
     "_comments": [
-      "Subscription form: originating order line is a pointer, not a child collection — More."
+      "Subscription form: originating order line is a pointer, not a child collection \u2014 More."
     ],
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -514,7 +528,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -533,7 +547,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -552,7 +566,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -571,7 +585,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -590,7 +604,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -609,7 +623,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -628,7 +642,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -647,7 +661,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -667,7 +681,7 @@
       "DisplayName": "Bundle Items",
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -686,7 +700,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -705,7 +719,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -724,7 +738,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -743,7 +757,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -762,7 +776,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -781,7 +795,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Primary"
+          "inclusion": "Primary"
         }
       }
     },
@@ -800,7 +814,7 @@
     "fields": {
       "Configuration": {
         "UI": {
-          "FormRole": "Detail"
+          "inclusion": "More"
         }
       }
     },
@@ -810,6 +824,261 @@
     "sync": {
       "lastModified": "2026-08-15T01:23:08.568Z",
       "checksum": "1ba7421a659abf12e1ece17b66330d4213c5206bb6f39709b80bbdd1ccbe8cab"
+    }
+  },
+  {
+    "_comments": [
+      "Person form: Ship-To is owned by the Bill-To Orders join."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Order Headers&RelatedEntityJoinField=ShipToPersonID"
+    }
+  },
+  {
+    "_comments": [
+      "Organization form: Ship-To is owned by the Bill-To Orders join."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Order Headers&RelatedEntityJoinField=ShipToOrganizationID"
+    }
+  },
+  {
+    "_comments": [
+      "Person form: MJ_BizApps_Orders: Customer Tax Exemptions is not a Person-form candidate."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Customer Tax Exemptions&RelatedEntityJoinField=PersonID"
+    }
+  },
+  {
+    "_comments": [
+      "Person form: MJ_BizApps_Orders: Payment Intents is not a Person-form candidate."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Payment Intents&RelatedEntityJoinField=BillToPersonID"
+    }
+  },
+  {
+    "_comments": [
+      "Person form: MJ_BizApps_Orders: Price List Assignments is not a Person-form candidate."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: People&RelatedEntity=MJ_BizApps_Orders: Price List Assignments&RelatedEntityJoinField=PersonID"
+    }
+  },
+  {
+    "_comments": [
+      "Organization form: MJ_BizApps_Orders: Customer Tax Exemptions is not an Organization-form candidate."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Customer Tax Exemptions&RelatedEntityJoinField=OrganizationID"
+    }
+  },
+  {
+    "_comments": [
+      "Organization form: MJ_BizApps_Orders: Payment Intents is not an Organization-form candidate."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Payment Intents&RelatedEntityJoinField=BillToOrganizationID"
+    }
+  },
+  {
+    "_comments": [
+      "Organization form: MJ_BizApps_Orders: Price List Assignments is not an Organization-form candidate."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Common: Organizations&RelatedEntity=MJ_BizApps_Orders: Price List Assignments&RelatedEntityJoinField=OrganizationID"
+    }
+  },
+  {
+    "_comments": [
+      "Order form: lines are the document body."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Lines&RelatedEntityJoinField=OrderHeaderID"
+    }
+  },
+  {
+    "_comments": [
+      "Order form: charges stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Charges&RelatedEntityJoinField=OrderHeaderID"
+    }
+  },
+  {
+    "_comments": [
+      "Order form: adjustments stay first-class."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "Primary"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Adjustments&RelatedEntityJoinField=OrderHeaderID"
+    }
+  },
+  {
+    "_comments": [
+      "Order form: payment intents sit in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "More"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Payment Intents&RelatedEntityJoinField=OrderHeaderID"
+    }
+  },
+  {
+    "_comments": [
+      "Order form: payment allocations sit in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "More"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Payment Lines&RelatedEntityJoinField=OrderHeaderID"
+    }
+  },
+  {
+    "_comments": [
+      "Order form: MJ_BizApps_Orders: Order Headers is not a candidate."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Headers&RelatedEntityJoinField=ReversesOrderHeaderID"
+    }
+  },
+  {
+    "_comments": [
+      "Order form: MJ_BizApps_Orders: Payment Details is not a candidate."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Payment Details&RelatedEntityJoinField=SourceOrderHeaderID"
+    }
+  },
+  {
+    "_comments": [
+      "Order form: MJ_BizApps_Orders: Stored Value Transactions is not a candidate."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Stored Value Transactions&RelatedEntityJoinField=RelatedOrderHeaderID"
+    }
+  },
+  {
+    "_comments": [
+      "Order form: MJ_BizApps_Orders: Subscription Events is not a candidate."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Subscription Events&RelatedEntityJoinField=RelatedOrderHeaderID"
     }
   }
 ]
