@@ -18,7 +18,7 @@ export type TermLookup = Record<string, { TermNumber: number; Label: string }>;
     metadata: {
         entity: 'MJ_BizApps_Orders: Subscriptions',
         slot: 'after-fields',
-        sortKey: 70,
+        sortKey: 80,
         contributionKey: SECTION_KEY,
     },
 })

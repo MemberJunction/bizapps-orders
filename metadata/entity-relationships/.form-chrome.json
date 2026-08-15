@@ -351,12 +351,13 @@
   },
   {
     "_comments": [
-      "Payment form: reversing payments belong in More."
+      "Payment form: reversing payments are the other end of the same header.",
+      "Not a candidate — same as Order Headers.ReversesOrderHeaderID."
     ],
     "fields": {
       "Configuration": {
         "UI": {
-          "inclusion": "More"
+          "inclusion": "None"
         }
       }
     },
@@ -364,8 +365,8 @@
       "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Payment Headers&RelatedEntity=MJ_BizApps_Orders: Payment Headers&RelatedEntityJoinField=ReversesPaymentHeaderID"
     },
     "sync": {
-      "lastModified": "2026-08-15T02:45:18.044Z",
-      "checksum": "58975efd1d9187857b888d0129194c7b3c6f8248bca208c86585ea58e2517426"
+      "lastModified": "2026-08-15T13:15:06.016Z",
+      "checksum": "9cefa22b1ba112e419ae4bb1b3a7c0523ed4d83203e6d34e454e6ae81d2a1f62"
     }
   },
   {
@@ -408,13 +409,14 @@
   },
   {
     "_comments": [
-      "Subscription form: coverage terms are the document body — always first-class."
+      "Subscription form: terms sit just below Details (sortKey 90)."
     ],
     "fields": {
-      "DisplayName": "Coverage Terms",
+      "DisplayName": "Terms",
       "Configuration": {
         "UI": {
-          "inclusion": "Primary"
+          "inclusion": "Primary",
+          "sortKey": 90
         }
       }
     },
@@ -428,12 +430,14 @@
   },
   {
     "_comments": [
-      "Subscription form: entitlement grants stay first-class."
+      "Subscription form: entitlement grants after Terms and Deferred Revenue (sortKey 70)."
     ],
     "fields": {
+      "DisplayName": "Entitlement Grants",
       "Configuration": {
         "UI": {
-          "inclusion": "Primary"
+          "inclusion": "Primary",
+          "sortKey": 70
         }
       }
     },
