@@ -7,6 +7,19 @@ registers its bundles on `IntegrationCheckRegistry`; that is its entire runtime 
 mj.config.cjs → testing.checkModules → this package → IntegrationCheckRegistry → IntegrationTestDriver
 ```
 
+## Transports
+
+| Path | What it proves | How |
+|---|---|---|
+| **Server** (`test-harnesses/integration.mjs`) | Booking, JEs, payments — `OrderEntityServer` + rolled-back SQL | `SQLServerDataProvider` |
+| **Client** (`test-harnesses/integration-client.mjs`) | MJAPI / GraphQL for catalog + party CRUD | `bootstrapIntegrationClient` |
+
+The client path does **not** import `@mj-biz-apps/orders-server`. Those `*EntityServer` constructors throw on `GraphQLDataProvider`. Booking checks stay on the server transport because they nest provider transactions and `TxQuery`.
+
+```bash
+GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs
+```
+
 ## Running
 
 ```bash
