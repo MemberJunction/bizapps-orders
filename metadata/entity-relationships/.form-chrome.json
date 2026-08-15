@@ -424,8 +424,8 @@
       "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Subscriptions&RelatedEntity=MJ_BizApps_Orders: Subscription Terms&RelatedEntityJoinField=SubscriptionID"
     },
     "sync": {
-      "lastModified": "2026-08-15T02:45:18.175Z",
-      "checksum": "6d330c8c485f03d88793d63d3c909fb7dc95d84729adcddf2598398d208c2e1c"
+      "lastModified": "2026-08-15T20:09:58.877Z",
+      "checksum": "ce426a32550f0b48032443c33727d93022d47cac97382e365b9a94edd347c015"
     }
   },
   {
@@ -445,8 +445,8 @@
       "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Subscriptions&RelatedEntity=MJ_BizApps_Orders: Entitlement Grants&RelatedEntityJoinField=SubscriptionID"
     },
     "sync": {
-      "lastModified": "2026-08-15T02:45:18.136Z",
-      "checksum": "ffcadf6a38dea7ba00c49040ba5c94475c9266e21b9bc382278ef1da715e8086"
+      "lastModified": "2026-08-15T20:09:58.899Z",
+      "checksum": "6907472aa402235f72de0cd98533805ee882a9dd05400f0b9eef4aef1bd9ef9f"
     }
   },
   {
