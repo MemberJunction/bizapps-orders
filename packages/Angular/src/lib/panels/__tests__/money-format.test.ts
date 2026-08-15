@@ -11,8 +11,10 @@ import {
     FormatCompact,
     FormatDate,
     FormatMoney,
+    FormatMoneyGroup,
     FormatQuantity,
     FormatRate,
+    HasCents,
     Initials,
     MJODatePipe,
     MJOMoneyPipe,
@@ -55,6 +57,21 @@ describe('FormatMoney', () => {
 
     it('rounds for dashboard tiles', () => {
         expect(FormatMoney(41230.44, { Round: true })).toBe('$41,230');
+        expect(FormatMoney(0, { Round: true })).toBe('$0');
+    });
+
+    it('HasCents is true only after rounding to a non-zero cent part', () => {
+        expect(HasCents(1115)).toBe(false);
+        expect(HasCents(1115.00)).toBe(false);
+        expect(HasCents(0)).toBe(false);
+        expect(HasCents(1115.5)).toBe(true);
+        expect(HasCents(0.01)).toBe(true);
+        expect(HasCents(null)).toBe(false);
+    });
+
+    it('FormatMoneyGroup hides cents only when every amount is whole dollars', () => {
+        expect(FormatMoneyGroup([1115, 1115, 0])).toEqual(['$1,115', '$1,115', '$0']);
+        expect(FormatMoneyGroup([1115, 1115.5, 0])).toEqual(['$1,115.00', '$1,115.50', '$0.00']);
     });
 
     it('returns an em-dash for null, undefined and NaN', () => {
