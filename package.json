@@ -1,7 +1,7 @@
 {
   "name": "bizapps-orders",
   "version": "0.1.0",
-  "license": "ISC",
+  "license": "BUSL-1.1",
   "description": "BizApps Orders - unified order management (products, orders, payments, subscriptions) built on MemberJunction",
   "workspaces": [
     "packages/*"

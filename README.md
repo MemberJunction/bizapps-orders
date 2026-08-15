@@ -558,10 +558,10 @@ Future bolt-on apps layer on via seams Orders ships now (soft `Order.ContractID`
 
 ## License
 
-ISC
+Business Source License 1.1 — see [LICENSE](./LICENSE) for details.
 
 ---
 
 <p align="center">
-  Built on <a href="https://github.com/MemberJunction/MJ">MemberJunction</a> — the open-source metadata-driven application platform.
+  Built on <a href="https://github.com/MemberJunction/MJ">MemberJunction</a> — the metadata-driven application platform.
 </p>
