@@ -194,6 +194,42 @@ export function stripNonExecutable(sql) {
     return out;
 }
 
+/**
+ * The converter's own "this migration is incomplete" banner. It writes a gap block listing
+ * statements the AST transpiler could not emit, having DROPPED them from the body.
+ *
+ * The banner alone is not proof of breakage — the statements most often dropped are ones a
+ * PostgreSQL port should not carry anyway (core schema-reconciliation procedures,
+ * sp_addextendedproperty, the CREATE SCHEMA guard the converter re-emits itself). In
+ * bizapps-forms two committed files carry this banner and are substantively fine.
+ *
+ * What is NEVER acceptable is a HOLLOW file: banner present, and nothing executable left. That
+ * happens when the dropped statements were the whole migration — bizapps-common's
+ * Layered_Base_Views_People_Organizations converts to a header and a banner, because its entire
+ * body sat inside two `IF NOT OBJECT_ID(...)` blocks. Such a file has a .pg.sql name, satisfies a
+ * filename parity check, passes a T-SQL scan (it contains no SQL at all), applies without error,
+ * and does nothing. It is the most dangerous artifact this gate can encounter, because every
+ * cheaper signal says it is fine.
+ */
+const GAP_BANNER = /UNHANDLED BY THE AST TRANSPILER|CONVERSION GAPS — resolve before relying/i;
+
+/** True when a file carries the converter's gap banner but has no executable SQL left. */
+export function isHollow(sql) {
+    if (!GAP_BANNER.test(sql)) return false;
+    let executable;
+    try {
+        executable = stripNonExecutable(sql);
+    } catch {
+        return false; // unparseable is reported by findForbidden, not here
+    }
+    // Setup the converter emits into every file regardless of content — not evidence of a port.
+    const body = executable
+        .replace(/CREATE\s+EXTENSION[^;]*;/gi, '')
+        .replace(/CREATE\s+SCHEMA[^;]*;/gi, '')
+        .replace(/SET\s+(search_path|standard_conforming_strings)[^;]*;/gi, '');
+    return !/\S/.test(body.replace(/;/g, ''));
+}
+
 /** Every forbidden construct present in a file's executable SQL. */
 export function findForbidden(sql) {
     let executable;
@@ -270,8 +306,20 @@ function main() {
     const problems = [];
 
     for (const file of pgFiles) {
-        for (const v of findForbidden(readFileSync(path.join(PG_DIR, file), 'utf8'))) {
+        const sql = readFileSync(path.join(PG_DIR, file), 'utf8');
+        for (const v of findForbidden(sql)) {
             problems.push({ kind: 'invalid', file: `migrations-pg/${file}`, detail: `Contains ${v.name} — ${v.why}` });
+        }
+        if (isHollow(sql)) {
+            problems.push({
+                kind: 'hollow',
+                file: `migrations-pg/${file}`,
+                detail:
+                    'HOLLOW — the converter dropped every statement in this migration and left only its gap ' +
+                    'banner. The file applies without error and does nothing, so filename parity, a T-SQL scan ' +
+                    'and a successful migrate all report success while the schema change never happens. Port the ' +
+                    'statements listed in the banner by hand.',
+            });
         }
     }
 
