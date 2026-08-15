@@ -1,0 +1,46 @@
+<mj-collapsible-panel
+    SectionKey="simulator"
+    SectionName="Volume simulator"
+    Icon="fa-solid fa-calculator"
+    [Form]="FormComponent"
+    [FormContext]="FormContext"
+    [DefaultExpanded]="true">
+    <div class="mjo-sim">
+        <div class="mjo-sim__row">
+            <label class="mjo-sim__field">
+                <span>Base price</span>
+                <input class="mj-input" type="number" [value]="BasePrice" (input)="OnBasePrice($event)">
+            </label>
+            <label class="mjo-sim__field mjo-sim__field--grow">
+                <span>Quantity · {{ Quantity }}</span>
+                <input type="range" min="1" max="150" [value]="Quantity" (input)="OnQuantity($event)">
+            </label>
+        </div>
+        <div class="mjo-sim__modes">
+            <button type="button" mjButton [variant]="Mode === 'volume' ? 'primary' : 'flat'" size="sm" (click)="SetMode('volume')">
+                Volume
+            </button>
+            <button type="button" mjButton [variant]="Mode === 'tiered' ? 'primary' : 'flat'" size="sm" (click)="SetMode('tiered')">
+                Graduated
+            </button>
+        </div>
+        <div class="mjo-doc-hero__stats">
+            <div class="mjo-doc-stat">
+                <span class="mjo-doc-stat__label">Unit price</span>
+                <span class="mjo-doc-stat__value">{{ Money(Result.EffectiveUnitPrice) }}</span>
+            </div>
+            <div class="mjo-doc-stat">
+                <span class="mjo-doc-stat__label">Total</span>
+                <span class="mjo-doc-stat__value">{{ Money(Result.TotalOrderAmount) }}</span>
+            </div>
+            <div class="mjo-doc-stat">
+                <span class="mjo-doc-stat__label">Discount</span>
+                <span class="mjo-doc-stat__value">{{ Result.DiscountPercent.toFixed(1) }}%</span>
+            </div>
+            <div class="mjo-doc-stat">
+                <span class="mjo-doc-stat__label">Savings</span>
+                <span class="mjo-doc-stat__value">{{ Money(Result.SavingsAmount) }}</span>
+            </div>
+        </div>
+    </div>
+</mj-collapsible-panel>

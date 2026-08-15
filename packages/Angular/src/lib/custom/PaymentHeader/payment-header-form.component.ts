@@ -1,7 +1,6 @@
 import { Component, inject } from '@angular/core';
 import type { RunViewParams } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
-import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
+import type { FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { DispatchFormNavigation } from '../form-navigation-helper';
 import {
@@ -28,7 +27,6 @@ import { FormatMoney } from '../../panels/money-format';
  * 9. Subscription Billing Events: Events triggered by recurring billing.
  * 10. System Metadata: Record IDs and audit timestamps.
  */
-@RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Payment Headers')
 @Component({
     standalone: false,
     selector: 'bizapps-payment-header-form',

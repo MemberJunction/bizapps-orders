@@ -1,10 +1,11 @@
 import '@angular/compiler';
 import { describe, it, expect } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
-import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersSubscriptionTermEntity } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersSubscriptionTermFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersSubscriptionTerm/mjbizappsorderssubscriptionterm.form.component';
 import { BizAppsSubscriptionTermFormComponent } from '../lib/custom/SubscriptionTerm/subscription-term-form.component';
+import { SubscriptionTermHeaderPanel } from '../lib/form-panels/subscription-term-header.panel';
 import '../public-api';
 
 describe('BizAppsSubscriptionTermFormComponent Custom Form Registration & Getters', () => {
@@ -12,24 +13,22 @@ describe('BizAppsSubscriptionTermFormComponent Custom Form Registration & Getter
         expect(BizAppsSubscriptionTermFormComponent.prototype instanceof mjBizAppsOrdersSubscriptionTermFormComponent).toBe(true);
     });
 
-    it('registers with BaseFormComponent under key "MJ_BizApps_Orders: Subscription Terms"', () => {
-        const registrations = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
-            BaseFormComponent,
-            'MJ_BizApps_Orders: Subscription Terms'
-        );
-        expect(registrations.length).toBeGreaterThanOrEqual(1);
-
-        const customReg = registrations.find(r => r.SubClass === BizAppsSubscriptionTermFormComponent);
-        expect(customReg).toBeDefined();
-    });
-
-    it('wins ClassFactory lookup priority over the generated component', () => {
+    it('leaves the generated Subscription Term form as the registered form', () => {
         const activeReg = MJGlobal.Instance.ClassFactory.GetRegistration(
             BaseFormComponent,
             'MJ_BizApps_Orders: Subscription Terms'
         );
-        expect(activeReg).toBeDefined();
-        expect(activeReg?.SubClass).toBe(BizAppsSubscriptionTermFormComponent);
+        expect(activeReg?.SubClass).toBe(mjBizAppsOrdersSubscriptionTermFormComponent);
+        const customReg = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
+            BaseFormComponent,
+            'MJ_BizApps_Orders: Subscription Terms'
+        ).find(r => r.SubClass === BizAppsSubscriptionTermFormComponent);
+        expect(customReg).toBeUndefined();
+    });
+
+    it('registers the identity header as a form contribution', () => {
+        const regs = MJGlobal.Instance.ClassFactory.GetAllRegistrations(BaseFormPanel);
+        expect(regs.some(r => r.SubClass === SubscriptionTermHeaderPanel)).toBe(true);
     });
 
     it('formats coverage window properly', () => {

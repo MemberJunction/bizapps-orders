@@ -1,11 +1,12 @@
 import '@angular/compiler';
 import { describe, it, expect } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
-import { BaseFormComponent } from '@memberjunction/ng-base-forms';
-import type { mjBizAppsOrdersProductEntity, mjBizAppsOrdersEventProductEntity } from '@mj-biz-apps/orders-entities';
+import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
+import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersProductFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
 import { BizAppsProductFormComponent } from '../lib/custom/Product/product-form.component';
 import { BizAppsProductPricingWidgetComponent } from '../lib/custom/Product/widgets/product-pricing-widget.component';
+import { ProductHeaderPanel } from '../lib/form-panels/product-header.panel';
 import '../public-api';
 
 describe('BizAppsProductFormComponent Custom Form Registration & Getters', () => {
@@ -13,24 +14,22 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
         expect(BizAppsProductFormComponent.prototype instanceof mjBizAppsOrdersProductFormComponent).toBe(true);
     });
 
-    it('registers with BaseFormComponent under key "MJ_BizApps_Orders: Products"', () => {
-        const registrations = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
-            BaseFormComponent,
-            'MJ_BizApps_Orders: Products'
-        );
-        expect(registrations.length).toBeGreaterThanOrEqual(1);
-
-        const customReg = registrations.find(r => r.SubClass === BizAppsProductFormComponent);
-        expect(customReg).toBeDefined();
-    });
-
-    it('wins ClassFactory lookup priority over the generated component', () => {
+    it('leaves the generated Product form as the registered form', () => {
         const activeReg = MJGlobal.Instance.ClassFactory.GetRegistration(
             BaseFormComponent,
             'MJ_BizApps_Orders: Products'
         );
-        expect(activeReg).toBeDefined();
-        expect(activeReg?.SubClass).toBe(BizAppsProductFormComponent);
+        expect(activeReg?.SubClass).toBe(mjBizAppsOrdersProductFormComponent);
+        const customReg = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
+            BaseFormComponent,
+            'MJ_BizApps_Orders: Products'
+        ).find(r => r.SubClass === BizAppsProductFormComponent);
+        expect(customReg).toBeUndefined();
+    });
+
+    it('registers the identity header as a form contribution', () => {
+        const regs = MJGlobal.Instance.ClassFactory.GetAllRegistrations(BaseFormPanel);
+        expect(regs.some(r => r.SubClass === ProductHeaderPanel)).toBe(true);
     });
 
     it('HasEventExtension detects event product types correctly', () => {

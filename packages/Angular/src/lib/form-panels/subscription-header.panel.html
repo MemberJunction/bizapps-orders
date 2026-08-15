@@ -1,0 +1,36 @@
+<div class="mjo-doc-hero">
+    <div class="mjo-doc-hero__identity">
+        <div class="mjo-doc-hero__avatar">
+            <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+        </div>
+        <div class="mjo-doc-hero__copy">
+            <div class="mjo-doc-hero__title-row">
+                <h1 class="mjo-doc-hero__title">{{ Title }}</h1>
+                <span [class]="StatusClass">{{ Record.Status || 'Active' }}</span>
+                <span [class]="AutoRenewClass">
+                    <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+                    {{ Record.AutoRenew ? 'Auto-renews' : 'Manual renewal' }}
+                </span>
+            </div>
+            <div class="mjo-doc-hero__meta">
+                <span>Coverage: <strong>{{ Coverage }}</strong></span>
+                @if (Record.Product) {
+                    <span>{{ Record.Product }}</span>
+                }
+                @if (Record.Company) {
+                    <span>{{ Record.Company }}</span>
+                }
+            </div>
+        </div>
+    </div>
+    <div class="mjo-doc-hero__stats">
+        <div class="mjo-doc-stat">
+            <span class="mjo-doc-stat__label">Holder</span>
+            <span class="mjo-doc-stat__value">{{ Holder }}</span>
+        </div>
+        <div class="mjo-doc-stat">
+            <span class="mjo-doc-stat__label">Beneficiary</span>
+            <span class="mjo-doc-stat__value">{{ Beneficiary }}</span>
+        </div>
+    </div>
+</div>

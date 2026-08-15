@@ -1,0 +1,63 @@
+.mjo-terms-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--mj-space-3);
+}
+
+.mjo-terms-deck {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    gap: var(--mj-space-3);
+}
+
+.mjo-term-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-3);
+    padding: var(--mj-space-4);
+    background: var(--mj-bg-surface);
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-md);
+}
+
+.mjo-term-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mj-space-2);
+}
+
+.mjo-term-card__amount {
+    font-size: var(--mj-text-lg);
+    font-weight: 700;
+    color: var(--mj-text-primary);
+}
+
+.mjo-term-card__dates {
+    color: var(--mj-text-secondary);
+    font-size: var(--mj-text-sm);
+}
+
+.mjo-term-card__open {
+    align-self: flex-start;
+    border: 0;
+    background: transparent;
+    color: var(--mj-text-link);
+    font-weight: 600;
+    cursor: pointer;
+    padding: 0;
+}
+
+.mjo-term-empty {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    padding: var(--mj-space-4);
+    color: var(--mj-text-muted);
+}
+
+.mjo-term-tone--1 { color: var(--mj-brand-primary); }
+.mjo-term-tone--2 { color: var(--mj-status-info-text); }
+.mjo-term-tone--3 { color: var(--mj-status-success-text); }
+.mjo-term-tone--4 { color: var(--mj-status-warning-text); }
+.mjo-term-tone--5 { color: var(--mj-text-secondary); }

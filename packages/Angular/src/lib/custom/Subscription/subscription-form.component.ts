@@ -1,6 +1,5 @@
 import { Component, OnChanges, SimpleChanges } from '@angular/core';
 import { CompositeKey, Metadata, RunView, type RunViewParams } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
@@ -28,7 +27,6 @@ const ACTIVE_PANE_SETTING = 'mj.orders.subscriptionForm.activePane';
  * 3. Interactive Term Deck: Color-coded cards for each term cycle with direct drill-downs.
  * 4. Multi-Term Deferred Revenue Waterfall: ASC 606 forward schedule with year dividers.
  */
-@RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Subscriptions')
 @Component({
     standalone: false,
     selector: 'bizapps-subscription-form',

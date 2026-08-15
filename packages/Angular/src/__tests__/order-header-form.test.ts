@@ -56,6 +56,14 @@ describe('BizAppsOrderHeaderFormComponent', () => {
         expect(OrderFormTabs(true).map((tab) => tab.key)).not.toContain('bill');
         expect(OrderFormTabs(true).map((tab) => tab.key)).not.toContain('ship');
     });
+
+    it('hard-stops leftover related grids on the full-page compose form', () => {
+        const ts = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-header-form.component.ts'),
+            'utf8',
+        );
+        expect(ts).toContain('ShowRelatedEntities: false');
+    });
 });
 
 describe('order header link wiring', () => {

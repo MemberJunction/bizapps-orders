@@ -1,0 +1,31 @@
+<mj-collapsible-panel
+    SectionKey="revRec"
+    SectionName="Deferred Revenue"
+    Icon="fa-solid fa-chart-line"
+    [Form]="FormComponent"
+    [FormContext]="FormContext"
+    [DefaultExpanded]="true">
+    <div class="mjo-terms-toolbar">
+        <button type="button" mjButton variant="flat" size="sm" (click)="View = View === 'waterfall' ? 'grid' : 'waterfall'">
+            <i class="fa-solid" [class.fa-table]="View === 'waterfall'" [class.fa-chart-line]="View === 'grid'" aria-hidden="true"></i>
+            {{ View === 'waterfall' ? 'Journals' : 'Waterfall' }}
+        </button>
+    </div>
+    @if (Loading) {
+        <p class="mjo-term-empty">Loading recognition schedule…</p>
+    } @else if (View === 'waterfall') {
+        <mj-deferred-revenue-waterfall
+            [JournalEntries]="Entries"
+            [Title]="'Term deferred revenue'"
+            [TermLookup]="TermLookup"
+            (JournalEntrySelected)="OpenJournal($event)">
+        </mj-deferred-revenue-waterfall>
+    } @else if (JournalParams) {
+        <mj-explorer-entity-data-grid
+            [Params]="JournalParams"
+            [AllowLoad]="FormComponent.IsSectionExpanded(SectionKey)"
+            [ShowToolbar]="true"
+            (Navigate)="FormComponent.OnFormNavigate($event)">
+        </mj-explorer-entity-data-grid>
+    }
+</mj-collapsible-panel>

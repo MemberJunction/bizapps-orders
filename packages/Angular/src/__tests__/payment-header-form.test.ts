@@ -1,10 +1,11 @@
 import '@angular/compiler';
 import { describe, it, expect } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
-import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersPaymentHeaderFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersPaymentHeader/mjbizappsorderspaymentheader.form.component';
 import { BizAppsPaymentHeaderFormComponent } from '../lib/custom/PaymentHeader/payment-header-form.component';
+import { PaymentHeaderPanel } from '../lib/form-panels/payment-header.panel';
 import '../public-api';
 
 describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters', () => {
@@ -12,24 +13,22 @@ describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters',
         expect(BizAppsPaymentHeaderFormComponent.prototype instanceof mjBizAppsOrdersPaymentHeaderFormComponent).toBe(true);
     });
 
-    it('registers with BaseFormComponent under key "MJ_BizApps_Orders: Payment Headers"', () => {
-        const registrations = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
-            BaseFormComponent,
-            'MJ_BizApps_Orders: Payment Headers'
-        );
-        expect(registrations.length).toBeGreaterThanOrEqual(1);
-
-        const customReg = registrations.find(r => r.SubClass === BizAppsPaymentHeaderFormComponent);
-        expect(customReg).toBeDefined();
-    });
-
-    it('wins ClassFactory lookup priority over the generated component', () => {
+    it('leaves the generated Payment Header form as the registered form', () => {
         const activeReg = MJGlobal.Instance.ClassFactory.GetRegistration(
             BaseFormComponent,
             'MJ_BizApps_Orders: Payment Headers'
         );
-        expect(activeReg).toBeDefined();
-        expect(activeReg?.SubClass).toBe(BizAppsPaymentHeaderFormComponent);
+        expect(activeReg?.SubClass).toBe(mjBizAppsOrdersPaymentHeaderFormComponent);
+        const customReg = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
+            BaseFormComponent,
+            'MJ_BizApps_Orders: Payment Headers'
+        ).find(r => r.SubClass === BizAppsPaymentHeaderFormComponent);
+        expect(customReg).toBeUndefined();
+    });
+
+    it('registers the identity header as a form contribution', () => {
+        const regs = MJGlobal.Instance.ClassFactory.GetAllRegistrations(BaseFormPanel);
+        expect(regs.some(r => r.SubClass === PaymentHeaderPanel)).toBe(true);
     });
 
     it('computes tender-tailored avatar icons accurately', () => {

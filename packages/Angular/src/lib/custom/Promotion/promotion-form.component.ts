@@ -1,5 +1,4 @@
 import { Component, inject } from '@angular/core';
-import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { DispatchFormNavigation } from '../form-navigation-helper';
@@ -22,7 +21,6 @@ import { FormatMoney } from '../../panels/money-format';
  * 4. Schedule & Temporal Window (Date range, Time of day).
  * 5. Coupon Codes & Target Criteria (Related entity data grids).
  */
-@RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Promotions')
 @Component({
     standalone: false,
     selector: 'bizapps-promotion-form',
