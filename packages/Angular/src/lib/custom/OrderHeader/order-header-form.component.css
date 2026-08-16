@@ -16,6 +16,43 @@
     margin-bottom: var(--mj-space-4);
 }
 
+.mjo-oh-hero.is-collapsed {
+    padding: var(--mj-space-2) var(--mj-space-4);
+}
+
+.mjo-oh-hero.is-collapsed .mjo-oh-hero__top {
+    align-items: center;
+}
+
+.mjo-oh-hero.is-collapsed .mjo-oh-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+}
+
+.mjo-oh-hero.is-collapsed .mjo-oh-title {
+    font-size: var(--mj-text-base);
+}
+
+.mjo-oh-hero__toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-md);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-secondary);
+    cursor: pointer;
+}
+
+.mjo-oh-hero__toggle:hover {
+    background: var(--mj-bg-surface-hover);
+    color: var(--mj-text-primary);
+}
+
 .mjo-oh-hero__top {
     display: flex;
     align-items: flex-start;

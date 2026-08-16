@@ -8,7 +8,7 @@
 
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="before-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 
-    <div class="mjo-oh-hero">
+    <div class="mjo-oh-hero" [class.is-collapsed]="!HeaderExpanded">
         <div class="mjo-oh-hero__top">
             <div class="mjo-oh-who">
                 <div class="mjo-oh-avatar"><i class="fa-solid fa-file-invoice-dollar"></i></div>
@@ -19,7 +19,7 @@
                             <span [class]="StatusChipClass">{{ record.Status }}</span>
                         }
                     </div>
-                    <div class="mjo-oh-sub">{{ HeaderSubtitle }}</div>
+                    <div class="mjo-oh-sub">{{ HeaderExpanded ? HeaderSubtitle : HeaderCollapsedMeta }}</div>
                 </div>
             </div>
             <div class="mjo-oh-hero__aside">
@@ -37,7 +37,7 @@
                         <span class="mjo-oh-amt">{{ Money('balance') }}</span>
                     </div>
                 </div>
-                @if (ShowConfirm) {
+                @if (ShowConfirm && HeaderExpanded) {
                     <div class="mjo-oh-confirm">
                         <button
                             type="button"
@@ -51,9 +51,19 @@
                         <span class="mjo-oh-confirm__hint">Books the receivable. This cannot be undone.</span>
                     </div>
                 }
+                <button
+                    type="button"
+                    class="mjo-oh-hero__toggle"
+                    (click)="ToggleHeader()"
+                    [attr.aria-expanded]="HeaderExpanded"
+                    [attr.aria-label]="HeaderExpanded ? 'Collapse header' : 'Expand header'"
+                    [title]="HeaderExpanded ? 'Collapse header' : 'Expand header'">
+                    <i class="fa-solid" [class.fa-chevron-up]="HeaderExpanded" [class.fa-chevron-down]="!HeaderExpanded" aria-hidden="true"></i>
+                </button>
             </div>
         </div>
 
+        @if (HeaderExpanded) {
         <div class="mjo-oh-facts">
             <div class="mjo-oh-fact">
                 <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderType" Type="select" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
@@ -352,6 +362,7 @@
                     </mj-explorer-entity-data-grid>
                 }
             </div>
+        }
         }
     </div>
 
