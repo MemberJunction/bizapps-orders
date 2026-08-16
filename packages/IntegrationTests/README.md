@@ -12,13 +12,17 @@ mj.config.cjs → testing.checkModules → this package → IntegrationCheckRegi
 | Path | What it proves | How |
 |---|---|---|
 | **Server** (`test-harnesses/integration.mjs`) | Booking, JEs, payments — `OrderEntityServer` + rolled-back SQL | `SQLServerDataProvider` |
-| **Client** (`test-harnesses/integration-client.mjs`) | MJAPI / GraphQL for catalog + party CRUD | `bootstrapIntegrationClient` |
+| **Client** (`test-harnesses/integration-client.mjs`) | MJAPI / GraphQL for catalog + party CRUD + committed volume | `bootstrapIntegrationClient` |
 
-The client path does **not** import `@mj-biz-apps/orders-server`. Those `*EntityServer` constructors throw on `GraphQLDataProvider`. Booking checks stay on the server transport because they nest provider transactions and `TxQuery`.
+The client path does **not** import `@mj-biz-apps/orders-server`. Those `*EntityServer` constructors throw on `GraphQLDataProvider`. Server booking checks stay on the server transport because they nest provider transactions and `TxQuery`. Confirm on the wire is still `Status = 'Confirmed'` + `order.Save()` — `MJ.SaveEntityGraph` — which is what `wire-volume` measures at population scale.
 
 ```bash
 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs
+GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs wire-volume
+WIRE_VOL_COUNT=40 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs wire-volume
 ```
+
+`wire-volume` **commits**. Each header `Notes` is `WIRE-VOL:<runId>` so you can inspect and later purge. Default count is 200 (`WIRE_VOL_COUNT`). ORD-WORLD must already be loaded (catalog-world / ORD-00). See `docs/reviewing-the-data.md`. Purge with `node test-harnesses/purge-wire-volume.mjs`.
 
 ## Running
 
@@ -112,8 +116,12 @@ included, so rollback-based isolation is impossible for that check.
 | `subscription-renewal` | SR1–SR11 |
 | `payments-rollups` | PR1–PR9 |
 | `volume` | VL1–VL13 |
+| `wire-crud` | W1–W3 (client only) |
+| `wire-volume` | WV1–WV7 (client only, committed) |
 
-The complete list, with what each bundle is for, is the header comment of `src/index.ts` — it is next
+`wire-crud` and `wire-volume` are **not** in `src/index.ts` or `EXPECTED_BUNDLES`. They register from `src/client-index.ts` and `test-harnesses/integration-client.mjs` so a GraphQL process never loads `*EntityServer`.
+
+The complete server-bundle list, with what each bundle is for, is the header comment of `src/index.ts` — it is next
 to the exports that register them, so it cannot drift as far as a table over here can.
 
 `volume` is the slow one: it confirms several hundred orders across its thirteen checks and runs last

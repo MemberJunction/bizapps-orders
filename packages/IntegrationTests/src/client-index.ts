@@ -8,5 +8,6 @@ LoadCommon();
 LoadOrders();
 
 import './checks/wire-crud.checks.js';
+import './checks/wire-volume.checks.js';
 
 export function LoadOrdersClientIntegrationTests(): void {}

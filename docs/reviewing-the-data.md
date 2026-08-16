@@ -1,16 +1,76 @@
 # Reviewing the data
 
-The integration checks leave nothing behind — every one of the 217 runs inside a transaction that
+There are two committed datasets you can inspect, and they are not the same thing.
+
+1. **`seed-review-data.mjs`** — eight labelled scenarios plus a small population, booked through
+   the *server* entity path (`OrderEntityServer.Save`). Tagged by the fixture run, not by Notes.
+2. **`wire-volume`** — hundreds of orders booked over **GraphQL** (`MJ.SaveEntityGraph`). Every
+   header `Notes` is `WIRE-VOL:<runId>`. This is the one that proves the client confirm path at
+   volume, with split payments, renewals, seats and event attendees.
+
+The rest of the integration checks leave nothing behind — they run inside a transaction that
 always rolls back, which is what makes them independent and re-runnable. To look at real rows, seed
 them deliberately:
 
 ```bash
 node test-harnesses/seed-review-data.mjs      # clears earlier runs, then commits 8 scenarios
 node test-harnesses/purge-fixture-data.mjs    # removes everything again
+
+# GraphQL-over-the-wire volume (MJAPI on GRAPHQL_PORT=4103, DB_DATABASE=bizapps_orders)
+WIRE_VOL_COUNT=200 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs wire-volume
+node test-harnesses/purge-wire-volume.mjs     # deletes WIRE-VOL-* orders only
 ```
 
 The seeder walks the **same** `OrderEntityServer.Save()` pipeline the checks do. Nothing about the
 data below is hand-written; it is all engine output.
+
+## Finding WIRE-VOL-* rows (GraphQL volume)
+
+The client bundle prints `wire-volume tag WIRE-VOL:<runId>` at setup. Filter on that Notes value.
+
+```sql
+-- Every order this run confirmed (and any renewal it tagged afterwards)
+SELECT h.OrderNumber, h.OrderDate, h.Status, h.TotalGross, h.AmountPaid, h.Balance,
+       h.PaymentStatus, h.BillToOrganizationID, h.ShipToOrganizationID, h.Notes
+  FROM __mj_BizAppsOrders.OrderHeader h
+ WHERE h.Notes LIKE 'WIRE-VOL:%'
+ ORDER BY h.OrderDate, h.OrderNumber;
+```
+
+```sql
+-- Split / mixed tenders: Cash + Check on the same order
+SELECT h.OrderNumber, ptype.Code AS Tender, ph.Amount, ph.Status, pl.Amount AS Applied
+  FROM __mj_BizAppsOrders.OrderHeader h
+  JOIN __mj_BizAppsOrders.PaymentLine pl ON pl.OrderHeaderID = h.ID
+  JOIN __mj_BizAppsOrders.PaymentHeader ph ON ph.ID = pl.PaymentHeaderID
+  JOIN __mj_BizAppsOrders.PaymentType ptype ON ptype.ID = ph.PaymentTypeID
+ WHERE h.Notes LIKE 'WIRE-VOL:%'
+ ORDER BY h.OrderNumber, ptype.Code;
+```
+
+```sql
+-- Event attendees (PersonID on Event Order Lines — AttendeeName/Email are gone)
+SELECT h.OrderNumber, p.FirstName, p.LastName, p.Email, eol.DietaryPreferences
+  FROM __mj_BizAppsOrders.EventOrderLine eol
+  JOIN __mj_BizAppsOrders.OrderLine l ON l.ID = eol.ID
+  JOIN __mj_BizAppsOrders.OrderHeader h ON h.ID = l.OrderHeaderID
+  JOIN __mj_BizAppsCommon.Person p ON p.ID = eol.PersonID
+ WHERE h.Notes LIKE 'WIRE-VOL:%'
+ ORDER BY h.OrderNumber;
+```
+
+```sql
+-- Parallel seats and the people they are for
+SELECT h.OrderNumber, l.LineNumber, l.ShipToPersonID, s.SubscriptionNumber
+  FROM __mj_BizAppsOrders.OrderLine l
+  JOIN __mj_BizAppsOrders.OrderHeader h ON h.ID = l.OrderHeaderID
+  LEFT JOIN __mj_BizAppsOrders.Subscription s ON s.OrderLineID = l.ID
+ WHERE h.Notes LIKE 'WIRE-VOL:%'
+   AND l.ShipToPersonID IS NOT NULL
+ ORDER BY h.OrderNumber, l.LineNumber;
+```
+
+One run is one `WIRE-VOL:<runId>` value. `purge-wire-volume.mjs` deletes only those rows (not ORD-WORLD catalog).
 
 > **Re-running the suite after seeding is fine.** The fixture clears the one thing it shares across
 > runs (charge-type GL links) at setup, and its teardown now removes committed orders properly. Both

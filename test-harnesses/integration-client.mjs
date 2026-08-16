@@ -2,6 +2,7 @@
  * GraphQL-wire dispatcher for Orders. Does not load *Server subclasses.
  *
  *   GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs
+ *   WIRE_VOL_COUNT=40 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs wire-volume
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +15,7 @@ dotenv.config({ path: path.resolve(here, '../../MJ/.env'), quiet: true });
 process.env.MJ_INTEGRATION_TEST = '1';
 process.env.RUN_MUTATION_TESTS = process.env.RUN_MUTATION_TESTS ?? '1';
 
-const ALL_BUNDLES = ['wire-crud'];
+const ALL_BUNDLES = ['wire-crud', 'wire-volume'];
 const args = process.argv.slice(2);
 const only = args.filter((a) => !a.startsWith('-'));
 
