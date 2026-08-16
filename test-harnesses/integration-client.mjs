@@ -46,15 +46,26 @@ for (const request of requested) {
         fail += 1;
         continue;
     }
-    for (const check of checks) {
-        const t = Date.now();
-        try {
-            await check.Fn(ctx);
-            console.log(`  ok   ${check.Id.padEnd(28)} ${Date.now() - t}ms  ${check.Name}`);
-            pass += 1;
-        } catch (err) {
-            console.error(`  FAIL ${check.Id.padEnd(28)} ${Date.now() - t}ms  ${err instanceof Error ? err.message : err}`);
-            fail += 1;
+    const lifecycle = registry.GetLifecycle(bundle);
+    try {
+        if (lifecycle) await lifecycle.Setup(ctx);
+        for (const check of checks) {
+            const t = Date.now();
+            try {
+                await check.Fn(ctx);
+                console.log(`  ok   ${check.Id.padEnd(28)} ${Date.now() - t}ms  ${check.Name}`);
+                pass += 1;
+            } catch (err) {
+                console.error(`  FAIL ${check.Id.padEnd(28)} ${Date.now() - t}ms  ${err instanceof Error ? err.message : err}`);
+                fail += 1;
+            }
+        }
+    } catch (err) {
+        console.error(`  FAIL ${bundle}.<setup>             ${err instanceof Error ? err.message : err}`);
+        fail += 1;
+    } finally {
+        if (lifecycle) {
+            await lifecycle.Teardown(ctx).catch((e) => console.warn(`  teardown warn: ${e?.message}`));
         }
     }
 }

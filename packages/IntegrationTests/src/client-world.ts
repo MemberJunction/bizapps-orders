@@ -7,6 +7,7 @@
  */
 import { RunView, type IMetadataProvider } from '@memberjunction/core';
 import type { IntegrationCheckContext } from '@memberjunction/testing-integration/registry';
+import { mjBizAppsCommonPersonEntity } from '@mj-biz-apps/common-entities';
 import {
     ADDRESS_ENTITY,
     COMPANY_PROFILE_ENTITY,
@@ -76,6 +77,39 @@ export async function ResolveClientWorld(ctx: IntegrationCheckContext): Promise<
     assertRequired(world);
     SetClientWorld(world);
     return world;
+}
+
+/**
+ * Mint people unique to this run so named-seat confirms do not collide with
+ * CorporateSeat "already subscribed" from a previous committed volume run.
+ */
+export async function AddRunPeople(
+    ctx: IntegrationCheckContext,
+    runId: string,
+    count: number,
+): Promise<string[]> {
+    const world = ClientWorldState();
+    const emails: string[] = [];
+    for (let i = 0; i < count; i++) {
+        const email = `wire.vol.${runId}.${i}@orders-wire.test`;
+        const person = await ctx.Provider.GetEntityObject<mjBizAppsCommonPersonEntity>(
+            PERSON_ENTITY,
+            ctx.User,
+        );
+        person.NewRecord();
+        person.FirstName = 'Wire';
+        person.LastName = `Seat${i}`;
+        person.Email = email;
+        person.Status = 'Active';
+        if (!(await person.Save())) {
+            throw new Error(
+                `run person ${email}: ${person.LatestResult?.CompleteMessage ?? 'unknown'}`,
+            );
+        }
+        world.People[email] = person.ID;
+        emails.push(email);
+    }
+    return emails;
 }
 
 interface CompanyRow {

@@ -4,7 +4,7 @@
  * Confirm is Status = 'Confirmed' + Save() — the graph crosses the wire as MJ.SaveEntityGraph
  * and the server subclass books. No Fx(), no *EntityServer, no @mj-biz-apps/orders-server.
  */
-import { FieldValueCollection, Metadata, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
+import { Metadata, type BaseEntity, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 import {
     OrderHeaderEntity,
     mjBizAppsOrdersEventOrderLineEntity,
@@ -55,6 +55,7 @@ export interface ClientOrderSpec {
 export interface ClientBuiltOrder {
     Order: OrderHeaderEntity;
     Lines: mjBizAppsOrdersOrderLineEntity[];
+    EventExtensions: mjBizAppsOrdersEventOrderLineEntity[];
 }
 
 export interface ClientConfirmResult extends ClientBuiltOrder {
@@ -71,11 +72,11 @@ export async function BuildClientOrder(
     const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, user);
     order.NewRecord();
     applyHeader(order, spec);
-    const lines = await createLines(md, user, spec.Lines);
-    for (const line of lines) {
+    const builtLines = await createLines(md, user, spec.Lines);
+    for (const line of builtLines.Lines) {
         order.Lines.Add(line);
     }
-    return { Order: order, Lines: lines };
+    return { Order: order, Lines: builtLines.Lines, EventExtensions: builtLines.EventExtensions };
 }
 
 export async function ConfirmClientOrder(
@@ -87,9 +88,6 @@ export async function ConfirmClientOrder(
     built.Order.Status = 'Confirmed';
     const saved = await built.Order.Save();
     const message = built.Order.LatestResult?.CompleteMessage ?? '';
-    if (saved) {
-        await persistEventAttendees(user, built, spec.Lines, provider);
-    }
     return { ...built, Saved: saved, Message: message };
 }
 
@@ -203,59 +201,86 @@ async function createLines(
     md: IMetadataProvider | Metadata,
     user: UserInfo,
     specs: ClientLineSpec[],
-): Promise<mjBizAppsOrdersOrderLineEntity[]> {
+): Promise<{
+    Lines: mjBizAppsOrdersOrderLineEntity[];
+    EventExtensions: mjBizAppsOrdersEventOrderLineEntity[];
+}> {
     const lines: mjBizAppsOrdersOrderLineEntity[] = [];
+    const eventExtensions: mjBizAppsOrdersEventOrderLineEntity[] = [];
     let lineNumber = 1;
     for (const spec of specs) {
+        if (spec.EventPersonID) {
+            const created = await createEventLine(md, user, spec, lineNumber++);
+            lines.push(created.Parent);
+            eventExtensions.push(created.Extension);
+            continue;
+        }
         const line = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
         line.NewRecord();
-        line.ProductID = spec.ProductID;
-        line.LineNumber = lineNumber++;
-        line.Quantity = spec.Quantity;
-        if (spec.UnitPrice !== undefined) line.UnitPrice = spec.UnitPrice;
-        if (spec.ShipToOrganizationID) line.ShipToOrganizationID = spec.ShipToOrganizationID;
-        if (spec.ShipToPersonID) line.ShipToPersonID = spec.ShipToPersonID;
-        if (spec.ShipToAddressID) line.ShipToAddressID = spec.ShipToAddressID;
-        if (spec.ServicePeriodStart) line.ServicePeriodStart = new Date(spec.ServicePeriodStart);
-        if (spec.ServicePeriodEnd) line.ServicePeriodEnd = new Date(spec.ServicePeriodEnd);
+        applyLine(line, spec, lineNumber++);
         lines.push(line);
     }
-    return lines;
+    return { Lines: lines, EventExtensions: eventExtensions };
 }
 
-async function persistEventAttendees(
-    user: UserInfo,
-    built: ClientBuiltOrder,
-    specs: ClientLineSpec[],
-    provider?: IMetadataProvider,
-): Promise<void> {
-    const needed = specs
-        .map((spec, index) => ({ spec, line: built.Lines[index] }))
-        .filter((row) => !!row.spec.EventPersonID && !!row.line?.ID);
-    if (needed.length === 0) return;
-
-    const md = provider ?? new Metadata();
-    await built.Order.EnsureLinesLoaded();
-    for (const row of needed) {
-        await saveEventLine(md, user, row.line.ID, row.spec.EventPersonID!);
-    }
+function applyLine(line: mjBizAppsOrdersOrderLineEntity, spec: ClientLineSpec, lineNumber: number): void {
+    line.ProductID = spec.ProductID;
+    line.LineNumber = lineNumber;
+    line.Quantity = spec.Quantity;
+    if (spec.UnitPrice !== undefined) line.UnitPrice = spec.UnitPrice;
+    if (spec.ShipToOrganizationID) line.ShipToOrganizationID = spec.ShipToOrganizationID;
+    if (spec.ShipToPersonID) line.ShipToPersonID = spec.ShipToPersonID;
+    if (spec.ShipToAddressID) line.ShipToAddressID = spec.ShipToAddressID;
+    if (spec.ServicePeriodStart) line.ServicePeriodStart = new Date(spec.ServicePeriodStart);
+    if (spec.ServicePeriodEnd) line.ServicePeriodEnd = new Date(spec.ServicePeriodEnd);
 }
 
-async function saveEventLine(
+/**
+ * Same construction as the Order Header line editor: NewRecord the IsA child, stamp
+ * the parent fields on ISAParent, Add that parent to the order. PersonID lives on
+ * the child and is saved after the header graph lands.
+ */
+async function createEventLine(
     md: IMetadataProvider | Metadata,
     user: UserInfo,
-    lineID: string,
-    personID: string,
-): Promise<void> {
+    spec: ClientLineSpec,
+    lineNumber: number,
+): Promise<{
+    Parent: mjBizAppsOrdersOrderLineEntity;
+    Extension: mjBizAppsOrdersEventOrderLineEntity;
+}> {
     const ext = await md.GetEntityObject<mjBizAppsOrdersEventOrderLineEntity>(
         EVENT_ORDER_LINE_ENTITY,
         user,
     );
-    ext.NewRecord(new FieldValueCollection([{ FieldName: 'ID', Value: lineID }]));
-    ext.PersonID = personID;
-    if (!(await ext.Save())) {
-        throw new Error(
-            `Event Order Line save failed for ${lineID}: ${ext.LatestResult?.CompleteMessage ?? 'unknown'}`,
-        );
+    ext.NewRecord();
+    const parent = ext.ISAParent;
+    if (!parent || !isOrderLine(parent)) {
+        throw new Error('Event Order Line NewRecord did not produce an Order Line ISAParent');
+    }
+    applyLine(parent, spec, lineNumber);
+    if (spec.EventPersonID) ext.PersonID = spec.EventPersonID;
+    return { Parent: parent, Extension: ext };
+}
+
+function isOrderLine(entity: BaseEntity): entity is mjBizAppsOrdersOrderLineEntity {
+    return entity.EntityInfo?.Name === ORDER_LINE_ENTITY;
+}
+
+async function persistEventAttendees(built: ClientBuiltOrder): Promise<void> {
+    if (built.EventExtensions.length === 0) return;
+    await built.Order.EnsureLinesLoaded();
+    for (const ext of built.EventExtensions) {
+        if (ext.IsSaved && !ext.Dirty) continue;
+        const parent = ext.ISAParent;
+        if (parent && isOrderLine(parent) && parent.ID) {
+            // Confirm stamps CompanyID server-side; reload so child Save does not rewrite a null.
+            await parent.Load(parent.ID);
+        }
+        if (!(await ext.Save())) {
+            throw new Error(
+                `Event Order Line save failed: ${ext.LatestResult?.CompleteMessage ?? 'unknown'}`,
+            );
+        }
     }
 }
