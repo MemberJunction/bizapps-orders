@@ -21,7 +21,7 @@
  * CONNECTS TO:
  *   PURE:   packages/CoreEntitiesServer/src/EntitlementBehavior.ts (38 unit tests on the rules)
  *   SERVER: EntitlementEngine, OrderEntityServer.grantEntitlements
- *   DOC:    plans/bizapps-orders-master.md D27, D76
+ *   DOC:    plans/archive/bizapps-orders-master.md D27, D76
  */
 import { randomUUID } from "crypto";
 import {

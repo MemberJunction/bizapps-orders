@@ -37,7 +37,7 @@
  *
  * CONNECTS TO:
  *   CODE: OrderEntityServer.nextSequence, assignOrderNumber
- *   DOC:  plans/bizapps-orders-master.md D30
+ *   DOC:  plans/archive/bizapps-orders-master.md D30
  */
 import { randomUUID } from "crypto";
 import {

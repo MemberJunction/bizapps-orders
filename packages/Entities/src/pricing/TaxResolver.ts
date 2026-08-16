@@ -29,7 +29,7 @@
  * CONNECTS TO:
  *   TABLES: __mj_BizAppsAccounting.{TaxJurisdiction,TaxRate} · __mj_BizAppsOrders.CustomerTaxExemption
  *   CALLER: OrderEntityServer (charges), Orders.PreviewTax
- *   DOC:    plans/pricing-charges-and-promotions.md §6
+ *   DOC:    plans/archive/pricing-charges-and-promotions.md §6
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';

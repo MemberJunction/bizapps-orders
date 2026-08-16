@@ -50,7 +50,7 @@
  * CONNECTS TO:
  *   BOOKING: PaymentLineEntityServer.Save — both legs book through the ordinary allocation path
  *   TABLES:  __mj_BizAppsOrders.{PaymentHeader,PaymentLine,PaymentDetail,OrderHeader}
- *   DOC:     plans/bizapps-orders-master.md D68
+ *   DOC:     plans/archive/bizapps-orders-master.md D68
  */
 import {
     BaseEntity,

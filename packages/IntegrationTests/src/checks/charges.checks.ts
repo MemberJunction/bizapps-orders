@@ -21,7 +21,7 @@
  *
  * CONNECTS TO:
  *   CODE: ChargeBehavior · ChargeEngine · OrderJournalEntryFactory.chargeCreditsFor
- *   DOC:  plans/pricing-charges-and-promotions.md §5
+ *   DOC:  plans/archive/pricing-charges-and-promotions.md §5
  */
 import { randomUUID } from "crypto";
 import {

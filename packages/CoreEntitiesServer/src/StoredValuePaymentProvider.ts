@@ -32,7 +32,7 @@
  * CONNECTS TO:
  *   BASE:  ./BasePaymentProvider.ts
  *   AKIN:  ./ApplyAccountCreditOperation.ts — the operation that spends a credit across orders (D68)
- *   DOC:   plans/bizapps-orders-master.md D19, D38, D68
+ *   DOC:   plans/archive/bizapps-orders-master.md D19, D38, D68
  */
 import { RegisterClass } from '@memberjunction/global';
 import { IRunViewProvider, RunView } from '@memberjunction/core';

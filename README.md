@@ -15,11 +15,11 @@
   <a href="#product-management">Products</a> &middot;
   <a href="#entity-model">Entity Model</a> &middot;
   <a href="#using-bizapps-orders-in-your-code">Code</a> &middot;
-  <a href="plans/bizapps-orders-master.md">Design Doc</a>
+  <a href="docs/HOW_THE_SYSTEM_WORKS.md">How it works</a>
 </p>
 
 <p align="center">
-  <img alt="Status" src="https://img.shields.io/badge/Status-Build%20%2F%20baseline%20landing-yellow?style=flat-square" />
+  <img alt="Status" src="https://img.shields.io/badge/Status-Engine%20shipped-green?style=flat-square" />
   <img alt="MJ Version" src="https://img.shields.io/badge/MemberJunction-5.40%2B-blue?style=flat-square" />
   <img alt="Angular" src="https://img.shields.io/badge/Angular-21-DD0031?style=flat-square&logo=angular&logoColor=white" />
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white" />
@@ -30,7 +30,7 @@
 
 ---
 
-> **🔨 Status: moving from design to build.** The [master plan](plans/bizapps-orders-master.md) (consolidated 2026-07-23, decisions **D1–D35**) is the single source of truth; this README is a tour. The active build front is the **schema baseline + per-line JE booking** (D10–D12, plan [§18](plans/bizapps-orders-master.md#18-build-sequencing-current-priorities)) — the per-line booking slice is built and harness-proven on the donor branch and is re-landing here, with the company-model schema wave (S1) and the rev-rec rework next. Code samples below reflect the plan's named surface; where a slice hasn't landed yet, the plan says so.
+> **How the system works today:** [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md). This README is a tour. Historical design (D1–D84) is in [`plans/archive/`](plans/archive/). Do not treat the archive as the current schema or API.
 
 A customer commits to pay; the system tracks both **what they're getting** and **how they're paying**. BizApps Orders treats orders, payments, and subscriptions as **aspects of the same business event** and ships them as one **MemberJunction Open App** — so an MJ adopter installs a single dependency and has working order management in days, rather than stitching together separate payments and subscriptions packages.
 
@@ -51,7 +51,7 @@ Orders is the **orchestrator**; it does not keep the ledger. Every business even
 | Subscription-aware — a continuity record spawning a per-cycle renewal Order | An e-commerce storefront / customer portal |
 | Reversal-disciplined — returns, refunds, chargebacks, credit-memo orders, cancellations at every layer, each emitting reversal JEs | A CRM (customer master lives in BizApps Common) — nor inventory/COGS (future BizApps Inventory bolt-on) |
 
-See [`plans/bizapps-orders-master.md`](plans/bizapps-orders-master.md) §1 and §21 for the full positioning and the explicit out-of-scope list.
+See [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md) for the current surface and the explicit out-of-scope list.
 
 ---
 
@@ -207,7 +207,7 @@ schema. The same rule retired `ProductPerformanceObligation`: allocating one tra
 distinct performance obligations is an agreement-envelope concern, not an order-entry one. Revenue
 recognition itself stays here, because deferring revenue over a subscription term is genuinely ours.
 
-No currency/FX columns on Order/OrderLine day one — multi-currency is deferred with the design standing *(D24)*. See [Entity Model in the master plan](plans/bizapps-orders-master.md#4-entity-model) for the complete reference.
+No currency/FX columns on Order/OrderLine — multi-currency is deferred *(D24)*. Entity names and the current graph are in [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md).
 
 ---
 
@@ -239,7 +239,7 @@ stateDiagram-v2
 ```
 
 - **Stage order is fixed; skipping forward is allowed** — Draft → Confirmed without Quoted is legal, but a later stage always gets its prerequisites' effects (booking on first Confirmed; can't Fulfill before Posted) *(D9)*.
-- **Confirm is a remote operation** (`Orders.ConfirmOrder`): order row + per-line JEs in one transaction *(D8, D12)*.
+- **Confirm is the first `Save()` to `Confirmed`**: order row + per-line JEs in one transaction *(D8, D12)*. There is no `Orders.ConfirmOrder` operation.
 - **Fulfillment is disconnected from revenue** — no JE fires on Posted → Fulfilled; orders with no fulfillment-requiring lines auto-advance *(D15)*.
 - **Reversal pattern**: a return / cancellation / amendment — and a **credit memo** — is a **new** `Order` (`ReversesOrderID` set) with negative-quantity lines for the slice being reversed. A credit-memo Order has a **negative `Balance`**, settled by a refund Payment, applied to another Order, or written off. Both orders and both JE sets persist; net is zero *(D16)*.
 - Orders get **number + memo, not names**: `ORD-{seq}` via `OrderSequence` plus `ExternalDocumentNumber`, with `Order.Description` as the searchable memo — no `Order.Name` *(D29, D30)*. `IsOverdue` is computed (`Balance > 0 AND DueDate < now`), never stored *(D32)*. All persisted timestamps are UTC *(D34)*.
@@ -304,44 +304,43 @@ Providers register against an abstract `PaymentProvider` base via `@RegisterClas
 
 ## Using BizApps Orders in Your Code
 
-> These follow the surface named in [`plans/bizapps-orders-master.md`](plans/bizapps-orders-master.md) — the plan is authoritative for what's landed vs pending (§18, §22).
+> These follow the surface in [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md). Confirm is a `Save()`, not a remote operation.
 
 ### Creating an order draft with lines
 
 ```typescript
 import { Metadata } from '@memberjunction/core';
-import type { OrderEntity, OrderLineEntity } from '@mj-biz-apps/orders-entities';
+import type { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 
 const md = new Metadata();
-const order = await md.GetEntityObject<OrderEntity>('MJ_BizApps_Orders: Orders', contextUser);
+const order = await md.GetEntityObject<OrderHeaderEntity>('MJ_BizApps_Orders: Order Headers', contextUser);
 order.NewRecord();
-order.CustomerOrganizationID = acmeOrgId;
 order.CompanyID = bchqCompanyId;     // OWNING company — document/visibility anchor, never GL (D6)
 order.OrderType = 'Sale';
 order.Status = 'Draft';
 order.OrderDate = new Date();        // backdating allowed, unguarded (D25)
-await order.Save();                  // OrderNumber assigned: ORD-{seq} (D30)
 
-const line = await md.GetEntityObject<OrderLineEntity>('MJ_BizApps_Orders: Order Lines', contextUser);
-line.NewRecord();
-line.OrderID = order.ID;
+const line = await order.Lines.Create();
 line.ProductID = sidecarProProductId;  // the product's company owns this line's revenue (D6)
 line.Quantity = 1;
-line.UnitPrice = 99.0;               // direct entry is the precedence base — or via ResolvePrice (D21)
-await line.Save();                   // totals validated; OrderLine.CompanyID stamped from the product
+// omit UnitPrice to let ResolvePrice run — never assign 0 for "unset"
+if (!(await order.Save())) {           // header + lines, one graph
+    throw new Error(order.LatestResult?.CompleteMessage ?? 'save failed');
+}
 ```
 
 ### Booking — you don't build JEs, Confirm does
 
 ```typescript
-// Client-side, Confirm is ONE atomic remote operation: Orders.ConfirmOrder —
-// order row + one JE per line, all-or-none (D8, D12). Server-side, the same path
-// runs through the server-only Order subclass's Save() override:
+// Confirm is the first Status → Confirmed save. Client and server use the same
+// graph Save(); the server subclass (OrderEntityServer) books inside that Save.
 
 order.Status = 'Confirmed';
-await order.Save();
+if (!(await order.Save())) {
+    throw new Error(order.LatestResult?.CompleteMessage ?? 'confirm failed');
+}
 // → outer transaction → save → OrderJournalEntryFactory books each line's JE via
-//   the accounting engine (Accounting.CreateJournalEntries; JEs land 'Pending')
+//   Accounting.CreateJournalEntries (JEs land 'Pending')
 //   → stamps each OrderLine.JournalEntryID → commit. ANY failure rolls back
 //   everything — a locked order without its JEs is invalid state.
 // Deferred-revenue lines also stage their forward-dated recognition JEs here (D14).
@@ -356,7 +355,7 @@ import { Metadata } from '@memberjunction/core';
 import type { PaymentEntity, PaymentLineEntity } from '@mj-biz-apps/orders-entities';
 
 const md = new Metadata();
-const payment = await md.GetEntityObject<PaymentEntity>('MJ_BizApps_Orders: Payments', contextUser);
+const payment = await md.GetEntityObject<PaymentEntity>('MJ_BizApps_Orders: Payment Headers', contextUser);
 payment.NewRecord();
 payment.ReceivingCompanyID = bchqCompanyId;  // where the cash hits (D18)
 payment.Method = 'CreditCard';
@@ -470,7 +469,7 @@ set first.
 Checks are safe to run repeatedly against a working database. Each one owns a transaction that
 always rolls back, so orders, journal entries, payments and subscription terms never reach disk;
 only the inert catalog fixture is committed, and teardown sweeps it in FK order *(D48 — the design,
-and the Phase 0 spike behind it, are in [`plans/integration-testing-plan.md`](plans/integration-testing-plan.md) §0)*.
+and the Phase 0 spike behind it, are in [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md) §11)*.
 
 ---
 
@@ -496,27 +495,21 @@ bizapps-orders/
 ├── metadata-tests/                # MJ: Tests + Test Suite records (pushed separately, not production seed)
 ├── scripts/                       # rebuild-db.sh, append-codegen.sh, link-local-apps.mjs
 ├── test-harnesses/                # standalone dispatchers (integration.mjs, booking-live.mjs)
+├── docs/
+│   └── HOW_THE_SYSTEM_WORKS.md    # How the running system works — start here
 └── plans/
-    └── bizapps-orders-master.md   # Master plan & decision log (D1–D35) — the single source of truth
+    ├── README.md                  # Pointer: current docs vs archive
+    ├── orders-plan-gap-report.html
+    └── archive/                   # Historical D1–D84 design docs
 ```
 
 Ports follow the BizApps convention (MJ core 4001/4201, common 4101/4301, accounting 4102/4302); Orders uses **4103 / 4303**.
 
 ---
 
-## Build Sequencing
+## What is still open
 
-The ruling of record is **build first, iterate in the system** — plans stay thin, every slice closes out with green tests and a demo artifact. Current order (full detail in [master plan §18](plans/bizapps-orders-master.md#18-build-sequencing-current-priorities)):
-
-| # | Slice |
-|---|---|
-| **1 — now** | **Per-line booking (D10–D12)**: `OrderLine.JournalEntryID` schema move, `OrderJournalEntryFactory`, Save-override, `Lines`/`Validate()` encapsulation, contra-role + company-default link seeds. Built and harness-proven 8/8 on the donor branch; re-landing here |
-| **2** | **Company-model schema wave (S1)**: `Order.CompanyID`, `Product.CompanyID` NOT NULL rename, `OrderLine.CompanyID` stamp, per-company `ProductCategory`, resolution walk re-anchored to the product's company |
-| **3** | **Rev-rec rework to D14**: retire the old schedule-bridge consumption in favor of forward-dated JEs at booking; correcting-order netting |
-| **4** | **LH4I / LXP launch slices** — the LXP is the [first integrating consumer](plans/bizapps-orders-master.md#16-the-lxp-launch-first-integrating-consumer) (§16): tiers + track bundles, real Stripe checkout subset, coupon launch path (D22), entitlement read/notify poll (D27), overdue/grace config (D32), subscription booking + staged rev-rec, tax if the finance call says so |
-| **5** | **Full GUI validation pass** — once, after the structural waves; then forms design pass → order-editor pilot → convert-on-touch (D33) |
-| **6** | **Cross-app FK hardening** when the CodeGen include-mode work lands |
-| **Later, named** | Payment-side intercompany design (D13) · sales-rule evaluation engine + approvals routing (D26) · subscription lifecycle/renewal spawning (D20) · gift-card flows · fulfillment queue + order splitting · provider expansion · CDP migration (§18/§21) |
+The engine slices in the old build sequence (per-line booking, company model, rev-rec, payments, subscriptions, tax, promotions) have landed. Remaining product work is in [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md) §13 and the [gap report](plans/orders-plan-gap-report.html): LXP packaging, live Stripe/Bill.com/BC export tests (other team), an approvals inbox, event capacity, multi-currency, and sibling apps (Contracts, Inventory).
 
 ---
 
@@ -524,7 +517,7 @@ The ruling of record is **build first, iterate in the system** — plans stay th
 
 The consolidated master plan absorbed the prior issue-tracked coordination chain — **git is the history**. The one live companion document is the sibling plan, [`bizapps-accounting/plans/bizapps-accounting-master.md`](https://github.com/MemberJunction/bizapps-accounting), the accounting side of every boundary contract here (JE remote operations, GL role links, provenance, batching).
 
-Future bolt-on apps layer on via seams Orders ships now (soft `Order.ContractID`, pricing-precedence top slot, `FulfillmentStatus` + fulfillment events): **BizApps Contracts** (agreement envelope) and **BizApps Inventory** (stock/costing/COGS, emitting its own JEs into Accounting) — see [master plan §21](plans/bizapps-orders-master.md#21-out-of-scope-and-future-app-boundaries).
+Future bolt-on apps layer on via seams Orders already ships (`FulfillmentStatus`, pricing-precedence top slot): **BizApps Contracts** and **BizApps Inventory**. Do not add their columns here.
 
 ---
 
@@ -532,8 +525,11 @@ Future bolt-on apps layer on via seams Orders ships now (soft `Order.ContractID`
 
 | Document | Description |
 |---|---|
-| [Master Plan](plans/bizapps-orders-master.md) | The single source of truth: decision log (D1–D35), entity model, lifecycle & booking, rev-rec, payments, multi-company, LXP launch, build sequencing |
-| [BizApps Accounting](https://github.com/MemberJunction/bizapps-accounting) | The ledger primitives Orders emits into (and the sibling master plan) |
+| [How the system works](docs/HOW_THE_SYSTEM_WORKS.md) | Current engine, API, UI, tests, and local run |
+| [API and UI architecture](docs/orders-api-and-ui-architecture.md) | Remote operations, Explorer sections, form binding |
+| [Reviewing the data](docs/reviewing-the-data.md) | Committed seed you can inspect |
+| [Archived design](plans/archive/) | Historical decision log (D1–D84) — not the running schema |
+| [BizApps Accounting](https://github.com/MemberJunction/bizapps-accounting) | The ledger primitives Orders emits into |
 | [BizApps Common](https://github.com/MemberJunction/bizapps-common) | Person / Organization / Address master data |
 | [BizApps Tasks](https://github.com/MemberJunction/bizapps-tasks) | The workflow / approval substrate |
 

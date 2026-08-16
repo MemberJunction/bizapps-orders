@@ -144,4 +144,5 @@ usually a DTO that mirrors an entity.
 
 - `packages/Entities/src/OrderHeaderEntity.ts` — the shared subclass and what belongs on it
 - `metadata/entity-relationships/` — how `Lines` is declared (metadata, not TypeScript)
+- [`HOW_THE_SYSTEM_WORKS.md`](HOW_THE_SYSTEM_WORKS.md) — the running system
 - MJ: `packages/MJCore/docs/related-record-collections.md`

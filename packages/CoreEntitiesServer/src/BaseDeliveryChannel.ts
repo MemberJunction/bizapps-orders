@@ -28,7 +28,7 @@
  *   PURE:    ./DeliveryBehavior.ts — who it goes to, and whether it should
  *   SHIPPED: ./EmailDeliveryChannel.ts
  *   LOOKUP:  ./DeliveryResolver.ts
- *   DOC:     plans/bizapps-orders-master.md §4.4
+ *   DOC:     plans/archive/bizapps-orders-master.md §4.4
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import type { DeliveryChannelCode, DeliveryContact } from './DeliveryBehavior.js';

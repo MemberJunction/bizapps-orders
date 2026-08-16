@@ -24,7 +24,7 @@
  * CONNECTS TO:
  *   CODE: OrderLineEntityServer (the negative-quantity guard), OrderEntityServer.Save (booking),
  *         CancelSubscriptionOperation.emitReversalOrder (the shape a reversal takes)
- *   DOC:  plans/bizapps-orders-master.md D16 (reversal lines)
+ *   DOC:  plans/archive/bizapps-orders-master.md D16 (reversal lines)
  */
 import { randomUUID } from "crypto";
 import {

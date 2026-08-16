@@ -19,7 +19,7 @@
  * CONNECTS TO:
  *   SERVER: ./BasePaymentProvider.ts and the drivers under it
  *   ROUTE:  ./PaymentWebhookHandler.ts
- *   DOC:    plans/bizapps-orders-master.md D19, D37
+ *   DOC:    plans/archive/bizapps-orders-master.md D19, D37
  */
 // WEB CRYPTO, NOT `node:crypto`. The shared server tsconfig sets `"types": []`, so this package has no
 // Node globals by design and no other file in it reaches for one. `globalThis.crypto` is typed by the

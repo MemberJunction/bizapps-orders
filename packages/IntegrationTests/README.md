@@ -49,7 +49,7 @@ bundle and committed — inert reference data. Every check then runs inside a pr
 
 This works because the booking path's own transaction and accounting's `CreateJournalEntries`
 savepoints nest correctly three deep — verified by a spike before any check was written
-(`plans/integration-testing-plan.md` §0).
+(`plans/archive/integration-testing-plan.md` §0).
 
 Teardown is an FK-ordered sweep, and it **does** disable the immutability triggers while it runs. It
 has to: a booked `OrderLine.JournalEntryID` cannot be cleared and a captured `PaymentLine` cannot be

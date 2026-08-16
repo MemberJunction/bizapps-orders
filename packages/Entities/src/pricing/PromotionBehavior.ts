@@ -24,7 +24,7 @@
  * CONNECTS TO:
  *   PURE:   ./PricingBehavior.ts (Money, AllocateProRata)
  *   SERVER: ./PromotionEngine.ts (loads rows, applies the outcome)
- *   DOC:    plans/pricing-charges-and-promotions.md §4
+ *   DOC:    plans/archive/pricing-charges-and-promotions.md §4
  */
 import { Money } from './PricingBehavior.js';
 

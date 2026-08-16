@@ -21,7 +21,7 @@
  *
  * CONNECTS TO:
  *   CODE: GiftCardEngine (the rows) · OrderEntityServer.issueGiftCards (the lifecycle point)
- *   DOC:  plans/bizapps-orders-master.md D4 (GiftCard product type), D27 (beneficiary), D44
+ *   DOC:  plans/archive/bizapps-orders-master.md D4 (GiftCard product type), D27 (beneficiary), D44
  */
 
 /** The ProductType.Code that marks a product as a gift card. Seeded per D4. */

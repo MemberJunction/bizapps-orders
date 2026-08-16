@@ -18,7 +18,7 @@
  *
  * CONNECTS TO:
  *   CODE: FulfillmentEngine · FulfillOrderLinesOperation · GetFulfillmentQueueOperation
- *   DOC:  plans/bizapps-orders-master.md D15
+ *   DOC:  plans/archive/bizapps-orders-master.md D15
  */
 
 /** The per-line fulfilment states (schema: CK_OrderLine_FulfillmentStatus). */

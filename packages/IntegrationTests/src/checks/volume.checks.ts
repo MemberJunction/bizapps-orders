@@ -74,7 +74,7 @@
  *
  * CONNECTS TO:
  *   CODE: OrderEntityServer.nextSequence / Save, SubscriptionBehavior, ChargeEngine, PromotionEngine
- *   DOC:  plans/bizapps-orders-master.md D30 (numbering), D45/D46 (subscription rules)
+ *   DOC:  plans/archive/bizapps-orders-master.md D30 (numbering), D45/D46 (subscription rules)
  *   PEER: checks/concurrency.checks.ts — the same question from a raw second connection
  */
 import { randomUUID } from "crypto";

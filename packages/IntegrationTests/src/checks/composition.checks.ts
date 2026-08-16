@@ -20,7 +20,7 @@
  *
  * CONNECTS TO:
  *   CODE: OrderEntityServer.Save — the whole pipeline
- *   DOC:  plans/pricing-charges-and-promotions.md §1 (the pipeline)
+ *   DOC:  plans/archive/pricing-charges-and-promotions.md §1 (the pipeline)
  */
 import { randomUUID } from "crypto";
 import {

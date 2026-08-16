@@ -31,7 +31,7 @@
  * CONNECTS TO:
  *   CODE: FulfillmentBehavior · GetFulfillmentQueueOperation · FulfillOrderLinesOperation
  *   PURE: packages/CoreEntitiesServer/src/__tests__/FulfillmentBehavior.test.ts
- *   DOC:  plans/bizapps-orders-master.md D15
+ *   DOC:  plans/archive/bizapps-orders-master.md D15
  */
 import { BaseRemotableOperation } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";

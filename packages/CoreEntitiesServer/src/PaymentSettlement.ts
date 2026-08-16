@@ -31,7 +31,7 @@
  *   PURE:    ./PaymentProviderBehavior.ts — DecideSettlement, the decision table
  *   ROUTE:   ./PaymentWebhookHandler.ts — the only caller
  *   WRITES:  ./PaymentHeaderEntityServer.ts (promote) · ./PaymentReversalFactory.ts (reverse)
- *   DOC:     plans/bizapps-orders-master.md D17, D19, D53
+ *   DOC:     plans/archive/bizapps-orders-master.md D17, D19, D53
  */
 import {
     BaseEntity,

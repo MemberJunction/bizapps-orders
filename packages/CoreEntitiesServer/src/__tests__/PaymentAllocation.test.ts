@@ -11,12 +11,12 @@
  *   is invisible to every downstream assertion. The orientation checks below are the only thing
  *   that would catch it.
  *
- * The worked examples from plans/intercompany-balancing.md §3 are reproduced verbatim, so the doc
+ * The worked examples from plans/archive/intercompany-balancing.md §3 are reproduced verbatim, so the doc
  * and the code cannot drift apart silently.
  *
  * CONNECTS TO:
  *   TESTS: ../PaymentAllocationFactory.ts
- *   DOC:   plans/intercompany-balancing.md §3
+ *   DOC:   plans/archive/intercompany-balancing.md §3
  */
 import { describe, it, expect } from 'vitest';
 import {

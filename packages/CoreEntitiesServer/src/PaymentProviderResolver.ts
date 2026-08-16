@@ -26,7 +26,7 @@
  * CONNECTS TO:
  *   BASE:    ./BasePaymentProvider.ts
  *   DRIVERS: ./StripePaymentProvider.ts · ./ManualPaymentProvider.ts · ./StoredValuePaymentProvider.ts
- *   DOC:     plans/bizapps-orders-master.md D19, D37
+ *   DOC:     plans/archive/bizapps-orders-master.md D19, D37
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';

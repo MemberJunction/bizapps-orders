@@ -17,7 +17,7 @@
  *
  * CONNECTS TO:
  *   CODE: PriceResolver · PricingBehavior · ProductPriceEntityServer · PreviewPriceOperation
- *   DOC:  plans/pricing-charges-and-promotions.md
+ *   DOC:  plans/archive/pricing-charges-and-promotions.md
  */
 import { randomUUID } from "crypto";
 import { BaseRemotableOperation } from "@memberjunction/core";

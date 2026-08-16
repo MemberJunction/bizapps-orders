@@ -26,7 +26,7 @@
  *
  * CONNECTS TO:
  *   CODE: TaxResolver (ResolveTax · ResolveTaxability · LoadNexusJurisdictions) · ChargeEngine
- *   DOC:  plans/pricing-charges-and-promotions.md §6
+ *   DOC:  plans/archive/pricing-charges-and-promotions.md §6
  */
 import { randomUUID } from "crypto";
 import {

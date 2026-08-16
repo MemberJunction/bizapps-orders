@@ -21,7 +21,7 @@
  *
  * CONNECTS TO:
  *   CODE: PromotionBehavior · PromotionEngine · OrderEntityServer.applyPromotions
- *   DOC:  plans/pricing-charges-and-promotions.md §4
+ *   DOC:  plans/archive/pricing-charges-and-promotions.md §4
  */
 import { randomUUID } from "crypto";
 import {

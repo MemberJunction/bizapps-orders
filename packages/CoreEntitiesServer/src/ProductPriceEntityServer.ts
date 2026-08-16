@@ -22,7 +22,7 @@
  *
  * CONNECTS TO:
  *   PURE:  ./PricingBehavior.ts (PickPriceRule — the reader this protects)
- *   DOC:   plans/pricing-schema.md
+ *   DOC:   plans/archive/pricing-schema.md
  */
 import { BaseEntity, IRunViewProvider, RunView, ValidationErrorInfo, ValidationResult } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';

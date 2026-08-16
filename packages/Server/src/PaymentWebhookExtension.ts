@@ -39,7 +39,7 @@
  * CONNECTS TO:
  *   HANDLER: @mj-biz-apps/orders-core-entities-server → PaymentWebhookHandler
  *   CONFIG:  mj.config.cjs → serverExtensions[]
- *   DOC:     plans/bizapps-orders-master.md D19
+ *   DOC:     plans/archive/bizapps-orders-master.md D19
  */
 import BodyParser from 'body-parser';
 import type { Application, Request, Response } from 'express';

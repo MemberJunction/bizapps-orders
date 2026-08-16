@@ -26,7 +26,7 @@
  *
  * CONNECTS TO:
  *   CODE: ReversalResolver (the lookups), OrderEntityServer.savePendingLines (the caller)
- *   DOC:  plans/bizapps-orders-master.md D16
+ *   DOC:  plans/archive/bizapps-orders-master.md D16
  */
 
 /** The line being unwound, as the database holds it. Quantity is positive — it was a sale. */

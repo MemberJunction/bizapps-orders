@@ -43,7 +43,7 @@
  *   BASE:    ./StripePaymentProvider.ts — auth, HTTP, form encoding, signature, fee lookup
  *   PURE:    ./PaymentProviderBehavior.ts — AchFeeEstimate, DecideSettlement
  *   EFFECTS: ./PaymentSettlement.ts — what the webhook does with the answer
- *   DOC:     plans/bizapps-orders-master.md D19, D37
+ *   DOC:     plans/archive/bizapps-orders-master.md D19, D37
  */
 import { RegisterClass } from '@memberjunction/global';
 import { BasePaymentProvider, type CaptureRequest, type CaptureResult, type CreateIntentRequest, type WebhookEvent } from './BasePaymentProvider.js';

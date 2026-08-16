@@ -29,7 +29,7 @@
  *   BASE:  ./BaseDeliveryChannel.ts
  *   PURE:  ./DeliveryBehavior.ts
  *   MJ:    @memberjunction/communication-engine
- *   DOC:   plans/bizapps-orders-master.md §4.4
+ *   DOC:   plans/archive/bizapps-orders-master.md §4.4
  */
 import { LogError, LogStatus } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';

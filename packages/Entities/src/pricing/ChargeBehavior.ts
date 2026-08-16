@@ -19,7 +19,7 @@
  * CONNECTS TO:
  *   PURE:   ./PricingBehavior.ts (Money, AllocateProRata)
  *   SERVER: ./ChargeEngine.ts
- *   DOC:    plans/pricing-charges-and-promotions.md §5
+ *   DOC:    plans/archive/pricing-charges-and-promotions.md §5
  */
 import { AllocateProRata, Money } from './PricingBehavior.js';
 

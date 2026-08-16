@@ -33,7 +33,7 @@
  * CONNECTS TO:
  *   CODE: PaymentIntentService · StripeACHPaymentProvider · PaymentSettlement · PaymentReversalFactory
  *   PURE: packages/CoreEntitiesServer/src/__tests__/AchSettlement{,Edges}.test.ts (103 tests)
- *   DOC:  plans/bizapps-orders-master.md D77, D78, D80
+ *   DOC:  plans/archive/bizapps-orders-master.md D77, D78, D80
  */
 import { randomUUID } from "crypto";
 import {
