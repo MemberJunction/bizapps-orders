@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { MJButtonDirective } from '@memberjunction/ng-ui-components';
-import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
+import { DeferredRevenueWaterfallModule } from './deferred-revenue-waterfall.stub';
 import { CustomFormsModule } from '../custom/custom-forms.module';
 import { PaymentHeaderPanel } from './payment-header.panel';
 import { PaymentJournalsPanel } from './payment-journals.panel';
@@ -23,8 +23,44 @@ import {
 import { PriceListHeaderPanel } from './price-list-header.panel';
 import { PriceListSimulatorPanel } from './price-list-simulator.panel';
 import { PromotionHeaderPanel } from './promotion-header.panel';
+import { MJODocHeroComponent } from './document-hero.component';
+import { MJOOverviewCardsComponent } from './overview-cards.component';
+import {
+    ChargeTypeHeaderPanel,
+    PaymentProviderHeaderPanel,
+    PaymentTypeHeaderPanel,
+    ProductCategoryHeaderPanel,
+    ProductTypeHeaderPanel,
+    RevRecTypeHeaderPanel,
+    SalesAuthorityHeaderPanel,
+    StoredValueHeaderPanel,
+    SubscriptionTypeHeaderPanel,
+} from './lookup-headers.panels';
+import {
+    ProductCategoryOverviewPanel,
+    ProductOverviewPanel,
+    ProductTypeOverviewPanel,
+    RevRecTypeOverviewPanel,
+    SubscriptionTypeOverviewPanel,
+} from './catalog-overviews.panels';
+import {
+    ChargeTypeOverviewPanel,
+    PriceListOverviewPanel,
+    PromotionOverviewPanel,
+    SalesAuthorityOverviewPanel,
+} from './commercial-overviews.panels';
+import {
+    PaymentOverviewPanel,
+    PaymentProviderOverviewPanel,
+    PaymentTypeOverviewPanel,
+    StoredValueOverviewPanel,
+    SubscriptionOverviewPanel,
+    SubscriptionTermOverviewPanel,
+} from './document-overviews.panels';
 
 const PANELS = [
+    MJODocHeroComponent,
+    MJOOverviewCardsComponent,
     PaymentHeaderPanel,
     PaymentJournalsPanel,
     SubscriptionHeaderPanel,
@@ -41,6 +77,30 @@ const PANELS = [
     PriceListHeaderPanel,
     PriceListSimulatorPanel,
     PromotionHeaderPanel,
+    ProductTypeHeaderPanel,
+    ProductCategoryHeaderPanel,
+    SubscriptionTypeHeaderPanel,
+    RevRecTypeHeaderPanel,
+    ChargeTypeHeaderPanel,
+    SalesAuthorityHeaderPanel,
+    StoredValueHeaderPanel,
+    PaymentProviderHeaderPanel,
+    PaymentTypeHeaderPanel,
+    ProductTypeOverviewPanel,
+    ProductCategoryOverviewPanel,
+    ProductOverviewPanel,
+    SubscriptionTypeOverviewPanel,
+    RevRecTypeOverviewPanel,
+    PriceListOverviewPanel,
+    PromotionOverviewPanel,
+    ChargeTypeOverviewPanel,
+    SalesAuthorityOverviewPanel,
+    PaymentOverviewPanel,
+    SubscriptionOverviewPanel,
+    SubscriptionTermOverviewPanel,
+    StoredValueOverviewPanel,
+    PaymentProviderOverviewPanel,
+    PaymentTypeOverviewPanel,
 ];
 
 /**

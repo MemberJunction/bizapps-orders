@@ -176,5 +176,212 @@
       "lastModified": "2026-08-15T01:23:08.151Z",
       "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
     }
+  },
+  {
+    "_comments": [
+      "Product Types: identity header + Overview first, then generated details."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Types"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T23:48:09.748Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Product Categories: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T23:48:09.785Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Subscription Types: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Types"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T23:48:09.810Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Revenue Recognition Types: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Revenue Recognition Types"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T23:48:09.873Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Charge Types: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Charge Types"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T23:48:09.904Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Sales Authorities: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Sales Authorities"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T23:48:09.994Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Stored Value Accounts: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Stored Value Accounts"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T23:48:09.934Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Payment Providers: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Providers"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T23:48:09.964Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Payment Types: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Types"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-15T23:48:10.017Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
   }
 ]

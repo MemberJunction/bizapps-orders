@@ -16,7 +16,7 @@ import {
     SubscriptionViewParams,
     type OrderJournalCard,
 } from '../../data/orders-queries';
-import { FormatMoney } from '../../panels/money-format';
+import { FormatMoney, HasCents } from '../../panels/money-format';
 import { mjBizAppsOrdersOrderHeaderFormComponent } from '../../generated/Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component';
 import type { MJOPricingState } from '../../services/pricing-scheduler.service';
 import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
@@ -287,18 +287,38 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public Money(kind: 'total' | 'paid' | 'balance'): string {
+        const opts = this.heroMoneyOptions();
         if (kind === 'paid') {
             if (!this.record?.IsSaved) return '—';
-            return FormatMoney(this.record.AmountPaid);
+            return FormatMoney(this.record.AmountPaid, opts);
         }
         if (kind === 'balance') {
             if (!this.record?.IsSaved) return '—';
-            return FormatMoney(this.record.Balance);
+            return FormatMoney(this.record.Balance, opts);
         }
+        const total = this.heroTotalAmount();
+        if (total == null) return this.Pricing.Loading ? '…' : '—';
+        return FormatMoney(total, opts);
+    }
+
+    /** Hide `.00` only when every visible hero amount is a whole dollar. */
+    private heroMoneyOptions(): { Round: boolean } {
+        return { Round: !this.heroMoneyAmounts().some(HasCents) };
+    }
+
+    private heroMoneyAmounts(): Array<number | null | undefined> {
+        const amounts: Array<number | null | undefined> = [this.heroTotalAmount()];
+        if (this.record?.IsSaved) {
+            amounts.push(this.record.AmountPaid, this.record.Balance);
+        }
+        return amounts;
+    }
+
+    private heroTotalAmount(): number | null {
         const preview = this.Pricing.Result?.Totals;
-        if (preview) return FormatMoney(this.record?.IsSaved ? preview.GrossTotal : preview.NetTotal);
-        if (!this.record?.IsSaved) return this.Pricing.Loading ? '…' : '—';
-        return FormatMoney(this.record.TotalGross);
+        if (preview) return this.record?.IsSaved ? preview.GrossTotal : preview.NetTotal;
+        if (!this.record?.IsSaved) return null;
+        return this.record.TotalGross;
     }
 
     public OnPricingChanged(state: MJOPricingState): void {

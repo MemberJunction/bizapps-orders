@@ -34,7 +34,10 @@ export interface MJOMoneyOptions {
      * columns, where a row of zeroes is noise and the eye wants the non-zero ones.
      */
     Zero?: string;
-    /** Drop the cents. For dashboard tiles where two decimals add nothing. */
+    /**
+     * Drop the cents (and `$0.00` becomes `$0`). For dashboard tiles, and for
+     * a header trio that is all whole dollars.
+     */
     Round?: boolean;
     /** Default `'$'`. Currency is single-currency today; this is the seam. */
     Symbol?: string;
@@ -57,10 +60,9 @@ export function FormatMoney(value: number | null | undefined, options: MJOMoneyO
     if (value === null || value === undefined || Number.isNaN(value)) return '—';
 
     const symbol = options.Symbol ?? '$';
-    const zeroText = options.Zero ?? `${symbol}0.00`;
-    if (value === 0) return zeroText;
-
     const digits = options.Round ? 0 : 2;
+    const zeroText = options.Zero ?? `${symbol}${digits === 0 ? '0' : '0.00'}`;
+    if (value === 0) return zeroText;
     const body =
         symbol +
         Math.abs(value).toLocaleString('en-US', {
@@ -80,6 +82,28 @@ export function FormatMoney(value: number | null | undefined, options: MJOMoneyO
             // column, which a hyphen does not.
             return `−${body}`;
     }
+}
+
+/**
+ * True when the amount has a non-zero cent part (after rounding to the
+ * nearest cent). Null / NaN do not count — they are not displayed as money.
+ */
+export function HasCents(value: number | null | undefined): boolean {
+    if (value == null || !Number.isFinite(value)) return false;
+    return Math.round(Math.abs(value) * 100) % 100 !== 0;
+}
+
+/**
+ * Format several amounts with one shared cents policy: if any has cents,
+ * all show two decimals; otherwise none do. Used for the order-header
+ * Total / Paid / Balance trio so the three figures stay aligned.
+ */
+export function FormatMoneyGroup(
+    values: ReadonlyArray<number | null | undefined>,
+    options: MJOMoneyOptions = {},
+): string[] {
+    const hideCents = options.Round === true || !values.some(HasCents);
+    return values.map((value) => FormatMoney(value, { ...options, Round: hideCents }));
 }
 
 /**

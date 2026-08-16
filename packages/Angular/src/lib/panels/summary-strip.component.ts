@@ -66,33 +66,45 @@ export interface MJOSummaryFigure {
     styles: [
         `
             .mjo-strip {
-                display: flex;
-                gap: var(--mj-space-6);
-                flex-wrap: wrap;
-                padding: var(--mj-space-3) var(--mj-space-4);
-                margin-bottom: var(--mj-space-4);
-                background: var(--mj-bg-surface);
-                border: 1px solid var(--mj-border-default);
-                border-radius: var(--mj-radius-md);
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+                gap: var(--mj-space-3, 10px);
+                padding-top: var(--mj-space-3, 10px);
+                margin-top: var(--mj-space-3, 10px);
+                border-top: 1px solid var(--mj-border-default);
             }
-            .mjo-strip__figure { min-width: 0; }
+            .mjo-strip__figure {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                padding: 8px 12px;
+                border-radius: var(--mj-radius-md, 8px);
+                background: var(--mj-bg-surface-sunken);
+                border: 1px solid var(--mj-border-default);
+                transition: border-color 0.15s ease;
+                min-width: 0;
+            }
+            .mjo-strip__figure:hover {
+                border-color: var(--mj-brand-primary, #38bdf8);
+            }
             .mjo-strip__label {
-                font-size: 10px;
-                font-weight: var(--mj-font-bold);
-                letter-spacing: 0.06em;
+                font-size: 10.5px;
+                font-weight: 700;
+                letter-spacing: 0.05em;
                 text-transform: uppercase;
                 color: var(--mj-text-muted);
             }
             .mjo-strip__value {
                 font-size: 16px;
-                font-weight: var(--mj-font-bold);
+                font-weight: 800;
                 font-variant-numeric: tabular-nums;
+                color: var(--mj-text-primary);
             }
-            .mjo-strip__note { margin-left: auto; align-self: center; max-width: 42ch; }
-
-            @media (max-width: 760px) {
-                .mjo-strip { gap: var(--mj-space-4); }
-                .mjo-strip__note { margin-left: 0; }
+            .mjo-strip__note {
+                grid-column: 1 / -1;
+                font-size: 11px;
+                color: var(--mj-text-muted);
+                margin-top: 2px;
             }
         `,
     ],

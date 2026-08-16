@@ -18,6 +18,7 @@ export const MJO_ENTITIES = {
     OrderHeader: 'MJ_BizApps_Orders: Order Headers',
     OrderLine: 'MJ_BizApps_Orders: Order Lines',
     OrderCharge: 'MJ_BizApps_Orders: Order Charges',
+    OrderAdjustment: 'MJ_BizApps_Orders: Order Adjustments',
     PaymentHeader: 'MJ_BizApps_Orders: Payment Headers',
     PaymentDetail: 'MJ_BizApps_Orders: Payment Details',
     PaymentLine: 'MJ_BizApps_Orders: Payment Lines',
@@ -35,6 +36,19 @@ export const MJO_ENTITIES = {
     SubscriptionEvent: 'MJ_BizApps_Orders: Subscription Events',
     ChargeType: 'MJ_BizApps_Orders: Charge Types',
     TaxExemption: 'MJ_BizApps_Orders: Customer Tax Exemptions',
+    SubscriptionType: 'MJ_BizApps_Orders: Subscription Types',
+    RevenueRecognitionType: 'MJ_BizApps_Orders: Revenue Recognition Types',
+    SalesAuthority: 'MJ_BizApps_Orders: Sales Authorities',
+    StoredValueAccount: 'MJ_BizApps_Orders: Stored Value Accounts',
+    StoredValueTransaction: 'MJ_BizApps_Orders: Stored Value Transactions',
+    PaymentProvider: 'MJ_BizApps_Orders: Payment Providers',
+    ProductEntitlement: 'MJ_BizApps_Orders: Product Entitlements',
+    EventProduct: 'MJ_BizApps_Orders: Event Products',
+    PriceListAssignment: 'MJ_BizApps_Orders: Price List Assignments',
+    PromotionCode: 'MJ_BizApps_Orders: Promotion Codes',
+    PromotionTarget: 'MJ_BizApps_Orders: Promotion Targets',
+    PaymentIntent: 'MJ_BizApps_Orders: Payment Intents',
+    EntitlementGrant: 'MJ_BizApps_Orders: Entitlement Grants',
 } as const;
 
 /**
