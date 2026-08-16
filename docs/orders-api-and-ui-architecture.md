@@ -201,6 +201,12 @@ Sections are organised by **job, not entity**: fifty-one tables would otherwise 
 destinations, leaving the user to assemble the workflow themselves. Top nav across sections, left nav
 within one — MJ's rule.
 
+**Record forms.** Payment Headers, Subscriptions, Subscription Terms, Products, Price Lists, and
+Promotions use the generated form plus contributions and `Layout: left-nav`. Order Headers stay on
+the custom compose form (`ShowRelatedEntities: false`) — leftover related grids do not belong under
+Lines. The reversing-payment self-join on Payment Headers is `inclusion: None`, matching
+`Order Headers.ReversesOrderHeaderID`.
+
 `@RegisterClass` decorators only run if the module is in the bundle, so `public-api.ts` both imports
 **and references** the four classes. A tree-shaken section is a blank tab.
 

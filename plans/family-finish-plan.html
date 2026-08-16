@@ -1,0 +1,709 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Finish the BizApps family — plan</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../mockups/assets/tokens.css">
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--mj-text-primary);
+    background: var(--mj-bg-page);
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--mj-text-link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.02em; }
+  p { margin: 0 0 12px; color: var(--mj-text-secondary); }
+  code, kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    background: var(--mj-bg-surface-sunken);
+    border-radius: 4px;
+    padding: 1px 6px;
+  }
+  .app {
+    display: grid;
+    grid-template-columns: 240px minmax(0, 1fr);
+    min-height: 100vh;
+  }
+  nav {
+    position: sticky; top: 0; height: 100vh; overflow: auto;
+    padding: 22px 16px 40px;
+    border-right: 1px solid var(--mj-border-default);
+    background: var(--mj-bg-surface);
+  }
+  nav .brand { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--mj-text-muted); margin-bottom: 6px; }
+  nav h1 { font-size: 16px; margin-bottom: 16px; }
+  nav a {
+    display: block; font-size: 13px; color: var(--mj-text-secondary);
+    padding: 5px 8px; border-radius: 6px; margin-bottom: 1px;
+  }
+  nav a:hover { background: var(--mj-bg-surface-hover); text-decoration: none; color: var(--mj-text-primary); }
+  nav .g { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--mj-text-muted); margin: 14px 8px 6px; }
+  main { max-width: 1080px; padding: 32px 36px 96px; }
+  .lede { font-size: 16.5px; line-height: 1.6; color: var(--mj-text-primary); max-width: 72ch; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 28px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 650; padding: 3px 10px; border-radius: 999px;
+    border: 1px solid var(--mj-border-default); color: var(--mj-text-secondary);
+    background: var(--mj-bg-surface);
+  }
+  .chip.ok { color: var(--mj-status-success-text); background: var(--mj-status-success-bg); border-color: var(--mj-status-success-border); }
+  .chip.warn { color: var(--mj-status-warning-text); background: var(--mj-status-warning-bg); border-color: var(--mj-status-warning-border); }
+  .chip.err { color: var(--mj-status-error-text); background: var(--mj-status-error-bg); border-color: var(--mj-status-error-border); }
+  .chip.info { color: var(--mj-status-info-text); background: var(--mj-status-info-bg); border-color: var(--mj-status-info-border); }
+  .chip.brand { color: var(--mj-brand-primary); background: color-mix(in srgb, var(--mj-brand-primary) 10%, var(--mj-bg-surface)); border-color: color-mix(in srgb, var(--mj-brand-primary) 28%, var(--mj-border-default)); }
+  h2 { font-size: 22px; margin: 42px 0 10px; }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  h4 { font-size: 13.5px; margin: 16px 0 6px; color: var(--mj-text-secondary); }
+  .grid { display: grid; gap: 12px; }
+  .g2 { grid-template-columns: 1fr 1fr; }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  @media (max-width: 980px) {
+    .app { grid-template-columns: 1fr; }
+    nav { position: relative; height: auto; border-right: 0; border-bottom: 1px solid var(--mj-border-default); }
+    .g2, .g3, .g4 { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+    border-radius: 12px; padding: 14px 16px;
+  }
+  .card h3 { margin-top: 0; }
+  .card .kicker { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--mj-text-muted); margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 8px 0 16px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--mj-border-subtle); }
+  th { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--mj-text-muted); }
+  td { color: var(--mj-text-primary); }
+  td.sec { color: var(--mj-text-secondary); font-size: 13px; }
+  .callout {
+    border-radius: 12px; padding: 14px 16px; margin: 16px 0;
+    border: 1px solid color-mix(in srgb, var(--mj-brand-primary) 35%, var(--mj-border-default));
+    background: color-mix(in srgb, var(--mj-brand-primary) 8%, var(--mj-bg-surface));
+  }
+  .callout.warn {
+    border-color: color-mix(in srgb, var(--mj-status-warning) 40%, var(--mj-border-default));
+    background: color-mix(in srgb, var(--mj-status-warning) 10%, var(--mj-bg-surface));
+  }
+  .callout h3 { margin: 0 0 6px; }
+  ul.tight { margin: 6px 0 10px; padding-left: 1.2em; color: var(--mj-text-secondary); }
+  ul.tight li { margin: 3px 0; }
+  .stack {
+    display: grid; gap: 6px; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px;
+  }
+  .stack .row {
+    display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center;
+    background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+    border-radius: 8px; padding: 8px 10px;
+  }
+  .stack .row .n {
+    width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--mj-bg-surface-sunken); color: var(--mj-text-muted); font-size: 11px;
+  }
+  /* ── inline mockups ── */
+  .mock {
+    background: var(--mj-bg-surface-card);
+    border: 1px solid var(--mj-border-default);
+    border-radius: 12px; overflow: hidden; margin: 12px 0 18px;
+  }
+  .mock-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; border-bottom: 1px solid var(--mj-border-subtle);
+    font-size: 12px; color: var(--mj-text-muted);
+  }
+  .mock-bar strong { color: var(--mj-text-primary); font-weight: 650; }
+  .mock-body { padding: 12px; }
+  .form {
+    background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+    border-radius: 10px; overflow: hidden;
+  }
+  .sec {
+    border-bottom: 1px solid var(--mj-border-subtle); padding: 10px 12px;
+  }
+  .sec:last-child { border-bottom: 0; }
+  .sec .t { font-size: 12.5px; font-weight: 650; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+  .sec .t i { color: var(--mj-text-muted); width: 14px; }
+  .flds { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .fld {
+    background: var(--mj-bg-surface-sunken); border-radius: 6px; padding: 6px 8px;
+    font-size: 11.5px; color: var(--mj-text-muted);
+  }
+  .fld b { display: block; color: var(--mj-text-primary); font-weight: 550; font-size: 12.5px; }
+  .plug {
+    border: 1.5px dashed color-mix(in srgb, var(--mj-brand-primary) 55%, var(--mj-border-default));
+    background: color-mix(in srgb, var(--mj-brand-primary) 7%, var(--mj-bg-surface));
+  }
+  .plug .t { color: var(--mj-brand-primary); }
+  .badge {
+    font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    padding: 1px 7px; border-radius: 999px;
+    background: color-mix(in srgb, var(--mj-brand-primary) 14%, transparent);
+    color: var(--mj-brand-primary);
+  }
+  .pipe { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 10px 0; }
+  .pipe .box {
+    background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+    border-radius: 10px; padding: 10px; font-size: 12.5px;
+  }
+  .pipe .box strong { display: block; margin-bottom: 4px; }
+  .pipe .box.ghost { opacity: .55; border-style: dashed; }
+  .pipe .box.now { border-color: color-mix(in srgb, var(--mj-brand-primary) 50%, var(--mj-border-default)); }
+  .mocks { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .mcard {
+    display: block; padding: 12px; border-radius: 10px;
+    border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface);
+    color: inherit;
+  }
+  .mcard:hover { border-color: var(--mj-brand-primary); text-decoration: none; transform: translateY(-1px); }
+  .mcard .t { font-weight: 650; font-size: 13.5px; }
+  .mcard .d { font-size: 12.5px; color: var(--mj-text-secondary); margin-top: 4px; }
+  .mcard .st { margin-top: 8px; }
+  .wk { counter-reset: wk; }
+  .wk .item { display: grid; grid-template-columns: 92px 1fr; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--mj-border-subtle); }
+  .wk .item:last-child { border-bottom: 0; }
+  .wk .when { font-size: 12px; font-weight: 700; color: var(--mj-brand-primary); padding-top: 2px; }
+  .hero-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 18px 0 8px; }
+  .stat { background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default); border-radius: 10px; padding: 12px; }
+  .stat .n { font-size: 22px; font-weight: 700; letter-spacing: -0.03em; }
+  .stat .l { font-size: 12px; color: var(--mj-text-muted); }
+  iframe.preview {
+    width: 100%; height: 360px; border: 0; background: var(--mj-bg-page);
+  }
+</style>
+</head>
+<body>
+<div class="app">
+<nav>
+  <div class="brand">BizApps · 14 Aug 2026</div>
+  <h1>Finish the family</h1>
+  <div class="g">Map</div>
+  <a href="#thesis">Thesis</a>
+  <a href="#stack">The stack as it is</a>
+  <a href="#left">What is left</a>
+  <div class="g">Architecture</div>
+  <a href="#extend">Auto-extend People / Orgs</a>
+  <a href="#accounting">Accounting as a bridge</a>
+  <a href="#integration">Integration suite</a>
+  <div class="g">Product</div>
+  <a href="#orders">Orders — fill the mocks</a>
+  <a href="#sales">Sales &amp; Contracts</a>
+  <a href="#sequence">Sequence</a>
+  <a href="#not">What not to do</a>
+  <div class="g">Existing mocks</div>
+  <a href="../mockups/index.html">Orders mockup index</a>
+  <a href="../mockups/orders/order-form.html">Order form</a>
+  <a href="../mockups/catalog/product-form-workspace-mockup.html">Product workspace</a>
+</nav>
+
+<main>
+  <div class="chip brand"><i class="fa-solid fa-map"></i> Plan · not a spec rewrite</div>
+  <h1 style="font-size:32px;margin:10px 0 8px">Finish Common, Accounting, and Orders — then the money path to Sales.</h1>
+  <p class="lede">
+    The engines are further along than the screens. Orders can book, price, tax, capture, refund, renew, and reverse
+    in a live database. Accounting can stage a balanced subledger and pretend to post it. Common has a real Person
+    and Organization. What we do <em>not</em> have is a family that feels finished: People do not grow extra life
+    when Orders is installed, Accounting still looks like a journal-entry app, most Orders mockups already have a
+    rail page (thin, not missing), Sales and Contracts are specified (and partly built) on other branches, and the
+    integration suite does not yet walk the same GraphQL path the Angular forms use.
+  </p>
+  <div class="meta">
+    <span class="chip">After Orders PR #68</span>
+    <span class="chip ok">Confirm / Check-ACH / MaxQty shipped</span>
+    <span class="chip warn">Sales next is still README</span>
+    <span class="chip info">Contracts late-mid on next</span>
+    <span class="chip">Uses existing mockups</span>
+  </div>
+
+  <div class="hero-stats">
+    <div class="stat"><div class="n">3</div><div class="l">apps we own the finish of</div></div>
+    <div class="stat"><div class="n">~32</div><div class="l">Orders check bundles, server-side</div></div>
+    <div class="stat"><div class="n">19</div><div class="l">Orders mockup screens already drawn</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">real ERP posters (BC / NS / QBO)</div></div>
+  </div>
+
+  <h2 id="thesis">Thesis</h2>
+  <div class="callout">
+    <h3>Three jobs, not thirty screens</h3>
+    <ul class="tight">
+      <li><strong>Common</strong> is the shared identity graph. Its generated (and custom) forms must be
+        <em>extensible by other apps</em> so a Person grows orders, tickets, deals, and contracts when those
+        apps are installed — without Common importing any of them.</li>
+      <li><strong>Accounting</strong> is a subledger + dispatch bridge to NetSuite / Business Central / QBO.
+        The JE workspace is an exception door, not the product.</li>
+      <li><strong>Orders</strong> is the transaction engine and the first finished Explorer surface.
+        Close the remaining order-taker path, then deepen the operator rails that already exist
+        (list, dashboard, fulfillment, payments, returns). Finish the few screens still mock-only
+        (statements, Confirm pre-flight, document-as-nav). Do not invent a second entry lane.</li>
+    </ul>
+  </div>
+  <p>Sales and Contracts sit on top of this. They cannot close a real deal into a real bill until Orders
+    grows two small seams and Common grows an Activity spine. That is why finishing <em>these three</em>
+    is how the other two become shippable.</p>
+
+  <h2 id="stack">The stack as it is</h2>
+  <div class="stack">
+    <div class="row"><span class="n">6</span><div><strong>Sales</strong> — Closed Won as a transaction. Schema + workspace live on PRs, not on <code>next</code>.</div><span class="chip warn">mid · unmerged</span></div>
+    <div class="row"><span class="n">5</span><div><strong>Contracts</strong> — agreement envelope + billing calendar. Vertical slice on <code>next</code>. Cannot price until Orders C0.</div><span class="chip info">late-mid</span></div>
+    <div class="row"><span class="n">4</span><div><strong>Orders</strong> — catalog, pricing, A/R, subs, payments, entitlements. Custom forms just landed. Engine ≫ UI.</div><span class="chip ok">engine done · UX mid</span></div>
+    <div class="row"><span class="n">3</span><div><strong>Accounting</strong> — AR subledger, role-mapped COA, batch, mock ERP poster. JE compose UI is ahead of the bridge.</div><span class="chip warn">bridge half-built</span></div>
+    <div class="row"><span class="n">2</span><div><strong>Tasks</strong> — published. Approval substrate. Wiring into Orders / Accounting / Sales is specified, not live.</div><span class="chip ok">shipped</span></div>
+    <div class="row"><span class="n">1</span><div><strong>Common</strong> — People, Orgs, addresses, contacts, relationships. Two custom forms. No Activity spine. No integration tests. Custom forms drop plugin slots.</div><span class="chip warn">kernel · not a platform</span></div>
+  </div>
+
+  <h3>Honest status cards</h3>
+  <div class="grid g3">
+    <div class="card">
+      <div class="kicker">Common</div>
+      <h3>Working CRM kernel</h3>
+      <p>Custom Person / Org forms + 4 widgets. Layered views just made Primary Address real. <code>AllowMultipleSubtypes</code> is the plan (Sales needs it). Command Center mockups were abandoned.</p>
+      <p><strong>Missing:</strong> plugin slots on the custom forms, Activity spine, dashboards, any test suite, docs that match the code.</p>
+    </div>
+    <div class="card">
+      <div class="kicker">Accounting</div>
+      <h3>Subledger that cannot post</h3>
+      <p>CreateJournalEntry is real. Orders books into it. Batch → approve → mock dispatch is real over GraphQL. <code>TargetSystem</code> is a label. No BC / NetSuite / QBO driver.</p>
+      <p><strong>Missing:</strong> one real <code>ErpPoster</code>, COA identity sync, a mapping UX, Orders→batch→ERP as a family test.</p>
+    </div>
+    <div class="card">
+      <div class="kicker">Orders</div>
+      <h3>One form, many unbuilt jobs</h3>
+      <p>Header form, Confirm verb, Check/ACH, line extensions, Person, MaxQty, product workspace, subs/terms, payment header. Operator rails (list, dashboard, fulfillment, returns, capture/refund/credit, aging) exist — thin, not mock-only.</p>
+      <p><strong>Missing:</strong> org-first picker, Confirm pre-flight, statements, document-as-nav, check-in desk, C0 seams for Contracts, seed that makes those rails look alive.</p>
+    </div>
+  </div>
+
+  <h2 id="left">What is left — one list</h2>
+  <table>
+    <thead><tr><th>Area</th><th>Item</th><th>Size</th><th>Why it matters</th></tr></thead>
+    <tbody>
+      <tr><td>Common</td><td>Restore <code>mj-form-panel-slot</code> on Person / Org custom forms</td><td>S</td><td>Without this, Orders cannot plug in. Today the override <em>drops</em> the generated slots.</td></tr>
+      <tr><td>MJ</td><td>Runtime related-entity host (DisplayInForm grids that appear when B is installed)</td><td>M</td><td>OpenApp install never regenerates Common’s form. Metadata-only extension is a lie today.</td></tr>
+      <tr><td>Common</td><td>Activity / ActivityType / ActivityLink spine</td><td>M</td><td>Blocks Sales S3 (timeline) and any 360 that is not a pile of grids.</td></tr>
+      <tr><td>Common</td><td>Confirm <code>AllowMultipleSubtypes</code> on People / Orgs</td><td>S</td><td>SalesAccount + Event attendee + later ATS on the same Person.</td></tr>
+      <tr><td>Common</td><td>Integration suite (AddressLink, xor contacts, relationships, layered views)</td><td>M</td><td>Zero tests in-repo.</td></tr>
+      <tr><td>Orders</td><td>Org-first party picker (Relationship walk)</td><td>M</td><td>Bill-to is still two uncorrelated lookups. Mock already signed this.</td></tr>
+      <tr><td>Orders</td><td>Delete Fast Entry / editor / workspace</td><td>S</td><td>Agreed. Check/ACH now lives on the header.</td></tr>
+      <tr><td>Orders</td><td>Stated facts on the line (event dates, “term decided at confirm”)</td><td>S</td><td>Show, do not prompt.</td></tr>
+      <tr><td>Orders</td><td>Confirm pre-flight overlay (U4) + document-as-nav</td><td>M</td><td>Confirm is a button, not a review of JEs / subs / grants / blockers. Invoice page exists off-rail.</td></tr>
+      <tr><td>Orders</td><td>Deepen operator rails (not rebuild them)</td><td>M</td><td>List / dashboard / fulfillment / returns / capture / refund / credit / aging are wired. They are cheap counts and thin lists, not the mock’s “day job.” Seed is 75 Confirmed and an empty pick queue.</td></tr>
+      <tr><td>Orders</td><td>C0: <code>Subscription.BillingMode</code> + resolver pre-walk slot</td><td>S</td><td>Unblocks Contracts billing and Sales close.</td></tr>
+      <tr><td>Accounting</td><td>First real ErpPoster (BC) + ExternalAccountID mapping UX</td><td>L</td><td>The product. Stop growing JE compose.</td></tr>
+      <tr><td>Family</td><td>GraphQL UX integration path (000 world → varied txns → DB asserts)</td><td>L</td><td>Server suite is real. It is not the Angular path.</td></tr>
+    </tbody>
+  </table>
+
+  <h2 id="extend">Auto-extend People / Orgs</h2>
+  <p>People and Organizations are generic on purpose. When Orders is installed, opening Jane Doe should show her tickets, orders, subscriptions, and bill-to history. When Sales is installed, her deals. Common must not import either app.</p>
+
+  <div class="callout warn">
+    <h3>The trap we already fell in</h3>
+    <p>Common’s custom Person / Org forms replace the generated ones. Generated forms emit
+      <code>&lt;mj-form-panel-slot&gt;</code> hosts. The custom templates <strong>do not</strong>.
+      So the one plugin mechanism MJ already has is dead on the two entities that matter most.
+      Generated related-entity grids (Orders bill-to, Tasks, etc.) are also gone — they were baked
+      into Common’s HTML at Common’s CodeGen time, and OpenApp install never rewrites that HTML.</p>
+  </div>
+
+  <div class="mock">
+    <div class="mock-bar">
+      <strong>Person form after Orders is installed</strong>
+      <span>Common owns the white sections · Orders owns the dashed ones · no import either way</span>
+    </div>
+    <div class="mock-body">
+      <div class="form">
+        <div class="sec">
+          <div class="t"><i class="fa-solid fa-user"></i> Jane Doe <span class="chip" style="margin-left:auto">Common</span></div>
+          <div class="flds">
+            <div class="fld">Email<b>jane@harbor.org</b></div>
+            <div class="fld">Organization<b>Harbor Conference</b></div>
+          </div>
+        </div>
+        <div class="sec">
+          <div class="t"><i class="fa-solid fa-location-dot"></i> Addresses · Contacts · Relationships <span class="chip">widgets</span></div>
+          <div class="fld">Primary · Harbor HQ, 14 Pier St</div>
+        </div>
+        <div class="sec plug">
+          <div class="t"><i class="fa-solid fa-ticket"></i> Event tickets <span class="badge">from Orders</span></div>
+          <div class="flds">
+            <div class="fld">Annual Meeting 2026<b>Confirmed · qty 1</b></div>
+            <div class="fld">Workshop: Pricing<b>Draft · needs dietary</b></div>
+          </div>
+        </div>
+        <div class="sec plug">
+          <div class="t"><i class="fa-solid fa-receipt"></i> Orders as bill-to <span class="badge">from Orders</span></div>
+          <div class="fld">ORD-10421 · $1,240 · Balance $0</div>
+        </div>
+        <div class="sec plug">
+          <div class="t"><i class="fa-solid fa-rotate"></i> Subscriptions <span class="badge">from Orders</span></div>
+          <div class="fld">Professional membership · term ends 31 Dec 2026</div>
+        </div>
+        <div class="sec plug" style="opacity:.7">
+          <div class="t"><i class="fa-solid fa-handshake"></i> Deals <span class="badge">from Sales · later</span></div>
+          <div class="fld">Would appear the day sales-ng is on the client bootstrap</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>What MJ already gives us</h3>
+  <table>
+    <thead><tr><th>Mechanism</th><th>Does it auto-extend Person when Orders installs?</th></tr></thead>
+    <tbody>
+      <tr><td><code>BaseFormPanel</code> + <code>@RegisterClassEx</code> into a slot</td><td class="sec">Yes — if the form still has slots. Zero code in Common. Orders ships the panel in <code>orders-ng</code>.</td></tr>
+      <tr><td><code>EntityRelationship.DisplayInForm</code> related grid</td><td class="sec">Only if Common’s form HTML is regenerated. OpenApp install puts Orders in <code>excludeSchemas</code> and never rewrites Common’s package. So: no.</td></tr>
+      <tr><td>Replace the form with another <code>@RegisterClass(BaseFormComponent)</code></td><td class="sec">Last writer wins the <em>whole</em> form. Orders must not do this to Person.</td></tr>
+      <tr><td><code>EntityFormConfig</code> / interactive overrides</td><td class="sec">Per-open, not a plugin bus. Fine for hide/collapse, not for “Orders is installed.”</td></tr>
+      <tr><td><code>RelatedRecordCollection</code></td><td class="sec">Save-graph. Does not draw a panel.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Proposal — do this, in this order</h3>
+  <div class="grid g2">
+    <div class="card">
+      <div class="kicker">B · this week · no MJ change</div>
+      <h3>1. Put the slots back. 2. Orders ships panels.</h3>
+      <p>Restore <code>before-fields</code> / <code>after-fields</code> / <code>after-related</code> on Common’s custom Person and Org templates (and keep <code>after-everything</code> from the container). Then Orders registers three <code>BaseFormPanel</code>s against <code>MJ_BizApps_Common: People</code> and <code>…Organizations</code>:</p>
+      <ul class="tight">
+        <li>Orders as bill-to / ship-to (grid, newest first)</li>
+        <li>Event tickets (Person only)</li>
+        <li>Subscriptions</li>
+      </ul>
+      <p>Client bootstrap already loads <code>orders-ng</code> when the app is installed. Common stays ignorant. Sales later does the same for deals.</p>
+    </div>
+    <div class="card">
+      <div class="kicker">A · next MJ PR · platform</div>
+      <h3>Runtime related-entity host</h3>
+      <p>A container that, at runtime, renders every <code>RelatedEntities</code> row with <code>DisplayInForm</code> using the existing grid + <code>BuildRelationshipViewParams</code>. Dedup against already-baked panels.</p>
+      <p>Then a seeded <code>EntityRelationship</code> from Orders is enough for a default grid. Custom cards (tickets) still use panels. This is the thing people already believe <code>DisplayInForm</code> does.</p>
+    </div>
+  </div>
+  <p>Do <strong>not</strong> start a new <code>MJ: Form Extensions</code> catalog until A exists and we still need toolbar verbs / hero replace. Those are real, and they are a later conversation (proposal E). Do <strong>not</strong> let Orders replace Common’s Person form class.</p>
+  <p>Broader concept: an installed OpenApp contributes <em>capabilities onto entities it does not own</em>.
+    Three layers, same idea as permissions:</p>
+  <ul class="tight">
+    <li><strong>Metadata</strong> — relationships, DisplayInForm, maybe later a form-extension row. Default grid for free.</li>
+    <li><strong>Panels</strong> — Angular in the contributing app, ClassFactory onto a slot. Custom UX.</li>
+    <li><strong>Actions / toolbar</strong> — not discovered today. Only add when “Create order from this Person” is a real verb we will not put inside a panel.</li>
+  </ul>
+
+  <h2 id="accounting">Accounting as a bridge</h2>
+  <p>Accounting is not a place to type journal entries. It is the AR subledger of record that
+    <em>stages, nets, locks, and posts</em> what Orders (and later Payments, Payroll) already decided,
+    into the customer’s GL. The Zuora→NetSuite / Stripe→QBO analogy is the product.</p>
+
+  <div class="pipe">
+    <div class="box now"><strong>1. Orders books</strong>One JE per line on Confirm. Role-mapped accounts. Provenance on the line.</div>
+    <div class="box now"><strong>2. Subledger holds</strong>Pending, balanced, immutable once batched. Detail stays here forever.</div>
+    <div class="box now"><strong>3. Batch + approve</strong>Net by company × account × dim. Tasks CFO gate. Real today.</div>
+    <div class="box" style="border-style:dashed"><strong>4. Dispatch</strong>One summarized JE per company to BC / NS / QBO. <em>Mock poster only.</em></div>
+    <div class="box ghost"><strong>5. ERP is the GL</strong>Periods, statements, close. We store ExternalAccountID + the batch ref.</div>
+  </div>
+
+  <div class="mock">
+    <div class="mock-bar">
+      <strong>The screen we still owe — mapping &amp; dispatch, not compose</strong>
+      <span>sketch · not a signed mock</span>
+    </div>
+    <div class="mock-body">
+      <div class="grid g2">
+        <div class="form">
+          <div class="sec">
+            <div class="t">Harbor Conference · Business Central</div>
+            <div class="flds">
+              <div class="fld">Our 11201 AR<b>BC · 1100 · Accounts Receivable</b></div>
+              <div class="fld">Our 40100 Sales<b>BC · 4000 · Conference Revenue</b></div>
+              <div class="fld">Our 21301 DefRev<b>unmapped — will refuse dispatch</b></div>
+              <div class="fld">Last pull<b>13 Aug · 86 accounts</b></div>
+            </div>
+          </div>
+        </div>
+        <div class="form">
+          <div class="sec">
+            <div class="t">Batch JEB-2026-0814</div>
+            <div class="fld">14 JEs · netted to 6 ERP lines · $18,440</div>
+            <div class="fld">Target · Business Central · company Harbor US</div>
+            <div class="fld">Status · Approved · waiting on mapping for 21301</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>What to build vs leave</h3>
+  <table>
+    <thead><tr><th>Build</th><th>Leave / shrink</th></tr></thead>
+    <tbody>
+      <tr><td>One real <code>ErpPoster</code> — Business Central first. Driver class, not a switch on <code>TargetSystem</code>.</td><td>More JE workspace chrome. Workspace stays create-only for manuals. Do not load booked order JEs there (already ruled).</td></tr>
+      <tr><td>COA pull + mapping review for <code>ExternalSystem</code> / <code>ExternalAccountID</code>. Refuse dispatch on unmapped roles we will post.</td><td>Resurrecting <code>ChartOfAccountsMapping</code>. D13 killed it; identity lives on the account.</td></tr>
+      <tr><td>Ack / poller so Posted means the ERP accepted the batch, not that the mock returned <code>MOCK-</code>.</td><td>Reports that look like a P&amp;L of <em>this</em> subledger. Aging / DefRev waterfall are inspection tools.</td></tr>
+      <tr><td>Family test: Orders Confirm → JE → batch → poster → assert ExternalRef + member <code>GLPosted</code>.</td><td>Fake Approve buttons on manuals (C.8). Wiring Tasks for real batch approval is enough.</td></tr>
+    </tbody>
+  </table>
+  <p>NetSuite and QBO are the same seam with a second driver. Do not start them until BC has posted a real batch against a sandbox and the mapping UX has refused an unmapped DefRev.</p>
+
+  <h2 id="integration">Integration suite — is it real?</h2>
+  <p>Short answer: <strong>Orders’ engine suite is real and has already paid for itself</strong> (eight product defects before UI existed).
+    It is <strong>not</strong> yet the Angular path. Accounting is closer to the wire on the batch side and has no unified <code>mj test</code> catalog.</p>
+
+  <h3>Orders today</h3>
+  <ul class="tight">
+    <li><strong>Harness:</strong> <code>@mj-biz-apps/orders-integration-tests</code> registered on <code>IntegrationCheckRegistry</code>. Run via <code>mj test suite "BizApps Orders Integration"</code> or <code>node test-harnesses/integration.mjs</code>.</li>
+    <li><strong>000 / world:</strong> <code>catalog-world</code> (CW1) commits people, orgs, catalog, GL from CSV. That is the setup. Then ~32 bundles: booking, rev-rec, subs, cancel, renew, payments, IC, events, pricing, promotions, charges, tax, composition, returns, gift cards, bundles, fulfillment, capture, invoicing, ACH, entitlements, concurrency, volume…</li>
+    <li><strong>How it writes:</strong> entity API (<code>order-builder.ts</code>) so <code>OrderEntityServer.Save</code> / <code>Confirm()</code> fire. Assertions via <code>provider.ExecuteSQL</code> against Orders <em>and</em> Accounting tables. Each check is <code>RequiresMutation</code> and rolls back.</li>
+    <li><strong>Transport:</strong> <em>server</em>. The fixture says so on purpose — a client transport has no transaction to roll back. Comments in <code>volume</code> / <code>concurrency</code> refuse client runs.</li>
+  </ul>
+  <div class="callout warn">
+    <h3>The gap you named</h3>
+    <p>Explorer talks GraphQL. Companions (<code>InitialPaymentReference</code>), related-record collections, <code>Confirm()</code> over the wire, ClassFactory registration on the client, and “save header + lines + extension in one trip” are exactly the seams a server-side builder never touches. A green server suite can hide a form that cannot book.</p>
+  </div>
+
+  <div class="grid g2">
+    <div class="card">
+      <div class="kicker">Keep</div>
+      <h3>Server engine suite</h3>
+      <p>Fast, transactional, found real bugs, asserts ledger state. Do not rewrite it as GraphQL. Do not drop <code>RUN_MUTATION_TESTS=1</code> (without it the driver skips everything and reports success). Phase 5 CI (rebuild-db → mj test) is still open and still worth it.</p>
+    </div>
+    <div class="card">
+      <div class="kicker">Add</div>
+      <h3>A GraphQL UX twin</h3>
+      <p>Same world, same assertions, different door. Talk to a running MJAPI as the Angular form does: <code>GraphQLDataProvider</code> or <code>ExecuteRemoteOperation</code>. Prefix-and-sweep teardown (MJ’s client pattern) because there is no outer transaction. This is the suite that would have caught a companion that never crossed the wire.</p>
+    </div>
+  </div>
+
+  <div class="mock">
+    <div class="mock-bar"><strong>Proposed GraphQL UX bundle</strong><span>deterministic · no browser · same DB asserts</span></div>
+    <div class="mock-body">
+      <table>
+        <thead><tr><th>#</th><th>What the test does</th><th>What it proves</th></tr></thead>
+        <tbody>
+          <tr><td>000</td><td>Idempotent world: companies, COA links, catalog, a bill-to org + people, one event product (MaxQty=1), one Check payment type.</td><td>Setup is data, not a snowflake DB.</td></tr>
+          <tr><td>G1</td><td>Create unsaved Order Header over GraphQL, add two lines (ticket + simple), set Person on the IS-A child, Save.</td><td>Related collections + Event Order Line survive the wire.</td></tr>
+          <tr><td>G2</td><td>Set InitialPaymentType = Check, set <code>InitialPaymentReference</code>, Confirm().</td><td>Companion + Confirm verb, not a Status dropdown.</td></tr>
+          <tr><td>G3</td><td>SQL: header Confirmed, one JE per line, ticket qty=1, reference persisted, PersonID on the extension.</td><td>The form’s happy path booked the same thing the engine suite books.</td></tr>
+          <tr><td>G4–Gn</td><td>Replay the interesting engine cases that the UI can actually perform: mid-year membership, promo+tax, refund, ACH, two attendees = two lines.</td><td>Varied transactions, not one demo order.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h3>Accounting today</h3>
+  <p>A 4-tier local pyramid, not <code>mj test</code>:</p>
+  <ul class="tight">
+    <li><strong>T2 server</strong> — live DB, trigger proofs, engine-runtime re-reads SQL after CreateJournalEntry.</li>
+    <li><strong>T3 API</strong> — GraphQL <code>ExecuteRemoteOperation</code> with an API key. <code>full-flow-api.ts</code> is company → COA → 3 JEs → preview/build/approve/dispatch → assert <code>GLPosted</code>. This is the shape we want.</li>
+    <li><strong>T5 Playwright</strong> — shell flows. Useful, not a substitute for headless GraphQL.</li>
+  </ul>
+  <p>Doc drift is bad (READMEs name deleted harnesses). There is no 000. There is no Orders→Accounting family bundle on the GraphQL path. Fold the surviving T3 scripts into <code>mj test</code> check modules and add one cross-app bundle. Keep Playwright for chrome, not for ledger truth.</p>
+
+  <h3>Vacuous-green rules (both repos)</h3>
+  <ul class="tight">
+    <li>A refusal check must assert the <em>message</em>, not just <code>Save() === false</code> (Orders already learned this on OB7–OB9).</li>
+    <li><code>assert-check-count</code> must fail if fewer checks ran than the registry declares.</li>
+    <li>GraphQL suite must fail if MJAPI is down — never skip-as-pass.</li>
+    <li>Posted to an ERP is not proven until the poster is not <code>mockErpPoster</code>.</li>
+  </ul>
+
+  <h2 id="orders">Orders — fill the mocks we already have</h2>
+  <p>Do not design a second visual language. The mockup kit is the spec. Most operator rails are already mounted — the honest gap is depth (pre-flight, statements, seed, day-health), not “build fulfillment from scratch.”</p>
+
+  <h3>Shipped vs mock-only</h3>
+  <div class="mocks">
+    <a class="mcard" href="../mockups/orders/order-form.html">
+      <div class="t">Order form</div>
+      <div class="d">One header, lines, parties, payment, more.</div>
+      <div class="st"><span class="chip ok">mostly shipped</span></div>
+    </a>
+    <a class="mcard" href="../mockups/orders/order-line-extensions.html">
+      <div class="t">Line extensions</div>
+      <div class="d">Event Person, notes, collapse. Qty=1 per ticket.</div>
+      <div class="st"><span class="chip ok">shipped</span></div>
+    </a>
+    <a class="mcard" href="../mockups/catalog/product-form-workspace-mockup.html">
+      <div class="t">Product workspace</div>
+      <div class="d">Hero + pricing / promo / accounting widgets.</div>
+      <div class="st"><span class="chip ok">shipped</span></div>
+    </a>
+    <a class="mcard" href="../mockups/receivables/rev-rec-and-ar-recon-mockup.html">
+      <div class="t">Rev-rec waterfall</div>
+      <div class="d">On subscription / term forms.</div>
+      <div class="st"><span class="chip ok">shipped</span></div>
+    </a>
+    <a class="mcard" href="../mockups/orders/list.html">
+      <div class="t">Order list</div>
+      <div class="d">Worklist + presets. On the rail.</div>
+      <div class="st"><span class="chip ok">wired · thin vs mock</span></div>
+    </a>
+    <a class="mcard" href="../mockups/orders/dashboard.html">
+      <div class="t">Orders dashboard</div>
+      <div class="d">Real queries, cheap counts — not the mock’s day-health.</div>
+      <div class="st"><span class="chip ok">wired · thin</span></div>
+    </a>
+    <a class="mcard" href="../mockups/orders/fulfillment.html">
+      <div class="t">Fulfillment queue</div>
+      <div class="d">GetFulfillmentQueue / FulfillOrderLines. Seed has nothing to pick.</div>
+      <div class="st"><span class="chip ok">wired</span></div>
+    </a>
+    <a class="mcard" href="../mockups/orders/return.html">
+      <div class="t">Return</div>
+      <div class="d">Rail page + RT1–RT12. Start, not a warehouse loop.</div>
+      <div class="st"><span class="chip ok">wired</span></div>
+    </a>
+    <a class="mcard" href="../mockups/payments/entry.html">
+      <div class="t">Payment entry</div>
+      <div class="d">Calls Orders.CapturePayment. Initial tender is on the order; this is later cash.</div>
+      <div class="st"><span class="chip ok">wired</span></div>
+    </a>
+    <a class="mcard" href="../mockups/payments/refund.html">
+      <div class="t">Refund</div>
+      <div class="d">Orders.RefundPayment + ACH bundles.</div>
+      <div class="st"><span class="chip ok">wired</span></div>
+    </a>
+    <a class="mcard" href="../mockups/payments/credit.html">
+      <div class="t">Account credit</div>
+      <div class="d">Spend a negative balance. AC1–AC11 cover the invariant.</div>
+      <div class="st"><span class="chip ok">wired</span></div>
+    </a>
+    <a class="mcard" href="../mockups/receivables/aging.html">
+      <div class="t">Aging / overdue</div>
+      <div class="d">GetOverdueWorklist is live. IsOverdue is not yet an EntityField Explorer can filter.</div>
+      <div class="st"><span class="chip ok">wired</span></div>
+    </a>
+    <a class="mcard" href="../mockups/receivables/statement.html">
+      <div class="t">Customer statement</div>
+      <div class="d">Still HTML only. Invoice document component exists off the left nav.</div>
+      <div class="st"><span class="chip err">mock only</span></div>
+    </a>
+    <a class="mcard" href="../mockups/orders/fast-entry.html">
+      <div class="t">Fast Entry</div>
+      <div class="d">Ruled out. Delete after this plan’s first week.</div>
+      <div class="st"><span class="chip warn">delete</span></div>
+    </a>
+    <a class="mcard" href="../mockups/orders/editor.html">
+      <div class="t">Full editor / workspace</div>
+      <div class="d">Same ruling. One form.</div>
+      <div class="st"><span class="chip warn">delete</span></div>
+    </a>
+  </div>
+
+  <p>Check-in is a <strong>door scan</strong>, not order entry. Do not put it on this form. It is an entitlement-consume surface when we get there (EN1–EN15 already describe the engine).</p>
+
+  <h3>Still open on the order form itself</h3>
+  <ul class="tight">
+    <li>Org-first bill-to / ship-to (Common Relationship → people of that org → “search everyone”).</li>
+    <li>Stated facts on the line (event dates from EventProduct; membership term “decided at confirm”).</li>
+    <li>Seed variety — 75 confirmed orders and an empty fulfillment queue make demos look unfinished.</li>
+    <li>Wire <code>pnpm test</code> on Angular / Entities packages (scripts still echo “No tests configured”).</li>
+  </ul>
+
+  <h2 id="sales">Sales &amp; Contracts — so we can finish the family</h2>
+  <p>Other people are building these. Local clones on this machine are behind GitHub. Treat origin as truth.</p>
+  <div class="grid g2">
+    <div class="card">
+      <div class="kicker">Contracts · origin/next</div>
+      <h3>Late-mid. Vertical slice is real.</h3>
+      <p>Nine-table model, workspace, SaveContract, GenerateBillingEvent, AmendTerm (AddProduct/Coterm), RenewTerm. Billing engine can assemble a draft. It cannot price or materialize an order until Orders grows:</p>
+      <ul class="tight">
+        <li><code>Subscription.BillingMode = Self | External</code></li>
+        <li>A pricing-resolver slot ahead of <code>Product:</code> (general pre-walk, not an <code>Agreement:</code> key)</li>
+      </ul>
+      <p><code>CreateFromDeal</code> is not built. Call sites still say <code>PreviewOrder</code>; Orders renamed that to <code>PriceOrder</code>.</p>
+    </div>
+    <div class="card">
+      <div class="kicker">Sales · origin/next</div>
+      <h3>Mid. The work is in open PRs.</h3>
+      <p><code>next</code> is still the README. PR #2 is the merge blocker (21 tables, SaveDeal, workspace). #4 is CloseDeal with Orders/Contracts stubbed. #5 is ProductID on lines.</p>
+      <p>Closed Won is a transaction only after Contracts.CreateFromDeal and Orders C0 exist. Identity is IsA on Common Person/Org — needs <code>AllowMultipleSubtypes</code>. Timeline needs the Activity spine. Do not wait for HubSpot import to call Sales “started.”</p>
+    </div>
+  </div>
+  <p>Our job toward them: land Orders C0, restore Common form slots, ship the Activity spine, and stop changing Orders’ pricing walk without telling them. Their job toward us: merge Sales #2, un-stub CloseDeal, call <code>PriceOrder</code> by its real name.</p>
+
+  <h2 id="sequence">Sequence</h2>
+  <p>Independently shippable slices. Each should leave the family more installable than it found it.</p>
+  <div class="wk">
+    <div class="item">
+      <div class="when">This week</div>
+      <div>
+        <strong>Close holes + unlock plugins.</strong>
+        Org-first picker. Stated facts. Delete Fast Entry / editor. Restore Common form slots. Confirm AllowMultipleSubtypes. Pull <code>next</code> on all three and rebuild.
+      </div>
+    </div>
+    <div class="item">
+      <div class="when">Next</div>
+      <div>
+        <strong>Orders panels on Person / Org.</strong>
+        Tickets, orders, subscriptions as <code>BaseFormPanel</code>s. IsOverdue as an EntityField. Seed variety. Wire package <code>pnpm test</code>. Orders C0 (<code>BillingMode</code> + resolver pre-walk).
+      </div>
+    </div>
+    <div class="item">
+      <div class="when">Then</div>
+      <div>
+        <strong>Deepen the rails; do not rebuild them.</strong>
+        Confirm pre-flight (U4). Mount the invoice document. Statements. Seed a physical backlog and some overdue so fulfillment / aging are demoable. GraphQL UX bundle 000+G1–G3 in parallel.
+      </div>
+    </div>
+    <div class="item">
+      <div class="when">Accounting track</div>
+      <div>
+        <strong>Bridge, not compose.</strong>
+        BC poster + mapping UX + ack. Fold T3 into <code>mj test</code>. Family Confirm→batch→poster check. No new JE workspace features.
+      </div>
+    </div>
+    <div class="item">
+      <div class="when">MJ track</div>
+      <div>
+        <strong>Runtime related-entity host.</strong>
+        So the next app (Sales, Contracts) can seed a relationship and get a grid without writing a panel. Common Activity spine so Sales can have a timeline.
+      </div>
+    </div>
+    <div class="item">
+      <div class="when">Leave to them</div>
+      <div>
+        <strong>Sales merge #2, CloseDeal un-stub, Contracts CreateFromDeal.</strong>
+        We only owe the seams. Escalation ladders, HubSpot, quota, e-sign are not this plan.
+      </div>
+    </div>
+  </div>
+
+  <h2 id="not">What not to do</h2>
+  <ul class="tight">
+    <li>Do not rebuild Fast Entry + a full editor. One form. The mock index still points at Fast Entry — update the index when we delete it.</li>
+    <li>Do not put booked order JEs in the Accounting workspace. Do not grow JE compose.</li>
+    <li>Do not let Orders <code>@RegisterClass</code> a Person form. Panels only.</li>
+    <li>Do not treat the server integration suite as proof the form works. Add the GraphQL twin; do not replace the engine suite.</li>
+    <li>Do not start NetSuite and QBO posters in parallel with BC.</li>
+    <li>Do not implement event capacity, subscription seat quantity, or IC settlement without a ruling — they are real and they are large.</li>
+    <li>Do not flip Entity Action bindings Pending → Active until MJ’s transition filter exists.</li>
+    <li>Do not publish Accounting <code>0.1.0</code> from main until there is a real release. Linking is the product until then.</li>
+  </ul>
+
+  <div class="callout">
+    <h3>Definition of “these three apps are finished enough”</h3>
+    <ul class="tight">
+      <li>A Person with Orders installed shows tickets / orders / subscriptions without Common knowing why.</li>
+      <li>An order taker can pick an org, add people as lines, take a check number, and Confirm — and a GraphQL test books the same shape into the ledger.</li>
+      <li>Those operator screens already exist — they look like the job (seed + pre-flight + statements), not a thin count tile.</li>
+      <li>A CFO can map Harbor’s DefRev to a BC account and dispatch a batch that is not <code>MOCK-</code>.</li>
+      <li>Contracts can mark a subscription <code>External</code> and have SpawnRenewals skip it. Sales can close onto that without stubbing.</li>
+    </ul>
+  </div>
+
+  <p style="margin-top:28px;font-size:12.5px;color:var(--mj-text-muted)">
+    Written 2026-08-14 after <a href="https://github.com/MemberJunction/bizapps-orders/pull/68">Orders #68</a>.
+    Sources: Common / Accounting / Orders trees, MJ <code>PANELS.md</code> + forms architecture,
+    Orders <code>plans/next-after-custom-forms.md</code> + <code>integration-testing-plan.md</code>,
+    Sales / Contracts READMEs and origin PRs. This file is a plan, not a commitment to schema.
+  </p>
+</main>
+</div>
+</body>
+</html>
