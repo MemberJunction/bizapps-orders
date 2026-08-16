@@ -167,6 +167,23 @@ export function PromotionStatusChipClass(status: string | null | undefined): str
     }
 }
 
+export function ActiveChipClass(isActive: boolean | null | undefined): string {
+    return isActive ? 'mjo-doc-chip mjo-doc-chip--ok' : 'mjo-doc-chip mjo-doc-chip--muted';
+}
+
+export function ActiveChipLabel(isActive: boolean | null | undefined): string {
+    return isActive ? 'Active' : 'Inactive';
+}
+
+export function YesNo(value: boolean | null | undefined): string {
+    return value ? 'Yes' : 'No';
+}
+
+export function FormatPercentFraction(value: number | null | undefined): string {
+    if (value == null) return '—';
+    return `${Math.round(value * 1000) / 10}%`;
+}
+
 export function PromotionValueLabel(value: number | null | undefined, typeName: string | null | undefined): string {
     const val = value ?? 0;
     const typeStr = (typeName || '').toLowerCase();

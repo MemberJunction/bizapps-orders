@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+    ActiveChipLabel,
     FormatCoverageWindow,
+    FormatPercentFraction,
     IsPaymentReversal,
     PaymentStatusChipClass,
     ProductAvatarIcon,
@@ -10,6 +12,7 @@ import {
     RecalculatePriceListSim,
     SubscriptionStatusChipClass,
     TermColorClass,
+    YesNo,
 } from '../document-form.helpers';
 
 describe('document-form helpers', () => {
@@ -46,6 +49,14 @@ describe('document-form helpers', () => {
         expect(PromotionValueLabel(20, 'Percentage Discount')).toBe('20% Off');
         expect(PromotionValueLabel(50, 'Fixed Amount')).toContain('$50.00');
         expect(PromotionStatusChipClass('Paused')).toContain('--warn');
+    });
+
+    it('labels active flags and percent fractions', () => {
+        expect(ActiveChipLabel(true)).toBe('Active');
+        expect(ActiveChipLabel(false)).toBe('Inactive');
+        expect(YesNo(false)).toBe('No');
+        expect(FormatPercentFraction(0.15)).toBe('15%');
+        expect(FormatPercentFraction(null)).toBe('—');
     });
 
     it('calculates volume and graduated price-list simulations', () => {

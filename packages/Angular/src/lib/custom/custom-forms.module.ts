@@ -12,7 +12,7 @@ import { BaseFormsModule } from '@memberjunction/ng-base-forms';
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 import { MJButtonDirective, MJTabNavComponent } from '@memberjunction/ng-ui-components';
-import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
+import { DeferredRevenueWaterfallModule } from '../form-panels/deferred-revenue-waterfall.stub';
 
 // Custom Form Components
 import { BizAppsProductFormComponent, LoadProductFormComponent } from './Product/product-form.component';
