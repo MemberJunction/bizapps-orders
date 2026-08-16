@@ -11,6 +11,7 @@ import {
     ORDER_FORM_SAVED_TABS,
     OrderFormTabs,
 } from '../lib/custom/OrderHeader/order-header-form.component';
+import { OrderHeaderExpandedFromPref } from '../lib/custom/OrderHeader/order-header-prefs';
 import '../public-api';
 
 const here = import.meta.dirname;
@@ -63,6 +64,18 @@ describe('BizAppsOrderHeaderFormComponent', () => {
             'utf8',
         );
         expect(ts).toContain('ShowRelatedEntities: false');
+    });
+
+    it('collapses the header to customer + date and persists only for saved orders', () => {
+        expect(OrderHeaderExpandedFromPref(false, '0')).toBe(true);
+        expect(OrderHeaderExpandedFromPref(true, '0')).toBe(false);
+        const html = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-header-form.component.html'),
+            'utf8',
+        );
+        expect(html).toContain('ToggleHeader()');
+        expect(html).toContain('@if (HeaderExpanded)');
+        expect(html).toContain('HeaderCollapsedMeta');
     });
 });
 

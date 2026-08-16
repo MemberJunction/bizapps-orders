@@ -16,11 +16,12 @@ import {
     SubscriptionViewParams,
     type OrderJournalCard,
 } from '../../data/orders-queries';
-import { FormatMoney, HasCents } from '../../panels/money-format';
+import { FormatDate, FormatMoney, HasCents } from '../../panels/money-format';
 import { mjBizAppsOrdersOrderHeaderFormComponent } from '../../generated/Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component';
 import type { MJOPricingState } from '../../services/pricing-scheduler.service';
 import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
 import { DispatchFormNavigation } from '../form-navigation-helper';
+import { OrderHeaderExpandedFromPref } from './order-header-prefs';
 
 /** Tabs that exist while the order is still being composed. */
 export type OrderFormNewTab = 'payment' | 'details';
@@ -38,6 +39,7 @@ export type OrderAccountingView = 'summary' | 'detail' | 'waterfall';
 const CONTEXT_TAB_SETTING = 'mj.orders.orderForm.contextTab';
 const EXPANDED_PARTY_SETTING = 'mj.orders.orderForm.expandedParty';
 const ACCOUNTING_VIEW_SETTING = 'mj.orders.orderForm.accountingView';
+const HEADER_EXPANDED_SETTING = 'mj.orders.orderForm.headerExpanded';
 
 export const ORDER_FORM_NEW_TABS: TabConfig[] = [
     { key: 'payment', label: 'Payment', icon: 'fa-solid fa-money-check-dollar' },
@@ -74,6 +76,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public ActiveTab: OrderFormContextTab | null = null;
     public ExpandedParty: OrderFormParty = 'ship';
+    public HeaderExpanded = true;
     public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
 
     /** Related lists in the header tabs have no parent height to fill — pin them like related-entity panels. */
@@ -117,6 +120,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             // Compose the order, don't reopen last session's payment pane over the catalog.
             this.ActiveTab = null;
             this.ExpandedParty = 'ship';
+            this.HeaderExpanded = true;
         }
         await this.ensureLinesLoaded();
         await this.defaultSellingCompany();
@@ -136,6 +140,16 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         if (this.ExpandedParty === party) return;
         this.ExpandedParty = party;
         UserInfoEngine.Instance.SetSettingDebounced(EXPANDED_PARTY_SETTING, party);
+    }
+
+    public ToggleHeader(): void {
+        this.HeaderExpanded = !this.HeaderExpanded;
+        if (this.record?.IsSaved) {
+            UserInfoEngine.Instance.SetSettingDebounced(
+                HEADER_EXPANDED_SETTING,
+                this.HeaderExpanded ? '1' : '0',
+            );
+        }
     }
 
     public JumpToBill(): void {
@@ -218,6 +232,17 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         ].filter((value): value is string => !!value);
         if (bits.length) return bits.join(' · ');
         return this.record?.IsSaved ? '' : 'Who is buying, and what';
+    }
+
+    public get HeaderDateLabel(): string {
+        const date = this.record?.OrderDate;
+        if (!date) return '';
+        const label = FormatDate(date);
+        return label === '—' ? '' : label;
+    }
+
+    public get HeaderCollapsedMeta(): string {
+        return [this.HeaderSubtitle, this.HeaderDateLabel].filter((bit) => bit.length > 0).join(' · ');
     }
 
     public get ShowStatusChip(): boolean {
@@ -390,6 +415,10 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         }
         const view = UserInfoEngine.Instance.GetSetting(ACCOUNTING_VIEW_SETTING);
         if (view === 'summary' || view === 'detail') this.AccountingView = view;
+        this.HeaderExpanded = OrderHeaderExpandedFromPref(
+            !!this.record?.IsSaved,
+            UserInfoEngine.Instance.GetSetting(HEADER_EXPANDED_SETTING),
+        );
     }
 
     private clampPrefsToVisibleTabs(): void {

@@ -1003,12 +1003,12 @@
   },
   {
     "_comments": [
-      "Order form: charges stay first-class."
+      "Order form owns charges on the Charges tab — not a leftover candidate."
     ],
     "fields": {
       "Configuration": {
         "UI": {
-          "inclusion": "Primary"
+          "inclusion": "None"
         }
       }
     },
@@ -1022,12 +1022,12 @@
   },
   {
     "_comments": [
-      "Order form: adjustments stay first-class."
+      "Order form does not surface adjustments as a related grid — not a candidate."
     ],
     "fields": {
       "Configuration": {
         "UI": {
-          "inclusion": "Primary"
+          "inclusion": "None"
         }
       }
     },
@@ -1041,12 +1041,12 @@
   },
   {
     "_comments": [
-      "Order form: payment intents sit in More."
+      "Order form owns payment on the Payment tab — not a leftover candidate."
     ],
     "fields": {
       "Configuration": {
         "UI": {
-          "inclusion": "More"
+          "inclusion": "None"
         }
       }
     },
@@ -1060,12 +1060,12 @@
   },
   {
     "_comments": [
-      "Order form: payment allocations sit in More."
+      "Order form owns payment allocations on the Payment tab — not a leftover candidate."
     ],
     "fields": {
       "Configuration": {
         "UI": {
-          "inclusion": "More"
+          "inclusion": "None"
         }
       }
     },
