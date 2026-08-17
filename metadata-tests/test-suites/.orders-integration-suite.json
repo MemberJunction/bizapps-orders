@@ -485,6 +485,17 @@
             "lastModified": "2026-08-10T01:18:37.872Z",
             "checksum": "457948418ab6eb015f74d65ee7cea30dccdb2eb0ea7c12f98a994ae76f27c924"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-32 - Embedded Payment Detail",
+            "Sequence": 32,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "539C0E01-8810-4DF5-BF71-2BA9F3BBF23E"
+          }
         }
       ]
     },

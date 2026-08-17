@@ -31,7 +31,7 @@
  */
 import { BaseEntity, ValidationErrorInfo, ValidationErrorType, ValidationResult, type FieldValueCollection } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { mjBizAppsOrdersOrderHeaderEntity } from './generated/entity_subclasses';
+import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentDetailEntity } from './generated/entity_subclasses';
 import { CanOfferConfirm, CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
@@ -60,6 +60,32 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * and `OrderEntityServer.createInitialPayment` turns it into a `PaymentDetail`.
      */
     public readonly InitialPaymentIntent = this.RegisterCompanion(new InitialPaymentIntentCompanion(this));
+
+    /**
+     * Order-entry instrument snapshot (D39). Optional — null until Ensure() or Load()
+     * finds InitialPaymentDetailID. Confirm copies this onto the Payment Header;
+     * the two rows are never shared. OnClear delete: exclusive per
+     * UQ_OrderHeader_InitialPaymentDetail.
+     *
+     * Remove when CodeGen emits the same members from EntityField.EmbeddedRecord.
+     */
+    public readonly InitialPaymentDetailEmb = this.DeclareEmbeddedRecord<mjBizAppsOrdersPaymentDetailEntity>({
+        ForeignKeyField: 'InitialPaymentDetailID',
+        RelatedEntity: 'MJ_BizApps_Orders: Payment Details',
+        OnClear: 'delete',
+    });
+
+    public get InitialPaymentDetailID_Object(): mjBizAppsOrdersPaymentDetailEntity | null {
+        return this.InitialPaymentDetailEmb.Value;
+    }
+
+    public InitialPaymentDetailID_EnsureObject(): mjBizAppsOrdersPaymentDetailEntity {
+        return this.InitialPaymentDetailEmb.Ensure();
+    }
+
+    public ClearInitialPaymentDetail(): void {
+        this.InitialPaymentDetailEmb.Clear();
+    }
 
     public get InitialPaymentReference(): string | null {
         return this.InitialPaymentIntent.Reference;

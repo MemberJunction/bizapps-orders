@@ -408,7 +408,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // and persisted lines; a brand-new confirm does not. The two paths write lines at
             // different times — see persistPreparedLines below.
 
-            // THE HEADER ONLY — `IsGraphNodeSave` is what makes that true, and it is load-bearing.
+            // THE HEADER + EMBEDS, not the lines. `SkipRelatedCollections` is load-bearing.
             //
             // `Lines` is a companion now, so an ordinary `super.Save()` would build a save plan,
             // see more than one node, and persist the lines here as part of the graph. That is the
@@ -423,8 +423,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // because a booked line is frozen. The error surfaces as an INSERT-EXEC rollback naming
             // neither the line nor the rule.
             //
-            // `IsGraphNodeSave` bypasses graph routing (and the in-flight debounce) and goes
-            // straight to the single-record path, which is precisely the old behaviour.
+            // `IsGraphNodeSave` is the wrong flag here: it skips *every* companion, including the
+            // InitialPaymentDetail embed. `SkipRelatedCollections` persists embeds and leaves
+            // collections for `persistPreparedLines` below.
             //
             // It does NOT suppress companion VALIDATION, and it should not: MJ validates every
             // companion from the parent's save so a cross-record invariant sees the whole graph
@@ -471,7 +472,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 this.OrderNumber = await this.assignOrderNumber();
             }
 
-            const savedHeader = await super.Save({ ...options, IsGraphNodeSave: true } as EntitySaveOptions);
+            const savedHeader = await super.Save({ ...options, SkipRelatedCollections: true });
             if (!savedHeader) {
                 throw new Error(
                     `Failed to save order header: ${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
