@@ -21,7 +21,7 @@
  *
  * CONNECTS TO:
  *   PURE:  ./DeliveryBehavior.ts — which of these are eligible, and de-duplication
- *   DOC:   plans/bizapps-orders-master.md §4.4, D65
+ *   DOC:   plans/archive/bizapps-orders-master.md §4.4, D65
  */
 import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import type { DeliveryContact } from './DeliveryBehavior.js';

@@ -9,9 +9,7 @@ import {
     type NamedCheck,
 } from '@memberjunction/testing-integration/registry';
 import { RunView, type IMetadataProvider } from '@memberjunction/core';
-import { ORDER_HEADER_ENTITY, PRODUCT_ENTITY, PRODUCT_TYPE_ENTITY } from '../entity-names.js';
-
-const PERSON_ENTITY = 'MJ_BizApps_Common: People';
+import { ORDER_HEADER_ENTITY, PERSON_ENTITY, PRODUCT_ENTITY, PRODUCT_TYPE_ENTITY } from '../entity-names.js';
 
 function View(ctx: IntegrationCheckContext): RunView {
     return RunView.FromMetadataProvider(ctx.Provider as IMetadataProvider);

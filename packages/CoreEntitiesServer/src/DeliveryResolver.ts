@@ -11,7 +11,7 @@
  *
  * CONNECTS TO:
  *   SEAM: ./BaseDeliveryChannel.ts
- *   DOC:  plans/bizapps-orders-master.md §4.4
+ *   DOC:  plans/archive/bizapps-orders-master.md §4.4
  */
 import { MJGlobal } from '@memberjunction/global';
 import { BaseDeliveryChannel } from './BaseDeliveryChannel.js';

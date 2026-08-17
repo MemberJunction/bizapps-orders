@@ -8,7 +8,7 @@
  * them, and no assertion anywhere would fail — the entry balanced perfectly. The `payment-ledger`
  * suite missed it entirely because every check used a single-company order.
  *
- * THE SHAPE (plans/intercompany-balancing.md §2)
+ * THE SHAPE (plans/archive/intercompany-balancing.md §2)
  * ONE JOURNAL ENTRY PER (PAYMENT LINE × COMPANY). This is the provenance rule booking already
  * uses — an OrderLine produces a JE that points back at the line — extended to the payment side.
  *
@@ -36,7 +36,7 @@
  *   LOOKUP:   AccountingEngineBase.ResolveIntercompanyAccounts (BA-D26, bizapps-accounting)
  *   RESOLVER: GLAccountResolver (./GLAccountResolver.ts)
  *   CALLER:   PaymentLineEntityServer (./PaymentLineEntityServer.ts)
- *   DOC:      plans/intercompany-balancing.md
+ *   DOC:      plans/archive/intercompany-balancing.md
  */
 import { GL_ROLE, type GLAccountResolver } from './GLAccountResolver.js';
 import type { PaymentJEDraft, PaymentJELine } from './PaymentJournalEntryFactory.js';

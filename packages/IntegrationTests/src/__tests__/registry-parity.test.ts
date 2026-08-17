@@ -288,6 +288,10 @@ describe('no check file escapes this test', () => {
         const checksDir = resolve(dirname(fileURLToPath(import.meta.url)), '../checks');
         const onDisk = readdirSync(checksDir)
             .filter((f) => f.endsWith('.checks.ts'))
+            // Client-only GraphQL bundles register from client-index.ts, not this file
+            // or the server barrel. Including them here would force EXPECTED_BUNDLES
+            // and ALL_BUNDLES to list a suite that must not load *EntityServer.
+            .filter((f) => !f.startsWith('wire-'))
             .map((f) => f.replace(/\.ts$/, '.js'))
             .sort();
         const self = readFileSync(fileURLToPath(import.meta.url), 'utf8');

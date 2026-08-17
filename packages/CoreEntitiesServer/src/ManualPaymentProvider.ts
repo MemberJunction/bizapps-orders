@@ -19,7 +19,7 @@
  *
  * CONNECTS TO:
  *   BASE: ./BasePaymentProvider.ts
- *   DOC:  plans/bizapps-orders-master.md D19 ('v1 = Stripe + Manual')
+ *   DOC:  plans/archive/bizapps-orders-master.md D19 ('v1 = Stripe + Manual')
  */
 import { RegisterClass } from '@memberjunction/global';
 import {

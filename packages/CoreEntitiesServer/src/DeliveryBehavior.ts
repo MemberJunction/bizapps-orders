@@ -30,7 +30,7 @@
  * CONNECTS TO:
  *   SEAM:    ./BaseDeliveryChannel.ts — what actually sends
  *   CHANNEL: ./EmailDeliveryChannel.ts — the one shipped implementation
- *   DOC:     plans/bizapps-orders-master.md §4.4
+ *   DOC:     plans/archive/bizapps-orders-master.md §4.4
  */
 
 /** How a document leaves the building. A union rather than an enum, per the house style. */

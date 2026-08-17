@@ -29,7 +29,7 @@
  *   SERVER: ./EntitlementEngine.ts (the lookups and the writes)
  *   CALLER: OrderEntityServer (grants are created inside the booking transaction)
  *   MIRROR: ./TaxResolver.ts — the same walk, for the same reason
- *   DOC:    plans/bizapps-orders-master.md D27, D76
+ *   DOC:    plans/archive/bizapps-orders-master.md D27, D76
  */
 
 /** When access begins. */

@@ -27,7 +27,7 @@
  * CONNECTS TO:
  *   CALLERS: ./RefundPaymentOperation.ts · ./PaymentSettlement.ts
  *   BOOKING: ./PaymentHeaderEntityServer.ts — the reversal books through the ordinary save path
- *   DOC:     plans/bizapps-orders-master.md D17, D39, D53, D68
+ *   DOC:     plans/archive/bizapps-orders-master.md D17, D39, D53, D68
  */
 import {
     BaseEntity,

@@ -30,7 +30,7 @@
  *
  * ALLOCATION is the earliest point the companies are even KNOWN. A capture says how much cash
  * arrived; only the allocation says whose revenue it settles. So the entries belong here, one per
- * company owning a line on the order (plans/intercompany-balancing.md §2).
+ * company owning a line on the order (plans/archive/intercompany-balancing.md §2).
  *
  * `BookedAt` is the idempotency key rather than a `JournalEntryID`, because one allocation produces
  * N entries. They are found the other way round, through accounting's D25 provenance pair.

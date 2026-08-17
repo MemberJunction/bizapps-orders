@@ -16,7 +16,7 @@
  * CONNECTS TO:
  *   PURE:   ./ChargeBehavior.ts
  *   CALLER: OrderEntityServer (after promotions, before booking)
- *   DOC:    plans/pricing-charges-and-promotions.md §5
+ *   DOC:    plans/archive/pricing-charges-and-promotions.md §5
  */
 import { BaseEntity, IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import {

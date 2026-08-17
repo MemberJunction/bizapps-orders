@@ -24,7 +24,7 @@
  * CONNECTS TO:
  *   PURE:   ./PaymentProviderBehavior.ts — minor units, signature, status mapping
  *   BASE:   ./BasePaymentProvider.ts
- *   DOC:    plans/bizapps-orders-master.md D19
+ *   DOC:    plans/archive/bizapps-orders-master.md D19
  */
 import { RegisterClass } from '@memberjunction/global';
 import { LogError } from '@memberjunction/core';

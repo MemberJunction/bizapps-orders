@@ -34,7 +34,7 @@
  *
  * CONNECTS TO:
  *   CODE: OrderStatusBehavior · OrderEntityServer.passesStatusTransition
- *   DOC:  plans/bizapps-orders-master.md D8, D53
+ *   DOC:  plans/archive/bizapps-orders-master.md D8, D53
  */
 import {
   Assert,

@@ -20,7 +20,7 @@
  *
  * CONNECTS TO:
  *   ENGINE: ./PriceResolver.ts (ResolvePrice — the same call the order path makes)
- *   DOC:    plans/pricing-charges-and-promotions.md §9
+ *   DOC:    plans/archive/pricing-charges-and-promotions.md §9
  */
 import {
     BaseRemotableOperation,

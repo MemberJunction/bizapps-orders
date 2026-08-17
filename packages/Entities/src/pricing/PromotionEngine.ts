@@ -22,7 +22,7 @@
  * CONNECTS TO:
  *   PURE:   ./PromotionBehavior.ts · ./PricingBehavior.ts (AllocateProRata)
  *   CALLER: OrderEntityServer (after lines are priced, before charges)
- *   DOC:    plans/pricing-charges-and-promotions.md §4
+ *   DOC:    plans/archive/pricing-charges-and-promotions.md §4
  */
 import { BaseEntity, IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import {

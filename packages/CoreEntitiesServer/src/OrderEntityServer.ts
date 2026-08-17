@@ -1512,7 +1512,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (!event) return;
 
         // NOTE: EventProduct.Capacity is deliberately NOT enforced here — see
-        // plans/bizapps-orders-master.md §21b. A correct check cannot be written
+        // plans/archive/bizapps-orders-master.md §21b. A correct check cannot be written
         // against these tables alone.
 
         // Dates only when the line does not state its own — an explicitly-set period WINS.

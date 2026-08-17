@@ -2,6 +2,7 @@
  * GraphQL-wire dispatcher for Orders. Does not load *Server subclasses.
  *
  *   GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs
+ *   WIRE_VOL_COUNT=40 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs wire-volume
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +15,7 @@ dotenv.config({ path: path.resolve(here, '../../MJ/.env'), quiet: true });
 process.env.MJ_INTEGRATION_TEST = '1';
 process.env.RUN_MUTATION_TESTS = process.env.RUN_MUTATION_TESTS ?? '1';
 
-const ALL_BUNDLES = ['wire-crud'];
+const ALL_BUNDLES = ['wire-crud', 'wire-volume'];
 const args = process.argv.slice(2);
 const only = args.filter((a) => !a.startsWith('-'));
 
@@ -45,15 +46,26 @@ for (const request of requested) {
         fail += 1;
         continue;
     }
-    for (const check of checks) {
-        const t = Date.now();
-        try {
-            await check.Fn(ctx);
-            console.log(`  ok   ${check.Id.padEnd(28)} ${Date.now() - t}ms  ${check.Name}`);
-            pass += 1;
-        } catch (err) {
-            console.error(`  FAIL ${check.Id.padEnd(28)} ${Date.now() - t}ms  ${err instanceof Error ? err.message : err}`);
-            fail += 1;
+    const lifecycle = registry.GetLifecycle(bundle);
+    try {
+        if (lifecycle) await lifecycle.Setup(ctx);
+        for (const check of checks) {
+            const t = Date.now();
+            try {
+                await check.Fn(ctx);
+                console.log(`  ok   ${check.Id.padEnd(28)} ${Date.now() - t}ms  ${check.Name}`);
+                pass += 1;
+            } catch (err) {
+                console.error(`  FAIL ${check.Id.padEnd(28)} ${Date.now() - t}ms  ${err instanceof Error ? err.message : err}`);
+                fail += 1;
+            }
+        }
+    } catch (err) {
+        console.error(`  FAIL ${bundle}.<setup>             ${err instanceof Error ? err.message : err}`);
+        fail += 1;
+    } finally {
+        if (lifecycle) {
+            await lifecycle.Teardown(ctx).catch((e) => console.warn(`  teardown warn: ${e?.message}`));
         }
     }
 }

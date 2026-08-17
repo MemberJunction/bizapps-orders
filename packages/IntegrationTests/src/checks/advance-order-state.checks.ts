@@ -37,7 +37,7 @@
  *
  * CONNECTS TO:
  *   CODE: AdvanceOrderStateOperation · FulfillmentBehavior · OrderEntityServer.Save
- *   DOC:  plans/bizapps-orders-master.md D17, D15
+ *   DOC:  plans/archive/bizapps-orders-master.md D17, D15
  */
 import { BaseRemotableOperation } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";

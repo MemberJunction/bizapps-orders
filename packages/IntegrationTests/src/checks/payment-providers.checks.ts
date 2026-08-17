@@ -24,7 +24,7 @@
  * CONNECTS TO:
  *   CODE: PaymentProviderResolver · BasePaymentProvider · PaymentHeaderEntityServer.settleWithProvider
  *   PURE: packages/CoreEntitiesServer/src/__tests__/PaymentProviderBehavior.test.ts (98 tests)
- *   DOC:  plans/bizapps-orders-master.md D18, D19, D37
+ *   DOC:  plans/archive/bizapps-orders-master.md D18, D19, D37
  */
 import { randomUUID } from "crypto";
 import {

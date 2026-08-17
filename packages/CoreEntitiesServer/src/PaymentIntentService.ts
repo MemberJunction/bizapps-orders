@@ -42,7 +42,7 @@
  *   LOOKUP:  ./PaymentProviderResolver.ts
  *   CAPTURE: ./CapturePaymentOperation.ts — takes the returned PaymentIntentID
  *   SETTLE:  ./PaymentSettlement.ts — moves the payment when the gateway answers
- *   DOC:     plans/bizapps-orders-master.md D19, D37, D80
+ *   DOC:     plans/archive/bizapps-orders-master.md D19, D37, D80
  */
 import {
     BaseEntity,

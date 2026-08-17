@@ -15,7 +15,7 @@
  * CONNECTS TO:
  *   PURE: GiftCardBehavior (+ its unit tests)
  *   CODE: OrderEntityServer.issueGiftCards (lifecycle) · StoredValuePaymentProvider (redemption)
- *   DOC:  plans/bizapps-orders-master.md D4, D27, D44
+ *   DOC:  plans/archive/bizapps-orders-master.md D4, D27, D44
  */
 import {
     BaseEntity,

@@ -22,7 +22,7 @@
  * CONNECTS TO:
  *   PURE:   ./EntitlementBehavior.ts
  *   CALLER: OrderEntityServer.Save (after subscriptions materialize — terms drive validity)
- *   DOC:    plans/bizapps-orders-master.md D27, D76
+ *   DOC:    plans/archive/bizapps-orders-master.md D27, D76
  */
 import {
     BaseEntity,

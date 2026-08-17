@@ -99,6 +99,6 @@ Being installed is necessary and not sufficient. Accounting also has to be *conf
 
 ## Related
 
-- `plans/bizapps-orders-master.md` — D13 (intercompany), D18 (capture entry), D80/D81
-- `plans/intercompany-balancing.md` — the shape of the due-to/due-from legs
+- `plans/archive/bizapps-orders-master.md` — D13 (intercompany), D18 (capture entry), D80/D81
+- `plans/archive/intercompany-balancing.md` — the shape of the due-to/due-from legs
 - `test-harnesses/resolve-app-packages.mjs` — how the root harnesses resolve accounting

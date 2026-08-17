@@ -1,9 +1,10 @@
 # The Orders API and UI architecture
 
 How a browser composes an order, which parts of that are MJ's job and which are ours, and where every
-piece lives. Companion to [`docs/ui-architecture.md`](ui-architecture.md) (the binding rules for new
-UI work), [`plans/orders-ux.md`](../plans/orders-ux.md) (the design) and
-[`/mockups`](../mockups/index.html) (the approved visual).
+piece lives. Companion to [`HOW_THE_SYSTEM_WORKS.md`](HOW_THE_SYSTEM_WORKS.md) (the running system),
+[`ui-architecture.md`](ui-architecture.md) (the binding rules for new UI work), and
+[`/mockups`](../mockups/index.html) (the approved visual). Historical UX thesis:
+[`plans/archive/orders-ux.md`](../plans/archive/orders-ux.md).
 
 ---
 

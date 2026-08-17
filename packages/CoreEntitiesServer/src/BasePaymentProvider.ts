@@ -28,7 +28,7 @@
  *   PURE:    ./PaymentProviderBehavior.ts
  *   DRIVERS: ./StripePaymentProvider.ts · ./ManualPaymentProvider.ts · ./StoredValuePaymentProvider.ts
  *   LOOKUP:  ./PaymentProviderResolver.ts
- *   DOC:     plans/bizapps-orders-master.md D19, D37
+ *   DOC:     plans/archive/bizapps-orders-master.md D19, D37
  */
 import { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import type { IntentStatus } from './PaymentProviderBehavior.js';

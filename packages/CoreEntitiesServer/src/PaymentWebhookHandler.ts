@@ -29,7 +29,7 @@
  * CONNECTS TO:
  *   PURE:   ./PaymentProviderBehavior.ts — signature, idempotency decision
  *   LOOKUP: ./PaymentProviderResolver.ts
- *   DOC:    plans/bizapps-orders-master.md D19
+ *   DOC:    plans/archive/bizapps-orders-master.md D19
  */
 import {
     BaseEntity,

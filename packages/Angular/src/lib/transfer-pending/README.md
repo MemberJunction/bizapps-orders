@@ -12,7 +12,7 @@ a second app needed the workspace card, the cost of not having promoted it becam
 must NOT make a third copy — promote it instead.
 
 The two copies are identical apart from this README. If you change one, change both or promote.
-Tracked in `plans/bizapps-orders-master.md` §21d.
+Tracked in `plans/archive/bizapps-orders-master.md` §21d.
 
 ## The rule that makes extraction cheap
 

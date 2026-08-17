@@ -17,7 +17,7 @@
  *
  * CONNECTS TO:
  *   SERVER: PriceResolver (the walk) · OrderLineEntityServer (stamps UnitPrice)
- *   DOC:    plans/pricing-charges-and-promotions.md, plans/pricing-schema.md
+ *   DOC:    plans/archive/pricing-charges-and-promotions.md, plans/archive/pricing-schema.md
  */
 
 /** Pricing models. `Usage` is declared but refused — metered billing has no usage pipeline yet. */

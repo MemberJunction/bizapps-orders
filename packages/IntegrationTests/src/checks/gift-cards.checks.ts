@@ -31,7 +31,7 @@
  * CONNECTS TO:
  *   CODE: GiftCardEngine · GiftCardBehavior · OrderJournalEntryFactory (the liability leg)
  *   PURE: packages/CoreEntitiesServer/src/__tests__/GiftCardBehavior.test.ts
- *   DOC:  plans/bizapps-orders-master.md D4, D27, D44
+ *   DOC:  plans/archive/bizapps-orders-master.md D4, D27, D44
  */
 import {
   Assert,

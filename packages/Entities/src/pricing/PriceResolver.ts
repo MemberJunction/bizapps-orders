@@ -24,7 +24,7 @@
  *   PURE:   ./PricingBehavior.ts (applicability, tie detection, the arithmetic)
  *   CALLER: OrderEntityServer (stamps UnitPrice before lines are written)
  *   OP:     ./PreviewPriceOperation.ts — the dry run, which MUST run this same path
- *   DOC:    plans/pricing-charges-and-promotions.md
+ *   DOC:    plans/archive/pricing-charges-and-promotions.md
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';

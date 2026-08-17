@@ -88,7 +88,7 @@ origin filters something to bite on.
 
 - **Every server call is stubbed.** Where one belongs, a `STUBBED CALL` note names it —
   `Orders.PreviewOrder`, `Orders.PreviewConfirm`, `Orders.ConfirmOrder`, `Orders.SaveOrder`,
-  `Orders.GetOverdueWorklist`. None of these exist yet; see `plans/orders-ux.md` §11.
+  `Orders.GetOverdueWorklist`. None of these exist yet; see `plans/archive/orders-ux.md` §11.
 - **Fast entry computes in the browser.** Deliberate, so the live decomposition is demonstrably
   honest rather than hardcoded — but in the build it is one `Orders.PreviewOrder` call, never client
   arithmetic beside the engine's.

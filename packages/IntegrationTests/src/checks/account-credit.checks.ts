@@ -21,7 +21,7 @@
  *
  * CONNECTS TO:
  *   CODE:  PaymentHeaderEntityServer (the invariant) · ApplyAccountCreditOperation (the tender)
- *   DOC:   plans/bizapps-orders-master.md D68
+ *   DOC:   plans/archive/bizapps-orders-master.md D68
  */
 import { randomUUID } from "crypto";
 import { BaseRemotableOperation } from "@memberjunction/core";

@@ -21,7 +21,7 @@
  * CONNECTS TO:
  *   PURE: BundleBehavior (+ its unit tests)
  *   CODE: OrderEntityServer.expandBundles (the lifecycle point)
- *   DOC:  plans/bizapps-orders-master.md D32/D41, D45
+ *   DOC:  plans/archive/bizapps-orders-master.md D32/D41, D45
  */
 import {
     BaseEntity,
