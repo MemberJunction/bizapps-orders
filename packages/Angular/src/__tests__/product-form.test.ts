@@ -19,7 +19,7 @@ describe('BizAppsProductFormComponent Custom Form Registration & Getters', () =>
             BaseFormComponent,
             'MJ_BizApps_Orders: Products'
         );
-        expect(activeReg?.SubClass).toBe(mjBizAppsOrdersProductFormComponent);
+        expect(activeReg?.SubClass?.name).toBe('mjBizAppsOrdersProductFormComponent');
         const customReg = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
             BaseFormComponent,
             'MJ_BizApps_Orders: Products'

@@ -18,7 +18,7 @@ describe('BizAppsPriceListFormComponent Custom Form Registration & Pricing Simul
             BaseFormComponent,
             'MJ_BizApps_Orders: Price Lists'
         );
-        expect(activeReg?.SubClass).toBe(mjBizAppsOrdersPriceListFormComponent);
+        expect(activeReg?.SubClass?.name).toBe('mjBizAppsOrdersPriceListFormComponent');
         const customReg = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
             BaseFormComponent,
             'MJ_BizApps_Orders: Price Lists'

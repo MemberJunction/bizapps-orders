@@ -18,7 +18,7 @@ describe('BizAppsSubscriptionTermFormComponent Custom Form Registration & Getter
             BaseFormComponent,
             'MJ_BizApps_Orders: Subscription Terms'
         );
-        expect(activeReg?.SubClass).toBe(mjBizAppsOrdersSubscriptionTermFormComponent);
+        expect(activeReg?.SubClass?.name).toBe('mjBizAppsOrdersSubscriptionTermFormComponent');
         const customReg = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
             BaseFormComponent,
             'MJ_BizApps_Orders: Subscription Terms'
