@@ -13,7 +13,7 @@
  *
  * BUNDLES
  *   catalog-world        CW1       commit ORD-WORLD (people, orgs, catalog, GL) from CSV
- *   order-booking        OB1–OB15  confirm → one balanced JE per line, atomically
+ *   order-booking        OB1–OB16  confirm → one balanced JE per line, atomically; Draft may have no lines
  *   revenue-recognition  RR1–RR7   forward-dated release schedules (D14/D43)
  *   subscriptions        SB1–SB12  SubscriptionType rules → Subscription + terms (D45/D46)
  *   subscription-cancellation SC1–SC10  Orders.CancelSubscription: policy → reversal (design §5)

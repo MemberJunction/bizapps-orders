@@ -53,7 +53,7 @@
                 <span class="mjo-stat-val">{{ BeneficiaryDisplayName }}</span>
             </div>
             <div class="mjo-stat-block">
-                <span class="mjo-stat-label">Coverage Terms</span>
+                <span class="mjo-stat-label">Terms</span>
                 <span class="mjo-stat-val">{{ SubscriptionTerms.length || GetSectionRowCount('mJBizAppsOrdersSubscriptionTerms') || 0 }} Cycles Appended</span>
             </div>
         </div>
@@ -71,7 +71,7 @@
             <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'terms'" (click)="SelectPane('terms')">
                 <div class="mjo-nav-btn-left">
                     <i class="fa-solid fa-calendar-check"></i>
-                    <span>Coverage Terms</span>
+                    <span>Terms</span>
                 </div>
                 @if (SubscriptionTerms.length > 0) {
                     <span class="mjo-nav-badge">{{ SubscriptionTerms.length }}</span>
@@ -138,12 +138,12 @@
         <!-- MAIN WORKSPACE CONTENT PANE -->
         <main class="mjo-sub-workspace-content">
 
-            <!-- PANE 1: COVERAGE TERMS & CYCLES -->
+            <!-- PANE 1: TERMS -->
             @if (ActivePane === 'terms') {
                 <div class="mjo-pane-card">
                     <div class="mjo-pane-header">
                         <div class="mjo-pane-title-area">
-                            <h2 class="mjo-pane-title"><i class="fa-solid fa-calendar-check"></i> Coverage Terms &amp; Cycles</h2>
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-calendar-check"></i> Terms</h2>
                             <p class="mjo-pane-desc">Contiguous subscription coverage periods, renewal milestones, term pricing, and proration.</p>
                         </div>
                         <div class="mjo-toggle-strip">

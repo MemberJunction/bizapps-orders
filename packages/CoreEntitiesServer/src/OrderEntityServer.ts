@@ -373,7 +373,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // `Dirty` is the question that was always meant: it rolls up the collection, so it is true
         // when a line was added, edited or removed and false when the lines are merely present.
         // That also distinguishes a case emptiness never could — lines loaded but untouched.
-        if (!booking && !this.Lines.Dirty) {
+        //
+        // An UNSAVED header still has to mint `OrderNumber` (NOT NULL). That lives on the
+        // full path below, inside the transaction, so a brand-new Draft with no lines must
+        // not take this shortcut. Existing drafts with no line edits (Notes, payer, …) can.
+        if (!booking && !this.Lines.Dirty && this.IsSaved) {
             return super.Save(options);
         }
 

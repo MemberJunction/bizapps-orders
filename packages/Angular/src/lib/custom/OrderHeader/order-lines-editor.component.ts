@@ -335,12 +335,35 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.ExtensionError = null;
         for (const ext of this.extensions.values()) {
             if (ext.IsSaved && !ext.Dirty) continue;
+            await this.syncExtensionParentFromSavedLine(ext);
             const saved = await ext.Save();
             if (!saved) {
                 this.ExtensionError = ext.LatestResult?.CompleteMessage ?? 'Failed to save line extension';
             }
         }
         this.cdr.detectChanges();
+    }
+
+    /**
+     * The leaf save writes the IS-A parent first (`IsParentEntitySave`), which
+     * skips `OrderLineEntityServer.PrepareForSave`. After the order graph
+     * returns, `Lines` holds the stamped CompanyID / UnitPrice — but the
+     * extension's `ISAParent` can still be the pre-save instance. Copy the
+     * saved line onto that parent so Validate does not fail with
+     * "Company cannot be null; Unit Price cannot be null".
+     */
+    private async syncExtensionParentFromSavedLine(ext: BaseEntity): Promise<void> {
+        const parent = ext.ISAParent;
+        if (!isOrderLine(parent)) {
+            return;
+        }
+        const line = this.Lines.find((item) => UUIDsEqual(item.ID, parent.ID));
+        if (line) {
+            await parent.LoadFromData(line.GetAll(), true);
+        }
+        if (!parent.CompanyID && parent.IsSaved) {
+            await parent.Load(parent.ID);
+        }
     }
 
     private clampQuantity(line: mjBizAppsOrdersOrderLineEntity, quantity: number): number {

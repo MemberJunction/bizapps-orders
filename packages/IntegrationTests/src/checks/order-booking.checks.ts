@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB12).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB16).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -20,6 +20,7 @@
  *   OB13 ExpectedGrossTotal guards the price — a repriced order is refused, not booked
  *   OB14 a back-dated order is booked on the date it states
  *   OB15 confirm-after-draft with lines not loaded still books memberships
+ *   OB16 a Draft with no lines saves (lines are required only at confirm)
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -583,6 +584,41 @@ export const OrderBookingChecks: NamedCheck[] = [
                      WHERE l.OrderHeaderID = '${reloaded.ID}'`,
                 );
                 Assert(term.length > 0, 'the membership must have a term — that is the service period');
+            }),
+    },
+    {
+        Id: 'order-booking.OB16',
+        Name: 'OB16: a Draft with no lines saves',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Draft is a real persisted status. You take an order before you know the lines —
+                // same exemption as a Pending payment with no allocations (D68). Confirm is the
+                // gate that requires something to book (OB12). This check is the other half of
+                // that pair: an empty Draft must actually land on disk.
+                const f = Fx();
+                const built = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [],
+                });
+
+                Assert(
+                    await built.Order.Save(),
+                    `draft with no lines must save: ${built.Order.LatestResult?.CompleteMessage ?? ''}`,
+                );
+                AssertEqual(built.Order.Status, 'Draft', 'status stays Draft');
+                AssertEqual(built.Order.Lines.Count, 0, 'no lines were invented');
+
+                const persisted = await TxOne<{ Status: string; N: number }>(
+                    ctx,
+                    `SELECT h.Status,
+                            (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = h.ID) AS N
+                       FROM ${ORDERS_SCHEMA}.OrderHeader h
+                      WHERE h.ID = '${built.Order.ID}'`,
+                );
+                AssertEqual(persisted.Status, 'Draft', 'persisted as Draft');
+                AssertEqual(Number(persisted.N), 0, 'still zero lines on disk');
             }),
     },
 ];
