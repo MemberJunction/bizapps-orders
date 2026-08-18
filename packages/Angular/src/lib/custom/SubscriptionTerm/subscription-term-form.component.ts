@@ -101,6 +101,7 @@ export class BizAppsSubscriptionTermFormComponent extends mjBizAppsOrdersSubscri
                     OrderBy: 'EffectiveDate ASC',
                     MaxRows: 200,
                     ResultType: 'entity_object',
+                    IncludeRelatedRecords: ['Lines'],
                 },
                 md.CurrentUser,
             );

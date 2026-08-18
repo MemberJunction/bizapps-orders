@@ -29,7 +29,7 @@
  *   DOC:     plans/archive/bizapps-orders-master.md D19, D37
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
-import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import { MJGlobal, RegisterClassEx } from '@memberjunction/global';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import {
     BasePaymentProvider,
@@ -76,7 +76,7 @@ export class BaseSecretResolver {
  * Registered with NO key, so it is the fallback a deployment replaces by registering its own against
  * `BaseSecretResolver` — the same shape as `DefaultPriceResolver`.
  */
-@RegisterClass(BaseSecretResolver)
+@RegisterClassEx(BaseSecretResolver, { skipNullKeyWarning: true })
 export class EnvironmentSecretResolver extends BaseSecretResolver {
     public override async Resolve(credentialsRef: string | null | undefined): Promise<PaymentCredentials> {
         if (!credentialsRef) return {};

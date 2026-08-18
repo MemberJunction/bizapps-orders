@@ -32,7 +32,7 @@
  *   DOC:    plans/archive/pricing-charges-and-promotions.md §6
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
-import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import { MJGlobal, RegisterClassEx } from '@memberjunction/global';
 
 const ACCOUNTING = '__mj_BizAppsAccounting';
 const TAX_JURISDICTION_ENTITY = `MJ_BizApps_Accounting: Tax Jurisdictions`;
@@ -200,7 +200,7 @@ export abstract class BaseTaxJurisdictionResolver {
  * matches only inside it. Nulls mean "do not care", so the same table expresses a state, a county
  * and a city without three shapes.
  */
-@RegisterClass(BaseTaxJurisdictionResolver)
+@RegisterClassEx(BaseTaxJurisdictionResolver, { skipNullKeyWarning: true })
 export class DefaultTaxJurisdictionResolver extends BaseTaxJurisdictionResolver {
     public async Resolve(
         address: TaxAddress,

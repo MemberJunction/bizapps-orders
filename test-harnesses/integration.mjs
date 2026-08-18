@@ -122,6 +122,7 @@ const ALL_BUNDLES = [
     'entitlements',
     'payment-providers',
     'ach-settlement',
+    'embedded-payment-detail',
     'volume',
 ];
 

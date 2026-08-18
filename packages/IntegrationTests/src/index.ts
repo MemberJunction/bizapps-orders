@@ -13,7 +13,7 @@
  *
  * BUNDLES
  *   catalog-world        CW1       commit ORD-WORLD (people, orgs, catalog, GL) from CSV
- *   order-booking        OB1–OB15  confirm → one balanced JE per line, atomically
+ *   order-booking        OB1–OB16  confirm → one balanced JE per line, atomically; Draft may have no lines
  *   revenue-recognition  RR1–RR7   forward-dated release schedules (D14/D43)
  *   subscriptions        SB1–SB12  SubscriptionType rules → Subscription + terms (D45/D46)
  *   subscription-cancellation SC1–SC10  Orders.CancelSubscription: policy → reversal (design §5)
@@ -35,6 +35,7 @@
  *   entitlements         EN1–EN15  what a purchase confers, and for how long (D27/D76)
  *   payment-providers    PV1–PV12  the gateway seam against a real database (D19/D37)
  *   ach-settlement       AS1–AS17  money that arrives days late, and can leave again (D77/D78/D80)
+ *   embedded-payment-detail PD1–PD14  PaymentDetail as an owner-held 1:1 embed (D38/D39)
  *
  * Note that `events` and `line-subscriber` are listed out of order above because that is the order
  * they were written in; the runner's order is presentational — each bundle owns its own fixture.
@@ -99,6 +100,7 @@ export * from './checks/volume.checks.js';
 export * from './checks/entitlements.checks.js';
 export * from './checks/payment-providers.checks.js';
 export * from './checks/ach-settlement.checks.js';
+export * from './checks/embedded-payment-detail.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

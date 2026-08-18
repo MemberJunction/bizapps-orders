@@ -11,8 +11,10 @@ import {
     type IntegrationCheckContext,
     type NamedCheck,
 } from '@memberjunction/testing-integration';
+import { PRODUCT_CATEGORY_ENTITY, PRODUCT_ENTITY } from '../entity-names.js';
+import { FindRows } from '../world/entity-io.js';
 import { LoadWorld } from '../world/load-world.js';
-import { SetWorld, World } from '../world/world.js';
+import { SetWorld, World, type WorldState } from '../world/world.js';
 
 const checks: NamedCheck[] = [
     {
@@ -48,6 +50,8 @@ const checks: NamedCheck[] = [
             Assert(!!world.Products['CONF-2027'], 'conference ticket missing');
             Assert(!!world.Products['MEM-IND'], 'individual membership missing');
 
+            await assertEventCategoryTree(ctx, world);
+
             Assert(!!world.ProductTypeIDs.PhysicalGood, 'Product Type PhysicalGood missing — push metadata/product-types');
             Assert(!!world.ProductTypeIDs.GiftCard, 'Product Type GiftCard missing');
             Assert(!!world.RevRecTypeIDs.get('UpFront'), 'RevRec UpFront missing');
@@ -62,6 +66,85 @@ const checks: NamedCheck[] = [
         },
     },
 ];
+
+async function assertEventCategoryTree(ctx: IntegrationCheckContext, world: WorldState): Promise<void> {
+    const required = [
+        'BCP:EVENTS',
+        'BCP:CONFERENCES',
+        'BCP:ANNUAL-CONF',
+        'BCP:WEBINARS',
+        'BCP:WEBINAR-LIVE',
+        'BCP:WORKSHOPS',
+        'BCP:HANDBOOKS',
+        'HH:CONFERENCES',
+    ];
+    for (const key of required) {
+        Assert(!!world.Categories[key], `category ${key} missing`);
+    }
+
+    const parents = await loadCategoryParents(ctx, world.Companies.BCP.ID);
+    assertParent(parents, world, 'BCP:ANNUAL-CONF', 'BCP:CONFERENCES');
+    assertParent(parents, world, 'BCP:CONFERENCES', 'BCP:EVENTS');
+    assertParent(parents, world, 'BCP:WEBINAR-LIVE', 'BCP:WEBINARS');
+    assertParent(parents, world, 'BCP:WEBINARS', 'BCP:EVENTS');
+    assertParent(parents, world, 'BCP:WORKSHOPS', 'BCP:EVENTS');
+    assertParent(parents, world, 'BCP:HANDBOOKS', 'BCP:BOOKS');
+
+    const hhParents = await loadCategoryParents(ctx, world.Companies.HH.ID);
+    assertParent(hhParents, world, 'HH:CONFERENCES', 'HH:EVENTS');
+
+    await assertProductCategory(ctx, world, 'CONF-2027', 'BCP:ANNUAL-CONF');
+    await assertProductCategory(ctx, world, 'STYLE-HB', 'BCP:HANDBOOKS');
+    await assertProductCategory(ctx, world, 'HH-CONF', 'HH:CONFERENCES');
+}
+
+async function loadCategoryParents(
+    ctx: IntegrationCheckContext,
+    companyID: string,
+): Promise<Map<string, string | null>> {
+    const rows = await FindRows<{ ID: string; ParentProductCategoryID: string | null }>(
+        ctx,
+        PRODUCT_CATEGORY_ENTITY,
+        `CompanyID = '${companyID}'`,
+        ['ID', 'ParentProductCategoryID'],
+    );
+    return new Map(rows.map((r) => [r.ID.toLowerCase(), r.ParentProductCategoryID]));
+}
+
+function assertParent(
+    parents: Map<string, string | null>,
+    world: WorldState,
+    childKey: string,
+    parentKey: string,
+): void {
+    const childID = world.Categories[childKey];
+    const parentID = world.Categories[parentKey];
+    const persisted = parents.get(childID.toLowerCase()) ?? null;
+    Assert(sameId(persisted, parentID), `${childKey} should parent to ${parentKey}`);
+}
+
+async function assertProductCategory(
+    ctx: IntegrationCheckContext,
+    world: WorldState,
+    sku: string,
+    categoryKey: string,
+): Promise<void> {
+    const rows = await FindRows<{ ID: string; ProductCategoryID: string }>(
+        ctx,
+        PRODUCT_ENTITY,
+        `SKU = '${sku}'`,
+        ['ID', 'ProductCategoryID'],
+    );
+    Assert(rows.length === 1, `${sku} missing`);
+    Assert(
+        sameId(rows[0].ProductCategoryID, world.Categories[categoryKey]),
+        `${sku} should sit in ${categoryKey}`,
+    );
+}
+
+function sameId(a: string | null | undefined, b: string | null | undefined): boolean {
+    return a != null && b != null && a.toLowerCase() === b.toLowerCase();
+}
 
 for (const check of checks) {
     IntegrationCheckRegistry.Instance.Register(check);

@@ -65,7 +65,7 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
-import { mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
+import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
@@ -85,7 +85,7 @@ interface CreateJournalEntriesResult {
 }
 
 @RegisterClass(BaseEntity, PAYMENT_HEADER_ENTITY)
-export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntity {
+export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
 
     // `Lines` is a RelatedRecordCollection on the GENERATED class now, emitted from the
     // RelatedRecordCollection metadata on the 'Payment Headers -> Payment Lines' relationship, so it
@@ -156,32 +156,23 @@ export class PaymentHeaderEntityServer extends mjBizAppsOrdersPaymentHeaderEntit
                 if (!line.AllocatedAt) line.AllocatedAt = new Date();
             }
 
-            // THE HEADER AND ITS ALLOCATIONS, AS ONE GRAPH.
+            // THE HEADER + EMBEDS, then the allocations explicitly.
             //
-            // Unlike bizapps-orders, this does NOT pass IsGraphNodeSave, because a payment's
-            // allocations are COMPLETE by the time they get here — the caller supplies them (manual
-            // entry, an order's initial payment, a reversal), and the gateway has already settled
-            // above in `settleWithProvider()`. There is nothing left to decide about a line, so
-            // there is no reason to keep ownership of when it is written.
-            //
-            // The graph does it better than the loop this replaced: removals run before inserts, and
-            // the foreign key is stamped at execution time, so it is correct even though the header's
-            // key is minted by this very save. Each line is still written by its own Save(), so
-            // PaymentLineEntityServer's application-total check and booking guards fire unchanged.
-            // THE HEADER ONLY, then the allocations explicitly.
-            //
-            // Letting the graph write them reads better and IS what the journal-entry path does — but
-            // it fails here, and the suite says so: `assertAllocationInvariant` and
+            // Letting the graph write the lines reads better and IS what the journal-entry path
+            // does — but it fails here, and the suite says so: `assertAllocationInvariant` and
             // `bookPersistedLines` below both re-read PaymentLine FROM THE DATABASE by
             // PaymentHeaderID, inside this transaction, and they found zero rows. A capture then
             // refused itself with "it is for 100 but its 0 allocations total 0" — 61 checks.
             //
             // Journal entries get away with the graph because nothing downstream re-reads the lines;
             // this path does, twice.
+            //
+            // `IsGraphNodeSave` is the wrong flag: it drops the PaymentDetail embed. Skip the
+            // collection only — the embed still persists with the header.
             for (const line of this.Lines.Items) {
                 line.PaymentHeaderID = this.ID;
             }
-            if (!(await super.Save({ ...options, IsGraphNodeSave: true } as EntitySaveOptions))) {
+            if (!(await super.Save({ ...options, SkipRelatedCollections: true }))) {
                 throw new Error(
                     `Failed to save payment ${this.PaymentNumber}: ` +
                         `${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,

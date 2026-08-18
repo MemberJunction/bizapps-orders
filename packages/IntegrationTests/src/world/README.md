@@ -23,6 +23,29 @@ Everything else in this folder is tenant/world data: selling companies, GL, peop
 | PARTNER | DEMO Partner Press  | Second demo seller                        |
 | ORPHAN  | Orphan Ledger       | Accounts exist, **no** GL links — refuse  |
 
+## Product category tree
+
+Per-company. `ParentCode` in `product-categories.csv` is the sibling `Code` in the same company
+(empty = root). Load is two-pass so the CSV order does not matter.
+
+Blue Cypress Press Events is the tree Explorer's category hierarchy panel is meant to show:
+
+```
+Events
+├── Conferences
+│   ├── Annual Conference     ← CONF-2027, CONF-DEFER
+│   └── Regional Conferences
+├── Webinars
+│   ├── Live Webinars
+│   └── On-Demand Webinars
+├── Workshops                 ← WORKSHOP, KIT-SEAT
+└── Trade Shows
+```
+
+Books splits into Handbooks / Anthologies; Memberships into Individual / Institutional. Harbor
+House Events has Conferences and Webinars only (no third level). Sales is still GL-linked at the
+`EVENTS` root — the resolver walks ancestors, so tickets on Annual Conference inherit it.
+
 ## GL hierarchy
 
 Most specific wins: **product → category tree → product type → company**.

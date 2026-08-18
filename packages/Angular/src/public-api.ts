@@ -57,6 +57,7 @@ export { OrdersPartyHeadersModule } from './lib/form-panels/party-headers.module
 export { PersonOrdersOverviewPanel } from './lib/form-panels/person-orders-overview.panel';
 export { OrganizationOrdersOverviewPanel } from './lib/form-panels/organization-orders-overview.panel';
 export { PartyOrdersOverviewComponent } from './lib/panels/party-orders-overview.component';
+export { ProductCategoryHierarchyPanel } from './lib/form-panels/product-category-hierarchy.panel';
 
 /** Explorer sections — the four top-level tabs of the Orders application. */
 export {

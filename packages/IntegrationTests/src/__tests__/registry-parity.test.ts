@@ -60,6 +60,7 @@ import '../checks/volume.checks.js';
 import '../checks/entitlements.checks.js';
 import '../checks/payment-providers.checks.js';
 import '../checks/ach-settlement.checks.js';
+import '../checks/embedded-payment-detail.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -74,7 +75,7 @@ const registry = IntegrationCheckRegistry.Instance;
  */
 const EXPECTED_BUNDLES: Record<string, number> = {
     'catalog-world': 1,
-    'order-booking': 15,
+    'order-booking': 16,
     'revenue-recognition': 7,
     subscriptions: 12,
     'subscription-cancellation': 10,
@@ -105,6 +106,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     entitlements: 15,
     'payment-providers': 12,
     'ach-settlement': 17,
+    'embedded-payment-detail': 14,
 };
 
 /**

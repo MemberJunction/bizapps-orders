@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-32 - Embedded Payment Detail",
+    "Description": "PaymentDetail as an owner-held 1:1 embed on Customer Payment Method (required), Payment Header (optional) and Order Header.InitialPaymentDetailID (optional). Proves inverted save (peer first, stamp owner FK), Load, dirty rollup via Notes, Clear+delete, unique 1:1, and that confirm copies the order snapshot onto the payment rather than sharing the row (D38/D39).",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A required wallet embed is provisioned by NewRecord; Save persists the detail first and stamps PaymentDetailID; Load hydrates the peer; a Notes edit on a clean owner still saves; a payment header stays null until Ensure, then Save stamps the FK and Load hydrates it; Clear+delete nulls the FK and removes the row; the same holds for Order.InitialPaymentDetailID; two wallets cannot share one detail; confirm copies the order snapshot onto a new payment detail."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "embedded-payment-detail"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "4497A6B1-5964-4654-9422-CC8EACBDBD6E"
+  }
+}

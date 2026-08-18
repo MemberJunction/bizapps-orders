@@ -1,0 +1,12 @@
+{
+  "entity": "MJ: Entity Fields",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "createNewFileIfNotFound": false,
+    "newFileName": ".embedded-payment-detail.json",
+    "appendRecordsToExistingFile": false,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true
+  }
+}

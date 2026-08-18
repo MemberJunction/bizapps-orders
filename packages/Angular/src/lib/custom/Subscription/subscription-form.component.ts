@@ -59,7 +59,7 @@ export class BizAppsSubscriptionFormComponent extends mjBizAppsOrdersSubscriptio
         await super.ngOnInit();
 
         this.initSections([
-            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Coverage Terms & Cycles', isExpanded: true },
+            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Terms', isExpanded: true },
             { sectionKey: 'stakeholders', sectionName: 'Stakeholders & Benefit Assignment', isExpanded: true },
             { sectionKey: 'renewalAndLifecycle', sectionName: 'Renewal & Lifecycle Settings', isExpanded: true },
             { sectionKey: 'mJBizAppsOrdersEntitlementGrants', sectionName: 'Granted Entitlements', isExpanded: true },
@@ -145,6 +145,7 @@ export class BizAppsSubscriptionFormComponent extends mjBizAppsOrdersSubscriptio
                     OrderBy: 'EffectiveDate ASC',
                     MaxRows: 500,
                     ResultType: 'entity_object',
+                    IncludeRelatedRecords: ['Lines'],
                 },
                 md.CurrentUser,
             );
