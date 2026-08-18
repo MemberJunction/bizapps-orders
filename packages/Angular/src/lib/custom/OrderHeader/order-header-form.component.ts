@@ -21,7 +21,13 @@ import { mjBizAppsOrdersOrderHeaderFormComponent } from '../../generated/Entitie
 import type { MJOPricingState } from '../../services/pricing-scheduler.service';
 import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
 import { DispatchFormNavigation } from '../form-navigation-helper';
-import { OrderHeaderExpandedFromPref } from './order-header-prefs';
+import {
+    ExpandedPartyFromPref,
+    FormatPartyAddress,
+    NextExpandedParty,
+    OrderHeaderExpandedFromPref,
+    type OrderFormParty,
+} from './order-header-prefs';
 
 /** Tabs that exist while the order is still being composed. */
 export type OrderFormNewTab = 'payment' | 'details';
@@ -31,7 +37,7 @@ export type OrderFormSavedTab = 'charges' | 'accounting' | 'subs';
 
 export type OrderFormContextTab = OrderFormNewTab | OrderFormSavedTab;
 
-export type OrderFormParty = 'bill' | 'ship';
+export type { OrderFormParty };
 
 /** Accounting tab shows one view at a time — a mode switch, not a second tab strip. */
 export type OrderAccountingView = 'summary' | 'detail' | 'waterfall';
@@ -75,7 +81,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public declare record: OrderHeaderEntity;
 
     public ActiveTab: OrderFormContextTab | null = null;
-    public ExpandedParty: OrderFormParty = 'ship';
+    public ExpandedParty: OrderFormParty | null = 'ship';
     public HeaderExpanded = true;
     public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
 
@@ -137,9 +143,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public SelectParty(party: OrderFormParty): void {
-        if (this.ExpandedParty === party) return;
-        this.ExpandedParty = party;
-        UserInfoEngine.Instance.SetSettingDebounced(EXPANDED_PARTY_SETTING, party);
+        this.ExpandedParty = NextExpandedParty(this.ExpandedParty, party);
+        UserInfoEngine.Instance.SetSettingDebounced(EXPANDED_PARTY_SETTING, this.ExpandedParty ?? '');
     }
 
     public ToggleHeader(): void {
@@ -267,7 +272,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public get BillToDetail(): string {
-        const bits = [this.record?.BillToPerson, this.record?.PaymentTermsType, this.record?.BillToAddress]
+        const address = this.FormatEmbeddedAddress(this.record?.BillToAddressID_Object) || this.record?.BillToAddress;
+        const bits = [this.record?.BillToPerson, this.record?.PaymentTermsType, address]
             .filter((value): value is string => !!value);
         return bits.length ? bits.join(' · ') : 'Person or organization';
     }
@@ -278,7 +284,37 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public get ShipToDetail(): string {
-        return this.record?.ShipToAddress || 'Header default — override when it ships elsewhere';
+        return this.FormatEmbeddedAddress(this.record?.ShipToAddressID_Object)
+            || this.record?.ShipToAddress
+            || 'Header default — override when it ships elsewhere';
+    }
+
+    public EnsureBillToAddress(event: Event): void {
+        event.stopPropagation();
+        this.record?.BillToAddressID_EnsureObject();
+        this.cdr.detectChanges();
+    }
+
+    public ClearBillToAddress(event: Event): void {
+        event.stopPropagation();
+        this.record?.ClearBillToAddress();
+        this.cdr.detectChanges();
+    }
+
+    public EnsureShipToAddress(event: Event): void {
+        event.stopPropagation();
+        this.record?.ShipToAddressID_EnsureObject();
+        this.cdr.detectChanges();
+    }
+
+    public ClearShipToAddress(event: Event): void {
+        event.stopPropagation();
+        this.record?.ClearShipToAddress();
+        this.cdr.detectChanges();
+    }
+
+    private FormatEmbeddedAddress(address: { Line1?: string | null; City?: string | null; StateProvince?: string | null; PostalCode?: string | null } | null | undefined): string {
+        return address ? FormatPartyAddress(address) : '';
     }
 
     public get ShipToIsSame(): boolean {
@@ -408,8 +444,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         const tab = UserInfoEngine.Instance.GetSetting(CONTEXT_TAB_SETTING);
         if (tab && this.isVisibleTab(tab)) this.ActiveTab = tab;
         if (this.record?.IsSaved) {
-            const party = UserInfoEngine.Instance.GetSetting(EXPANDED_PARTY_SETTING);
-            this.ExpandedParty = party === 'bill' ? 'bill' : 'ship';
+            this.ExpandedParty = ExpandedPartyFromPref(UserInfoEngine.Instance.GetSetting(EXPANDED_PARTY_SETTING));
         } else {
             this.ExpandedParty = 'ship';
         }

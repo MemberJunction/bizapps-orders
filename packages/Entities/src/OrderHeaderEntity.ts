@@ -31,6 +31,7 @@
  */
 import { BaseEntity, ValidationErrorInfo, ValidationErrorType, ValidationResult, type FieldValueCollection } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import type { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentDetailEntity } from './generated/entity_subclasses';
 import { CanOfferConfirm, CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
@@ -75,6 +76,23 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         OnClear: 'delete',
     });
 
+    /**
+     * Bill-to / ship-to street addresses. Addresses are first-class Common
+     * records (shared via AddressLink), so OnClear orphans — never deletes —
+     * the peer. Remove when CodeGen emits these from EntityField.EmbeddedRecord.
+     */
+    public readonly BillToAddressEmb = this.DeclareEmbeddedRecord<mjBizAppsCommonAddressEntity>({
+        ForeignKeyField: 'BillToAddressID',
+        RelatedEntity: 'MJ_BizApps_Common: Addresses',
+        OnClear: 'orphan',
+    });
+
+    public readonly ShipToAddressEmb = this.DeclareEmbeddedRecord<mjBizAppsCommonAddressEntity>({
+        ForeignKeyField: 'ShipToAddressID',
+        RelatedEntity: 'MJ_BizApps_Common: Addresses',
+        OnClear: 'orphan',
+    });
+
     public get InitialPaymentDetailID_Object(): mjBizAppsOrdersPaymentDetailEntity | null {
         return this.InitialPaymentDetailEmb.Value;
     }
@@ -85,6 +103,30 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
     public ClearInitialPaymentDetail(): void {
         this.InitialPaymentDetailEmb.Clear();
+    }
+
+    public get BillToAddressID_Object(): mjBizAppsCommonAddressEntity | null {
+        return this.BillToAddressEmb.Value;
+    }
+
+    public BillToAddressID_EnsureObject(): mjBizAppsCommonAddressEntity {
+        return this.BillToAddressEmb.Ensure();
+    }
+
+    public ClearBillToAddress(): void {
+        this.BillToAddressEmb.Clear();
+    }
+
+    public get ShipToAddressID_Object(): mjBizAppsCommonAddressEntity | null {
+        return this.ShipToAddressEmb.Value;
+    }
+
+    public ShipToAddressID_EnsureObject(): mjBizAppsCommonAddressEntity {
+        return this.ShipToAddressEmb.Ensure();
+    }
+
+    public ClearShipToAddress(): void {
+        this.ShipToAddressEmb.Clear();
     }
 
     public get InitialPaymentReference(): string | null {
@@ -295,6 +337,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         switch (field) {
             case 'BillToPersonID':
             case 'BillToOrganizationID':
+            case 'BillToAddressID':
             case 'ShipToPersonID':
             case 'ShipToOrganizationID':
             case 'ShipToAddressID':
