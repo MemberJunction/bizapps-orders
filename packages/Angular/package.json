@@ -19,6 +19,7 @@
   "author": "MemberJunction.com",
   "license": "ISC",
   "dependencies": {
+    "@memberjunction/ng-hierarchy-tree": "6.1.0-edge.2",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-ng": ">=0.1.0",
     "@mj-biz-apps/common-entities": "5.33.2",
