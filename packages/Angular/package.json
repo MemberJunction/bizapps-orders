@@ -17,7 +17,7 @@
     "build:styles": "node -e \"require('node:fs').mkdirSync('dist/lib/styles',{recursive:true});require('node:fs').copyFileSync('src/lib/styles/orders-kit.css','dist/lib/styles/orders-kit.css')\""
   },
   "author": "MemberJunction.com",
-  "license": "ISC",
+  "license": "BUSL-1.1",
   "dependencies": {
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-ng": ">=0.1.0",
