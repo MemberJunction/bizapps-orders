@@ -465,21 +465,51 @@ async function loadTax(ctx: IntegrationCheckContext, world: WorldState): Promise
 }
 
 async function loadCategories(ctx: IntegrationCheckContext, world: WorldState): Promise<void> {
-    for (const row of ReadCsv(join(DATA, 'product-categories.csv'))) {
+    const rows = ReadCsv(join(DATA, 'product-categories.csv'));
+    await upsertCategoryRows(ctx, world, rows);
+    await applyCategoryParents(ctx, world, rows);
+}
+
+async function upsertCategoryRows(
+    ctx: IntegrationCheckContext,
+    world: WorldState,
+    rows: Array<Record<string, string>>,
+): Promise<void> {
+    for (const row of rows) {
         const company = world.Companies[row.CompanyCode];
         Assert(!!company, `product-categories.csv: unknown company ${row.CompanyCode}`);
         const id = await Upsert(
             ctx,
             PRODUCT_CATEGORY_ENTITY,
-            `CompanyID = '${company.ID}' AND Name = '${Quote(row.Name)}'`,
+            `CompanyID = '${company.ID}' AND Code = '${Quote(row.Code)}'`,
             {
                 CompanyID: company.ID,
                 Code: row.Code,
                 Name: row.Name,
+                Description: row.Description || null,
                 IsActive: true,
             },
         );
         world.Categories[`${row.CompanyCode}:${row.Code}`] = id;
+    }
+}
+
+async function applyCategoryParents(
+    ctx: IntegrationCheckContext,
+    world: WorldState,
+    rows: Array<Record<string, string>>,
+): Promise<void> {
+    for (const row of rows) {
+        const id = world.Categories[`${row.CompanyCode}:${row.Code}`];
+        const parentID = row.ParentCode
+            ? world.Categories[`${row.CompanyCode}:${row.ParentCode}`]
+            : null;
+        if (row.ParentCode) {
+            Assert(!!parentID, `product-categories.csv: unknown parent ${row.ParentCode} for ${row.Code}`);
+        }
+        await Upsert(ctx, PRODUCT_CATEGORY_ENTITY, `ID = '${id}'`, {
+            ParentProductCategoryID: parentID,
+        });
     }
 }
 

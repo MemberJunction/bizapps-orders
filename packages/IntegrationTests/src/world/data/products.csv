@@ -1,20 +1,20 @@
 SKU,Name,CompanyCode,CategoryCode,ProductTypeCode,RevRecCode,SubscriptionTypeCode,Mnemonic
-STYLE-HB,Style Handbook,BCP,BOOKS,PhysicalGood,UpFront,,WidgetA
-KIT-BOOK,New Member Kit — Handbook,BCP,BOOKS,PhysicalGood,UpFront,,BundlePartX
-KIT-SEAT,New Member Kit — Workshop,BCP,EVENTS,Service,UpFront,,BundlePartY
+STYLE-HB,Style Handbook,BCP,HANDBOOKS,PhysicalGood,UpFront,,WidgetA
+KIT-BOOK,New Member Kit — Handbook,BCP,HANDBOOKS,PhysicalGood,UpFront,,BundlePartX
+KIT-SEAT,New Member Kit — Workshop,BCP,WORKSHOPS,Service,UpFront,,BundlePartY
 KIT-NEW,New Member Kit,BCP,BUNDLES,Bundle,UpFront,,BundleA
-WORKSHOP,Editing Workshop Seat,BCP,EVENTS,Service,UpFront,,
+WORKSHOP,Editing Workshop Seat,BCP,WORKSHOPS,Service,UpFront,,
 CONSULT-HR,Editorial Consulting (hourly),BCP,SERVICES,Service,UpFront,,
 EDIT-COURSE,Editorial Course (straight-line),BCP,SERVICES,Service,EvenOverTime,,DeferredA
-CONF-DEFER,Deferred Conference Hold,BCP,EVENTS,Service,AllBackEnd,,EventA
-CONF-2027,Annual Conference Ticket 2027,BCP,EVENTS,Event,AllBackEnd,,EventTicket
-MEM-IND,Individual Membership,BCP,MEMBERSHIPS,Membership,EvenOverTime,AnnualRolling,SubRolling
-MEM-INST,Institutional Membership,BCP,MEMBERSHIPS,Membership,EvenOverTime,CalendarYear,SubCalendar
-MEM-FISCAL,Fiscal-Year Membership,BCP,MEMBERSHIPS,Membership,EvenOverTime,FiscalYearJul,SubFiscal
-MEM-SEAT,Named Seat Membership,BCP,MEMBERSHIPS,Membership,EvenOverTime,CorporateSeat,SubSeat
-MEM-MONTH,Monthly Membership,BCP,MEMBERSHIPS,Membership,EvenOverTime,MonthlyRolling,SubMonthly
+CONF-DEFER,Deferred Conference Hold,BCP,ANNUAL-CONF,Service,AllBackEnd,,EventA
+CONF-2027,Annual Conference Ticket 2027,BCP,ANNUAL-CONF,Event,AllBackEnd,,EventTicket
+MEM-IND,Individual Membership,BCP,MEM-INDIV,Membership,EvenOverTime,AnnualRolling,SubRolling
+MEM-INST,Institutional Membership,BCP,MEM-ORG,Membership,EvenOverTime,CalendarYear,SubCalendar
+MEM-FISCAL,Fiscal-Year Membership,BCP,MEM-ORG,Membership,EvenOverTime,FiscalYearJul,SubFiscal
+MEM-SEAT,Named Seat Membership,BCP,MEM-INDIV,Membership,EvenOverTime,CorporateSeat,SubSeat
+MEM-MONTH,Monthly Membership,BCP,MEM-INDIV,Membership,EvenOverTime,MonthlyRolling,SubMonthly
 GIFT-50,Gift Card $50,BCP,GIFTS,GiftCard,UpFront,,GiftCardA
 HH-ANTH,Harbor House Anthology,HH,BOOKS,PhysicalGood,UpFront,,WidgetB
 HH-MEM,Harbor House Membership,HH,MEMBERSHIPS,Membership,EvenOverTime,AnnualRolling,
-HH-CONF,Harbor House Conference Ticket,HH,EVENTS,Event,AllBackEnd,,EventTicketB
+HH-CONF,Harbor House Conference Ticket,HH,CONFERENCES,Event,AllBackEnd,,EventTicketB
 ORPHAN-SKU,Unlinked Service,ORPHAN,MISC,Service,UpFront,,WidgetC
