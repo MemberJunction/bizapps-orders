@@ -27,7 +27,7 @@
  *   DOC:    plans/archive/pricing-charges-and-promotions.md
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
-import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import { MJGlobal, RegisterClassEx } from '@memberjunction/global';
 import {
     ComputeAmount,
     IsRuleApplicable,
@@ -149,8 +149,9 @@ const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toL
  * The data-driven resolver everyone gets unless a plugin overrides them.
  *
  * Registered with NO key, which makes it the fallback the walk ends at.
+ * `skipNullKeyWarning` is required — a null key is the designed default, not a missing plugin.
  */
-@RegisterClass(BasePriceResolver)
+@RegisterClassEx(BasePriceResolver, { skipNullKeyWarning: true })
 export class DefaultPriceResolver extends BasePriceResolver {
     public async Resolve(
         ctx: PriceResolutionContext,
@@ -413,11 +414,11 @@ export async function ResolvePrice(
     keys.push(`Company:${ctx.CompanyID}`);
 
     for (const key of keys) {
+        // Probe first. CreateInstance falls back to the no-key default and warns when the
+        // Product/Category/Company key has no plugin — which is the common case.
+        if (!isRegistered(key)) continue;
         const plugin = MJGlobal.Instance.ClassFactory.CreateInstance<BasePriceResolver>(BasePriceResolver, key);
-        // ClassFactory falls back to the BASE registration when a key has no plugin, so a hit that
-        // is really the default must not be mistaken for a specific override — check the key was
-        // genuinely registered before using it.
-        if (!plugin || !isRegistered(key)) continue;
+        if (!plugin) continue;
         const hit = await plugin.Resolve(ctx, provider, user);
         if (hit) return { ...hit, ResolvedBy: key };
     }
