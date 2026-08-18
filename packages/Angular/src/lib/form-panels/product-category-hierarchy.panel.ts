@@ -30,7 +30,7 @@ import { mjBizAppsOrdersProductCategoryEntity } from '@mj-biz-apps/orders-entiti
     template: `
         <mj-collapsible-panel
             SectionKey="categoryTaxonomy"
-            SectionName="Category Hierarchy & Taxonomy"
+            SectionName="Hierarchy"
             Icon="fa-solid fa-sitemap"
             Variant="related-entity"
             [Form]="FormComponent"
@@ -52,7 +52,9 @@ import { mjBizAppsOrdersProductCategoryEntity } from '@mj-biz-apps/orders-entiti
             flex-direction: column;
             width: 100%;
             height: 100%;
-            min-height: 520px;
+            min-height: 640px;
+            min-height: calc(100vh - 280px);
+            flex: 1;
             margin-bottom: 20px;
         }
     `]
@@ -94,7 +96,7 @@ export class ProductCategoryHierarchyPanel extends BaseFormPanel<mjBizAppsOrders
                 ActiveRecordID: recId || undefined,
                 ExtraFilter: filter,
                 Height: '100%',
-                MinHeight: '520px',
+                MinHeight: '640px',
                 ShowSearch: true,
                 ShowToolbar: true,
                 NavigateOnNodeClick: true
