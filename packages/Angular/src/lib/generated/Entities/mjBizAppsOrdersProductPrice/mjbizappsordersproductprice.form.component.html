@@ -268,9 +268,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Price Tiers','ProductPriceID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Price Tiers')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Price Tiers','ProductPriceID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPriceTiers')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPriceTiers', $event.totalRowCount)"
                 >
@@ -293,9 +293,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','ProductPriceID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines','ProductPriceID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLines')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
                 >

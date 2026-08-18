@@ -27,7 +27,7 @@ export class mjBizAppsOrdersSubscriptionFormComponent extends BaseFormComponent 
             { sectionKey: 'mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID', sectionName: 'Subscriptions (Migrates To Subscription)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID', sectionName: 'Subscriptions (Migrates From Subscription)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Events', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Subscription Terms', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersSubscriptionTerms', sectionName: 'Terms', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false }
         ]);
     }

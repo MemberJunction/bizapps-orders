@@ -70,7 +70,7 @@ export function OrderFormTabs(saved: boolean): TabConfig[] {
  * no "save first" step. Bill-to / ship-to are header bubbles. Extra fields live
  * on Details. Charges / accounting / subscriptions appear after save.
  */
-@RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Order Headers')
+@RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Order Headers', 2)
 @Component({
     standalone: false,
     selector: 'bizapps-order-header-form',

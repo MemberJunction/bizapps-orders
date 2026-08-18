@@ -172,9 +172,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Stored Value Transactions','StoredValueAccountID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions','StoredValueAccountID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersStoredValueTransactions')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersStoredValueTransactions', $event.totalRowCount)"
                 >
@@ -197,9 +197,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Details','StoredValueAccountID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Details')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Details','StoredValueAccountID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentDetails')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentDetails', $event.totalRowCount)"
                 >

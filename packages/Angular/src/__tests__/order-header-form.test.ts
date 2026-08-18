@@ -1,4 +1,5 @@
 import '@angular/compiler';
+import '../public-api';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -12,7 +13,6 @@ import {
     OrderFormTabs,
 } from '../lib/custom/OrderHeader/order-header-form.component';
 import { OrderHeaderExpandedFromPref } from '../lib/custom/OrderHeader/order-header-prefs';
-import '../public-api';
 
 const here = import.meta.dirname;
 

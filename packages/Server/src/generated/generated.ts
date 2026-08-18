@@ -278,7 +278,7 @@ export class mjBizAppsOrdersCustomerPaymentMethod_ {
     _mj__UpdatedAt: Date;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     OwnerPerson?: string;
         
     @Field({nullable: true}) 
@@ -729,7 +729,7 @@ export class mjBizAppsOrdersCustomerTaxExemption_ {
     Organization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     Person?: string;
         
 }
@@ -995,7 +995,7 @@ export class mjBizAppsOrdersEntitlementGrant_ {
     Subscription?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     BeneficiaryPerson?: string;
         
     @Field({nullable: true}) 
@@ -1336,7 +1336,7 @@ export class mjBizAppsOrdersEventOrderLine_ {
     JournalEntryID?: string;
         
     @Field() 
-    @MaxLength(100)
+    @MaxLength(201)
     Person: string;
         
 }
@@ -1759,6 +1759,9 @@ export class mjBizAppsOrdersEventProduct_ {
     @MaxLength(255)
     PricingDriverClass?: string;
         
+    @Field(() => Float, {nullable: true}) 
+    MaxQuantityPerLine?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(255)
     VenueAddress?: string;
@@ -1768,9 +1771,6 @@ export class mjBizAppsOrdersEventProduct_ {
         
     @Field(() => Float, {nullable: true}) 
     _mj__Longitude?: number;
-        
-    @Field(() => Float, {nullable: true}) 
-    MaxQuantityPerLine?: number;
         
 }
 
@@ -3244,7 +3244,7 @@ export class mjBizAppsOrdersOrderHeader_ {
     Company: string;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     BillToPerson?: string;
         
     @Field({nullable: true}) 
@@ -3268,7 +3268,7 @@ export class mjBizAppsOrdersOrderHeader_ {
     ShipToOrganization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     ShipToPerson?: string;
         
     @Field({nullable: true}) 
@@ -3300,6 +3300,18 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field({nullable: true}) 
     @MaxLength(36)
     RootReversesOrderHeaderID?: string;
+        
+    @Field(() => Int, {nullable: true}) 
+    ReversesOrderHeaderIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    ReversesOrderHeaderIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    ReversesOrderHeaderIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    ReversesOrderHeaderIDChildCount?: number;
         
     @Field(() => Int) 
     IsOverdue: number;
@@ -4235,7 +4247,7 @@ export class mjBizAppsOrdersOrderLine_ {
     ShipToOrganization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     ShipToPerson?: string;
         
     @Field({nullable: true}) 
@@ -4260,9 +4272,33 @@ export class mjBizAppsOrdersOrderLine_ {
     @MaxLength(36)
     RootReversesOrderLineID?: string;
         
+    @Field(() => Int, {nullable: true}) 
+    ReversesOrderLineIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    ReversesOrderLineIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    ReversesOrderLineIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    ReversesOrderLineIDChildCount?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(36)
     RootParentOrderLineID?: string;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentOrderLineIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    ParentOrderLineIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    ParentOrderLineIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentOrderLineIDChildCount?: number;
         
     @Field(() => [mjBizAppsOrdersOrderLinePriceComponent_])
     mjBizAppsOrdersOrderLinePriceComponents_OrderLineIDArray: mjBizAppsOrdersOrderLinePriceComponent_[]; // Link to mjBizAppsOrdersOrderLinePriceComponents
@@ -5343,7 +5379,7 @@ export class mjBizAppsOrdersPaymentHeader_ {
     ReceivingCompany: string;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     BillToPerson?: string;
         
     @Field({nullable: true}) 
@@ -5377,6 +5413,18 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @Field({nullable: true}) 
     @MaxLength(36)
     RootReversesPaymentHeaderID?: string;
+        
+    @Field(() => Int, {nullable: true}) 
+    ReversesPaymentHeaderIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    ReversesPaymentHeaderIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    ReversesPaymentHeaderIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    ReversesPaymentHeaderIDChildCount?: number;
         
     @Field(() => [mjBizAppsOrdersPaymentHeader_])
     mjBizAppsOrdersPaymentHeaders_ReversesPaymentHeaderIDArray: mjBizAppsOrdersPaymentHeader_[]; // Link to mjBizAppsOrdersPaymentHeaders
@@ -5730,7 +5778,7 @@ export class mjBizAppsOrdersPaymentIntent_ {
     OrderHeader?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     BillToPerson?: string;
         
     @Field({nullable: true}) 
@@ -7274,7 +7322,7 @@ export class mjBizAppsOrdersPriceListAssignment_ {
     Organization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     Person?: string;
         
 }
@@ -8103,6 +8151,18 @@ export class mjBizAppsOrdersProductCategory_ {
     @Field({nullable: true}) 
     @MaxLength(36)
     RootParentProductCategoryID?: string;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentProductCategoryIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    ParentProductCategoryIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    ParentProductCategoryIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentProductCategoryIDChildCount?: number;
         
     @Field(() => [mjBizAppsOrdersProduct_])
     mjBizAppsOrdersProducts_ProductCategoryIDArray: mjBizAppsOrdersProduct_[]; // Link to mjBizAppsOrdersProducts
@@ -9352,6 +9412,18 @@ export class mjBizAppsOrdersProduct_ {
     @MaxLength(36)
     RootSuccessorProductID?: string;
         
+    @Field(() => Int, {nullable: true}) 
+    SuccessorProductIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    SuccessorProductIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    SuccessorProductIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    SuccessorProductIDChildCount?: number;
+        
     @Field(() => [mjBizAppsOrdersProductEntitlement_])
     mjBizAppsOrdersProductEntitlements_ProductIDArray: mjBizAppsOrdersProductEntitlement_[]; // Link to mjBizAppsOrdersProductEntitlements
     
@@ -9771,7 +9843,7 @@ export class mjBizAppsOrdersPromotionCode_ {
     AssignedOrganization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     AssignedPerson?: string;
         
     @Field(() => [mjBizAppsOrdersOrderAdjustment_])
@@ -11404,7 +11476,7 @@ export class mjBizAppsOrdersStoredValueAccount_ {
     IssuingCompany: string;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     BeneficiaryPerson?: string;
         
     @Field({nullable: true}) 
@@ -12955,7 +13027,7 @@ export class mjBizAppsOrdersSubscription_ {
     HolderOrganization?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(100)
+    @MaxLength(201)
     BeneficiaryPerson?: string;
         
     @Field({nullable: true}) 
@@ -12974,9 +13046,33 @@ export class mjBizAppsOrdersSubscription_ {
     @MaxLength(36)
     RootMigratesFromSubscriptionID?: string;
         
+    @Field(() => Int, {nullable: true}) 
+    MigratesFromSubscriptionIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    MigratesFromSubscriptionIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    MigratesFromSubscriptionIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    MigratesFromSubscriptionIDChildCount?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(36)
     RootMigratesToSubscriptionID?: string;
+        
+    @Field(() => Int, {nullable: true}) 
+    MigratesToSubscriptionIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    MigratesToSubscriptionIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    MigratesToSubscriptionIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    MigratesToSubscriptionIDChildCount?: number;
         
     @Field(() => [mjBizAppsOrdersEntitlementGrant_])
     mjBizAppsOrdersEntitlementGrants_SubscriptionIDArray: mjBizAppsOrdersEntitlementGrant_[]; // Link to mjBizAppsOrdersEntitlementGrants

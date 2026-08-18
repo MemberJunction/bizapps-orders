@@ -175,9 +175,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Grants','ProductEntitlementID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Grants')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Grants','ProductEntitlementID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersEntitlementGrants')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersEntitlementGrants', $event.totalRowCount)"
                 >

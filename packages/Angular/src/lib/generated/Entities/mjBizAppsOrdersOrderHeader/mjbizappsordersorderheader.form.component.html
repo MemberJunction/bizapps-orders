@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="orderIdentification"
         SectionName="Order Identification"
-        Icon="fa fa-shopping-cart"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -126,7 +126,7 @@
     <mj-collapsible-panel
         SectionKey="billingAndShipping"
         SectionName="Billing and Shipping"
-        Icon="fa fa-truck"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -273,7 +273,7 @@
     <mj-collapsible-panel
         SectionKey="accountingAndAudit"
         SectionName="Accounting and Audit"
-        Icon="fa fa-file-invoice"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -330,6 +330,38 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="RootReversesOrderHeaderID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ReversesOrderHeaderIDDepth"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ReversesOrderHeaderIDPath"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ReversesOrderHeaderIDIsLeaf"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ReversesOrderHeaderIDChildCount"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -399,9 +431,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','OrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines','OrderHeaderID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLines')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
                 >
@@ -424,9 +456,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Details','SourceOrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Details')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Details','SourceOrderHeaderID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentDetails')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentDetails', $event.totalRowCount)"
                 >
@@ -449,9 +481,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Headers','ReversesOrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Headers')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Headers','ReversesOrderHeaderID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderHeaders')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderHeaders', $event.totalRowCount)"
                 >
@@ -474,9 +506,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Stored Value Transactions','RelatedOrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions','RelatedOrderHeaderID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersStoredValueTransactions')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersStoredValueTransactions', $event.totalRowCount)"
                 >
@@ -499,9 +531,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Lines','OrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Lines')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Lines','OrderHeaderID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentLines')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentLines', $event.totalRowCount)"
                 >
@@ -524,9 +556,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Adjustments','OrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Adjustments')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Adjustments','OrderHeaderID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderAdjustments')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderAdjustments', $event.totalRowCount)"
                 >
@@ -549,9 +581,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Events','RelatedOrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Events')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Events','RelatedOrderHeaderID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionEvents')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionEvents', $event.totalRowCount)"
                 >
@@ -574,9 +606,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Intents','OrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Intents')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Intents','OrderHeaderID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentIntents')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentIntents', $event.totalRowCount)"
                 >
@@ -599,9 +631,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Charges','OrderHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Charges')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Charges','OrderHeaderID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderCharges')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderCharges', $event.totalRowCount)"
                 >

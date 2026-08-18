@@ -1,0 +1,64 @@
+[
+  {
+    "_comments": [
+      "Seeds Hierarchy.IsHierarchy=true in EntityField.Configuration for ProductCategory.ParentProductCategoryID."
+    ],
+    "fields": {
+      "Name": "MJ_BizApps_Orders: Product Categories"
+    },
+    "relatedEntities": {
+      "MJ: Entity Fields": [
+        {
+          "fields": {
+            "Configuration": {
+              "Hierarchy": {
+                "IsHierarchy": true
+              }
+            }
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories&Name=ParentProductCategoryID"
+          },
+          "sync": {
+            "lastModified": "2026-08-18T21:37:21.739Z",
+            "checksum": "c9d7f02681366f41bfee4d9aea7fcd14c0e8d47223c47f20891c562673cfefa1"
+          }
+        }
+      ]
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories"
+    }
+  },
+  {
+    "_comments": [
+      "Seeds Hierarchy.IsHierarchy=true in EntityField.Configuration for OrderLine.ParentOrderLineID."
+    ],
+    "fields": {
+      "Name": "MJ_BizApps_Orders: Order Lines"
+    },
+    "relatedEntities": {
+      "MJ: Entity Fields": [
+        {
+          "fields": {
+            "Configuration": {
+              "Hierarchy": {
+                "IsHierarchy": true
+              }
+            }
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=ParentOrderLineID"
+          },
+          "sync": {
+            "lastModified": "2026-08-18T21:37:21.768Z",
+            "checksum": "c9d7f02681366f41bfee4d9aea7fcd14c0e8d47223c47f20891c562673cfefa1"
+          }
+        }
+      ]
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines"
+    }
+  }
+]

@@ -272,9 +272,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Headers','InitialPaymentDetailID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Headers')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Headers','InitialPaymentDetailID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderHeaders')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderHeaders', $event.totalRowCount)"
                 >
@@ -297,9 +297,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Headers','PaymentDetailID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Headers')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Headers','PaymentDetailID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentHeaders')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentHeaders', $event.totalRowCount)"
                 >
@@ -322,9 +322,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Customer Payment Methods','PaymentDetailID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Customer Payment Methods')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Customer Payment Methods','PaymentDetailID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersCustomerPaymentMethods')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersCustomerPaymentMethods', $event.totalRowCount)"
                 >

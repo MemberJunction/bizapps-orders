@@ -43,6 +43,38 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ParentProductCategoryIDDepth"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ParentProductCategoryIDPath"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ParentProductCategoryIDIsLeaf"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ParentProductCategoryIDChildCount"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -192,9 +224,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Products','ProductCategoryID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Products')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Products','ProductCategoryID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProducts')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProducts', $event.totalRowCount)"
                 >
@@ -217,9 +249,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Categories','ParentProductCategoryID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Categories')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Categories','ParentProductCategoryID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductCategories')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductCategories', $event.totalRowCount)"
                 >
@@ -242,9 +274,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Targets','ProductCategoryID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets','ProductCategoryID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionTargets')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionTargets', $event.totalRowCount)"
                 >

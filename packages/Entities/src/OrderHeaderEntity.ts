@@ -29,7 +29,7 @@
  *
  * @module @mj-biz-apps/orders-entities
  */
-import { BaseEntity, ValidationErrorInfo, ValidationErrorType, ValidationResult, type FieldValueCollection } from '@memberjunction/core';
+import { BaseEntity, EmbeddedRecord, ValidationErrorInfo, ValidationErrorType, ValidationResult, type FieldValueCollection } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import type { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentDetailEntity } from './generated/entity_subclasses';
@@ -62,71 +62,16 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      */
     public readonly InitialPaymentIntent = this.RegisterCompanion(new InitialPaymentIntentCompanion(this));
 
-    /**
-     * Order-entry instrument snapshot (D39). Optional — null until Ensure() or Load()
-     * finds InitialPaymentDetailID. Confirm copies this onto the Payment Header;
-     * the two rows are never shared. OnClear delete: exclusive per
-     * UQ_OrderHeader_InitialPaymentDetail.
-     *
-     * Remove when CodeGen emits the same members from EntityField.EmbeddedRecord.
-     */
-    public readonly InitialPaymentDetailEmb = this.DeclareEmbeddedRecord<mjBizAppsOrdersPaymentDetailEntity>({
-        ForeignKeyField: 'InitialPaymentDetailID',
-        RelatedEntity: 'MJ_BizApps_Orders: Payment Details',
-        OnClear: 'delete',
-    });
-
-    /**
-     * Bill-to / ship-to street addresses. Addresses are first-class Common
-     * records (shared via AddressLink), so OnClear orphans — never deletes —
-     * the peer. Remove when CodeGen emits these from EntityField.EmbeddedRecord.
-     */
-    public readonly BillToAddressEmb = this.DeclareEmbeddedRecord<mjBizAppsCommonAddressEntity>({
-        ForeignKeyField: 'BillToAddressID',
-        RelatedEntity: 'MJ_BizApps_Common: Addresses',
-        OnClear: 'orphan',
-    });
-
-    public readonly ShipToAddressEmb = this.DeclareEmbeddedRecord<mjBizAppsCommonAddressEntity>({
-        ForeignKeyField: 'ShipToAddressID',
-        RelatedEntity: 'MJ_BizApps_Common: Addresses',
-        OnClear: 'orphan',
-    });
-
-    public get InitialPaymentDetailID_Object(): mjBizAppsOrdersPaymentDetailEntity | null {
-        return this.InitialPaymentDetailEmb.Value;
-    }
-
-    public InitialPaymentDetailID_EnsureObject(): mjBizAppsOrdersPaymentDetailEntity {
-        return this.InitialPaymentDetailEmb.Ensure();
-    }
-
     public ClearInitialPaymentDetail(): void {
-        this.InitialPaymentDetailEmb.Clear();
-    }
-
-    public get BillToAddressID_Object(): mjBizAppsCommonAddressEntity | null {
-        return this.BillToAddressEmb.Value;
-    }
-
-    public BillToAddressID_EnsureObject(): mjBizAppsCommonAddressEntity {
-        return this.BillToAddressEmb.Ensure();
+        this.GetCompanion<EmbeddedRecord>('InitialPaymentDetailID_Object')?.Clear();
     }
 
     public ClearBillToAddress(): void {
-        this.BillToAddressEmb.Clear();
-    }
-
-    public get ShipToAddressID_Object(): mjBizAppsCommonAddressEntity | null {
-        return this.ShipToAddressEmb.Value;
-    }
-
-    public ShipToAddressID_EnsureObject(): mjBizAppsCommonAddressEntity {
-        return this.ShipToAddressEmb.Ensure();
+        this.GetCompanion<EmbeddedRecord>('BillToAddressID_Object')?.Clear();
     }
 
     public ClearShipToAddress(): void {
-        this.ShipToAddressEmb.Clear();
+        this.GetCompanion<EmbeddedRecord>('ShipToAddressID_Object')?.Clear();
     }
 
     public get InitialPaymentReference(): string | null {

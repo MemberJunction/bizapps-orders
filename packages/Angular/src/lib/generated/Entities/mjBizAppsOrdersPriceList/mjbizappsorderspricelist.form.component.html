@@ -124,9 +124,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Prices','PriceListID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Prices')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Prices','PriceListID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductPrices')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductPrices', $event.totalRowCount)"
                 >
@@ -149,9 +149,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Company Policies','DefaultPriceListID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Company Policies')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Company Policies','DefaultPriceListID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderCompanyPolicies')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderCompanyPolicies', $event.totalRowCount)"
                 >
@@ -174,9 +174,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Price List Assignments','PriceListID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Price List Assignments')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Price List Assignments','PriceListID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPriceListAssignments')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPriceListAssignments', $event.totalRowCount)"
                 >

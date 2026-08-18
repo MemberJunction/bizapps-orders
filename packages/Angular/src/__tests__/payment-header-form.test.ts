@@ -1,12 +1,12 @@
 import '@angular/compiler';
 import { describe, it, expect } from 'vitest';
+import '../public-api';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersPaymentHeaderFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersPaymentHeader/mjbizappsorderspaymentheader.form.component';
 import { BizAppsPaymentHeaderFormComponent } from '../lib/custom/PaymentHeader/payment-header-form.component';
 import { PaymentHeaderPanel } from '../lib/form-panels/payment-header.panel';
-import '../public-api';
 
 describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters', () => {
     it('subclasses the generated mjBizAppsOrdersPaymentHeaderFormComponent', () => {
@@ -18,7 +18,7 @@ describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters',
             BaseFormComponent,
             'MJ_BizApps_Orders: Payment Headers'
         );
-        expect(activeReg?.SubClass).toBe(mjBizAppsOrdersPaymentHeaderFormComponent);
+        expect(activeReg?.SubClass?.name).toBe('mjBizAppsOrdersPaymentHeaderFormComponent');
         const customReg = MJGlobal.Instance.ClassFactory.GetAllRegistrations(
             BaseFormComponent,
             'MJ_BizApps_Orders: Payment Headers'

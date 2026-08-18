@@ -153,9 +153,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Adjustments','PromotionCodeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Adjustments')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Adjustments','PromotionCodeID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderAdjustments')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderAdjustments', $event.totalRowCount)"
                 >

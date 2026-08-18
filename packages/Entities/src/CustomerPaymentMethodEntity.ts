@@ -17,22 +17,4 @@ const ENTITY = 'MJ_BizApps_Orders: Customer Payment Methods';
 const DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 
 @RegisterClass(BaseEntity, ENTITY)
-export class CustomerPaymentMethodEntity extends mjBizAppsOrdersCustomerPaymentMethodEntity {
-    /**
-     * Exclusive instrument snapshot. OnClear delete: a wallet does not share its
-     * PaymentDetail (UQ_CustomerPaymentMethod_PaymentDetail).
-     */
-    public readonly PaymentDetailEmb = this.DeclareEmbeddedRecord<mjBizAppsOrdersPaymentDetailEntity>({
-        ForeignKeyField: 'PaymentDetailID',
-        RelatedEntity: DETAIL_ENTITY,
-        OnClear: 'delete',
-    });
-
-    public get PaymentDetailID_Object(): mjBizAppsOrdersPaymentDetailEntity {
-        return this.PaymentDetailEmb.Value!;
-    }
-
-    public PaymentDetailID_EnsureObject(): mjBizAppsOrdersPaymentDetailEntity {
-        return this.PaymentDetailEmb.Ensure();
-    }
-}
+export class CustomerPaymentMethodEntity extends mjBizAppsOrdersCustomerPaymentMethodEntity {}

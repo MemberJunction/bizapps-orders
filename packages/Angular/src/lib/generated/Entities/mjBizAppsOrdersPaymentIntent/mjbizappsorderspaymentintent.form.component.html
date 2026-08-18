@@ -162,9 +162,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Headers','PaymentIntentID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Headers')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Headers','PaymentIntentID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentHeaders')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentHeaders', $event.totalRowCount)"
                 >

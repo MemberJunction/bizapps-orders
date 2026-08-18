@@ -221,7 +221,71 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
+            FieldName="MigratesFromSubscriptionIDDepth"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MigratesFromSubscriptionIDPath"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MigratesFromSubscriptionIDIsLeaf"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MigratesFromSubscriptionIDChildCount"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
             FieldName="RootMigratesToSubscriptionID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MigratesToSubscriptionIDDepth"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MigratesToSubscriptionIDPath"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MigratesToSubscriptionIDIsLeaf"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MigratesToSubscriptionIDChildCount"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -285,9 +349,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Grants','SubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Grants')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Grants','SubscriptionID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersEntitlementGrants')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersEntitlementGrants', $event.totalRowCount)"
                 >
@@ -310,9 +374,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','MigratesToSubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions','MigratesToSubscriptionID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesToSubscriptionID', $event.totalRowCount)"
                 >
@@ -335,9 +399,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','MigratesFromSubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions','MigratesFromSubscriptionID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionsMigratesFromSubscriptionID', $event.totalRowCount)"
                 >
@@ -360,9 +424,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Events','SubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Events')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Events','SubscriptionID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionEvents')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionEvents', $event.totalRowCount)"
                 >
@@ -371,10 +435,10 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Subscription Terms Section -->
+    <!-- Terms Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersSubscriptionTerms"
-        SectionName="Subscription Terms"
+        SectionName="Terms"
         Icon="fa fa-calendar-check"
         Variant="related-entity"
         [Form]="this"
@@ -385,9 +449,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Terms','SubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Terms')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Terms','SubscriptionID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionTerms')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionTerms', $event.totalRowCount)"
                 >
@@ -410,9 +474,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','SubscriptionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines','SubscriptionID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLines')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLines', $event.totalRowCount)"
                 >

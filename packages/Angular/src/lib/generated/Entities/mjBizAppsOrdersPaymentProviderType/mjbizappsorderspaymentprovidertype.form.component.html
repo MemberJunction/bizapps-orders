@@ -158,9 +158,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Providers','PaymentProviderTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Providers')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Providers','PaymentProviderTypeID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentProviders')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentProviders', $event.totalRowCount)"
                 >
