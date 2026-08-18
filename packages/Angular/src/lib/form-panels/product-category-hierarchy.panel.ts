@@ -59,6 +59,9 @@ import { mjBizAppsOrdersProductCategoryEntity } from '@mj-biz-apps/orders-entiti
 })
 export class ProductCategoryHierarchyPanel extends BaseFormPanel<mjBizAppsOrdersProductCategoryEntity> {
     private readonly SETTING_KEY = 'mj.hierarchyTree.zoom.product_categories';
+    private _treeConfig: HierarchyTreeConfig | null = null;
+    private _cachedRecordId: string | null = null;
+    private _cachedCompanyId: string | null = null;
 
     public get persistedZoomLevel(): number | undefined {
         const raw = UserInfoEngine.Instance.GetSetting(this.SETTING_KEY);
@@ -76,20 +79,27 @@ export class ProductCategoryHierarchyPanel extends BaseFormPanel<mjBizAppsOrders
     }
 
     public get treeConfig(): HierarchyTreeConfig {
-        const filter = this.Record?.CompanyID ? `CompanyID = '${this.Record.CompanyID}'` : '';
-        return {
-            EntityName: 'MJ_BizApps_Orders: Product Categories',
-            ParentField: 'ParentProductCategoryID',
-            SubtitleField: 'Description',
-            DefaultIcon: 'fa-solid fa-tags',
-            DefaultColor: '#10b981',
-            ActiveRecordID: this.Record?.ID || undefined,
-            ExtraFilter: filter,
-            Height: '100%',
-            MinHeight: '520px',
-            ShowSearch: true,
-            ShowToolbar: true,
-            NavigateOnNodeClick: true
-        };
+        const recId = this.Record?.ID || null;
+        const compId = this.Record?.CompanyID || null;
+        if (!this._treeConfig || this._cachedRecordId !== recId || this._cachedCompanyId !== compId) {
+            this._cachedRecordId = recId;
+            this._cachedCompanyId = compId;
+            const filter = compId ? `CompanyID = '${compId}'` : '';
+            this._treeConfig = {
+                EntityName: 'MJ_BizApps_Orders: Product Categories',
+                ParentField: 'ParentProductCategoryID',
+                SubtitleField: 'Description',
+                DefaultIcon: 'fa-solid fa-tags',
+                DefaultColor: '#10b981',
+                ActiveRecordID: recId || undefined,
+                ExtraFilter: filter,
+                Height: '100%',
+                MinHeight: '520px',
+                ShowSearch: true,
+                ShowToolbar: true,
+                NavigateOnNodeClick: true
+            };
+        }
+        return this._treeConfig;
     }
 }
