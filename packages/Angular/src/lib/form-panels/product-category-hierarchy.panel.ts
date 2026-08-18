@@ -53,13 +53,15 @@ import { mjBizAppsOrdersProductCategoryEntity } from '@mj-biz-apps/orders-entiti
 })
 export class ProductCategoryHierarchyPanel extends BaseFormPanel<mjBizAppsOrdersProductCategoryEntity> {
     public get treeConfig(): HierarchyTreeConfig {
+        const filter = this.Record?.CompanyID ? `CompanyID = '${this.Record.CompanyID}'` : '';
         return {
             EntityName: 'MJ_BizApps_Orders: Product Categories',
             ParentField: 'ParentProductCategoryID',
             SubtitleField: 'Description',
             DefaultIcon: 'fa-solid fa-tags',
             DefaultColor: '#10b981',
-            FocusRecordID: this.Record?.ID || undefined,
+            ActiveRecordID: this.Record?.ID || undefined,
+            ExtraFilter: filter,
             Height: '440px',
             ShowSearch: true,
             ShowToolbar: true
