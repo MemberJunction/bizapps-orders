@@ -276,9 +276,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Codes','PromotionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Codes')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Codes','PromotionID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionCodes')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionCodes', $event.totalRowCount)"
                 >
@@ -301,9 +301,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Targets','PromotionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets','PromotionID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionTargets')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionTargets', $event.totalRowCount)"
                 >
@@ -326,9 +326,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Adjustments','PromotionID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Adjustments')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Adjustments','PromotionID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderAdjustments')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderAdjustments', $event.totalRowCount)"
                 >

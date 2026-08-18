@@ -125,7 +125,15 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="PricingDriverClass"
-            Type="code"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MaxQuantityPerLine"
+            Type="number"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -176,6 +184,38 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="RootSuccessorProductID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="SuccessorProductIDDepth"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="SuccessorProductIDPath"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="SuccessorProductIDIsLeaf"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="SuccessorProductIDChildCount"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -272,9 +312,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Entitlements','ProductID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Entitlements')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Entitlements','ProductID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductEntitlements')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductEntitlements', $event.totalRowCount)"
                 >
@@ -297,9 +337,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Bundle Items','ComponentProductID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Bundle Items')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Bundle Items','ComponentProductID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductBundleItemsComponentProductID')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductBundleItemsComponentProductID', $event.totalRowCount)"
                 >
@@ -308,10 +348,10 @@
         }
     </mj-collapsible-panel>
 
-    <!-- Product Bundle Items (Bundle Product ID) Section -->
+    <!-- Bundle Items Section -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersProductBundleItemsBundleProductID"
-        SectionName="Product Bundle Items (Bundle Product ID)"
+        SectionName="Bundle Items"
         Icon="fa fa-box-open"
         Variant="related-entity"
         [Form]="this"
@@ -322,9 +362,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Bundle Items','BundleProductID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Bundle Items')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Bundle Items','BundleProductID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductBundleItemsBundleProductID')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductBundleItemsBundleProductID', $event.totalRowCount)"
                 >
@@ -347,9 +387,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Products','SuccessorProductID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Products')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Products','SuccessorProductID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProducts')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProducts', $event.totalRowCount)"
                 >
@@ -372,9 +412,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','SourceBundleProductID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines','SourceBundleProductID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLinesSourceBundleProductID')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLinesSourceBundleProductID', $event.totalRowCount)"
                 >
@@ -397,9 +437,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Order Lines','ProductID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Order Lines','ProductID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersOrderLinesProductID')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersOrderLinesProductID', $event.totalRowCount)"
                 >
@@ -422,9 +462,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscriptions','ProductID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscriptions','ProductID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptions')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptions', $event.totalRowCount)"
                 >
@@ -447,9 +487,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Prices','ProductID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Prices')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Prices','ProductID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProductPrices')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProductPrices', $event.totalRowCount)"
                 >
@@ -472,9 +512,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Promotion Targets','ProductID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Promotion Targets','ProductID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPromotionTargets')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPromotionTargets', $event.totalRowCount)"
                 >

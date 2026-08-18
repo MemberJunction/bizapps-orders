@@ -1,7 +1,6 @@
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
-import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
 import { CustomFormsModule } from '../custom/custom-forms.module';
@@ -112,7 +111,6 @@ const PANELS = [
     imports: [
         CommonModule,
         BaseFormsModule,
-        EntityViewerModule,
         MJButtonDirective,
         DeferredRevenueWaterfallModule,
         CustomFormsModule,

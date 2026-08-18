@@ -135,6 +135,14 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="PricingDriverClass"
+            Type="code"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -157,14 +165,6 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="OrderLineExtensionEntity"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PricingDriverClass"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
@@ -218,9 +218,9 @@
         <div>
             <mj-explorer-entity-data-grid
                 [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Products','ProductTypeID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Products')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Products','ProductTypeID')"
                 [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersProducts')"
-                [ShowToolbar]="false"
+                [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersProducts', $event.totalRowCount)"
                 >

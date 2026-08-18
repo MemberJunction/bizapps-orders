@@ -179,7 +179,7 @@ module.exports = {
   // cross-schema foreign keys into common and accounting — those are real
   // constraints, not soft UUID refs — but their ENTITIES ship from their own
   // installed packages and must not be regenerated here.
-  excludeSchemas: ['sys', 'staging', 'dbo', '__mj', '__mj_BizAppsCommon', '__mj_BizAppsAccounting', '__mj_BizAppsTasks'],
+  excludeSchemas: ['sys', 'staging', 'dbo', '__mj', '__mj_BizAppsCommon', '__mj_BizAppsAccounting', '__mj_BizAppsTasks', '__mj_BizAppsIssues', '__mj_BizAppsCommittees', '__mj_BizAppsSecureMessaging'],
 
   /**
    * Server extensions — routes this app adds to MJServer.
