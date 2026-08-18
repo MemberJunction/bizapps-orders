@@ -1,8 +1,9 @@
-import { Component, ChangeDetectionStrategy, OnInit } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RegisterClassEx } from '@memberjunction/global';
-import { BaseFormPanel, BaseFormsModule } from '@memberjunction/ng-base-forms';
+import { BaseFormPanel, BaseFormsModule, FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { HierarchyTreeComponent, HierarchyTreeConfig } from '@memberjunction/ng-hierarchy-tree';
+import { UserInfoEngine } from '@memberjunction/core-entities';
 import { mjBizAppsOrdersProductCategoryEntity } from '@mj-biz-apps/orders-entities';
 
 /**
@@ -38,20 +39,42 @@ import { mjBizAppsOrdersProductCategoryEntity } from '@mj-biz-apps/orders-entiti
             @if (Record.IsSaved) {
                 <mj-hierarchy-tree
                     [Config]="treeConfig"
-                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                    [ZoomLevel]="persistedZoomLevel"
+                    (ZoomChange)="onZoomChange($event)"
+                    (Navigate)="onNavigate($event)">
                 </mj-hierarchy-tree>
             }
         </mj-collapsible-panel>
     `,
     styles: [`
         :host {
-            display: block;
+            display: flex;
+            flex-direction: column;
             width: 100%;
+            height: 100%;
+            min-height: 520px;
             margin-bottom: 20px;
         }
     `]
 })
 export class ProductCategoryHierarchyPanel extends BaseFormPanel<mjBizAppsOrdersProductCategoryEntity> {
+    private readonly SETTING_KEY = 'mj.hierarchyTree.zoom.product_categories';
+
+    public get persistedZoomLevel(): number | undefined {
+        const raw = UserInfoEngine.Instance.GetSetting(this.SETTING_KEY);
+        return raw ? parseFloat(raw) : undefined;
+    }
+
+    public onZoomChange(zoom: number): void {
+        UserInfoEngine.Instance.SetSettingDebounced(this.SETTING_KEY, zoom.toFixed(2));
+    }
+
+    public onNavigate(event: FormNavigationEvent): void {
+        if (this.FormComponent?.OnFormNavigate) {
+            this.FormComponent.OnFormNavigate(event);
+        }
+    }
+
     public get treeConfig(): HierarchyTreeConfig {
         const filter = this.Record?.CompanyID ? `CompanyID = '${this.Record.CompanyID}'` : '';
         return {
@@ -62,9 +85,11 @@ export class ProductCategoryHierarchyPanel extends BaseFormPanel<mjBizAppsOrders
             DefaultColor: '#10b981',
             ActiveRecordID: this.Record?.ID || undefined,
             ExtraFilter: filter,
-            Height: '440px',
+            Height: '100%',
+            MinHeight: '520px',
             ShowSearch: true,
-            ShowToolbar: true
+            ShowToolbar: true,
+            NavigateOnNodeClick: true
         };
     }
 }
