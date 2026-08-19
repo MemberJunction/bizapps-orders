@@ -85,8 +85,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public HeaderExpanded = true;
     public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
 
-    /** Related lists in the header tabs have no parent height to fill — pin them like related-entity panels. */
-    public readonly RelatedGridHeight = 400;
+    /** Related lists in the header tabs cap at 300px and scroll internally when larger. */
+    public readonly RelatedGridHeight = 300;
 
     public AccountingView: OrderAccountingView = 'summary';
 
@@ -468,8 +468,12 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public get PaymentParams(): RunViewParams | null {
-        if (!this.record?.IsSaved) return null;
-        return this.BuildRelationshipViewParamsByEntityName(MJO_ENTITIES.PaymentDetail, 'SourceOrderHeaderID');
+        if (!this.record?.IsSaved || !this.record.ID) return null;
+        return {
+            EntityName: MJO_ENTITIES.PaymentHeader,
+            ExtraFilter: `ID IN (SELECT PaymentHeaderID FROM [__mj_BizAppsOrders].[PaymentLine] WHERE OrderHeaderID = '${this.record.ID}')`,
+            ResultType: 'entity_object',
+        };
     }
 
     public get ChargeParams(): RunViewParams | null {

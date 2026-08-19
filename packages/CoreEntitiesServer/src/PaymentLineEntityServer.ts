@@ -106,6 +106,12 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         // backfilled) must not credit AR a second time.
         if (this.BookedAt) return super.Save(options);
 
+        // When saved as part of a parent PaymentHeader save, the parent PaymentHeader
+        // coordinates the booking of all allocations in one atomic batch inside the parent transaction.
+        if (options?.IsParentEntitySave) {
+            return super.Save(options);
+        }
+
         const payment = await this.loadPayment();
         // Nothing to book yet for an allocation against a Pending payment — no cash has landed.
         // It books when the payment reaches Captured, not here.

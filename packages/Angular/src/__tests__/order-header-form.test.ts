@@ -66,6 +66,21 @@ describe('BizAppsOrderHeaderFormComponent', () => {
         expect(ts).toContain('ShowRelatedEntities: false');
     });
 
+    it('lists applied payments via Payment Headers filtered by PaymentLine.OrderHeaderID', () => {
+        const ts = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-header-form.component.ts'),
+            'utf8',
+        );
+        const html = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-header-form.component.html'),
+            'utf8',
+        );
+        expect(ts).toContain('EntityName: MJO_ENTITIES.PaymentHeader');
+        expect(ts).toContain("ID IN (SELECT PaymentHeaderID FROM [__mj_BizAppsOrders].[PaymentLine] WHERE OrderHeaderID = '${this.record.ID}')");
+        expect(html).toContain("[Height]=\"'fit-content'\"");
+        expect(html).toContain('[MaxHeight]="RelatedGridHeight"');
+    });
+
     it('collapses the header to customer + date and persists only for saved orders', () => {
         expect(OrderHeaderExpandedFromPref(false, '0')).toBe(true);
         expect(OrderHeaderExpandedFromPref(true, '0')).toBe(false);

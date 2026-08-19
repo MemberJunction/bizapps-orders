@@ -214,10 +214,12 @@
                 @if (record.IsSaved && PaymentParams) {
                     <mj-explorer-entity-data-grid
                         [Params]="PaymentParams"
-                        [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Details')"
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
-                        [Height]="RelatedGridHeight"
+                        [ShowNewButton]="false"
+                        [ShowDeleteButton]="false"
+                        [Height]="'fit-content'"
+                        [MaxHeight]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
                 } @else {
@@ -249,7 +251,8 @@
                         [ShowToolbar]="true"
                         [ShowNewButton]="false"
                         [ShowDeleteButton]="false"
-                        [Height]="RelatedGridHeight"
+                        [Height]="'fit-content'"
+                        [MaxHeight]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
                     @if (record.MoneyLocked) {
@@ -360,7 +363,8 @@
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
                         [ShowNewButton]="false"
-                        [Height]="RelatedGridHeight"
+                        [Height]="'fit-content'"
+                        [MaxHeight]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
                 } @else {
@@ -377,7 +381,8 @@
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
                         [ShowNewButton]="false"
-                        [Height]="RelatedGridHeight"
+                        [Height]="'fit-content'"
+                        [MaxHeight]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
                 }
