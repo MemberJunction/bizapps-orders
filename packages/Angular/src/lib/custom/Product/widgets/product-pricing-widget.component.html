@@ -1,10 +1,13 @@
 <div class="mjo-pricing-widget-wrap">
-    <!-- Top Commercial Terms Card -->
+    <!-- 1. Top Commercial Parameters Card -->
     <div class="mjo-pricing-card">
         <div class="mjo-card-header">
             <div class="mjo-card-title">
                 <i class="fa-solid fa-calculator"></i>
                 <span>Base Commercial Terms &amp; ASC 606 Allocation</span>
+            </div>
+            <div class="mjo-base-pill">
+                Base List: <strong>{{ FormattedBasePrice }}</strong>
             </div>
         </div>
         <div class="mjo-pricing-fields">
@@ -39,27 +42,221 @@
         </div>
     </div>
 
-    <!-- Price Lists & Volume Tiers Grid -->
+    <!-- 2. Channel Segments & Volume Ladder Card -->
     <div class="mjo-pricing-card">
-        <div class="mjo-card-header">
-            <div class="mjo-card-title">
-                <i class="fa-solid fa-tags"></i>
-                <span>Price Lists &amp; Custom Volume Tiers</span>
+        <!-- Channel Segment Tabs Header -->
+        <div class="mjo-channel-bar">
+            <div class="mjo-channel-list">
+                @for (ch of Channels; track ch.ID) {
+                    <button 
+                        type="button" 
+                        class="mjo-channel-tab" 
+                        [class.active]="SelectedChannelID === ch.ID"
+                        (click)="SelectChannel(ch.ID)">
+                        <i [class]="ch.Icon"></i>
+                        <span>{{ ch.Name }}</span>
+                        <span class="mjo-channel-count">{{ ch.TierCount }} {{ ch.TierCount === 1 ? 'Tier' : 'Tiers' }}</span>
+                    </button>
+                }
+            </div>
+
+            <div class="mjo-channel-actions">
+                <button type="button" class="mjo-btn-subtle" (click)="ToggleAdvancedView()">
+                    <i [class]="IsAdvancedGridView ? 'fa-solid fa-stairs' : 'fa-solid fa-table-cells'"></i>
+                    <span>{{ IsAdvancedGridView ? 'View Quick Ladder' : 'Advanced Grid View' }}</span>
+                </button>
+                <button type="button" class="mjo-btn-subtle" (click)="OpenNewPriceDialog()">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>Add Channel / Rule</span>
+                </button>
             </div>
         </div>
 
-        @if (ProductPricesViewParams) {
-            <div class="mjo-grid-wrap">
-                <mj-explorer-entity-data-grid
-                    [Params]="ProductPricesViewParams"
-                    [NewRecordValues]="NewPriceRecordValues"
-                    [Height]="400"
-                    [AllowLoad]="true"
-                    [ShowToolbar]="true"
-                    [ShowNewButton]="true"
-                    (Navigate)="Navigate.emit($event)">
-                </mj-explorer-entity-data-grid>
+        @if (IsAdvancedGridView) {
+            <!-- Full Advanced Entity Data Grid View -->
+            @if (ProductPricesViewParams) {
+                <div class="mjo-grid-wrap">
+                    <mj-explorer-entity-data-grid
+                        [Params]="ProductPricesViewParams"
+                        [NewRecordValues]="NewPriceRecordValues"
+                        [Height]="420"
+                        [AllowLoad]="true"
+                        [ShowToolbar]="true"
+                        [ShowNewButton]="true"
+                        (Navigate)="Navigate.emit($event)">
+                    </mj-explorer-entity-data-grid>
+                </div>
+            }
+        } @else {
+            <!-- Option 1: Quick Tier Ladder View -->
+            @if (IsLoading) {
+                <div class="mjo-loading-state">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <span>Loading price tiers…</span>
+                </div>
+            } @else if (LadderTiers.length === 0) {
+                <div class="mjo-empty-tiers">
+                    <div class="mjo-empty-icon"><i class="fa-solid fa-tags"></i></div>
+                    <div class="mjo-empty-text">
+                        <h4>No Pricing Tiers Configured for this Channel</h4>
+                        <p>Use the Quick Bracket builder below to add volume-discounted pricing.</p>
+                    </div>
+                </div>
+            } @else {
+                <div class="mjo-ladder-table-wrap">
+                    <table class="mjo-ladder-table">
+                        <thead>
+                            <tr>
+                                <th>Tier Bracket</th>
+                                <th>Unit Range</th>
+                                <th class="mjo-th-num">Unit Price ($)</th>
+                                <th>Discount vs Base</th>
+                                <th>Unit Savings</th>
+                                <th>Model</th>
+                                <th>Status / Dates</th>
+                                <th class="mjo-th-actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (tier of LadderTiers; track tier.ID) {
+                                <tr>
+                                    <td>
+                                        <strong class="mjo-tier-title">{{ tier.BracketLabel }}</strong>
+                                    </td>
+                                    <td>
+                                        <span class="mjo-range-pill">{{ tier.UnitRangeText }}</span>
+                                    </td>
+                                    <td class="mjo-td-num">
+                                        <input 
+                                            type="text" 
+                                            class="mjo-price-input" 
+                                            [value]="FormatCurrency(tier.Amount)"
+                                            (blur)="OnPriceInputBlur(tier, $event)"
+                                            [title]="'Edit price for ' + tier.BracketLabel">
+                                    </td>
+                                    <td>
+                                        @if (tier.DiscountPercent > 0) {
+                                            <span class="mjo-disc-tag">
+                                                <i class="fa-solid fa-arrow-down"></i> {{ tier.DiscountPercent }}% off
+                                            </span>
+                                        } @else {
+                                            <span class="mjo-standard-tag">Standard Base</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (tier.UnitSavings > 0) {
+                                            <strong class="mjo-savings-val">{{ FormatCurrency(tier.UnitSavings) }} / unit</strong>
+                                        } @else {
+                                            <span style="color: var(--mj-text-muted, #94a3b8);">$0.00</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <span class="mjo-model-tag">{{ tier.PricingModel }}</span>
+                                    </td>
+                                    <td>
+                                        <span class="mjo-date-tag">{{ tier.EffectiveDatesText }}</span>
+                                    </td>
+                                    <td class="mjo-td-actions">
+                                        <button 
+                                            type="button" 
+                                            class="mjo-action-btn" 
+                                            title="Open full price rule" 
+                                            (click)="OpenTierRecord(tier)">
+                                            <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                                        </button>
+                                        @if (!tier.IsBaseBracket) {
+                                            <button 
+                                                type="button" 
+                                                class="mjo-action-btn mjo-action-btn--delete" 
+                                                title="Delete tier" 
+                                                (click)="DeleteTier(tier)">
+                                                <i class="fa-solid fa-trash"></i>
+                                            </button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <!-- Quick Add Tier Bracket Bar -->
+            <div class="mjo-quick-add-bar">
+                <div class="mjo-quick-add-inputs">
+                    <span class="mjo-quick-add-label">
+                        <i class="fa-solid fa-plus-circle"></i> Add Volume Tier:
+                    </span>
+                    <label class="mjo-field-group">
+                        <span class="mjo-sub-label">Min:</span>
+                        <input 
+                            type="number" 
+                            class="mjo-input-num" 
+                            [(ngModel)]="NewTierMin" 
+                            min="1">
+                    </label>
+                    <label class="mjo-field-group">
+                        <span class="mjo-sub-label">Max:</span>
+                        <input 
+                            type="number" 
+                            class="mjo-input-num" 
+                            [(ngModel)]="NewTierMax" 
+                            placeholder="∞">
+                    </label>
+                    <label class="mjo-field-group">
+                        <span class="mjo-sub-label">Price ($):</span>
+                        <input 
+                            type="number" 
+                            class="mjo-input-price" 
+                            [(ngModel)]="NewTierPrice" 
+                            min="0" 
+                            step="0.01">
+                    </label>
+                    <label class="mjo-field-group">
+                        <span class="mjo-sub-label">Model:</span>
+                        <select class="mjo-input-select" [(ngModel)]="NewTierModel">
+                            <option value="Volume">Volume</option>
+                            <option value="PerUnit">PerUnit</option>
+                            <option value="Tiered">Tiered</option>
+                            <option value="Flat">Flat</option>
+                        </select>
+                    </label>
+                    <button 
+                        type="button" 
+                        class="mjo-btn-add" 
+                        [disabled]="IsSaving" 
+                        (click)="AddTierBracket()">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Add Bracket</span>
+                    </button>
+                </div>
+
+                <div class="mjo-guard-badge">
+                    <i class="fa-solid fa-shield-halved"></i>
+                    <span>Gap &amp; overlap protection active</span>
+                </div>
             </div>
+
+            <!-- Volume Step Curve Diagram -->
+            @if (StepBars.length > 0) {
+                <div class="mjo-step-curve-wrap">
+                    <div class="mjo-step-curve-title">
+                        <i class="fa-solid fa-chart-simple"></i>
+                        <span>Live Volume Step Curve (Base vs Tiers)</span>
+                    </div>
+                    <div class="mjo-step-curve-bars">
+                        @for (bar of StepBars; track bar.Label) {
+                            <div class="mjo-step-col">
+                                <span class="mjo-step-val">{{ bar.FormattedAmount }}</span>
+                                <div class="mjo-step-track">
+                                    <div class="mjo-step-fill" [style.height.%]="bar.Percentage"></div>
+                                </div>
+                                <span class="mjo-step-label">{{ bar.Label }} units</span>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
         }
     </div>
 </div>
