@@ -78,10 +78,12 @@
                     <i [class]="IsAdvancedGridView ? 'fa-solid fa-stairs' : 'fa-solid fa-table-cells'"></i>
                     <span>{{ IsAdvancedGridView ? 'View Quick Ladder' : 'Advanced Grid View' }}</span>
                 </button>
-                <button type="button" class="mjo-btn-subtle" (click)="OpenNewPriceDialog()">
-                    <i class="fa-solid fa-plus"></i>
-                    <span>Add Channel / Rule</span>
-                </button>
+                @if (EditMode) {
+                    <button type="button" class="mjo-btn-subtle" (click)="OpenNewPriceDialog()">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Add Channel / Rule</span>
+                    </button>
+                }
             </div>
         </div>
 
@@ -95,7 +97,8 @@
                         [Height]="420"
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
-                        [ShowNewButton]="true"
+                        [ShowNewButton]="EditMode"
+                        [ShowDeleteButton]="EditMode"
                         (Navigate)="Navigate.emit($event)">
                     </mj-explorer-entity-data-grid>
                 </div>
@@ -112,7 +115,13 @@
                     <div class="mjo-empty-icon"><i class="fa-solid fa-tags"></i></div>
                     <div class="mjo-empty-text">
                         <h4>No Pricing Tiers Configured for this Channel</h4>
-                        <p>Use the Quick Bracket builder below to add volume-discounted pricing.</p>
+                        <p>
+                            @if (EditMode) {
+                                Use the Quick Bracket builder below to add volume-discounted pricing.
+                            } @else {
+                                Switch to Edit mode to configure pricing tiers and volume discounts.
+                            }
+                        </p>
                     </div>
                 </div>
             } @else {
@@ -140,12 +149,16 @@
                                         <span class="mjo-range-pill">{{ tier.UnitRangeText }}</span>
                                     </td>
                                     <td class="mjo-td-num">
-                                        <input 
-                                            type="text" 
-                                            class="mjo-price-input" 
-                                            [value]="FormatCurrency(tier.Amount)"
-                                            (blur)="OnPriceInputBlur(tier, $event)"
-                                            [title]="'Edit price for ' + tier.BracketLabel">
+                                        @if (EditMode) {
+                                            <input 
+                                                type="text" 
+                                                class="mjo-price-input" 
+                                                [value]="FormatCurrency(tier.Amount)"
+                                                (blur)="OnPriceInputBlur(tier, $event)"
+                                                [title]="'Edit price for ' + tier.BracketLabel">
+                                        } @else {
+                                            <strong class="mjo-price-val">{{ FormatCurrency(tier.Amount) }}</strong>
+                                        }
                                     </td>
                                     <td>
                                         @if (tier.DiscountPercent > 0) {
@@ -177,7 +190,7 @@
                                             (click)="OpenTierRecord(tier)">
                                             <i class="fa-solid fa-arrow-up-right-from-square"></i>
                                         </button>
-                                        @if (!tier.IsBaseBracket) {
+                                        @if (EditMode && !tier.IsBaseBracket) {
                                             <button 
                                                 type="button" 
                                                 class="mjo-action-btn mjo-action-btn--delete" 
@@ -194,66 +207,68 @@
                 </div>
             }
 
-            <!-- Quick Add Tier Bracket Bar -->
-            <div class="mjo-quick-add-bar">
-                <div class="mjo-quick-add-inputs">
-                    <span class="mjo-quick-add-label">
-                        <i class="fa-solid fa-plus-circle"></i> Add Volume Tier:
-                    </span>
-                    <label class="mjo-field-group">
-                        <span class="mjo-sub-label">Min:</span>
-                        <input 
-                            type="number" 
-                            class="mjo-input-num" 
-                            [(ngModel)]="NewTierMin" 
-                            min="1">
-                    </label>
-                    <label class="mjo-field-group">
-                        <span class="mjo-sub-label">Max:</span>
-                        <input 
-                            type="number" 
-                            class="mjo-input-num" 
-                            [(ngModel)]="NewTierMax" 
-                            placeholder="∞">
-                    </label>
-                    <label class="mjo-field-group">
-                        <span class="mjo-sub-label">Price ($):</span>
-                        <input 
-                            type="number" 
-                            class="mjo-input-price" 
-                            [(ngModel)]="NewTierPrice" 
-                            min="0" 
-                            step="0.01">
-                    </label>
-                    <label class="mjo-field-group">
-                        <span class="mjo-sub-label">Model:</span>
-                        <select class="mjo-input-select" [(ngModel)]="NewTierModel">
-                            <option value="Volume">Volume</option>
-                            <option value="PerUnit">PerUnit</option>
-                            <option value="Tiered">Tiered</option>
-                            <option value="Flat">Flat</option>
-                        </select>
-                    </label>
-                    <button 
-                        type="button" 
-                        class="mjo-btn-add" 
-                        [disabled]="IsSaving" 
-                        (click)="AddTierBracket()">
-                        @if (IsSaving) {
-                            <i class="fa-solid fa-spinner fa-spin"></i>
-                            <span>Saving…</span>
-                        } @else {
-                            <i class="fa-solid fa-plus"></i>
-                            <span>Add Bracket</span>
-                        }
-                    </button>
-                </div>
+            <!-- Quick Add Tier Bracket Bar (Only active when EditMode is true) -->
+            @if (EditMode) {
+                <div class="mjo-quick-add-bar">
+                    <div class="mjo-quick-add-inputs">
+                        <span class="mjo-quick-add-label">
+                            <i class="fa-solid fa-plus-circle"></i> Add Volume Tier:
+                        </span>
+                        <label class="mjo-field-group">
+                            <span class="mjo-sub-label">Min:</span>
+                            <input 
+                                type="number" 
+                                class="mjo-input-num" 
+                                [(ngModel)]="NewTierMin" 
+                                min="1">
+                        </label>
+                        <label class="mjo-field-group">
+                            <span class="mjo-sub-label">Max:</span>
+                            <input 
+                                type="number" 
+                                class="mjo-input-num" 
+                                [(ngModel)]="NewTierMax" 
+                                placeholder="∞">
+                        </label>
+                        <label class="mjo-field-group">
+                            <span class="mjo-sub-label">Price ($):</span>
+                            <input 
+                                type="number" 
+                                class="mjo-input-price" 
+                                [(ngModel)]="NewTierPrice" 
+                                min="0" 
+                                step="0.01">
+                        </label>
+                        <label class="mjo-field-group">
+                            <span class="mjo-sub-label">Model:</span>
+                            <select class="mjo-input-select" [(ngModel)]="NewTierModel">
+                                <option value="Volume">Volume</option>
+                                <option value="PerUnit">PerUnit</option>
+                                <option value="Tiered">Tiered</option>
+                                <option value="Flat">Flat</option>
+                            </select>
+                        </label>
+                        <button 
+                            type="button" 
+                            class="mjo-btn-add" 
+                            [disabled]="IsSaving" 
+                            (click)="AddTierBracket()">
+                            @if (IsSaving) {
+                                <i class="fa-solid fa-spinner fa-spin"></i>
+                                <span>Saving…</span>
+                            } @else {
+                                <i class="fa-solid fa-plus"></i>
+                                <span>Add Bracket</span>
+                            }
+                        </button>
+                    </div>
 
-                <div class="mjo-guard-badge">
-                    <i class="fa-solid fa-shield-halved"></i>
-                    <span>Gap &amp; overlap protection active</span>
+                    <div class="mjo-guard-badge">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        <span>Gap &amp; overlap protection active</span>
+                    </div>
                 </div>
-            </div>
+            }
 
             <!-- Volume Step Curve Diagram -->
             @if (StepBars.length > 0) {

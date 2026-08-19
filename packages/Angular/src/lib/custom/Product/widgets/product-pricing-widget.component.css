@@ -275,6 +275,15 @@
     box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
 }
 
+.mjo-price-val {
+    font-family: var(--mj-font-mono, monospace);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--mj-text-primary, #0f172a);
+    display: inline-block;
+    padding: 4px 0;
+}
+
 .mjo-disc-tag {
     display: inline-flex;
     align-items: center;

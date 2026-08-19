@@ -112,5 +112,24 @@
       "lastModified": "2026-08-13T21:31:03.451Z",
       "checksum": "59ee22ef08f01d52c6e3631d5007658abc56699ce43678d9318114372f7a0f26"
     }
+  },
+  {
+    "_comments": [
+      "Declares Products -> Product Prices as a related-record collection (MJ 6.1).",
+      "",
+      "Product price rules (volume brackets, channel overrides) form a coherent child collection of",
+      "the product entity graph. Managing them via RelatedRecordCollection allows transactional graph saves",
+      "and direct in-memory manipulation on product.Prices."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:product-prices-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Product Prices&RelatedEntityJoinField=ProductID"
+    },
+    "sync": {
+      "lastModified": "2026-08-19T01:45:44.536Z",
+      "checksum": "4efa7a1101423c98ac5ca100fd10f44b127e74952955971d46dc7c7ad653b26f"
+    }
   }
 ]
