@@ -262,7 +262,225 @@
     color: var(--mj-text-secondary, #475569);
 }
 
-/* ── 5. Responsive ─────────────────────────────────────────────────────────── */
+/* ── 5. Accounting Tab & Ledger Rollup Cards ──────────────────────────── */
+.mjo-ph-acct {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-3, 12px);
+}
+
+.mjo-ph-acct__bar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--mj-space-3, 12px);
+    flex-wrap: wrap;
+    padding-bottom: var(--mj-space-2, 8px);
+    border-bottom: 1px solid var(--mj-border-subtle, #f1f5f9);
+}
+
+.mjo-ph-acct__heading {
+    margin: 0;
+    font-size: var(--mj-text-sm, 14px);
+    font-weight: var(--mj-font-bold, 700);
+    color: var(--mj-text-primary, #0f172a);
+}
+
+.mjo-ph-acct__subtext {
+    margin: 2px 0 0;
+    font-size: var(--mj-text-xs, 12px);
+    color: var(--mj-text-muted, #64748b);
+}
+
+.mjo-ph-switch {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-full, 9999px);
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+}
+
+.mjo-ph-switch button {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--mj-text-secondary, #475569);
+    font: inherit;
+    font-size: var(--mj-text-xs, 12px);
+    font-weight: var(--mj-font-semibold, 600);
+    padding: 4px 12px;
+    border-radius: var(--mj-radius-full, 9999px);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 120ms ease;
+}
+
+.mjo-ph-switch button.is-on {
+    background: var(--mj-bg-surface, #ffffff);
+    color: var(--mj-text-primary, #0f172a);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.mjo-ph-switch__n {
+    min-width: 1.25em;
+    padding: 0 5px;
+    border-radius: var(--mj-radius-full, 9999px);
+    background: color-mix(in srgb, var(--mj-brand-primary, #0076b6) 14%, var(--mj-bg-surface, #ffffff));
+    color: var(--mj-brand-primary, #0076b6);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.mjo-ph-hint {
+    padding: var(--mj-space-4, 16px);
+    border-radius: var(--mj-radius-md, 8px);
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+    border: 1px dashed var(--mj-border-default, #e2e8f0);
+    color: var(--mj-text-muted, #64748b);
+    font-size: var(--mj-text-sm, 13px);
+    text-align: center;
+}
+
+/* Journal Entry Rollup Cards */
+.mjo-oh-jecard {
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-md, 8px);
+    background: var(--mj-bg-surface, #ffffff);
+    overflow: hidden;
+}
+
+.mjo-oh-jecard + .mjo-oh-jecard {
+    margin-top: var(--mj-space-3, 12px);
+}
+
+.mjo-oh-jecard__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--mj-space-2, 8px);
+    padding: var(--mj-space-2, 8px) var(--mj-space-3, 12px);
+    background: var(--mj-bg-surface-card, #f8fafc);
+    border-bottom: 1px solid var(--mj-border-subtle, #f1f5f9);
+}
+
+.mjo-oh-jecard__co {
+    font-size: var(--mj-text-sm, 13.5px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-text-primary, #0f172a);
+}
+
+.mjo-oh-jecard__sub {
+    margin-left: var(--mj-space-2, 8px);
+    font-size: var(--mj-text-xs, 12px);
+    color: var(--mj-text-muted, #64748b);
+}
+
+.mjo-oh-chip {
+    font-size: var(--mj-text-xs, 11px);
+    font-weight: var(--mj-font-semibold, 600);
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-full, 9999px);
+    background: var(--mj-status-danger-bg, #fef2f2);
+    color: var(--mj-status-danger-text, #991b1b);
+    border: 1px solid var(--mj-status-danger-border, #fecaca);
+}
+
+.mjo-oh-chip--ok {
+    background: var(--mj-status-success-bg, #f0fdf4);
+    color: var(--mj-status-success-text, #166534);
+    border-color: var(--mj-status-success-border, #bbf7d0);
+}
+
+.mjo-oh-je__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--mj-text-sm, 13px);
+}
+
+.mjo-oh-je__table th,
+.mjo-oh-je__table td {
+    padding: var(--mj-space-2, 8px) var(--mj-space-3, 12px);
+    border-bottom: 1px solid var(--mj-border-subtle, #f1f5f9);
+    text-align: left;
+    vertical-align: top;
+}
+
+.mjo-oh-je__table thead th {
+    font-size: var(--mj-text-xs, 11px);
+    font-weight: var(--mj-font-bold, 700);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--mj-text-muted, #64748b);
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+}
+
+.mjo-oh-je__table tfoot th {
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-text-primary, #0f172a);
+    border-bottom: 0;
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+}
+
+.mjo-oh-je__table .is-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.mjo-oh-je__table .is-quiet {
+    color: var(--mj-text-disabled, #cbd5e1);
+}
+
+.mjo-oh-acctline {
+    display: flex;
+    align-items: baseline;
+    gap: var(--mj-space-2, 8px);
+    flex-wrap: wrap;
+}
+
+.mjo-oh-acctline__code {
+    font-family: var(--mj-font-family-mono, monospace);
+    font-variant-numeric: tabular-nums;
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-brand-primary, #0076b6);
+    background: var(--mj-status-info-bg, rgba(0, 118, 182, 0.08));
+    padding: 1px 6px;
+    border-radius: var(--mj-radius-sm, 4px);
+    font-size: 11.5px;
+}
+
+.mjo-oh-acctline__name {
+    color: var(--mj-text-primary, #0f172a);
+    font-weight: 500;
+}
+
+.mjo-oh-acctline__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.mjo-oh-dim {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: var(--mj-radius-full, 9999px);
+    border: 1px solid var(--mj-border-subtle, #e2e8f0);
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+    color: var(--mj-text-secondary, #475569);
+    font-size: 11px;
+}
+
+.mjo-oh-je__src {
+    font-size: 11px;
+    color: var(--mj-text-muted, #64748b);
+}
+
+/* ── 6. Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 1100px) {
     .mjo-record-summary-bar {
         grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));

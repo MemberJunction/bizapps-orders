@@ -7,6 +7,7 @@ import type { mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-ent
 import { mjBizAppsOrdersPaymentHeaderFormComponent } from '../lib/generated/Entities/mjBizAppsOrdersPaymentHeader/mjbizappsorderspaymentheader.form.component';
 import { BizAppsPaymentHeaderFormComponent } from '../lib/custom/PaymentHeader/payment-header-form.component';
 import { PaymentHeaderPanel } from '../lib/form-panels/payment-header.panel';
+import { PaymentJournalsPanel } from '../lib/form-panels/payment-journals.panel';
 
 describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters', () => {
     it('subclasses the generated mjBizAppsOrdersPaymentHeaderFormComponent', () => {
@@ -95,5 +96,51 @@ describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters',
 
         expect(instance.SettlementStatusText).toContain('Refunded');
         expect(instance.StatusBadgeClass).toContain('mjo-status-chip--purple');
+    });
+
+    it('builds comprehensive payment journal filter including direct and allocation line links', () => {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        instance.record = {
+            IsSaved: true,
+            ID: 'pay-hdr-123',
+            JournalEntryID: 'je-direct-456',
+        } as unknown as mjBizAppsOrdersPaymentHeaderEntity;
+
+        const params = instance.PaymentJournalEntryParams;
+        expect(params).not.toBeNull();
+        expect(params?.EntityName).toBe('MJ_BizApps_Accounting: Journal Entries');
+        expect(params?.ExtraFilter).toContain("ID = 'je-direct-456'");
+        expect(params?.ExtraFilter).toContain("LinkedRecordID = 'pay-hdr-123'");
+        expect(params?.ExtraFilter).toContain("SELECT ID FROM [__mj_BizAppsOrders].[PaymentLine] WHERE PaymentHeaderID = 'pay-hdr-123'");
+    });
+
+    it('registers PaymentJournalsPanel as a form panel contribution', () => {
+        const regs = MJGlobal.Instance.ClassFactory.GetAllRegistrations(BaseFormPanel);
+        expect(regs.some(r => r.SubClass === PaymentJournalsPanel)).toBe(true);
+    });
+
+    it('evaluates CardIsBalanced correctly', () => {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        expect(instance.CardIsBalanced({
+            CompanyID: 'co-1',
+            Company: 'Co 1',
+            TotalDebit: 500,
+            TotalCredit: 500,
+            Rows: [],
+        })).toBe(true);
+
+        expect(instance.CardIsBalanced({
+            CompanyID: 'co-1',
+            Company: 'Co 1',
+            TotalDebit: 500,
+            TotalCredit: 499.99,
+            Rows: [],
+        })).toBe(false);
+    });
+
+    it('formats source line label correctly', () => {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        expect(instance.SourceLineLabel(1)).toBe('1 allocation');
+        expect(instance.SourceLineLabel(3)).toBe('3 allocations');
     });
 });
