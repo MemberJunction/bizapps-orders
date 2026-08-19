@@ -162,7 +162,7 @@ export async function ResolvePricingDriver(
         const policyRes = await rv.RunView<{ PricingDriverClass: string | null }>(
             {
                 EntityName: POLICY_ENTITY,
-                ExtraFilter: `CompanyID = '${companyID}'`,
+                ExtraFilter: `ID = '${companyID}'`,
                 Fields: ['PricingDriverClass'],
                 ResultType: 'simple',
             },

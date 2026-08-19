@@ -449,9 +449,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // it writes a row, and none of it needs the header's key — the collection stamps the
             // foreign key itself.
             // A form that saved the draft and then confirmed reloads the HEADER only.
-            // `EnsureLinesLoaded` is the shared (non-transactional) read; booking is the
-            // only caller that MUST have the collection before it decides subscriptions.
-            if (booking) await this.EnsureLinesLoaded();
+            // Booking is the only caller that MUST have the collection before it decides subscriptions.
+            if (booking && this.IsSaved && !this.Lines.IsLoaded) {
+                await this.Lines.Load();
+            }
 
             await this.expandBundles();
             const decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine> =
@@ -931,7 +932,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
-                    `Failed to save order line ${line.LineNumber}: ${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    `Failed to save order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`,
                 );
             }
             persisted.push(line);
@@ -2407,13 +2408,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // caught by that three times.
         await this.requireReferenceWhenTenderDemandsOne(provider, user);
 
-        // The payment owns its own instrument row (D39). Prefer a typed reference from the
-        // companion (Fast Entry / editor) and fall back to copying a pre-built detail (fixtures).
+        // The payment owns its own instrument row (D39). If the order already has an
+        // InitialPaymentDetail row (from the embedded record), copy it; otherwise mint a
+        // fresh PaymentDetail from the typed reference.
         let paymentDetailID: string | null = null;
-        if (this.InitialPaymentReference) {
-            paymentDetailID = await this.createPaymentDetailFromReference(options);
-        } else if (this.InitialPaymentDetailID) {
+        if (this.InitialPaymentDetailID) {
             paymentDetailID = await this.copyPaymentDetail(this.InitialPaymentDetailID, options);
+        } else if (this.InitialPaymentReference) {
+            paymentDetailID = await this.createPaymentDetailFromReference(options);
         }
 
         // Typed as the SERVER subclass, which is what the class factory returns for this key: the

@@ -183,7 +183,7 @@ export interface MJOTenderOption {
                     <div class="mj-typeahead-list is-open" role="listbox">
                         @for (option of PayerResults; track option.ID) {
                             <div class="mj-typeahead-item" role="option" (mousedown)="ChoosePayer(option)">
-                                <div class="fe-picker__body">
+                                <div class="mjo-pe__pick-body">
                                     <div class="name">{{ option.Name }}</div>
                                     <div class="sub">{{ option.IsOrganization ? 'Organization' : 'Person' }}</div>
                                 </div>
@@ -294,6 +294,11 @@ export interface MJOTenderOption {
             }
             .mjo-pe__note {
                 margin-top: var(--mj-space-3);
+            }
+            .mjo-pe__pick-body {
+                display: flex;
+                flex-direction: column;
+                min-width: 0;
             }
             /*
              * STICKY. With every open order listed the page runs to several

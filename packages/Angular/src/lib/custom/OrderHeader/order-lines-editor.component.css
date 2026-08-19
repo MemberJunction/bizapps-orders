@@ -173,7 +173,14 @@
     color: var(--mj-text-primary);
 }
 
-.mjo-ol-picker { position: relative; z-index: 20; }
+.mjo-ol-picker {
+    position: relative;
+    z-index: 20;
+}
+
+.mjo-ol-picker:has(.mj-typeahead-list.is-open) {
+    z-index: 40;
+}
 
 .mjo-search {
     display: flex;

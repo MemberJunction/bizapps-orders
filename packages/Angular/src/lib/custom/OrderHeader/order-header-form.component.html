@@ -37,20 +37,6 @@
                         <span class="mjo-oh-amt">{{ Money('balance') }}</span>
                     </div>
                 </div>
-                @if (ShowConfirm && HeaderExpanded) {
-                    <div class="mjo-oh-confirm">
-                        <button
-                            type="button"
-                            mjButton
-                            variant="primary"
-                            [disabled]="Confirming"
-                            (click)="RunConfirm()">
-                            <i class="fa-solid" [class.fa-check]="!Confirming" [class.fa-circle-notch]="Confirming" [class.fa-spin]="Confirming" aria-hidden="true"></i>
-                            {{ Confirming ? 'Booking…' : 'Confirm order' }}
-                        </button>
-                        <span class="mjo-oh-confirm__hint">Books the receivable. This cannot be undone.</span>
-                    </div>
-                }
                 <button
                     type="button"
                     class="mjo-oh-hero__toggle"
@@ -66,10 +52,10 @@
         @if (HeaderExpanded) {
         <div class="mjo-oh-facts">
             <div class="mjo-oh-fact">
-                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderType" Type="select" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderType" Type="select" [EditMode]="ComposeMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
             </div>
             <div class="mjo-oh-fact">
-                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="CompanyID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="CompanyID" Type="textbox" [EditMode]="ComposeMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
             </div>
             <div class="mjo-oh-fact">
                 <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
@@ -209,8 +195,8 @@
         @if (ActiveTab === 'payment') {
             <div class="mjo-oh-tabpane">
                 <div class="mjo-oh-fields">
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentTypeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
-                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentAmount" Type="number" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentTypeID" Type="textbox" [EditMode]="ComposeMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentAmount" Type="number" [EditMode]="ComposeMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     @if (PaymentRequiresReference) {
                         <label class="mjo-oh-ref">
                             <span class="mjo-oh-ref__label">Check / ACH reference</span>
@@ -218,7 +204,7 @@
                                 class="mj-input"
                                 [ngModel]="PaymentReference"
                                 (ngModelChange)="SetPaymentReference($event)"
-                                [disabled]="!EditMode"
+                                [disabled]="!ComposeMode"
                                 placeholder="Check number or confirmation ID"
                                 autocomplete="off"
                                 aria-label="Check or ACH reference">
@@ -262,9 +248,13 @@
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
                         [ShowNewButton]="false"
+                        [ShowDeleteButton]="false"
                         [Height]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
+                    @if (record.MoneyLocked) {
+                        <div class="mjo-oh-hint">Charges were booked with the order and cannot be edited.</div>
+                    }
                 }
             </div>
         }
@@ -408,7 +398,7 @@
         [DefaultExpanded]="true">
         <mjo-order-lines-editor
             [Order]="record"
-            [EditMode]="EditMode"
+            [EditMode]="ComposeMode"
             (PricingChanged)="OnPricingChanged($event)"
             (Navigate)="OnFormNavigate($event)">
         </mjo-order-lines-editor>

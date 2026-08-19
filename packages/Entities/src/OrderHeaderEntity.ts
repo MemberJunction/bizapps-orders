@@ -37,6 +37,11 @@ import { CanOfferConfirm, CanTransition, IsBooked, type TransitionVerdict } from
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
+import {
+    BookedMoneyEditMessage,
+    ORDER_HEADER_MONEY_FIELDS,
+    ORDER_LINE_MONEY_FIELDS,
+} from './booked-money';
 
 /** The order editor's sections, in the order the screen shows them. */
 export type OrderEditorSection = 'header' | 'parties' | 'lines' | 'charges' | 'payment';
@@ -63,6 +68,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     public readonly InitialPaymentIntent = this.RegisterCompanion(new InitialPaymentIntentCompanion(this));
 
     public ClearInitialPaymentDetail(): void {
+        this.InitialPaymentIntent.Reference = null;
         this.GetCompanion<EmbeddedRecord>('InitialPaymentDetailID_Object')?.Clear();
     }
 
@@ -75,11 +81,45 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     }
 
     public get InitialPaymentReference(): string | null {
-        return this.InitialPaymentIntent.Reference;
+        return (
+            this.InitialPaymentDetailID_Object?.ReferenceNumber ??
+            this.InitialPaymentIntent.Reference ??
+            null
+        );
     }
 
     public set InitialPaymentReference(value: string | null) {
-        this.InitialPaymentIntent.Reference = value;
+        const trimmed = (value ?? '').trim();
+        const ref = trimmed.length ? trimmed : null;
+        this.InitialPaymentIntent.Reference = ref;
+        if (ref) {
+            const detail = this.InitialPaymentDetailID_EnsureObject();
+            detail.ReferenceNumber = ref;
+            if (this.CompanyID && !detail.CompanyID) {
+                detail.CompanyID = this.CompanyID;
+            }
+            if (this.InitialPaymentTypeID && !detail.PaymentTypeID) {
+                detail.PaymentTypeID = this.InitialPaymentTypeID;
+            }
+        } else if (this.InitialPaymentDetailID_Object) {
+            this.InitialPaymentDetailID_Object.ReferenceNumber = null;
+            if (this.isInitialPaymentDetailEmpty(this.InitialPaymentDetailID_Object)) {
+                this.ClearInitialPaymentDetail();
+            }
+        }
+    }
+
+    private isInitialPaymentDetailEmpty(detail: mjBizAppsOrdersPaymentDetailEntity): boolean {
+        return (
+            !detail.ReferenceNumber &&
+            !detail.Last4 &&
+            !detail.BankName &&
+            !detail.RoutingLast4 &&
+            !detail.AccountLast4 &&
+            !detail.ProviderCustomerRef &&
+            !detail.ProviderInstrumentRef &&
+            !detail.HolderName
+        );
     }
 
     /**
@@ -165,8 +205,22 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     }
 
     public override Validate(): ValidationResult {
+        if (this.InitialPaymentDetailID_Object) {
+            if (this.isInitialPaymentDetailEmpty(this.InitialPaymentDetailID_Object)) {
+                this.ClearInitialPaymentDetail();
+            } else {
+                if (this.CompanyID && !this.InitialPaymentDetailID_Object.CompanyID) {
+                    this.InitialPaymentDetailID_Object.CompanyID = this.CompanyID;
+                }
+                if (this.InitialPaymentTypeID && !this.InitialPaymentDetailID_Object.PaymentTypeID) {
+                    this.InitialPaymentDetailID_Object.PaymentTypeID = this.InitialPaymentTypeID;
+                }
+            }
+        }
+
         const result = super.Validate();
         this.dropSavePopulatedFieldErrors(result);
+        this.refuseBookedMoneyEdits(result);
 
         const verdict = this.statusTransitionVerdict();
         if (!verdict.Allowed) {
@@ -258,6 +312,67 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     /** Whether this order is booked to the ledger right now. */
     public get IsBookedOrder(): boolean {
         return IsBooked(this.Status);
+    }
+
+    /**
+     * True when money composition is frozen: the order was already booked
+     * *before* this save. The booking save itself (Draft/Quoted → Confirmed)
+     * must still write the figures it just computed. A brand-new unsaved row
+     * is never locked, including back-office create-as-Confirmed.
+     */
+    public get MoneyLocked(): boolean {
+        if (!this.IsSaved || this.bookingInFlight) return false;
+        const from = this.GetFieldByName('Status')?.OldValue as string | undefined;
+        return IsBooked(from ?? '');
+    }
+
+    /**
+     * Refuse adds / removes / reprices / tender restatements after booking.
+     * The booking save itself still has to write the figures it just computed.
+     */
+    private refuseBookedMoneyEdits(result: ValidationResult): void {
+        if (!this.MoneyLocked) return;
+
+        const dirtyLineMoney: string[] = [];
+        let newLineCount = 0;
+        for (const line of this.Lines.Items) {
+            if (!line.IsSaved) {
+                newLineCount += 1;
+                continue;
+            }
+            for (const name of ORDER_LINE_MONEY_FIELDS) {
+                if (line.GetFieldByName(name)?.Dirty) {
+                    dirtyLineMoney.push(name);
+                }
+            }
+        }
+
+        const dirtyHeaderMoney: string[] = [];
+        for (const name of ORDER_HEADER_MONEY_FIELDS) {
+            if (this.GetFieldByName(name)?.Dirty) {
+                dirtyHeaderMoney.push(name);
+            }
+        }
+
+        const message = BookedMoneyEditMessage({
+            NewLineCount: newLineCount,
+            RemovedLineCount: this.Lines.Removed.length,
+            DirtyLineMoneyFields: dirtyLineMoney,
+            ChargesChanged: this.Charges.IsLoaded && this.Charges.Dirty,
+            AdjustmentsChanged: this.Adjustments.IsLoaded && this.Adjustments.Dirty,
+            DirtyHeaderMoneyFields: dirtyHeaderMoney,
+        });
+        if (!message) return;
+
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo(
+                'Status',
+                message,
+                this.Status,
+                ValidationErrorType.Failure,
+            ),
+        );
     }
 
     /**
@@ -373,29 +488,13 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * missing payer without a round trip.
      */
     public async Confirm(): Promise<void> {
-        await this.EnsureLinesLoaded();
+        if (this.IsSaved && !this.Lines.IsLoaded) {
+            await this.Lines.Load();
+        }
         this.Status = 'Confirmed';
         if (!(await this.Save())) {
             throw new Error(this.LatestResult?.CompleteMessage?.trim() || 'The order could not be confirmed.');
         }
-    }
-
-    /**
-     * Populate `Lines` from the database when this header is saved and the collection is empty.
-     *
-     * WHY THIS IS HERE, NOT ON THE FORM. Changing Status to Confirmed and pressing Save is a
-     * legal confirm — Fast Entry's `Confirm()` is the same two statements. After a draft save the
-     * GraphQL form reloads the HEADER only, so `Lines` is an unloaded explicit collection: empty
-     * in memory, full on disk. Booking that walks `this.Lines.Items` then sees no memberships,
-     * creates no terms, and EvenOverTime refuses for want of a service period.
-     *
-     * A read, not a write — safe on both tiers. The server Save path calls this before the
-     * transactional booking walk so every caller (form, Confirm(), API, fixture) gets the same
-     * answer. Does nothing when the header is new or the collection is already loaded.
-     */
-    public async EnsureLinesLoaded(): Promise<void> {
-        if (!this.IsSaved || this.Lines.IsLoaded) return;
-        await this.Lines.Load();
     }
 
     /**

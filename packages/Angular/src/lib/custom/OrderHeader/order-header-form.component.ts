@@ -104,6 +104,15 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return OrderFormTabs(!!this.record?.IsSaved);
     }
 
+    /**
+     * Money composition (lines, tender, selling company) is editable only while
+     * the order is still a draft/quote. After Confirm the ledger owns those
+     * figures; the form Edit toggle may still open notes and parties.
+     */
+    public get ComposeMode(): boolean {
+        return this.EditMode && !this.record?.MoneyLocked;
+    }
+
     protected navigationService = inject(NavigationService, { optional: true });
 
     override OnFormNavigate(event: FormNavigationEvent): void {
@@ -128,10 +137,37 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             this.ExpandedParty = 'ship';
             this.HeaderExpanded = true;
         }
-        await this.ensureLinesLoaded();
+        if (this.record?.IsSaved && !this.record.Lines.IsLoaded) {
+            await this.record.Lines.Load();
+        }
+        this.updateLineBadge();
         await this.defaultSellingCompany();
         await this.loadPaymentTypes();
         await this.refreshAccountingIfNeeded();
+
+        this.RegisterToolbarItem({
+            Key: 'confirm-order',
+            Text: 'Confirm order',
+            Icon: 'fa-solid fa-check-double',
+            Variant: 'primary',
+            Mode: 'both',
+            Order: 5,
+            Visible: (record) => {
+                const ord = record as OrderHeaderEntity;
+                return !ord?.IsBookedOrder && ord?.Status !== 'Voided' && !!ord?.IsSaved;
+            },
+            Disabled: (record) => {
+                if (this.Confirming) return 'Booking order…';
+                const ord = record as OrderHeaderEntity;
+                if (this.NeedsPaymentReference) return 'Need a check / ACH reference before confirming.';
+                const verdict = ord?.ConfirmEligibility?.();
+                if (verdict && !verdict.Allowed) return verdict.Reason ?? 'Cannot confirm this order.';
+                return false;
+            },
+            IsLoading: () => this.Confirming,
+            OnClick: async () => this.RunConfirm(),
+        });
+
         this.cdr.detectChanges();
     }
 
@@ -202,11 +238,22 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         this.Confirming = true;
         this.ConfirmError = null;
         try {
+            if (this.record.Dirty) {
+                const saveResult = await this.record.Save();
+                if (!saveResult) {
+                    throw new Error(this.record.LatestResult?.Message ?? 'Failed to save order changes before confirming.');
+                }
+            }
             await this.record.Confirm();
+            this.updateLineBadge();
+            if (this.EditMode) {
+                this.EditMode = false;
+            }
         } catch (error) {
             this.ConfirmError = error instanceof Error ? error.message : String(error);
         } finally {
             this.Confirming = false;
+            this.updateLineBadge();
             this.cdr.detectChanges();
         }
     }
@@ -334,9 +381,11 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return (this.record?.Lines.Items.length ?? 0) === 0;
     }
 
-    public get LineBadge(): number | undefined {
+    public LineBadge: number | undefined = undefined;
+
+    public updateLineBadge(): void {
         const count = this.record?.Lines.Items.length ?? 0;
-        return count > 0 ? count : undefined;
+        this.LineBadge = count > 0 ? count : undefined;
     }
 
     public get TotalLabel(): string {
@@ -384,6 +433,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public OnPricingChanged(state: MJOPricingState): void {
         this.Pricing = state;
+        this.updateLineBadge();
         this.cdr.detectChanges();
     }
 
@@ -567,10 +617,6 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         }
     }
 
-    private async ensureLinesLoaded(): Promise<void> {
-        if (!this.record?.IsSaved || this.record.Lines.IsLoaded) return;
-        await this.record.Lines.Load();
-    }
 
     private async defaultSellingCompany(): Promise<void> {
         if (this.record?.IsSaved || this.record?.CompanyID) return;

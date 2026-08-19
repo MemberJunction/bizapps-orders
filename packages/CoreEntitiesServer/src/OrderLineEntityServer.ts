@@ -40,8 +40,9 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { OrderLineEntity } from '@mj-biz-apps/orders-entities';
-import { LineGross, NetAfterDiscount } from '@mj-biz-apps/orders-entities';
+import { IsBooked, LineGross, NetAfterDiscount, OrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { ORDER_HEADER_ENTITY } from './entity-names.js';
+import { RequireUUID } from './sql-guards.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
@@ -96,7 +97,41 @@ export class OrderLineEntityServer extends OrderLineEntity {
             );
         }
 
+        await this.refuseNewLineOnBookedOrder(result);
+
         return result;
+    }
+
+    /**
+     * A new line saved on its own (not through the order graph) still has to
+     * refuse a booked parent. Header.Validate covers the graph path; this
+     * covers the standalone path.
+     */
+    private async refuseNewLineOnBookedOrder(result: ValidationResult): Promise<void> {
+        if (this.IsSaved || !this.OrderHeaderID) return;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const lookup = await rv.RunView<{ ID: string; Status: string }>(
+            {
+                EntityName: ORDER_HEADER_ENTITY,
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
+                Fields: ['ID', 'Status'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        const status = lookup?.Results?.[0]?.Status;
+        if (!status || !IsBooked(status)) return;
+
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo(
+                'OrderHeaderID',
+                `Order line cannot be added — the order is booked. Voiding is how booked money is undone.`,
+                this.OrderHeaderID,
+                ValidationErrorType.Failure,
+            ),
+        );
     }
 
     /**
