@@ -648,6 +648,53 @@ export async function GetOrderJournalRollup(
     };
 }
 
+/**
+ * Filter expression resolving all journal entries linked to a payment header
+ * or its payment line allocations.
+ */
+export function BuildPaymentJournalFilter(payment: mjBizAppsOrdersPaymentHeaderEntity): string {
+    if (!payment?.IsSaved || !payment.ID) return '1 = 0';
+    const filters: string[] = [];
+    if (payment.JournalEntryID) {
+        filters.push(`ID = '${payment.JournalEntryID}'`);
+    }
+    filters.push(`LinkedRecordID = '${payment.ID}'`);
+    filters.push(`LinkedRecordID IN (SELECT ID FROM [__mj_BizAppsOrders].[PaymentLine] WHERE PaymentHeaderID = '${payment.ID}')`);
+    return filters.join(' OR ');
+}
+
+/**
+ * Rollup of all journal entries produced by a payment and its line allocations.
+ */
+export async function GetPaymentJournalRollup(
+    payment: mjBizAppsOrdersPaymentHeaderEntity,
+    user?: UserInfo,
+): Promise<OrderJournalRollup> {
+    if (!payment?.IsSaved || !payment.ID) return EMPTY_ROLLUP;
+    const filter = BuildPaymentJournalFilter(payment);
+    const journals = await runRows<JournalHeaderRow>(
+        MJO_ACCOUNTING_ENTITIES.JournalEntry,
+        [filter],
+        '__mj_CreatedAt DESC',
+        500,
+        user,
+        ['ID', 'CompanyID', 'Company'],
+    );
+    if (journals.length === 0) return EMPTY_ROLLUP;
+
+    const { lines, dims } = await loadJournalLinesAndDims(journals.map((j) => j.ID), user);
+    const accounts = await loadGLAccounts(lines.map((line) => line.GLAccountID), user);
+    const nettable = toNettableLines(journals, lines, dims);
+    const rows = PresentOrderJournalRollup(NetLines(nettable), rollupLabels(journals, lines, dims, accounts));
+    const cards = GroupOrderJournalByCompany(rows);
+    return {
+        Cards: cards,
+        TotalDebit: cards.reduce((sum, card) => sum + card.TotalDebit, 0),
+        TotalCredit: cards.reduce((sum, card) => sum + card.TotalCredit, 0),
+        JournalCount: journals.length,
+    };
+}
+
 function presentDimensions(dims: NetGroup['dims'], labels: RollupLabels): OrderJournalDimension[] {
     return dims.map((dim) => ({
         Name: labels.Dimension[dim.DimensionID.toLowerCase()] || dim.DimensionID,

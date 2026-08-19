@@ -1,5 +1,6 @@
 import { Component, inject } from '@angular/core';
 import type { RunViewParams } from '@memberjunction/core';
+import { UserInfoEngine } from '@memberjunction/core-entities';
 import type { FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { DispatchFormNavigation } from '../form-navigation-helper';
@@ -8,6 +9,14 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersPaymentHeaderFormComponent } from '../../generated/Entities/mjBizAppsOrdersPaymentHeader/mjbizappsorderspaymentheader.form.component';
 import { FormatMoney } from '../../panels/money-format';
+import {
+    BuildPaymentJournalFilter,
+    GetPaymentJournalRollup,
+    type OrderJournalCard,
+} from '../../data/orders-queries';
+import { MJO_ACCOUNTING_ENTITIES } from '../../data/entity-names';
+
+const ACCOUNTING_VIEW_SETTING = 'mj.orders.paymentHeader.accountingView';
 
 /**
  * Custom Payment Header form component overriding the CodeGen-generated form.
@@ -19,7 +28,7 @@ import { FormatMoney } from '../../panels/money-format';
  * 1. Payment Details & Money Breakdown: Payment date, tender, gross amount, processor fee, and net settlement cash.
  * 2. Payment Allocations (Order Lines Settled): Which orders and invoice lines this payment settled.
  * 3. Payer & Receiving Account: Paying party (Org / Person) and receiving company bank account.
- * 4. Accounting & Linked Journal Entries: General ledger journal entries balancing Cash and Accounts Receivable.
+ * 4. Accounting: General ledger journal entries balancing Cash and Accounts Receivable with rolled-up and by-entry views.
  * 5. Processing & Gateway Settlement: Payment provider, gateway reference, authorization code, and charge/refund IDs.
  * 6. Reversal & Refund Linking: Dynamic section explaining refunds/reversals when applicable.
  * 7. Stored Value & Account Credit: Stored value / credit account transactions.
@@ -38,6 +47,12 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
 
     protected navigationService = inject(NavigationService, { optional: true });
 
+    public AccountingView: 'summary' | 'detail' = 'summary';
+    public RollupCards: OrderJournalCard[] = [];
+    public RollupLoading = false;
+    public RollupError: string | null = null;
+    public RollupJournalCount = 0;
+
     override OnFormNavigate(event: FormNavigationEvent): void {
         this.Navigate.emit(event);
         DispatchFormNavigation(event, this.navigationService);
@@ -46,17 +61,24 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
     override async ngOnInit(): Promise<void> {
         await super.ngOnInit();
 
+        const savedView = UserInfoEngine.Instance.GetSetting(ACCOUNTING_VIEW_SETTING);
+        if (savedView === 'summary' || savedView === 'detail') {
+            this.AccountingView = savedView;
+        }
+
         this.initSections([
             { sectionKey: 'paymentInformation', sectionName: 'Payment Details & Money Breakdown', isExpanded: true },
             { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Allocations (Order Lines Settled)', isExpanded: true },
             { sectionKey: 'relationships', sectionName: 'Payer & Receiving Account', isExpanded: true },
-            { sectionKey: 'accountingAndJournalEntries', sectionName: 'Accounting & Linked Journal Entries', isExpanded: true },
+            { sectionKey: 'accounting', sectionName: 'Accounting', isExpanded: true },
             { sectionKey: 'processingDetails', sectionName: 'Processing & Gateway Settlement', isExpanded: true },
             { sectionKey: 'reversalInformation', sectionName: 'Reversal & Refund Linking', isExpanded: true },
             { sectionKey: 'mJBizAppsOrdersStoredValueTransactions', sectionName: 'Stored Value & Account Credit Transactions', isExpanded: false },
             { sectionKey: 'notesAndMetadata', sectionName: 'Memo & Internal Notes', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptionEvents', sectionName: 'Subscription Billing Events', isExpanded: false },
         ]);
+
+        void this.loadPaymentJournalRollup();
     }
 
     /**
@@ -169,21 +191,58 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
 
     /**
      * View parameters for the linked Journal Entries grid.
-     * Matches by JournalEntryID or LinkedRecordID = record.ID.
+     * Matches by JournalEntryID or LinkedRecordID on payment header or payment lines.
      */
     public get PaymentJournalEntryParams(): RunViewParams | null {
         if (!this.record?.IsSaved || !this.record?.ID) return null;
-        const filters: string[] = [];
-        if (this.record.JournalEntryID) {
-            filters.push(`ID = '${this.record.JournalEntryID}'`);
-        }
-        filters.push(`LinkedRecordID = '${this.record.ID}'`);
         return {
-            EntityName: 'MJ_BizApps_Accounting: Journal Entries',
-            ExtraFilter: filters.join(' OR '),
+            EntityName: MJO_ACCOUNTING_ENTITIES.JournalEntry,
+            ExtraFilter: BuildPaymentJournalFilter(this.record),
             OrderBy: '__mj_CreatedAt DESC',
             ResultType: 'entity_object',
         };
+    }
+
+    public SetAccountingView(view: 'summary' | 'detail'): void {
+        if (this.AccountingView === view) return;
+        this.AccountingView = view;
+        UserInfoEngine.Instance.SetSettingDebounced(ACCOUNTING_VIEW_SETTING, view);
+        if (view === 'summary') void this.loadPaymentJournalRollup();
+    }
+
+    public CardIsBalanced(card: OrderJournalCard): boolean {
+        return Math.abs(card.TotalDebit - card.TotalCredit) < 0.005;
+    }
+
+    public RollupAmount(amount: number): string {
+        return FormatMoney(amount);
+    }
+
+    public SourceLineLabel(count: number): string {
+        return count === 1 ? '1 allocation' : `${count} allocations`;
+    }
+
+    public async loadPaymentJournalRollup(): Promise<void> {
+        if (!this.record?.IsSaved || !this.record?.ID) {
+            this.RollupCards = [];
+            this.RollupJournalCount = 0;
+            return;
+        }
+        this.RollupLoading = true;
+        this.RollupError = null;
+        this.cdr.detectChanges();
+        try {
+            const rollup = await GetPaymentJournalRollup(this.record, this.ProviderToUse?.CurrentUser);
+            this.RollupCards = rollup.Cards;
+            this.RollupJournalCount = rollup.JournalCount;
+        } catch (error) {
+            this.RollupCards = [];
+            this.RollupJournalCount = 0;
+            this.RollupError = error instanceof Error ? error.message : 'Could not roll up the journals.';
+        } finally {
+            this.RollupLoading = false;
+            this.cdr.detectChanges();
+        }
     }
 
     /**
@@ -192,6 +251,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
     public async OnWidgetDataChanged(): Promise<void> {
         if (!this.record.Dirty) {
             await this.record.InnerLoad(this.record.PrimaryKey);
+            await this.loadPaymentJournalRollup();
             this.cdr.detectChanges();
         }
     }

@@ -334,7 +334,7 @@
       "Payment form: allocations (lines) are the document body — always first-class."
     ],
     "fields": {
-      "DisplayName": "Allocations",
+      "DisplayName": "Lines",
       "Configuration": {
         "UI": {
           "inclusion": "Primary"
@@ -345,8 +345,8 @@
       "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Payment Headers&RelatedEntity=MJ_BizApps_Orders: Payment Lines&RelatedEntityJoinField=PaymentHeaderID"
     },
     "sync": {
-      "lastModified": "2026-08-15T02:45:18.064Z",
-      "checksum": "2b08a140dc79fafa107c3072a4fcb63dc2cf08dd4dcc2d4b596178f6dc01144c"
+      "lastModified": "2026-08-19T22:31:43.432Z",
+      "checksum": "682c967a73237d9a4532d60d5b4a840bac29f91523c49b28fc7308e7652d264c"
     }
   },
   {
