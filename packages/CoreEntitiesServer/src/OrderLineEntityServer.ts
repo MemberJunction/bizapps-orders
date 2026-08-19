@@ -150,6 +150,14 @@ export class OrderLineEntityServer extends OrderLineEntity {
             await parent.LoadFromData(this.GetAll(), true);
         }
 
+        // A persisted IS-A child with no leaf-owned dirt has nothing to write.
+        // Re-saving it re-enters BaseEntity's child-save path; after the parent
+        // row is already persisted, that path only re-hydrates from GetAll(),
+        // which includes parent virtuals the child does not own (e.g. OrderHeader).
+        if (parent && ext.IsSaved && !this.extensionHasLeafDirtyFields(ext)) {
+            return;
+        }
+
         if (!ext.IsSaved || ext.Dirty) {
             const saved = await ext.Save(options);
             if (!saved) {
@@ -159,6 +167,11 @@ export class OrderLineEntityServer extends OrderLineEntity {
                 );
             }
         }
+    }
+
+    private extensionHasLeafDirtyFields(ext: BaseEntity): boolean {
+        const parentNames = ext.EntityInfo.ParentEntityFieldNames;
+        return ext.Fields.some((f) => f.Dirty && !parentNames.has(f.Name));
     }
 
     /** Derived from the product, always — plan D6. */
