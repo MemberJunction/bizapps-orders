@@ -25,7 +25,7 @@ export class BizAppsProductPromotionsWidgetComponent {
     public get PromotionsViewParams(): RunViewParams | null {
         return {
             EntityName: 'MJ_BizApps_Orders: Promotions',
-            OrderBy: 'Priority DESC, __mj_CreatedAt DESC',
+            OrderBy: 'StackSequence ASC, __mj_CreatedAt DESC',
             MaxRows: 50,
             ResultType: 'entity_object',
         };

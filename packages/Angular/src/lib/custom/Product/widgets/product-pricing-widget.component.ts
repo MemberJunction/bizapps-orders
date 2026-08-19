@@ -61,7 +61,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit {
         return {
             EntityName: 'MJ_BizApps_Orders: Product Prices',
             ExtraFilter: `ProductID = '${this.Product.ID}'`,
-            OrderBy: 'Priority DESC, MinQuantity ASC',
+            OrderBy: 'MinQuantity ASC, EffectiveFrom DESC',
             ResultType: 'entity_object',
         };
     }
