@@ -53,4 +53,6 @@
 
 .mjo-grid-container {
     padding: 0;
+    min-height: 380px;
+    height: 400px;
 }

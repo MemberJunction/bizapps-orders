@@ -40,4 +40,6 @@
 
 .mjo-grid-wrap {
     padding: 0;
+    min-height: 380px;
+    height: 400px;
 }
