@@ -3454,26 +3454,6 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Field Name: SubscriptionType
         * * Display Name: Subscription Type
         * * SQL Data Type: nvarchar(200)`),
-    RootSuccessorProductID: z.string().nullable().describe(`
-        * * Field Name: RootSuccessorProductID
-        * * Display Name: Root Successor Product ID
-        * * SQL Data Type: uniqueidentifier`),
-    SuccessorProductIDDepth: z.number().nullable().describe(`
-        * * Field Name: SuccessorProductIDDepth
-        * * Display Name: Successor Depth
-        * * SQL Data Type: int`),
-    SuccessorProductIDPath: z.string().nullable().describe(`
-        * * Field Name: SuccessorProductIDPath
-        * * Display Name: Successor Path
-        * * SQL Data Type: nvarchar(MAX)`),
-    SuccessorProductIDIsLeaf: z.boolean().nullable().describe(`
-        * * Field Name: SuccessorProductIDIsLeaf
-        * * Display Name: Is Leaf Successor
-        * * SQL Data Type: bit`),
-    SuccessorProductIDChildCount: z.number().nullable().describe(`
-        * * Field Name: SuccessorProductIDChildCount
-        * * Display Name: Successor Child Count
-        * * SQL Data Type: int`),
 });
 
 export type mjBizAppsOrdersProductEntityType = z.infer<typeof mjBizAppsOrdersProductSchema>;
@@ -15046,51 +15026,6 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     */
     get SubscriptionType(): string | null {
         return this.Get('SubscriptionType');
-    }
-
-    /**
-    * * Field Name: RootSuccessorProductID
-    * * Display Name: Root Successor Product ID
-    * * SQL Data Type: uniqueidentifier
-    */
-    get RootSuccessorProductID(): string | null {
-        return this.Get('RootSuccessorProductID');
-    }
-
-    /**
-    * * Field Name: SuccessorProductIDDepth
-    * * Display Name: Successor Depth
-    * * SQL Data Type: int
-    */
-    get SuccessorProductIDDepth(): number | null {
-        return this.Get('SuccessorProductIDDepth');
-    }
-
-    /**
-    * * Field Name: SuccessorProductIDPath
-    * * Display Name: Successor Path
-    * * SQL Data Type: nvarchar(MAX)
-    */
-    get SuccessorProductIDPath(): string | null {
-        return this.Get('SuccessorProductIDPath');
-    }
-
-    /**
-    * * Field Name: SuccessorProductIDIsLeaf
-    * * Display Name: Is Leaf Successor
-    * * SQL Data Type: bit
-    */
-    get SuccessorProductIDIsLeaf(): boolean | null {
-        return this.Get('SuccessorProductIDIsLeaf');
-    }
-
-    /**
-    * * Field Name: SuccessorProductIDChildCount
-    * * Display Name: Successor Child Count
-    * * SQL Data Type: int
-    */
-    get SuccessorProductIDChildCount(): number | null {
-        return this.Get('SuccessorProductIDChildCount');
     }
 }
 

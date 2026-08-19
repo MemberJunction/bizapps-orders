@@ -9408,22 +9408,6 @@ export class mjBizAppsOrdersProduct_ {
     @MaxLength(200)
     SubscriptionType?: string;
         
-    @Field({nullable: true}) 
-    @MaxLength(36)
-    RootSuccessorProductID?: string;
-        
-    @Field(() => Int, {nullable: true}) 
-    SuccessorProductIDDepth?: number;
-        
-    @Field({nullable: true}) 
-    SuccessorProductIDPath?: string;
-        
-    @Field(() => Boolean, {nullable: true}) 
-    SuccessorProductIDIsLeaf?: boolean;
-        
-    @Field(() => Int, {nullable: true}) 
-    SuccessorProductIDChildCount?: number;
-        
     @Field(() => [mjBizAppsOrdersProductEntitlement_])
     mjBizAppsOrdersProductEntitlements_ProductIDArray: mjBizAppsOrdersProductEntitlement_[]; // Link to mjBizAppsOrdersProductEntitlements
     
