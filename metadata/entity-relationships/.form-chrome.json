@@ -568,6 +568,7 @@
       "Product form: entitlements stay first-class."
     ],
     "fields": {
+      "DisplayName": "Entitlements",
       "Configuration": {
         "UI": {
           "inclusion": "Primary"
@@ -578,8 +579,8 @@
       "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Product Entitlements&RelatedEntityJoinField=ProductID"
     },
     "sync": {
-      "lastModified": "2026-08-15T02:45:18.279Z",
-      "checksum": "ffcadf6a38dea7ba00c49040ba5c94475c9266e21b9bc382278ef1da715e8086"
+      "lastModified": "2026-08-19T01:23:20.068Z",
+      "checksum": "a4ce51c51bdc7a436b6ab018a3bdf86913a0c65df2672d06d713cf2192304164"
     }
   },
   {

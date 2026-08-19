@@ -139,7 +139,7 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
     template: `
         <mj-collapsible-panel
             SectionKey="subscriptions"
-            SectionName="Subscription defaults"
+            SectionName="Subscription"
             Icon="fa-solid fa-repeat"
             [Form]="FormComponent"
             [FormContext]="FormContext">

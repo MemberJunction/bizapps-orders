@@ -66,6 +66,12 @@ export class BizAppsProductPricingWidgetComponent implements OnInit {
         };
     }
 
+    public get NewPriceRecordValues(): Record<string, unknown> {
+        return {
+            ProductID: this.Product?.ID,
+        };
+    }
+
     public OnSliderChange(event: Event): void {
         const input = event.target as HTMLInputElement;
         this.SimQuantity = parseInt(input.value, 10) || 1;
