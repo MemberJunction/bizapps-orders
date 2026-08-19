@@ -1,7 +1,7 @@
-SKU,Code,EntitlementType,Quantity,UnitOfMeasure,ValidityMode,ValidityDurationDays,Mnemonic
-STYLE-HB,WIDGET-SUPPORT,Feature,,,Perpetual,,WidgetSupport
-STYLE-HB,WIDGET-FORUM,ResourceQuantity,5,Seat,FixedDuration,90,WidgetForum
-MEM-IND,SUB-SEATS,ResourceQuantity,1,Seat,SubscriptionTerm,,SubSeats
-CONF-2027,TICKET-ACCESS,Feature,,,EventWindow,,TicketAccess
-MEM-INST,PRORATED-SEATS,ResourceQuantity,25,Seat,SubscriptionTerm,,ProratedSeats
-EDIT-COURSE,DEFERRED-ACCESS,Feature,,,,,DeferredAccess
+SKU,Code,EntitlementType,Quantity,UnitOfMeasure,ValidityMode,ValidityDurationDays,Mnemonic,AccessLeadHours,AccessLagHours
+STYLE-HB,WIDGET-SUPPORT,Feature,,,Perpetual,,WidgetSupport,,
+STYLE-HB,WIDGET-FORUM,ResourceQuantity,5,Seat,FixedDuration,90,WidgetForum,,
+MEM-IND,SUB-SEATS,ResourceQuantity,1,Seat,SubscriptionTerm,,SubSeats,,
+CONF-2027,TICKET-ACCESS,Feature,,,EventWindow,,TicketAccess,1,24
+MEM-INST,PRORATED-SEATS,ResourceQuantity,4,Seat,SubscriptionTerm,,ProratedSeats,,
+EDIT-COURSE,DEFERRED-ACCESS,Feature,,,,,DeferredAccess,,

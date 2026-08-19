@@ -37,9 +37,11 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  PRODUCT_ENTITY,
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
+  upsertViaEntity,
 } from "../fixture.js";
 import { ConfirmOrder } from "../order-builder.js";
 
@@ -556,6 +558,7 @@ export const EntitlementsChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
+        await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubCalendar, { EntitlementQuantityMode: 'PerUnit' });
         // SubCalendar is Jan-1 anchored WITH proration, so buying it mid-year scales the line
         // quantity to a fraction — and the seat count is computed from that fraction. This is the
         // only place a fractional quantity arises naturally, which is why the unit test alone was

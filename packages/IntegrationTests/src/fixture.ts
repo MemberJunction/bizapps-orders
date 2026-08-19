@@ -30,7 +30,8 @@
  *   USED BY: every bundle under ./checks
  */
 import { randomUUID } from 'node:crypto';
-import { BaseEntity, CompositeKey, Metadata } from '@memberjunction/core';
+import { BaseEntity, CompositeKey, Metadata, RunView } from '@memberjunction/core';
+import type { mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
 import { LoadWorld } from './world/load-world.js';
@@ -705,6 +706,22 @@ export async function CreateBundleItem(
     componentProductID: string,
     opts: { Quantity?: number; PricingMode?: 'Bundled' | 'SumOfParts'; SortOrder?: number } = {},
 ): Promise<string> {
+    const md = new Metadata();
+    const rv = new RunView();
+    const existing = await rv.RunView<{ ID: string }>({
+        EntityName: PRODUCT_BUNDLE_ITEM_ENTITY,
+        ExtraFilter: `BundleProductID='${bundleProductID}' AND ComponentProductID='${componentProductID}'`,
+        ResultType: 'simple',
+    }, ctx.User);
+    if (existing.Success && existing.Results && existing.Results.length > 0) {
+        const item = await md.GetEntityObject<mjBizAppsOrdersProductBundleItemEntity>(PRODUCT_BUNDLE_ITEM_ENTITY, ctx.User);
+        await item.Load(existing.Results[0].ID);
+        item.Quantity = opts.Quantity ?? 1;
+        item.PricingMode = opts.PricingMode ?? 'Bundled';
+        item.SortOrder = opts.SortOrder ?? 0;
+        await item.Save();
+        return existing.Results[0].ID;
+    }
     return createViaEntity(ctx, PRODUCT_BUNDLE_ITEM_ENTITY, {
         BundleProductID: bundleProductID,
         ComponentProductID: componentProductID,

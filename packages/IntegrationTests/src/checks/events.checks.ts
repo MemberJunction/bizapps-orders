@@ -194,17 +194,19 @@ export const EventChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
+        const baseDeferred = Number((await netOnAccount(ctx, f.CoA.ID, DEFERRED_CODE)).Net);
+        const baseSales = Number((await netOnAccount(ctx, f.CoA.ID, SALES_CODE)).Net);
         await sellTickets(ctx);
 
         // Booking credited Deferred 500; the release debits it back and credits Sales. The pair
         // must net Deferred to nothing, or the liability lingers after the event has happened.
         AssertEqual(
-          Number((await netOnAccount(ctx, f.CoA.ID, DEFERRED_CODE)).Net),
+          Number((await netOnAccount(ctx, f.CoA.ID, DEFERRED_CODE)).Net) - baseDeferred,
           0,
           "deferred revenue is fully released by the event date",
         );
         AssertEqual(
-          Number((await netOnAccount(ctx, f.CoA.ID, SALES_CODE)).Net),
+          Number((await netOnAccount(ctx, f.CoA.ID, SALES_CODE)).Net) - baseSales,
           -500,
           "and lands in Sales exactly once",
         );
@@ -343,22 +345,18 @@ export const EventChecks: NamedCheck[] = [
 
         // The IsA child shares the parent's PK (BO-D37), which is what lets attendee data hang off
         // a line without widening OrderLine for every product type that will never use it.
-        // DIFFERENT SHAPE FROM EventProduct, deliberately. There the child is created WITH its
-        // parent in one save. Here the parent order line already exists — it was written by the
-        // confirm — so this attaches a child row to an existing parent, which BaseEntity's IS-A
-        // path does not model: it always wants to save the parent too, and the parent is frozen by
-        // the immutability trigger on a Confirmed order. So the extension row is written directly,
-        // and the reason is that the ORDER of operations differs, not that IsA cannot be expressed.
+        const f = Fx();
         await TxQuery(
           ctx,
-          `INSERT INTO ${ORDERS_SCHEMA}.EventOrderLine (ID, AttendeeName, AttendeeEmail)
-           VALUES ('${line.ID}','Dana Whitfield','dana@example.org')`,
+          `INSERT INTO ${ORDERS_SCHEMA}.EventOrderLine (ID, PersonID, Comments)
+           VALUES ('${line.ID}','${f.Customers.PersonID}','Vegan meal requested')`,
         );
-        const attendee = await TxOne<{ AttendeeName: string; ID: string }>(
+        const attendee = await TxOne<{ PersonID: string; Comments: string; ID: string }>(
           ctx,
-          `SELECT ID, AttendeeName FROM ${ORDERS_SCHEMA}.EventOrderLine WHERE ID='${line.ID}'`,
+          `SELECT ID, PersonID, Comments FROM ${ORDERS_SCHEMA}.EventOrderLine WHERE ID='${line.ID}'`,
         );
-        AssertEqual(attendee.AttendeeName, "Dana Whitfield", "attendee stored against the line");
+        AssertEqual(attendee.PersonID.toLowerCase(), f.Customers.PersonID.toLowerCase(), "attendee person stored against the line");
+        AssertEqual(attendee.Comments, "Vegan meal requested", "comments stored against the line");
         AssertEqual(
           attendee.ID.toLowerCase(),
           line.ID.toLowerCase(),
@@ -373,6 +371,11 @@ export const EventChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
+        const baseDeferredA = Number((await netOnAccount(ctx, f.CoA.ID, DEFERRED_CODE)).Net);
+        const baseDeferredB = Number((await netOnAccount(ctx, f.CoB.ID, DEFERRED_CODE)).Net);
+        const baseSalesA = Number((await netOnAccount(ctx, f.CoA.ID, SALES_CODE)).Net);
+        const baseSalesB = Number((await netOnAccount(ctx, f.CoB.ID, SALES_CODE)).Net);
+
         // One conference, tickets sold by two entities — deferral must not pool into the ordering
         // company any more than receivables do.
         const result = await ConfirmOrder(ctx.User, {
@@ -386,15 +389,26 @@ export const EventChecks: NamedCheck[] = [
         Assert(result.Saved, `confirm failed: ${result.Message}`);
 
         // Each company's deferral is released by its own event-dated entry, so both net to zero.
-        for (const co of [f.CoA.ID, f.CoB.ID]) {
-          AssertEqual(
-            Number((await netOnAccount(ctx, co, DEFERRED_CODE)).Net),
-            0,
-            `deferred revenue clears on company ${co}`,
-          );
-        }
-        AssertEqual(Number((await netOnAccount(ctx, f.CoA.ID, SALES_CODE)).Net), -500, "Co A earns its 500");
-        AssertEqual(Number((await netOnAccount(ctx, f.CoB.ID, SALES_CODE)).Net), -300, "Co B earns its 300");
+        AssertEqual(
+          Number((await netOnAccount(ctx, f.CoA.ID, DEFERRED_CODE)).Net) - baseDeferredA,
+          0,
+          `deferred revenue clears on company ${f.CoA.ID}`,
+        );
+        AssertEqual(
+          Number((await netOnAccount(ctx, f.CoB.ID, DEFERRED_CODE)).Net) - baseDeferredB,
+          0,
+          `deferred revenue clears on company ${f.CoB.ID}`,
+        );
+        AssertEqual(
+          Number((await netOnAccount(ctx, f.CoA.ID, SALES_CODE)).Net) - baseSalesA,
+          -500,
+          "Co A earns its 500",
+        );
+        AssertEqual(
+          Number((await netOnAccount(ctx, f.CoB.ID, SALES_CODE)).Net) - baseSalesB,
+          -300,
+          "Co B earns its 300",
+        );
       }),
   },
 ];

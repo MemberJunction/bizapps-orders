@@ -507,7 +507,7 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * SQL Data Type: uniqueidentifier`),
     DiscountPct: z.number().describe(`
         * * Field Name: DiscountPct
-        * * Display Name: Discount Percent
+        * * Display Name: Discount Percentage
         * * SQL Data Type: decimal(7, 4)`),
     DiscountAmount: z.number().describe(`
         * * Field Name: DiscountAmount
@@ -1147,13 +1147,13 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)`),
     BillToAddressID: z.string().nullable().describe(`
         * * Field Name: BillToAddressID
-        * * Display Name: Bill To Address
+        * * Display Name: Billing Address
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
         * * Description: FK to __mj_BizAppsCommon.Address — the billing address for this order/invoice. Nullable.`),
     ShipToAddressID: z.string().nullable().describe(`
         * * Field Name: ShipToAddressID
-        * * Display Name: Ship To Address
+        * * Display Name: Shipping Address
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
         * * Description: FK to __mj_BizAppsCommon.Address — the shipping/service address; drives tax jurisdiction when tax lands. Nullable.`),
@@ -1299,11 +1299,11 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * SQL Data Type: nvarchar(100)`),
     BillToAddress: z.string().nullable().describe(`
         * * Field Name: BillToAddress
-        * * Display Name: Bill To Address Details
+        * * Display Name: Billing Address Detail
         * * SQL Data Type: nvarchar(255)`),
     ShipToAddress: z.string().nullable().describe(`
         * * Field Name: ShipToAddress
-        * * Display Name: Ship To Address Details
+        * * Display Name: Shipping Address Detail
         * * SQL Data Type: nvarchar(255)`),
     ShipToOrganization: z.string().nullable().describe(`
         * * Field Name: ShipToOrganization
@@ -1327,7 +1327,7 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * SQL Data Type: char(4)`),
     PostedByUser: z.string().nullable().describe(`
         * * Field Name: PostedByUser
-        * * Display Name: Posted By Name
+        * * Display Name: Posted By User
         * * SQL Data Type: nvarchar(100)`),
     ReversesOrderHeader: z.string().nullable().describe(`
         * * Field Name: ReversesOrderHeader
@@ -1341,26 +1341,6 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Field Name: __mj_Longitude
         * * Display Name: Longitude
         * * SQL Data Type: decimal(10, 6)`),
-    RootReversesOrderHeaderID: z.string().nullable().describe(`
-        * * Field Name: RootReversesOrderHeaderID
-        * * Display Name: Root Reverses Order
-        * * SQL Data Type: uniqueidentifier`),
-    ReversesOrderHeaderIDDepth: z.number().nullable().describe(`
-        * * Field Name: ReversesOrderHeaderIDDepth
-        * * Display Name: Reversal Depth
-        * * SQL Data Type: int`),
-    ReversesOrderHeaderIDPath: z.string().nullable().describe(`
-        * * Field Name: ReversesOrderHeaderIDPath
-        * * Display Name: Reversal Path
-        * * SQL Data Type: nvarchar(MAX)`),
-    ReversesOrderHeaderIDIsLeaf: z.boolean().nullable().describe(`
-        * * Field Name: ReversesOrderHeaderIDIsLeaf
-        * * Display Name: Is Leaf Reversal
-        * * SQL Data Type: bit`),
-    ReversesOrderHeaderIDChildCount: z.number().nullable().describe(`
-        * * Field Name: ReversesOrderHeaderIDChildCount
-        * * Display Name: Reversal Child Count
-        * * SQL Data Type: int`),
     IsOverdue: z.number().describe(`
         * * Field Name: IsOverdue
         * * Display Name: Is Overdue
@@ -1532,7 +1512,7 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Description: Unit price (>= 0). Multiplied by Quantity to get the line amount booked to revenue.`),
     ProductPriceID: z.string().nullable().describe(`
         * * Field Name: ProductPriceID
-        * * Display Name: Product Price
+        * * Display Name: Product Price Rule
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Prices (vwProductPrices.ID)
         * * Description: Which price RULE produced UnitPrice. UnitPrice still stamps; this records why, so a disputed invoice can be traced back to the rule that priced it. NULL when the caller supplied the price directly, which remains valid.`),
@@ -1702,26 +1682,6 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Field Name: __mj_Longitude
         * * Display Name: Longitude
         * * SQL Data Type: decimal(10, 6)`),
-    RootReversesOrderLineID: z.string().nullable().describe(`
-        * * Field Name: RootReversesOrderLineID
-        * * Display Name: Root Reverses Order Line
-        * * SQL Data Type: uniqueidentifier`),
-    ReversesOrderLineIDDepth: z.number().nullable().describe(`
-        * * Field Name: ReversesOrderLineIDDepth
-        * * Display Name: Reverses Order Line Depth
-        * * SQL Data Type: int`),
-    ReversesOrderLineIDPath: z.string().nullable().describe(`
-        * * Field Name: ReversesOrderLineIDPath
-        * * Display Name: Reverses Order Line Path
-        * * SQL Data Type: nvarchar(MAX)`),
-    ReversesOrderLineIDIsLeaf: z.boolean().nullable().describe(`
-        * * Field Name: ReversesOrderLineIDIsLeaf
-        * * Display Name: Reverses Order Line Is Leaf
-        * * SQL Data Type: bit`),
-    ReversesOrderLineIDChildCount: z.number().nullable().describe(`
-        * * Field Name: ReversesOrderLineIDChildCount
-        * * Display Name: Reverses Order Line Child Count
-        * * SQL Data Type: int`),
     RootParentOrderLineID: z.string().nullable().describe(`
         * * Field Name: RootParentOrderLineID
         * * Display Name: Root Parent Order Line
@@ -1960,7 +1920,7 @@ export const mjBizAppsOrdersPaymentHeaderSchema = z.object({
         * * Description: Gross amount received (negative for reversal methods).`),
     ProcessingFeeAmount: z.number().describe(`
         * * Field Name: ProcessingFeeAmount
-        * * Display Name: Processing Fee Amount
+        * * Display Name: Processing Fee
         * * SQL Data Type: decimal(18, 2)
         * * Default Value: 0
         * * Description: Processor fee withheld from this payment.`),
@@ -2083,26 +2043,6 @@ export const mjBizAppsOrdersPaymentHeaderSchema = z.object({
         * * Field Name: JournalEntry
         * * Display Name: Journal Entry
         * * SQL Data Type: nvarchar(40)`),
-    RootReversesPaymentHeaderID: z.string().nullable().describe(`
-        * * Field Name: RootReversesPaymentHeaderID
-        * * Display Name: Root Reverses Payment Header ID
-        * * SQL Data Type: uniqueidentifier`),
-    ReversesPaymentHeaderIDDepth: z.number().nullable().describe(`
-        * * Field Name: ReversesPaymentHeaderIDDepth
-        * * Display Name: Reversal Depth
-        * * SQL Data Type: int`),
-    ReversesPaymentHeaderIDPath: z.string().nullable().describe(`
-        * * Field Name: ReversesPaymentHeaderIDPath
-        * * Display Name: Reversal Path
-        * * SQL Data Type: nvarchar(MAX)`),
-    ReversesPaymentHeaderIDIsLeaf: z.boolean().nullable().describe(`
-        * * Field Name: ReversesPaymentHeaderIDIsLeaf
-        * * Display Name: Is Leaf Reversal
-        * * SQL Data Type: bit`),
-    ReversesPaymentHeaderIDChildCount: z.number().nullable().describe(`
-        * * Field Name: ReversesPaymentHeaderIDChildCount
-        * * Display Name: Child Reversal Count
-        * * SQL Data Type: int`),
 });
 
 export type mjBizAppsOrdersPaymentHeaderEntityType = z.infer<typeof mjBizAppsOrdersPaymentHeaderSchema>;
@@ -3454,26 +3394,6 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Field Name: SubscriptionType
         * * Display Name: Subscription Type
         * * SQL Data Type: nvarchar(200)`),
-    RootSuccessorProductID: z.string().nullable().describe(`
-        * * Field Name: RootSuccessorProductID
-        * * Display Name: Root Successor Product ID
-        * * SQL Data Type: uniqueidentifier`),
-    SuccessorProductIDDepth: z.number().nullable().describe(`
-        * * Field Name: SuccessorProductIDDepth
-        * * Display Name: Successor Depth
-        * * SQL Data Type: int`),
-    SuccessorProductIDPath: z.string().nullable().describe(`
-        * * Field Name: SuccessorProductIDPath
-        * * Display Name: Successor Path
-        * * SQL Data Type: nvarchar(MAX)`),
-    SuccessorProductIDIsLeaf: z.boolean().nullable().describe(`
-        * * Field Name: SuccessorProductIDIsLeaf
-        * * Display Name: Is Leaf Successor
-        * * SQL Data Type: bit`),
-    SuccessorProductIDChildCount: z.number().nullable().describe(`
-        * * Field Name: SuccessorProductIDChildCount
-        * * Display Name: Successor Child Count
-        * * SQL Data Type: int`),
 });
 
 export type mjBizAppsOrdersProductEntityType = z.infer<typeof mjBizAppsOrdersProductSchema>;
@@ -4710,52 +4630,12 @@ export const mjBizAppsOrdersSubscriptionSchema = z.object({
         * * SQL Data Type: nvarchar(200)`),
     MigratesFromSubscription: z.string().nullable().describe(`
         * * Field Name: MigratesFromSubscription
-        * * Display Name: Migrates From Name
+        * * Display Name: Migrates From Subscription Name
         * * SQL Data Type: nvarchar(40)`),
     MigratesToSubscription: z.string().nullable().describe(`
         * * Field Name: MigratesToSubscription
-        * * Display Name: Migrates To Name
+        * * Display Name: Migrates To Subscription Name
         * * SQL Data Type: nvarchar(40)`),
-    RootMigratesFromSubscriptionID: z.string().nullable().describe(`
-        * * Field Name: RootMigratesFromSubscriptionID
-        * * Display Name: Root Migrates From Subscription
-        * * SQL Data Type: uniqueidentifier`),
-    MigratesFromSubscriptionIDDepth: z.number().nullable().describe(`
-        * * Field Name: MigratesFromSubscriptionIDDepth
-        * * Display Name: Migrates From Depth
-        * * SQL Data Type: int`),
-    MigratesFromSubscriptionIDPath: z.string().nullable().describe(`
-        * * Field Name: MigratesFromSubscriptionIDPath
-        * * Display Name: Migrates From Path
-        * * SQL Data Type: nvarchar(MAX)`),
-    MigratesFromSubscriptionIDIsLeaf: z.boolean().nullable().describe(`
-        * * Field Name: MigratesFromSubscriptionIDIsLeaf
-        * * Display Name: Migrates From Is Leaf
-        * * SQL Data Type: bit`),
-    MigratesFromSubscriptionIDChildCount: z.number().nullable().describe(`
-        * * Field Name: MigratesFromSubscriptionIDChildCount
-        * * Display Name: Migrates From Child Count
-        * * SQL Data Type: int`),
-    RootMigratesToSubscriptionID: z.string().nullable().describe(`
-        * * Field Name: RootMigratesToSubscriptionID
-        * * Display Name: Root Migrates To Subscription
-        * * SQL Data Type: uniqueidentifier`),
-    MigratesToSubscriptionIDDepth: z.number().nullable().describe(`
-        * * Field Name: MigratesToSubscriptionIDDepth
-        * * Display Name: Migrates To Depth
-        * * SQL Data Type: int`),
-    MigratesToSubscriptionIDPath: z.string().nullable().describe(`
-        * * Field Name: MigratesToSubscriptionIDPath
-        * * Display Name: Migrates To Path
-        * * SQL Data Type: nvarchar(MAX)`),
-    MigratesToSubscriptionIDIsLeaf: z.boolean().nullable().describe(`
-        * * Field Name: MigratesToSubscriptionIDIsLeaf
-        * * Display Name: Migrates To Is Leaf
-        * * SQL Data Type: bit`),
-    MigratesToSubscriptionIDChildCount: z.number().nullable().describe(`
-        * * Field Name: MigratesToSubscriptionIDChildCount
-        * * Display Name: Migrates To Child Count
-        * * SQL Data Type: int`),
 });
 
 export type mjBizAppsOrdersSubscriptionEntityType = z.infer<typeof mjBizAppsOrdersSubscriptionSchema>;
@@ -6286,7 +6166,7 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
 
     /**
     * * Field Name: DiscountPct
-    * * Display Name: Discount Percent
+    * * Display Name: Discount Percentage
     * * SQL Data Type: decimal(7, 4)
     * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
     */
@@ -8358,7 +8238,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: BillToAddressID
-    * * Display Name: Bill To Address
+    * * Display Name: Billing Address
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
     * * Description: FK to __mj_BizAppsCommon.Address — the billing address for this order/invoice. Nullable.
@@ -8372,7 +8252,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: ShipToAddressID
-    * * Display Name: Ship To Address
+    * * Display Name: Shipping Address
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
     * * Description: FK to __mj_BizAppsCommon.Address — the shipping/service address; drives tax jurisdiction when tax lands. Nullable.
@@ -8724,7 +8604,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: BillToAddress
-    * * Display Name: Bill To Address Details
+    * * Display Name: Billing Address Detail
     * * SQL Data Type: nvarchar(255)
     */
     get BillToAddress(): string | null {
@@ -8733,7 +8613,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: ShipToAddress
-    * * Display Name: Ship To Address Details
+    * * Display Name: Shipping Address Detail
     * * SQL Data Type: nvarchar(255)
     */
     get ShipToAddress(): string | null {
@@ -8787,7 +8667,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: PostedByUser
-    * * Display Name: Posted By Name
+    * * Display Name: Posted By User
     * * SQL Data Type: nvarchar(100)
     */
     get PostedByUser(): string | null {
@@ -8819,51 +8699,6 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     */
     get __mj_Longitude(): number | null {
         return this.Get('__mj_Longitude');
-    }
-
-    /**
-    * * Field Name: RootReversesOrderHeaderID
-    * * Display Name: Root Reverses Order
-    * * SQL Data Type: uniqueidentifier
-    */
-    get RootReversesOrderHeaderID(): string | null {
-        return this.Get('RootReversesOrderHeaderID');
-    }
-
-    /**
-    * * Field Name: ReversesOrderHeaderIDDepth
-    * * Display Name: Reversal Depth
-    * * SQL Data Type: int
-    */
-    get ReversesOrderHeaderIDDepth(): number | null {
-        return this.Get('ReversesOrderHeaderIDDepth');
-    }
-
-    /**
-    * * Field Name: ReversesOrderHeaderIDPath
-    * * Display Name: Reversal Path
-    * * SQL Data Type: nvarchar(MAX)
-    */
-    get ReversesOrderHeaderIDPath(): string | null {
-        return this.Get('ReversesOrderHeaderIDPath');
-    }
-
-    /**
-    * * Field Name: ReversesOrderHeaderIDIsLeaf
-    * * Display Name: Is Leaf Reversal
-    * * SQL Data Type: bit
-    */
-    get ReversesOrderHeaderIDIsLeaf(): boolean | null {
-        return this.Get('ReversesOrderHeaderIDIsLeaf');
-    }
-
-    /**
-    * * Field Name: ReversesOrderHeaderIDChildCount
-    * * Display Name: Reversal Child Count
-    * * SQL Data Type: int
-    */
-    get ReversesOrderHeaderIDChildCount(): number | null {
-        return this.Get('ReversesOrderHeaderIDChildCount');
     }
 
     /**
@@ -9531,7 +9366,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: ProductPriceID
-    * * Display Name: Product Price
+    * * Display Name: Product Price Rule
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Prices (vwProductPrices.ID)
     * * Description: Which price RULE produced UnitPrice. UnitPrice still stamps; this records why, so a disputed invoice can be traced back to the rule that priced it. NULL when the caller supplied the price directly, which remains valid.
@@ -9935,51 +9770,6 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     */
     get __mj_Longitude(): number | null {
         return this.Get('__mj_Longitude');
-    }
-
-    /**
-    * * Field Name: RootReversesOrderLineID
-    * * Display Name: Root Reverses Order Line
-    * * SQL Data Type: uniqueidentifier
-    */
-    get RootReversesOrderLineID(): string | null {
-        return this.Get('RootReversesOrderLineID');
-    }
-
-    /**
-    * * Field Name: ReversesOrderLineIDDepth
-    * * Display Name: Reverses Order Line Depth
-    * * SQL Data Type: int
-    */
-    get ReversesOrderLineIDDepth(): number | null {
-        return this.Get('ReversesOrderLineIDDepth');
-    }
-
-    /**
-    * * Field Name: ReversesOrderLineIDPath
-    * * Display Name: Reverses Order Line Path
-    * * SQL Data Type: nvarchar(MAX)
-    */
-    get ReversesOrderLineIDPath(): string | null {
-        return this.Get('ReversesOrderLineIDPath');
-    }
-
-    /**
-    * * Field Name: ReversesOrderLineIDIsLeaf
-    * * Display Name: Reverses Order Line Is Leaf
-    * * SQL Data Type: bit
-    */
-    get ReversesOrderLineIDIsLeaf(): boolean | null {
-        return this.Get('ReversesOrderLineIDIsLeaf');
-    }
-
-    /**
-    * * Field Name: ReversesOrderLineIDChildCount
-    * * Display Name: Reverses Order Line Child Count
-    * * SQL Data Type: int
-    */
-    get ReversesOrderLineIDChildCount(): number | null {
-        return this.Get('ReversesOrderLineIDChildCount');
     }
 
     /**
@@ -10738,7 +10528,7 @@ export class mjBizAppsOrdersPaymentHeaderEntity extends BaseEntity<mjBizAppsOrde
 
     /**
     * * Field Name: ProcessingFeeAmount
-    * * Display Name: Processing Fee Amount
+    * * Display Name: Processing Fee
     * * SQL Data Type: decimal(18, 2)
     * * Default Value: 0
     * * Description: Processor fee withheld from this payment.
@@ -11026,51 +10816,6 @@ export class mjBizAppsOrdersPaymentHeaderEntity extends BaseEntity<mjBizAppsOrde
     */
     get JournalEntry(): string | null {
         return this.Get('JournalEntry');
-    }
-
-    /**
-    * * Field Name: RootReversesPaymentHeaderID
-    * * Display Name: Root Reverses Payment Header ID
-    * * SQL Data Type: uniqueidentifier
-    */
-    get RootReversesPaymentHeaderID(): string | null {
-        return this.Get('RootReversesPaymentHeaderID');
-    }
-
-    /**
-    * * Field Name: ReversesPaymentHeaderIDDepth
-    * * Display Name: Reversal Depth
-    * * SQL Data Type: int
-    */
-    get ReversesPaymentHeaderIDDepth(): number | null {
-        return this.Get('ReversesPaymentHeaderIDDepth');
-    }
-
-    /**
-    * * Field Name: ReversesPaymentHeaderIDPath
-    * * Display Name: Reversal Path
-    * * SQL Data Type: nvarchar(MAX)
-    */
-    get ReversesPaymentHeaderIDPath(): string | null {
-        return this.Get('ReversesPaymentHeaderIDPath');
-    }
-
-    /**
-    * * Field Name: ReversesPaymentHeaderIDIsLeaf
-    * * Display Name: Is Leaf Reversal
-    * * SQL Data Type: bit
-    */
-    get ReversesPaymentHeaderIDIsLeaf(): boolean | null {
-        return this.Get('ReversesPaymentHeaderIDIsLeaf');
-    }
-
-    /**
-    * * Field Name: ReversesPaymentHeaderIDChildCount
-    * * Display Name: Child Reversal Count
-    * * SQL Data Type: int
-    */
-    get ReversesPaymentHeaderIDChildCount(): number | null {
-        return this.Get('ReversesPaymentHeaderIDChildCount');
     }
 }
 
@@ -14569,6 +14314,25 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
  */
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Products')
 export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProductEntityType> {
+
+  /**
+  * Related records: MJ_BizApps_Orders: Product Prices
+  *
+  * Loads, validates and persists as one unit with this MJ_BizApps_Orders: Products record — see
+  * guides/TRANSACTIONS_AND_BATCHING_GUIDE.md. Declared by the RelatedRecordCollection metadata on
+  * the 'MJ_BizApps_Orders: Products → MJ_BizApps_Orders: Product Prices' relationship; edit that row, not this file.
+  *
+  */
+  public readonly Prices = this.DeclareRelatedRecords<mjBizAppsOrdersProductPriceEntity>({
+      Name: 'Prices',
+        RelatedEntity: 'MJ_BizApps_Orders: Product Prices',
+        RelatedEntityJoinField: 'ProductID',
+        OrderBy: 'MinQuantity ASC, __mj_CreatedAt ASC',
+        Load: 'explicit',
+        OnRemove: 'delete',
+        Source: 'database',
+  });
+
     /**
     * Loads the MJ_BizApps_Orders: Products record from the database
     * @param ID: string - primary key value to load the MJ_BizApps_Orders: Products record.
@@ -15027,51 +14791,6 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     */
     get SubscriptionType(): string | null {
         return this.Get('SubscriptionType');
-    }
-
-    /**
-    * * Field Name: RootSuccessorProductID
-    * * Display Name: Root Successor Product ID
-    * * SQL Data Type: uniqueidentifier
-    */
-    get RootSuccessorProductID(): string | null {
-        return this.Get('RootSuccessorProductID');
-    }
-
-    /**
-    * * Field Name: SuccessorProductIDDepth
-    * * Display Name: Successor Depth
-    * * SQL Data Type: int
-    */
-    get SuccessorProductIDDepth(): number | null {
-        return this.Get('SuccessorProductIDDepth');
-    }
-
-    /**
-    * * Field Name: SuccessorProductIDPath
-    * * Display Name: Successor Path
-    * * SQL Data Type: nvarchar(MAX)
-    */
-    get SuccessorProductIDPath(): string | null {
-        return this.Get('SuccessorProductIDPath');
-    }
-
-    /**
-    * * Field Name: SuccessorProductIDIsLeaf
-    * * Display Name: Is Leaf Successor
-    * * SQL Data Type: bit
-    */
-    get SuccessorProductIDIsLeaf(): boolean | null {
-        return this.Get('SuccessorProductIDIsLeaf');
-    }
-
-    /**
-    * * Field Name: SuccessorProductIDChildCount
-    * * Display Name: Successor Child Count
-    * * SQL Data Type: int
-    */
-    get SuccessorProductIDChildCount(): number | null {
-        return this.Get('SuccessorProductIDChildCount');
     }
 }
 
@@ -18677,7 +18396,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
 
     /**
     * * Field Name: MigratesFromSubscription
-    * * Display Name: Migrates From Name
+    * * Display Name: Migrates From Subscription Name
     * * SQL Data Type: nvarchar(40)
     */
     get MigratesFromSubscription(): string | null {
@@ -18686,100 +18405,10 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
 
     /**
     * * Field Name: MigratesToSubscription
-    * * Display Name: Migrates To Name
+    * * Display Name: Migrates To Subscription Name
     * * SQL Data Type: nvarchar(40)
     */
     get MigratesToSubscription(): string | null {
         return this.Get('MigratesToSubscription');
-    }
-
-    /**
-    * * Field Name: RootMigratesFromSubscriptionID
-    * * Display Name: Root Migrates From Subscription
-    * * SQL Data Type: uniqueidentifier
-    */
-    get RootMigratesFromSubscriptionID(): string | null {
-        return this.Get('RootMigratesFromSubscriptionID');
-    }
-
-    /**
-    * * Field Name: MigratesFromSubscriptionIDDepth
-    * * Display Name: Migrates From Depth
-    * * SQL Data Type: int
-    */
-    get MigratesFromSubscriptionIDDepth(): number | null {
-        return this.Get('MigratesFromSubscriptionIDDepth');
-    }
-
-    /**
-    * * Field Name: MigratesFromSubscriptionIDPath
-    * * Display Name: Migrates From Path
-    * * SQL Data Type: nvarchar(MAX)
-    */
-    get MigratesFromSubscriptionIDPath(): string | null {
-        return this.Get('MigratesFromSubscriptionIDPath');
-    }
-
-    /**
-    * * Field Name: MigratesFromSubscriptionIDIsLeaf
-    * * Display Name: Migrates From Is Leaf
-    * * SQL Data Type: bit
-    */
-    get MigratesFromSubscriptionIDIsLeaf(): boolean | null {
-        return this.Get('MigratesFromSubscriptionIDIsLeaf');
-    }
-
-    /**
-    * * Field Name: MigratesFromSubscriptionIDChildCount
-    * * Display Name: Migrates From Child Count
-    * * SQL Data Type: int
-    */
-    get MigratesFromSubscriptionIDChildCount(): number | null {
-        return this.Get('MigratesFromSubscriptionIDChildCount');
-    }
-
-    /**
-    * * Field Name: RootMigratesToSubscriptionID
-    * * Display Name: Root Migrates To Subscription
-    * * SQL Data Type: uniqueidentifier
-    */
-    get RootMigratesToSubscriptionID(): string | null {
-        return this.Get('RootMigratesToSubscriptionID');
-    }
-
-    /**
-    * * Field Name: MigratesToSubscriptionIDDepth
-    * * Display Name: Migrates To Depth
-    * * SQL Data Type: int
-    */
-    get MigratesToSubscriptionIDDepth(): number | null {
-        return this.Get('MigratesToSubscriptionIDDepth');
-    }
-
-    /**
-    * * Field Name: MigratesToSubscriptionIDPath
-    * * Display Name: Migrates To Path
-    * * SQL Data Type: nvarchar(MAX)
-    */
-    get MigratesToSubscriptionIDPath(): string | null {
-        return this.Get('MigratesToSubscriptionIDPath');
-    }
-
-    /**
-    * * Field Name: MigratesToSubscriptionIDIsLeaf
-    * * Display Name: Migrates To Is Leaf
-    * * SQL Data Type: bit
-    */
-    get MigratesToSubscriptionIDIsLeaf(): boolean | null {
-        return this.Get('MigratesToSubscriptionIDIsLeaf');
-    }
-
-    /**
-    * * Field Name: MigratesToSubscriptionIDChildCount
-    * * Display Name: Migrates To Child Count
-    * * SQL Data Type: int
-    */
-    get MigratesToSubscriptionIDChildCount(): number | null {
-        return this.Get('MigratesToSubscriptionIDChildCount');
     }
 }

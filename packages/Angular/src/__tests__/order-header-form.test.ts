@@ -104,6 +104,20 @@ describe('order header link wiring', () => {
         expect(lines).not.toContain('href="#"');
     });
 
+    it('passes ComposeMode into the lines editor so booked orders cannot add lines', () => {
+        const header = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-header-form.component.html'),
+            'utf8',
+        );
+        const ts = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-header-form.component.ts'),
+            'utf8',
+        );
+        expect(ts).toContain('get ComposeMode()');
+        expect(header).toContain('[EditMode]="ComposeMode"');
+        expect(header).toContain('mjo-order-lines-editor');
+    });
+
     it('gates quantity, remove, picker and the extension form on the order EditMode', () => {
         const lines = readFileSync(
             join(here, '../lib/custom/OrderHeader/order-lines-editor.component.html'),
@@ -115,13 +129,19 @@ describe('order header link wiring', () => {
         expect(lines).toContain('mjo-ol-picker');
     });
 
-    it('offers Confirm as a verb and does not let Status be edited', () => {
+    it('offers Confirm as a toolbar action and does not let Status be edited', () => {
+        const ts = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-header-form.component.ts'),
+            'utf8',
+        );
         const header = readFileSync(
             join(here, '../lib/custom/OrderHeader/order-header-form.component.html'),
             'utf8',
         );
-        expect(header).toContain('RunConfirm()');
-        expect(header).toContain('Confirm order');
+        expect(ts).toContain('RegisterToolbarItem');
+        expect(ts).toContain('confirm-order');
+        expect(ts).toContain('Confirm order');
+        expect(ts).toContain('RunConfirm()');
         expect(header).toContain('Check / ACH reference');
         expect(header).toMatch(/FieldName="Status"[\s\S]*?\[EditMode\]="false"/);
         expect(header).toMatch(/FieldName="PaymentStatus"[\s\S]*?\[EditMode\]="false"/);

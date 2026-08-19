@@ -38,11 +38,14 @@ import {
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
+  upsertViaEntity,
 } from "../fixture.js";
+import { FindRows, Quote } from "../world/entity-io.js";
 import {
   PRICE_LIST_ASSIGNMENT_ENTITY,
   PRICE_LIST_ENTITY,
   PRICE_TIER_ENTITY,
+  PRODUCT_ENTITY,
   PRODUCT_PRICE_ENTITY,
 } from "../entity-names.js";
 import { ConfirmOrder } from "../order-builder.js";
@@ -79,10 +82,33 @@ async function addPrice(
     description?: string;
   },
 ): Promise<string> {
-  // Through the object model, NOT an INSERT. ProductPriceEntityServer enforces the price-ambiguity
-  // guard — no two Active rules may share product, list, fee type and priority — and a raw INSERT
-  // walks straight past it. That is exactly how ambiguity used to surface at CONFIRM time, far from
-  // the rule that caused it, instead of loudly here where the offending rule is being written.
+  const feeType = "Standard";
+  const priority = opts.priority ?? 0;
+  const listClause = opts.priceListID
+    ? `PriceListID = '${Quote(opts.priceListID)}'`
+    : "PriceListID IS NULL";
+  const minClause = opts.minQty != null ? `MinQuantity = ${opts.minQty}` : "MinQuantity IS NULL";
+  const maxClause = opts.maxQty != null ? `MaxQuantity = ${opts.maxQty}` : "MaxQuantity IS NULL";
+  const monthsClause = opts.months != null ? `RecurrenceMonths = '${Quote(opts.months)}'` : "RecurrenceMonths IS NULL";
+
+  const existing = await FindRows<{ ID: string }>(
+    ctx,
+    PRODUCT_PRICE_ENTITY,
+    `ProductID = '${Quote(productID)}' AND Status = 'Active' AND FeeType = '${feeType}' AND Priority = ${priority} AND ${listClause} AND ${minClause} AND ${maxClause} AND ${monthsClause}`,
+    ["ID"],
+  );
+  if (existing.length) {
+    await upsertViaEntity(ctx, PRODUCT_PRICE_ENTITY, existing[0].ID, {
+      Amount: opts.amount,
+      PricingModel: opts.model ?? "PerUnit",
+      Description: opts.description ?? null,
+      RecurrenceMonths: opts.months ?? null,
+      RecurrenceDaysOfWeek: opts.daysOfWeek ?? null,
+      PackageQuantity: opts.packageQty ?? null,
+    });
+    return existing[0].ID;
+  }
+
   return createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
     ProductID: productID,
     PriceListID: opts.priceListID ?? null,
@@ -319,8 +345,8 @@ export const PricingChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        await addPrice(ctx, f.Products.WidgetA, { amount: 10, minQty: 1, maxQty: 9 });
-        await addPrice(ctx, f.Products.WidgetA, { amount: 7, minQty: 10, maxQty: null });
+        await addPrice(ctx, f.Products.WidgetA, { amount: 10, minQty: 1, maxQty: 9, priority: 10 });
+        await addPrice(ctx, f.Products.WidgetA, { amount: 7, minQty: 10, maxQty: null, priority: 10 });
 
         const small = await confirmUnpriced(ctx, f.Products.WidgetA, 5);
         Assert(small.Saved, `confirm failed: ${small.Message}`);
@@ -338,7 +364,7 @@ export const PricingChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        await addPrice(ctx, f.Products.WidgetA, { amount: 20, description: "standard" });
+        await addPrice(ctx, f.Products.WidgetA, { amount: 20, description: "standard", priority: 5 });
         await addPrice(ctx, f.Products.WidgetA, { amount: 14, months: "12", priority: 10, description: "december" });
 
         const december = await confirmUnpriced(ctx, f.Products.WidgetA, 1, new Date(2026, 11, 10));
@@ -357,7 +383,7 @@ export const PricingChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        const pid = await addPrice(ctx, f.Products.WidgetA, { amount: 10, model: "Volume" });
+        const pid = await addPrice(ctx, f.Products.WidgetA, { amount: 10, model: "Volume", priority: 10 });
         await addTier(ctx, pid, 1, 50, 10, 0);
         await addTier(ctx, pid, 51, null, 8, 1);
 
@@ -374,7 +400,7 @@ export const PricingChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        const pid = await addPrice(ctx, f.Products.WidgetA, { amount: 10, model: "Tiered" });
+        const pid = await addPrice(ctx, f.Products.WidgetA, { amount: 10, model: "Tiered", priority: 10 });
         await addTier(ctx, pid, 1, 50, 10, 0);
         await addTier(ctx, pid, 51, null, 8, 1);
 
@@ -392,9 +418,20 @@ export const PricingChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        // No price rule at all, and no stated price. A silently-zero line is an invoice for nothing
-        // that looks deliberate (D12's precedent).
-        const order = await confirmUnpriced(ctx, f.Products.WidgetA, 3);
+        const widgetARow = await TxOne<{ ProductCategoryID: string; RevenueRecognitionTypeID: string }>(
+          ctx,
+          `SELECT ProductCategoryID, RevenueRecognitionTypeID FROM ${ORDERS_SCHEMA}.Product WHERE ID='${f.Products.WidgetA}'`,
+        );
+        const unpricedProduct = await createViaEntity(ctx, PRODUCT_ENTITY, {
+          CompanyID: f.CoA.ID,
+          Name: "Unpriced Product",
+          SKU: `UNPRICED-${randomUUID().slice(0, 6)}`,
+          ProductTypeID: f.ProductTypeIDs.Simple,
+          ProductCategoryID: widgetARow.ProductCategoryID,
+          RevenueRecognitionTypeID: widgetARow.RevenueRecognitionTypeID,
+          Status: "Active",
+        });
+        const order = await confirmUnpriced(ctx, unpricedProduct, 3);
         Assert(!order.Saved, "a line nobody can price must be refused");
         Assert(
           /cannot be priced|no price/i.test(order.Message),
@@ -523,7 +560,7 @@ export const PricingChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
-        const priceID = await addPrice(ctx, f.Products.WidgetA, { amount: 15, description: "list rate" });
+        const priceID = await addPrice(ctx, f.Products.WidgetA, { amount: 15, description: "list rate", priority: 10 });
         const order = await confirmUnpriced(ctx, f.Products.WidgetA, 3);
         Assert(order.Saved, `confirm failed: ${order.Message}`);
 

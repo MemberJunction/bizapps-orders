@@ -23,6 +23,7 @@ export * from './generated/remote_operations';
  * same lifecycle the server does rather than a hand-copied approximation.
  */
 export * from './OrderStatusBehavior';
+export * from './booked-money';
 export * from './line-quantity';
 
 /**
@@ -31,6 +32,8 @@ export * from './line-quantity';
  * runs in the browser before a round trip AND on the server for every other caller.
  */
 export * from './OrderHeaderEntity';
+export * from './OrderLineEntity';
+export * from './OrderLineExtensionCompanion';
 export * from './CustomerPaymentMethodEntity';
 export * from './PaymentHeaderEntity';
 export * from './save-populated-fields';

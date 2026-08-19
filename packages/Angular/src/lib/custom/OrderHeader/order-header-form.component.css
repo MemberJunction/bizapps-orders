@@ -1,11 +1,31 @@
 /* mj-form-field uses display:contents + a 200px|1fr internal grid.
    Wrap each field; never place the host as a CSS-grid item. */
 
-:host ::ng-deep .mj-forms-panel,
-:host ::ng-deep .mj-forms-panel-body,
-:host ::ng-deep .mj-forms-panel-content {
+:host ::ng-deep .mj-forms-panel-body:not(.mj-forms-panel-body--collapsed) {
+    max-height: none;
+}
+
+:host ::ng-deep .mj-forms-panel-body:not(.mj-forms-panel-body--collapsed) .mj-forms-panel-content {
     max-height: none;
     overflow: visible;
+}
+
+/* Product search results sit `position: absolute` under the add-product
+   input at the bottom of Lines. The panel card and body both use
+   overflow:hidden (rounded-corner clip + collapse animation), which
+   shears the list off at the section edge. Collapse still forces
+   overflow:hidden on the collapsed body. */
+:host ::ng-deep mj-collapsible-panel:has(mjo-order-lines-editor) .mj-forms-panel {
+    overflow: visible;
+}
+
+:host ::ng-deep mj-collapsible-panel:has(mjo-order-lines-editor) .mj-forms-panel-body:not(.mj-forms-panel-body--collapsed) {
+    overflow: visible;
+}
+
+:host ::ng-deep mj-collapsible-panel:has(.mj-typeahead-list.is-open) {
+    position: relative;
+    z-index: 30;
 }
 
 .mjo-oh-hero {

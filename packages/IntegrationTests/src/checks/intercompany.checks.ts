@@ -271,6 +271,19 @@ export const IntercompanyChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
+        const baselines = new Map<string, number>();
+        for (const co of [f.CoA.ID, f.CoB.ID]) {
+          const base = await TxOne<{ Net: number }>(
+            ctx,
+            `SELECT SUM(ISNULL(jel.DebitAmount,0)) - SUM(ISNULL(jel.CreditAmount,0)) AS Net
+               FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+               JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+               JOIN ${ACCT_SCHEMA}.JournalEntry je ON je.ID = jel.JournalEntryID
+               WHERE gl.Code='${AR_CODE}' AND je.CompanyID='${co}'`,
+          );
+          baselines.set(co, Number(base.Net ?? 0));
+        }
+
         const order = await confirmMultiCompanyOrder(ctx, [
           ["WidgetA", 100],
           ["WidgetB", 200],
@@ -291,7 +304,11 @@ export const IntercompanyChecks: NamedCheck[] = [
                JOIN ${ACCT_SCHEMA}.JournalEntry je ON je.ID = jel.JournalEntryID
                WHERE gl.Code='${AR_CODE}' AND je.CompanyID='${co}'`,
           );
-          AssertEqual(Number(net.Net), 0, `AR nets to zero on company ${co} (booked ${booked})`);
+          AssertEqual(
+            Number(net.Net) - (baselines.get(co) ?? 0),
+            0,
+            `AR nets to zero on company ${co} (booked ${booked})`,
+          );
         }
         Assert(Payment.ID != null, "payment exists");
       }),

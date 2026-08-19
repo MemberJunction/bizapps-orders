@@ -166,8 +166,8 @@ export const FulfillmentChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
-        // Deliberately NOT calling makeShippable — the Simple type requires no fulfilment.
-        const order = await sell(ctx, [["WidgetA", 100]]);
+        // Service product with UpFront rev rec requires no fulfilment.
+        const order = await sell(ctx, [["BundlePartY", 100]]);
         const out = await queue(ctx);
         Assert(
           mine(out, order.Order.ID as string) == null,

@@ -43,7 +43,7 @@ import {
     ValidationErrorType,
     ValidationResult,
 } from '@memberjunction/core';
-import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import { MJGlobal, RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
     OrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
@@ -449,9 +449,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // it writes a row, and none of it needs the header's key — the collection stamps the
             // foreign key itself.
             // A form that saved the draft and then confirmed reloads the HEADER only.
-            // `EnsureLinesLoaded` is the shared (non-transactional) read; booking is the
-            // only caller that MUST have the collection before it decides subscriptions.
-            if (booking) await this.EnsureLinesLoaded();
+            // Booking is the only caller that MUST have the collection before it decides subscriptions.
+            if (booking && this.IsSaved && !this.Lines.IsLoaded) {
+                await this.Lines.Load();
+            }
 
             await this.expandBundles();
             const decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine> =
@@ -815,7 +816,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // Normally done inside `OrderLineEntityServer.Save()`; hoisted here for the same reason
             // the rest of this method is, so the line is complete before companion validation sees
             // it. Idempotent, so its own `Save()` re-deriving them below changes nothing.
-            await (line as OrderLineEntityServer).PrepareForSave?.();
+            const serverLine = line as unknown as { PrepareForSave?: () => Promise<void> };
+            if (typeof serverLine.PrepareForSave === 'function') {
+                await serverLine.PrepareForSave();
+            } else if (line.ISAParent) {
+                const parentServerLine = line.ISAParent as unknown as { PrepareForSave?: () => Promise<void> };
+                if (typeof parentServerLine.PrepareForSave === 'function') {
+                    await parentServerLine.PrepareForSave();
+                }
+            }
         }
 
         // A BROWSER ASKS FOR CHARGES AND DISCOUNTS THROUGH THE COLLECTIONS, so drain them into the
@@ -923,7 +932,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
-                    `Failed to save order line ${line.LineNumber}: ${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    `Failed to save order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`,
                 );
             }
             persisted.push(line);
@@ -1640,23 +1649,59 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
 
-            // Provider discipline (plan D12): load through the entity's OWN provider so the read
-            // sees our uncommitted transaction, not a second connection.
-            const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
-                ORDER_LINE_ENTITY,
-                CompositeKey.FromID(drafts[i].OrderLineID),
-                this.ContextCurrentUser,
-            );
-            line.JournalEntryID = jeID;
+            // Prefer the in-memory line from this.Lines (already an instantiated IS-A subclass if applicable),
+            // falling back to loading through the entity's OWN provider to see uncommitted transactions.
+            let line = this.Lines.Items.find((l) => UUIDsEqual(l.ID, drafts[i].OrderLineID));
+            if (!line) {
+                const loadedLine = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
+                    ORDER_LINE_ENTITY,
+                    this.ContextCurrentUser,
+                );
+                if (await loadedLine.Load(drafts[i].OrderLineID)) {
+                    line = loadedLine;
+                }
+            }
+            if (!line) {
+                throw new Error(
+                    `Order line with ID ${drafts[i].OrderLineID} could not be loaded to stamp JournalEntryID.`,
+                );
+            }
 
-            const saved = await line.Save(options);
+            // JournalEntryID lives on Order Line. Event/Subscription/etc. IS-A children
+            // in this.Lines would otherwise Save() as the leaf, whose clean-leaf
+            // finalizeSave used to throw on parent virtuals (OrderHeader).
+            const stampTarget = this.resolveOrderLineForStamp(line);
+            stampTarget.JournalEntryID = jeID;
+
+            const saveOptions = new EntitySaveOptions();
+            if (options) {
+                Object.assign(saveOptions, options);
+            }
+            saveOptions.IsParentEntitySave = true;
+
+            const saved = await stampTarget.Save(saveOptions);
             if (!saved) {
                 throw new Error(
-                    `Failed to stamp JournalEntryID on order line ${line.LineNumber}: ` +
-                        `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    `Failed to stamp JournalEntryID on order line ${stampTarget.LineNumber}: ${ExtractEntityErrorMessage(stampTarget)}`,
                 );
             }
         }
+    }
+
+    /**
+     * Walk up the IS-A chain to the Order Line that owns `JournalEntryID`.
+     * Event Order Line / Subscription Order Line instances in `this.Lines` are
+     * children of that row; stamping on the parent and saving with
+     * `IsParentEntitySave` skips leaf delegation.
+     */
+    private resolveOrderLineForStamp(
+        line: mjBizAppsOrdersOrderLineEntity,
+    ): mjBizAppsOrdersOrderLineEntity {
+        let current: BaseEntity = line;
+        while (current.ISAParent) {
+            current = current.ISAParent;
+        }
+        return current as mjBizAppsOrdersOrderLineEntity;
     }
 
 
@@ -2363,13 +2408,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // caught by that three times.
         await this.requireReferenceWhenTenderDemandsOne(provider, user);
 
-        // The payment owns its own instrument row (D39). Prefer a typed reference from the
-        // companion (Fast Entry / editor) and fall back to copying a pre-built detail (fixtures).
+        // The payment owns its own instrument row (D39). If the order already has an
+        // InitialPaymentDetail row (from the embedded record), copy it; otherwise mint a
+        // fresh PaymentDetail from the typed reference.
         let paymentDetailID: string | null = null;
-        if (this.InitialPaymentReference) {
-            paymentDetailID = await this.createPaymentDetailFromReference(options);
-        } else if (this.InitialPaymentDetailID) {
+        if (this.InitialPaymentDetailID) {
             paymentDetailID = await this.copyPaymentDetail(this.InitialPaymentDetailID, options);
+        } else if (this.InitialPaymentReference) {
+            paymentDetailID = await this.createPaymentDetailFromReference(options);
         }
 
         // Typed as the SERVER subclass, which is what the class factory returns for this key: the
@@ -2502,6 +2548,68 @@ export class OrderEntityServer extends OrderHeaderEntity {
         );
         return result?.Results?.length ?? 0;
     }
+}
+
+/**
+ * Extract human-readable error messages from an entity, including its leaf/root chain,
+ * LatestResult, ResultHistory, and synchronous validation.
+ */
+function ExtractEntityErrorMessage(entity: BaseEntity | null | undefined): string {
+    if (!entity) return 'unknown error (null entity)';
+    const candidateEntities = [entity, entity.LeafEntity, entity.RootEntity].filter(Boolean);
+    const messages: string[] = [];
+
+    for (const ent of candidateEntities) {
+        const latest = ent.LatestResult;
+        if (latest) {
+            if (latest.Message && latest.Message.trim().length > 0) {
+                const trimmed = latest.Message.trim();
+                if (!messages.includes(trimmed)) messages.push(trimmed);
+            }
+            if (latest.Error) {
+                const errStr = typeof latest.Error === 'string' ? latest.Error : (latest.Error as Error).message || JSON.stringify(latest.Error);
+                if (errStr && !messages.includes(errStr)) messages.push(errStr);
+            }
+            if (latest.Errors && latest.Errors.length > 0) {
+                for (const err of latest.Errors) {
+                    const field = (err as ValidationErrorInfo).Source ?? (err as any).FieldName ?? '';
+                    const msg = (err as ValidationErrorInfo).Message ?? (err as any).message ?? JSON.stringify(err);
+                    const formatted = field ? `${field}: ${msg}` : msg;
+                    if (formatted && !messages.includes(formatted)) messages.push(formatted);
+                }
+            }
+        }
+        for (const res of ent.ResultHistory ?? []) {
+            if (!res.Success) {
+                if (res.Message && res.Message.trim().length > 0 && !messages.includes(res.Message.trim())) {
+                    messages.push(res.Message.trim());
+                }
+                if (res.Errors && res.Errors.length > 0) {
+                    for (const err of res.Errors) {
+                        const field = (err as ValidationErrorInfo).Source ?? (err as any).FieldName ?? '';
+                        const msg = (err as ValidationErrorInfo).Message ?? (err as any).message ?? JSON.stringify(err);
+                        const formatted = field ? `${field}: ${msg}` : msg;
+                        if (formatted && !messages.includes(formatted)) messages.push(formatted);
+                    }
+                }
+            }
+        }
+    }
+
+    // Also check synchronous validation directly if no messages found
+    if (messages.length === 0) {
+        const val = entity.Validate();
+        if (!val.Success && val.Errors.length > 0) {
+            for (const err of val.Errors) {
+                const field = err.Source ?? '';
+                const msg = err.Message ?? JSON.stringify(err);
+                const formatted = field ? `${field}: ${msg}` : msg;
+                if (formatted && !messages.includes(formatted)) messages.push(formatted);
+            }
+        }
+    }
+
+    return messages.length > 0 ? messages.join('; ') : (entity.LatestResult?.CompleteMessage ?? 'unknown error');
 }
 
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */

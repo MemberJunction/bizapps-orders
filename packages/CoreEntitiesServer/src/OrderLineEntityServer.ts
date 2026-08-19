@@ -40,8 +40,9 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
-import { LineGross, NetAfterDiscount } from '@mj-biz-apps/orders-entities';
+import { IsBooked, LineGross, NetAfterDiscount, OrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { ORDER_HEADER_ENTITY } from './entity-names.js';
+import { RequireUUID } from './sql-guards.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
@@ -51,7 +52,7 @@ function money(value: number): number {
 }
 
 @RegisterClass(BaseEntity, ORDER_LINE_ENTITY)
-export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
+export class OrderLineEntityServer extends OrderLineEntity {
     /**
      * The exact extended amount the price rule computed, when a rule priced this line.
      *
@@ -96,7 +97,41 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
             );
         }
 
+        await this.refuseNewLineOnBookedOrder(result);
+
         return result;
+    }
+
+    /**
+     * A new line saved on its own (not through the order graph) still has to
+     * refuse a booked parent. Header.Validate covers the graph path; this
+     * covers the standalone path.
+     */
+    private async refuseNewLineOnBookedOrder(result: ValidationResult): Promise<void> {
+        if (this.IsSaved || !this.OrderHeaderID) return;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const lookup = await rv.RunView<{ ID: string; Status: string }>(
+            {
+                EntityName: ORDER_HEADER_ENTITY,
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
+                Fields: ['ID', 'Status'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        const status = lookup?.Results?.[0]?.Status;
+        if (!status || !IsBooked(status)) return;
+
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo(
+                'OrderHeaderID',
+                `Order line cannot be added — the order is booked. Voiding is how booked money is undone.`,
+                this.OrderHeaderID,
+                ValidationErrorType.Failure,
+            ),
+        );
     }
 
     /**
@@ -120,7 +155,58 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
 
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
         await this.PrepareForSave();
-        return super.Save(options);
+        const ok = await super.Save(options);
+        if (!ok) {
+            return false;
+        }
+
+        await this.persistExtension(options);
+        return true;
+    }
+
+    private async persistExtension(options?: EntitySaveOptions): Promise<void> {
+        if (!this.Extension.IsConfigured) {
+            return;
+        }
+
+        const ext = await this.Extension.EnsureEntity();
+        if (!ext) {
+            return;
+        }
+
+        if (this.ID && (!ext.Get('ID') || ext.Get('ID') !== this.ID)) {
+            ext.Set('ID', this.ID);
+        }
+
+        // If the extension is an IS-A child of this line, sync the saved parent state
+        // so the extension's inner save knows the parent row is already persisted in the database.
+        const parent = ext.ISAParent;
+        if (parent) {
+            await parent.LoadFromData(this.GetAll(), true);
+        }
+
+        // A persisted IS-A child with no leaf-owned dirt has nothing to write.
+        // Re-saving it re-enters BaseEntity's child-save path; after the parent
+        // row is already persisted, that path only re-hydrates from GetAll(),
+        // which includes parent virtuals the child does not own (e.g. OrderHeader).
+        if (parent && ext.IsSaved && !this.extensionHasLeafDirtyFields(ext)) {
+            return;
+        }
+
+        if (!ext.IsSaved || ext.Dirty) {
+            const saved = await ext.Save(options);
+            if (!saved) {
+                throw new Error(
+                    `Failed to save line extension '${this.Extension.EntityName}' for order line ${this.LineNumber}: ` +
+                        (ext.LatestResult?.CompleteMessage ?? 'unknown error'),
+                );
+            }
+        }
+    }
+
+    private extensionHasLeafDirtyFields(ext: BaseEntity): boolean {
+        const parentNames = ext.EntityInfo.ParentEntityFieldNames;
+        return ext.Fields.some((f) => f.Dirty && !parentNames.has(f.Name));
     }
 
     /** Derived from the product, always — plan D6. */

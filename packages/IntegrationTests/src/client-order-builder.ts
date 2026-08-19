@@ -7,6 +7,7 @@
 import { Metadata, type BaseEntity, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 import {
     OrderHeaderEntity,
+    OrderLineEntity,
     mjBizAppsOrdersEventOrderLineEntity,
     mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersPaymentDetailEntity,
@@ -236,9 +237,8 @@ function applyLine(line: mjBizAppsOrdersOrderLineEntity, spec: ClientLineSpec, l
 }
 
 /**
- * Same construction as the Order Header line editor: NewRecord the IsA child, stamp
- * the parent fields on ISAParent, Add that parent to the order. PersonID lives on
- * the child and is saved after the header graph lands.
+ * Creates an OrderLine with an EventOrderLine extension attached via companion.
+ * Both line and extension are saved atomically on the server.
  */
 async function createEventLine(
     md: IMetadataProvider | Metadata,
@@ -249,38 +249,15 @@ async function createEventLine(
     Parent: mjBizAppsOrdersOrderLineEntity;
     Extension: mjBizAppsOrdersEventOrderLineEntity;
 }> {
-    const ext = await md.GetEntityObject<mjBizAppsOrdersEventOrderLineEntity>(
-        EVENT_ORDER_LINE_ENTITY,
+    const line = (await md.GetEntityObject<OrderLineEntity>(
+        ORDER_LINE_ENTITY,
         user,
-    );
-    ext.NewRecord();
-    const parent = ext.ISAParent;
-    if (!parent || !isOrderLine(parent)) {
-        throw new Error('Event Order Line NewRecord did not produce an Order Line ISAParent');
-    }
-    applyLine(parent, spec, lineNumber);
+    )) as OrderLineEntity;
+    line.NewRecord();
+    applyLine(line, spec, lineNumber);
+    const ext = (await line.Extension.EnsureEntity(
+        EVENT_ORDER_LINE_ENTITY,
+    )) as mjBizAppsOrdersEventOrderLineEntity;
     if (spec.EventPersonID) ext.PersonID = spec.EventPersonID;
-    return { Parent: parent, Extension: ext };
-}
-
-function isOrderLine(entity: BaseEntity): entity is mjBizAppsOrdersOrderLineEntity {
-    return entity.EntityInfo?.Name === ORDER_LINE_ENTITY;
-}
-
-async function persistEventAttendees(built: ClientBuiltOrder): Promise<void> {
-    if (built.EventExtensions.length === 0) return;
-    await built.Order.EnsureLinesLoaded();
-    for (const ext of built.EventExtensions) {
-        if (ext.IsSaved && !ext.Dirty) continue;
-        const parent = ext.ISAParent;
-        if (parent && isOrderLine(parent) && parent.ID) {
-            // Confirm stamps CompanyID server-side; reload so child Save does not rewrite a null.
-            await parent.Load(parent.ID);
-        }
-        if (!(await ext.Save())) {
-            throw new Error(
-                `Event Order Line save failed: ${ext.LatestResult?.CompleteMessage ?? 'unknown'}`,
-            );
-        }
-    }
+    return { Parent: line, Extension: ext };
 }

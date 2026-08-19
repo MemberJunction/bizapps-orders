@@ -4,9 +4,7 @@ import { FormsModule } from '@angular/forms';
 import {
     BaseEntity,
     CompositeKey,
-    FieldValueCollection,
     Metadata,
-    type BaseEntityEvent,
     type IMetadataProvider,
 } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
@@ -18,14 +16,14 @@ import {
 } from '@memberjunction/ng-base-forms';
 import {
     OrderHeaderEntity,
+    OrderLineEntity,
+    ClampLineQuantity,
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
-import type { Subscription } from 'rxjs';
 import { MJOConsequenceChipComponent, MJOPriceSourceBadgeComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { GetCatalogOptions, type MJOProductOption } from '../../data/orders-queries';
-import { ClampLineQuantity } from '@mj-biz-apps/orders-entities';
 import { MJOPricingScheduler, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 import {
     ExtensionCollapsedHint,
@@ -36,11 +34,11 @@ import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-ext
 /**
  * Inline catalog picker + line cards for an order header.
  *
- * Lines are `Order.Lines.Create()` children — or, when the product type
- * declares an `OrderLineExtensionEntity`, the IS-A child is created and its
- * parent is added to `Lines`. The leaf is saved after the header graph save.
- * The extension form is embedded without Simple/Extended chrome. Newly added
- * lines start expanded; existing lines stay collapsed behind a disclosure.
+ * Lines are `Order.Lines.Create()` children. When the product type declares an
+ * `OrderLineExtensionEntity`, the extension is managed by `line.Extension` as a
+ * `BaseEntity` companion and persists atomically on the server inside the order's
+ * transaction. Newly added lines start expanded; existing lines stay collapsed
+ * behind a disclosure.
  */
 @Component({
     standalone: true,
@@ -61,8 +59,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     private readonly cdr = inject(ChangeDetectorRef);
 
     private _order: OrderHeaderEntity | null = null;
-    private saveSub: Subscription | null = null;
-    private readonly extensions = new Map<string, BaseEntity>();
     private readonly expandedLineIds = new Set<string>();
 
     @Input() public Provider: IMetadataProvider | null = null;
@@ -87,7 +83,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public PickerCursor = 0;
     public PickerOpen = false;
     public CatalogError: string | null = null;
-    public ExtensionError: string | null = null;
 
     public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
         return [...(this._order?.Lines.Items ?? [])];
@@ -177,7 +172,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
         if (!this.EditMode) return;
-        this.extensions.delete(line.ID);
         this.expandedLineIds.delete(line.ID);
         this._order?.Lines.Remove(line);
         this.schedulePricing();
@@ -212,7 +206,13 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public ExtensionFor(line: mjBizAppsOrdersOrderLineEntity): BaseEntity | null {
-        return this.extensions.get(line.ID) ?? null;
+        if (line.EntityInfo?.Name !== MJO_ENTITIES.OrderLine) {
+            return line;
+        }
+        if (line instanceof OrderLineEntity) {
+            return line.Extension?.Entity ?? null;
+        }
+        return (line as unknown as OrderLineEntity).Extension?.Entity ?? null;
     }
 
     public ExtensionFormConfigFor(line: mjBizAppsOrdersOrderLineEntity): EntityFormConfig {
@@ -246,7 +246,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     private async onOrderBound(): Promise<void> {
-        this.bindOrderEvents();
         if (this.Catalog.length === 0) await this.loadCatalog();
         if (this._order && !this._order.Lines.IsLoaded && this._order.IsSaved) {
             await this._order.Lines.Load();
@@ -256,19 +255,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.cdr.detectChanges();
     }
 
-    private bindOrderEvents(): void {
-        if (!this._order) return;
-        this.saveSub = this._order.RegisterEventHandler((event) => {
-            if (!isSuccessfulSaveEvent(event.type, event.payload)) return;
-            void this.persistExtensions();
-        });
-    }
-
     private unbindOrder(): void {
-        this.saveSub?.unsubscribe();
-        this.saveSub = null;
         this.expandedLineIds.clear();
-        this.extensions.clear();
     }
 
     private async addPlainLine(product: MJOProductOption): Promise<void> {
@@ -281,88 +269,32 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     private async addExtendedLine(product: MJOProductOption): Promise<void> {
         if (!this._order || !product.OrderLineExtensionEntity) return;
         CachedExtensionEntityInfo(this.metadata, product.OrderLineExtensionEntity);
-        const ext = await this.metadata.GetEntityObject(
+        const line = await this.metadata.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
             product.OrderLineExtensionEntity,
-            this.metadata.CurrentUser,
+            this._order.ContextCurrentUser,
         );
-        ext.NewRecord();
-        const parent = ext.ISAParent;
-        if (!isOrderLine(parent)) {
-            await this.addPlainLine(product);
-            return;
-        }
-        parent.ProductID = product.ID;
-        parent.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
-        this._order.Lines.Add(parent);
-        this.extensions.set(parent.ID, ext);
-        this.expandedLineIds.add(parent.ID);
+        if (!line) return;
+        line.NewRecord();
+        this._order.Lines.Add(line);
+        line.ProductID = product.ID;
+        line.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
+        this.expandedLineIds.add(line.ID);
     }
 
     private async hydrateExtensions(): Promise<void> {
-        const next = new Map<string, BaseEntity>();
+        if (!this._order) return;
         for (const line of this.Lines) {
-            const kept = this.extensions.get(line.ID);
-            if (kept) {
-                next.set(line.ID, kept);
-                continue;
+            const extName = this.ProductFor(line)?.OrderLineExtensionEntity;
+            if (extName && line.EntityInfo?.Name === MJO_ENTITIES.OrderLine && line.IsSaved) {
+                CachedExtensionEntityInfo(this.metadata, extName);
+                const ext = await this.metadata.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
+                    extName,
+                    this._order.ContextCurrentUser,
+                );
+                if (ext && await ext.Load(line.ID)) {
+                    this._order.Lines.ReplaceItem(line, ext);
+                }
             }
-            const ext = await this.loadExtensionFor(line);
-            if (ext) next.set(line.ID, ext);
-        }
-        this.extensions.clear();
-        for (const [id, ext] of next) this.extensions.set(id, ext);
-    }
-
-    private async loadExtensionFor(line: mjBizAppsOrdersOrderLineEntity): Promise<BaseEntity | null> {
-        const extName = this.ProductFor(line)?.OrderLineExtensionEntity;
-        if (!extName) return null;
-        CachedExtensionEntityInfo(this.metadata, extName);
-        if (line.ISAChild?.EntityInfo.Name === extName) return line.ISAChild;
-        if (!line.IsSaved) return null;
-
-        const ext = await this.metadata.GetEntityObject(extName, this.metadata.CurrentUser);
-        if (await ext.InnerLoad(CompositeKey.FromID(line.ID))) return ext;
-
-        ext.NewRecord(new FieldValueCollection([{ FieldName: 'ID', Value: line.ID }]));
-        const parent = ext.ISAParent;
-        if (parent) {
-            await parent.LoadFromData(line.GetAll(), true);
-        }
-        return ext;
-    }
-
-    private async persistExtensions(): Promise<void> {
-        this.ExtensionError = null;
-        for (const ext of this.extensions.values()) {
-            if (ext.IsSaved && !ext.Dirty) continue;
-            await this.syncExtensionParentFromSavedLine(ext);
-            const saved = await ext.Save();
-            if (!saved) {
-                this.ExtensionError = ext.LatestResult?.CompleteMessage ?? 'Failed to save line extension';
-            }
-        }
-        this.cdr.detectChanges();
-    }
-
-    /**
-     * The leaf save writes the IS-A parent first (`IsParentEntitySave`), which
-     * skips `OrderLineEntityServer.PrepareForSave`. After the order graph
-     * returns, `Lines` holds the stamped CompanyID / UnitPrice — but the
-     * extension's `ISAParent` can still be the pre-save instance. Copy the
-     * saved line onto that parent so Validate does not fail with
-     * "Company cannot be null; Unit Price cannot be null".
-     */
-    private async syncExtensionParentFromSavedLine(ext: BaseEntity): Promise<void> {
-        const parent = ext.ISAParent;
-        if (!isOrderLine(parent)) {
-            return;
-        }
-        const line = this.Lines.find((item) => UUIDsEqual(item.ID, parent.ID));
-        if (line) {
-            await parent.LoadFromData(line.GetAll(), true);
-        }
-        if (!parent.CompanyID && parent.IsSaved) {
-            await parent.Load(parent.ID);
         }
     }
 
@@ -396,18 +328,4 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             this.cdr.detectChanges();
         });
     }
-}
-
-function isOrderLine(entity: BaseEntity | null): entity is mjBizAppsOrdersOrderLineEntity {
-    return entity != null && entity.EntityInfo.Name === MJO_ENTITIES.OrderLine;
-}
-
-function isSuccessfulSaveEvent(
-    type: BaseEntityEvent['type'],
-    payload: BaseEntityEvent['payload'],
-): boolean {
-    if (type !== 'save' && type !== 'graph_save') return false;
-    if (payload == null || typeof payload !== 'object') return true;
-    if (!('Success' in payload)) return true;
-    return payload.Success !== false;
 }

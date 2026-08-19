@@ -1,0 +1,1108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Pricing UX Exploration — MemberJunction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+<style>
+  :root {
+    --mj-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --mj-font-mono: 'JetBrains Mono', monospace;
+    --mj-radius-sm: 6px;
+    --mj-radius-md: 10px;
+    --mj-radius-lg: 14px;
+    --mj-radius-full: 9999px;
+
+    /* Light Mode Tokens */
+    --mj-bg-page: #f8fafc;
+    --mj-bg-surface: #ffffff;
+    --mj-bg-surface-sunken: #f1f5f9;
+    --mj-bg-surface-hover: #f8fafc;
+    --mj-text-primary: #0f172a;
+    --mj-text-secondary: #475569;
+    --mj-text-muted: #64748b;
+    --mj-border-default: #e2e8f0;
+    --mj-border-subtle: #f1f5f9;
+    --mj-brand-primary: #0284c7;
+    --mj-brand-hover: #0369a1;
+    --mj-color-success: #16a34a;
+    --mj-color-success-bg: #dcfce7;
+    --mj-color-warning: #d97706;
+    --mj-color-warning-bg: #fef3c7;
+    --mj-color-purple: #7c3aed;
+    --mj-color-purple-bg: #f3e8ff;
+  }
+
+  body.dark-mode {
+    --mj-bg-page: #0b1120;
+    --mj-bg-surface: #131d31;
+    --mj-bg-surface-sunken: #0d1527;
+    --mj-bg-surface-hover: #1b2742;
+    --mj-text-primary: #f8fafc;
+    --mj-text-secondary: #cbd5e1;
+    --mj-text-muted: #94a3b8;
+    --mj-border-default: #23324d;
+    --mj-border-subtle: #19243b;
+    --mj-brand-primary: #38bdf8;
+    --mj-brand-hover: #0ea5e9;
+    --mj-color-success: #4ade80;
+    --mj-color-success-bg: rgba(74, 222, 128, 0.15);
+    --mj-color-warning: #fbbf24;
+    --mj-color-warning-bg: rgba(251, 191, 36, 0.15);
+    --mj-color-purple: #c084fc;
+    --mj-color-purple-bg: rgba(192, 132, 252, 0.15);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--mj-font-sans);
+    background: var(--mj-bg-page);
+    color: var(--mj-text-primary);
+    -webkit-font-smoothing: antialiased;
+    font-size: 13.5px;
+  }
+
+  /* App Bar */
+  .top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 24px;
+    background: #092340;
+    color: #ffffff;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .top-left { display: flex; align-items: center; gap: 12px; }
+  .logo-badge {
+    background: #0284c7;
+    color: #fff;
+    padding: 3px 8px;
+    border-radius: var(--mj-radius-sm);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .app-title { font-size: 15px; font-weight: 700; }
+  .theme-toggle-btn {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #ffffff;
+    border-radius: var(--mj-radius-sm);
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* Option Switcher Banner */
+  .option-switcher-banner {
+    background: var(--mj-bg-surface);
+    border-bottom: 1px solid var(--mj-border-default);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .option-switcher-left { display: flex; flex-direction: column; gap: 4px; }
+  .option-switcher-title { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .option-switcher-sub { font-size: 12.5px; color: var(--mj-text-muted); }
+  
+  .option-tabs {
+    display: flex;
+    background: var(--mj-bg-surface-sunken);
+    padding: 4px;
+    border-radius: var(--mj-radius-md);
+    gap: 4px;
+    border: 1px solid var(--mj-border-default);
+  }
+  .option-tab-btn {
+    border: none;
+    background: transparent;
+    padding: 8px 16px;
+    border-radius: var(--mj-radius-sm);
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--mj-text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.15s ease;
+  }
+  .option-tab-btn.active {
+    background: var(--mj-bg-surface);
+    color: var(--mj-brand-primary);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  .option-tab-btn .badge {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: var(--mj-radius-full);
+    background: var(--mj-brand-primary);
+    color: #fff;
+  }
+
+  /* Main Workspace Layout */
+  .main-container {
+    max-width: 1280px;
+    margin: 20px auto;
+    padding: 0 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* Product Header Summary */
+  .product-header-card {
+    background: var(--mj-bg-surface);
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-lg);
+    padding: 18px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+  }
+  .header-identity {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .identity-left { display: flex; align-items: center; gap: 14px; }
+  .prod-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: var(--mj-radius-md);
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 19px;
+  }
+  .prod-title-group h2 { margin: 0; font-size: 18px; font-weight: 700; }
+  .badges-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .chip {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-full);
+    background: var(--mj-bg-surface-sunken);
+    border: 1px solid var(--mj-border-default);
+    color: var(--mj-text-secondary);
+  }
+  .chip--active { background: var(--mj-color-success-bg); color: var(--mj-color-success); border-color: transparent; }
+
+  .header-metrics-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    padding-top: 14px;
+    border-top: 1px solid var(--mj-border-default);
+  }
+  .stat-block { display: flex; flex-direction: column; gap: 2px; }
+  .stat-label { font-size: 11px; font-weight: 600; color: var(--mj-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat-value { font-size: 15px; font-weight: 700; font-family: var(--mj-font-mono); }
+  .stat-value--blue { color: var(--mj-brand-primary); }
+
+  /* Option Containers */
+  .option-section { display: none; flex-direction: column; gap: 20px; }
+  .option-section.active { display: flex; }
+
+  /* Thesis Bar */
+  .thesis-box {
+    background: var(--mj-bg-surface);
+    border-left: 4px solid var(--mj-brand-primary);
+    border-radius: 0 var(--mj-radius-md) var(--mj-radius-md) 0;
+    padding: 14px 18px;
+    border-top: 1px solid var(--mj-border-default);
+    border-right: 1px solid var(--mj-border-default);
+    border-bottom: 1px solid var(--mj-border-default);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .thesis-icon { font-size: 20px; color: var(--mj-brand-primary); margin-top: 2px; }
+  .thesis-text h4 { margin: 0 0 3px 0; font-size: 14px; font-weight: 700; }
+  .thesis-text p { margin: 0; font-size: 12.5px; color: var(--mj-text-secondary); line-height: 1.5; }
+
+  /* Card Component */
+  .card {
+    background: var(--mj-bg-surface);
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-lg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    overflow: hidden;
+  }
+  .card-header {
+    padding: 14px 20px;
+    background: var(--mj-bg-surface-sunken);
+    border-bottom: 1px solid var(--mj-border-default);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .card-title {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title i { color: var(--mj-brand-primary); }
+  .card-body { padding: 20px; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: var(--mj-radius-sm);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+  }
+  .btn-primary { background: var(--mj-brand-primary); color: #fff; }
+  .btn-primary:hover { background: var(--mj-brand-hover); }
+  .btn-secondary { background: var(--mj-bg-surface); border-color: var(--mj-border-default); color: var(--mj-text-primary); }
+  .btn-secondary:hover { background: var(--mj-bg-surface-hover); }
+  .btn-success { background: var(--mj-color-success); color: #fff; }
+  .btn-sm { padding: 5px 10px; font-size: 11.5px; }
+
+  /* =========================================================================
+     OPTION 1: CHANNEL TABS & QUICK TIER LADDER
+     ========================================================================= */
+  .channel-tabs-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--mj-border-default);
+    padding: 0 16px;
+    background: var(--mj-bg-surface-sunken);
+  }
+  .channel-tab-list { display: flex; gap: 4px; }
+  .channel-tab {
+    padding: 12px 16px;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--mj-text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .channel-tab.active {
+    color: var(--mj-brand-primary);
+    border-bottom-color: var(--mj-brand-primary);
+    background: var(--mj-bg-surface);
+  }
+  .channel-pill {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 9999px;
+    background: var(--mj-bg-surface-sunken);
+    color: var(--mj-text-secondary);
+  }
+  .channel-tab.active .channel-pill { background: rgba(2, 132, 199, 0.15); color: var(--mj-brand-primary); }
+
+  /* Tier Ladder Table */
+  .tier-ladder-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .tier-ladder-table th {
+    text-align: left;
+    padding: 10px 14px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--mj-text-muted);
+    background: var(--mj-bg-surface-sunken);
+    border-bottom: 1px solid var(--mj-border-default);
+  }
+  .tier-ladder-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--mj-border-default);
+    vertical-align: middle;
+  }
+  .tier-ladder-table tr:hover { background: var(--mj-bg-surface-hover); }
+
+  .qty-bracket-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mj-font-mono);
+    font-weight: 700;
+    background: var(--mj-bg-surface-sunken);
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--mj-border-default);
+  }
+  .price-input {
+    font-family: var(--mj-font-mono);
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--mj-text-primary);
+    background: var(--mj-bg-surface);
+    border: 1px solid var(--mj-border-default);
+    border-radius: 6px;
+    padding: 6px 10px;
+    width: 110px;
+  }
+  .price-input:focus {
+    outline: none;
+    border-color: var(--mj-brand-primary);
+    box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+  }
+
+  .discount-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 700;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: var(--mj-color-success-bg);
+    color: var(--mj-color-success);
+  }
+
+  /* Add Tier Bar */
+  .add-tier-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    background: var(--mj-bg-surface-sunken);
+    border-top: 1px solid var(--mj-border-default);
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .quick-add-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .quick-add-input {
+    padding: 6px 10px;
+    font-size: 12.5px;
+    border-radius: 6px;
+    border: 1px solid var(--mj-border-default);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-primary);
+  }
+  .quick-add-input--num { width: 75px; font-family: var(--mj-font-mono); text-align: center; }
+  .quick-add-input--price { width: 95px; font-family: var(--mj-font-mono); font-weight: 700; }
+
+  /* Visual Step Chart */
+  .step-curve-container {
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .step-curve-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    height: 90px;
+    padding-top: 10px;
+  }
+  .step-bar-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    height: 100%;
+    justify-content: flex-end;
+  }
+  .step-bar-fill {
+    width: 100%;
+    border-radius: 4px 4px 0 0;
+    background: linear-gradient(180deg, #0284c7 0%, #0369a1 100%);
+    transition: height 0.3s ease;
+    min-height: 12px;
+  }
+  .step-bar-label { font-size: 11px; font-family: var(--mj-font-mono); color: var(--mj-text-muted); }
+  .step-bar-val { font-size: 11.5px; font-weight: 700; font-family: var(--mj-font-mono); color: var(--mj-brand-primary); }
+
+  /* =========================================================================
+     OPTION 2: INLINE SPREADSHEET WITH BATCH GENERATOR
+     ========================================================================= */
+  .spreadsheet-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--mj-bg-surface-sunken);
+    border-bottom: 1px solid var(--mj-border-default);
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .ss-quick-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--mj-bg-surface);
+    padding: 8px 12px;
+    border-radius: var(--mj-radius-md);
+    border: 1px dashed var(--mj-brand-primary);
+  }
+
+  .spreadsheet-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .spreadsheet-table th {
+    padding: 10px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    color: var(--mj-text-muted);
+    background: var(--mj-bg-surface-sunken);
+    border-bottom: 1px solid var(--mj-border-default);
+    border-right: 1px solid var(--mj-border-default);
+  }
+  .spreadsheet-table td {
+    padding: 0;
+    border-bottom: 1px solid var(--mj-border-default);
+    border-right: 1px solid var(--mj-border-default);
+  }
+  .spreadsheet-cell-input {
+    width: 100%;
+    height: 100%;
+    padding: 10px 12px;
+    border: none;
+    background: transparent;
+    font-family: var(--mj-font-sans);
+    font-size: 13px;
+    color: var(--mj-text-primary);
+  }
+  .spreadsheet-cell-input:focus {
+    background: rgba(2, 132, 199, 0.08);
+    outline: 2px solid var(--mj-brand-primary);
+  }
+  .spreadsheet-cell-input--mono { font-family: var(--mj-font-mono); }
+
+  /* =========================================================================
+     OPTION 3: VISUAL SLIDER & LIVE SIMULATOR MATRIX
+     ========================================================================= */
+  .rule-builder-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 16px;
+  }
+  @media (max-width: 900px) {
+    .rule-builder-grid { grid-template-columns: 1fr; }
+  }
+
+  .tier-card-item {
+    background: var(--mj-bg-surface);
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-md);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+    transition: all 0.15s ease;
+  }
+  .tier-card-item:hover {
+    border-color: var(--mj-brand-primary);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .tier-card-left { display: flex; align-items: center; gap: 12px; }
+  .tier-num-circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--mj-bg-surface-sunken);
+    border: 1px solid var(--mj-border-default);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 12px;
+    color: var(--mj-brand-primary);
+  }
+
+  /* Live Test Calculator */
+  .sim-test-card {
+    background: var(--mj-bg-surface-sunken);
+    border-radius: var(--mj-radius-lg);
+    padding: 18px;
+    border: 1px solid var(--mj-border-default);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .sim-result-box {
+    background: var(--mj-bg-surface);
+    border-radius: var(--mj-radius-md);
+    border: 1px solid var(--mj-border-default);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+</style>
+</head>
+<body>
+
+  <!-- Top App Bar -->
+  <div class="top-bar">
+    <div class="top-left">
+      <span class="logo-badge">MemberJunction</span>
+      <span class="app-title"><i class="fa-solid fa-tags" style="color: #38bdf8; margin-right: 6px;"></i> Product Pricing Workspace Mockup</span>
+    </div>
+    <button type="button" class="theme-toggle-btn" onclick="toggleTheme()">
+      <i class="fa-solid fa-moon"></i> Toggle Dark/Light Mode
+    </button>
+  </div>
+
+  <!-- Design Direction Switcher Banner -->
+  <div class="option-switcher-banner">
+    <div class="option-switcher-left">
+      <div class="option-switcher-title">
+        <i class="fa-solid fa-layer-group" style="color: var(--mj-brand-primary);"></i>
+        <span>Explore 3 Divergent Product Pricing UX Approaches</span>
+      </div>
+      <span class="option-switcher-sub">Compare interactive workflows for rapid volume bracket creation, price list channels, and tiered ladder setup.</span>
+    </div>
+
+    <div class="option-tabs">
+      <button type="button" class="option-tab-btn active" onclick="switchOption(1)">
+        <i class="fa-solid fa-stairs"></i>
+        <span>Option 1: Channel Matrix &amp; Quick-Ladder</span>
+        <span class="badge">Recommended</span>
+      </button>
+      <button type="button" class="option-tab-btn" onclick="switchOption(2)">
+        <i class="fa-solid fa-table-cells"></i>
+        <span>Option 2: High-Speed Inline Spreadsheet</span>
+      </button>
+      <button type="button" class="option-tab-btn" onclick="switchOption(3)">
+        <i class="fa-solid fa-chart-line"></i>
+        <span>Option 3: Step-Curve &amp; Rule Builder</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="main-container">
+
+    <!-- Shared Product Context Hero -->
+    <div class="product-header-card">
+      <div class="header-identity">
+        <div class="identity-left">
+          <div class="prod-avatar"><i class="fa-solid fa-cube"></i></div>
+          <div class="prod-title-group">
+            <h2>Individual Membership</h2>
+            <div class="badges-row">
+              <span class="chip"><i class="fa-solid fa-barcode"></i> SKU: MEM-IND</span>
+              <span class="chip"><i class="fa-solid fa-folder"></i> Category: Memberships</span>
+              <span class="chip chip--active"><i class="fa-solid fa-circle-check"></i> Active</span>
+            </div>
+          </div>
+        </div>
+        <div>
+          <button class="btn btn-secondary btn-sm"><i class="fa-solid fa-eye"></i> View Live Catalog</button>
+        </div>
+      </div>
+
+      <div class="header-metrics-strip">
+        <div class="stat-block">
+          <span class="stat-label">Base List Price (1 Unit)</span>
+          <span class="stat-value stat-value--blue">$1,200.00</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">ASC 606 Rev-Rec</span>
+          <span class="stat-value">Even Over Time</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Tax Status</span>
+          <span class="stat-value">Tax Exempt</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Configured Channels</span>
+          <span class="stat-value">4 Price Lists</span>
+        </div>
+        <div class="stat-block">
+          <span class="stat-label">Active Tiers</span>
+          <span class="stat-value">8 Volume Brackets</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- =====================================================================
+         OPTION 1: CHANNEL TABS + QUICK-TIER LADDER (RECOMMENDED)
+         ===================================================================== -->
+    <div id="option-1" class="option-section active">
+      <div class="thesis-box">
+        <div class="thesis-icon"><i class="fa-solid fa-lightbulb"></i></div>
+        <div class="thesis-text">
+          <h4>Option 1: Channel Tabs &amp; Instant Tier Ladder (Recommended)</h4>
+          <p>
+            <strong>Philosophy:</strong> Groups pricing by commercial channel (Direct / Wholesale / Partner / Government). Inside each channel, volume tiers are represented as a <em>sequential ladder</em> where adding a new bracket automatically computes the starting minimum quantity (`prev_max + 1`).
+            <br><strong>Key Advantage:</strong> 1-click bracket creation, zero modal popups, prevents quantity gaps/overlaps, and gives instant visual feedback via a step diagram.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <!-- Channel Segment Tabs -->
+        <div class="channel-tabs-bar">
+          <div class="channel-tab-list">
+            <button class="channel-tab active" onclick="switchChannel(this, 'base')">
+              <i class="fa-solid fa-globe"></i> Base / Direct List
+              <span class="channel-pill">4 Tiers</span>
+            </button>
+            <button class="channel-tab" onclick="switchChannel(this, 'wholesale')">
+              <i class="fa-solid fa-boxes-stacked"></i> Wholesale (-35%)
+              <span class="channel-pill">3 Tiers</span>
+            </button>
+            <button class="channel-tab" onclick="switchChannel(this, 'partner')">
+              <i class="fa-solid fa-handshake"></i> Certified Partner
+              <span class="channel-pill">2 Tiers</span>
+            </button>
+            <button class="channel-tab" onclick="switchChannel(this, 'gov')">
+              <i class="fa-solid fa-building-columns"></i> Gov / Non-Profit
+              <span class="channel-pill">1 Tier</span>
+            </button>
+          </div>
+          <div>
+            <button class="btn btn-secondary btn-sm" onclick="alert('Opens modal to clone Base Price List to a new Customer Channel.')">
+              <i class="fa-solid fa-plus"></i> Add Channel
+            </button>
+          </div>
+        </div>
+
+        <!-- Tier Ladder Grid -->
+        <table class="tier-ladder-table">
+          <thead>
+            <tr>
+              <th>Tier Bracket</th>
+              <th>Unit Range</th>
+              <th>Unit Price ($)</th>
+              <th>Discount vs Base</th>
+              <th>Unit Savings</th>
+              <th>Pricing Model</th>
+              <th>Effective Dates</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tier-ladder-body">
+            <tr>
+              <td><strong style="color: var(--mj-brand-primary);">Tier 1 (Base)</strong></td>
+              <td><span class="qty-bracket-pill">1 – 9 units</span></td>
+              <td><input type="text" class="price-input" value="$1,200.00" onchange="updateRowSavings(this)"></td>
+              <td><span class="chip">Standard</span></td>
+              <td>$0.00</td>
+              <td><span class="chip">PerUnit</span></td>
+              <td><span style="color: var(--mj-text-muted);">Always Active</span></td>
+              <td style="text-align: right;">
+                <button class="btn btn-secondary btn-sm" title="Locked as Base"><i class="fa-solid fa-lock"></i></button>
+              </td>
+            </tr>
+            <tr>
+              <td><strong style="color: var(--mj-brand-primary);">Tier 2 (Mid-Market)</strong></td>
+              <td><span class="qty-bracket-pill">10 – 49 units</span></td>
+              <td><input type="text" class="price-input" value="$1,050.00" onchange="updateRowSavings(this)"></td>
+              <td><span class="discount-badge"><i class="fa-solid fa-arrow-down"></i> 12.5% off</span></td>
+              <td><strong style="color: var(--mj-color-success);">$150.00 / unit</strong></td>
+              <td><span class="chip">Volume</span></td>
+              <td><span style="color: var(--mj-text-muted);">Always Active</span></td>
+              <td style="text-align: right;">
+                <button class="btn btn-secondary btn-sm" onclick="removeLadderRow(this)"><i class="fa-solid fa-trash" style="color: #ef4444;"></i></button>
+              </td>
+            </tr>
+            <tr>
+              <td><strong style="color: var(--mj-brand-primary);">Tier 3 (Enterprise)</strong></td>
+              <td><span class="qty-bracket-pill">50 – 99 units</span></td>
+              <td><input type="text" class="price-input" value="$900.00" onchange="updateRowSavings(this)"></td>
+              <td><span class="discount-badge"><i class="fa-solid fa-arrow-down"></i> 25.0% off</span></td>
+              <td><strong style="color: var(--mj-color-success);">$300.00 / unit</strong></td>
+              <td><span class="chip">Volume</span></td>
+              <td><span style="color: var(--mj-text-muted);">Always Active</span></td>
+              <td style="text-align: right;">
+                <button class="btn btn-secondary btn-sm" onclick="removeLadderRow(this)"><i class="fa-solid fa-trash" style="color: #ef4444;"></i></button>
+              </td>
+            </tr>
+            <tr>
+              <td><strong style="color: var(--mj-brand-primary);">Tier 4 (Strategic)</strong></td>
+              <td><span class="qty-bracket-pill">100+ units</span></td>
+              <td><input type="text" class="price-input" value="$750.00" onchange="updateRowSavings(this)"></td>
+              <td><span class="discount-badge"><i class="fa-solid fa-arrow-down"></i> 37.5% off</span></td>
+              <td><strong style="color: var(--mj-color-success);">$450.00 / unit</strong></td>
+              <td><span class="chip">Volume</span></td>
+              <td><span style="color: var(--mj-text-muted);">Always Active</span></td>
+              <td style="text-align: right;">
+                <button class="btn btn-secondary btn-sm" onclick="removeLadderRow(this)"><i class="fa-solid fa-trash" style="color: #ef4444;"></i></button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Quick 1-Click Add Tier Bracket Bar -->
+        <div class="add-tier-bar">
+          <div class="quick-add-group">
+            <span style="font-weight: 700; color: var(--mj-brand-primary); font-size: 13px;">
+              <i class="fa-solid fa-plus-circle"></i> Add Volume Tier Bracket:
+            </span>
+            <span>Min:</span>
+            <input type="number" id="new-tier-min" class="quick-add-input quick-add-input--num" value="100">
+            <span>Max (blank for ∞):</span>
+            <input type="number" id="new-tier-max" class="quick-add-input quick-add-input--num" placeholder="∞">
+            <span>Price ($):</span>
+            <input type="text" id="new-tier-price" class="quick-add-input quick-add-input--price" value="$650.00">
+            <button class="btn btn-primary btn-sm" onclick="addNewLadderTier()">
+              <i class="fa-solid fa-plus"></i> Add Bracket
+            </button>
+          </div>
+
+          <div style="font-size: 12px; color: var(--mj-text-muted);">
+            <i class="fa-solid fa-shield-halved" style="color: var(--mj-color-success);"></i> Gap &amp; overlap protection active
+          </div>
+        </div>
+
+        <!-- Visual Step Chart -->
+        <div class="step-curve-container">
+          <div style="font-size: 12px; font-weight: 700; color: var(--mj-text-muted); text-transform: uppercase;">
+            <i class="fa-solid fa-chart-simple" style="color: var(--mj-brand-primary); margin-right: 4px;"></i> Live Volume Step Curve (Base Price vs Tiers)
+          </div>
+          <div class="step-curve-bars">
+            <div class="step-bar-col">
+              <span class="step-bar-val">$1,200</span>
+              <div class="step-bar-fill" style="height: 100%;"></div>
+              <span class="step-bar-label">1–9</span>
+            </div>
+            <div class="step-bar-col">
+              <span class="step-bar-val">$1,050</span>
+              <div class="step-bar-fill" style="height: 87%;"></div>
+              <span class="step-bar-label">10–49</span>
+            </div>
+            <div class="step-bar-col">
+              <span class="step-bar-val">$900</span>
+              <div class="step-bar-fill" style="height: 75%;"></div>
+              <span class="step-bar-label">50–99</span>
+            </div>
+            <div class="step-bar-col">
+              <span class="step-bar-val">$750</span>
+              <div class="step-bar-fill" style="height: 62%;"></div>
+              <span class="step-bar-label">100+</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =====================================================================
+         OPTION 2: INLINE SPREADSHEET WITH BATCH GENERATOR
+         ===================================================================== -->
+    <div id="option-2" class="option-section">
+      <div class="thesis-box">
+        <div class="thesis-icon"><i class="fa-solid fa-table-cells"></i></div>
+        <div class="thesis-text">
+          <h4>Option 2: High-Speed Inline Spreadsheet Grid</h4>
+          <p>
+            <strong>Philosophy:</strong> Excel-like flat data table where all fields are directly editable cell-by-cell with keyboard arrow navigation, instant copy-paste, and a top quick-insert strip.
+            <br><strong>Key Advantage:</strong> Familiar to finance/accounting operations power users; handles dozens of custom price list overrides with bulk multi-tier generation tools.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="spreadsheet-toolbar">
+          <div class="ss-quick-strip">
+            <span style="font-size: 11px; font-weight: 700; color: var(--mj-brand-primary);">QUICK ADD ROW:</span>
+            <select class="quick-add-input" style="font-size: 12px;">
+              <option>Base / Standard</option>
+              <option>Wholesale List</option>
+              <option>Partner Network</option>
+            </select>
+            <input type="number" class="quick-add-input quick-add-input--num" placeholder="Min" value="1">
+            <input type="number" class="quick-add-input quick-add-input--num" placeholder="Max" value="9">
+            <input type="text" class="quick-add-input quick-add-input--price" placeholder="Amount" value="$1,200.00">
+            <button class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Insert Row</button>
+          </div>
+
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="alert('Automated Generator: Enter base price and step down percentages to create 5 brackets at once.')">
+              <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Generate Brackets
+            </button>
+            <button class="btn btn-secondary btn-sm"><i class="fa-solid fa-file-excel"></i> Bulk Import / CSV</button>
+          </div>
+        </div>
+
+        <table class="spreadsheet-table">
+          <thead>
+            <tr>
+              <th style="width: 200px;">Price List Channel</th>
+              <th style="width: 100px;">Min Qty</th>
+              <th style="width: 100px;">Max Qty</th>
+              <th style="width: 130px;">Amount ($)</th>
+              <th style="width: 130px;">Pricing Model</th>
+              <th style="width: 130px;">Fee Type</th>
+              <th style="width: 150px;">Effective From</th>
+              <th style="width: 150px;">Effective To</th>
+              <th style="width: 60px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><input type="text" class="spreadsheet-cell-input" value="Base / Direct List"></td>
+              <td><input type="number" class="spreadsheet-cell-input spreadsheet-cell-input--mono" value="1"></td>
+              <td><input type="number" class="spreadsheet-cell-input spreadsheet-cell-input--mono" value="9"></td>
+              <td><input type="text" class="spreadsheet-cell-input spreadsheet-cell-input--mono" style="font-weight: 700; color: var(--mj-brand-primary);" value="$1,200.00"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="PerUnit"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="Standard"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="2026-01-01"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="—"></td>
+              <td style="text-align: center;"><button class="btn btn-secondary btn-sm"><i class="fa-solid fa-trash"></i></button></td>
+            </tr>
+            <tr>
+              <td><input type="text" class="spreadsheet-cell-input" value="Base / Direct List"></td>
+              <td><input type="number" class="spreadsheet-cell-input spreadsheet-cell-input--mono" value="10"></td>
+              <td><input type="number" class="spreadsheet-cell-input spreadsheet-cell-input--mono" value="49"></td>
+              <td><input type="text" class="spreadsheet-cell-input spreadsheet-cell-input--mono" style="font-weight: 700; color: var(--mj-brand-primary);" value="$1,050.00"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="Volume"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="Standard"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="2026-01-01"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="—"></td>
+              <td style="text-align: center;"><button class="btn btn-secondary btn-sm"><i class="fa-solid fa-trash"></i></button></td>
+            </tr>
+            <tr>
+              <td><input type="text" class="spreadsheet-cell-input" value="Wholesale (-35%)"></td>
+              <td><input type="number" class="spreadsheet-cell-input spreadsheet-cell-input--mono" value="1"></td>
+              <td><input type="number" class="spreadsheet-cell-input spreadsheet-cell-input--mono" value="24"></td>
+              <td><input type="text" class="spreadsheet-cell-input spreadsheet-cell-input--mono" style="font-weight: 700; color: var(--mj-brand-primary);" value="$780.00"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="PerUnit"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="Standard"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="2026-01-01"></td>
+              <td><input type="text" class="spreadsheet-cell-input" value="—"></td>
+              <td style="text-align: center;"><button class="btn btn-secondary btn-sm"><i class="fa-solid fa-trash"></i></button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- =====================================================================
+         OPTION 3: STEP-CURVE & RULE BUILDER
+         ===================================================================== -->
+    <div id="option-3" class="option-section">
+      <div class="thesis-box">
+        <div class="thesis-icon"><i class="fa-solid fa-sliders"></i></div>
+        <div class="thesis-text">
+          <h4>Option 3: Step-Curve &amp; Rule Builder</h4>
+          <p>
+            <strong>Philosophy:</strong> Visual tiered card system with an embedded interactive test calculator pane, allowing pricing managers to preview order quoting calculations directly beside tier rules.
+            <br><strong>Key Advantage:</strong> Instant validation of quotes for different customer segments (e.g. "What does a partner pay for 45 units?").
+          </p>
+        </div>
+      </div>
+
+      <div class="rule-builder-grid">
+        <!-- Left: Rule Cards -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title"><i class="fa-solid fa-list-ol"></i> Active Tier Rules for Base List</span>
+            <button class="btn btn-primary btn-sm"><i class="fa-solid fa-plus"></i> Add Tier Rule</button>
+          </div>
+          <div class="card-body">
+            <div class="tier-card-item">
+              <div class="tier-card-left">
+                <div class="tier-num-circle">1</div>
+                <div>
+                  <div style="font-weight: 700;">Base Retail Bracket</div>
+                  <div style="font-size: 11.5px; color: var(--mj-text-muted); font-family: var(--mj-font-mono);">1 to 9 units</div>
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 16px; font-weight: 700; font-family: var(--mj-font-mono); color: var(--mj-brand-primary);">$1,200.00</div>
+                <div style="font-size: 11px; color: var(--mj-text-muted);">Standard List</div>
+              </div>
+            </div>
+
+            <div class="tier-card-item">
+              <div class="tier-card-left">
+                <div class="tier-num-circle">2</div>
+                <div>
+                  <div style="font-weight: 700;">Mid-Volume Tier</div>
+                  <div style="font-size: 11.5px; color: var(--mj-text-muted); font-family: var(--mj-font-mono);">10 to 49 units</div>
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 16px; font-weight: 700; font-family: var(--mj-font-mono); color: var(--mj-brand-primary);">$1,050.00</div>
+                <div class="discount-badge">12.5% discount</div>
+              </div>
+            </div>
+
+            <div class="tier-card-item">
+              <div class="tier-card-left">
+                <div class="tier-num-circle">3</div>
+                <div>
+                  <div style="font-weight: 700;">High-Volume Tier</div>
+                  <div style="font-size: 11.5px; color: var(--mj-text-muted); font-family: var(--mj-font-mono);">50 to 99 units</div>
+                </div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 16px; font-weight: 700; font-family: var(--mj-font-mono); color: var(--mj-brand-primary);">$900.00</div>
+                <div class="discount-badge">25.0% discount</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Real-Time Quote Simulator -->
+        <div class="sim-test-card">
+          <div style="font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-calculator" style="color: var(--mj-brand-primary);"></i>
+            <span>Quote Validation Test</span>
+          </div>
+          <div style="font-size: 12px; color: var(--mj-text-secondary);">
+            Test how an order quotes in real-time against configured pricing brackets:
+          </div>
+
+          <div>
+            <label style="font-size: 11.5px; font-weight: 600; color: var(--mj-text-muted); display: block; margin-bottom: 4px;">TEST QUANTITY:</label>
+            <input type="number" id="sim-test-qty" class="quick-add-input" style="width: 100%; font-family: var(--mj-font-mono); font-size: 14px;" value="25" oninput="runOption3Sim()">
+          </div>
+
+          <div class="sim-result-box">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--mj-text-muted);">Matched Tier:</span>
+              <strong id="sim-matched-tier">Mid-Volume (10–49 units)</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--mj-text-muted);">Effective Unit Price:</span>
+              <strong id="sim-unit-price" style="font-family: var(--mj-font-mono); color: var(--mj-brand-primary);">$1,050.00</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--mj-text-muted);">Total Order Value:</span>
+              <strong id="sim-total-val" style="font-family: var(--mj-font-mono); font-size: 15px;">$26,250.00</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-top: 1px solid var(--mj-border-default); padding-top: 8px;">
+              <span style="color: var(--mj-text-muted);">Customer Savings:</span>
+              <strong id="sim-savings" style="font-family: var(--mj-font-mono); color: var(--mj-color-success);">$3,750.00 (12.5%)</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    function toggleTheme() {
+      document.body.classList.toggle('dark-mode');
+    }
+
+    function switchOption(num) {
+      document.querySelectorAll('.option-tab-btn').forEach((btn, idx) => {
+        btn.classList.toggle('active', idx === num - 1);
+      });
+      document.querySelectorAll('.option-section').forEach((sec, idx) => {
+        sec.classList.toggle('active', idx === num - 1);
+      });
+    }
+
+    function switchChannel(btn, channelKey) {
+      document.querySelectorAll('.channel-tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+    }
+
+    function addNewLadderTier() {
+      const min = document.getElementById('new-tier-min').value || 100;
+      const max = document.getElementById('new-tier-max').value || '∞';
+      const price = document.getElementById('new-tier-price').value || '$650.00';
+      const maxText = max === '∞' ? `${min}+ units` : `${min} – ${max} units`;
+
+      const tbody = document.getElementById('tier-ladder-body');
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong style="color: var(--mj-brand-primary);">Tier ${tbody.children.length + 1} (Custom)</strong></td>
+        <td><span class="qty-bracket-pill">${maxText}</span></td>
+        <td><input type="text" class="price-input" value="${price}"></td>
+        <td><span class="discount-badge"><i class="fa-solid fa-arrow-down"></i> 45.8% off</span></td>
+        <td><strong style="color: var(--mj-color-success);">$550.00 / unit</strong></td>
+        <td><span class="chip">Volume</span></td>
+        <td><span style="color: var(--mj-text-muted);">Always Active</span></td>
+        <td style="text-align: right;">
+          <button class="btn btn-secondary btn-sm" onclick="removeLadderRow(this)"><i class="fa-solid fa-trash" style="color: #ef4444;"></i></button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+
+      // Auto update next min
+      if (max !== '∞') {
+        document.getElementById('new-tier-min').value = parseInt(max, 10) + 1;
+        document.getElementById('new-tier-max').value = '';
+      }
+    }
+
+    function removeLadderRow(btn) {
+      const row = btn.closest('tr');
+      row.remove();
+    }
+
+    function updateRowSavings(input) {
+      // live compute discount %
+      const val = parseFloat(input.value.replace(/[^0-9.]/g, '')) || 1200;
+      const discount = Math.max(0, Math.round((1 - (val / 1200)) * 1000) / 10);
+      const savings = Math.max(0, 1200 - val);
+      const row = input.closest('tr');
+      row.children[3].innerHTML = `<span class="discount-badge"><i class="fa-solid fa-arrow-down"></i> ${discount}% off</span>`;
+      row.children[4].innerHTML = `<strong style="color: var(--mj-color-success);">$${savings.toFixed(2)} / unit</strong>`;
+    }
+
+    function runOption3Sim() {
+      const qty = parseInt(document.getElementById('sim-test-qty').value, 10) || 1;
+      let tier = 'Base (1–9 units)';
+      let price = 1200;
+      if (qty >= 50) {
+        tier = 'High-Volume (50–99 units)';
+        price = 900;
+      } else if (qty >= 10) {
+        tier = 'Mid-Volume (10–49 units)';
+        price = 1050;
+      }
+
+      const total = qty * price;
+      const baseTotal = qty * 1200;
+      const savings = baseTotal - total;
+      const pct = Math.round((savings / baseTotal) * 1000) / 10;
+
+      document.getElementById('sim-matched-tier').innerText = tier;
+      document.getElementById('sim-unit-price').innerText = `$${price.toFixed(2)}`;
+      document.getElementById('sim-total-val').innerText = `$${total.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+      document.getElementById('sim-savings').innerText = `$${savings.toLocaleString('en-US', {minimumFractionDigits: 2})} (${pct}%)`;
+    }
+  </script>
+</body>
+</html>

@@ -22,7 +22,7 @@ export class mjBizAppsOrdersProductFormComponent extends BaseFormComponent {
             { sectionKey: 'catalogLifecycle', sectionName: 'Catalog Lifecycle', isExpanded: true },
             { sectionKey: 'subscriptionAndEntitlements', sectionName: 'Subscription and Entitlements', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductEntitlements', sectionName: 'Product Entitlements', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductEntitlements', sectionName: 'Entitlements', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductBundleItemsComponentProductID', sectionName: 'Product Bundle Items (Component Product ID)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductBundleItemsBundleProductID', sectionName: 'Bundle Items', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
