@@ -40,7 +40,7 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { OrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { LineGross, NetAfterDiscount } from '@mj-biz-apps/orders-entities';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
@@ -51,7 +51,7 @@ function money(value: number): number {
 }
 
 @RegisterClass(BaseEntity, ORDER_LINE_ENTITY)
-export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
+export class OrderLineEntityServer extends OrderLineEntity {
     /**
      * The exact extended amount the price rule computed, when a rule priced this line.
      *
@@ -120,7 +120,45 @@ export class OrderLineEntityServer extends mjBizAppsOrdersOrderLineEntity {
 
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
         await this.PrepareForSave();
-        return super.Save(options);
+        const ok = await super.Save(options);
+        if (!ok) {
+            return false;
+        }
+
+        await this.persistExtension(options);
+        return true;
+    }
+
+    private async persistExtension(options?: EntitySaveOptions): Promise<void> {
+        if (!this.Extension.IsConfigured) {
+            return;
+        }
+
+        const ext = await this.Extension.EnsureEntity();
+        if (!ext) {
+            return;
+        }
+
+        if (this.ID && (!ext.Get('ID') || ext.Get('ID') !== this.ID)) {
+            ext.Set('ID', this.ID);
+        }
+
+        // If the extension is an IS-A child of this line, sync the saved parent state
+        // so the extension's inner save knows the parent row is already persisted in the database.
+        const parent = ext.ISAParent;
+        if (parent) {
+            await parent.LoadFromData(this.GetAll(), true);
+        }
+
+        if (!ext.IsSaved || ext.Dirty) {
+            const saved = await ext.Save(options);
+            if (!saved) {
+                throw new Error(
+                    `Failed to save line extension '${this.Extension.EntityName}' for order line ${this.LineNumber}: ` +
+                        (ext.LatestResult?.CompleteMessage ?? 'unknown error'),
+                );
+            }
+        }
     }
 
     /** Derived from the product, always — plan D6. */

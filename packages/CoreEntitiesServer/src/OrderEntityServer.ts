@@ -815,7 +815,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // Normally done inside `OrderLineEntityServer.Save()`; hoisted here for the same reason
             // the rest of this method is, so the line is complete before companion validation sees
             // it. Idempotent, so its own `Save()` re-deriving them below changes nothing.
-            await (line as OrderLineEntityServer).PrepareForSave?.();
+            const serverLine = line as unknown as { PrepareForSave?: () => Promise<void> };
+            if (typeof serverLine.PrepareForSave === 'function') {
+                await serverLine.PrepareForSave();
+            } else if (line.ISAParent) {
+                const parentServerLine = line.ISAParent as unknown as { PrepareForSave?: () => Promise<void> };
+                if (typeof parentServerLine.PrepareForSave === 'function') {
+                    await parentServerLine.PrepareForSave();
+                }
+            }
         }
 
         // A BROWSER ASKS FOR CHARGES AND DISCOUNTS THROUGH THE COLLECTIONS, so drain them into the
@@ -1640,13 +1648,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
 
-            // Provider discipline (plan D12): load through the entity's OWN provider so the read
-            // sees our uncommitted transaction, not a second connection.
-            const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
-                ORDER_LINE_ENTITY,
-                CompositeKey.FromID(drafts[i].OrderLineID),
-                this.ContextCurrentUser,
-            );
+            // Prefer the in-memory line from this.Lines (already an instantiated IS-A subclass if applicable),
+            // falling back to loading through the entity's OWN provider to see uncommitted transactions.
+            const existingLine = this.Lines.Items.find((l) => l.ID === drafts[i].OrderLineID);
+            const line =
+                existingLine ??
+                (await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
+                    ORDER_LINE_ENTITY,
+                    CompositeKey.FromID(drafts[i].OrderLineID),
+                    this.ContextCurrentUser,
+                ));
             line.JournalEntryID = jeID;
 
             const saved = await line.Save(options);

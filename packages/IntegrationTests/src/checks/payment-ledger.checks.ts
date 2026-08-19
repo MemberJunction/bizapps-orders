@@ -389,12 +389,14 @@ export const PaymentLedgerChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
+        const baseAR = Number((await netOnAccount(ctx, f.CoA.ID, AR_CODE)).Net);
+        const baseCash = Number((await netOnAccount(ctx, f.CoA.ID, CASH_CODE)).Net);
         const order = await confirmOrder(ctx);
 
         // Booking alone leaves the receivable outstanding — that is the correct interim state.
         const afterBooking = await netOnAccount(ctx, f.CoA.ID, AR_CODE);
         AssertEqual(
-          Number(afterBooking.Net),
+          Number(afterBooking.Net) - baseAR,
           250,
           "AR is a debit balance after booking",
         );
@@ -405,13 +407,13 @@ export const PaymentLedgerChecks: NamedCheck[] = [
         // order's Balance read 0 — the sub-ledger and the GL disagreeing permanently.
         const afterCapture = await netOnAccount(ctx, f.CoA.ID, AR_CODE);
         AssertEqual(
-          Number(afterCapture.Net),
+          Number(afterCapture.Net) - baseAR,
           0,
           "AR nets to ZERO once the customer has paid",
         );
 
         const cash = await netOnAccount(ctx, f.CoA.ID, CASH_CODE);
-        AssertEqual(Number(cash.Net), 250, "and the cash landed");
+        AssertEqual(Number(cash.Net) - baseCash, 250, "and the cash landed");
 
         // The sub-ledger agrees with the ledger, which is the whole point.
         const row = await TxOne<{ Balance: number; PaymentStatus: string }>(
@@ -484,6 +486,7 @@ export const PaymentLedgerChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
+        const baseAR = Number((await netOnAccount(ctx, f.CoA.ID, AR_CODE)).Net);
         const order = await confirmOrder(ctx);
         const payment = await capturePayment(
           ctx,
@@ -504,7 +507,7 @@ export const PaymentLedgerChecks: NamedCheck[] = [
         const after = await allocationEntries(ctx, payment.ID as string);
         AssertEqual(after.length, 1, "still one allocation entry — BookedAt held the line");
         const ar = await netOnAccount(ctx, f.CoA.ID, AR_CODE);
-        AssertEqual(Number(ar.Net), 0, "AR still nets to zero, not -250");
+        AssertEqual(Number(ar.Net) - baseAR, 0, "AR still nets to zero, not -250");
       }),
   },
   {
@@ -514,6 +517,7 @@ export const PaymentLedgerChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
+        const baseAR = Number((await netOnAccount(ctx, f.CoA.ID, AR_CODE)).Net);
         // The D42 path: intent on the order, confirmed once, everything else automatic.
         const result = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
@@ -536,7 +540,7 @@ export const PaymentLedgerChecks: NamedCheck[] = [
         );
 
         const ar = await netOnAccount(ctx, f.CoA.ID, AR_CODE);
-        AssertEqual(Number(ar.Net), 0, "AR nets to zero from a single confirm");
+        AssertEqual(Number(ar.Net) - baseAR, 0, "AR nets to zero from a single confirm");
       }),
   },
   {
@@ -611,6 +615,8 @@ export const PaymentLedgerChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
+        const baseAR = Number((await netOnAccount(ctx, f.CoA.ID, AR_CODE)).Net);
+        const baseCash = Number((await netOnAccount(ctx, f.CoA.ID, CASH_CODE)).Net);
         const order = await confirmOrder(ctx, 250);
         const payment = await capturePayment(
           ctx,
@@ -657,12 +663,12 @@ export const PaymentLedgerChecks: NamedCheck[] = [
 
         // Net across all four entries: AR is owed again, cash is gone.
         AssertEqual(
-          Number((await netOnAccount(ctx, f.CoA.ID, AR_CODE)).Net),
+          Number((await netOnAccount(ctx, f.CoA.ID, AR_CODE)).Net) - baseAR,
           250,
           "AR outstanding again",
         );
         AssertEqual(
-          Number((await netOnAccount(ctx, f.CoA.ID, CASH_CODE)).Net),
+          Number((await netOnAccount(ctx, f.CoA.ID, CASH_CODE)).Net) - baseCash,
           0,
           "cash nets out",
         );

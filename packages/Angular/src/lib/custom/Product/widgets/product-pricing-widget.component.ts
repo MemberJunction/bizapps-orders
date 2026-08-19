@@ -86,8 +86,21 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     @Output() public PriceChanged = new EventEmitter<void>();
     @Output() public TierAdded = new EventEmitter<mjBizAppsOrdersProductPriceEntity>();
 
-    private cdr = inject(ChangeDetectorRef);
-    private navService = inject(NavigationService, { optional: true });
+    private cdr?: ChangeDetectorRef;
+    private navService?: NavigationService;
+
+    constructor() {
+        try {
+            this.cdr = inject(ChangeDetectorRef, { optional: true }) ?? undefined;
+        } catch {
+            this.cdr = undefined;
+        }
+        try {
+            this.navService = inject(NavigationService, { optional: true }) ?? undefined;
+        } catch {
+            this.navService = undefined;
+        }
+    }
 
     public IsLoading = false;
     public IsSaving = false;
@@ -110,6 +123,36 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     public NewTierMax: number | null = null;
     public NewTierPrice = 0;
     public NewTierModel: 'Volume' | 'PerUnit' | 'Tiered' | 'Flat' = 'Volume';
+
+    // Pricing Simulation
+    public SimQuantity = 1;
+    public SimResult = {
+        DiscountPercent: 0,
+        UnitPrice: 0,
+        TotalAmount: 0,
+        TotalSavings: 0,
+    };
+
+    public RecalculateSimulation(): void {
+        const base = this.Product?.StandaloneSellingPrice ?? 0;
+        let discount = 0;
+        if (this.SimQuantity >= 50) {
+            discount = 25;
+        } else if (this.SimQuantity >= 25) {
+            discount = 15;
+        } else if (this.SimQuantity >= 10) {
+            discount = 10;
+        }
+        const unit = base * (1 - discount / 100);
+        const total = unit * this.SimQuantity;
+        const savings = (base * this.SimQuantity) - total;
+        this.SimResult = {
+            DiscountPercent: discount,
+            UnitPrice: unit,
+            TotalAmount: total,
+            TotalSavings: savings,
+        };
+    }
 
     ngOnInit(): void {
         this.LoadPricingData();
@@ -158,7 +201,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         if (!this.Product?.ID) return;
 
         this.IsLoading = true;
-        this.cdr.markForCheck();
+        this.cdr?.markForCheck();
 
         try {
             if (this.Product.Prices) {
@@ -198,7 +241,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             console.error('Failed to load product pricing records:', err);
         } finally {
             this.IsLoading = false;
-            this.cdr.markForCheck();
+            this.cdr?.markForCheck();
         }
     }
 
@@ -242,7 +285,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     public ToggleAdvancedView(): void {
         this.IsAdvancedGridView = !this.IsAdvancedGridView;
-        this.cdr.markForCheck();
+        this.cdr?.markForCheck();
     }
 
     private rebuildLadder(): void {
@@ -310,7 +353,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
         // Build Step Curve Bars
         this.buildStepBars(tiers, base);
-        this.cdr.markForCheck();
+        this.cdr?.markForCheck();
     }
 
     private buildStepBars(tiers: LadderTierRow[], basePrice: number): void {
@@ -352,7 +395,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         const amount = Number(this.NewTierPrice);
 
         this.IsSaving = true;
-        this.cdr.markForCheck();
+        this.cdr?.markForCheck();
 
         try {
             // 1. Auto-adjust prior open-ended or overlapping sibling tiers in the same channel
@@ -417,7 +460,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             this.ShowToast(`Error creating pricing bracket: ${errMsg}`, 'error', 6000);
         } finally {
             this.IsSaving = false;
-            this.cdr.markForCheck();
+            this.cdr?.markForCheck();
         }
     }
 
@@ -431,7 +474,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
         tier.Record.Amount = rawVal;
         this.IsSaving = true;
-        this.cdr.markForCheck();
+        this.cdr?.markForCheck();
 
         try {
             const saved = await tier.Record.Save();
@@ -452,13 +495,13 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             input.value = this.FormatCurrency(tier.Amount);
         } finally {
             this.IsSaving = false;
-            this.cdr.markForCheck();
+            this.cdr?.markForCheck();
         }
     }
 
     public async DeleteTier(tier: LadderTierRow): Promise<void> {
         this.IsSaving = true;
-        this.cdr.markForCheck();
+        this.cdr?.markForCheck();
 
         try {
             if (this.Product.Prices && this.Product.Prices.Items.includes(tier.Record)) {
@@ -480,7 +523,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             this.ShowToast(`Error deleting tier: ${errMsg}`, 'error');
         } finally {
             this.IsSaving = false;
-            this.cdr.markForCheck();
+            this.cdr?.markForCheck();
         }
     }
 
@@ -512,7 +555,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         if (type === 'error') icon = 'fa-solid fa-triangle-exclamation';
 
         this.ActiveToast = { Type: type, Message: message, Icon: icon };
-        this.cdr.markForCheck();
+        this.cdr?.markForCheck();
 
         try {
             const store = GetGlobalObjectStore();
@@ -529,7 +572,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         }
         this.toastTimer = setTimeout(() => {
             this.ActiveToast = null;
-            this.cdr.markForCheck();
+            this.cdr?.markForCheck();
         }, durationMs);
     }
 
@@ -538,7 +581,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             clearTimeout(this.toastTimer);
         }
         this.ActiveToast = null;
-        this.cdr.markForCheck();
+        this.cdr?.markForCheck();
     }
 
     private extractErrorMessage(result: unknown): string {

@@ -137,6 +137,7 @@ if (doReset) {
         `UPDATE ${ORDERS}.OrderLine SET JournalEntryID=NULL WHERE OrderHeaderID IN (${orders})`,
         `UPDATE ${ORDERS}.PaymentHeader SET JournalEntryID=NULL WHERE ReceivingCompanyID IN (${scope})`,
         `UPDATE ${ORDERS}.PaymentLine SET BookedAt=NULL WHERE OrderHeaderID IN (${orders})`,
+        `DELETE FROM ${ACCT}.JournalEntryLineDimension WHERE JournalEntryLineID IN (SELECT jel.ID FROM ${ACCT}.JournalEntryLine jel JOIN ${ACCT}.JournalEntry je ON je.ID=jel.JournalEntryID WHERE je.CompanyID IN (${scope}))`,
         `DELETE jel FROM ${ACCT}.JournalEntryLine jel JOIN ${ACCT}.JournalEntry je ON je.ID=jel.JournalEntryID WHERE je.CompanyID IN (${scope})`,
         `DELETE FROM ${ACCT}.JournalEntry WHERE CompanyID IN (${scope})`,
         `UPDATE ${ORDERS}.OrderHeader SET InitialPaymentDetailID=NULL WHERE CompanyID IN (${scope})`,
@@ -175,6 +176,7 @@ if (doReset) {
         `UPDATE ${ORDERS}.OrderHeader SET ReversesOrderHeaderID=NULL WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.OrderLine WHERE OrderHeaderID IN (${orders})`,
         `DELETE FROM ${ORDERS}.OrderHeader WHERE CompanyID IN (${scope})`,
+        `DELETE FROM ${ACCT}.IntercompanyAccountMatchDimension WHERE IntercompanyAccountMatchID IN (SELECT ID FROM ${ACCT}.IntercompanyAccountMatch WHERE SourceCompanyID IN (${scope}) OR TargetCompanyID IN (${scope}))`,
         `DELETE FROM ${ACCT}.IntercompanyAccountMatch WHERE SourceCompanyID IN (${scope}) OR TargetCompanyID IN (${scope})`,
         // Every child of Product, enumerated from sys.foreign_keys rather than guessed — the list was
         // previously EventProduct alone, so a demo product that had picked up a price row could never
@@ -188,8 +190,11 @@ if (doReset) {
         `DELETE FROM ${ORDERS}.Product WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.ProductCategory WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ORDERS}.ProductType WHERE Name LIKE '${DEMO_TAG}%'`,
+        `DELETE FROM ${ACCT}.GLAccountLinkDimension WHERE GLAccountLinkID IN (SELECT ID FROM ${ACCT}.GLAccountLink WHERE RecordID IN (${scope}))`,
         `DELETE FROM ${ACCT}.GLAccountLink WHERE RecordID IN (${scope})`,
+        `DELETE FROM ${ACCT}.CompanyTaxNexus WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ACCT}.JournalEntrySequence WHERE CompanyID IN (${scope})`,
+        `DELETE FROM ${ACCT}.JournalEntryBatchSequence WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ACCT}.GLAccount WHERE CompanyID IN (${scope})`,
         `DELETE FROM ${ACCT}.AccountingCompanyProfile WHERE ID IN (${scope})`,
         `DELETE FROM __mj.Company WHERE Name LIKE '${DEMO_TAG}%'`,
@@ -504,7 +509,9 @@ async function confirmOrder({ lines, customer, orderDate, initialPayment, note }
         if (spec.to) line.ServicePeriodEnd = new Date(spec.to);
         built.push(line);
     }
-    order.Lines = built;
+    for (const line of built) {
+        order.Lines.Add(line);
+    }
     order.Status = 'Confirmed';
 
     if (!(await order.Save())) {
@@ -544,7 +551,7 @@ async function payOrder(orderID, typeCode, amount) {
     line.OrderHeaderID = orderID;
     line.Amount = balance;
     line.AllocatedAt = new Date();
-    payment.Lines = [line];
+    payment.Lines.Add(line);
 
     if (!(await payment.Save())) {
         throw new Error(`payment failed: ${payment.LatestResult?.CompleteMessage ?? 'unknown'}`);
@@ -631,7 +638,7 @@ icLine.NewRecord();
 icLine.OrderHeaderID = o9.ID;
 icLine.Amount = 300;
 icLine.AllocatedAt = new Date();
-icPayment.Lines = [icLine];
+icPayment.Lines.Add(icLine);
 
 if (!(await icPayment.Save())) throw new Error(`IC capture failed: ${icPayment.LatestResult?.CompleteMessage}`);
 
@@ -738,7 +745,7 @@ overLine.NewRecord();
 overLine.OrderHeaderID = creditOrder.ID;
 overLine.Amount = 250;          // 50 more than the order — the surplus becomes the credit
 overLine.AllocatedAt = new Date();
-overPayment.Lines = [overLine];
+overPayment.Lines.Add(overLine);
 
 if (!(await overPayment.Save())) {
     throw new Error(`over-payment failed: ${overPayment.LatestResult?.CompleteMessage}`);

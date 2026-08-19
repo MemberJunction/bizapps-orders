@@ -41,7 +41,7 @@
     <mj-collapsible-panel
         SectionKey="attendeePreferences"
         SectionName="Attendee Preferences"
-        Icon="fa fa-utensils"
+        Icon="fa fa-sliders-h"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -75,7 +75,9 @@
     <mj-collapsible-panel
         SectionKey="orderLines"
         SectionName="Order Lines"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-list"
+        Variant="inherited"
+        InheritedFromEntity="MJ_BizApps_Orders: Order Lines"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 

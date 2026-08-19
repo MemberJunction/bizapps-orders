@@ -630,6 +630,8 @@ async function loadEntitlements(ctx: IntegrationCheckContext, world: WorldState)
                 IsActive: true,
                 ValidityMode: row.ValidityMode || null,
                 ValidityDurationDays: row.ValidityDurationDays ? Number(row.ValidityDurationDays) : null,
+                AccessLeadHours: row.AccessLeadHours ? Number(row.AccessLeadHours) : null,
+                AccessLagHours: row.AccessLagHours ? Number(row.AccessLagHours) : null,
             },
         );
         if (row.Mnemonic) world.Entitlements[row.Mnemonic] = id;

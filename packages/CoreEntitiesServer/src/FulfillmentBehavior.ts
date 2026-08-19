@@ -106,9 +106,9 @@ export function RefuseFlip(
     if (!line) return 'LineNotFound';
     // Before Confirmed nothing is owed, so nothing can ship. Voided orders are out entirely.
     if (!ORDER_STATES_ALLOWING_FULFILLMENT.has(orderStatus)) return 'OrderNotPosted';
-    if (!line.RequiresFulfillment) return 'DoesNotRequireFulfillment';
-    if (line.ReversesOrderLineID) return 'IsReversal';
     if (line.IsRollupParent) return 'IsRollupParent';
+    if (line.ReversesOrderLineID) return 'IsReversal';
+    if (!line.RequiresFulfillment) return 'DoesNotRequireFulfillment';
     if ((line.FulfillmentStatus ?? 'Pending') !== 'Pending') return 'AlreadyFulfilled';
     return null;
 }

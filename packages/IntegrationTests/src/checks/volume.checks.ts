@@ -1259,7 +1259,7 @@ export const VolumeChecks: NamedCheck[] = [
           FeeType: "Standard",
           Amount: listPrice,
           EffectiveFrom: "2020-01-01",
-          Priority: 0,
+          Priority: 10,
           Status: "Active",
         }));
         listID = await createViaEntity(ctx, PRICE_LIST_ENTITY, {
@@ -1280,7 +1280,7 @@ export const VolumeChecks: NamedCheck[] = [
           FeeType: "Standard",
           Amount: memberPrice,
           EffectiveFrom: "2020-01-01",
-          Priority: 0,
+          Priority: 10,
           Status: "Active",
         }));
       };
