@@ -66,11 +66,17 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass } from '@memberjunction/global';
 import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
+import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
-import { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
+import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJournalEntryFactory.js';
+import {
+    PaymentAllocationFactory,
+    type OrderLineShare,
+} from './PaymentAllocationFactory.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
+import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -160,15 +166,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             //
             // Letting the graph write the lines reads better and IS what the journal-entry path
             // does — but it fails here, and the suite says so: `assertAllocationInvariant` and
-            // `bookPersistedLines` below both re-read PaymentLine FROM THE DATABASE by
-            // PaymentHeaderID, inside this transaction, and they found zero rows. A capture then
-            // refused itself with "it is for 100 but its 0 allocations total 0" — 61 checks.
-            //
-            // Journal entries get away with the graph because nothing downstream re-reads the lines;
-            // this path does, twice.
-            //
-            // `IsGraphNodeSave` is the wrong flag: it drops the PaymentDetail embed. Skip the
-            // collection only — the embed still persists with the header.
+            // `bookAllocations` both read PaymentLine FROM THE DATABASE by PaymentHeaderID inside
+            // this transaction.
             for (const line of this.Lines.Items) {
                 line.PaymentHeaderID = this.ID;
             }
@@ -182,9 +181,11 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             // The lines go down BEFORE the invariant is checked, because the check reads what is
             // actually persisted rather than what this object happens to be holding — a line that
             // silently failed to save would otherwise still count toward the total.
-
             for (const line of this.Lines.Items) {
-                if (!(await line.Save(options))) {
+                const lineSaveOptions = new EntitySaveOptions();
+                if (options) Object.assign(lineSaveOptions, options);
+                lineSaveOptions.IsParentEntitySave = true;
+                if (!(await line.Save(lineSaveOptions))) {
                     throw new Error(
                         `Failed to save a payment allocation for ${this.PaymentNumber}: ` +
                             `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
@@ -193,27 +194,11 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             }
 
             if (capturing) {
-                // BOOK THE LINES THAT WERE ALREADY ON DISK. A payment that was saved `Pending` — the
-                // shape a bank debit takes, because nothing has cleared when the caller asks — persisted
-                // its allocations with nothing booked, exactly as `PaymentLineEntityServer` intends
-                // ("it books when the payment reaches Captured, not here"). THIS is that moment, and
-                // without this call the cash leg never books: persisting an allocation only writes the
-                // transient collection, which is empty on a promotion.
-                //
-                // Safe to run on every capture. `BookedAt` is the allocation's idempotency key, so a
-                // line booked on its own save is skipped here rather than credited twice.
-                await this.bookPersistedLines(options);
+                // Book journal entries for all unbooked allocations of this payment in one atomic batch.
+                await this.bookAllocations(options);
                 await this.assertAllocationInvariant();
                 // Only reach the fee builder when there IS a fee AND this tender books one inline.
-                // Since the cash leg moved to the allocation (D13), this is the header's ONLY entry —
-                // so a payment without a fee has nothing to book here, and an account-credit transfer
-                // (Amount 0, D68) would otherwise trip the builder's zero-gross guard even though it
-                // is perfectly valid.
-                //
-                // OFF BY DEFAULT (D82). A per-payment fee leg cannot reconcile to a bank statement,
-                // because the processor batches into payouts and deducts costs that never attach to
-                // any payment. The fee is still READ from the gateway and still stored on this row;
-                // it simply does not become a journal entry unless a deployment asks for it.
+                // OFF BY DEFAULT (D82).
                 if (Number(this.ProcessingFeeAmount ?? 0) > 0 && (await this.feeBooksInline())) {
                     await this.bookProcessingFee(options);
                 }
@@ -236,15 +221,17 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
     }
 
     /**
-     * True when this save is the first transition into a booked status.
-     *
-     * `JournalEntryID` is the idempotency key, not the status: a captured payment re-saved for any
-     * reason (a note edited, a provider id backfilled) must not book again.
+     * True when this save needs to book journal entries.
+     * Evaluates true on a new record being saved as Captured/Refunded, on status transitions into
+     * Captured/Refunded, or when there are unbooked lines attached.
      */
     private willBookOnThisSave(): boolean {
         if (!BOOKED_STATUSES.has(this.Status)) return false;
-        if (this.JournalEntryID) return false;
-        return true;
+        if (!this.IsSaved) return true;
+        const previousStatus = this.GetFieldByName('Status')?.OldValue as string | undefined;
+        if (previousStatus !== this.Status) return true;
+        if (this.Lines.Items.some((l) => !l.BookedAt)) return true;
+        return false;
     }
 
     /**
@@ -327,48 +314,143 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      * `Captured` and the cash leg follows automatically.
      */
     /**
-     * Re-save any allocation already on disk that has not booked yet, so its cash leg lands.
+     * Book one journal entry per company owning a line on the orders settled by unbooked allocations.
      *
-     * ONLY REACHABLE FROM A DELAYED CAPTURE. A payment captured in one act saves its lines from the
-     * transient collection while the header is already `Captured`, so each one books as it is written
-     * and arrives here with `BookedAt` set — this method then finds nothing and costs one query. A
-     * payment that sat `Pending` first (a bank debit waiting on the bank) persisted its lines
-     * unbooked, and this is the only place that debt is settled.
-     *
-     * RE-SAVED AS ENTITY OBJECTS, deliberately. `PaymentLineEntityServer.Save` is what books an
-     * allocation, and it needs the real subclass to do it — reading these as `simple` rows and
-     * updating them would write the columns and book nothing, which is the failure this method exists
-     * to prevent.
+     * In the payment-header save, all allocations for the payment are gathered and drafted together,
+     * submitted to Accounting.CreateJournalEntries in one batch inside the payment transaction, and
+     * stamped with BookedAt.
      */
-    private async bookPersistedLines(options?: EntitySaveOptions): Promise<void> {
+    private async bookAllocations(options?: EntitySaveOptions): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+
+        const unbookedLines: mjBizAppsOrdersPaymentLineEntity[] = [];
+        const seenLineIDs = new Set<string>();
+
+        for (const line of this.Lines.Items) {
+            if (!line.BookedAt) {
+                unbookedLines.push(line);
+                if (line.ID) seenLineIDs.add(String(line.ID).toLowerCase());
+            }
+        }
+
+        if (this.ID) {
+            const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+            const res = await rv.RunView<BaseEntity>(
+                {
+                    EntityName: PAYMENT_LINE_ENTITY,
+                    ExtraFilter: `PaymentHeaderID='${this.ID}' AND BookedAt IS NULL`,
+                    ResultType: 'entity_object',
+                    BypassCache: true,
+                },
+                this.ContextCurrentUser,
+            );
+            for (const line of (res?.Results ?? []) as mjBizAppsOrdersPaymentLineEntity[]) {
+                if (!seenLineIDs.has(String(line.ID).toLowerCase())) {
+                    unbookedLines.push(line);
+                    seenLineIDs.add(String(line.ID).toLowerCase());
+                }
+            }
+        }
+
+        if (unbookedLines.length === 0) return;
+
+        await AccountingEngineBase.Instance.Config(false, user, provider);
+        const resolver = await BuildGLAccountResolver(provider, user);
+        const factory = new PaymentAllocationFactory(
+            resolver,
+            (source, target, asOf) => {
+                const hit = AccountingEngineBase.Instance.ResolveIntercompanyAccounts(source, target, asOf);
+                return hit ? { DueToGLAccountID: hit.DueTo.GLAccountID, DueFromGLAccountID: hit.DueFrom.GLAccountID } : null;
+            },
+            EntityIDFor(PAYMENT_LINE_ENTITY),
+        );
+
+        const allDrafts: PaymentJEDraft[] = [];
+
+        for (const line of unbookedLines) {
+            const orderLines = await this.loadOrderLines(line.OrderHeaderID);
+            if (orderLines.length === 0) {
+                throw new Error(
+                    `Cannot allocate ${line.Amount} to order ${line.OrderHeaderID}: the order has no lines, so ` +
+                        `there is no basis for deciding whose revenue the cash settles.`,
+                );
+            }
+            const orderNumber = await this.loadOrderNumber(line.OrderHeaderID);
+
+            const { Drafts } = await factory.BuildAllocationDrafts({
+                PaymentLineID: line.ID,
+                PaymentNumber: this.PaymentNumber,
+                OrderNumber: orderNumber,
+                Amount: line.Amount ?? 0,
+                ReceivingCompanyID: this.ReceivingCompanyID,
+                OrderLines: orderLines,
+                TargetOrderLineID: line.OrderLineID ?? null,
+                PaymentDate: this.PaymentDate ? new Date(this.PaymentDate) : new Date(),
+                IsReversal: this.Status === 'Refunded' || (line.Amount ?? 0) < 0,
+            });
+
+            allDrafts.push(...Drafts);
+        }
+
+        if (allDrafts.length === 0) return;
+
+        const result = await this.createJournalEntries(allDrafts, provider, user);
+        if ((result.Results?.length ?? 0) !== allDrafts.length) {
+            throw new Error(
+                `Accounting returned ${result.Results?.length ?? 0} journal entries for allocations that ` +
+                    `produced ${allDrafts.length} drafts. The cash leg is incomplete; refusing to commit.`,
+            );
+        }
+
+        for (const line of unbookedLines) {
+            line.BookedAt = new Date();
+            const saveOptions = new EntitySaveOptions();
+            if (options) Object.assign(saveOptions, options);
+            saveOptions.IsParentEntitySave = true;
+            if (!(await line.Save(saveOptions))) {
+                throw new Error(
+                    `Failed to stamp BookedAt on the allocation: ${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+        }
+    }
+
+    private async loadOrderLines(orderHeaderID: string): Promise<OrderLineShare[]> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const result = await rv.RunView<BaseEntity>(
+        const res = await rv.RunView<{ ID: string; CompanyID: string; LineTotalGross: number }>(
             {
-                EntityName: PAYMENT_LINE_ENTITY,
-                ExtraFilter: `PaymentHeaderID='${this.ID}' AND BookedAt IS NULL`,
-                ResultType: 'entity_object',
+                EntityName: ORDER_LINE_ENTITY,
+                ExtraFilter: `OrderHeaderID='${orderHeaderID}'`,
+                Fields: ['ID', 'CompanyID', 'LineTotalGross'],
+                ResultType: 'simple',
                 BypassCache: true,
             },
             this.ContextCurrentUser,
         );
-
-        if (!result?.Success) {
-            throw new Error(
-                `Could not read the unbooked allocations for payment ${this.PaymentNumber}: ` +
-                    `${result?.ErrorMessage ?? 'unknown error'}`,
-            );
+        if (!res?.Success) {
+            throw new Error(`Could not read the order's lines to allocate the payment: ${res?.ErrorMessage ?? 'unknown error'}`);
         }
+        return (res.Results ?? []).map((l) => ({
+            OrderLineID: l.ID,
+            CompanyID: l.CompanyID,
+            Amount: Number(l.LineTotalGross ?? 0),
+        }));
+    }
 
-        for (const line of result.Results ?? []) {
-            // A no-op save: nothing on the row changes, and the ONLY purpose is to run the subclass's
-            // booking path now that the header it reads is Captured.
-            if (!(await line.Save(options))) {
-                throw new Error(
-                    `Could not book an allocation of payment ${this.PaymentNumber}: ` +
-                        `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
-                );
-            }
-        }
+    private async loadOrderNumber(orderHeaderID: string): Promise<string> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ OrderNumber: string }>(
+            {
+                EntityName: ORDER_HEADER_ENTITY,
+                ExtraFilter: `ID='${orderHeaderID}'`,
+                Fields: ['OrderNumber'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        return res?.Results?.[0]?.OrderNumber ?? String(orderHeaderID);
     }
 
     /**
