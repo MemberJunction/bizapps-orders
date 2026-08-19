@@ -6,13 +6,13 @@ import {
     OnChanges,
     SimpleChanges,
     Output,
-    ChangeDetectionStrategy,
     ChangeDetectorRef,
     inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Metadata, RunView, CompositeKey } from '@memberjunction/core';
+import { GetGlobalObjectStore } from '@memberjunction/global';
 import { NavigationService } from '@memberjunction/ng-shared';
 import type { FormContext, FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import type { RunViewParams } from '@memberjunction/core';
@@ -55,6 +55,12 @@ export interface StepCurveBar {
     Percentage: number;
 }
 
+export interface WidgetToast {
+    Type: 'success' | 'error' | 'info';
+    Message: string;
+    Icon: string;
+}
+
 const PRODUCT_PRICES_ENTITY = 'MJ_BizApps_Orders: Product Prices';
 const PRICE_LISTS_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 
@@ -62,8 +68,8 @@ const PRICE_LISTS_ENTITY = 'MJ_BizApps_Orders: Price Lists';
  * World-Class Product Pricing Matrix & Volume Ladder Widget (Option 1).
  *
  * Provides commercial channel segmentation (Base List, Wholesale, Partner),
- * rapid 1-click volume tier ladder configuration with gap/overlap protection,
- * live discount & savings math, and an interactive step curve.
+ * rapid 1-click volume tier ladder configuration with automatic gap/overlap protection,
+ * live discount & savings math, non-intrusive toast notifications, and an interactive step curve.
  */
 @Component({
     standalone: false,
@@ -86,6 +92,9 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     public IsLoading = false;
     public IsSaving = false;
     public IsAdvancedGridView = false;
+
+    public ActiveToast: WidgetToast | null = null;
+    private toastTimer?: ReturnType<typeof setTimeout>;
 
     public Channels: PriceChannel[] = [
         { ID: null, Name: 'Base / Direct List', Icon: 'fa-solid fa-globe', TierCount: 0 }
@@ -325,7 +334,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     public async AddTierBracket(): Promise<void> {
         if (!this.Product?.ID) {
-            alert('Cannot add pricing tier: Product must be saved first.');
+            this.ShowToast('Cannot add pricing tier: Product must be saved first.', 'error');
             return;
         }
 
@@ -342,6 +351,28 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.cdr.markForCheck();
 
         try {
+            // 1. Auto-adjust prior open-ended or overlapping sibling tiers in the same channel
+            const channelSiblings = this.AllPriceRecords.filter(p => 
+                (this.SelectedChannelID === null ? !p.PriceListID : p.PriceListID === this.SelectedChannelID) &&
+                p.Status === 'Active' &&
+                (p.FeeType || 'Standard') === 'Standard'
+            );
+
+            for (const sib of channelSiblings) {
+                const sibMin = Number(sib.MinQuantity) || 1;
+                const sibMax = sib.MaxQuantity != null ? Number(sib.MaxQuantity) : null;
+
+                // If sibling started before our new tier and has open end (null) or extends into our range
+                if (sibMin < minQty && (sibMax === null || sibMax >= minQty)) {
+                    sib.MaxQuantity = minQty - 1;
+                    const sibSaved = await sib.Save();
+                    if (!sibSaved) {
+                        console.warn('Could not adjust sibling tier upper bound:', sib.LatestResult);
+                    }
+                }
+            }
+
+            // 2. Instantiate and save the new tier bracket
             const md = new Metadata();
             const newPrice = await md.GetEntityObject<mjBizAppsOrdersProductPriceEntity>(PRODUCT_PRICES_ENTITY);
             if (!newPrice) {
@@ -364,14 +395,17 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
                 await this.LoadPricingData();
                 this.PriceChanged.emit();
                 this.TierAdded.emit(newPrice);
+                const bracketDesc = maxQty != null ? `${minQty}–${maxQty} units` : `${minQty}+ units`;
+                this.ShowToast(`Added tier bracket (${bracketDesc}) for ${this.FormatCurrency(amount)}`, 'success');
             } else {
                 console.error('Failed to save product price record:', newPrice.LatestResult);
-                const msg = newPrice.LatestResult?.Message || 'Validation failed';
-                alert(`Could not save pricing bracket: ${msg}`);
+                const errMsg = this.extractErrorMessage(newPrice.LatestResult);
+                this.ShowToast(`Could not save pricing bracket: ${errMsg}`, 'error', 6000);
             }
         } catch (err) {
             console.error('Failed to create tier bracket:', err);
-            alert(`Error creating pricing bracket: ${err instanceof Error ? err.message : String(err)}`);
+            const errMsg = err instanceof Error ? err.message : String(err);
+            this.ShowToast(`Error creating pricing bracket: ${errMsg}`, 'error', 6000);
         } finally {
             this.IsSaving = false;
             this.cdr.markForCheck();
@@ -395,14 +429,17 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             if (saved) {
                 await this.LoadPricingData();
                 this.PriceChanged.emit();
+                this.ShowToast(`Updated price for ${tier.BracketLabel} to ${this.FormatCurrency(rawVal)}`, 'success');
             } else {
                 console.error('Failed to update price:', tier.Record.LatestResult);
-                alert(`Failed to update price: ${tier.Record.LatestResult?.Message || 'Save failed'}`);
+                const errMsg = this.extractErrorMessage(tier.Record.LatestResult);
+                this.ShowToast(`Failed to update price: ${errMsg}`, 'error');
                 input.value = this.FormatCurrency(tier.Amount);
             }
         } catch (err) {
             console.error('Failed to update tier price:', err);
-            alert(`Error updating price: ${err instanceof Error ? err.message : String(err)}`);
+            const errMsg = err instanceof Error ? err.message : String(err);
+            this.ShowToast(`Error updating price: ${errMsg}`, 'error');
             input.value = this.FormatCurrency(tier.Amount);
         } finally {
             this.IsSaving = false;
@@ -411,8 +448,6 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     public async DeleteTier(tier: LadderTierRow): Promise<void> {
-        if (!confirm(`Are you sure you want to delete ${tier.BracketLabel} (${tier.UnitRangeText})?`)) return;
-
         this.IsSaving = true;
         this.cdr.markForCheck();
 
@@ -421,13 +456,16 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             if (deleted) {
                 await this.LoadPricingData();
                 this.PriceChanged.emit();
+                this.ShowToast(`Deleted ${tier.BracketLabel} (${tier.UnitRangeText})`, 'info');
             } else {
                 console.error('Failed to delete tier:', tier.Record.LatestResult);
-                alert(`Failed to delete tier: ${tier.Record.LatestResult?.Message || 'Delete failed'}`);
+                const errMsg = this.extractErrorMessage(tier.Record.LatestResult);
+                this.ShowToast(`Failed to delete tier: ${errMsg}`, 'error');
             }
         } catch (err) {
             console.error('Failed to delete tier:', err);
-            alert(`Error deleting tier: ${err instanceof Error ? err.message : String(err)}`);
+            const errMsg = err instanceof Error ? err.message : String(err);
+            this.ShowToast(`Error deleting tier: ${errMsg}`, 'error');
         } finally {
             this.IsSaving = false;
             this.cdr.markForCheck();
@@ -454,6 +492,59 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         if (this.navService) {
             this.navService.OpenNewEntityRecord(PRODUCT_PRICES_ENTITY, this.NewPriceRecordValues);
         }
+    }
+
+    public ShowToast(message: string, type: 'success' | 'error' | 'info' = 'info', durationMs = 4000): void {
+        let icon = 'fa-solid fa-circle-info';
+        if (type === 'success') icon = 'fa-solid fa-circle-check';
+        if (type === 'error') icon = 'fa-solid fa-triangle-exclamation';
+
+        this.ActiveToast = { Type: type, Message: message, Icon: icon };
+        this.cdr.markForCheck();
+
+        try {
+            const store = GetGlobalObjectStore();
+            const notifService = store ? (store['MJNotificationService'] as { CreateSimpleNotification?: (m: string, t: string, d: number) => void } | undefined) : undefined;
+            if (notifService && typeof notifService.CreateSimpleNotification === 'function') {
+                notifService.CreateSimpleNotification(message, type, durationMs);
+            }
+        } catch {
+            // Safe fallback
+        }
+
+        if (this.toastTimer) {
+            clearTimeout(this.toastTimer);
+        }
+        this.toastTimer = setTimeout(() => {
+            this.ActiveToast = null;
+            this.cdr.markForCheck();
+        }, durationMs);
+    }
+
+    public DismissToast(): void {
+        if (this.toastTimer) {
+            clearTimeout(this.toastTimer);
+        }
+        this.ActiveToast = null;
+        this.cdr.markForCheck();
+    }
+
+    private extractErrorMessage(result: unknown): string {
+        if (!result) return 'An unexpected error occurred.';
+        if (typeof result === 'string') {
+            try {
+                const parsed = JSON.parse(result);
+                return parsed.Message || parsed.message || result;
+            } catch {
+                return result;
+            }
+        }
+        if (typeof result === 'object' && result !== null) {
+            const obj = result as Record<string, unknown>;
+            if (typeof obj['Message'] === 'string') return this.extractErrorMessage(obj['Message']);
+            if (typeof obj['message'] === 'string') return this.extractErrorMessage(obj['message']);
+        }
+        return 'Operation failed';
     }
 
     public FormatCurrency(val: number): string {

@@ -1,4 +1,17 @@
 <div class="mjo-pricing-widget-wrap">
+    <!-- Toast Notification Banner -->
+    @if (ActiveToast) {
+        <div class="mjo-toast" [class]="'mjo-toast--' + ActiveToast.Type">
+            <div class="mjo-toast-left">
+                <i [class]="ActiveToast.Icon"></i>
+                <span class="mjo-toast-msg">{{ ActiveToast.Message }}</span>
+            </div>
+            <button type="button" class="mjo-toast-close" (click)="DismissToast()">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+    }
+
     <!-- 1. Top Commercial Parameters Card -->
     <div class="mjo-pricing-card">
         <div class="mjo-card-header">

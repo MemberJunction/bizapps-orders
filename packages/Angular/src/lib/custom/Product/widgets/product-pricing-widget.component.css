@@ -3,6 +3,73 @@
     flex-direction: column;
     gap: 16px;
     width: 100%;
+    position: relative;
+}
+
+/* In-Widget Toast Notification */
+.mjo-toast {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-radius: var(--mj-radius-md, 8px);
+    font-size: 13px;
+    font-weight: 500;
+    animation: mjo-toast-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border: 1px solid transparent;
+}
+
+@keyframes mjo-toast-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.mjo-toast--success {
+    background: rgba(22, 163, 74, 0.15);
+    border-color: rgba(22, 163, 74, 0.3);
+    color: #22c55e;
+}
+
+.mjo-toast--error {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #f87171;
+}
+
+.mjo-toast--info {
+    background: rgba(2, 132, 199, 0.15);
+    border-color: rgba(2, 132, 199, 0.3);
+    color: #38bdf8;
+}
+
+.mjo-toast-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.mjo-toast-left i {
+    font-size: 16px;
+}
+
+.mjo-toast-msg {
+    line-height: 1.4;
+}
+
+.mjo-toast-close {
+    background: transparent;
+    border: none;
+    color: currentColor;
+    opacity: 0.7;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.mjo-toast-close:hover {
+    opacity: 1;
 }
 
 .mjo-pricing-card {
