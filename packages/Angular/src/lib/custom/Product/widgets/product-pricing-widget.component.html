@@ -226,8 +226,13 @@
                         class="mjo-btn-add" 
                         [disabled]="IsSaving" 
                         (click)="AddTierBracket()">
-                        <i class="fa-solid fa-plus"></i>
-                        <span>Add Bracket</span>
+                        @if (IsSaving) {
+                            <i class="fa-solid fa-spinner fa-spin"></i>
+                            <span>Saving…</span>
+                        } @else {
+                            <i class="fa-solid fa-plus"></i>
+                            <span>Add Bracket</span>
+                        }
                     </button>
                 </div>
 

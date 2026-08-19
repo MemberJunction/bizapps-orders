@@ -114,14 +114,14 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     public get BaseListPrice(): number {
         // Base list price is the single-unit price of the base list (or StandaloneSellingPrice if set)
-        if (this.Product?.StandaloneSellingPrice && this.Product.StandaloneSellingPrice > 0) {
+        if (this.Product?.StandaloneSellingPrice && Number(this.Product.StandaloneSellingPrice) > 0) {
             return Number(this.Product.StandaloneSellingPrice);
         }
-        const baseFirstTier = this.AllPriceRecords.find(p => !p.PriceListID && (p.MinQuantity === 1 || !p.MinQuantity));
-        if (baseFirstTier && baseFirstTier.Amount > 0) {
+        const baseFirstTier = this.AllPriceRecords.find(p => !p.PriceListID && (Number(p.MinQuantity) === 1 || !p.MinQuantity));
+        if (baseFirstTier && Number(baseFirstTier.Amount) > 0) {
             return Number(baseFirstTier.Amount);
         }
-        return 1200;
+        return 0;
     }
 
     public get FormattedBasePrice(): string {
@@ -129,7 +129,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     public get ProductPricesViewParams(): RunViewParams | null {
-        if (!this.Product?.IsSaved || !this.Product?.ID) return null;
+        if (!this.Product?.ID) return null;
         return {
             EntityName: PRODUCT_PRICES_ENTITY,
             ExtraFilter: `ProductID = '${this.Product.ID}'`,
@@ -146,7 +146,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     public async LoadPricingData(): Promise<void> {
-        if (!this.Product?.IsSaved || !this.Product?.ID) return;
+        if (!this.Product?.ID) return;
 
         this.IsLoading = true;
         this.cdr.markForCheck();
@@ -171,6 +171,8 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
             if (pricesResult.Success && pricesResult.Results) {
                 this.AllPriceRecords = pricesResult.Results;
+            } else {
+                console.warn('Could not retrieve product prices:', pricesResult.ErrorMessage);
             }
 
             // Build Channels
@@ -233,16 +235,13 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     private rebuildLadder(): void {
         const channelRecords = this.AllPriceRecords
             .filter(p => (this.SelectedChannelID === null ? !p.PriceListID : p.PriceListID === this.SelectedChannelID))
-            .sort((a, b) => (a.MinQuantity || 0) - (b.MinQuantity || 0));
+            .sort((a, b) => (Number(a.MinQuantity) || 0) - (Number(b.MinQuantity) || 0));
 
         const base = this.BaseListPrice;
-        let maxSeenQty = 0;
 
         const tiers: LadderTierRow[] = channelRecords.map((rec, index) => {
             const min = Number(rec.MinQuantity) || 1;
-            const max = rec.MaxQuantity != null ? Number(rec.MaxQuantity) : null;
-            if (max != null && max > maxSeenQty) maxSeenQty = max;
-            else if (min > maxSeenQty) maxSeenQty = min;
+            const max = rec.MaxQuantity != null && !isNaN(Number(rec.MaxQuantity)) ? Number(rec.MaxQuantity) : null;
 
             const amount = Number(rec.Amount) || 0;
             const savings = Math.max(0, base - amount);
@@ -280,18 +279,18 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         if (tiers.length === 0) {
             this.NewTierMin = 1;
             this.NewTierMax = 9;
-            this.NewTierPrice = base;
+            this.NewTierPrice = base > 0 ? base : 100;
             this.NewTierModel = 'PerUnit';
         } else {
             const lastTier = tiers[tiers.length - 1];
-            if (lastTier.MaxQuantity != null) {
-                this.NewTierMin = lastTier.MaxQuantity + 1;
+            if (lastTier.MaxQuantity != null && !isNaN(Number(lastTier.MaxQuantity))) {
+                this.NewTierMin = Number(lastTier.MaxQuantity) + 1;
                 this.NewTierMax = this.NewTierMin + 49;
-                this.NewTierPrice = Math.max(1, Math.round(lastTier.Amount * 0.85));
+                this.NewTierPrice = Math.max(1, Math.round((Number(lastTier.Amount) || base || 100) * 0.85));
             } else {
-                this.NewTierMin = lastTier.MinQuantity + 50;
+                this.NewTierMin = (Number(lastTier.MinQuantity) || 1) + 50;
                 this.NewTierMax = null;
-                this.NewTierPrice = Math.max(1, Math.round(lastTier.Amount * 0.85));
+                this.NewTierPrice = Math.max(1, Math.round((Number(lastTier.Amount) || base || 100) * 0.85));
             }
             this.NewTierModel = 'Volume';
         }
@@ -325,7 +324,19 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     public async AddTierBracket(): Promise<void> {
-        if (!this.Product?.IsSaved || !this.Product?.ID) return;
+        if (!this.Product?.ID) {
+            alert('Cannot add pricing tier: Product must be saved first.');
+            return;
+        }
+
+        const minQty = Number(this.NewTierMin) || 1;
+        const maxQtyVal = this.NewTierMax != null && String(this.NewTierMax).trim() !== '' 
+            ? Number(this.NewTierMax) 
+            : null;
+        const maxQty = maxQtyVal !== null && !isNaN(maxQtyVal) && maxQtyVal >= minQty 
+            ? maxQtyVal 
+            : null;
+        const amount = Number(this.NewTierPrice);
 
         this.IsSaving = true;
         this.cdr.markForCheck();
@@ -339,23 +350,28 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
             newPrice.ProductID = this.Product.ID;
             newPrice.PriceListID = this.SelectedChannelID;
-            newPrice.MinQuantity = this.NewTierMin;
-            newPrice.MaxQuantity = this.NewTierMax && this.NewTierMax > this.NewTierMin ? this.NewTierMax : null;
-            newPrice.Amount = this.NewTierPrice;
-            newPrice.PricingModel = this.NewTierModel;
+            newPrice.MinQuantity = minQty;
+            newPrice.MaxQuantity = maxQty;
+            newPrice.Amount = isNaN(amount) ? 0 : amount;
+            newPrice.PricingModel = this.NewTierModel || 'Volume';
             newPrice.FeeType = 'Standard';
+            newPrice.Priority = 0;
+            newPrice.Status = 'Active';
             newPrice.EffectiveFrom = new Date();
 
             const saved = await newPrice.Save();
             if (saved) {
-                this.AllPriceRecords.push(newPrice);
-                this.rebuildLadder();
-                this.updateChannelCounts();
+                await this.LoadPricingData();
                 this.PriceChanged.emit();
                 this.TierAdded.emit(newPrice);
+            } else {
+                console.error('Failed to save product price record:', newPrice.LatestResult);
+                const msg = newPrice.LatestResult?.Message || 'Validation failed';
+                alert(`Could not save pricing bracket: ${msg}`);
             }
         } catch (err) {
             console.error('Failed to create tier bracket:', err);
+            alert(`Error creating pricing bracket: ${err instanceof Error ? err.message : String(err)}`);
         } finally {
             this.IsSaving = false;
             this.cdr.markForCheck();
@@ -365,18 +381,29 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     public async OnPriceInputBlur(tier: LadderTierRow, event: Event): Promise<void> {
         const input = event.target as HTMLInputElement;
         const rawVal = parseFloat(input.value.replace(/[^0-9.]/g, ''));
-        if (isNaN(rawVal) || rawVal === tier.Amount) return;
+        if (isNaN(rawVal) || rawVal === tier.Amount) {
+            input.value = this.FormatCurrency(tier.Amount);
+            return;
+        }
 
         tier.Record.Amount = rawVal;
         this.IsSaving = true;
         this.cdr.markForCheck();
 
         try {
-            await tier.Record.Save();
-            this.rebuildLadder();
-            this.PriceChanged.emit();
+            const saved = await tier.Record.Save();
+            if (saved) {
+                await this.LoadPricingData();
+                this.PriceChanged.emit();
+            } else {
+                console.error('Failed to update price:', tier.Record.LatestResult);
+                alert(`Failed to update price: ${tier.Record.LatestResult?.Message || 'Save failed'}`);
+                input.value = this.FormatCurrency(tier.Amount);
+            }
         } catch (err) {
             console.error('Failed to update tier price:', err);
+            alert(`Error updating price: ${err instanceof Error ? err.message : String(err)}`);
+            input.value = this.FormatCurrency(tier.Amount);
         } finally {
             this.IsSaving = false;
             this.cdr.markForCheck();
@@ -392,13 +419,15 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         try {
             const deleted = await tier.Record.Delete();
             if (deleted) {
-                this.AllPriceRecords = this.AllPriceRecords.filter(p => p.ID !== tier.ID);
-                this.rebuildLadder();
-                this.updateChannelCounts();
+                await this.LoadPricingData();
                 this.PriceChanged.emit();
+            } else {
+                console.error('Failed to delete tier:', tier.Record.LatestResult);
+                alert(`Failed to delete tier: ${tier.Record.LatestResult?.Message || 'Delete failed'}`);
             }
         } catch (err) {
             console.error('Failed to delete tier:', err);
+            alert(`Error deleting tier: ${err instanceof Error ? err.message : String(err)}`);
         } finally {
             this.IsSaving = false;
             this.cdr.markForCheck();
@@ -406,18 +435,24 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     public OpenTierRecord(tier: LadderTierRow): void {
-        if (!this.navService) return;
-        this.navService.OpenEntityRecord(PRODUCT_PRICES_ENTITY, CompositeKey.FromID(tier.ID));
+        this.Navigate.emit({
+            Kind: 'record',
+            EntityName: PRODUCT_PRICES_ENTITY,
+            PrimaryKey: CompositeKey.FromID(tier.ID),
+        });
+        if (this.navService) {
+            this.navService.OpenEntityRecord(PRODUCT_PRICES_ENTITY, CompositeKey.FromID(tier.ID));
+        }
     }
 
     public OpenNewPriceDialog(): void {
-        if (!this.navService) return;
-        this.navService.OpenNewEntityRecord(PRODUCT_PRICES_ENTITY, this.NewPriceRecordValues);
-    }
-
-    private updateChannelCounts(): void {
-        for (const ch of this.Channels) {
-            ch.TierCount = this.AllPriceRecords.filter(p => (ch.ID === null ? !p.PriceListID : p.PriceListID === ch.ID)).length;
+        this.Navigate.emit({
+            Kind: 'new-record',
+            EntityName: PRODUCT_PRICES_ENTITY,
+            DefaultValues: this.NewPriceRecordValues,
+        });
+        if (this.navService) {
+            this.navService.OpenNewEntityRecord(PRODUCT_PRICES_ENTITY, this.NewPriceRecordValues);
         }
     }
 
