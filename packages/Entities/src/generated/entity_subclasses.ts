@@ -14569,6 +14569,25 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
  */
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Products')
 export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProductEntityType> {
+
+  /**
+  * Related records: MJ_BizApps_Orders: Product Prices
+  *
+  * Loads, validates and persists as one unit with this MJ_BizApps_Orders: Products record — see
+  * guides/TRANSACTIONS_AND_BATCHING_GUIDE.md. Declared by the RelatedRecordCollection metadata on
+  * the 'MJ_BizApps_Orders: Products → MJ_BizApps_Orders: Product Prices' relationship; edit that row, not this file.
+  *
+  */
+  public readonly Prices = this.DeclareRelatedRecords<mjBizAppsOrdersProductPriceEntity>({
+      Name: 'Prices',
+        RelatedEntity: 'MJ_BizApps_Orders: Product Prices',
+        RelatedEntityJoinField: 'ProductID',
+        OrderBy: 'MinQuantity ASC, __mj_CreatedAt ASC',
+        Load: 'explicit',
+        OnRemove: 'delete',
+        Source: 'database',
+  });
+
     /**
     * Loads the MJ_BizApps_Orders: Products record from the database
     * @param ID: string - primary key value to load the MJ_BizApps_Orders: Products record.

@@ -161,28 +161,32 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.cdr.markForCheck();
 
         try {
-            const rv = new RunView();
-            const [pricesResult, listsResult] = await Promise.all([
-                rv.RunView<mjBizAppsOrdersProductPriceEntity>({
+            if (this.Product.Prices) {
+                await this.Product.Prices.Load();
+                this.AllPriceRecords = [...this.Product.Prices.Items];
+            } else {
+                const rv = new RunView();
+                const pricesResult = await rv.RunView<mjBizAppsOrdersProductPriceEntity>({
                     EntityName: PRODUCT_PRICES_ENTITY,
                     ExtraFilter: `ProductID = '${this.Product.ID}'`,
                     OrderBy: 'MinQuantity ASC, __mj_CreatedAt ASC',
                     ResultType: 'entity_object',
                     MaxRows: 100,
-                }),
-                rv.RunView<mjBizAppsOrdersPriceListEntity>({
-                    EntityName: PRICE_LISTS_ENTITY,
-                    OrderBy: 'Name ASC',
-                    ResultType: 'entity_object',
-                    MaxRows: 50,
-                }),
-            ]);
-
-            if (pricesResult.Success && pricesResult.Results) {
-                this.AllPriceRecords = pricesResult.Results;
-            } else {
-                console.warn('Could not retrieve product prices:', pricesResult.ErrorMessage);
+                });
+                if (pricesResult.Success && pricesResult.Results) {
+                    this.AllPriceRecords = pricesResult.Results;
+                } else {
+                    console.warn('Could not retrieve product prices:', pricesResult.ErrorMessage);
+                }
             }
+
+            const rv = new RunView();
+            const listsResult = await rv.RunView<mjBizAppsOrdersPriceListEntity>({
+                EntityName: PRICE_LISTS_ENTITY,
+                OrderBy: 'Name ASC',
+                ResultType: 'entity_object',
+                MaxRows: 50,
+            });
 
             // Build Channels
             const availableLists: mjBizAppsOrdersPriceListEntity[] = listsResult.Success && listsResult.Results ? listsResult.Results : [];
@@ -373,10 +377,15 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             }
 
             // 2. Instantiate and save the new tier bracket
-            const md = new Metadata();
-            const newPrice = await md.GetEntityObject<mjBizAppsOrdersProductPriceEntity>(PRODUCT_PRICES_ENTITY);
-            if (!newPrice) {
-                throw new Error(`Failed to create entity object for ${PRODUCT_PRICES_ENTITY}`);
+            let newPrice: mjBizAppsOrdersProductPriceEntity;
+
+            if (this.Product.Prices) {
+                newPrice = await this.Product.Prices.Create();
+            } else {
+                const md = new Metadata();
+                const obj = await md.GetEntityObject<mjBizAppsOrdersProductPriceEntity>(PRODUCT_PRICES_ENTITY);
+                if (!obj) throw new Error(`Failed to create entity object for ${PRODUCT_PRICES_ENTITY}`);
+                newPrice = obj;
             }
 
             newPrice.ProductID = this.Product.ID;
@@ -452,6 +461,9 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.cdr.markForCheck();
 
         try {
+            if (this.Product.Prices && this.Product.Prices.Items.includes(tier.Record)) {
+                this.Product.Prices.Remove(tier.Record);
+            }
             const deleted = await tier.Record.Delete();
             if (deleted) {
                 await this.LoadPricingData();
