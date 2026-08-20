@@ -11,625 +11,774 @@
     <!-- ================================================================
          HERO IDENTITY HEADER CARD & SUMMARY METRIC STRIP
          ================================================================ -->
-    <div class="mjo-record-header-card">
-        <div class="mjo-record-header-top">
-            <div class="mjo-record-identity">
-                <div class="mjo-record-avatar" [class.mjo-record-avatar--reversal]="IsReversal">
+    <div class="mjo-ph-hero">
+        <div class="mjo-ph-hero__top">
+            <div class="mjo-ph-who">
+                <div class="mjo-ph-avatar" [class.is-reversal]="IsReversal">
                     <i [class]="PaymentAvatarIcon"></i>
                 </div>
-                <div class="mjo-record-title-area">
-                    <h1 class="mjo-record-title">
-                        {{ record.PaymentNumber || 'New Payment' }} · {{ FormattedGrossAmount }}
-                    </h1>
-                    <div class="mjo-record-badges">
-                        <span class="mjo-entity-chip"><i class="fa-solid fa-database"></i> MJ_BizApps_Orders: Payment Headers</span>
-                        <span class="mjo-sku-badge">№ {{ record.PaymentNumber || '—' }}</span>
-                        @if (record.PaymentType) {
-                            <span class="mjo-tender-chip">
-                                <i class="fa-solid fa-money-bill-transfer"></i> {{ record.PaymentType }}
-                            </span>
-                        }
+                <div>
+                    <div class="mjo-ph-title-row">
+                        <h1 class="mjo-ph-title">
+                            {{ record.PaymentNumber || 'New payment' }} · {{ FormattedGrossAmount }}
+                        </h1>
+                        <span [class]="StatusBadgeClass">{{ record.Status || 'Draft' }}</span>
                         @if (IsReversal) {
-                            <span class="mjo-reversal-chip">
+                            <span class="mjo-status-chip mjo-status-chip--purple">
                                 <i class="fa-solid fa-rotate-left"></i> Reversal
                             </span>
                         }
-                        <span [class]="StatusBadgeClass">{{ record.Status || 'Draft' }}</span>
+                    </div>
+                    <div class="mjo-ph-sub">{{ HeaderSubtitle }}</div>
+                </div>
+            </div>
+
+            <div class="mjo-ph-hero__aside">
+                <div class="mjo-ph-money">
+                    <div>
+                        <span class="mjo-ph-kicker">Gross</span>
+                        <span class="mjo-ph-amt">{{ FormattedGrossAmount }}</span>
+                    </div>
+                    <div>
+                        <span class="mjo-ph-kicker">Fee</span>
+                        <span class="mjo-ph-amt">{{ FormattedFee }}</span>
+                    </div>
+                    <div>
+                        <span class="mjo-ph-kicker">Net</span>
+                        <span class="mjo-ph-amt">{{ FormattedNetAmount }}</span>
+                    </div>
+                    <div>
+                        <span class="mjo-ph-kicker">Allocations</span>
+                        <span class="mjo-ph-amt" [class.is-balanced]="IsAllocationBalanced" [class.is-unbalanced]="!IsAllocationBalanced && TotalAllocated > 0">
+                            @if (IsCaptured) {
+                                {{ GetSectionRowCount('mJBizAppsOrdersPaymentLines') || 0 }} Settled
+                            } @else {
+                                ${{ TotalAllocated.toFixed(2) }}
+                            }
+                        </span>
                     </div>
                 </div>
-            </div>
 
-            @if (!IsCaptured) {
-                <div class="mjo-record-header-actions">
-                    <button type="button" class="mjo-form-btn mjo-form-btn--secondary" (click)="SaveAsDraft()">
-                        <i class="fa-solid fa-floppy-disk"></i> Save as Draft
-                    </button>
-                    <button type="button" class="mjo-form-btn mjo-form-btn--primary" [disabled]="!IsAllocationBalanced" (click)="CapturePayment()">
-                        <i class="fa-solid fa-check-circle"></i> Capture &amp; Book Payment
-                    </button>
-                </div>
-            }
-        </div>
-
-        <!-- Quick Summary Metric Strip -->
-        <div class="mjo-record-summary-bar">
-            <div class="mjo-stat-block">
-                <span class="mjo-stat-label">Gross Received</span>
-                <span class="mjo-stat-val mjo-money">{{ FormattedGrossAmount }}</span>
-            </div>
-            <div class="mjo-stat-block">
-                <span class="mjo-stat-label">Processing Fee</span>
-                <span class="mjo-stat-val">{{ FormattedFee }}</span>
-            </div>
-            <div class="mjo-stat-block">
-                <span class="mjo-stat-label">Net Settlement</span>
-                <span class="mjo-stat-val mjo-net">{{ FormattedNetAmount }}</span>
-            </div>
-            <div class="mjo-stat-block">
-                <span class="mjo-stat-label">Payer (Bill-To)</span>
-                <span class="mjo-stat-val">{{ PayerDisplayName }}</span>
-            </div>
-            <div class="mjo-stat-block">
-                <span class="mjo-stat-label">Allocations</span>
-                <span class="mjo-stat-val" [class.mjo-money]="IsAllocationBalanced">
-                    @if (IsCaptured) {
-                        {{ GetSectionRowCount('mJBizAppsOrdersPaymentLines') || 0 }} Lines Settled
-                    } @else {
-                        {{ TotalAllocated | currency }} Allocated
-                    }
-                </span>
+                @if (!IsCaptured) {
+                    <div class="mjo-ph-actions">
+                        <button type="button" class="mjo-btn mjo-btn--secondary" (click)="SaveAsDraft()" [disabled]="Saving || Capturing">
+                            <i class="fa-solid fa-floppy-disk"></i> {{ Saving ? 'Saving…' : 'Save draft' }}
+                        </button>
+                        <button type="button" class="mjo-btn mjo-btn--primary" (click)="CapturePayment()" [disabled]="Capturing || Saving || !IsAllocationBalanced || !record.Amount || !hasPayer">
+                            <i class="fa-solid fa-check-double"></i> {{ Capturing ? 'Capturing…' : 'Capture & Book' }}
+                        </button>
+                    </div>
+                }
             </div>
         </div>
     </div>
 
-    <!-- ========================================
-         1. PAYMENT DETAILS & MONEY BREAKDOWN
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="paymentInformation"
-        SectionName="Payment Details &amp; Money Breakdown"
-        Icon="fa fa-credit-card"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PaymentNumber"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PaymentDate"
-            Type="datepicker"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PaymentTypeID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Status"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Amount"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProcessingFeeAmount"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="NetAmount"
-            Type="number"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-    </mj-collapsible-panel>
+    <!-- TAB NAVIGATION STRIP -->
+    <div class="mjo-ph-tabs">
+        <mj-tab-nav [Tabs]="ContextTabs" [ActiveKey]="ActiveTab ?? ''" (TabChange)="SelectTab($event)"></mj-tab-nav>
+    </div>
 
-    <!-- ========================================
-         2. PAYMENT ALLOCATIONS (ORDER & LINE SETTLEMENT)
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersPaymentLines"
-        SectionName="Payment Allocations (Order Lines Settled)"
-        Icon="fa fa-list-check"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="IsCaptured ? GetSectionRowCount('mJBizAppsOrdersPaymentLines') : TotalAllocated"
-        [DefaultExpanded]="true">
-
-        @if (AllocationError) {
-            <div class="mjo-alloc-error-banner" role="alert">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span>{{ AllocationError }}</span>
-            </div>
-        }
-
-        @if (IsCaptured && record.IsSaved) {
+    @if (CaptureError) {
+        <div class="mjo-alert mjo-alert--error">
+            <i class="fa-solid fa-circle-exclamation"></i>
             <div>
-                <mj-explorer-entity-data-grid
-                    [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Lines','PaymentHeaderID')"
-                    [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Lines')"
-                    [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentLines')"
-                    [ShowToolbar]="false"
-                    (Navigate)="OnFormNavigate($event)"
-                    (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentLines', $event.totalRowCount)">
-                </mj-explorer-entity-data-grid>
+                <strong>Failed to capture payment:</strong> {{ CaptureError }}
             </div>
-        } @else {
-            <div class="mjo-alloc-workbench">
-                <div class="mjo-alloc-header-bar">
-                    <div class="mjo-alloc-status-pill" [class.is-balanced]="IsAllocationBalanced" [class.is-unbalanced]="!IsAllocationBalanced">
-                        @if (IsAllocationBalanced) {
-                            <i class="fa-solid fa-circle-check"></i>
-                            <span>Fully Allocated ({{ TotalAllocated | currency }} of {{ FormattedGrossAmount }}). Invariant satisfied for capture.</span>
-                        } @else if (UnallocatedRemainder > 0) {
-                            <i class="fa-solid fa-triangle-exclamation"></i>
-                            <span>{{ UnallocatedRemainder | currency }} Unallocated Cash Remaining. Please allocate to orders before capture.</span>
-                        } @else {
-                            <i class="fa-solid fa-circle-exclamation"></i>
-                            <span>Over-allocated by {{ -UnallocatedRemainder | currency }}. Allocations cannot exceed gross payment.</span>
-                        }
-                    </div>
+        </div>
+    }
 
-                    <div class="mjo-alloc-quick-actions">
-                        <button type="button" class="mjo-btn-action" (click)="AutoApplyOldestFirst()" [disabled]="(record.Amount || 0) <= 0">
-                            <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Apply Oldest First
-                        </button>
-                        <button type="button" class="mjo-btn-action" (click)="ClearAllocations()">
-                            <i class="fa-solid fa-rotate-left"></i> Clear All
-                        </button>
-                    </div>
-                </div>
+    <!-- ================================================================
+         TAB 1: PAYMENT & ALLOCATION WORKBENCH
+         ================================================================ -->
+    @if (ActiveTab === 'payment') {
+        <div class="mjo-ph-workbench">
 
-                @if (LoadingOpenOrders) {
-                    <div class="mjo-alloc-hint">
-                        <i class="fa-solid fa-spinner fa-spin"></i> Loading open orders for customer…
-                    </div>
-                } @else if (OpenOrders.length === 0) {
-                    <div class="mjo-alloc-empty">
-                        <i class="fa-solid fa-folder-open"></i>
-                        <div>
-                            <strong>No open unpaid orders found.</strong>
-                            <p>Select a paying customer (Bill-To Organization or Person) in Section 3 to populate open invoices.</p>
+            <!-- LEFT COLUMN: THE MONEY & PAYER (380px) -->
+            <aside class="mjo-ph-money-pane">
+
+                <!-- 1. Payer Card -->
+                <div class="mjo-card">
+                    <div class="mjo-card__header">
+                        <div class="mjo-card__title">
+                            <i class="fa-solid fa-user-tag"></i> Who is paying?
                         </div>
                     </div>
-                } @else {
-                    <table class="mjo-alloc-table">
-                        <thead>
-                            <tr>
-                                <th style="width: 36px;"></th>
-                                <th style="width: 140px;">Order / Line #</th>
-                                <th>Description</th>
-                                <th>Due Date</th>
-                                <th>Company</th>
-                                <th class="num">Original Gross</th>
-                                <th class="num">Open Balance</th>
-                                <th class="num" style="width: 130px;">Apply ($)</th>
-                                <th class="num">Leaves Bal.</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @for (order of OpenOrders; track order.ID) {
-                                <tr class="mjo-alloc-order-row">
-                                    <td>
-                                        <button
-                                            type="button"
-                                            class="mjo-alloc-expand-btn"
-                                            (click)="ToggleOrderExpanded(order.ID)"
-                                            [title]="IsOrderExpanded(order.ID) ? 'Collapse Lines' : 'Expand Lines'">
-                                            <i class="fa-solid" [class.fa-chevron-down]="IsOrderExpanded(order.ID)" [class.fa-chevron-right]="!IsOrderExpanded(order.ID)"></i>
-                                        </button>
-                                    </td>
-                                    <td>
-                                        <strong class="mjo-alloc-order-num">{{ order.OrderNumber }}</strong>
-                                    </td>
-                                    <td>
-                                        <div>{{ order.Description || 'Standard Order' }}</div>
-                                        <div class="mjo-alloc-subtext">{{ GetOrderLines(order.ID).length }} lines on order</div>
-                                    </td>
-                                    <td>
-                                        <div>{{ FormatOrderDueDate(order) }}</div>
-                                        @if (GetOrderDaysOverdue(order) > 0) {
-                                            <span class="mjo-alloc-late-tag">{{ GetOrderDaysOverdue(order) }}d overdue</span>
-                                        }
-                                    </td>
-                                    <td>
-                                        <span class="mjo-sku-badge">{{ order.Company || '—' }}</span>
-                                    </td>
-                                    <td class="num font-mono">{{ order.TotalGross ? (order.TotalGross | currency) : '—' }}</td>
-                                    <td class="num font-mono"><strong>{{ (order.Balance ?? order.TotalGross ?? 0) | currency }}</strong></td>
-                                    <td class="num">
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            class="mjo-alloc-input"
-                                            [value]="GetOrderAllocation(order.ID) || ''"
-                                            (input)="SetOrderAllocation(order.ID, $any($event.target).value)"
-                                            placeholder="0.00"
-                                            aria-label="Order apply amount">
-                                    </td>
-                                    <td class="num font-mono" [class.mjo-alloc-bal-zero]="CalculateLeavesBalance(order) === 0" [class.mjo-alloc-bal-warn]="CalculateLeavesBalance(order) > 0">
-                                        {{ CalculateLeavesBalance(order) | currency }}
-                                    </td>
-                                </tr>
-
-                                @if (IsOrderExpanded(order.ID)) {
-                                    @for (line of GetOrderLines(order.ID); track line.ID) {
-                                        <tr class="mjo-alloc-line-row">
-                                            <td></td>
-                                            <td class="font-mono">Line {{ line.LineNumber }}</td>
-                                            <td>{{ line.Description || line.Product || 'Item Line' }}</td>
-                                            <td>—</td>
-                                            <td><span class="mjo-sku-badge">{{ line.Company || '—' }}</span></td>
-                                            <td class="num font-mono">{{ line.LineTotalGross ? (line.LineTotalGross | currency) : '—' }}</td>
-                                            <td class="num font-mono">{{ line.LineTotalGross ? (line.LineTotalGross | currency) : '—' }}</td>
-                                            <td class="num">
-                                                <input
-                                                    type="number"
-                                                    step="0.01"
-                                                    min="0"
-                                                    class="mjo-alloc-input mjo-alloc-input--line"
-                                                    [value]="GetLineAllocation(line.ID) || ''"
-                                                    (input)="SetLineAllocation(line.ID, $any($event.target).value)"
-                                                    placeholder="0.00"
-                                                    aria-label="Line apply amount">
-                                            </td>
-                                            <td class="num font-mono">—</td>
-                                        </tr>
-                                    }
+                    <div class="mjo-card__body">
+                        <div class="mjo-ph-fields-stack">
+                            <mj-form-field
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                DisplayNameOverride="Organization"
+                                FieldName="BillToOrganizationID"
+                                Type="textbox"
+                                LinkType="Record"
+                                [EditMode]="ComposeMode"
+                                [FormContext]="formContext"
+                                (Navigate)="OnFormNavigate($event); OnPayerSelectionChanged()">
+                            </mj-form-field>
+                            <mj-form-field
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                DisplayNameOverride="Person"
+                                FieldName="BillToPersonID"
+                                Type="textbox"
+                                LinkType="Record"
+                                [EditMode]="ComposeMode"
+                                [FormContext]="formContext"
+                                (Navigate)="OnFormNavigate($event); OnPayerSelectionChanged()">
+                            </mj-form-field>
+                        </div>
+                        @if (hasPayer) {
+                            <div class="mjo-payer-chip">
+                                <i class="fa-solid fa-circle-check text-success"></i>
+                                <span>{{ PayerDisplayName }}</span>
+                                @if (OpenOrders.length > 0) {
+                                    <span class="mjo-badge">{{ OpenOrders.length }} unpaid orders</span>
                                 }
-                            }
-                        </tbody>
-                    </table>
-                }
-            </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- ========================================
-         3. PAYER & RECEIVING ACCOUNT
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="relationships"
-        SectionName="Payer &amp; Receiving Account"
-        Icon="fa fa-users"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReceivingCompanyID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="BillToPersonID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="BillToOrganizationID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-    </mj-collapsible-panel>
-
-    <!-- ========================================
-         4. ACCOUNTING
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="accounting"
-        SectionName="Accounting"
-        Icon="fa-solid fa-scale-balanced"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="RollupJournalCount || GetSectionRowCount('accounting')"
-        [DefaultExpanded]="true">
-        @if (record.IsSaved) {
-            <div class="mjo-ph-acct">
-                <div class="mjo-ph-acct__bar">
-                    <div>
-                        <h2 class="mjo-ph-acct__heading">{{ AccountingView === 'summary' ? 'Payment journal' : 'Individual journals' }}</h2>
-                        <p class="mjo-ph-acct__subtext">
-                            @if (AccountingView === 'summary') {
-                                Rolled up debit/credit entries for this payment and its allocations
-                            } @else {
-                                Individual journal entry records linked to this payment — open a row to drill in
-                            }
-                        </p>
-                    </div>
-                    <div class="mjo-ph-switch" role="group" aria-label="Accounting view">
-                        <button type="button" [class.is-on]="AccountingView === 'summary'" (click)="SetAccountingView('summary')">
-                            Rolled up
-                        </button>
-                        <button type="button" [class.is-on]="AccountingView === 'detail'" (click)="SetAccountingView('detail')">
-                            By entry
-                            @if (RollupJournalCount) {
-                                <span class="mjo-ph-switch__n">{{ RollupJournalCount }}</span>
-                            }
-                        </button>
+                            </div>
+                        }
                     </div>
                 </div>
 
-                @if (AccountingView === 'summary') {
-                    @if (RollupLoading) {
-                        <div class="mjo-ph-hint">Rolling up journals…</div>
-                    } @else if (RollupError) {
-                        <div class="mjo-ph-hint">{{ RollupError }}</div>
-                    } @else if (RollupCards.length === 0) {
-                        <div class="mjo-ph-hint">No journal entries yet — they appear when the payment is captured.</div>
-                    } @else {
-                        @for (card of RollupCards; track card.CompanyID) {
-                            <article class="mjo-oh-jecard">
-                                <header class="mjo-oh-jecard__head">
-                                    <div>
-                                        <span class="mjo-oh-jecard__co">{{ card.Company }}</span>
-                                        <span class="mjo-oh-jecard__sub">{{ card.Rows.length }} {{ card.Rows.length === 1 ? 'line' : 'lines' }}</span>
+                <!-- 2. Payment Details Card -->
+                <div class="mjo-card">
+                    <div class="mjo-card__header">
+                        <div class="mjo-card__title">
+                            <i class="fa-solid fa-money-check-dollar"></i> Payment details
+                        </div>
+                    </div>
+                    <div class="mjo-card__body">
+                        <div class="mjo-field">
+                            <label class="mjo-label">Amount received ($)</label>
+                            <div class="mjo-input-money-wrap">
+                                <span class="mjo-currency-prefix">$</span>
+                                <input
+                                    type="number"
+                                    class="mj-input is-num mjo-input--money"
+                                    [ngModel]="record.Amount"
+                                    (ngModelChange)="OnAmountChanged($event)"
+                                    [disabled]="!ComposeMode"
+                                    placeholder="0.00"
+                                    step="0.01"
+                                />
+                            </div>
+                        </div>
+
+                        <div class="mjo-ph-fields-stack">
+                            <mj-form-field
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                DisplayNameOverride="Payment Date"
+                                FieldName="PaymentDate"
+                                Type="datepicker"
+                                [EditMode]="ComposeMode"
+                                [FormContext]="formContext"
+                                (Navigate)="OnFormNavigate($event)">
+                            </mj-form-field>
+
+                            <div class="mjo-field">
+                                <label class="mjo-label">Payment Type</label>
+                                @if (ComposeMode && PaymentTypes.length > 0) {
+                                    <select class="mj-input" [ngModel]="record.PaymentTypeID" (ngModelChange)="OnPaymentTypeSelected($event)">
+                                        <option [ngValue]="null">Select payment type…</option>
+                                        @for (pt of PaymentTypes; track pt.ID) {
+                                            <option [value]="pt.ID">{{ pt.Name }}</option>
+                                        }
+                                    </select>
+                                } @else {
+                                    <mj-form-field
+                                        [Record]="record"
+                                        [ShowLabel]="false"
+                                        FieldName="PaymentTypeID"
+                                        Type="textbox"
+                                        LinkType="Record"
+                                        [EditMode]="ComposeMode"
+                                        [FormContext]="formContext"
+                                        (Navigate)="OnFormNavigate($event)">
+                                    </mj-form-field>
+                                }
+                            </div>
+
+                            <!-- TENDER-SPECIFIC INSTRUMENT CAPTURE (PaymentDetail) -->
+                            @if (PaymentTypeCode === 'check' || (SelectedPaymentType?.RequiresReference && !RequiresInstrument)) {
+                                <div class="mjo-instrument-box">
+                                    <div class="mjo-instrument-box__title">
+                                        <i class="fa-solid fa-money-check"></i> Check details
                                     </div>
-                                    <span class="mjo-oh-chip" [class.mjo-oh-chip--ok]="CardIsBalanced(card)">
-                                        {{ CardIsBalanced(card) ? 'Balanced' : 'Out of balance' }}
-                                    </span>
-                                </header>
-                                <table class="mjo-oh-je__table">
-                                    <thead>
-                                        <tr>
-                                            <th>Account</th>
-                                            <th class="is-num">Debit</th>
-                                            <th class="is-num">Credit</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @for (row of card.Rows; track row.Key) {
-                                            <tr>
-                                                <td>
-                                                    <div class="mjo-oh-acctline">
-                                                        @if (row.AccountCode) {
-                                                            <span class="mjo-oh-acctline__code">{{ row.AccountCode }}</span>
-                                                        }
-                                                        <span class="mjo-oh-acctline__name">{{ row.AccountName }}</span>
+                                    <div class="mjo-instrument-box__grid">
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Check № <span class="text-danger">*</span></label>
+                                            <input type="text" class="mj-input font-mono" [(ngModel)]="ReferenceNumber" [disabled]="!ComposeMode" placeholder="e.g. 10428" autocomplete="off" />
+                                        </div>
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Check Date</label>
+                                            <input type="date" class="mj-input" [(ngModel)]="InstrumentDateInput" [disabled]="!ComposeMode" />
+                                        </div>
+                                        <div class="mjo-field col-span-full">
+                                            <label class="mjo-label">Bank Name</label>
+                                            <input type="text" class="mj-input" [(ngModel)]="BankName" [disabled]="!ComposeMode" placeholder="e.g. Chase, Bank of America" />
+                                        </div>
+                                    </div>
+                                </div>
+                            } @else if (PaymentTypeCode === 'card' || RequiresInstrument) {
+                                <div class="mjo-instrument-box">
+                                    <div class="mjo-instrument-box__title">
+                                        <i class="fa-solid fa-credit-card"></i> Card instrument details
+                                    </div>
+                                    <div class="mjo-instrument-box__grid">
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Card Brand</label>
+                                            <select class="mj-input" [(ngModel)]="CardBrand" [disabled]="!ComposeMode">
+                                                <option value="">Select Brand</option>
+                                                <option value="Visa">Visa</option>
+                                                <option value="MasterCard">MasterCard</option>
+                                                <option value="American Express">American Express</option>
+                                                <option value="Discover">Discover</option>
+                                                <option value="Other">Other</option>
+                                            </select>
+                                        </div>
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Last 4 Digits</label>
+                                            <input type="text" class="mj-input font-mono" maxlength="4" [(ngModel)]="CardLast4" [disabled]="!ComposeMode" placeholder="4242" />
+                                        </div>
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Expiry (MM / YYYY)</label>
+                                            <div class="flex gap-2">
+                                                <input type="number" min="1" max="12" class="mj-input font-mono w-16" [(ngModel)]="CardExpMonth" [disabled]="!ComposeMode" placeholder="MM" />
+                                                <input type="number" min="2025" max="2045" class="mj-input font-mono w-24" [(ngModel)]="CardExpYear" [disabled]="!ComposeMode" placeholder="YYYY" />
+                                            </div>
+                                        </div>
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Cardholder Name</label>
+                                            <input type="text" class="mj-input" [(ngModel)]="CardHolderName" [disabled]="!ComposeMode" placeholder="Name on card" />
+                                        </div>
+                                        <div class="mjo-field col-span-full">
+                                            <label class="mjo-label">Auth / Approval №</label>
+                                            <input type="text" class="mj-input" [(ngModel)]="ReferenceNumber" [disabled]="!ComposeMode" placeholder="e.g. AUTH-98210" />
+                                        </div>
+                                    </div>
+                                </div>
+                            } @else if (PaymentTypeCode === 'ach') {
+                                <div class="mjo-instrument-box">
+                                    <div class="mjo-instrument-box__title">
+                                        <i class="fa-solid fa-building-columns"></i> Bank transfer / ACH details
+                                    </div>
+                                    <div class="mjo-instrument-box__grid">
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Bank Name</label>
+                                            <input type="text" class="mj-input" [(ngModel)]="BankName" [disabled]="!ComposeMode" placeholder="e.g. Wells Fargo" />
+                                        </div>
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Account Type</label>
+                                            <select class="mj-input" [(ngModel)]="BankAccountType" [disabled]="!ComposeMode">
+                                                <option [ngValue]="null">Select Type</option>
+                                                <option value="Checking">Checking</option>
+                                                <option value="Savings">Savings</option>
+                                            </select>
+                                        </div>
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Routing Last 4</label>
+                                            <input type="text" class="mj-input font-mono" maxlength="4" [(ngModel)]="RoutingLast4" [disabled]="!ComposeMode" placeholder="1234" />
+                                        </div>
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Account Last 4</label>
+                                            <input type="text" class="mj-input font-mono" maxlength="4" [(ngModel)]="AccountLast4" [disabled]="!ComposeMode" placeholder="5678" />
+                                        </div>
+                                        <div class="mjo-field col-span-full">
+                                            <label class="mjo-label">Trace / Reference №</label>
+                                            <input type="text" class="mj-input" [(ngModel)]="ReferenceNumber" [disabled]="!ComposeMode" placeholder="Trace #" />
+                                        </div>
+                                    </div>
+                                </div>
+                            } @else if (RequiresReference) {
+                                <div class="mjo-instrument-box">
+                                    <div class="mjo-instrument-box__title">
+                                        <i class="fa-solid fa-receipt"></i> Reference details
+                                    </div>
+                                    <div class="mjo-field">
+                                        <label class="mjo-label">Reference / Wire Confirmation № <span class="text-danger">*</span></label>
+                                        <input type="text" class="mj-input" [(ngModel)]="ReferenceNumber" [disabled]="!ComposeMode" placeholder="Confirmation or transfer id" />
+                                    </div>
+                                </div>
+                            }
+
+                            <mj-form-field
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                DisplayNameOverride="Receiving Co."
+                                FieldName="ReceivingCompanyID"
+                                Type="textbox"
+                                LinkType="Record"
+                                [EditMode]="ComposeMode"
+                                [FormContext]="formContext"
+                                (Navigate)="OnFormNavigate($event)">
+                            </mj-form-field>
+
+                            <mj-form-field
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                DisplayNameOverride="Processing Fee"
+                                FieldName="ProcessingFeeAmount"
+                                Type="number"
+                                [EditMode]="ComposeMode"
+                                [FormContext]="formContext"
+                                (Navigate)="OnFormNavigate($event)">
+                            </mj-form-field>
+                        </div>
+
+                        <div class="mjo-net-calc">
+                            <span class="mjo-net-calc__label">Net Settlement Amount</span>
+                            <span class="mjo-net-calc__val">{{ FormattedNetAmount }}</span>
+                        </div>
+                    </div>
+                </div>
+
+            </aside>
+
+            <!-- RIGHT COLUMN: ALLOCATION WORKBENCH -->
+            <main class="mjo-ph-alloc-pane">
+
+                <!-- 1. Balance Status Hero Strip -->
+                <div class="mjo-alloc-hero" [class.is-balanced]="IsAllocationBalanced" [class.is-warning]="!IsAllocationBalanced && UnallocatedRemainder > 0" [class.is-error]="UnallocatedRemainder < 0">
+                    <div class="mjo-alloc-hero__stats">
+                        <div class="mjo-alloc-stat">
+                            <span class="mjo-alloc-stat__kicker">Payment Received</span>
+                            <span class="mjo-alloc-stat__val">${{ (record.Amount || 0).toFixed(2) }}</span>
+                        </div>
+                        <div class="mjo-alloc-stat__op"><i class="fa-solid fa-minus"></i></div>
+                        <div class="mjo-alloc-stat">
+                            <span class="mjo-alloc-stat__kicker">Allocated</span>
+                            <span class="mjo-alloc-stat__val">${{ TotalAllocated.toFixed(2) }}</span>
+                        </div>
+                        <div class="mjo-alloc-stat__op"><i class="fa-solid fa-equals"></i></div>
+                        <div class="mjo-alloc-stat">
+                            <span class="mjo-alloc-stat__kicker">Unallocated Remainder</span>
+                            <span class="mjo-alloc-stat__val" [class.text-danger]="UnallocatedRemainder < 0">
+                                ${{ Math.abs(UnallocatedRemainder).toFixed(2) }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="mjo-alloc-hero__message">
+                        @if (IsAllocationBalanced) {
+                            <i class="fa-solid fa-circle-check text-success"></i>
+                            <span>Allocations tie 100% to payment received. Ready to capture and book.</span>
+                        } @else if (UnallocatedRemainder > 0) {
+                            <i class="fa-solid fa-circle-info text-warning"></i>
+                            <span>${{ UnallocatedRemainder.toFixed(2) }} remaining to allocate before capturing.</span>
+                        } @else {
+                            <i class="fa-solid fa-triangle-exclamation text-danger"></i>
+                            <span>Over-allocated by ${{ Math.abs(UnallocatedRemainder).toFixed(2) }}. Please adjust amounts.</span>
+                        }
+                    </div>
+                </div>
+                <!-- 2. Allocation Toolbar -->
+                <div class="mjo-alloc-toolbar">
+                    <div class="mjo-alloc-toolbar__left">
+                        <h2 class="mjo-alloc-toolbar__title">
+                            <i class="fa-solid fa-receipt"></i> Open orders
+                        </h2>
+                        @if (OpenOrders.length > 0) {
+                            <span class="mjo-badge">{{ FilteredOpenOrders.length }} available</span>
+                        }
+                    </div>
+
+                    @if (!IsCaptured && OpenOrders.length > 0) {
+                        <div class="mjo-alloc-toolbar__right">
+                            <div class="mjo-search-input-wrap">
+                                <i class="fa-solid fa-magnifying-glass"></i>
+                                <input type="text" class="mjo-input mjo-input--sm" [(ngModel)]="SearchQuery" placeholder="Filter orders…" />
+                            </div>
+                            <button type="button" class="mjo-btn mjo-btn--secondary mjo-btn--sm" (click)="AutoApplyOldestFirst()">
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-apply oldest
+                            </button>
+                            <button type="button" class="mjo-btn mjo-btn--outline mjo-btn--sm" (click)="ClearAllocations()">
+                                <i class="fa-solid fa-eraser"></i> Clear all
+                            </button>
+                        </div>
+                    }
+                </div>
+
+                <!-- 3. Open Orders & Order Lines Allocation Table -->
+                <div class="mjo-card mjo-card--table">
+                    @if (LoadingOpenOrders) {
+                        <div class="mjo-empty-state">
+                            <i class="fa-solid fa-spinner fa-spin fa-2x text-muted"></i>
+                            <p>Loading open orders…</p>
+                        </div>
+                    } @else if (OpenOrders.length === 0) {
+                        <div class="mjo-empty-state">
+                            <i class="fa-solid fa-receipt fa-3x text-muted"></i>
+                            <h3>No unpaid orders found</h3>
+                            <p>There are zero open unpaid orders. Any recorded payment will be retained as unallocated credit.</p>
+                        </div>
+                    } @else {
+                        <div class="mjo-table-responsive">
+                            <table class="mjo-table">
+                                <thead>
+                                    <tr>
+                                        <th class="w-8"></th>
+                                        @if (!hasPayer) {
+                                            <th>Customer</th>
+                                        }
+                                        <th>Order №</th>
+                                        <th>Date</th>
+                                        <th>Due</th>
+                                        <th>Company</th>
+                                        <th class="text-right">Gross</th>
+                                        <th class="text-right">Open Balance</th>
+                                        <th class="text-right w-36">Apply Amount</th>
+                                        <th class="text-right">Leaves Balance</th>
+                                        <th class="w-24"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (order of FilteredOpenOrders; track order.ID) {
+                                        <tr class="mjo-order-row" [class.is-expanded]="IsOrderExpanded(order.ID || '')">
+                                            <td>
+                                                <button type="button" class="mjo-icon-btn" (click)="ToggleOrderExpanded(order.ID || '')" title="Toggle line items">
+                                                    <i class="fa-solid" [class.fa-chevron-down]="IsOrderExpanded(order.ID || '')" [class.fa-chevron-right]="!IsOrderExpanded(order.ID || '')"></i>
+                                                </button>
+                                            </td>
+                                            @if (!hasPayer) {
+                                                <td class="font-bold">{{ order.BillToOrganization || order.BillToPerson || '—' }}</td>
+                                            }
+                                            <td>
+                                                <button type="button" class="mjo-link" (click)="OpenOrderRecord(order, $event)">
+                                                    <strong>{{ order.OrderNumber }}</strong>
+                                                </button>
+                                                @if (order.Description) {
+                                                    <div class="mjo-subtext">{{ order.Description }}</div>
+                                                }
+                                            </td>
+                                            <td>{{ order.OrderDate ? FormatOrderDueDate(order) : '—' }}</td>
+                                            <td>
+                                                @if (GetOrderDaysOverdue(order) > 0) {
+                                                    <span class="mjo-badge mjo-badge--error">{{ GetOrderDaysOverdue(order) }}d overdue</span>
+                                                } @else {
+                                                    <span>{{ FormatOrderDueDate(order) }}</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                <span class="mjo-company-pill">{{ order.Company || 'Default' }}</span>
+                                            </td>
+                                            <td class="text-right font-mono">${{ (order.TotalGross || 0).toFixed(2) }}</td>
+                                            <td class="text-right font-mono font-bold">${{ (order.Balance ?? order.TotalGross ?? 0).toFixed(2) }}</td>
+                                            <td class="text-right">
+                                                <div class="mjo-apply-input-wrap" [class.is-derived]="HasLineAllocations(order.ID || '')">
+                                                    <span class="mjo-apply-dollar">$</span>
+                                                    <input
+                                                        type="number"
+                                                        class="mjo-input mjo-input--sm mjo-input--num"
+                                                        [ngModel]="GetOrderAllocation(order.ID || '')"
+                                                        (ngModelChange)="SetOrderAllocation(order.ID || '', $event)"
+                                                        [disabled]="IsCaptured || HasLineAllocations(order.ID || '')"
+                                                        step="0.01"
+                                                        min="0"
+                                                        [title]="HasLineAllocations(order.ID || '') ? 'Order allocation is driven by line item allocations below' : 'Enter amount to allocate to order'"
+                                                    />
+                                                </div>
+                                                @if (HasLineAllocations(order.ID || '')) {
+                                                    <div class="mjo-subtext text-info">
+                                                        <i class="fa-solid fa-layer-group"></i> Lines allocated
                                                     </div>
-                                                    <div class="mjo-oh-acctline__meta">
-                                                        @for (dim of row.Dimensions; track dim.Name + dim.Value) {
-                                                            <span class="mjo-oh-dim">{{ dim.Name }} · {{ dim.Value }}</span>
-                                                        }
-                                                        @if (row.SourceLineCount) {
-                                                            <span class="mjo-oh-je__src">{{ SourceLineLabel(row.SourceLineCount) }}</span>
-                                                        }
+                                                }
+                                            </td>
+                                            <td class="text-right font-mono" [class.text-muted]="CalculateLeavesBalance(order) === 0">
+                                                ${{ CalculateLeavesBalance(order).toFixed(2) }}
+                                            </td>
+                                            <td class="text-right">
+                                                @if (!IsCaptured) {
+                                                    <button
+                                                        type="button"
+                                                        class="mjo-btn mjo-btn--outline mjo-btn--sm"
+                                                        (click)="FullPayOrder(order)"
+                                                        [disabled]="(order.Balance ?? order.TotalGross ?? 0) <= 0"
+                                                    >
+                                                        Pay in Full
+                                                    </button>
+                                                }
+                                            </td>
+                                        </tr>
+
+                                        <!-- EXPANDED CHILD ROW: INDIVIDUAL ORDER LINES -->
+                                        @if (IsOrderExpanded(order.ID || '')) {
+                                            <tr class="mjo-lines-row">
+                                                <td [attr.colspan]="hasPayer ? 10 : 11" class="p-0">
+                                                    <div class="mjo-nested-lines-pane">
+                                                        <div class="mjo-nested-lines-header">
+                                                             <i class="fa-solid fa-layer-group"></i>
+                                                            <span>Order Line Items (Targeted Line Allocations)</span>
+                                                        </div>
+                                                        <table class="mjo-nested-table">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>#</th>
+                                                                    <th>Product</th>
+                                                                    <th class="text-right">Unit Price</th>
+                                                                    <th class="text-right">Gross</th>
+                                                                    <th class="text-right w-36">Line Allocation</th>
+                                                                    <th class="w-20"></th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                @for (line of GetOrderLines(order.ID || ''); track line.ID) {
+                                                                    <tr>
+                                                                        <td>{{ line.LineNumber }}</td>
+                                                                        <td>
+                                                                            <strong>{{ line.Product || 'Line Item' }}</strong>
+                                                                        </td>
+                                                                        <td class="text-right font-mono">${{ (line.UnitPrice || 0).toFixed(2) }}</td>
+                                                                        <td class="text-right font-mono">${{ (line.LineTotalGross || 0).toFixed(2) }}</td>
+                                                                        <td class="text-right">
+                                                                            <div class="mjo-apply-input-wrap">
+                                                                                <span class="mjo-apply-dollar">$</span>
+                                                                                <input
+                                                                                    type="number"
+                                                                                    class="mjo-input mjo-input--xs mjo-input--num"
+                                                                                    [ngModel]="GetLineAllocation(line.ID || '')"
+                                                                                    (ngModelChange)="SetLineAllocation(line.ID || '', $event, order.ID)"
+                                                                                    [disabled]="IsCaptured"
+                                                                                    step="0.01"
+                                                                                    min="0"
+                                                                                />
+                                                                            </div>
+                                                                        </td>
+                                                                        <td class="text-right">
+                                                                            @if (!IsCaptured) {
+                                                                                <button type="button" class="mjo-btn mjo-btn--outline mjo-btn--xs" (click)="FullPayLine(order, line)">
+                                                                                    Line Pay
+                                                                                </button>
+                                                                            }
+                                                                        </td>
+                                                                    </tr>
+                                                                }
+                                                            </tbody>
+                                                        </table>
                                                     </div>
                                                 </td>
-                                                <td class="is-num" [class.is-quiet]="!row.Debit">{{ RollupAmount(row.Debit) }}</td>
-                                                <td class="is-num" [class.is-quiet]="!row.Credit">{{ RollupAmount(row.Credit) }}</td>
                                             </tr>
                                         }
-                                    </tbody>
-                                    <tfoot>
-                                        <tr>
-                                            <th>Total</th>
-                                            <td class="is-num">{{ RollupAmount(card.TotalDebit) }}</td>
-                                            <td class="is-num">{{ RollupAmount(card.TotalCredit) }}</td>
-                                        </tr>
-                                    </tfoot>
-                                </table>
-                            </article>
-                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
                     }
-                } @else if (PaymentJournalEntryParams) {
+                </div>
+
+            </main>
+
+        </div>
+    }
+
+    <!-- ================================================================
+         TAB 2: ACCOUNTING & GENERAL LEDGER (CAPTURED PAYMENTS)
+         ================================================================ -->
+    @if (ActiveTab === 'accounting') {
+        <div class="mjo-ph-tab-body">
+            <div class="mjo-accounting-header">
+                <div>
+                    <h2><i class="fa-solid fa-book"></i> General Ledger Postings</h2>
+                    <p class="text-muted">Double-entry balanced accounting entries booked across operating and receivable accounts.</p>
+                </div>
+                <div class="mjo-view-toggle">
+                    <button type="button" class="mjo-toggle-btn" [class.is-active]="AccountingView === 'summary'" (click)="SetAccountingView('summary')">
+                        Summary (Rolled-up)
+                    </button>
+                    <button type="button" class="mjo-toggle-btn" [class.is-active]="AccountingView === 'detail'" (click)="SetAccountingView('detail')">
+                        By Journal Entry
+                    </button>
+                </div>
+            </div>
+
+            @if (AccountingView === 'summary') {
+                @if (RollupLoading) {
+                    <div class="mjo-empty-state">
+                        <i class="fa-solid fa-spinner fa-spin fa-2x text-muted"></i>
+                        <p>Rolling up general ledger accounts…</p>
+                    </div>
+                } @else if (RollupError) {
+                    <div class="mjo-alert mjo-alert--error">{{ RollupError }}</div>
+                } @else if (RollupCards.length === 0) {
+                    <div class="mjo-empty-state">
+                        <i class="fa-solid fa-book-open fa-3x text-muted"></i>
+                        <h3>No journal entries booked yet</h3>
+                        <p>Journal entries are booked automatically upon capturing and settling the payment.</p>
+                    </div>
+                } @else {
+                    <div class="mjo-gl-cards-grid">
+                        @for (card of RollupCards; track card.CompanyID) {
+                            <div class="mjo-card mjo-card--gl">
+                                <div class="mjo-card__header">
+                                    <div>
+                                        <h3 class="mjo-card__title">{{ card.Company }}</h3>
+                                        <div class="mjo-subtext">{{ card.Rows.length }} {{ card.Rows.length === 1 ? 'line' : 'lines' }}</div>
+                                    </div>
+                                    <span class="mjo-badge" [class.mjo-badge--success]="CardIsBalanced(card)" [class.mjo-badge--error]="!CardIsBalanced(card)">
+                                        {{ CardIsBalanced(card) ? 'Balanced' : 'Out of Balance' }}
+                                    </span>
+                                </div>
+                                <div class="mjo-card__body p-0">
+                                    <table class="mjo-table mjo-table--compact">
+                                        <thead>
+                                            <tr>
+                                                <th>GL Account</th>
+                                                <th>Name</th>
+                                                <th class="text-right">Debit</th>
+                                                <th class="text-right">Credit</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @for (row of card.Rows; track row.Key) {
+                                                <tr>
+                                                    <td class="font-mono">{{ row.AccountCode || '—' }}</td>
+                                                    <td>
+                                                        <span>{{ row.AccountName }}</span>
+                                                    </td>
+                                                    <td class="text-right font-mono">{{ row.Debit ? RollupAmount(row.Debit) : '—' }}</td>
+                                                    <td class="text-right font-mono">{{ row.Credit ? RollupAmount(row.Credit) : '—' }}</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                        <tfoot>
+                                            <tr>
+                                                <th colspan="2">Total</th>
+                                                <th class="text-right font-mono">${{ card.TotalDebit.toFixed(2) }}</th>
+                                                <th class="text-right font-mono">${{ card.TotalCredit.toFixed(2) }}</th>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            } @else {
+                @if (PaymentJournalEntryParams) {
                     <mj-explorer-entity-data-grid
                         [Params]="PaymentJournalEntryParams"
                         [AllowLoad]="true"
-                        [ShowToolbar]="true"
-                        [ShowNewButton]="false"
-                        [Height]="'fit-content'"
-                        [MaxHeight]="300"
-                        (Navigate)="OnFormNavigate($event)"
-                        (AfterDataLoad)="SetSectionRowCount('accounting', $event.totalRowCount)">
+                        [ShowToolbar]="false"
+                        (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
                 }
-            </div>
-        }
-    </mj-collapsible-panel>
-
-    <!-- ========================================
-         5. PROCESSING & GATEWAY SETTLEMENT
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="processingDetails"
-        SectionName="Processing &amp; Gateway Settlement"
-        Icon="fa fa-cogs"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PaymentProviderID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="PaymentDetailID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProviderChargeID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ProviderRefundID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-    </mj-collapsible-panel>
-
-    <!-- ========================================
-         6. REVERSAL & REFUND LINKING
-         ======================================== -->
-    @if (IsReversal || record.ReversesPaymentHeaderID) {
-    <mj-collapsible-panel
-        SectionKey="reversalInformation"
-        SectionName="Reversal &amp; Refund Linking"
-        Icon="fa fa-undo"
-        [Form]="this"
-        [FormContext]="formContext">
-
-        <div class="mjo-reversal-banner">
-            <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-            <div>
-                <strong>Payment Reversal Record:</strong> This transaction reverses or refunds a previously captured payment. Accounting and ledger balances net against the original transaction.
-            </div>
+            }
         </div>
-
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReversesPaymentHeaderID"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-            LinkType="Record"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="ReversalReason"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-    </mj-collapsible-panel>
     }
 
-    <!-- ========================================
-         7. STORED VALUE TRANSACTIONS
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersStoredValueTransactions"
-        SectionName="Stored Value &amp; Credit Transactions"
-        Icon="fa fa-wallet"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersStoredValueTransactions')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Stored Value Transactions','RelatedPaymentID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersStoredValueTransactions')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersStoredValueTransactions', $event.totalRowCount)">
-            </mj-explorer-entity-data-grid>
+    <!-- ================================================================
+         TAB 3: DETAILS & NOTES
+         ================================================================ -->
+    @if (ActiveTab === 'details') {
+        <div class="mjo-ph-tab-body">
+            <div class="mjo-form-sections-grid">
+
+                <!-- Processing & Gateway Details -->
+                <div class="mjo-card">
+                    <div class="mjo-card__header">
+                        <h3 class="mjo-card__title"><i class="fa-solid fa-gears"></i> Processing &amp; Gateway Details</h3>
+                    </div>
+                    <div class="mjo-card__body mjo-form-grid-2">
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentProviderID" Type="textbox" LinkType="Record" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentIntentID" Type="textbox" LinkType="Record" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentDetailID" Type="textbox" LinkType="Record" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ProviderChargeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ProviderRefundID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="IdempotencyKey" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
+                    </div>
+                </div>
+
+                <!-- Reversal & Notes -->
+                <div class="mjo-card">
+                    <div class="mjo-card__header">
+                        <h3 class="mjo-card__title"><i class="fa-solid fa-note-sticky"></i> Reversal Info &amp; Notes</h3>
+                    </div>
+                    <div class="mjo-card__body mjo-form-grid-2">
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ReversesPaymentHeaderID" Type="textbox" LinkType="Record" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ReversalReason" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Description" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Notes" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext"></mj-form-field>
+                    </div>
+                </div>
+
+                <!-- Audit Metadata -->
+                <div class="mjo-card">
+                    <div class="mjo-card__header">
+                        <h3 class="mjo-card__title"><i class="fa-solid fa-clock-rotate-left"></i> System Metadata</h3>
+                    </div>
+                    <div class="mjo-card__body mjo-form-grid-2">
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="__mj_CreatedAt" Type="textbox" [EditMode]="false" [FormContext]="formContext"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="__mj_UpdatedAt" Type="textbox" [EditMode]="false" [FormContext]="formContext"></mj-form-field>
+                    </div>
+                </div>
+
+            </div>
         </div>
-        }
-    </mj-collapsible-panel>
+    }
 
-    <!-- ========================================
-         8. MEMO & INTERNAL NOTES
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="notesAndMetadata"
-        SectionName="Memo &amp; Internal Notes"
-        Icon="fa fa-align-left"
-        [Form]="this"
-        [FormContext]="formContext">
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Description"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Notes"
-            Type="textarea"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-    </mj-collapsible-panel>
+    <!-- ================================================================
+         TAB 4: RELATED RECORDS
+         ================================================================ -->
+    @if (ActiveTab === 'related') {
+        <div class="mjo-ph-tab-body">
+            <mj-collapsible-panel
+                SectionKey="mJBizAppsOrdersStoredValueTransactions"
+                SectionName="Stored Value &amp; Account Credit Transactions"
+                Icon="fa fa-wallet"
+                Variant="related-entity"
+                [Form]="this"
+                [FormContext]="formContext"
+                [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersStoredValueTransactions')"
+                [DefaultExpanded]="true">
+                <mj-explorer-entity-data-grid
+                    [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Stored Value Transactions', 'RelatedPaymentID')"
+                    [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Stored Value Transactions', 'RelatedPaymentID')"
+                    [AllowLoad]="true"
+                    [ShowToolbar]="true"
+                    (Navigate)="OnFormNavigate($event)"
+                    (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersStoredValueTransactions', $event.totalRowCount)">
+                </mj-explorer-entity-data-grid>
+            </mj-collapsible-panel>
 
-    <!-- ========================================
-         9. SUBSCRIPTION BILLING EVENTS
-         ======================================== -->
-    <mj-collapsible-panel
-        SectionKey="mJBizAppsOrdersSubscriptionEvents"
-        SectionName="Subscription Billing Events"
-        Icon="fa fa-history"
-        Variant="related-entity"
-        [Form]="this"
-        [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionEvents')"
-        [DefaultExpanded]="false">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Events','RelatedPaymentID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Events')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersSubscriptionEvents')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionEvents', $event.totalRowCount)">
-            </mj-explorer-entity-data-grid>
+            <mj-collapsible-panel
+                SectionKey="mJBizAppsOrdersSubscriptionEvents"
+                SectionName="Subscription Billing Events"
+                Icon="fa fa-history"
+                Variant="related-entity"
+                [Form]="this"
+                [FormContext]="formContext"
+                [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersSubscriptionEvents')"
+                [DefaultExpanded]="false">
+                <mj-explorer-entity-data-grid
+                    [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Subscription Events', 'PaymentHeaderID')"
+                    [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Subscription Events', 'PaymentHeaderID')"
+                    [AllowLoad]="true"
+                    [ShowToolbar]="true"
+                    (Navigate)="OnFormNavigate($event)"
+                    (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersSubscriptionEvents', $event.totalRowCount)">
+                </mj-explorer-entity-data-grid>
+            </mj-collapsible-panel>
+
+            <mj-collapsible-panel
+                SectionKey="mJBizAppsOrdersPaymentHeaders"
+                SectionName="Linked Reversal &amp; Refund Payment Records"
+                Icon="fa fa-rotate-left"
+                Variant="related-entity"
+                [Form]="this"
+                [FormContext]="formContext"
+                [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentHeaders')"
+                [DefaultExpanded]="false">
+                <mj-explorer-entity-data-grid
+                    [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Headers', 'ReversesPaymentHeaderID')"
+                    [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Headers', 'ReversesPaymentHeaderID')"
+                    [AllowLoad]="true"
+                    [ShowToolbar]="true"
+                    (Navigate)="OnFormNavigate($event)"
+                    (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentHeaders', $event.totalRowCount)">
+                </mj-explorer-entity-data-grid>
+            </mj-collapsible-panel>
         </div>
-        }
-    </mj-collapsible-panel>
-
-    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+    }
 
 </mj-record-form-container>
 }

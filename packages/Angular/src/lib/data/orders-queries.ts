@@ -335,8 +335,12 @@ export async function GetOrders(
         filters.push(`ID = '${options.OrderHeaderID}'`);
     }
     if (options.CompanyID) filters.push(`CompanyID = '${options.CompanyID}'`);
-    if (options.BillToPersonID) filters.push(`BillToPersonID = '${options.BillToPersonID}'`);
-    if (options.BillToOrganizationID) filters.push(`BillToOrganizationID = '${options.BillToOrganizationID}'`);
+    if (options.BillToPersonID && options.BillToOrganizationID) {
+        filters.push(`(BillToOrganizationID = '${options.BillToOrganizationID}' OR BillToPersonID = '${options.BillToPersonID}')`);
+    } else {
+        if (options.BillToPersonID) filters.push(`BillToPersonID = '${options.BillToPersonID}'`);
+        if (options.BillToOrganizationID) filters.push(`BillToOrganizationID = '${options.BillToOrganizationID}'`);
+    }
     if (options.Search?.trim()) {
         const escaped = likeText(options.Search);
         filters.push(
@@ -945,6 +949,15 @@ export async function GetPaymentNumbers(
         if (row.ID && row.PaymentNumber) numbers.set(String(row.ID).toLowerCase(), row.PaymentNumber);
     }
     return numbers;
+}
+
+/** A tender the customer can pay with. */
+export interface MJOTenderOption {
+    ID: string;
+    Code: string;
+    Name: string;
+    RequiresReference: boolean;
+    RequiresInstrument: boolean;
 }
 
 /**

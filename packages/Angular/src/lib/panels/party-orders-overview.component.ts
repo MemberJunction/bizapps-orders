@@ -1035,7 +1035,7 @@ export class PartyOrdersOverviewComponent implements OnInit {
 
     public OnActionClick(action: string): void {
         if (action === 'quote' && this.navigationService) {
-            this.navigationService.OpenEntityRecord(MJO_ENTITIES.OrderHeader, CompositeKey.FromID('new'));
+            this.navigationService.OpenEntityRecord(MJO_ENTITIES.OrderHeader, new CompositeKey());
         }
     }
 

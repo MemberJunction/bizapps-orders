@@ -42,9 +42,7 @@ import type { TabReorder } from '../../transfer-pending/workspace-tabs/workspace
 import { MJOOrderEditorPageComponent } from './order-editor.page';
 import type { MJOOrderStage } from '../../panels/status-stepper.component';
 import { MJOPricingScheduler } from '../../services/pricing-scheduler.service';
-import { type MJOCompanyOption } from '../../data/orders-queries';
-import type { MJOProductOption } from '../../data/orders-queries';
-import type { MJOTenderOption } from '../payments/payment-entry.page';
+import { type MJOCompanyOption, type MJOProductOption, type MJOTenderOption } from '../../data/orders-queries';
 import { ReadableSaveError } from '../../services/save-error';
 import { MJO_ENTITIES } from '../../data/entity-names';
 

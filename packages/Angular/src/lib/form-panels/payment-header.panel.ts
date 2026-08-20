@@ -10,17 +10,8 @@ import {
 } from './document-form.helpers';
 
 /**
- * Payment Header identity strip. Generated field panels stay under Details.
+ * Payment Header identity strip (used when custom form is not active).
  */
-@RegisterClassEx(BaseFormPanel, {
-    key: 'form-panel:PaymentHeaders:header',
-    metadata: {
-        entity: 'MJ_BizApps_Orders: Payment Headers',
-        slot: 'before-fields',
-        sortKey: 100,
-        contributionKey: 'header',
-    },
-})
 @Component({
     standalone: false,
     selector: 'mjo-payment-header-panel',

@@ -21,7 +21,7 @@ export function IsSavePopulatedFieldError(
     headerIsSaved: boolean,
     lineIsSaved: (index: number) => boolean,
 ): boolean {
-    if (source === 'OrderNumber') return !headerIsSaved;
+    if (source === 'OrderNumber' || source === 'PaymentNumber') return !headerIsSaved;
     const match = LINE_POPULATED.exec(source);
     if (!match) return false;
     return !lineIsSaved(Number(match[2]));
