@@ -143,4 +143,138 @@ describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters',
         expect(instance.SourceLineLabel(1)).toBe('1 allocation');
         expect(instance.SourceLineLabel(3)).toBe('3 allocations');
     });
+
+    it('calculates TotalAllocated, UnallocatedRemainder, and IsAllocationBalanced accurately', () => {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        instance.record = {
+            Amount: 500,
+            Status: 'Pending',
+        } as unknown as mjBizAppsOrdersPaymentHeaderEntity;
+
+        instance.OrderAllocations = {
+            'ord-1': 300,
+        };
+        instance.LineAllocations = {
+            'line-2': 100,
+        };
+
+        expect(instance.TotalAllocated).toBe(400);
+        expect(instance.UnallocatedRemainder).toBe(100);
+        expect(instance.IsAllocationBalanced).toBe(false);
+
+        // Add remaining $100
+        instance.SetOrderAllocation('ord-3', 100);
+        expect(instance.TotalAllocated).toBe(500);
+        expect(instance.UnallocatedRemainder).toBe(0);
+        expect(instance.IsAllocationBalanced).toBe(true);
+
+        // Over-allocated by $50
+        instance.SetLineAllocation('line-4', 50);
+        expect(instance.TotalAllocated).toBe(550);
+        expect(instance.UnallocatedRemainder).toBe(-50);
+        expect(instance.IsAllocationBalanced).toBe(false);
+    });
+
+    it('toggles order expansion and computes leaves balance properly', () => {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        instance.ExpandedOrderIDs = new Set();
+        instance.OrderAllocations = {};
+        instance.LineAllocations = {};
+        instance.OrderLinesMap = new Map();
+
+        expect(instance.IsOrderExpanded('ord-100')).toBe(false);
+        instance.ToggleOrderExpanded('ord-100');
+        expect(instance.IsOrderExpanded('ord-100')).toBe(true);
+        instance.ToggleOrderExpanded('ord-100');
+        expect(instance.IsOrderExpanded('ord-100')).toBe(false);
+
+        const mockOrder = {
+            ID: 'ord-100',
+            TotalGross: 1000,
+            Balance: 1000,
+        } as unknown as mjBizAppsOrdersOrderHeaderEntity;
+
+        // No allocation -> Leaves balance is full 1000
+        expect(instance.CalculateLeavesBalance(mockOrder)).toBe(1000);
+
+        // Order-level allocation of 400
+        instance.SetOrderAllocation('ord-100', 400);
+        expect(instance.CalculateLeavesBalance(mockOrder)).toBe(600);
+
+        // Line-level allocation of 200 on line of ord-100
+        instance.OrderLinesMap.set('ord-100', [
+            { ID: 'line-1', LineNumber: 1, LineTotalGross: 500 } as unknown as mjBizAppsOrdersOrderLineEntity,
+        ]);
+        instance.SetLineAllocation('line-1', 200);
+        expect(instance.CalculateLeavesBalance(mockOrder)).toBe(400);
+    });
+
+    it('auto-applies oldest first to open orders', () => {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        instance.record = {
+            Amount: 650,
+            Status: 'Pending',
+        } as unknown as mjBizAppsOrdersPaymentHeaderEntity;
+
+        instance.OpenOrders = [
+            { ID: 'ord-2', OrderDate: new Date('2026-08-10'), Balance: 400 } as unknown as mjBizAppsOrdersOrderHeaderEntity,
+            { ID: 'ord-1', OrderDate: new Date('2026-08-01'), Balance: 500 } as unknown as mjBizAppsOrdersOrderHeaderEntity,
+        ];
+        instance.OrderAllocations = {};
+        instance.LineAllocations = {};
+
+        instance.AutoApplyOldestFirst();
+
+        // Oldest order (ord-1, $500) gets $500 in full
+        expect(instance.GetOrderAllocation('ord-1')).toBe(500);
+        // Next order (ord-2, $400) gets remaining $150
+        expect(instance.GetOrderAllocation('ord-2')).toBe(150);
+        expect(instance.TotalAllocated).toBe(650);
+        expect(instance.IsAllocationBalanced).toBe(true);
+    });
+
+    it('synchronizes order-level and line-level allocations into record.Lines', async () => {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        const mockLinesList: any[] = [];
+        const mockRelatedCollection = {
+            Items: mockLinesList,
+            Create: async () => {
+                const item: any = {};
+                mockLinesList.push(item);
+                return item;
+            },
+            Remove: (item: any) => {
+                const idx = mockLinesList.indexOf(item);
+                if (idx >= 0) mockLinesList.splice(idx, 1);
+            },
+        };
+
+        instance.record = {
+            Lines: mockRelatedCollection,
+        } as unknown as mjBizAppsOrdersPaymentHeaderEntity;
+
+        instance.OrderAllocations = {
+            'ord-1': 300,
+        };
+        instance.LineAllocations = {
+            'line-5': 150,
+        };
+        instance.OrderLinesMap = new Map([
+            ['ord-2', [{ ID: 'line-5' } as unknown as mjBizAppsOrdersOrderLineEntity]],
+        ]);
+
+        await instance.SyncAllocationsToRecord();
+
+        expect(mockLinesList).toHaveLength(2);
+
+        const orderAlloc = mockLinesList.find(l => l.OrderHeaderID === 'ord-1');
+        expect(orderAlloc).toBeDefined();
+        expect(orderAlloc.OrderLineID).toBeNull();
+        expect(orderAlloc.Amount).toBe(300);
+
+        const lineAlloc = mockLinesList.find(l => l.OrderLineID === 'line-5');
+        expect(lineAlloc).toBeDefined();
+        expect(lineAlloc.OrderHeaderID).toBe('ord-2');
+        expect(lineAlloc.Amount).toBe(150);
+    });
 });

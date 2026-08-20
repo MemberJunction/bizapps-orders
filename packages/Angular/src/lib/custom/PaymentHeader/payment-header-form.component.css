@@ -167,6 +167,51 @@
     background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.04));
 }
 
+/* ── Header Actions ────────────────────────────────────────────────────────── */
+.mjo-record-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    align-self: center;
+}
+
+.mjo-form-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: var(--mj-radius-sm, 4px);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+}
+
+.mjo-form-btn--primary {
+    background: var(--mj-status-success-text, #15803d);
+    color: #ffffff;
+}
+
+.mjo-form-btn--primary:hover:not(:disabled) {
+    filter: brightness(0.92);
+}
+
+.mjo-form-btn--primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.mjo-form-btn--secondary {
+    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.04));
+    color: var(--mj-text-primary, #0f172a);
+    border-color: var(--mj-border-default, #cbd5e1);
+}
+
+.mjo-form-btn--secondary:hover {
+    background: var(--mj-bg-surface-card, #ffffff);
+}
+
 /* ── 2. Quick Summary Metric Strip ─────────────────────────────────────────── */
 .mjo-record-summary-bar {
     display: grid;
@@ -235,34 +280,231 @@
     flex-shrink: 0;
 }
 
-/* ── 4. Subgrid Wrapper ───────────────────────────────────────────────────── */
-.mjo-subgrid-wrap {
-    margin-top: var(--mj-space-3, 12px);
-    border-top: 1px solid var(--mj-border-default, #f1f5f9);
-    padding-top: var(--mj-space-3, 12px);
-}
-
-.mjo-subgrid-title {
+/* ── 4. Allocation Workbench (Section 2 for New/Pending Payments) ─────────── */
+.mjo-alloc-error-banner {
     display: flex;
     align-items: center;
     gap: 8px;
+    padding: 10px 14px;
+    background: var(--mj-status-error-bg, rgba(239, 68, 68, 0.12));
+    border: 1px solid var(--mj-status-error-border, rgba(239, 68, 68, 0.35));
+    border-radius: var(--mj-radius-md, 8px);
+    color: var(--mj-status-error-text, #dc2626);
     font-size: 13px;
-    font-weight: var(--mj-font-semibold, 600);
-    color: var(--mj-text-primary, #0f172a);
-    margin-bottom: var(--mj-space-2, 8px);
+    font-weight: 600;
+    margin-bottom: 12px;
 }
 
-.mjo-subgrid-title i {
+.mjo-alloc-workbench {
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-md, 8px);
+    padding: 14px;
+}
+
+.mjo-alloc-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--mj-border-default, #e2e8f0);
+}
+
+.mjo-alloc-status-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: var(--mj-radius-sm, 4px);
+    font-size: 12.5px;
+    font-weight: 600;
+}
+
+.mjo-alloc-status-pill.is-balanced {
+    background: var(--mj-status-success-bg, rgba(34, 197, 94, 0.12));
+    border: 1px solid var(--mj-status-success-border, rgba(34, 197, 94, 0.35));
+    color: var(--mj-status-success-text, #15803d);
+}
+
+.mjo-alloc-status-pill.is-unbalanced {
+    background: var(--mj-status-warning-bg, rgba(245, 158, 11, 0.12));
+    border: 1px solid var(--mj-status-warning-border, rgba(245, 158, 11, 0.35));
+    color: var(--mj-status-warning-text, #b45309);
+}
+
+.mjo-alloc-quick-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mjo-btn-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: var(--mj-radius-sm, 4px);
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    color: var(--mj-text-primary, #0f172a);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.mjo-btn-action:hover:not(:disabled) {
+    background: var(--mj-bg-surface-sunken, #f1f5f9);
+}
+
+.mjo-btn-action:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.mjo-btn-action i {
     color: var(--mj-brand-primary, #0076b6);
 }
 
-.mjo-subgrid-title code {
-    font-family: var(--mj-font-family-mono, monospace);
+.mjo-alloc-hint, .mjo-alloc-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--mj-text-muted, #64748b);
+    font-size: 13px;
+}
+
+.mjo-alloc-empty i {
+    font-size: 28px;
+    color: var(--mj-text-muted, #64748b);
+    margin-bottom: 8px;
+}
+
+.mjo-alloc-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-md, 8px);
+    overflow: hidden;
+    font-size: 13px;
+}
+
+.mjo-alloc-table th {
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+    color: var(--mj-text-secondary, #475569);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--mj-border-default, #e2e8f0);
+    text-align: left;
+}
+
+.mjo-alloc-table th.num, .mjo-alloc-table td.num {
+    text-align: right;
+}
+
+.mjo-alloc-table td {
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--mj-border-default, #e2e8f0);
+    vertical-align: middle;
+}
+
+.mjo-alloc-table tr:last-child td {
+    border-bottom: none;
+}
+
+.mjo-alloc-order-row {
+    background: var(--mj-bg-surface-card, #ffffff);
+}
+
+.mjo-alloc-order-row:hover {
+    background: var(--mj-bg-surface-sunken, #f8fafc);
+}
+
+.mjo-alloc-line-row {
+    background: var(--mj-bg-surface-sunken, #f8fafc);
     font-size: 12px;
     color: var(--mj-text-secondary, #475569);
 }
 
-/* ── 5. Accounting Tab & Ledger Rollup Cards ──────────────────────────── */
+.mjo-alloc-line-row td {
+    padding: 6px 10px 6px 28px;
+    border-bottom: 1px dashed var(--mj-border-default, #e2e8f0);
+}
+
+.mjo-alloc-expand-btn {
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    border-radius: var(--mj-radius-sm, 4px);
+    cursor: pointer;
+    color: var(--mj-text-muted, #64748b);
+}
+
+.mjo-alloc-expand-btn:hover {
+    background: var(--mj-bg-surface-sunken, #f1f5f9);
+    color: var(--mj-text-primary, #0f172a);
+}
+
+.mjo-alloc-order-num {
+    color: var(--mj-brand-primary, #0076b6);
+    font-family: var(--mj-font-family-mono, monospace);
+}
+
+.mjo-alloc-subtext {
+    font-size: 11px;
+    color: var(--mj-text-muted, #64748b);
+}
+
+.mjo-alloc-late-tag {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--mj-status-error-text, #dc2626);
+}
+
+.mjo-alloc-input {
+    width: 95px;
+    padding: 4px 7px;
+    font-size: 12.5px;
+    font-family: var(--mj-font-family-mono, monospace);
+    font-weight: 600;
+    text-align: right;
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    border-radius: var(--mj-radius-sm, 4px);
+    background: var(--mj-bg-surface-card, #ffffff);
+    color: var(--mj-text-primary, #0f172a);
+}
+
+.mjo-alloc-input:focus {
+    border-color: var(--mj-brand-primary, #0076b6);
+    outline: none;
+}
+
+.mjo-alloc-input--line {
+    background: var(--mj-bg-surface-card, #ffffff);
+}
+
+.mjo-alloc-bal-zero {
+    color: var(--mj-status-success-text, #15803d);
+    font-weight: 700;
+}
+
+.mjo-alloc-bal-warn {
+    color: var(--mj-status-warning-text, #b45309);
+    font-weight: 600;
+}
+
+.font-mono {
+    font-family: var(--mj-font-family-mono, monospace);
+}
+
+/* ── 5. Accounting Rollup Panel ───────────────────────────────────────────── */
 .mjo-ph-acct {
     display: flex;
     flex-direction: column;
@@ -271,162 +513,143 @@
 
 .mjo-ph-acct__bar {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: var(--mj-space-3, 12px);
     flex-wrap: wrap;
-    padding-bottom: var(--mj-space-2, 8px);
-    border-bottom: 1px solid var(--mj-border-subtle, #f1f5f9);
 }
 
 .mjo-ph-acct__heading {
     margin: 0;
-    font-size: var(--mj-text-sm, 14px);
+    font-size: 14px;
     font-weight: var(--mj-font-bold, 700);
     color: var(--mj-text-primary, #0f172a);
 }
 
 .mjo-ph-acct__subtext {
-    margin: 2px 0 0;
+    margin: 2px 0 0 0;
     font-size: var(--mj-text-xs, 12px);
     color: var(--mj-text-muted, #64748b);
 }
 
 .mjo-ph-switch {
     display: inline-flex;
+    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.04));
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    border-radius: var(--mj-radius-sm, 4px);
     padding: 2px;
-    border: 1px solid var(--mj-border-default, #e2e8f0);
-    border-radius: var(--mj-radius-full, 9999px);
-    background: var(--mj-bg-surface-sunken, #f8fafc);
 }
 
 .mjo-ph-switch button {
-    appearance: none;
-    border: 0;
+    border: none;
     background: transparent;
-    color: var(--mj-text-secondary, #475569);
-    font: inherit;
-    font-size: var(--mj-text-xs, 12px);
+    padding: 3px 10px;
+    font-size: 11.5px;
     font-weight: var(--mj-font-semibold, 600);
-    padding: 4px 12px;
-    border-radius: var(--mj-radius-full, 9999px);
+    color: var(--mj-text-secondary, #475569);
+    border-radius: 2px;
     cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    transition: all 120ms ease;
+    transition: all 0.15s ease;
 }
 
 .mjo-ph-switch button.is-on {
-    background: var(--mj-bg-surface, #ffffff);
+    background: var(--mj-bg-surface-card, #ffffff);
     color: var(--mj-text-primary, #0f172a);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .mjo-ph-switch__n {
-    min-width: 1.25em;
+    margin-left: 4px;
     padding: 0 5px;
     border-radius: var(--mj-radius-full, 9999px);
-    background: color-mix(in srgb, var(--mj-brand-primary, #0076b6) 14%, var(--mj-bg-surface, #ffffff));
-    color: var(--mj-brand-primary, #0076b6);
-    font-variant-numeric: tabular-nums;
-    text-align: center;
+    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.08));
+    font-size: 10px;
 }
 
 .mjo-ph-hint {
-    padding: var(--mj-space-4, 16px);
-    border-radius: var(--mj-radius-md, 8px);
-    background: var(--mj-bg-surface-sunken, #f8fafc);
-    border: 1px dashed var(--mj-border-default, #e2e8f0);
+    font-size: var(--mj-text-xs, 12px);
     color: var(--mj-text-muted, #64748b);
-    font-size: var(--mj-text-sm, 13px);
-    text-align: center;
+    padding: var(--mj-space-3, 12px) 0;
 }
 
-/* Journal Entry Rollup Cards */
 .mjo-oh-jecard {
+    background: var(--mj-bg-surface-card, #ffffff);
     border: 1px solid var(--mj-border-default, #e2e8f0);
     border-radius: var(--mj-radius-md, 8px);
-    background: var(--mj-bg-surface, #ffffff);
     overflow: hidden;
-}
-
-.mjo-oh-jecard + .mjo-oh-jecard {
-    margin-top: var(--mj-space-3, 12px);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .mjo-oh-jecard__head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--mj-space-2, 8px);
-    padding: var(--mj-space-2, 8px) var(--mj-space-3, 12px);
-    background: var(--mj-bg-surface-card, #f8fafc);
-    border-bottom: 1px solid var(--mj-border-subtle, #f1f5f9);
+    padding: 8px 12px;
+    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.02));
+    border-bottom: 1px solid var(--mj-border-default, #e2e8f0);
 }
 
 .mjo-oh-jecard__co {
-    font-size: var(--mj-text-sm, 13.5px);
-    font-weight: var(--mj-font-semibold, 600);
+    font-size: 12.5px;
+    font-weight: var(--mj-font-bold, 700);
     color: var(--mj-text-primary, #0f172a);
 }
 
 .mjo-oh-jecard__sub {
-    margin-left: var(--mj-space-2, 8px);
-    font-size: var(--mj-text-xs, 12px);
+    font-size: 11px;
     color: var(--mj-text-muted, #64748b);
+    margin-left: 6px;
 }
 
 .mjo-oh-chip {
-    font-size: var(--mj-text-xs, 11px);
+    font-size: 10.5px;
     font-weight: var(--mj-font-semibold, 600);
-    padding: 2px 8px;
+    padding: 1px 7px;
     border-radius: var(--mj-radius-full, 9999px);
-    background: var(--mj-status-danger-bg, #fef2f2);
-    color: var(--mj-status-danger-text, #991b1b);
-    border: 1px solid var(--mj-status-danger-border, #fecaca);
+    background: var(--mj-status-warning-bg, rgba(245, 158, 11, 0.12));
+    color: var(--mj-status-warning-text, #b45309);
 }
 
 .mjo-oh-chip--ok {
-    background: var(--mj-status-success-bg, #f0fdf4);
-    color: var(--mj-status-success-text, #166534);
-    border-color: var(--mj-status-success-border, #bbf7d0);
+    background: var(--mj-status-success-bg, rgba(34, 197, 94, 0.12));
+    color: var(--mj-status-success-text, #15803d);
 }
 
 .mjo-oh-je__table {
     width: 100%;
     border-collapse: collapse;
-    font-size: var(--mj-text-sm, 13px);
+    font-size: 12px;
 }
 
 .mjo-oh-je__table th,
 .mjo-oh-je__table td {
-    padding: var(--mj-space-2, 8px) var(--mj-space-3, 12px);
-    border-bottom: 1px solid var(--mj-border-subtle, #f1f5f9);
+    padding: 6px 12px;
     text-align: left;
-    vertical-align: top;
+    border-bottom: 1px solid var(--mj-border-default, #f1f5f9);
 }
 
-.mjo-oh-je__table thead th {
-    font-size: var(--mj-text-xs, 11px);
-    font-weight: var(--mj-font-bold, 700);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--mj-text-muted, #64748b);
-    background: var(--mj-bg-surface-sunken, #f8fafc);
-}
-
-.mjo-oh-je__table tfoot th {
+.mjo-oh-je__table th {
+    font-size: 10.5px;
     font-weight: var(--mj-font-semibold, 600);
-    color: var(--mj-text-primary, #0f172a);
-    border-bottom: 0;
-    background: var(--mj-bg-surface-sunken, #f8fafc);
+    color: var(--mj-text-muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.01));
 }
 
-.mjo-oh-je__table .is-num {
+.mjo-oh-je__table th.is-num,
+.mjo-oh-je__table td.is-num {
     text-align: right;
+    font-family: var(--mj-font-family-mono, monospace);
     font-variant-numeric: tabular-nums;
-    white-space: nowrap;
+}
+
+.mjo-oh-je__table tfoot th,
+.mjo-oh-je__table tfoot td {
+    font-weight: var(--mj-font-bold, 700);
+    border-top: 1px solid var(--mj-border-default, #cbd5e1);
+    border-bottom: none;
+    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.02));
 }
 
 .mjo-oh-je__table .is-quiet {

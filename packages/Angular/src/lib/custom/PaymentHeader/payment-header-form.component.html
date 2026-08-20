@@ -38,6 +38,17 @@
                     </div>
                 </div>
             </div>
+
+            @if (!IsCaptured) {
+                <div class="mjo-record-header-actions">
+                    <button type="button" class="mjo-form-btn mjo-form-btn--secondary" (click)="SaveAsDraft()">
+                        <i class="fa-solid fa-floppy-disk"></i> Save as Draft
+                    </button>
+                    <button type="button" class="mjo-form-btn mjo-form-btn--primary" [disabled]="!IsAllocationBalanced" (click)="CapturePayment()">
+                        <i class="fa-solid fa-check-circle"></i> Capture &amp; Book Payment
+                    </button>
+                </div>
+            }
         </div>
 
         <!-- Quick Summary Metric Strip -->
@@ -60,7 +71,13 @@
             </div>
             <div class="mjo-stat-block">
                 <span class="mjo-stat-label">Allocations</span>
-                <span class="mjo-stat-val">{{ GetSectionRowCount('mJBizAppsOrdersPaymentLines') || 0 }} Lines Settled</span>
+                <span class="mjo-stat-val" [class.mjo-money]="IsAllocationBalanced">
+                    @if (IsCaptured) {
+                        {{ GetSectionRowCount('mJBizAppsOrdersPaymentLines') || 0 }} Lines Settled
+                    } @else {
+                        {{ TotalAllocated | currency }} Allocated
+                    }
+                </span>
             </div>
         </div>
     </div>
@@ -134,7 +151,7 @@
     </mj-collapsible-panel>
 
     <!-- ========================================
-         2. PAYMENT ALLOCATIONS (ORDER LINES SETTLED)
+         2. PAYMENT ALLOCATIONS (ORDER & LINE SETTLEMENT)
          ======================================== -->
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersPaymentLines"
@@ -143,19 +160,156 @@
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
-        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentLines')"
+        [BadgeCount]="IsCaptured ? GetSectionRowCount('mJBizAppsOrdersPaymentLines') : TotalAllocated"
         [DefaultExpanded]="true">
-        @if (record.IsSaved) {
-        <div>
-            <mj-explorer-entity-data-grid
-                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Lines','PaymentHeaderID')"
-                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Lines')"
-                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentLines')"
-                [ShowToolbar]="false"
-                (Navigate)="OnFormNavigate($event)"
-                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentLines', $event.totalRowCount)">
-            </mj-explorer-entity-data-grid>
-        </div>
+
+        @if (AllocationError) {
+            <div class="mjo-alloc-error-banner" role="alert">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>{{ AllocationError }}</span>
+            </div>
+        }
+
+        @if (IsCaptured && record.IsSaved) {
+            <div>
+                <mj-explorer-entity-data-grid
+                    [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Lines','PaymentHeaderID')"
+                    [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Lines')"
+                    [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentLines')"
+                    [ShowToolbar]="false"
+                    (Navigate)="OnFormNavigate($event)"
+                    (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentLines', $event.totalRowCount)">
+                </mj-explorer-entity-data-grid>
+            </div>
+        } @else {
+            <div class="mjo-alloc-workbench">
+                <div class="mjo-alloc-header-bar">
+                    <div class="mjo-alloc-status-pill" [class.is-balanced]="IsAllocationBalanced" [class.is-unbalanced]="!IsAllocationBalanced">
+                        @if (IsAllocationBalanced) {
+                            <i class="fa-solid fa-circle-check"></i>
+                            <span>Fully Allocated ({{ TotalAllocated | currency }} of {{ FormattedGrossAmount }}). Invariant satisfied for capture.</span>
+                        } @else if (UnallocatedRemainder > 0) {
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            <span>{{ UnallocatedRemainder | currency }} Unallocated Cash Remaining. Please allocate to orders before capture.</span>
+                        } @else {
+                            <i class="fa-solid fa-circle-exclamation"></i>
+                            <span>Over-allocated by {{ -UnallocatedRemainder | currency }}. Allocations cannot exceed gross payment.</span>
+                        }
+                    </div>
+
+                    <div class="mjo-alloc-quick-actions">
+                        <button type="button" class="mjo-btn-action" (click)="AutoApplyOldestFirst()" [disabled]="(record.Amount || 0) <= 0">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-Apply Oldest First
+                        </button>
+                        <button type="button" class="mjo-btn-action" (click)="ClearAllocations()">
+                            <i class="fa-solid fa-rotate-left"></i> Clear All
+                        </button>
+                    </div>
+                </div>
+
+                @if (LoadingOpenOrders) {
+                    <div class="mjo-alloc-hint">
+                        <i class="fa-solid fa-spinner fa-spin"></i> Loading open orders for customer…
+                    </div>
+                } @else if (OpenOrders.length === 0) {
+                    <div class="mjo-alloc-empty">
+                        <i class="fa-solid fa-folder-open"></i>
+                        <div>
+                            <strong>No open unpaid orders found.</strong>
+                            <p>Select a paying customer (Bill-To Organization or Person) in Section 3 to populate open invoices.</p>
+                        </div>
+                    </div>
+                } @else {
+                    <table class="mjo-alloc-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 36px;"></th>
+                                <th style="width: 140px;">Order / Line #</th>
+                                <th>Description</th>
+                                <th>Due Date</th>
+                                <th>Company</th>
+                                <th class="num">Original Gross</th>
+                                <th class="num">Open Balance</th>
+                                <th class="num" style="width: 130px;">Apply ($)</th>
+                                <th class="num">Leaves Bal.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (order of OpenOrders; track order.ID) {
+                                <tr class="mjo-alloc-order-row">
+                                    <td>
+                                        <button
+                                            type="button"
+                                            class="mjo-alloc-expand-btn"
+                                            (click)="ToggleOrderExpanded(order.ID)"
+                                            [title]="IsOrderExpanded(order.ID) ? 'Collapse Lines' : 'Expand Lines'">
+                                            <i class="fa-solid" [class.fa-chevron-down]="IsOrderExpanded(order.ID)" [class.fa-chevron-right]="!IsOrderExpanded(order.ID)"></i>
+                                        </button>
+                                    </td>
+                                    <td>
+                                        <strong class="mjo-alloc-order-num">{{ order.OrderNumber }}</strong>
+                                    </td>
+                                    <td>
+                                        <div>{{ order.Description || 'Standard Order' }}</div>
+                                        <div class="mjo-alloc-subtext">{{ GetOrderLines(order.ID).length }} lines on order</div>
+                                    </td>
+                                    <td>
+                                        <div>{{ FormatOrderDueDate(order) }}</div>
+                                        @if (GetOrderDaysOverdue(order) > 0) {
+                                            <span class="mjo-alloc-late-tag">{{ GetOrderDaysOverdue(order) }}d overdue</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <span class="mjo-sku-badge">{{ order.Company || '—' }}</span>
+                                    </td>
+                                    <td class="num font-mono">{{ order.TotalGross ? (order.TotalGross | currency) : '—' }}</td>
+                                    <td class="num font-mono"><strong>{{ (order.Balance ?? order.TotalGross ?? 0) | currency }}</strong></td>
+                                    <td class="num">
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            class="mjo-alloc-input"
+                                            [value]="GetOrderAllocation(order.ID) || ''"
+                                            (input)="SetOrderAllocation(order.ID, $any($event.target).value)"
+                                            placeholder="0.00"
+                                            aria-label="Order apply amount">
+                                    </td>
+                                    <td class="num font-mono" [class.mjo-alloc-bal-zero]="CalculateLeavesBalance(order) === 0" [class.mjo-alloc-bal-warn]="CalculateLeavesBalance(order) > 0">
+                                        {{ CalculateLeavesBalance(order) | currency }}
+                                    </td>
+                                </tr>
+
+                                @if (IsOrderExpanded(order.ID)) {
+                                    @for (line of GetOrderLines(order.ID); track line.ID) {
+                                        <tr class="mjo-alloc-line-row">
+                                            <td></td>
+                                            <td class="font-mono">Line {{ line.LineNumber }}</td>
+                                            <td>{{ line.Description || line.Product || 'Item Line' }}</td>
+                                            <td>—</td>
+                                            <td><span class="mjo-sku-badge">{{ line.Company || '—' }}</span></td>
+                                            <td class="num font-mono">{{ line.LineTotalGross ? (line.LineTotalGross | currency) : '—' }}</td>
+                                            <td class="num font-mono">{{ line.LineTotalGross ? (line.LineTotalGross | currency) : '—' }}</td>
+                                            <td class="num">
+                                                <input
+                                                    type="number"
+                                                    step="0.01"
+                                                    min="0"
+                                                    class="mjo-alloc-input mjo-alloc-input--line"
+                                                    [value]="GetLineAllocation(line.ID) || ''"
+                                                    (input)="SetLineAllocation(line.ID, $any($event.target).value)"
+                                                    placeholder="0.00"
+                                                    aria-label="Line apply amount">
+                                            </td>
+                                            <td class="num font-mono">—</td>
+                                        </tr>
+                                    }
+                                }
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
         }
     </mj-collapsible-panel>
 
