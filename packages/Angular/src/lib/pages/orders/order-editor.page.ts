@@ -36,8 +36,7 @@ import {
 } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format';
 import { BuildOrderStages, type MJOOrderStage, type MJOStageChangeRequestEventArgs } from '../../panels/order-stages';
-import type { MJOProductOption } from '../../data/orders-queries';
-import type { MJOTenderOption } from '../payments/payment-entry.page';
+import type { MJOProductOption, MJOTenderOption } from '../../data/orders-queries';
 import type { RunViewParams } from '@memberjunction/core';
 import { MJButtonDirective, MJDropdownComponent, MJTabNavComponent, type TabConfig } from '@memberjunction/ng-ui-components';
 // The MODULE, not the component: `mj-entity-data-grid` is declared (standalone: false), so a

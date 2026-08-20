@@ -59,7 +59,6 @@ export const ORDERS_SUB_PAGES: OrdersSubPage[] = [
 export const PAYMENTS_SUB_PAGES: OrdersSubPage[] = [
     { Id: 'dashboard', Label: 'Dashboard', Icon: 'fa-solid fa-gauge-high', Description: 'What came in, and does it tie?' },
     { Id: 'list', Label: 'All payments', Icon: 'fa-solid fa-table-list' },
-    { Id: 'entry', Label: 'Take a payment', Icon: 'fa-solid fa-hand-holding-dollar' },
     { Id: 'refund', Label: 'Refunds', Icon: 'fa-solid fa-arrow-rotate-left', Group: 'Work' },
     { Id: 'credit', Label: 'Account credits', Icon: 'fa-solid fa-piggy-bank', Group: 'Work' },
 ];

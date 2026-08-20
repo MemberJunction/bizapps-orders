@@ -122,6 +122,10 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
     }
 
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+        if (!this.PaymentNumber) {
+            this.PaymentNumber = await this.assignPaymentNumber();
+        }
+
         // A rail that settles on somebody else's schedule may not reach Captured here, whoever asked.
         await this.deferCaptureWhenSettlementIsLate();
 
@@ -748,6 +752,28 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             throw new Error(`Journal entry booking failed for payment ${this.PaymentNumber}. ${detail}`);
         }
         return payload;
+    }
+
+    private async assignPaymentNumber(): Promise<string> {
+        return `PAY-${String(await this.nextSequence('PaymentSequence')).padStart(6, '0')}`;
+    }
+
+    private async nextSequence(table: 'OrderSequence' | 'PaymentSequence' | 'SubscriptionSequence'): Promise<number> {
+        const provider = this.ProviderToUse as unknown as { ExecuteSQL: (sql: string, params?: unknown[]) => Promise<unknown> };
+        const rows = (await provider.ExecuteSQL(
+            `DECLARE @seq TABLE (Seq INT);
+             UPDATE __mj_BizAppsOrders.${table} WITH (UPDLOCK, HOLDLOCK)
+             SET NextSequenceNumber = NextSequenceNumber + 1
+             OUTPUT deleted.NextSequenceNumber INTO @seq(Seq)
+             WHERE ID = 1;
+             SELECT Seq FROM @seq;`,
+        )) as Array<{ Seq?: number }> | { Results?: Array<{ Seq?: number }> } | undefined;
+        const list = Array.isArray(rows) ? rows : (rows?.Results ?? []);
+        const val = list[0]?.Seq;
+        if (typeof val !== 'number' || val <= 0) {
+            throw new Error(`Failed to assign sequence number from ${table}: unexpected return ${JSON.stringify(rows)}`);
+        }
+        return val;
     }
 
     private buildFailureResult(err: unknown): BaseEntityResult {

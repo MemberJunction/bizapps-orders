@@ -44,7 +44,6 @@ import type { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOOrdersListPageComponent } from '../pages/orders/orders-list.page';
 import { MJOOrdersDashboardPageComponent } from '../pages/orders/orders-dashboard.page';
 import { MJOFulfillmentPageComponent } from '../pages/orders/fulfillment.page';
-import { MJOPaymentEntryPageComponent } from '../pages/payments/payment-entry.page';
 import { MJOPaymentsListPageComponent } from '../pages/payments/payments-list.page';
 import { MJORefundPageComponent } from '../pages/payments/refund.page';
 import { MJOAccountCreditPageComponent } from '../pages/payments/account-credit.page';
@@ -284,7 +283,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         // Opening a record routes to the page that shows it. Each carries its id,
         // which the destination reads on activation.
         on<{ ID?: string } | string>('OrderOpened', (row) => this.openEntity(MJO_ENTITIES.OrderHeader, row));
-        on<{ ID?: string } | string>('PaymentOpened', (row) => this.openRecord('entry', row));
+        on<{ ID?: string } | string>('PaymentOpened', (row) => this.openEntity(MJO_ENTITIES.PaymentHeader, row));
         on<{ ID?: string } | string>('ProductOpened', (row) => this.openEntity(MJO_ENTITIES.Product, row));
 
         // The irreversible step. Straight to the engine — there is no dry run in front of it.
@@ -403,7 +402,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
      * primary button that guesses is worse than none — it makes the wrong action
      * the most prominent one on the page.
      */
-    protected get primaryAction(): { Label: string; Icon: string; PageId: string } | null {
+    protected get primaryAction(): { Label: string; Icon: string; PageId?: string; EntityName?: string } | null {
         return null;
     }
 
@@ -441,15 +440,23 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     public StartPrimary(): void {
         const action = this.primaryAction;
         if (!action) return;
-        this.OnPageSelected(action.PageId);
 
-        // STARTING SOMETHING NEW MEANS A BLANK SURFACE. Pages are cached and re-inserted rather
-        // than rebuilt (that is what preserves a part-typed order across a trip to another rail
-        // item), so navigating alone hands back whatever was on screen last time. A page that can
-        // be started fresh says so by exposing `Reset()`; one that must NOT be blanked simply does
-        // not, which is why this asks rather than destroying the cached view.
-        const page = this.mounted.get(action.PageId)?.instance as { Reset?: () => unknown } | undefined;
-        if (typeof page?.Reset === 'function') void page.Reset();
+        if (action.EntityName) {
+            this.navigationService.OpenEntityRecord(action.EntityName, new CompositeKey());
+            return;
+        }
+
+        if (action.PageId) {
+            this.OnPageSelected(action.PageId);
+
+            // STARTING SOMETHING NEW MEANS A BLANK SURFACE. Pages are cached and re-inserted rather
+            // than rebuilt (that is what preserves a part-typed order across a trip to another rail
+            // item), so navigating alone hands back whatever was on screen last time. A page that can
+            // be started fresh says so by exposing `Reset()`; one that must NOT be blanked simply does
+            // not, which is why this asks rather than destroying the cached view.
+            const page = this.mounted.get(action.PageId)?.instance as { Reset?: () => unknown } | undefined;
+            if (typeof page?.Reset === 'function') void page.Reset();
+        }
     }
 
     /* ── Confirm ────────────────────────────────────────────────────────── */
@@ -776,7 +783,7 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
 })
 export class PaymentsSectionResource extends MJOSectionBaseComponent {
     protected override get primaryAction() {
-        return { Label: 'Take a payment', Icon: 'fa-solid fa-plus', PageId: 'entry' };
+        return { Label: 'New payment', Icon: 'fa-solid fa-plus', EntityName: MJO_ENTITIES.PaymentHeader };
     }
 
     protected get subPages(): OrdersSubPage[] {
@@ -793,8 +800,6 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
     }
     protected resolvePage(pageId: string): Type<unknown> | null {
         switch (pageId) {
-            case 'entry':
-                return MJOPaymentEntryPageComponent;
             case 'list':
                 return MJOPaymentsListPageComponent;
             case 'dashboard':

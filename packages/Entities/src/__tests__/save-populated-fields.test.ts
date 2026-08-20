@@ -5,12 +5,14 @@ describe('IsSavePopulatedFieldError', () => {
     const noneSaved = () => false;
     const allSaved = () => true;
 
-    it('drops OrderNumber on a new header', () => {
+    it('drops OrderNumber and PaymentNumber on a new header', () => {
         expect(IsSavePopulatedFieldError('OrderNumber', false, noneSaved)).toBe(true);
+        expect(IsSavePopulatedFieldError('PaymentNumber', false, noneSaved)).toBe(true);
     });
 
-    it('keeps OrderNumber once the header is saved', () => {
+    it('keeps OrderNumber and PaymentNumber once the header is saved', () => {
         expect(IsSavePopulatedFieldError('OrderNumber', true, noneSaved)).toBe(false);
+        expect(IsSavePopulatedFieldError('PaymentNumber', true, noneSaved)).toBe(false);
     });
 
     it('drops UnitPrice / CompanyID / LineNumber on a new line', () => {

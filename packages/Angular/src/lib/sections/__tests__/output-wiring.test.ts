@@ -35,7 +35,6 @@ const NOTIFICATION_ONLY = new Set([
     'Applied',        // account credit: Orders.ApplyAccountCredit already ran
     'Refunded',       // refund: Orders.RefundPayment already ran
     'ReturnCreated',  // return: Orders.ConfirmOrder already ran
-    'CaptureRequested', // payment entry: Orders.CapturePayment already ran
     'LineOpened',     // opens an inline panel the page owns
     'OpenInAccounting', // deep link into a different app
 ]);
@@ -96,20 +95,6 @@ describe('page outputs are wired to the section', () => {
         // Adding to it is a decision worth making deliberately, because every
         // entry is a control a user can press that does nothing.
         expect([...AWAITING_OPERATION]).toEqual([]);
-    });
-
-    it('captures a payment through the operation, not an unheard event', () => {
-        const page = readFileSync(
-            join(LIB, 'pages', 'payments', 'payment-entry.page.ts'),
-            'utf8',
-        );
-        expect(page).toMatch(/OrdersCapturePaymentOperation/);
-        // The fee is the server's number. A client-side rate is a client-side
-        // general-ledger amount, and the 2.9% placeholder that used to be here is
-        // exactly the kind of figure that drifts from the ledger unnoticed.
-        expect(page).not.toMatch(/0\.029/);
-        // Retries must not take the money twice.
-        expect(page).toMatch(/IdempotencyKey/);
     });
 
     it('points every primary button at a page that exists', () => {

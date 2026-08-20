@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
 import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.component';
@@ -112,7 +112,7 @@ import { LocalDay, ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@m
                         </thead>
                         <tbody>
                             @for (payment of LatestPayments; track payment.ID) {
-                                <tr>
+                                <tr (click)="PaymentOpened.emit(payment)" style="cursor: pointer;">
                                     <td><span class="mono">{{ payment.PaymentNumber }}</span></td>
                                     <td>{{ payerOf(payment) }}</td>
                                     <td>{{ payment.PaymentType ?? '—' }}</td>
@@ -213,6 +213,8 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
      * first pass on, so later verify passes agree.
      */
     private readonly cdr = inject(ChangeDetectorRef);
+
+    @Output() PaymentOpened = new EventEmitter<mjBizAppsOrdersPaymentHeaderEntity>();
 
     private payments: mjBizAppsOrdersPaymentHeaderEntity[] = [];
 
