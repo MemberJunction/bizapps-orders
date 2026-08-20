@@ -168,6 +168,44 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             OnClick: async () => this.RunConfirm(),
         });
 
+        this.RegisterToolbarItem({
+            Key: 'void-order',
+            Text: 'Void',
+            Icon: 'fa-solid fa-ban',
+            Variant: 'secondary',
+            Mode: 'both',
+            Order: 6,
+            Visible: (record) => {
+                const ord = record as OrderHeaderEntity;
+                return !ord?.IsBookedOrder && ord?.Status !== 'Voided' && !!ord?.IsSaved;
+            },
+            OnClick: async () => {
+                if (!this.record) return;
+                this.record.Status = 'Voided';
+                await this.record.Save();
+                this.cdr.detectChanges();
+            },
+        });
+
+        this.RegisterToolbarItem({
+            Key: 'reopen-draft',
+            Text: 'Reopen as draft',
+            Icon: 'fa-solid fa-arrow-rotate-left',
+            Variant: 'primary',
+            Mode: 'both',
+            Order: 5,
+            Visible: (record) => {
+                const ord = record as OrderHeaderEntity;
+                return ord?.Status === 'Voided' && !!ord?.IsSaved;
+            },
+            OnClick: async () => {
+                if (!this.record) return;
+                this.record.Status = 'Draft';
+                await this.record.Save();
+                this.cdr.detectChanges();
+            },
+        });
+
         this.cdr.detectChanges();
     }
 

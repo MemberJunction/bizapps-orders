@@ -3,29 +3,13 @@
  *
  * WHY IT EXISTS
  * `CK_OrderHeader_Status` enforced the legal SET of statuses and nothing enforced the legal MOVES.
- * `Fulfilled → Draft` saved. `Voided → Confirmed` saved. A voided order could come back to life,
- * keep the journal entries its reversal had already unwound, and be shipped — every row valid, the
- * constraint satisfied, and nothing looking.
- *
- * `OrderStatusBehavior` has the table and its own unit tests walk all thirty-six pairs. This bundle
- * proves the table is actually WIRED: that the refusal happens inside `OrderEntityServer.Save`,
- * which is the one path a workflow, a form, an operation and a fixture all go through, and that a
- * refused save leaves the row exactly as it was.
- *
- * THE CHECKS THAT EARN THEIR KEEP
- *   · OS4 — a refused transition ROLLS NOTHING BACK because it never started. The status on disk is
- *     unchanged and, critically, no second journal entry exists.
- *   · OS5 — Voided is final on the real path. This is the one that was exploitable: re-confirming a
- *     voided order would book against a reversal that already stands.
- *   · OS7 — the refusal reaches the caller as a MESSAGE. A bare `false` from a save is how the UI
- *     ends up showing "could not save" for a rule the user could have satisfied.
  *
  * WHAT IT PROVES
  *   OS1   every legal forward move is accepted on the real save path
- *   OS2   a booked order cannot be returned to an editable state
- *   OS3   any live order can be voided
+ *   OS2   a booked order cannot be returned to an editable state or voided in-place
+ *   OS3   unconfirmed orders can move freely between Draft, Quoted, and Voided
  *   OS4   a refused move changes nothing on disk and books nothing
- *   OS5   Voided is terminal — no status can be reached from it
+ *   OS5   unconfirmed Voided orders can reopen to Draft or Quoted, but cannot confirm directly
  *   OS6   a new order may be created directly in a booked status (D17)
  *   OS7   the refusal carries a reason a caller can read
  *   OS8   an unknown status is refused before the CHECK constraint sees it
@@ -114,12 +98,12 @@ export const OrderStatusChecks: NamedCheck[] = [
   },
   {
     Id: "order-status.OS2",
-    Name: "OS2: a booked order cannot be returned to an editable state",
+    Name: "OS2: a booked order cannot be returned to an editable state or voided in-place",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
-        // Confirm books journal entries (D8). Going back to Draft would leave those entries standing
-        // against an order somebody is now editing underneath them.
+        // Confirm books journal entries (D8). Going back to Draft/Quoted or Voided in-place would leave
+        // those entries standing or bypass reversal orders.
         const confirmed = await ConfirmOrder(ctx.User, {
           CompanyID: Fx().CoA.ID,
           BillToOrganizationID: Fx().Customers.OrganizationID,
@@ -127,9 +111,9 @@ export const OrderStatusChecks: NamedCheck[] = [
         });
         Assert(confirmed.Saved, `confirm failed: ${confirmed.Message}`);
 
-        for (const editable of ["Draft", "Quoted"]) {
-          const result = await moveTo(confirmed.Order as never, editable);
-          AssertEqual(result.Saved, false, `Confirmed must not become ${editable}`);
+        for (const refusedTarget of ["Draft", "Quoted", "Voided"]) {
+          const result = await moveTo(confirmed.Order as never, refusedTarget);
+          AssertEqual(result.Saved, false, `Confirmed must not become ${refusedTarget}`);
           AssertEqual(
             (await statusOf(ctx, confirmed.Order.ID as string)).Status,
             "Confirmed",
@@ -140,15 +124,29 @@ export const OrderStatusChecks: NamedCheck[] = [
   },
   {
     Id: "order-status.OS3",
-    Name: "OS3: any live order can be voided",
+    Name: "OS3: unconfirmed orders can move freely between Draft, Quoted, and Voided",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
-        for (const from of ["Draft", "Quoted"] as const) {
-          const order = await orderIn(ctx, from);
-          const result = await moveTo(order as never, "Voided");
-          Assert(result.Saved, `${from} should be voidable: ${result.Message}`);
-        }
+        // Draft -> Voided -> Draft
+        const draftOrder = await orderIn(ctx, "Draft");
+        const voidDraft = await moveTo(draftOrder as never, "Voided");
+        Assert(voidDraft.Saved, `Draft should be voidable: ${voidDraft.Message}`);
+        AssertEqual((await statusOf(ctx, draftOrder.ID as string)).Status, "Voided", "order is voided");
+
+        const unvoidDraft = await moveTo(draftOrder as never, "Draft");
+        Assert(unvoidDraft.Saved, `Voided draft should reopen to Draft: ${unvoidDraft.Message}`);
+        AssertEqual((await statusOf(ctx, draftOrder.ID as string)).Status, "Draft", "reopened as draft");
+
+        // Quoted -> Voided -> Quoted
+        const quotedOrder = await orderIn(ctx, "Quoted");
+        const voidQuote = await moveTo(quotedOrder as never, "Voided");
+        Assert(voidQuote.Saved, `Quoted should be voidable: ${voidQuote.Message}`);
+        AssertEqual((await statusOf(ctx, quotedOrder.ID as string)).Status, "Voided", "quote is voided");
+
+        const unvoidQuote = await moveTo(quotedOrder as never, "Quoted");
+        Assert(unvoidQuote.Saved, `Voided quote should reopen to Quoted: ${unvoidQuote.Message}`);
+        AssertEqual((await statusOf(ctx, quotedOrder.ID as string)).Status, "Quoted", "reopened as quote");
       }),
   },
   {
@@ -179,18 +177,25 @@ export const OrderStatusChecks: NamedCheck[] = [
   },
   {
     Id: "order-status.OS5",
-    Name: "OS5: Voided is terminal on the real save path",
+    Name: "OS5: unconfirmed Voided orders can reopen to Draft or Quoted, but cannot confirm directly",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
-        // THE ONE THAT WAS EXPLOITABLE. Re-confirming a voided order books against a reversal that
-        // already stands — the customer is charged twice and both records look correct.
         const order = await orderIn(ctx, "Draft");
         Assert((await moveTo(order as never, "Voided")).Saved, "the order voids");
 
-        for (const target of ["Draft", "Quoted", "Confirmed", "Posted", "Fulfilled"]) {
+        // Can move to Draft
+        Assert((await moveTo(order as never, "Draft")).Saved, "can reopen as Draft");
+        Assert((await moveTo(order as never, "Voided")).Saved, "can void again");
+
+        // Can move to Quoted
+        Assert((await moveTo(order as never, "Quoted")).Saved, "can reopen as Quoted");
+        Assert((await moveTo(order as never, "Voided")).Saved, "can void again");
+
+        // Cannot move directly to Confirmed, Posted, or Fulfilled
+        for (const target of ["Confirmed", "Posted", "Fulfilled"]) {
           const result = await moveTo(order as never, target);
-          AssertEqual(result.Saved, false, `Voided must not become ${target}`);
+          AssertEqual(result.Saved, false, `Voided must not become ${target} directly`);
           AssertEqual((await statusOf(ctx, order.ID as string)).Status, "Voided", "and stays voided");
         }
       }),
@@ -222,7 +227,7 @@ export const OrderStatusChecks: NamedCheck[] = [
         const refused = await moveTo(order as never, "Confirmed");
         AssertEqual(refused.Saved, false, "refused");
         Assert(/voided/i.test(refused.Message), `the message names the state it is in: ${refused.Message}`);
-        Assert(/final/i.test(refused.Message), `and says it is final: ${refused.Message}`);
+        Assert(/reopen/i.test(refused.Message), `and says how to reopen: ${refused.Message}`);
       }),
   },
   {

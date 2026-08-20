@@ -792,6 +792,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             if (term?.IsProrated && term.ProrationFactor != null) {
                 line.Quantity = Math.round(line.Quantity * term.ProrationFactor * 1e4) / 1e4;
             }
+            if (term) {
+                if (term.StartDate) line.ServicePeriodStart = term.StartDate;
+                if (term.EndDate) line.ServicePeriodEnd = term.EndDate;
+            }
 
             // Events carry their own service period — the event happens when it happens.
             await this.applyEventServicePeriod(line);
@@ -929,6 +933,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         const persisted: mjBizAppsOrdersOrderLineEntity[] = [];
         for (const line of this.Lines.Items) {
+            const serverLine = line as unknown as { BypassBookedCheck?: boolean };
+            serverLine.BypassBookedCheck = true;
             const saved = await line.Save(options);
             if (!saved) {
                 throw new Error(
@@ -1825,6 +1831,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // could never show subscription detail for a line. Set here because the
             // line is already being saved on the next statement; it costs no extra write.
             line.SubscriptionID = subscriptionID;
+            const serverLine = line as unknown as { BypassBookedCheck?: boolean };
+            serverLine.BypassBookedCheck = true;
             await line.Save(options);
         }
 

@@ -102,13 +102,16 @@ export class OrderLineEntityServer extends OrderLineEntity {
         return result;
     }
 
+    /** Set by OrderEntityServer when saving lines as part of an order graph save/booking. */
+    public BypassBookedCheck = false;
+
     /**
      * A new line saved on its own (not through the order graph) still has to
      * refuse a booked parent. Header.Validate covers the graph path; this
      * covers the standalone path.
      */
     private async refuseNewLineOnBookedOrder(result: ValidationResult): Promise<void> {
-        if (this.IsSaved || !this.OrderHeaderID) return;
+        if (this.IsSaved || !this.OrderHeaderID || this.BypassBookedCheck) return;
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const lookup = await rv.RunView<{ ID: string; Status: string }>(
@@ -127,7 +130,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
         result.Errors.push(
             new ValidationErrorInfo(
                 'OrderHeaderID',
-                `Order line cannot be added — the order is booked. Voiding is how booked money is undone.`,
+                `Order line cannot be added — the order is booked. Corrections to booked orders go through reversal orders.`,
                 this.OrderHeaderID,
                 ValidationErrorType.Failure,
             ),

@@ -38,30 +38,27 @@ export function IsOrderStatus(value: string | null | undefined): value is OrderS
 /**
  * Where each status may go.
  *
- * THE SHAPE OF THE LIFECYCLE. `Draft` and `Quoted` are the two editable states and may move to each
- * other freely — quoting a draft and pulling a quote back for edit are both ordinary. `Confirmed` is
- * the irreversible step: it books journal entries (D8), which is why nothing returns to an editable
- * state from there. After it the order advances forward only, and the sole way back out is `Voided`.
- *
- * `Voided` IS TERMINAL, and that is the entry that matters most. A voided order has given back what
- * it took — the reversal exists as its own record (D53) — so re-confirming it would book a second
- * time against a reversal that already stands. There is no legitimate route out, and offering one
- * would make "voided" mean "voided for now".
- *
- * `Fulfilled` is terminal-but-voidable: goods can be returned after they ship, and that is a void
- * plus a return order, not an edit of the original.
+ * THE SHAPE OF THE LIFECYCLE.
+ * - `Draft` and `Quoted` are the two pre-booking editable states. They may move to each other
+ *   freely, or be moved to `Voided` (pre-booking void), or advance to `Confirmed` (booking gate).
+ * - `Voided` (unconfirmed): An unconfirmed order in `Voided` may be reopened back to `Draft` or
+ *   `Quoted`. Direct transition from `Voided` to `Confirmed` is blocked (must reopen as Draft/Quote first).
+ * - `Confirmed` is the irreversible booking gate: it books journal entries (D8), which is why
+ *   nothing returns to an editable state or moves to `Voided` from there.
+ * - After `Confirmed`, the order advances forward (`Confirmed` → `Posted` → `Fulfilled`).
+ * - Post-booking cancellations/corrections go through **Reversal Orders** (D16/D53) rather than in-place
+ *   status changes to `Voided`, ensuring correcting journal entries are properly recorded.
+ * - `Fulfilled` is the terminal stage of an order lifecycle.
  *
  * A status may always be re-saved as itself — an ordinary row update that touches other columns.
  */
 const TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
     Draft: ['Quoted', 'Confirmed', 'Voided'],
     Quoted: ['Draft', 'Confirmed', 'Voided'],
-    // Posted is the accounting-period step; Fulfilled is reachable directly because an order with
-    // nothing to ship auto-advances past it (see FulfillmentBehavior).
-    Confirmed: ['Posted', 'Fulfilled', 'Voided'],
-    Posted: ['Fulfilled', 'Voided'],
-    Fulfilled: ['Voided'],
-    Voided: [],
+    Confirmed: ['Posted', 'Fulfilled'],
+    Posted: ['Fulfilled'],
+    Fulfilled: [],
+    Voided: ['Draft', 'Quoted'],
 };
 
 export interface TransitionVerdict {
@@ -97,6 +94,20 @@ export function CanTransition(from: string | null | undefined, to: string | null
     if (from === to) return { Allowed: true };
 
     if (TRANSITIONS[from].includes(to)) return { Allowed: true };
+
+    if (IsBooked(from) && to === 'Voided') {
+        return {
+            Allowed: false,
+            Reason: `A booked order (${from}) cannot be voided in-place. Create a reversal order to cancel or refund lines (D53).`,
+        };
+    }
+
+    if (from === 'Voided' && to === 'Confirmed') {
+        return {
+            Allowed: false,
+            Reason: `A voided order cannot be confirmed directly. Reopen it as Draft or Quoted first.`,
+        };
+    }
 
     const onward = TRANSITIONS[from];
     return {
@@ -136,6 +147,9 @@ export function CanOfferConfirm(status: string | null | undefined): TransitionVe
     }
     if (IsBooked(status)) {
         return { Allowed: false, Reason: 'This order is already booked.' };
+    }
+    if (status === 'Voided') {
+        return { Allowed: false, Reason: 'Reopen this voided order as a Draft or Quote before confirming.' };
     }
     return CanTransition(status, 'Confirmed');
 }

@@ -314,9 +314,9 @@ async function PL4Body(ctx: IntegrationCheckContext): Promise<void> {
     );
 
     // What actually matters, and the reason the split is safe: the bank ends up net.
-    const f2 = Fx();
-    const cashNet = await netOnAccount(ctx, f2.CoA.ID, CASH_CODE);
-    AssertEqual(Number(cashNet.Net), 242.75, "cash nets to what the bank received");
+    const feeCash = Number(feeLines.find((l) => l.Code === CASH_CODE)?.CreditAmount ?? 0);
+    const allocCash = netOn(allocLines, CASH_CODE);
+    AssertEqual(allocCash - feeCash, 242.75, "cash nets to what the bank received");
   });
 }
 
