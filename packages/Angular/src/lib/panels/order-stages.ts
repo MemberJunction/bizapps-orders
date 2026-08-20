@@ -76,7 +76,11 @@ export function BuildOrderStages(
     requiresFulfillment = false,
 ): MJOStepperStage[] {
     if (current === 'Voided') {
-        return [{ Stage: 'Voided', Reachable: false, Note: 'This order was voided before it booked.' }];
+        return [
+            { Stage: 'Voided', Reachable: false, Note: 'This unconfirmed order is currently voided.' },
+            { Stage: 'Draft', Reachable: true, Note: 'Reopen as draft for editing.' },
+            { Stage: 'Quoted', Reachable: true, Note: 'Reopen as quote.' },
+        ];
     }
 
     const at = STAGE_ORDER.indexOf(current);
@@ -142,7 +146,11 @@ export function ActionsForStage(current: MJOOrderStage): Array<{ Key: string; La
                 { Key: 'document', Label: 'Bill' },
             ];
         case 'Voided':
-            return [{ Key: 'document', Label: 'Bill' }];
+            return [
+                { Key: 'reopen-draft', Label: 'Reopen as draft' },
+                { Key: 'reopen-quoted', Label: 'Reopen as quote' },
+                { Key: 'document', Label: 'Bill' },
+            ];
         default:
             return [];
     }

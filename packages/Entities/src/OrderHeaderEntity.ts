@@ -177,11 +177,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
     /** The refusal message for an illegal move, shared by `Validate()` and the server's early gate. */
     protected statusTransitionRefusal(verdict: TransitionVerdict): string {
-        return (
-            `${verdict.Reason} (order ${this.OrderNumber ?? 'not yet numbered'}). Voiding is how a ` +
-            `booked order is undone; a reversal is its own record rather than an edit of the ` +
-            `original (D53).`
-        );
+        return `${verdict.Reason} (order ${this.OrderNumber ?? 'not yet numbered'}).`;
     }
 
     /**

@@ -29,10 +29,10 @@ import {
 const LEGAL: Record<OrderStatus, OrderStatus[]> = {
     Draft: ['Quoted', 'Confirmed', 'Voided'],
     Quoted: ['Draft', 'Confirmed', 'Voided'],
-    Confirmed: ['Posted', 'Fulfilled', 'Voided'],
-    Posted: ['Fulfilled', 'Voided'],
-    Fulfilled: ['Voided'],
-    Voided: [],
+    Confirmed: ['Posted', 'Fulfilled'],
+    Posted: ['Fulfilled'],
+    Fulfilled: [],
+    Voided: ['Draft', 'Quoted'],
 };
 
 describe('the whole transition matrix', () => {
@@ -50,37 +50,46 @@ describe('the whole transition matrix', () => {
 });
 
 describe('the rules the matrix encodes', () => {
-    it('lets a draft and a quote move to each other freely', () => {
-        // Both are editable; quoting a draft and pulling a quote back for edit are ordinary.
+    it('lets Draft, Quoted, and Voided move between each other freely before booking', () => {
         expect(CanTransition('Draft', 'Quoted').Allowed).toBe(true);
         expect(CanTransition('Quoted', 'Draft').Allowed).toBe(true);
+        expect(CanTransition('Draft', 'Voided').Allowed).toBe(true);
+        expect(CanTransition('Voided', 'Draft').Allowed).toBe(true);
+        expect(CanTransition('Quoted', 'Voided').Allowed).toBe(true);
+        expect(CanTransition('Voided', 'Quoted').Allowed).toBe(true);
     });
 
-    it('never returns a booked order to an editable state', () => {
-        // Confirm books journal entries (D8). Going back to Draft would leave the entries standing
-        // against an order that is being edited underneath them.
+    it('never returns a booked order to an editable state or voided in-place', () => {
+        // Confirm books journal entries (D8). Going back to Draft/Quoted or Voided in-place would
+        // leave the entries standing or bypass reversal orders.
         for (const booked of ['Confirmed', 'Posted', 'Fulfilled'] as const) {
             expect(CanTransition(booked, 'Draft').Allowed).toBe(false);
             expect(CanTransition(booked, 'Quoted').Allowed).toBe(false);
+            expect(CanTransition(booked, 'Voided').Allowed).toBe(false);
         }
     });
 
-    it('treats Voided as final — nothing comes back', () => {
-        // A voided order has given back what it took, and the reversal is its own record. Re-confirming
-        // would book a second time against a reversal that already stands.
-        for (const status of ORDER_STATUSES) {
-            if (status === 'Voided') continue;
-            expect(CanTransition('Voided', status).Allowed).toBe(false);
-        }
-        expect(IsTerminal('Voided')).toBe(true);
-        expect(NextStatuses('Voided')).toEqual([]);
+    it('lets Voided return to Draft and Quoted, but not directly to Confirmed', () => {
+        expect(CanTransition('Voided', 'Draft').Allowed).toBe(true);
+        expect(CanTransition('Voided', 'Quoted').Allowed).toBe(true);
+        expect(CanTransition('Voided', 'Confirmed').Allowed).toBe(false);
+        expect(CanTransition('Voided', 'Posted').Allowed).toBe(false);
+        expect(CanTransition('Voided', 'Fulfilled').Allowed).toBe(false);
+        expect(IsTerminal('Voided')).toBe(false);
+        expect(NextStatuses('Voided')).toEqual(['Draft', 'Quoted']);
     });
 
-    it('lets any live status be voided', () => {
-        for (const status of ORDER_STATUSES) {
-            if (status === 'Voided') continue;
-            expect(CanTransition(status, 'Voided').Allowed).toBe(true);
-        }
+    it('treats Fulfilled as terminal', () => {
+        expect(IsTerminal('Fulfilled')).toBe(true);
+        expect(NextStatuses('Fulfilled')).toEqual([]);
+    });
+
+    it('only allows Draft and Quoted to be voided (pre-booking void)', () => {
+        expect(CanTransition('Draft', 'Voided').Allowed).toBe(true);
+        expect(CanTransition('Quoted', 'Voided').Allowed).toBe(true);
+        expect(CanTransition('Confirmed', 'Voided').Allowed).toBe(false);
+        expect(CanTransition('Posted', 'Voided').Allowed).toBe(false);
+        expect(CanTransition('Fulfilled', 'Voided').Allowed).toBe(false);
     });
 
     it('lets Confirmed reach Fulfilled without passing through Posted', () => {
@@ -119,13 +128,12 @@ describe('creation and bad input', () => {
         const refused = CanTransition('Fulfilled', 'Draft');
         expect(refused.Allowed).toBe(false);
         expect(refused.Reason).toContain('Fulfilled');
-        expect(refused.Reason).toContain('Draft');
-        // The reason names the way out rather than only the refusal.
-        expect(refused.Reason).toContain('Voided');
+        expect(refused.Reason).toContain('final');
     });
 
-    it('says plainly when a status is final rather than listing nothing', () => {
-        expect(CanTransition('Voided', 'Confirmed').Reason).toMatch(/final/i);
+    it('says plainly when a transition is blocked', () => {
+        expect(CanTransition('Voided', 'Confirmed').Reason).toMatch(/reopen it as draft or quoted/i);
+        expect(CanTransition('Confirmed', 'Voided').Reason).toMatch(/reversal order/i);
     });
 
     it('recognises exactly the six legal statuses', () => {
@@ -165,10 +173,11 @@ describe('what a status permits', () => {
         expect(CanOfferConfirm('Fulfilled').Allowed).toBe(false);
         expect(CanOfferConfirm('Voided').Allowed).toBe(false);
         expect(CanOfferConfirm('Confirmed').Reason).toMatch(/already booked/i);
+        expect(CanOfferConfirm('Voided').Reason).toMatch(/reopen/i);
     });
 
     it('has exactly one terminal status', () => {
-        expect(ORDER_STATUSES.filter(IsTerminal)).toEqual(['Voided']);
+        expect(ORDER_STATUSES.filter(IsTerminal)).toEqual(['Fulfilled']);
     });
 
     it('never reports a status as both editable and booked', () => {

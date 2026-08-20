@@ -58,11 +58,8 @@ describe('BuildOrderStages', () => {
         expect(reachable('Fulfilled')).toEqual([]);
     });
 
-    it('collapses a Voided order to a single terminal stage', () => {
-        const stages = BuildOrderStages('Voided');
-        expect(stages).toHaveLength(1);
-        expect(stages[0].Stage).toBe('Voided');
-        expect(stages[0].Reachable).toBe(false);
+    it('lets a Voided order reopen to Draft or Quoted', () => {
+        expect(reachable('Voided')).toEqual(['Draft', 'Quoted']);
     });
 
     it('explains every blocked stage rather than leaving a dead end', () => {
