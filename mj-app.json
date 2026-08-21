@@ -5,7 +5,7 @@
   "displayName": "BizApps Orders",
   "description": "Unified order management for MemberJunction — products, orders, payments, subscriptions. The Order is the transactional substrate and the A/R primitive; payments and subscriptions are aspects of the same business event. Emits balanced journal entries into BizApps Accounting.",
   "version": "5.0.0",
-  "license": "ISC",
+  "license": "BUSL-1.1",
   "icon": "fa-solid fa-cart-shopping",
   "publisher": {
     "name": "MemberJunction",
