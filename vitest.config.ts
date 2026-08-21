@@ -26,6 +26,17 @@ export default defineConfig({
         // Each package's tests are independent and none of them touch a database, so there is no
         // ordering requirement to preserve here.
         passWithNoTests: false,
+        server: {
+            deps: {
+                // Every BizApps `*-ng` package is `"type": "module"` but ngc emits extensionless
+                // relative specifiers (`./lib/generated/generated-forms.module`), which Node's ESM
+                // resolver rejects. Bundlers resolve them, which is why the Angular build is fine
+                // and only the Node-side test runner trips. Inlining these routes them through
+                // Vite's resolver instead of externalizing them to Node, so the real modules stay
+                // in the graph -- nothing is stubbed or mocked away.
+                inline: [/@mj-biz-apps[\\/][^\\/]+-ng[\\/]/],
+            },
+        },
     },
     resolve: {
         alias: {
