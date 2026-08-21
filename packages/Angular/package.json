@@ -19,7 +19,7 @@
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",
   "dependencies": {
-    "@memberjunction/ng-hierarchy-tree": "6.1.0-edge.2",
+    "@memberjunction/ng-hierarchy-tree": "6.1.0-edge.3",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-ng": ">=0.1.0",
     "@mj-biz-apps/common-entities": "5.33.2",
