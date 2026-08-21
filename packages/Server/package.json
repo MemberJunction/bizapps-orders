@@ -18,6 +18,9 @@
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",
   "devDependencies": {
+    "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
+    "@mj-biz-apps/accounting-entities": ">=0.1.0",
+    "@mj-biz-apps/accounting-server": ">=0.1.0",
     "@types/express": "^5.0.6",
     "typescript": "^5.9.3"
   },
