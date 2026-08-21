@@ -1,7 +1,6 @@
 ---
 "@mj-biz-apps/orders-entities": minor
 "@mj-biz-apps/orders-core-entities-server": minor
-"@mj-biz-apps/orders-integration-tests": patch
 ---
 
 Move order lines onto an MJ 6.1 related-record collection, and split the order rules across the two
