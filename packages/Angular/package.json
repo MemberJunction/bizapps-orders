@@ -12,7 +12,7 @@
     "/dist"
   ],
   "scripts": {
-    "build": "ngc && npm run build:styles",
+    "build": "ngc && tsc-alias -f && npm run build:styles",
     "test": "echo \"No tests configured yet\"",
     "build:styles": "node -e \"require('node:fs').mkdirSync('dist/lib/styles',{recursive:true});require('node:fs').copyFileSync('src/lib/styles/orders-kit.css','dist/lib/styles/orders-kit.css')\""
   },
