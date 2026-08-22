@@ -26,9 +26,9 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "5.0.0",
-    "@mj-biz-apps/orders-server": "5.0.0",
-    "@mj-biz-apps/orders-core-entities-server": "5.0.0"
+    "@mj-biz-apps/orders-entities": "5.1.0",
+    "@mj-biz-apps/orders-server": "5.1.0",
+    "@mj-biz-apps/orders-core-entities-server": "5.1.0"
   },
   "peerDependencies": {
     "@memberjunction/core": "^6.1.0-edge.1",
