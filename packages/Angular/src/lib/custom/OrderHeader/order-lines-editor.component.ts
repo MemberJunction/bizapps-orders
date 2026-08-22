@@ -205,12 +205,23 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.cdr.detectChanges();
     }
 
+    private readonly hydratingLineIds = new Set<string>();
+
     public ExtensionFor(line: mjBizAppsOrdersOrderLineEntity): BaseEntity | null {
         if (line.EntityInfo?.Name !== MJO_ENTITIES.OrderLine) {
             return line;
         }
         if (line instanceof OrderLineEntity) {
-            return line.Extension?.Entity ?? null;
+            if (line.Extension?.Entity) {
+                return line.Extension.Entity;
+            }
+            if (line.IsSaved && !this.hydratingLineIds.has(line.ID)) {
+                const extName = this.ProductFor(line)?.OrderLineExtensionEntity;
+                if (extName) {
+                    void this.hydrateSingleLine(line, extName);
+                }
+            }
+            return null;
         }
         return (line as unknown as OrderLineEntity).Extension?.Entity ?? null;
     }
@@ -257,6 +268,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     private unbindOrder(): void {
         this.expandedLineIds.clear();
+        this.hydratingLineIds.clear();
     }
 
     private async addPlainLine(product: MJOProductOption): Promise<void> {
@@ -278,16 +290,28 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.expandedLineIds.add(line.ID);
     }
 
+    private async hydrateSingleLine(line: OrderLineEntity, extName: string): Promise<void> {
+        if (this.hydratingLineIds.has(line.ID)) return;
+        this.hydratingLineIds.add(line.ID);
+        try {
+            CachedExtensionEntityInfo(this.metadata, extName);
+            await line.Extension.EnsureEntity(extName);
+            this.cdr.detectChanges();
+        } finally {
+            this.hydratingLineIds.delete(line.ID);
+        }
+    }
+
     private async hydrateExtensions(): Promise<void> {
         if (!this._order) return;
+        if (this.Catalog.length === 0) await this.loadCatalog();
         for (const line of this.Lines) {
             const extName = this.ProductFor(line)?.OrderLineExtensionEntity;
             if (extName && line.IsSaved) {
-                CachedExtensionEntityInfo(this.metadata, extName);
                 if (line instanceof OrderLineEntity) {
-                    await line.Extension.EnsureEntity(extName);
+                    await this.hydrateSingleLine(line, extName);
                 } else if ((line as unknown as OrderLineEntity).Extension) {
-                    await (line as unknown as OrderLineEntity).Extension.EnsureEntity(extName);
+                    await this.hydrateSingleLine(line as unknown as OrderLineEntity, extName);
                 }
             }
         }
