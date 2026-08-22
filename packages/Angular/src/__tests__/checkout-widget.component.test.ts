@@ -48,6 +48,42 @@ describe('MJCheckoutWidgetComponent', () => {
         });
     });
 
+    describe('customUI configuration and theming', () => {
+        it('prefers customUI.css and customUI.js over legacy top-level properties', () => {
+            component.config = {
+                unitPrice: 25,
+                customCSS: '.legacy { color: blue; }',
+                customJS: 'console.log("legacy");',
+                theme: { primaryColor: '#000000' },
+                customUI: {
+                    css: '.modern { color: red; }',
+                    js: 'console.log("modern");',
+                    theme: { primaryColor: '#ff0000' },
+                    componentOverrideKey: 'CustomDonationSlider'
+                }
+            } as CheckoutWidgetConfig;
+
+            expect(component.activeCSS()).toBe('.modern { color: red; }');
+            expect(component.activeJS()).toBe('console.log("modern");');
+            expect(component.activeTheme()?.primaryColor).toBe('#ff0000');
+            expect(component.activeComponentOverrideKey()).toBe('CustomDonationSlider');
+        });
+
+        it('falls back to top-level customCSS and customJS when customUI is omitted', () => {
+            component.config = {
+                unitPrice: 25,
+                customCSS: '.legacy { color: blue; }',
+                customJS: 'console.log("legacy");',
+                theme: { primaryColor: '#000000' }
+            } as CheckoutWidgetConfig;
+
+            expect(component.activeCSS()).toBe('.legacy { color: blue; }');
+            expect(component.activeJS()).toBe('console.log("legacy");');
+            expect(component.activeTheme()?.primaryColor).toBe('#000000');
+            expect(component.activeComponentOverrideKey()).toBeNull();
+        });
+    });
+
     describe('dynamic extension fields and unit synchronization', () => {
         it('uses default attendee fields when no custom fields provided', () => {
             component.config = { unitPrice: 50 } as CheckoutWidgetConfig;

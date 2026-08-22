@@ -107,3 +107,4 @@ export * from './date-cell';
  * It reads days, it does not parse them — `ToISODate` above is the one place that interprets a cell.
  */
 export * from './overdue';
+export * from './configuration-types';

@@ -16,7 +16,9 @@ import {
     mjBizAppsOrdersCheckoutWidgetDistributionEntity,
     mjBizAppsOrdersCheckoutWidgetEntity,
     mjBizAppsOrdersProductEntity,
-    mjBizAppsOrdersProductTypeEntity
+    mjBizAppsOrdersProductTypeEntity,
+    type CheckoutWidgetConfiguration,
+    type ProductTypeConfiguration
 } from '@mj-biz-apps/orders-entities';
 import { IdentityClaimEngineServer } from '@memberjunction/core-entities-server';
 
@@ -175,13 +177,24 @@ export class CheckoutSessionService {
             }
         }
 
-        let configObj: Record<string, unknown> = {};
+        let configObj: CheckoutWidgetConfiguration = {};
         if (widget.Configuration) {
             try {
-                configObj = JSON.parse(widget.Configuration) as Record<string, unknown>;
+                configObj = JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration;
             } catch {
                 configObj = {};
             }
+        }
+
+        // Ensure customUI section is populated, cascading from entity fields if needed
+        if (!configObj.customUI) {
+            configObj.customUI = {};
+        }
+        if (widget.CustomCSS && !configObj.customUI.css) {
+            configObj.customUI.css = widget.CustomCSS;
+        }
+        if (widget.CustomJS && !configObj.customUI.js) {
+            configObj.customUI.js = widget.CustomJS;
         }
 
         return {
@@ -192,8 +205,8 @@ export class CheckoutSessionService {
             WidgetName: widget.Name,
             CompanyID: widget.CompanyID,
             Configuration: configObj,
-            CustomCSS: widget.CustomCSS,
-            CustomJS: widget.CustomJS,
+            CustomCSS: configObj.customUI.css || widget.CustomCSS,
+            CustomJS: configObj.customUI.js || widget.CustomJS,
             ExpiresAt: session.ExpiresAt.toISOString()
         };
     }
@@ -405,11 +418,26 @@ export class CheckoutSessionService {
                     const prodLoaded = await product.Load(inputLine.ProductID);
                     if (prodLoaded) {
                         maxQuantityPerLine = product.MaxQuantityPerLine ?? null;
-                        if (!targetExtensionEntity && product.ProductTypeID) {
+                        if (product.ProductTypeID) {
                             const pType = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, contextUser);
                             const pTypeLoaded = await pType.Load(product.ProductTypeID);
                             if (pTypeLoaded) {
-                                targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
+                                if (!targetExtensionEntity) {
+                                    targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
+                                }
+                                if (pType.Configuration) {
+                                    try {
+                                        const pTypeConfig = JSON.parse(pType.Configuration) as ProductTypeConfiguration;
+                                        if (pTypeConfig.unitMode === 'perUnit') {
+                                            maxQuantityPerLine = 1;
+                                        }
+                                        if (pTypeConfig.maxQuantity && !maxQuantityPerLine) {
+                                            maxQuantityPerLine = pTypeConfig.maxQuantity;
+                                        }
+                                    } catch {
+                                        // Ignore malformed JSON in Configuration
+                                    }
+                                }
                             }
                         }
                     }

@@ -1,13 +1,13 @@
 <div class="mj-checkout-widget-container"
-    [style.--mj-primary-color]="config?.theme?.primaryColor || '#2563eb'"
-    [style.--mj-accent-color]="config?.theme?.accentColor || '#3b82f6'"
-    [style.--mj-border-radius]="config?.theme?.borderRadius || '8px'"
-    [style.--mj-bg-color]="config?.theme?.backgroundColor || '#ffffff'"
-    [style.--mj-text-color]="config?.theme?.textColor || '#0f172a'"
-    [style.--mj-font-family]="config?.theme?.fontFamily || 'inherit'">
+    [style.--mj-primary-color]="activeTheme()?.primaryColor || '#2563eb'"
+    [style.--mj-accent-color]="activeTheme()?.accentColor || '#3b82f6'"
+    [style.--mj-border-radius]="activeTheme()?.borderRadius || '8px'"
+    [style.--mj-bg-color]="activeTheme()?.backgroundColor || '#ffffff'"
+    [style.--mj-text-color]="activeTheme()?.textColor || '#0f172a'"
+    [style.--mj-font-family]="activeTheme()?.fontFamily || 'inherit'">
 
-    @if (config?.customCSS) {
-        <style>{{ config?.customCSS }}</style>
+    @if (activeCSS()) {
+        <style>{{ activeCSS() }}</style>
     }
 
     <!-- Widget Header -->

@@ -3,7 +3,8 @@
  *
  * Provides a responsive, embeddable checkout surface for single-item, multi-unit
  * extended products, zero-dollar registrations, and custom domain extensions
- * with dynamic metadata-driven field generation, custom CSS theming, and custom JS lifecycle hooks.
+ * with dynamic metadata-driven field generation, customUI JSON configuration,
+ * CSS theming, and custom JS lifecycle hooks.
  *
  * @module @mj-biz-apps/orders-angular/checkout-widget
  */
@@ -22,8 +23,13 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import type {
+    CustomUIConfiguration,
+    CustomUIThemeConfiguration,
+    CheckoutWidgetConfiguration
+} from '@mj-biz-apps/orders-entities';
 
-export interface CheckoutWidgetTheme {
+export interface CheckoutWidgetTheme extends CustomUIThemeConfiguration {
     primaryColor?: string;
     accentColor?: string;
     borderRadius?: string;
@@ -51,7 +57,7 @@ export interface CheckoutAttendee {
     [key: string]: unknown;
 }
 
-export interface CheckoutWidgetConfig {
+export interface CheckoutWidgetConfig extends CheckoutWidgetConfiguration {
     title?: string;
     description?: string;
     productId?: string;
@@ -65,6 +71,7 @@ export interface CheckoutWidgetConfig {
     theme?: CheckoutWidgetTheme;
     customCSS?: string;
     customJS?: string;
+    customUI?: CustomUIConfiguration;
     successMessage?: string;
     redirectUrl?: string;
     extensionEntityName?: string;
@@ -146,6 +153,27 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
         }));
     });
 
+    // Unified customUI computed values
+    public activeCSS = computed<string>(() => {
+        const cfg = this._config();
+        return cfg?.customUI?.css || cfg?.customCSS || '';
+    });
+
+    public activeJS = computed<string>(() => {
+        const cfg = this._config();
+        return cfg?.customUI?.js || cfg?.customJS || '';
+    });
+
+    public activeTheme = computed<CustomUIThemeConfiguration | null>(() => {
+        const cfg = this._config();
+        return cfg?.customUI?.theme || cfg?.theme || null;
+    });
+
+    public activeComponentOverrideKey = computed<string | null>(() => {
+        const cfg = this._config();
+        return cfg?.customUI?.componentOverrideKey || null;
+    });
+
     // Dynamic field list
     public activeFieldDefs = computed<ExtensionFieldDef[]>(() => {
         const custom = this._config()?.extensionFields;
@@ -189,6 +217,9 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
 
     public ngOnInit(): void {
         this.syncUnits();
+        if (this.activeJS()) {
+            this.mountCustomJS(this.activeJS());
+        }
         this.executeLifecycleHook('onInit', {
             config: this.config,
             distributionSlug: this.distributionSlug
@@ -198,8 +229,8 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
     public ngOnChanges(changes: SimpleChanges): void {
         if (changes['config']) {
             this.syncUnits();
-            if (changes['config'].currentValue?.customJS) {
-                this.mountCustomJS(changes['config'].currentValue.customJS);
+            if (this.activeJS()) {
+                this.mountCustomJS(this.activeJS());
             }
         }
     }

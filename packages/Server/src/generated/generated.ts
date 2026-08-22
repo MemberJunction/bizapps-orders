@@ -3897,7 +3897,7 @@ export class mjBizAppsOrdersOrderHeader_ {
     ReversesOrderHeader?: string;
         
     @Field({nullable: true}) 
-    @MaxLength(255)
+    @MaxLength(100)
     SourceCheckoutWidget?: string;
         
     @Field(() => Float, {nullable: true}) 
@@ -9004,6 +9004,9 @@ export class mjBizAppsOrdersProductType_ {
     @MaxLength(255)
     PricingDriverClass?: string;
         
+    @Field({nullable: true, description: `Extensible JSON configuration for this product type including customUI (js, css, theme, componentOverrideKey), unitMode, allowQuantity, and fieldOverrides.`}) 
+    Configuration?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     DefaultRevenueRecognitionType?: string;
@@ -9067,6 +9070,9 @@ export class CreatemjBizAppsOrdersProductTypeInput {
     @Field({ nullable: true })
     PricingDriverClass: string | null;
 
+    @Field({ nullable: true })
+    Configuration: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -9124,6 +9130,9 @@ export class UpdatemjBizAppsOrdersProductTypeInput {
 
     @Field({ nullable: true })
     PricingDriverClass?: string | null;
+
+    @Field({ nullable: true })
+    Configuration?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

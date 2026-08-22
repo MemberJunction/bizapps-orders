@@ -18,7 +18,15 @@ class MockCheckoutWidget {
     Name = 'Annual AI Summit Registration';
     CompanyID = 'comp-10';
     Status = 'Active';
-    Configuration = JSON.stringify({ theme: { primaryColor: '#2563eb' }, allowCoupons: true });
+    Configuration = JSON.stringify({
+        theme: { primaryColor: '#2563eb' },
+        allowCoupons: true,
+        customUI: {
+            css: '.custom-summit { border: 2px solid red; }',
+            js: 'console.log("Summit Widget Loaded");',
+            theme: { primaryColor: '#059669' }
+        }
+    });
     CustomCSS: string | null = null;
     CustomJS: string | null = null;
     Load = mockWidgetLoad;
@@ -51,6 +59,13 @@ class MockProductType {
     ID = 'ptype-event';
     Name = 'Event Registration';
     OrderLineExtensionEntity = 'MJ_BizApps_Orders: Event Order Lines';
+    Configuration = JSON.stringify({
+        unitMode: 'perUnit',
+        customUI: {
+            css: '.event-line { background: #f0fdf4; }',
+            js: 'console.log("Event Type Hook");'
+        }
+    });
     Load = mockProductTypeLoad;
 }
 
@@ -213,12 +228,14 @@ describe('CheckoutSessionService', () => {
             expect(res2.Success).toBe(false);
         });
 
-        it('initializes a session and parses widget configuration', async () => {
+        it('initializes a session and extracts customUI configuration', async () => {
             const res = await CheckoutSessionService.InitializeSession('summit-2026', 'client-xyz');
             expect(res.Success).toBe(true);
             expect(res.SessionID).toBe('sess-123');
             expect(res.WidgetName).toBe('Annual AI Summit Registration');
-            expect(res.Configuration).toHaveProperty('allowCoupons', true);
+            expect(res.CustomCSS).toBe('.custom-summit { border: 2px solid red; }');
+            expect(res.CustomJS).toBe('console.log("Summit Widget Loaded");');
+            expect(res.Configuration?.customUI).toBeDefined();
         });
     });
 
@@ -277,8 +294,8 @@ describe('CheckoutSessionService', () => {
             expect(res.Lines[0].Description).toContain('Bob Jones');
         });
 
-        it('splits multi-unit purchases into discrete lines when MaxQuantityPerLine is 1', async () => {
-            mockProductInstance.MaxQuantityPerLine = 1;
+        it('splits multi-unit purchases into discrete lines when ProductType Configuration unitMode is perUnit', async () => {
+            mockProductInstance.MaxQuantityPerLine = null; // Let ProductType Configuration enforce unitMode
             const linesInput = [
                 {
                     ProductID: 'prod-1',
