@@ -881,12 +881,12 @@ const server = http.createServer(async (req, res) => {
                     throw new Error('Annual Conference Product CONF-2027 not found in DB.');
                 }
 
-                // 3. Create Draft Order via BaseEntity
+                // 3. Create Order via BaseEntity
                 const order = await md.GetEntityObject('MJ_BizApps_Orders: Order Headers', contextUser);
                 order.NewRecord();
                 order.CompanyID = product.CompanyID;
                 order.BillToPersonID = person.ID;
-                order.Status = 'Draft';
+                order.ShipToPersonID = person.ID;
                 const qty = data.quantity || 1;
                 const unitPrice = data.unitPrice ?? 275.00;
                 const totalGross = unitPrice * qty;
@@ -903,10 +903,9 @@ const server = http.createServer(async (req, res) => {
                     order.ExternalDocumentNumber = data.stripePaymentMethodId;
                 }
 
-                // 4. Attach Order Lines to order.Lines collection
+                // 4. Attach Order Lines with EventOrderLine extension to order.Lines collection
                 for (let i = 0; i < qty; i++) {
-                    const line = await md.GetEntityObject('MJ_BizApps_Orders: Order Lines', contextUser);
-                    line.NewRecord();
+                    const line = await order.Lines.Create();
                     line.ProductID = product.ID;
                     line.CompanyID = product.CompanyID;
                     line.LineNumber = i + 1;
@@ -916,22 +915,47 @@ const server = http.createServer(async (req, res) => {
                     line.LineTotalNet = unitPrice;
                     const att = data.attendees[i] || primaryAttendee;
                     line.Description = `${att.firstName || ''} ${att.lastName || ''} (${att.email || ''})`.trim();
-                    order.Lines.Add(line);
+
+                    // Resolve or create Person for attendee
+                    let attPersonID = person.ID;
+                    if (att.email && att.email.toLowerCase() !== email.toLowerCase()) {
+                        const attEmailEscaped = att.email.trim().toLowerCase().replace(/'/g, "''");
+                        const attRes = await rv.RunView({
+                            EntityName: 'MJ_BizApps_Common: People',
+                            ExtraFilter: `Email = '${attEmailEscaped}'`,
+                            ResultType: 'entity_object'
+                        }, contextUser);
+                        let attPerson = attRes.Results?.[0];
+                        if (!attPerson) {
+                            attPerson = await md.GetEntityObject('MJ_BizApps_Common: People', contextUser);
+                            attPerson.NewRecord();
+                            attPerson.FirstName = att.firstName || 'Attendee';
+                            attPerson.LastName = att.lastName || (i + 1).toString();
+                            attPerson.Email = att.email.trim().toLowerCase();
+                            await attPerson.Save();
+                        }
+                        attPersonID = attPerson.ID;
+                    }
+
+                    // Attach and configure EventOrderLine extension companion
+                    const ext = await line.Extension.EnsureEntity('MJ_BizApps_Orders: Event Order Lines');
+                    if (ext) {
+                        ext.Set('PersonID', attPersonID);
+                        if (att.dietaryPreferences) ext.Set('DietaryPreferences', att.dietaryPreferences);
+                        if (att.allergies) ext.Set('Allergies', att.allergies);
+                        if (att.comments) ext.Set('Comments', att.comments);
+                    }
                 }
 
-                // 5. Save Order with Lines
-                const savedOrder = await order.Save();
-                if (!savedOrder) {
-                    throw new Error(`Failed to save Order via BaseEntity: ${order.LatestResult?.Message}`);
-                }
-
-                // 6. Confirm Order (Triggers full booking, GL ledger journal entries, entitlements)
-                order.Status = 'Confirmed';
-                order.ConfirmedAt = new Date();
-                const confirmed = await order.Save();
-                if (!confirmed) {
-                    throw new Error(`Failed to confirm Order via BaseEntity: ${order.LatestResult?.Message}`);
-                }
+                // 5. Confirm Order directly via order.Confirm()
+                // This triggers OrderEntityServer.Save() booking transaction:
+                // - Persists OrderHeader
+                // - Persists OrderLines
+                // - Persists EventOrderLines via line.Extension.Save()
+                // - Calls Accounting.CreateJournalEntries to book GL ledger entries
+                // - Materializes subscriptions & grants entitlements
+                // - Stamps ConfirmedAt
+                await order.Confirm();
 
                 // 7. Mint IdentityClaim via IdentityClaimEngine
                 const orderEntityInfo = md.EntityByName('MJ_BizApps_Orders: Order Headers');

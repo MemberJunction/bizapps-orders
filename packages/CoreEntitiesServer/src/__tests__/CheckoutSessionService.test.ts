@@ -280,15 +280,15 @@ describe('CheckoutSessionService', () => {
     });
 
     describe('UpdateDraft', () => {
-        it('assembles draft order graph using order.Lines and saves atomically', async () => {
+        it('assembles draft order graph using order.Lines and saves state in session metadata', async () => {
             const linesInput = [
                 { ProductID: 'prod-1', Quantity: 2 }
             ];
 
             const res = await CheckoutSessionService.UpdateDraft('sess-123', 'guest@example.com', linesInput);
             expect(res.Success).toBe(true);
-            expect(mocks.mockOrderInstance.Save).toHaveBeenCalled();
             expect(mocks.mockSessionInstance.Save).toHaveBeenCalled();
+            expect(mocks.mockSessionInstance.MetadataJSON).toBeDefined();
             expect(res.Lines.length).toBe(1);
             expect(res.Lines[0].ProductID).toBe('prod-1');
         });
@@ -306,7 +306,7 @@ describe('CheckoutSessionService', () => {
 
             const res = await CheckoutSessionService.UpdateDraft('sess-123', 'alice@example.com', linesInput);
             expect(res.Success).toBe(true);
-            expect(mocks.mockOrderInstance.Save).toHaveBeenCalled();
+            expect(mocks.mockSessionInstance.Save).toHaveBeenCalled();
             expect(res.Lines[0].Description).toContain('Alice Smith');
         });
 
@@ -330,7 +330,7 @@ describe('CheckoutSessionService', () => {
 
             const res = await CheckoutSessionService.UpdateDraft('sess-123', 'bob@example.com', linesInput);
             expect(res.Success).toBe(true);
-            expect(mocks.mockOrderInstance.Save).toHaveBeenCalled();
+            expect(mocks.mockSessionInstance.Save).toHaveBeenCalled();
             expect(res.Lines[0].Description).toContain('Bob Jones');
         });
 
@@ -349,30 +349,34 @@ describe('CheckoutSessionService', () => {
 
             const res = await CheckoutSessionService.UpdateDraft('sess-123', 'a1@test.com', linesInput);
             expect(res.Success).toBe(true);
-            expect(mocks.mockOrderInstance.Lines.Items.length).toBe(2);
+            expect(res.Lines.length).toBe(2);
         });
     });
 
     describe('CompleteCheckout', () => {
         it('confirms $0 order immediately and creates identity claim via IdentityClaimEngineServer', async () => {
-            mocks.mockOrderInstance.TotalGross = 0;
             mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
 
             const res = await CheckoutSessionService.CompleteCheckout('sess-123');
             expect(res.Success).toBe(true);
             expect(res.Status).toBe('Confirmed');
-            expect(mocks.mockOrderInstance.Status).toBe('Confirmed');
             expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalled();
             expect(mocks.mockClaimCreate).toHaveBeenCalled();
         });
 
-        it('returns processing status for orders with a balance due', async () => {
-            mocks.mockOrderInstance.TotalGross = 500;
+        it('confirms paid order and executes BaseEntity lifecycle booking', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
 
             const res = await CheckoutSessionService.CompleteCheckout('sess-123');
             expect(res.Success).toBe(true);
-            expect(res.Status).toBe('Processing');
-            expect(mocks.mockSessionInstance.Status).toBe('Processing');
+            expect(res.Status).toBe('Confirmed');
+            expect(mocks.mockSessionInstance.Status).toBe('Confirmed');
+            expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalled();
         });
     });
 });

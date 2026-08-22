@@ -283,34 +283,26 @@ export class CheckoutSessionService {
     }
 
     /**
-     * Creates an order line entity instance, using polymorphic IS-A entity if available or standard line.
+     * Creates an order line entity instance attached to the order's Lines collection.
      */
     private static async createOrderLine(
         order: OrderHeaderEntity,
         targetExtensionEntity: string | null,
-        md: Metadata,
-        contextUser?: UserInfo
-    ): Promise<mjBizAppsOrdersOrderLineEntity> {
+        _md: Metadata,
+        _contextUser?: UserInfo
+    ): Promise<OrderLineEntity> {
+        const line = (await order.Lines.Create()) as OrderLineEntity;
         if (targetExtensionEntity) {
-            try {
-                const extObj = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(targetExtensionEntity, contextUser);
-                if (extObj && extObj.ISAParent) {
-                    extObj.NewRecord();
-                    order.Lines.Add(extObj);
-                    return extObj;
-                }
-            } catch {
-                // Fall back to standard line creation
-            }
+            await line.Extension.EnsureEntity(targetExtensionEntity);
         }
-        return (await order.Lines.Create()) as OrderLineEntity;
+        return line;
     }
 
     /**
      * Dynamically populates and coerces extension companion properties from a field map.
      */
     private static async hydrateLineExtension(
-        line: mjBizAppsOrdersOrderLineEntity,
+        line: OrderLineEntity,
         extensionEntityName: string | null | undefined,
         fieldValues: Record<string, unknown>,
         contextUser?: UserInfo
@@ -336,35 +328,12 @@ export class CheckoutSessionService {
         // Auto-resolve PersonID if person fields exist on the entity or extension
         const resolvedPersonID = await this.resolveOrEnsurePerson(fieldValues, contextUser);
 
-        // 1. Direct field assignment on polymorphic line (e.g. EventOrderLineEntity)
-        const lineFieldsByName = new Map<string, EntityFieldInfo>((line.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f]));
-        if (resolvedPersonID) {
-            const pField = lineFieldsByName.get('personid') || lineFieldsByName.get('attendeepersonid');
-            if (pField && !pField.IsPrimaryKey && !pField.IsVirtual && pField.AllowUpdateAPI) {
-                line.Set(pField.Name, resolvedPersonID);
-            }
-        }
-
-        for (const [key, rawValue] of Object.entries(fieldValues)) {
-            const field = lineFieldsByName.get(key.toLowerCase());
-            if (field && !field.IsPrimaryKey && !field.IsVirtual && field.AllowUpdateAPI) {
-                let coerced = rawValue;
-                if (field.Type.toLowerCase().includes('int') && typeof rawValue === 'string') {
-                    coerced = parseInt(rawValue, 10);
-                } else if ((field.Type.toLowerCase().includes('decimal') || field.Type.toLowerCase().includes('money')) && typeof rawValue === 'string') {
-                    coerced = parseFloat(rawValue);
-                } else if (field.Type.toLowerCase() === 'bit' && typeof rawValue === 'string') {
-                    coerced = rawValue === 'true' || rawValue === '1';
-                }
-                line.Set(field.Name, coerced);
-            }
-        }
-
-        // 2. Also populate companion if line is base OrderLineEntity
-        if (line instanceof OrderLineEntity && extensionEntityName && line.EntityInfo?.Name !== extensionEntityName) {
+        if (extensionEntityName && line.Extension) {
             const ext = await line.Extension.EnsureEntity(extensionEntityName);
             if (ext) {
-                const extFieldsByName = new Map<string, EntityFieldInfo>((ext.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f]));
+                const extFieldsByName = new Map<string, EntityFieldInfo>(
+                    (ext.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f])
+                );
                 if (resolvedPersonID) {
                     const extPField = extFieldsByName.get('personid') || extFieldsByName.get('attendeepersonid');
                     if (extPField && !extPField.IsPrimaryKey && !extPField.IsVirtual && extPField.AllowUpdateAPI) {
@@ -420,8 +389,8 @@ export class CheckoutSessionService {
     }
 
     /**
-     * Assembles or updates a draft Order using the in-memory order graph (`order.Lines` and
-     * companion extensions) and persists the complete order graph in a single atomic transaction.
+     * Builds and prices draft order lines in memory, persisting the checkout state to the
+     * CheckoutSession without creating premature draft rows in the OrderHeader database table.
      */
     public static async UpdateDraft(
         sessionID: string,
@@ -463,20 +432,14 @@ export class CheckoutSessionService {
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
         await widget.Load(session.CheckoutWidgetID);
 
-        // Load existing draft order with lines or create a new OrderHeaderEntity
+        // Build in-memory Order graph for accurate pricing calculation without DB pollution
         const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
-        if (session.DraftOrderID) {
-            await order.LoadWithLines(session.DraftOrderID);
-            // Clear existing in-memory lines to rebuild from current input
-            order.Lines.Clear();
-        } else {
-            order.NewRecord();
-            order.CompanyID = widget.CompanyID;
-            order.Status = 'Draft';
-            order.Origin = 'Widget';
-            order.SourceCheckoutWidgetID = widget.ID;
-            order.OrderDate = new Date();
-        }
+        order.NewRecord();
+        order.CompanyID = widget.CompanyID;
+        order.Status = 'Draft';
+        order.Origin = 'Widget';
+        order.SourceCheckoutWidgetID = widget.ID;
+        order.OrderDate = new Date();
 
         const normalizedEmail = (email || '').trim().toLowerCase();
         session.Email = normalizedEmail;
@@ -488,7 +451,6 @@ export class CheckoutSessionService {
 
         let sequence = 1;
         for (const inputLine of lines) {
-            // Introspect Product and ProductType to discover extension configuration
             let targetExtensionEntity = inputLine.ExtensionData?.EntityName ?? null;
             let maxQuantityPerLine: number | null = null;
 
@@ -528,7 +490,6 @@ export class CheckoutSessionService {
 
             const unitPayloads = this.extractUnitPayloads(inputLine);
 
-            // If product enforces 1-unit per line (e.g. conference tickets) and multiple unit payloads exist:
             if ((maxQuantityPerLine === 1 || unitPayloads.length > 1) && unitPayloads.length > 0) {
                 for (const unitData of unitPayloads) {
                     const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
@@ -550,7 +511,7 @@ export class CheckoutSessionService {
             }
         }
 
-        // Price the draft order in memory so lines have UnitPrice and TotalGross before saving
+        // Price the draft order in memory
         try {
             const pricingService = new OrderPricingService({
                 Provider: (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
@@ -580,28 +541,9 @@ export class CheckoutSessionService {
             console.warn('[CheckoutSessionService] Pricing walk error on draft:', pricingErr);
         }
 
-        // Single atomic graph save for order header + lines + companions
-        const savedOrder = await order.Save();
-        if (!savedOrder) {
-            return {
-                Success: false,
-                ErrorMessage: `Failed to save draft order: ${order.LatestResult?.Message ?? 'Validation error'}`,
-                SessionID: sessionID,
-                Subtotal: 0,
-                Tax: 0,
-                Adjustments: 0,
-                TotalGross: 0,
-                RequiresPayment: false,
-                Lines: []
-            };
-        }
-
-        session.DraftOrderID = order.ID;
-        await session.Save();
-
-        // Build line summaries from the saved order graph
+        // Build line summaries from the in-memory priced order graph
         const lineSummaries: CheckoutLineSummary[] = (order.Lines.Items as OrderLineEntity[]).map(l => ({
-            ID: l.ID,
+            ID: l.ID || `line-${l.LineNumber}`,
             ProductID: l.ProductID,
             Quantity: l.Quantity,
             UnitPrice: l.UnitPrice ?? 0,
@@ -611,11 +553,20 @@ export class CheckoutSessionService {
 
         const totalGross = order.TotalGross ?? lineSummaries.reduce((sum, l) => sum + l.ExtendedPrice, 0);
 
+        // Store checkout state in session metadata JSON — no orphan OrderHeader rows
+        session.MetadataJSON = JSON.stringify({
+            Lines: lines,
+            Email: normalizedEmail,
+            TotalGross: totalGross,
+            LineSummaries: lineSummaries
+        });
+        await session.Save();
+
         return {
             Success: true,
             SessionID: session.ID,
-            OrderID: order.ID,
-            OrderNumber: order.OrderNumber,
+            OrderID: session.DraftOrderID || '',
+            OrderNumber: '',
             Subtotal: totalGross,
             Tax: 0,
             Adjustments: 0,
@@ -626,7 +577,8 @@ export class CheckoutSessionService {
     }
 
     /**
-     * Completes the checkout session: confirms $0 orders immediately or prepares payment capture.
+     * Completes the checkout session: atomically builds the Order graph, attaches extensions,
+     * prices lines, confirms the order, and executes full BaseEntity lifecycle booking (GL ledger entries).
      */
     public static async CompleteCheckout(
         sessionID: string,
@@ -644,77 +596,148 @@ export class CheckoutSessionService {
             };
         }
 
-        if (!session.DraftOrderID) {
-            return {
-                Success: false,
-                ErrorMessage: 'No draft order associated with session',
-                SessionID: sessionID,
-                Status: session.Status
-            };
-        }
+        const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
+        await widget.Load(session.CheckoutWidgetID);
 
-        const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
-        const orderLoaded = await order.LoadWithLines(session.DraftOrderID);
-        if (!orderLoaded) {
-            return {
-                Success: false,
-                ErrorMessage: 'Failed to load draft order',
-                SessionID: sessionID,
-                Status: session.Status
-            };
-        }
-
-        const totalGross = order.TotalGross ?? 0;
-
-        // If $0 order (e.g. Free registration or 100% promo)
-        if (totalGross === 0) {
+        let linesInput: CheckoutLineInput[] = [];
+        if (session.MetadataJSON) {
             try {
-                await order.Confirm();
-            } catch (confirmErr) {
-                return {
-                    Success: false,
-                    ErrorMessage: `Failed to confirm free order: ${confirmErr instanceof Error ? confirmErr.message : String(confirmErr)}`,
-                    SessionID: sessionID,
-                    Status: session.Status
-                };
+                const parsed = JSON.parse(session.MetadataJSON) as { Lines?: CheckoutLineInput[] };
+                if (parsed.Lines && Array.isArray(parsed.Lines)) {
+                    linesInput = parsed.Lines;
+                }
+            } catch {
+                // Ignore metadata parse error
             }
+        }
 
-            session.Status = 'Confirmed';
-            await session.Save();
+        // Atomically create the OrderHeaderEntity
+        const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
+        order.NewRecord();
+        order.CompanyID = widget.CompanyID;
+        order.BillToPersonID = session.PersonID ?? null;
+        order.ShipToPersonID = session.PersonID ?? null;
+        order.Origin = 'Widget';
+        order.OrderType = 'Sale';
+        order.SourceCheckoutWidgetID = widget.ID;
+        order.OrderDate = new Date();
 
-            // If session has email, issue identity claim for external access
-            if (session.Email) {
+        let sequence = 1;
+        for (const inputLine of linesInput) {
+            let targetExtensionEntity = inputLine.ExtensionData?.EntityName ?? null;
+            let maxQuantityPerLine: number | null = null;
+
+            if (inputLine.ProductID) {
                 try {
-                    await IdentityClaimEngineServer.Instance.CreateClaim({
-                        ClaimTypeName: 'EntitlementGrant',
-                        NormalizedEmail: session.Email,
-                        EntityID: ORDER_HEADER_ENTITY,
-                        RecordID: order.ID,
-                        Payload: { OrderID: order.ID, OrderNumber: order.OrderNumber },
-                        SendEmail: true
-                    }, contextUser);
+                    const product = await md.GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, contextUser);
+                    if (await product.Load(inputLine.ProductID)) {
+                        maxQuantityPerLine = product.MaxQuantityPerLine ?? null;
+                        if (product.ProductTypeID) {
+                            const pType = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, contextUser);
+                            if (await pType.Load(product.ProductTypeID)) {
+                                if (!targetExtensionEntity) {
+                                    targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
+                                }
+                                if (pType.Configuration) {
+                                    try {
+                                        const pTypeConfig = JSON.parse(pType.Configuration) as ProductTypeConfiguration;
+                                        if (pTypeConfig.unitMode === 'perUnit') maxQuantityPerLine = 1;
+                                    } catch {
+                                        // Ignore malformed JSON
+                                    }
+                                }
+                            }
+                        }
+                    }
                 } catch {
-                    // Identity claim creation logged but non-blocking for completion
+                    // Fallback
                 }
             }
 
+            const unitPayloads = this.extractUnitPayloads(inputLine);
+
+            if ((maxQuantityPerLine === 1 || unitPayloads.length > 1) && unitPayloads.length > 0) {
+                for (const unitData of unitPayloads) {
+                    const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
+                    line.ProductID = inputLine.ProductID;
+                    line.Quantity = 1;
+                    line.LineNumber = sequence++;
+
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser);
+                }
+            } else {
+                const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
+                line.ProductID = inputLine.ProductID;
+                line.Quantity = inputLine.Quantity;
+                line.LineNumber = sequence++;
+
+                if (unitPayloads.length > 0) {
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser);
+                }
+            }
+        }
+
+        // Price lines before confirmation
+        const pricingService = new OrderPricingService({
+            Provider: (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
+            User: contextUser ?? (order.ContextCurrentUser as UserInfo),
+        });
+
+        await pricingService.Price({
+            OrderHeaderID: order.ID || null,
+            CompanyID: widget.CompanyID,
+            BillToPersonID: order.BillToPersonID ?? null,
+            BillToOrganizationID: order.BillToOrganizationID ?? null,
+            OrderDate: order.OrderDate ?? new Date(),
+            ShipToAddressID: order.ShipToAddressID ?? null,
+            Lines: [...order.Lines.Items],
+            PromotionCodes: [],
+            ManualDiscounts: [],
+            Charges: [],
+        });
+
+        let sumGross = 0;
+        for (const line of order.Lines.Items) {
+            const extPrice = line.LineTotalGross ?? ((line.UnitPrice ?? 0) * (line.Quantity ?? 1));
+            sumGross += extPrice;
+        }
+        order.TotalGross = Math.round(sumGross * 100) / 100;
+        // Confirm order via BaseEntity lifecycle (executes GL booking, entitlement issuance, status latching)
+        try {
+            await order.Confirm();
+        } catch (confirmErr) {
             return {
-                Success: true,
-                SessionID: session.ID,
-                Status: 'Confirmed',
-                OrderID: order.ID,
-                OrderNumber: order.OrderNumber
+                Success: false,
+                ErrorMessage: `Failed to confirm order: ${confirmErr instanceof Error ? confirmErr.message : String(confirmErr)}`,
+                SessionID: sessionID,
+                Status: session.Status
             };
         }
 
-        // For paid orders, return processing status so client payment flow continues
-        session.Status = 'Processing';
+        session.Status = 'Confirmed';
+        session.DraftOrderID = order.ID;
         await session.Save();
+
+        // Mint Identity Claim for authenticated external access to order / entitlements
+        if (session.Email) {
+            try {
+                await IdentityClaimEngineServer.Instance.CreateClaim({
+                    ClaimTypeName: 'EntitlementGrant',
+                    NormalizedEmail: session.Email,
+                    EntityID: ORDER_HEADER_ENTITY,
+                    RecordID: order.ID,
+                    Payload: { OrderID: order.ID, OrderNumber: order.OrderNumber },
+                    SendEmail: true
+                }, contextUser);
+            } catch {
+                // Non-blocking
+            }
+        }
 
         return {
             Success: true,
             SessionID: session.ID,
-            Status: 'Processing',
+            Status: 'Confirmed',
             OrderID: order.ID,
             OrderNumber: order.OrderNumber
         };
