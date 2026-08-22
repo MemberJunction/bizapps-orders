@@ -594,7 +594,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
             if (currentQty === 1) {
                 heading.innerText = 'Your Attendee Information';
                 copyBtn.style.display = 'none';
-                const att = attendeesData[0] || { firstName: '', lastName: '', email: '', company: '', title: '' };
+                const att = attendeesData[0] || { firstName: '', lastName: '', email: '', company: '', title: '', dietaryPreferences: '', allergies: '', comments: '' };
 
                 container.innerHTML = \`
                     <div class="mj-form-grid">
@@ -611,12 +611,16 @@ const HTML_CONTENT = `<!DOCTYPE html>
                             <input type="email" id="att_email_0" value="\${att.email || ''}" oninput="updateAttendee(0, 'email', this.value)" required placeholder="janet.doer@example.com" />
                         </div>
                         <div class="mj-form-group">
-                            <label for="att_company_0">Company / Organization</label>
-                            <input type="text" id="att_company_0" value="\${att.company || ''}" oninput="updateAttendee(0, 'company', this.value)" placeholder="Acme Corp" />
+                            <label for="att_diet_0">Dietary Preferences</label>
+                            <input type="text" id="att_diet_0" value="\${att.dietaryPreferences || ''}" oninput="updateAttendee(0, 'dietaryPreferences', this.value)" placeholder="Vegetarian / Gluten-Free" />
                         </div>
                         <div class="mj-form-group">
-                            <label for="att_title_0">Job Title</label>
-                            <input type="text" id="att_title_0" value="\${att.title || ''}" oninput="updateAttendee(0, 'title', this.value)" placeholder="VP Engineering" />
+                            <label for="att_allergy_0">Allergies</label>
+                            <input type="text" id="att_allergy_0" value="\${att.allergies || ''}" oninput="updateAttendee(0, 'allergies', this.value)" placeholder="Peanuts / Shellfish / None" />
+                        </div>
+                        <div class="mj-form-group full">
+                            <label for="att_comments_0">Special Requests / Comments</label>
+                            <input type="text" id="att_comments_0" value="\${att.comments || ''}" oninput="updateAttendee(0, 'comments', this.value)" placeholder="Speaker badge, accessibility notes..." />
                         </div>
                     </div>
                 \`;
@@ -626,7 +630,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
 
                 let html = '';
                 for (let i = 0; i < currentQty; i++) {
-                    const att = attendeesData[i] || { firstName: '', lastName: '', email: '', company: '', title: '' };
+                    const att = attendeesData[i] || { firstName: '', lastName: '', email: '', company: '', title: '', dietaryPreferences: '', allergies: '', comments: '' };
                     html += \`
                         <div class="attendee-card">
                             <div class="attendee-title">Attendee #\${i + 1}</div>
@@ -643,6 +647,18 @@ const HTML_CONTENT = `<!DOCTYPE html>
                                     <label for="att_email_\${i}">Email *</label>
                                     <input type="email" id="att_email_\${i}" value="\${att.email || ''}" oninput="updateAttendee(\${i}, 'email', this.value)" required />
                                 </div>
+                                <div class="mj-form-group">
+                                    <label for="att_diet_\${i}">Dietary Preferences</label>
+                                    <input type="text" id="att_diet_\${i}" value="\${att.dietaryPreferences || ''}" oninput="updateAttendee(\${i}, 'dietaryPreferences', this.value)" placeholder="Vegetarian, Vegan, etc." />
+                                </div>
+                                <div class="mj-form-group">
+                                    <label for="att_allergy_\${i}">Allergies</label>
+                                    <input type="text" id="att_allergy_\${i}" value="\${att.allergies || ''}" oninput="updateAttendee(\${i}, 'allergies', this.value)" placeholder="Peanuts, Shellfish, etc." />
+                                </div>
+                                <div class="mj-form-group full">
+                                    <label for="att_comments_\${i}">Special Requests</label>
+                                    <input type="text" id="att_comments_\${i}" value="\${att.comments || ''}" oninput="updateAttendee(\${i}, 'comments', this.value)" placeholder="Accessibility, notes..." />
+                                </div>
                             </div>
                         </div>
                     \`;
@@ -653,7 +669,7 @@ const HTML_CONTENT = `<!DOCTYPE html>
 
         function updateAttendee(index, field, value) {
             if (!attendeesData[index]) {
-                attendeesData[index] = { firstName: '', lastName: '', email: '', company: '', title: '' };
+                attendeesData[index] = { firstName: '', lastName: '', email: '', company: '', title: '', dietaryPreferences: '', allergies: '', comments: '' };
             }
             attendeesData[index][field] = value;
         }
