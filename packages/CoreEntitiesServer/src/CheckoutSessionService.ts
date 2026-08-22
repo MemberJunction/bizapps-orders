@@ -8,10 +8,11 @@
  * @module @mj-biz-apps/orders-core-entities-server/CheckoutSessionService
  */
 
-import { BaseEntity, EntityFieldInfo, Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { BaseEntity, EntityFieldInfo, IMetadataProvider, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import {
     OrderHeaderEntity,
     OrderLineEntity,
+    OrderPricingService,
     mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersCheckoutSessionEntity,
     mjBizAppsOrdersCheckoutWidgetDistributionEntity,
@@ -549,6 +550,36 @@ export class CheckoutSessionService {
             }
         }
 
+        // Price the draft order in memory so lines have UnitPrice and TotalGross before saving
+        try {
+            const pricingService = new OrderPricingService({
+                Provider: (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
+                User: contextUser ?? (order.ContextCurrentUser as UserInfo),
+            });
+
+            await pricingService.Price({
+                OrderHeaderID: order.ID || null,
+                CompanyID: widget.CompanyID,
+                BillToPersonID: order.BillToPersonID ?? null,
+                BillToOrganizationID: order.BillToOrganizationID ?? null,
+                OrderDate: order.OrderDate ?? new Date(),
+                ShipToAddressID: order.ShipToAddressID ?? null,
+                Lines: [...order.Lines.Items],
+                PromotionCodes: [],
+                ManualDiscounts: [],
+                Charges: [],
+            });
+
+            let sumGross = 0;
+            for (const line of order.Lines.Items) {
+                const extPrice = line.LineTotalGross ?? ((line.UnitPrice ?? 0) * (line.Quantity ?? 1));
+                sumGross += extPrice;
+            }
+            order.TotalGross = Math.round(sumGross * 100) / 100;
+        } catch (pricingErr) {
+            console.warn('[CheckoutSessionService] Pricing walk error on draft:', pricingErr);
+        }
+
         // Single atomic graph save for order header + lines + companions
         const savedOrder = await order.Save();
         if (!savedOrder) {
@@ -623,18 +654,26 @@ export class CheckoutSessionService {
         }
 
         const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
-        await order.Load(session.DraftOrderID);
+        const orderLoaded = await order.LoadWithLines(session.DraftOrderID);
+        if (!orderLoaded) {
+            return {
+                Success: false,
+                ErrorMessage: 'Failed to load draft order',
+                SessionID: sessionID,
+                Status: session.Status
+            };
+        }
 
         const totalGross = order.TotalGross ?? 0;
 
         // If $0 order (e.g. Free registration or 100% promo)
         if (totalGross === 0) {
-            order.Status = 'Confirmed';
-            const saved = await order.Save();
-            if (!saved) {
+            try {
+                await order.Confirm();
+            } catch (confirmErr) {
                 return {
                     Success: false,
-                    ErrorMessage: `Failed to confirm free order: ${order.LatestResult?.Message}`,
+                    ErrorMessage: `Failed to confirm free order: ${confirmErr instanceof Error ? confirmErr.message : String(confirmErr)}`,
                     SessionID: sessionID,
                     Status: session.Status
                 };

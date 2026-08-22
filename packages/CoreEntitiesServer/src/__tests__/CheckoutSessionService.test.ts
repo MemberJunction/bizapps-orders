@@ -121,6 +121,10 @@ const mocks = vi.hoisted(() => {
         Load = mockOrderLoad;
         LoadWithLines = vi.fn().mockResolvedValue(true);
         Save = mockOrderSave;
+        Confirm = vi.fn().mockImplementation(() => {
+            this.Status = 'Confirmed';
+            return Promise.resolve();
+        });
         Lines = {
             Items: [] as MockOrderLine[],
             Create: vi.fn().mockImplementation(() => {
@@ -138,6 +142,16 @@ const mocks = vi.hoisted(() => {
         };
     }
 
+    class MockOrderPricingService {
+        Price = vi.fn().mockImplementation((ctx: { Lines: MockOrderLine[] }) => {
+            for (const line of ctx.Lines) {
+                line.UnitPrice = 100;
+                line.LineTotalGross = 100 * line.Quantity;
+            }
+            return Promise.resolve({});
+        });
+    }
+
     return {
         MockCheckoutWidget,
         MockCheckoutSession,
@@ -147,6 +161,7 @@ const mocks = vi.hoisted(() => {
         MockExtensionEntity,
         MockOrderLine,
         MockOrderHeader,
+        MockOrderPricingService,
         mockWidgetSave,
         mockWidgetLoad,
         mockSessionSave,
@@ -218,6 +233,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
 vi.mock('@mj-biz-apps/orders-entities', () => ({
     OrderHeaderEntity: mocks.MockOrderHeader,
     OrderLineEntity: mocks.MockOrderLine,
+    OrderPricingService: mocks.MockOrderPricingService,
     mjBizAppsOrdersOrderLineEntity: mocks.MockOrderLine,
     mjBizAppsOrdersCheckoutSessionEntity: mocks.MockCheckoutSession,
     mjBizAppsOrdersCheckoutWidgetDistributionEntity: class {},
@@ -346,7 +362,7 @@ describe('CheckoutSessionService', () => {
             expect(res.Success).toBe(true);
             expect(res.Status).toBe('Confirmed');
             expect(mocks.mockOrderInstance.Status).toBe('Confirmed');
-            expect(mocks.mockOrderInstance.Save).toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalled();
             expect(mocks.mockClaimCreate).toHaveBeenCalled();
         });
 
