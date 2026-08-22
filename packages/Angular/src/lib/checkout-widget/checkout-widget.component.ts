@@ -1,8 +1,9 @@
 /**
- * @fileoverview Adaptive Checkout Widget Component
+ * @fileoverview Generic Adaptive Checkout Widget Component
  *
- * Provides a responsive, embeddable checkout surface for single-item, multi-attendee event,
- * and zero-dollar registration flows with customizable branding and secure Stripe Elements tokenization.
+ * Provides a responsive, embeddable checkout surface for single-item, multi-unit
+ * extended products, zero-dollar registrations, and custom domain extensions
+ * with dynamic metadata-driven field generation, custom CSS theming, and custom JS lifecycle hooks.
  *
  * @module @mj-biz-apps/orders-angular/checkout-widget
  */
@@ -28,6 +29,17 @@ export interface CheckoutWidgetTheme {
     borderRadius?: string;
     fontFamily?: string;
     backgroundColor?: string;
+    textColor?: string;
+}
+
+export interface ExtensionFieldDef {
+    name: string;
+    label: string;
+    type: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select';
+    required?: boolean;
+    placeholder?: string;
+    defaultValue?: unknown;
+    options?: Array<{ label: string; value: string | number }>;
 }
 
 export interface CheckoutAttendee {
@@ -36,6 +48,7 @@ export interface CheckoutAttendee {
     email: string;
     company?: string;
     title?: string;
+    [key: string]: unknown;
 }
 
 export interface CheckoutWidgetConfig {
@@ -45,7 +58,7 @@ export interface CheckoutWidgetConfig {
     productName?: string;
     unitPrice?: number;
     currency?: string;
-    isEvent?: boolean;
+    unitMode?: 'perUnit' | 'perLine';
     allowQuantity?: boolean;
     maxQuantity?: number;
     stripePublishableKey?: string;
@@ -54,17 +67,31 @@ export interface CheckoutWidgetConfig {
     customJS?: string;
     successMessage?: string;
     redirectUrl?: string;
+    extensionEntityName?: string;
+    extensionFields?: ExtensionFieldDef[];
+    isEvent?: boolean;
 }
 
 export interface CheckoutSubmissionEvent {
     email: string;
     quantity: number;
     attendees: CheckoutAttendee[];
+    extensionData: {
+        entityName?: string;
+        fields?: Record<string, unknown>;
+        units?: Array<Record<string, unknown>>;
+    };
     totalGross: number;
     paymentToken?: string;
     stripePaymentMethodId?: string;
     stripePaymentIntentId?: string;
     sessionKey: string;
+}
+
+declare global {
+    interface Window {
+        MJCheckoutHooks?: Record<string, (arg1?: unknown, arg2?: unknown) => unknown>;
+    }
 }
 
 @Component({
@@ -81,7 +108,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
     @Input()
     public set config(val: CheckoutWidgetConfig | null) {
         this._config.set(val);
-        this.syncAttendees();
+        this.syncUnits();
     }
     public get config(): CheckoutWidgetConfig | null {
         return this._config();
@@ -96,19 +123,53 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
     @Output() public submitted = new EventEmitter<CheckoutSubmissionEvent>();
     @Output() public cancelled = new EventEmitter<void>();
 
-    // Form Signals
+    // Form state signals
     public email = signal<string>('');
     public firstName = signal<string>('');
     public lastName = signal<string>('');
     public company = signal<string>('');
     public title = signal<string>('');
     public quantity = signal<number>(1);
-    public attendees = signal<CheckoutAttendee[]>([]);
+
+    // Generic units array holding field maps for each unit
+    public units = signal<Array<Record<string, unknown>>>([]);
+
+    // Backward-compatibility signal for legacy attendees
+    public attendees = computed<CheckoutAttendee[]>(() => {
+        return this.units().map(u => ({
+            firstName: String(u['firstName'] || u['FirstName'] || ''),
+            lastName: String(u['lastName'] || u['LastName'] || ''),
+            email: String(u['email'] || u['Email'] || ''),
+            company: u['company'] ? String(u['company']) : (u['Company'] ? String(u['Company']) : undefined),
+            title: u['title'] ? String(u['title']) : (u['Title'] ? String(u['Title']) : undefined),
+            ...u
+        }));
+    });
+
+    // Dynamic field list
+    public activeFieldDefs = computed<ExtensionFieldDef[]>(() => {
+        const custom = this._config()?.extensionFields;
+        if (custom && custom.length > 0) {
+            return custom;
+        }
+        // Default standard attendee fields
+        return [
+            { name: 'firstName', label: 'First Name', type: 'text', required: true, placeholder: 'Jane' },
+            { name: 'lastName', label: 'Last Name', type: 'text', required: true, placeholder: 'Doe' },
+            { name: 'email', label: 'Email Address', type: 'text', required: true, placeholder: 'jane.doe@example.com' },
+            { name: 'company', label: 'Company / Organization', type: 'text', required: false, placeholder: 'Acme Corp' },
+            { name: 'title', label: 'Job Title', type: 'text', required: false, placeholder: 'Director' }
+        ];
+    });
 
     // Computed properties
     public isFree = computed(() => (this._config()?.unitPrice ?? 0) <= 0);
-    public isSingleEvent = computed(() => Boolean(this._config()?.isEvent) && this.quantity() === 1);
-    public isMultiAttendee = computed(() => Boolean(this._config()?.isEvent) && this.quantity() > 1);
+    public isPerUnit = computed(() => {
+        const cfg = this._config();
+        return cfg?.unitMode === 'perUnit' || Boolean(cfg?.isEvent);
+    });
+    public isSingleUnit = computed(() => !this.isPerUnit() || this.quantity() === 1);
+    public isMultiUnit = computed(() => this.isPerUnit() && this.quantity() > 1);
 
     public subtotal = computed(() => {
         const price = this._config()?.unitPrice ?? 0;
@@ -127,77 +188,114 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
     });
 
     public ngOnInit(): void {
-        this.syncAttendees();
+        this.syncUnits();
+        this.executeLifecycleHook('onInit', {
+            config: this.config,
+            distributionSlug: this.distributionSlug
+        });
     }
 
     public ngOnChanges(changes: SimpleChanges): void {
         if (changes['config']) {
-            this.syncAttendees();
+            this.syncUnits();
+            if (changes['config'].currentValue?.customJS) {
+                this.mountCustomJS(changes['config'].currentValue.customJS);
+            }
         }
+    }
+
+    private mountCustomJS(scriptContent: string): void {
+        if (!scriptContent || typeof window === 'undefined') return;
+        try {
+            const runner = new Function('widgetContext', scriptContent);
+            runner({ component: this, config: this.config });
+        } catch (err) {
+            console.warn('[MJCheckoutWidget] CustomJS evaluation notice:', err);
+        }
+    }
+
+    public executeLifecycleHook(hookName: string, payload?: unknown): unknown {
+        if (typeof window === 'undefined') return undefined;
+        try {
+            if (window.MJCheckoutHooks && typeof window.MJCheckoutHooks[hookName] === 'function') {
+                return window.MJCheckoutHooks[hookName](payload, { component: this, config: this.config });
+            }
+        } catch (err) {
+            console.warn(`[MJCheckoutWidget] Hook error in ${hookName}:`, err);
+        }
+        return undefined;
     }
 
     public onQuantityChange(newQty: number): void {
         const clamped = Math.max(1, Math.min(newQty, this.config?.maxQuantity ?? 50));
         this.quantity.set(clamped);
-        this.syncAttendees();
+        this.syncUnits();
+        this.executeLifecycleHook('onQuantityChange', { quantity: clamped });
     }
 
-    public syncAttendees(): void {
+    public syncUnits(): void {
         const currentQty = this.quantity();
-        const currentList = this.attendees();
-        const updated: CheckoutAttendee[] = [];
+        const currentUnits = this.units();
+        const updated: Array<Record<string, unknown>> = [];
 
         for (let i = 0; i < currentQty; i++) {
             if (i === 0) {
+                const primary = currentUnits[0] || {};
                 updated.push({
-                    firstName: currentList[0]?.firstName || this.firstName(),
-                    lastName: currentList[0]?.lastName || this.lastName(),
-                    email: currentList[0]?.email || this.email(),
-                    company: currentList[0]?.company || this.company(),
-                    title: currentList[0]?.title || this.title()
+                    ...primary,
+                    firstName: this.firstName() || (primary['firstName'] as string) || '',
+                    lastName: this.lastName() || (primary['lastName'] as string) || '',
+                    email: this.email() || (primary['email'] as string) || '',
+                    company: this.company() || (primary['company'] as string) || '',
+                    title: this.title() || (primary['title'] as string) || '',
                 });
-            } else if (currentList[i]) {
-                updated.push({ ...currentList[i] });
+            } else if (currentUnits[i]) {
+                updated.push({ ...currentUnits[i] });
             } else {
-                updated.push({
-                    firstName: '',
-                    lastName: '',
-                    email: '',
-                    company: this.company(),
-                    title: ''
-                });
+                const initial: Record<string, unknown> = {};
+                for (const field of this.activeFieldDefs()) {
+                    initial[field.name] = field.defaultValue ?? '';
+                }
+                if (this.company()) {
+                    initial['company'] = this.company();
+                }
+                updated.push(initial);
             }
         }
 
-        this.attendees.set(updated);
+        this.units.set(updated);
+    }
+
+    public updateUnitField(index: number, fieldName: string, value: unknown): void {
+        const list = [...this.units()];
+        if (list[index]) {
+            list[index] = { ...list[index], [fieldName]: value };
+            if (index === 0) {
+                if (fieldName === 'firstName') this.firstName.set(String(value ?? ''));
+                if (fieldName === 'lastName') this.lastName.set(String(value ?? ''));
+                if (fieldName === 'email') this.email.set(String(value ?? ''));
+                if (fieldName === 'company') this.company.set(String(value ?? ''));
+                if (fieldName === 'title') this.title.set(String(value ?? ''));
+            }
+            this.units.set(list);
+        }
     }
 
     public updateAttendee(index: number, field: keyof CheckoutAttendee, value: string): void {
-        const list = [...this.attendees()];
-        if (list[index]) {
-            list[index] = { ...list[index], [field]: value };
-            if (index === 0) {
-                if (field === 'firstName') this.firstName.set(value);
-                if (field === 'lastName') this.lastName.set(value);
-                if (field === 'email') this.email.set(value);
-                if (field === 'company') this.company.set(value);
-                if (field === 'title') this.title.set(value);
-            }
-            this.attendees.set(list);
-        }
+        this.updateUnitField(index, field as string, value);
     }
 
     public copyPrimaryToAll(): void {
-        const primary = this.attendees()[0];
+        const primary = this.units()[0];
         if (!primary) return;
-        const list = this.attendees().map((att, i) => {
-            if (i === 0) return att;
+        const list = this.units().map((unit, i) => {
+            if (i === 0) return unit;
             return {
-                ...att,
-                company: primary.company || att.company
+                ...unit,
+                company: primary['company'] || unit['company']
             };
         });
-        this.attendees.set(list);
+        this.units.set(list);
     }
 
     public isFormValid(): boolean {
@@ -205,10 +303,18 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
         if (!em || !em.includes('@')) return false;
         if (!this.firstName().trim() || !this.lastName().trim()) return false;
 
-        if (this.isMultiAttendee()) {
-            for (const att of this.attendees()) {
-                if (!att.firstName.trim() || !att.lastName.trim() || !att.email.trim() || !att.email.includes('@')) {
-                    return false;
+        const currentUnits = this.units();
+        const fields = this.activeFieldDefs();
+
+        if (this.isMultiUnit()) {
+            for (const unit of currentUnits) {
+                for (const field of fields) {
+                    if (field.required) {
+                        const val = unit[field.name];
+                        if (val === undefined || val === null || String(val).trim() === '') {
+                            return false;
+                        }
+                    }
                 }
             }
         }
@@ -224,13 +330,32 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
         if (!this.isFormValid() || this.isProcessing) return;
 
         const sessionKey = 'ck_sess_' + Math.random().toString(36).substring(2, 15);
-        this.submitted.emit({
+        const currentUnits = this.units();
+
+        const submission: CheckoutSubmissionEvent = {
             email: this.email().trim().toLowerCase(),
             quantity: this.quantity(),
             attendees: this.attendees(),
+            extensionData: {
+                entityName: this.config?.extensionEntityName,
+                fields: currentUnits[0] || {},
+                units: currentUnits
+            },
             totalGross: this.totalGross(),
             stripePaymentMethodId: this.isFree() ? undefined : (this.stripePaymentMethodId ?? 'pm_stripe_token_' + Math.random().toString(36).substring(2, 8)),
             sessionKey
-        });
+        };
+
+        // Execute custom validation hook if present
+        const customValidationResult = this.executeLifecycleHook('onValidate', submission);
+        if (customValidationResult === false || typeof customValidationResult === 'string') {
+            this.errorMessage = typeof customValidationResult === 'string' ? customValidationResult : 'Submission validation rejected.';
+            return;
+        }
+
+        // Execute pre-submit enrichment hook
+        this.executeLifecycleHook('onBeforeSubmit', submission);
+
+        this.submitted.emit(submission);
     }
 }

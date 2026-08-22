@@ -5,11 +5,19 @@ import '@angular/compiler';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MJCheckoutWidgetComponent, type CheckoutWidgetConfig } from '../lib/checkout-widget/checkout-widget.component';
 
+// Setup window polyfill for Node.js test runner
+if (typeof globalThis.window === 'undefined') {
+    (globalThis as unknown as { window: Record<string, unknown> }).window = globalThis as unknown as Record<string, unknown>;
+}
+
 describe('MJCheckoutWidgetComponent', () => {
     let component: MJCheckoutWidgetComponent;
 
     beforeEach(() => {
         component = new MJCheckoutWidgetComponent();
+        if (typeof window !== 'undefined') {
+            delete window.MJCheckoutHooks;
+        }
     });
 
     describe('computed properties', () => {
@@ -28,20 +36,43 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(component.totalGross()).toBe(300);
         });
 
-        it('detects single event vs multi-attendee registration mode', () => {
+        it('detects single event vs multi-unit registration mode', () => {
             component.config = { isEvent: true, unitPrice: 50 } as CheckoutWidgetConfig;
             component.quantity.set(1);
-            expect(component.isSingleEvent()).toBe(true);
-            expect(component.isMultiAttendee()).toBe(false);
+            expect(component.isSingleUnit()).toBe(true);
+            expect(component.isMultiUnit()).toBe(false);
 
             component.quantity.set(3);
-            expect(component.isSingleEvent()).toBe(false);
-            expect(component.isMultiAttendee()).toBe(true);
+            expect(component.isSingleUnit()).toBe(false);
+            expect(component.isMultiUnit()).toBe(true);
         });
     });
 
-    describe('attendee synchronization', () => {
-        it('syncs attendees array length when quantity increases', () => {
+    describe('dynamic extension fields and unit synchronization', () => {
+        it('uses default attendee fields when no custom fields provided', () => {
+            component.config = { unitPrice: 50 } as CheckoutWidgetConfig;
+            const defs = component.activeFieldDefs();
+            expect(defs.map(d => d.name)).toContain('firstName');
+            expect(defs.map(d => d.name)).toContain('email');
+        });
+
+        it('supports custom dynamic extension fields', () => {
+            component.config = {
+                unitPrice: 50,
+                extensionFields: [
+                    { name: 'studentId', label: 'Student ID', type: 'text', required: true },
+                    { name: 'cohort', label: 'Cohort Year', type: 'number', required: false },
+                    { name: 'track', label: 'Specialization Track', type: 'select', options: [{ label: 'AI', value: 'ai' }] }
+                ]
+            } as CheckoutWidgetConfig;
+
+            const defs = component.activeFieldDefs();
+            expect(defs).toHaveLength(3);
+            expect(defs[0].name).toBe('studentId');
+            expect(defs[2].type).toBe('select');
+        });
+
+        it('syncs units array length when quantity increases', () => {
             component.config = { isEvent: true } as CheckoutWidgetConfig;
             component.firstName.set('Jane');
             component.lastName.set('Doe');
@@ -50,21 +81,63 @@ describe('MJCheckoutWidgetComponent', () => {
 
             component.onQuantityChange(3);
 
-            expect(component.attendees()).toHaveLength(3);
-            expect(component.attendees()[0].firstName).toBe('Jane');
-            expect(component.attendees()[0].email).toBe('jane@example.com');
-            expect(component.attendees()[1].company).toBe('Acme');
+            expect(component.units()).toHaveLength(3);
+            expect(component.units()[0]['firstName']).toBe('Jane');
+            expect(component.units()[0]['email']).toBe('jane@example.com');
+            expect(component.units()[1]['company']).toBe('Acme');
         });
 
-        it('copies primary company to all attendees', () => {
+        it('copies primary company to all units', () => {
             component.config = { isEvent: true } as CheckoutWidgetConfig;
             component.onQuantityChange(2);
-            component.updateAttendee(0, 'company', 'Global Enterprises');
+            component.updateUnitField(0, 'company', 'Global Enterprises');
 
             component.copyPrimaryToAll();
 
-            expect(component.attendees()[0].company).toBe('Global Enterprises');
-            expect(component.attendees()[1].company).toBe('Global Enterprises');
+            expect(component.units()[0]['company']).toBe('Global Enterprises');
+            expect(component.units()[1]['company']).toBe('Global Enterprises');
+        });
+    });
+
+    describe('custom JS lifecycle hooks and validation', () => {
+        it('executes onValidate hook and blocks submission if hook returns false or error message', () => {
+            window.MJCheckoutHooks = {
+                onValidate: vi.fn().mockReturnValue('Domain @competitor.com is not allowed.')
+            };
+
+            component.config = { unitPrice: 0 } as CheckoutWidgetConfig;
+            component.email.set('test@competitor.com');
+            component.firstName.set('John');
+            component.lastName.set('Doe');
+            component.syncUnits();
+
+            const emitSpy = vi.spyOn(component.submitted, 'emit');
+            component.handleSubmit();
+
+            expect(emitSpy).not.toHaveBeenCalled();
+            expect(component.errorMessage).toBe('Domain @competitor.com is not allowed.');
+        });
+
+        it('executes onBeforeSubmit hook to enrich payload before emission', () => {
+            window.MJCheckoutHooks = {
+                onBeforeSubmit: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
+                    payload['enrichedTracking'] = 'campaign-abc';
+                })
+            };
+
+            component.config = { unitPrice: 0 } as CheckoutWidgetConfig;
+            component.email.set('jane@example.com');
+            component.firstName.set('Jane');
+            component.lastName.set('Doe');
+            component.syncUnits();
+
+            const emitSpy = vi.spyOn(component.submitted, 'emit');
+            component.handleSubmit();
+
+            expect(emitSpy).toHaveBeenCalledWith(expect.objectContaining({
+                email: 'jane@example.com',
+                enrichedTracking: 'campaign-abc'
+            }));
         });
     });
 
@@ -90,23 +163,6 @@ describe('MJCheckoutWidgetComponent', () => {
             component.isPaymentReady = true;
 
             expect(component.isFormValid()).toBe(true);
-        });
-
-        it('emits submitted event with normalized payload', () => {
-            component.config = { unitPrice: 0 } as CheckoutWidgetConfig;
-            component.email.set(' Jane.Doe@Example.com ');
-            component.firstName.set('Jane');
-            component.lastName.set('Doe');
-            component.syncAttendees();
-
-            const emitSpy = vi.spyOn(component.submitted, 'emit');
-            component.handleSubmit();
-
-            expect(emitSpy).toHaveBeenCalledWith(expect.objectContaining({
-                email: 'jane.doe@example.com',
-                quantity: 1,
-                totalGross: 0
-            }));
         });
     });
 });

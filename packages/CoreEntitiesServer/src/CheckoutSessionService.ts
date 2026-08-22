@@ -1,19 +1,22 @@
 /**
  * @fileoverview CheckoutSessionService
  *
- * Provides server-side orchestration for anonymous checkout sessions, widget token
- * initialization, draft order graph composition, and payment completion handling.
+ * Provides generic server-side orchestration for anonymous checkout sessions, widget token
+ * initialization, draft order graph composition with polymorphic product extensions,
+ * and payment completion handling.
  *
  * @module @mj-biz-apps/orders-core-entities-server/CheckoutSessionService
  */
 
-import { Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { BaseEntity, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import {
     OrderHeaderEntity,
     OrderLineEntity,
     mjBizAppsOrdersCheckoutSessionEntity,
     mjBizAppsOrdersCheckoutWidgetDistributionEntity,
-    mjBizAppsOrdersCheckoutWidgetEntity
+    mjBizAppsOrdersCheckoutWidgetEntity,
+    mjBizAppsOrdersProductEntity,
+    mjBizAppsOrdersProductTypeEntity
 } from '@mj-biz-apps/orders-entities';
 import { IdentityClaimEngineServer } from '@memberjunction/core-entities-server';
 
@@ -21,7 +24,9 @@ const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
 const CHECKOUT_SESSION_ENTITY = 'MJ_BizApps_Orders: Checkout Sessions';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
-const EVENT_ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Event Order Lines';
+const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
+const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
+const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 
 export interface InitSessionResult {
     Success: boolean;
@@ -49,9 +54,25 @@ export interface CheckoutAttendeeInput {
 
 export type AttendeeInput = CheckoutAttendeeInput;
 
+export interface CheckoutLineExtensionData {
+    /** Target extension entity name (e.g. 'MJ_BizApps_Orders: Event Order Lines') */
+    EntityName?: string;
+    /** Key-value dictionary of extension fields */
+    Fields?: Record<string, unknown>;
+    /** For multi-unit items (e.g. 3 tickets), array of per-unit field dictionaries */
+    Units?: Array<Record<string, unknown>>;
+}
+
 export interface CheckoutLineInput {
     ProductID: string;
     Quantity: number;
+    /** Generic polymorphic extension payload */
+    ExtensionData?: CheckoutLineExtensionData;
+    /** Generic field dictionary directly on line input */
+    ExtensionFields?: Record<string, unknown>;
+    /** Per-unit field dictionaries */
+    Units?: Array<Record<string, unknown>>;
+    /** Legacy attendee input compatibility */
     Attendees?: CheckoutAttendeeInput[];
 }
 
@@ -143,11 +164,11 @@ export class CheckoutSessionService {
             session.DistributionID = distribution.ID;
             session.ClientSessionKey = clientSessionKey;
             session.Status = 'Open';
-            
+
             const expires = new Date();
             expires.setHours(expires.getHours() + 2); // 2 hour checkout session TTL
             session.ExpiresAt = expires;
-            
+
             const saved = await session.Save();
             if (!saved) {
                 return { Success: false, ErrorMessage: 'Failed to initialize checkout session record' };
@@ -175,6 +196,148 @@ export class CheckoutSessionService {
             CustomJS: widget.CustomJS,
             ExpiresAt: session.ExpiresAt.toISOString()
         };
+    }
+
+    /**
+     * Resolves or creates a Person entity record based on provided fields.
+     */
+    private static async resolveOrEnsurePerson(
+        fields: Record<string, unknown>,
+        contextUser?: UserInfo
+    ): Promise<string | null> {
+        const email = (fields['Email'] || fields['email'] || fields['PrimaryEmail']) as string | undefined;
+        if (!email || !email.trim()) {
+            return null;
+        }
+
+        const normalized = email.trim().toLowerCase();
+        const rv = new RunView();
+        const escaped = normalized.replace(/'/g, "''");
+        const personRes = await rv.RunView<{ ID: string }>({
+            EntityName: PERSON_ENTITY,
+            ExtraFilter: `Email = '${escaped}' OR PrimaryEmail = '${escaped}'`,
+            ResultType: 'simple'
+        }, contextUser);
+
+        if (personRes.Success && personRes.Results && personRes.Results.length > 0) {
+            return personRes.Results[0].ID;
+        }
+
+        const firstName = (fields['FirstName'] || fields['firstName'] || '') as string;
+        const lastName = (fields['LastName'] || fields['lastName'] || '') as string;
+        if (firstName || lastName) {
+            try {
+                const md = new Metadata();
+                const person = await md.GetEntityObject<BaseEntity>(PERSON_ENTITY, contextUser);
+                person.NewRecord();
+                person.Set('FirstName', firstName);
+                person.Set('LastName', lastName);
+                person.Set('Email', normalized);
+                person.Set('PrimaryEmail', normalized);
+                if (fields['Company'] || fields['company']) {
+                    person.Set('CompanyName', fields['Company'] || fields['company']);
+                }
+                const saved = await person.Save();
+                if (saved) {
+                    return person.Get('ID') as string;
+                }
+            } catch {
+                // Person creation is non-blocking
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Dynamically populates and coerces extension companion properties from a field map.
+     */
+    private static async hydrateLineExtension(
+        line: OrderLineEntity,
+        extensionEntityName: string | null | undefined,
+        fieldValues: Record<string, unknown>,
+        contextUser?: UserInfo
+    ): Promise<void> {
+        if (!extensionEntityName || !fieldValues || Object.keys(fieldValues).length === 0) {
+            return;
+        }
+
+        const ext = await line.Extension.EnsureEntity(extensionEntityName);
+        if (!ext) {
+            return;
+        }
+
+        // Build descriptive summary for the line card if names/email are present
+        const firstName = fieldValues['FirstName'] || fieldValues['firstName'];
+        const lastName = fieldValues['LastName'] || fieldValues['lastName'];
+        const email = fieldValues['Email'] || fieldValues['email'];
+        const nameOrEmail = [
+            firstName,
+            lastName,
+            email ? `(${email})` : ''
+        ].filter(Boolean).join(' ');
+
+        if (nameOrEmail) {
+            line.Description = nameOrEmail;
+        }
+
+        // Auto-resolve PersonID if person fields exist on the extension entity
+        const personIdField = ext.EntityInfo.Fields.find(f => f.Name === 'PersonID' || f.Name === 'AttendeePersonID');
+        if (personIdField && !fieldValues['PersonID'] && !fieldValues['personId']) {
+            if (email) {
+                const resolvedPersonID = await this.resolveOrEnsurePerson(fieldValues, contextUser);
+                if (resolvedPersonID) {
+                    ext.Set(personIdField.Name, resolvedPersonID);
+                }
+            }
+        }
+
+        // Dynamic field assignment with type coercion
+        const fieldsByName = new Map(ext.EntityInfo.Fields.map(f => [f.Name.toLowerCase(), f]));
+
+        for (const [key, rawValue] of Object.entries(fieldValues)) {
+            const field = fieldsByName.get(key.toLowerCase());
+            if (field && !field.IsPrimaryKey && !field.IsVirtual && field.AllowUpdateAPI) {
+                let coerced = rawValue;
+                if (field.Type.toLowerCase().includes('int') && typeof rawValue === 'string') {
+                    coerced = parseInt(rawValue, 10);
+                } else if ((field.Type.toLowerCase().includes('decimal') || field.Type.toLowerCase().includes('money')) && typeof rawValue === 'string') {
+                    coerced = parseFloat(rawValue);
+                } else if (field.Type.toLowerCase() === 'bit' && typeof rawValue === 'string') {
+                    coerced = rawValue === 'true' || rawValue === '1';
+                }
+                ext.Set(field.Name, coerced);
+            }
+        }
+    }
+
+    /**
+     * Extracts unit field maps from an input line across all polymorphic formats.
+     */
+    private static extractUnitPayloads(inputLine: CheckoutLineInput): Array<Record<string, unknown>> {
+        if (inputLine.ExtensionData?.Units && inputLine.ExtensionData.Units.length > 0) {
+            return inputLine.ExtensionData.Units;
+        }
+        if (inputLine.Units && inputLine.Units.length > 0) {
+            return inputLine.Units;
+        }
+        if (inputLine.Attendees && inputLine.Attendees.length > 0) {
+            return inputLine.Attendees.map(a => ({
+                FirstName: a.FirstName,
+                LastName: a.LastName,
+                Email: a.Email,
+                Company: a.Company,
+                PersonID: a.PersonID,
+                DietaryPreferences: a.DietaryPreferences,
+                Comments: a.Comments
+            }));
+        }
+        if (inputLine.ExtensionData?.Fields && Object.keys(inputLine.ExtensionData.Fields).length > 0) {
+            return [inputLine.ExtensionData.Fields];
+        }
+        if (inputLine.ExtensionFields && Object.keys(inputLine.ExtensionFields).length > 0) {
+            return [inputLine.ExtensionFields];
+        }
+        return [];
     }
 
     /**
@@ -232,27 +395,49 @@ export class CheckoutSessionService {
 
         let sequence = 1;
         for (const inputLine of lines) {
-            const line = (await order.Lines.Create()) as OrderLineEntity;
-            line.ProductID = inputLine.ProductID;
-            line.Quantity = inputLine.Quantity;
-            line.LineNumber = sequence++;
+            // Introspect Product and ProductType to discover extension configuration
+            let targetExtensionEntity = inputLine.ExtensionData?.EntityName ?? null;
+            let maxQuantityPerLine: number | null = null;
 
-            // Handle multi-attendee event lines or companion extensions
-            if (inputLine.Attendees && inputLine.Attendees.length > 0) {
-                const primaryAttendee = inputLine.Attendees[0];
-                line.Description = `${primaryAttendee.FirstName} ${primaryAttendee.LastName} (${primaryAttendee.Email})`;
+            if (inputLine.ProductID) {
+                try {
+                    const product = await md.GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, contextUser);
+                    const prodLoaded = await product.Load(inputLine.ProductID);
+                    if (prodLoaded) {
+                        maxQuantityPerLine = product.MaxQuantityPerLine ?? null;
+                        if (!targetExtensionEntity && product.ProductTypeID) {
+                            const pType = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, contextUser);
+                            const pTypeLoaded = await pType.Load(product.ProductTypeID);
+                            if (pTypeLoaded) {
+                                targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
+                            }
+                        }
+                    }
+                } catch {
+                    // Fallback to direct input line extension if product load is mocked or unavailable
+                }
+            }
 
-                const ext = await line.Extension.EnsureEntity(EVENT_ORDER_LINE_ENTITY);
-                if (ext) {
-                    if (primaryAttendee.PersonID) {
-                        ext.Set('PersonID', primaryAttendee.PersonID);
-                    }
-                    if (primaryAttendee.DietaryPreferences) {
-                        ext.Set('DietaryPreferences', primaryAttendee.DietaryPreferences);
-                    }
-                    if (primaryAttendee.Comments) {
-                        ext.Set('Comments', primaryAttendee.Comments);
-                    }
+            const unitPayloads = this.extractUnitPayloads(inputLine);
+
+            // If product enforces 1-unit per line (e.g. conference tickets) and multiple unit payloads exist:
+            if ((maxQuantityPerLine === 1 || unitPayloads.length > 1) && unitPayloads.length > 0) {
+                for (const unitData of unitPayloads) {
+                    const line = (await order.Lines.Create()) as OrderLineEntity;
+                    line.ProductID = inputLine.ProductID;
+                    line.Quantity = 1;
+                    line.LineNumber = sequence++;
+
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser);
+                }
+            } else {
+                const line = (await order.Lines.Create()) as OrderLineEntity;
+                line.ProductID = inputLine.ProductID;
+                line.Quantity = inputLine.Quantity;
+                line.LineNumber = sequence++;
+
+                if (unitPayloads.length > 0) {
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser);
                 }
             }
         }
@@ -351,7 +536,7 @@ export class CheckoutSessionService {
             session.Status = 'Confirmed';
             await session.Save();
 
-            // If session has email and entitlement was generated, ensure identity claims exist for external access
+            // If session has email, issue identity claim for external access
             if (session.Email) {
                 try {
                     await IdentityClaimEngineServer.Instance.CreateClaim({

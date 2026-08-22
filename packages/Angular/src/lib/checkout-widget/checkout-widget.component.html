@@ -1,4 +1,11 @@
-<div class="mj-checkout-widget-container" [style.--mj-primary-color]="config?.theme?.primaryColor || '#2563eb'" [style.--mj-border-radius]="config?.theme?.borderRadius || '8px'" [style.--mj-font-family]="config?.theme?.fontFamily || 'inherit'">
+<div class="mj-checkout-widget-container"
+    [style.--mj-primary-color]="config?.theme?.primaryColor || '#2563eb'"
+    [style.--mj-accent-color]="config?.theme?.accentColor || '#3b82f6'"
+    [style.--mj-border-radius]="config?.theme?.borderRadius || '8px'"
+    [style.--mj-bg-color]="config?.theme?.backgroundColor || '#ffffff'"
+    [style.--mj-text-color]="config?.theme?.textColor || '#0f172a'"
+    [style.--mj-font-family]="config?.theme?.fontFamily || 'inherit'">
+
     @if (config?.customCSS) {
         <style>{{ config?.customCSS }}</style>
     }
@@ -49,57 +56,163 @@
         }
     </div>
 
-    <!-- Registration / Contact Details Form -->
+    <!-- Registration / Contact / Product Extension Form Section -->
     <section class="mj-widget-form-section">
-        @if (isSingleEvent() || !config?.isEvent) {
-            <!-- Flattened Primary Contact Details -->
-            <h3 class="mj-section-title">Your Details</h3>
+        @if (isSingleUnit()) {
+            <!-- Single Unit / Primary Form -->
+            <h3 class="mj-section-title">Details</h3>
             <div class="mj-form-grid">
-                <div class="mj-form-group">
-                    <label class="mj-label">First Name <span class="mj-required">*</span></label>
-                    <input type="text" class="mj-input" [ngModel]="firstName()" (ngModelChange)="updateAttendee(0, 'firstName', $event)" placeholder="Jane" required />
-                </div>
-                <div class="mj-form-group">
-                    <label class="mj-label">Last Name <span class="mj-required">*</span></label>
-                    <input type="text" class="mj-input" [ngModel]="lastName()" (ngModelChange)="updateAttendee(0, 'lastName', $event)" placeholder="Doe" required />
-                </div>
-                <div class="mj-form-group full-width">
-                    <label class="mj-label">Email Address <span class="mj-required">*</span></label>
-                    <input type="email" class="mj-input" [ngModel]="email()" (ngModelChange)="updateAttendee(0, 'email', $event)" placeholder="jane.doe@example.com" required />
-                </div>
-                <div class="mj-form-group">
-                    <label class="mj-label">Company / Org</label>
-                    <input type="text" class="mj-input" [ngModel]="company()" (ngModelChange)="updateAttendee(0, 'company', $event)" placeholder="Acme Corp" />
-                </div>
-                <div class="mj-form-group">
-                    <label class="mj-label">Job Title</label>
-                    <input type="text" class="mj-input" [ngModel]="title()" (ngModelChange)="updateAttendee(0, 'title', $event)" placeholder="Director" />
-                </div>
+                @for (field of activeFieldDefs(); track field.name) {
+                    <div class="mj-form-group" [class.full-width]="field.type === 'textarea' || field.name === 'email' || field.name === 'Email'">
+                        <label class="mj-label">
+                            {{ field.label }}
+                            @if (field.required) {
+                                <span class="mj-required">*</span>
+                            }
+                        </label>
+
+                        @switch (field.type) {
+                            @case ('textarea') {
+                                <textarea
+                                    class="mj-input mj-textarea"
+                                    [ngModel]="units()[0]?.[field.name]"
+                                    (ngModelChange)="updateUnitField(0, field.name, $event)"
+                                    [placeholder]="field.placeholder || ''"
+                                    [required]="field.required || false">
+                                </textarea>
+                            }
+                            @case ('select') {
+                                <select
+                                    class="mj-select"
+                                    [ngModel]="units()[0]?.[field.name]"
+                                    (ngModelChange)="updateUnitField(0, field.name, $event)"
+                                    [required]="field.required || false">
+                                    <option value="">Select {{ field.label }}</option>
+                                    @for (opt of field.options; track opt.value) {
+                                        <option [value]="opt.value">{{ opt.label }}</option>
+                                    }
+                                </select>
+                            }
+                            @case ('boolean') {
+                                <label class="mj-checkbox-label">
+                                    <input
+                                        type="checkbox"
+                                        [ngModel]="units()[0]?.[field.name]"
+                                        (ngModelChange)="updateUnitField(0, field.name, $event)" />
+                                    <span>{{ field.label }}</span>
+                                </label>
+                            }
+                            @case ('number') {
+                                <input
+                                    type="number"
+                                    class="mj-input"
+                                    [ngModel]="units()[0]?.[field.name]"
+                                    (ngModelChange)="updateUnitField(0, field.name, $event)"
+                                    [placeholder]="field.placeholder || ''"
+                                    [required]="field.required || false" />
+                            }
+                            @case ('date') {
+                                <input
+                                    type="date"
+                                    class="mj-input"
+                                    [ngModel]="units()[0]?.[field.name]"
+                                    (ngModelChange)="updateUnitField(0, field.name, $event)"
+                                    [required]="field.required || false" />
+                            }
+                            @default {
+                                <input
+                                    [type]="field.name.toLowerCase().includes('email') ? 'email' : 'text'"
+                                    class="mj-input"
+                                    [ngModel]="units()[0]?.[field.name]"
+                                    (ngModelChange)="updateUnitField(0, field.name, $event)"
+                                    [placeholder]="field.placeholder || ''"
+                                    [required]="field.required || false" />
+                            }
+                        }
+                    </div>
+                }
             </div>
         } @else {
-            <!-- Multi-Attendee Grid Matrix -->
+            <!-- Multi-Unit Matrix (Repeating Fieldsets for Quantity > 1) -->
             <div class="mj-multi-attendee-header">
-                <h3 class="mj-section-title">Attendee Details ({{ quantity() }})</h3>
-                <button type="button" class="mj-btn-link" (click)="copyPrimaryToAll()">Copy Company to All</button>
+                <h3 class="mj-section-title">Item Details ({{ quantity() }})</h3>
+                <button type="button" class="mj-btn-link" (click)="copyPrimaryToAll()">Copy Primary Info to All</button>
             </div>
 
             <div class="mj-attendee-matrix">
-                @for (att of attendees(); track $index) {
+                @for (unit of units(); track $index) {
                     <div class="mj-attendee-card">
-                        <div class="mj-attendee-card-title">Attendee {{ $index + 1 }}</div>
+                        <div class="mj-attendee-card-title">Item {{ $index + 1 }}</div>
                         <div class="mj-form-grid">
-                            <div class="mj-form-group">
-                                <label class="mj-label">First Name <span class="mj-required">*</span></label>
-                                <input type="text" class="mj-input" [ngModel]="att.firstName" (ngModelChange)="updateAttendee($index, 'firstName', $event)" required />
-                            </div>
-                            <div class="mj-form-group">
-                                <label class="mj-label">Last Name <span class="mj-required">*</span></label>
-                                <input type="text" class="mj-input" [ngModel]="att.lastName" (ngModelChange)="updateAttendee($index, 'lastName', $event)" required />
-                            </div>
-                            <div class="mj-form-group full-width">
-                                <label class="mj-label">Email <span class="mj-required">*</span></label>
-                                <input type="email" class="mj-input" [ngModel]="att.email" (ngModelChange)="updateAttendee($index, 'email', $event)" required />
-                            </div>
+                            @for (field of activeFieldDefs(); track field.name) {
+                                <div class="mj-form-group" [class.full-width]="field.type === 'textarea' || field.name === 'email' || field.name === 'Email'">
+                                    <label class="mj-label">
+                                        {{ field.label }}
+                                        @if (field.required) {
+                                            <span class="mj-required">*</span>
+                                        }
+                                    </label>
+
+                                    @switch (field.type) {
+                                        @case ('textarea') {
+                                            <textarea
+                                                class="mj-input mj-textarea"
+                                                [ngModel]="unit[field.name]"
+                                                (ngModelChange)="updateUnitField($index, field.name, $event)"
+                                                [placeholder]="field.placeholder || ''"
+                                                [required]="field.required || false">
+                                            </textarea>
+                                        }
+                                        @case ('select') {
+                                            <select
+                                                class="mj-select"
+                                                [ngModel]="unit[field.name]"
+                                                (ngModelChange)="updateUnitField($index, field.name, $event)"
+                                                [required]="field.required || false">
+                                                <option value="">Select {{ field.label }}</option>
+                                                @for (opt of field.options; track opt.value) {
+                                                    <option [value]="opt.value">{{ opt.label }}</option>
+                                                }
+                                            </select>
+                                        }
+                                        @case ('boolean') {
+                                            <label class="mj-checkbox-label">
+                                                <input
+                                                    type="checkbox"
+                                                    [ngModel]="unit[field.name]"
+                                                    (ngModelChange)="updateUnitField($index, field.name, $event)" />
+                                                <span>{{ field.label }}</span>
+                                            </label>
+                                        }
+                                        @case ('number') {
+                                            <input
+                                                type="number"
+                                                class="mj-input"
+                                                [ngModel]="unit[field.name]"
+                                                (ngModelChange)="updateUnitField($index, field.name, $event)"
+                                                [placeholder]="field.placeholder || ''"
+                                                [required]="field.required || false" />
+                                        }
+                                        @case ('date') {
+                                            <input
+                                                type="date"
+                                                class="mj-input"
+                                                [ngModel]="unit[field.name]"
+                                                (ngModelChange)="updateUnitField($index, field.name, $event)"
+                                                [required]="field.required || false" />
+                                        }
+                                        @default {
+                                            <input
+                                                [type]="field.name.toLowerCase().includes('email') ? 'email' : 'text'"
+                                                class="mj-input"
+                                                [ngModel]="unit[field.name]"
+                                                (ngModelChange)="updateUnitField($index, field.name, $event)"
+                                                [placeholder]="field.placeholder || ''"
+                                                [required]="field.required || false" />
+                                        }
+                                    }
+                                </div>
+                            }
                         </div>
                     </div>
                 }
@@ -107,7 +220,7 @@
         }
     </section>
 
-    <!-- Stripe Embedded Payment Section (Never takes raw CC info; hidden for $0 free SKU) -->
+    <!-- Stripe Embedded Payment Section -->
     @if (!isFree()) {
         <section class="mj-widget-payment-section">
             <h3 class="mj-section-title">Payment</h3>
@@ -138,8 +251,12 @@
             } @else if (isFree()) {
                 <span>Complete Free Registration</span>
             } @else {
-                <span>Pay {{ currencySymbol() }}{{ totalGross().toFixed(2) }} & Register</span>
+                <span>Pay {{ currencySymbol() }}{{ totalGross().toFixed(2) }}</span>
             }
+        </button>
+
+        <button type="button" class="mj-btn-cancel" [disabled]="isProcessing" (click)="cancelled.emit()">
+            Cancel
         </button>
     </div>
 </div>

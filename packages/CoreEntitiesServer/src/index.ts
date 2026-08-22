@@ -422,6 +422,8 @@ export { EntitlementGrantClaimDriver, LoadEntitlementGrantClaimDriver } from './
 export { CheckoutSessionService } from './CheckoutSessionService.js';
 export type {
     AttendeeInput,
+    CheckoutAttendeeInput,
+    CheckoutLineExtensionData,
     CheckoutLineInput,
     CheckoutLineSummary,
     InitSessionResult,
