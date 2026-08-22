@@ -13,9 +13,11 @@
   <a href="#installation">Install</a> &middot;
   <a href="#what-you-get">What you get</a> &middot;
   <a href="#product-management">Products</a> &middot;
+  <a href="#checkout-widget--session-engine">Checkout Widget</a> &middot;
   <a href="#entity-model">Entity Model</a> &middot;
   <a href="#using-bizapps-orders-in-your-code">Code</a> &middot;
-  <a href="docs/HOW_THE_SYSTEM_WORKS.md">How it works</a>
+  <a href="docs/HOW_THE_SYSTEM_WORKS.md">How it works</a> &middot;
+  <a href="docs/checkout-widget-and-session-architecture.md">Widget Guide</a>
 </p>
 
 <p align="center">
@@ -299,6 +301,20 @@ Providers register against an abstract `PaymentProvider` base via `@RegisterClas
 | **Manual** (Wire / ACH / Check / Cash recorded by finance) | v1 |
 | **StoredValue** (internal — gift-card redemption) | when gift cards activate |
 | PayPal / Square / Authorize.Net / Adyen | deferred (§21) |
+
+---
+
+## Checkout Widget & Session Engine
+
+BizApps Orders includes an **adaptive, metadata-driven embeddable checkout and registration engine**. Any product in your catalog can be sold or registered online with zero custom code:
+
+- 🪄 **Zero-Touch Dynamic Auto-Discovery**: Automatically reflects product-type companion extension entities (e.g. `EventOrderLine`, `MembershipOrderLine`, `LicenseOrderLine`) and renders contact + custom fields (`DietaryPreferences`, `Allergies`, `SpecialRequests`, `IsVIP`).
+- 🎨 **Extensible `customUI` & Theming**: Full control over brand colors, CSS token overrides, scoped stylesheets, and lifecycle JavaScript hooks (`onInit`, `onValidate`, `onQuantityChange`, `onBeforeSubmit`, `onSuccess`).
+- 🎟️ **Multi-Attendee / Unit Expansion**: When purchasing multiple units (`unitMode: 'perUnit'`), the widget dynamically expands discrete attendee forms and persists separate order lines in the database.
+- ⚡ **Zero-DB-Draft In-Memory Pricing**: Draft adjustments and coupon evaluations run in-memory via `OrderPricingService` without creating temporary rows in `OrderHeader`.
+- 🔐 **Guest Record Claiming**: Anonymous buyers receive cryptographic claim tokens / magic links allowing them to claim their orders and entitlements once authenticated.
+
+👉 **See the complete [Checkout Widget & Session Architecture Guide](docs/checkout-widget-and-session-architecture.md) for tutorials, schema details, and embedding code.**
 
 ---
 
