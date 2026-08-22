@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
         CompanyID = 'comp-10';
         Status = 'Active';
         Configuration = JSON.stringify({
+            productId: 'prod-1',
             theme: { primaryColor: '#2563eb' },
             allowCoupons: true,
             customUI: {
@@ -194,6 +195,18 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
     return {
         ...actual,
         Metadata: class {
+            Entities = [
+                {
+                    Name: 'MJ_BizApps_Orders: Event Order Lines',
+                    Fields: [
+                        { Name: 'PersonID', Type: 'uniqueidentifier', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
+                        { Name: 'DietaryPreferences', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false, AllowsNull: true, DisplayName: 'Dietary Preferences' },
+                        { Name: 'Comments', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false, AllowsNull: true, DisplayName: 'Special Requests' },
+                        { Name: 'CustomCount', Type: 'int', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false, AllowsNull: true, DisplayName: 'Custom Count' }
+                    ],
+                    ParentEntityFieldNames: new Set(['ID', 'ProductID', 'Quantity', 'UnitPrice'])
+                }
+            ];
             GetEntityObject = vi.fn().mockImplementation((name: string) => {
                 if (name.includes('Checkout Widgets')) return Promise.resolve(mocks.mockWidgetInstance);
                 if (name.includes('Checkout Sessions')) return Promise.resolve(mocks.mockSessionInstance);
@@ -276,6 +289,22 @@ describe('CheckoutSessionService', () => {
             expect(res.CustomCSS).toBe('.custom-summit { border: 2px solid red; }');
             expect(res.CustomJS).toBe('console.log("Summit Widget Loaded");');
             expect(res.Configuration?.customUI).toBeDefined();
+        });
+
+        it('auto-discovers extension fields from ProductType metadata when not explicitly specified', async () => {
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', 'client-xyz');
+            expect(res.Success).toBe(true);
+            const extFields = res.Configuration?.extensionFields as Array<{ name: string; label: string }>;
+            expect(extFields).toBeDefined();
+            expect(Array.isArray(extFields)).toBe(true);
+            // Should contain core person fields plus discovered extension fields
+            const names = extFields.map(f => f.name);
+            expect(names).toContain('firstName');
+            expect(names).toContain('lastName');
+            expect(names).toContain('email');
+            expect(names).toContain('dietaryPreferences');
+            expect(names).toContain('comments');
+            expect(names).toContain('customCount');
         });
     });
 

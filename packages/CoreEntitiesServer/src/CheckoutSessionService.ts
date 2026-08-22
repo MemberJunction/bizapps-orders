@@ -195,9 +195,8 @@ export class CheckoutSessionService {
         if (widget.CustomCSS && !configObj.customUI.css) {
             configObj.customUI.css = widget.CustomCSS;
         }
-        if (widget.CustomJS && !configObj.customUI.js) {
-            configObj.customUI.js = widget.CustomJS;
-        }
+        // Auto-discover extension fields from product type metadata if not explicitly provided
+        await this.discoverExtensionFields(configObj, md, contextUser);
 
         return {
             Success: true,
@@ -211,6 +210,115 @@ export class CheckoutSessionService {
             CustomJS: configObj.customUI.js || widget.CustomJS,
             ExpiresAt: session.ExpiresAt.toISOString()
         };
+    }
+
+    /**
+     * Discovers extension field definitions from metadata for the target product's extension entity.
+     */
+    private static async discoverExtensionFields(
+        configObj: CheckoutWidgetConfiguration,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<void> {
+        if (Array.isArray(configObj.extensionFields) && configObj.extensionFields.length > 0) {
+            return;
+        }
+
+        let productId = typeof configObj.productId === 'string' ? configObj.productId : undefined;
+        const productSku = typeof configObj.productSku === 'string' ? configObj.productSku : undefined;
+
+        if (!productId && productSku) {
+            const rv = new RunView();
+            const escapedSku = productSku.trim().replace(/'/g, "''");
+            const prodRes = await rv.RunView<{ ID: string }>({
+                EntityName: PRODUCT_ENTITY,
+                ExtraFilter: `SKU = '${escapedSku}'`,
+                ResultType: 'simple'
+            }, contextUser);
+            if (prodRes?.Success && prodRes.Results && prodRes.Results.length > 0) {
+                productId = prodRes.Results[0].ID;
+            }
+        }
+
+        if (!productId) return;
+
+        const product = await md.GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, contextUser);
+        const prodLoaded = await product.Load(productId);
+        if (!prodLoaded || !product.ProductTypeID) return;
+
+        const productType = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, contextUser);
+        const typeLoaded = await productType.Load(product.ProductTypeID);
+        if (!typeLoaded || !productType.OrderLineExtensionEntity) return;
+
+        const extEntityName = productType.OrderLineExtensionEntity;
+        configObj.extensionEntityName = extEntityName;
+
+        const extEntityInfo = md.Entities.find(e => e.Name === extEntityName);
+        if (!extEntityInfo) return;
+
+        const discoveredFields: Array<{
+            name: string;
+            label: string;
+            type: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select';
+            required: boolean;
+            placeholder?: string;
+        }> = [];
+
+        // Check if extension links to a Person
+        const hasPerson = extEntityInfo.Fields.some(f => f.Name.toLowerCase() === 'personid');
+        if (hasPerson) {
+            discoveredFields.push(
+                { name: 'firstName', label: 'First Name', type: 'text', required: true, placeholder: 'Jane' },
+                { name: 'lastName', label: 'Last Name', type: 'text', required: true, placeholder: 'Doe' },
+                { name: 'email', label: 'Email Address', type: 'text', required: true, placeholder: 'jane.doe@example.com' },
+                { name: 'company', label: 'Company / Organization', type: 'text', required: false, placeholder: 'Acme Corp' },
+                { name: 'title', label: 'Job Title', type: 'text', required: false, placeholder: 'Director' }
+            );
+        }
+
+        const excluded = new Set(['id', 'personid', 'checkinat']);
+        const parentFields = new Set<string>();
+        if (extEntityInfo.ParentEntityFieldNames) {
+            for (const n of extEntityInfo.ParentEntityFieldNames) {
+                parentFields.add(n.toLowerCase());
+            }
+        }
+
+        for (const f of extEntityInfo.Fields) {
+            const lower = f.Name.toLowerCase();
+            if (excluded.has(lower) || parentFields.has(lower) || lower.startsWith('__mj_') || f.IsPrimaryKey || f.IsVirtual || !f.AllowUpdateAPI) {
+                continue;
+            }
+
+            let fieldType: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select' = 'text';
+            const sqlType = (f.Type || '').toLowerCase();
+            const valList = (f.ValueListType || '').toLowerCase();
+
+            if (valList === 'list' || valList === 'listoruserentry') {
+                fieldType = 'select';
+            } else if (sqlType === 'bit') {
+                fieldType = 'boolean';
+            } else if (['date', 'datetime', 'datetime2', 'datetimeoffset', 'smalldatetime'].includes(sqlType)) {
+                fieldType = 'date';
+            } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(sqlType)) {
+                fieldType = 'number';
+            } else if (['ntext', 'text', 'nvarchar(max)', 'varchar(max)'].includes(sqlType) || (f.Length && f.Length > 255)) {
+                fieldType = 'textarea';
+            }
+
+            const camelName = f.Name.charAt(0).toLowerCase() + f.Name.slice(1);
+            const label = f.DisplayName?.trim() || f.Name.replace(/([a-z])([A-Z])/g, '$1 $2');
+
+            discoveredFields.push({
+                name: camelName,
+                label,
+                type: fieldType,
+                required: !f.AllowsNull,
+                placeholder: f.Description || label
+            });
+        }
+
+        configObj.extensionFields = discoveredFields;
     }
 
     /**
