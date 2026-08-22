@@ -269,15 +269,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     private async addExtendedLine(product: MJOProductOption): Promise<void> {
         if (!this._order || !product.OrderLineExtensionEntity) return;
         CachedExtensionEntityInfo(this.metadata, product.OrderLineExtensionEntity);
-        const line = await this.metadata.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
-            product.OrderLineExtensionEntity,
-            this._order.ContextCurrentUser,
-        );
-        if (!line) return;
-        line.NewRecord();
-        this._order.Lines.Add(line);
+        const line = (await this._order.Lines.Create()) as OrderLineEntity;
         line.ProductID = product.ID;
         line.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
+        if (line instanceof OrderLineEntity) {
+            await line.Extension.EnsureEntity(product.OrderLineExtensionEntity);
+        }
         this.expandedLineIds.add(line.ID);
     }
 
@@ -285,14 +282,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (!this._order) return;
         for (const line of this.Lines) {
             const extName = this.ProductFor(line)?.OrderLineExtensionEntity;
-            if (extName && line.EntityInfo?.Name === MJO_ENTITIES.OrderLine && line.IsSaved) {
+            if (extName && line.IsSaved) {
                 CachedExtensionEntityInfo(this.metadata, extName);
-                const ext = await this.metadata.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
-                    extName,
-                    this._order.ContextCurrentUser,
-                );
-                if (ext && await ext.Load(line.ID)) {
-                    this._order.Lines.ReplaceItem(line, ext);
+                if (line instanceof OrderLineEntity) {
+                    await line.Extension.EnsureEntity(extName);
+                } else if ((line as unknown as OrderLineEntity).Extension) {
+                    await (line as unknown as OrderLineEntity).Extension.EnsureEntity(extName);
                 }
             }
         }
