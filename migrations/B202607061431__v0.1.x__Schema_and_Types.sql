@@ -101,24 +101,27 @@ GO
 -- =============================================================================
 -- 2. SCHEMA INFO — entity-name prefix for CodeGen (must match mj.config.cjs)
 -- =============================================================================
-INSERT INTO __mj.SchemaInfo
-(
-  ID,
-  SchemaName,
-  EntityIDMin, EntityIDMax,
-  Comments,
-  Description,
-  EntityNamePrefix, EntityNameSuffix
-)
-VALUES
-(
-  'B6E2A4C1-7F03-4E52-9C8A-2D6F1B0E9A47',
-  '__mj_BizAppsOrders',
-  1, 1000000,
-  NULL,
-  'MemberJunction: BizApps Orders — product catalog + order lifecycle',
-  'MJ_BizApps_Orders: ', NULL
-);
+IF NOT EXISTS (SELECT 1 FROM __mj.SchemaInfo WHERE ID = 'B6E2A4C1-7F03-4E52-9C8A-2D6F1B0E9A47' OR SchemaName = '__mj_BizAppsOrders')
+BEGIN
+    INSERT INTO __mj.SchemaInfo
+    (
+      ID,
+      SchemaName,
+      EntityIDMin, EntityIDMax,
+      Comments,
+      Description,
+      EntityNamePrefix, EntityNameSuffix
+    )
+    VALUES
+    (
+      'B6E2A4C1-7F03-4E52-9C8A-2D6F1B0E9A47',
+      '__mj_BizAppsOrders',
+      1, 1000000,
+      NULL,
+      'MemberJunction: BizApps Orders — product catalog + order lifecycle',
+      'MJ_BizApps_Orders: ', NULL
+    );
+END
 GO
 
 -- =============================================================================
@@ -130,5 +133,8 @@ GO
 -- metadata lock — reproducible with plain sqlcmd + BEGIN TRAN, and it surfaces as a bewildering
 -- "deadlocked with another process" on a single-connection run. The rollup triggers therefore return
 -- early on zero-row DML, which is exactly what CodeGen's `__mj_CreatedAt` backfills are.
-CREATE TYPE __mj_BizAppsOrders.OrderHeaderIDList AS TABLE (ID UNIQUEIDENTIFIER NOT NULL PRIMARY KEY);
+IF NOT EXISTS (SELECT 1 FROM sys.types WHERE name = 'OrderHeaderIDList' AND schema_id = SCHEMA_ID('__mj_BizAppsOrders'))
+BEGIN
+    CREATE TYPE __mj_BizAppsOrders.OrderHeaderIDList AS TABLE (ID UNIQUEIDENTIFIER NOT NULL PRIMARY KEY);
+END
 GO

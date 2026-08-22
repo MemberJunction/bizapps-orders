@@ -58,6 +58,13 @@ export { PersonOrdersOverviewPanel } from './lib/form-panels/person-orders-overv
 export { OrganizationOrdersOverviewPanel } from './lib/form-panels/organization-orders-overview.panel';
 export { PartyOrdersOverviewComponent } from './lib/panels/party-orders-overview.component';
 export { ProductCategoryHierarchyPanel } from './lib/form-panels/product-category-hierarchy.panel';
+export {
+    MJCheckoutWidgetComponent,
+    type CheckoutWidgetConfig,
+    type CheckoutWidgetTheme,
+    type CheckoutAttendee,
+    type CheckoutSubmissionEvent,
+} from './lib/checkout-widget/checkout-widget.component';
 
 /** Explorer sections — the four top-level tabs of the Orders application. */
 export {
