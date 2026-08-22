@@ -114,6 +114,15 @@ export class OrderLineExtensionCompanion extends EntityCompanion<OrderLineExtens
                 }
                 ext.SetMany(this._wireData.Fields, true);
             }
+        } else if (lineId && this.Owner.IsSaved) {
+            const key = new CompositeKey(
+                ext.EntityInfo.PrimaryKeys.map(pk => new KeyValuePair(pk.Name, lineId)),
+            );
+            const loaded = await ext.InnerLoad(key);
+            if (!loaded) {
+                ext.NewRecord();
+                ext.Set('ID', lineId);
+            }
         } else {
             ext.NewRecord();
             if (lineId) {

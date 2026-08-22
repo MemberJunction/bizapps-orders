@@ -33,6 +33,7 @@
     "@memberjunction/communication-types": "^6.1.0-edge.1",
     "@memberjunction/core": "^6.1.0-edge.1",
     "@memberjunction/core-entities": "^6.1.0-edge.1",
+    "@memberjunction/core-entities-server": "^6.1.0-edge.1",
     "@memberjunction/global": "^6.1.0-edge.1",
     "@memberjunction/sqlserver-dataprovider": "^6.1.0-edge.1",
     "@mj-biz-apps/accounting-core-entities-server": ">=0.1.0",

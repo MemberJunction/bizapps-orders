@@ -417,3 +417,16 @@ export type { OrderStatus, TransitionVerdict } from '@mj-biz-apps/orders-entitie
 // populated OrderHeader.DueDate before, so the collections worklist returned nothing, ever.
 export { AddDays, BestCustomerTerms, CustomerTermsApply, ResolveDueDate } from './PaymentTermsBehavior.js';
 export type { CustomerTermsFacts, TermsFacts, TermsResolution, TermsResolutionInput, TermsSource } from './PaymentTermsBehavior.js';
+
+export { EntitlementGrantClaimDriver, LoadEntitlementGrantClaimDriver } from './EntitlementGrantClaimDriver.js';
+export { CheckoutSessionService } from './CheckoutSessionService.js';
+export type {
+    AttendeeInput,
+    CheckoutAttendeeInput,
+    CheckoutLineExtensionData,
+    CheckoutLineInput,
+    CheckoutLineSummary,
+    InitSessionResult,
+    UpdateDraftResult,
+    CompleteCheckoutResult,
+} from './CheckoutSessionService.js';

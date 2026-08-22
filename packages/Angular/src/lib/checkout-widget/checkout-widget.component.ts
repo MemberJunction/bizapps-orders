@@ -1,0 +1,392 @@
+/**
+ * @fileoverview Generic Adaptive Checkout Widget Component
+ *
+ * Provides a responsive, embeddable checkout surface for single-item, multi-unit
+ * extended products, zero-dollar registrations, and custom domain extensions
+ * with dynamic metadata-driven field generation, customUI JSON configuration,
+ * CSS theming, and custom JS lifecycle hooks.
+ *
+ * @module @mj-biz-apps/orders-angular/checkout-widget
+ */
+
+import {
+    Component,
+    Input,
+    Output,
+    EventEmitter,
+    OnInit,
+    OnChanges,
+    SimpleChanges,
+    signal,
+    computed,
+    ChangeDetectionStrategy
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import type {
+    CustomUIConfiguration,
+    CustomUIThemeConfiguration,
+    CheckoutWidgetConfiguration
+} from '@mj-biz-apps/orders-entities';
+
+export interface CheckoutWidgetTheme extends CustomUIThemeConfiguration {
+    primaryColor?: string;
+    accentColor?: string;
+    borderRadius?: string;
+    fontFamily?: string;
+    backgroundColor?: string;
+    textColor?: string;
+}
+
+export interface ExtensionFieldDef {
+    name: string;
+    label: string;
+    type: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select';
+    required?: boolean;
+    placeholder?: string;
+    defaultValue?: unknown;
+    options?: Array<{ label: string; value: string | number }>;
+}
+
+export interface CheckoutAttendee {
+    firstName: string;
+    lastName: string;
+    email: string;
+    company?: string;
+    title?: string;
+    [key: string]: unknown;
+}
+
+export interface CheckoutWidgetConfig extends CheckoutWidgetConfiguration {
+    title?: string;
+    description?: string;
+    productId?: string;
+    productName?: string;
+    unitPrice?: number;
+    currency?: string;
+    unitMode?: 'perUnit' | 'perLine';
+    allowQuantity?: boolean;
+    maxQuantity?: number;
+    stripePublishableKey?: string;
+    theme?: CheckoutWidgetTheme;
+    customCSS?: string;
+    customJS?: string;
+    customUI?: CustomUIConfiguration;
+    successMessage?: string;
+    redirectUrl?: string;
+    extensionEntityName?: string;
+    extensionFields?: ExtensionFieldDef[];
+    isEvent?: boolean;
+}
+
+export interface CheckoutSubmissionEvent {
+    email: string;
+    quantity: number;
+    attendees: CheckoutAttendee[];
+    extensionData: {
+        entityName?: string;
+        fields?: Record<string, unknown>;
+        units?: Array<Record<string, unknown>>;
+    };
+    totalGross: number;
+    paymentToken?: string;
+    stripePaymentMethodId?: string;
+    stripePaymentIntentId?: string;
+    sessionKey: string;
+}
+
+declare global {
+    interface Window {
+        MJCheckoutHooks?: Record<string, (arg1?: unknown, arg2?: unknown) => unknown>;
+    }
+}
+
+@Component({
+    selector: 'mj-checkout-widget',
+    standalone: true,
+    imports: [CommonModule, FormsModule],
+    templateUrl: './checkout-widget.component.html',
+    styleUrls: ['./checkout-widget.component.css'],
+    changeDetection: ChangeDetectionStrategy.OnPush
+})
+export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
+    private _config = signal<CheckoutWidgetConfig | null>(null);
+
+    @Input()
+    public set config(val: CheckoutWidgetConfig | null) {
+        this._config.set(val);
+        this.syncUnits();
+    }
+    public get config(): CheckoutWidgetConfig | null {
+        return this._config();
+    }
+
+    @Input() public distributionSlug: string = '';
+    @Input() public isProcessing: boolean = false;
+    @Input() public errorMessage: string | null = null;
+    @Input() public isPaymentReady: boolean = true;
+    @Input() public stripePaymentMethodId: string | null = null;
+
+    @Output() public submitted = new EventEmitter<CheckoutSubmissionEvent>();
+    @Output() public cancelled = new EventEmitter<void>();
+
+    // Form state signals
+    public email = signal<string>('');
+    public firstName = signal<string>('');
+    public lastName = signal<string>('');
+    public company = signal<string>('');
+    public title = signal<string>('');
+    public quantity = signal<number>(1);
+
+    // Generic units array holding field maps for each unit
+    public units = signal<Array<Record<string, unknown>>>([]);
+
+    // Backward-compatibility signal for legacy attendees
+    public attendees = computed<CheckoutAttendee[]>(() => {
+        return this.units().map(u => ({
+            firstName: String(u['firstName'] || u['FirstName'] || ''),
+            lastName: String(u['lastName'] || u['LastName'] || ''),
+            email: String(u['email'] || u['Email'] || ''),
+            company: u['company'] ? String(u['company']) : (u['Company'] ? String(u['Company']) : undefined),
+            title: u['title'] ? String(u['title']) : (u['Title'] ? String(u['Title']) : undefined),
+            ...u
+        }));
+    });
+
+    // Unified customUI computed values
+    public activeCSS = computed<string>(() => {
+        const cfg = this._config();
+        return cfg?.customUI?.css || cfg?.customCSS || '';
+    });
+
+    public activeJS = computed<string>(() => {
+        const cfg = this._config();
+        return cfg?.customUI?.js || cfg?.customJS || '';
+    });
+
+    public activeTheme = computed<CustomUIThemeConfiguration | null>(() => {
+        const cfg = this._config();
+        return cfg?.customUI?.theme || cfg?.theme || null;
+    });
+
+    public activeComponentOverrideKey = computed<string | null>(() => {
+        const cfg = this._config();
+        return cfg?.customUI?.componentOverrideKey || null;
+    });
+
+    // Dynamic field list
+    public activeFieldDefs = computed<ExtensionFieldDef[]>(() => {
+        const custom = this._config()?.extensionFields;
+        if (custom && custom.length > 0) {
+            return custom;
+        }
+        // Default standard attendee fields
+        return [
+            { name: 'firstName', label: 'First Name', type: 'text', required: true, placeholder: 'Jane' },
+            { name: 'lastName', label: 'Last Name', type: 'text', required: true, placeholder: 'Doe' },
+            { name: 'email', label: 'Email Address', type: 'text', required: true, placeholder: 'jane.doe@example.com' },
+            { name: 'company', label: 'Company / Organization', type: 'text', required: false, placeholder: 'Acme Corp' },
+            { name: 'title', label: 'Job Title', type: 'text', required: false, placeholder: 'Director' }
+        ];
+    });
+
+    // Computed properties
+    public isFree = computed(() => (this._config()?.unitPrice ?? 0) <= 0);
+    public isPerUnit = computed(() => {
+        const cfg = this._config();
+        return cfg?.unitMode === 'perUnit' || Boolean(cfg?.isEvent);
+    });
+    public isSingleUnit = computed(() => !this.isPerUnit() || this.quantity() === 1);
+    public isMultiUnit = computed(() => this.isPerUnit() && this.quantity() > 1);
+
+    public subtotal = computed(() => {
+        const price = this._config()?.unitPrice ?? 0;
+        return price * this.quantity();
+    });
+
+    public totalGross = computed(() => this.subtotal());
+
+    public currencySymbol = computed(() => {
+        const c = this._config()?.currency?.toUpperCase() ?? 'USD';
+        switch (c) {
+            case 'EUR': return '€';
+            case 'GBP': return '£';
+            default: return '$';
+        }
+    });
+
+    public ngOnInit(): void {
+        this.syncUnits();
+        if (this.activeJS()) {
+            this.mountCustomJS(this.activeJS());
+        }
+        this.executeLifecycleHook('onInit', {
+            config: this.config,
+            distributionSlug: this.distributionSlug
+        });
+    }
+
+    public ngOnChanges(changes: SimpleChanges): void {
+        if (changes['config']) {
+            this.syncUnits();
+            if (this.activeJS()) {
+                this.mountCustomJS(this.activeJS());
+            }
+        }
+    }
+
+    private mountCustomJS(scriptContent: string): void {
+        if (!scriptContent || typeof window === 'undefined') return;
+        try {
+            const runner = new Function('widgetContext', scriptContent);
+            runner({ component: this, config: this.config });
+        } catch (err) {
+            console.warn('[MJCheckoutWidget] CustomJS evaluation notice:', err);
+        }
+    }
+
+    public executeLifecycleHook(hookName: string, payload?: unknown): unknown {
+        if (typeof window === 'undefined') return undefined;
+        try {
+            if (window.MJCheckoutHooks && typeof window.MJCheckoutHooks[hookName] === 'function') {
+                return window.MJCheckoutHooks[hookName](payload, { component: this, config: this.config });
+            }
+        } catch (err) {
+            console.warn(`[MJCheckoutWidget] Hook error in ${hookName}:`, err);
+        }
+        return undefined;
+    }
+
+    public onQuantityChange(newQty: number): void {
+        const clamped = Math.max(1, Math.min(newQty, this.config?.maxQuantity ?? 50));
+        this.quantity.set(clamped);
+        this.syncUnits();
+        this.executeLifecycleHook('onQuantityChange', { quantity: clamped });
+    }
+
+    public syncUnits(): void {
+        const currentQty = this.quantity();
+        const currentUnits = this.units();
+        const updated: Array<Record<string, unknown>> = [];
+
+        for (let i = 0; i < currentQty; i++) {
+            if (i === 0) {
+                const primary = currentUnits[0] || {};
+                updated.push({
+                    ...primary,
+                    firstName: this.firstName() || (primary['firstName'] as string) || '',
+                    lastName: this.lastName() || (primary['lastName'] as string) || '',
+                    email: this.email() || (primary['email'] as string) || '',
+                    company: this.company() || (primary['company'] as string) || '',
+                    title: this.title() || (primary['title'] as string) || '',
+                });
+            } else if (currentUnits[i]) {
+                updated.push({ ...currentUnits[i] });
+            } else {
+                const initial: Record<string, unknown> = {};
+                for (const field of this.activeFieldDefs()) {
+                    initial[field.name] = field.defaultValue ?? '';
+                }
+                if (this.company()) {
+                    initial['company'] = this.company();
+                }
+                updated.push(initial);
+            }
+        }
+
+        this.units.set(updated);
+    }
+
+    public updateUnitField(index: number, fieldName: string, value: unknown): void {
+        const list = [...this.units()];
+        if (list[index]) {
+            list[index] = { ...list[index], [fieldName]: value };
+            if (index === 0) {
+                if (fieldName === 'firstName') this.firstName.set(String(value ?? ''));
+                if (fieldName === 'lastName') this.lastName.set(String(value ?? ''));
+                if (fieldName === 'email') this.email.set(String(value ?? ''));
+                if (fieldName === 'company') this.company.set(String(value ?? ''));
+                if (fieldName === 'title') this.title.set(String(value ?? ''));
+            }
+            this.units.set(list);
+        }
+    }
+
+    public updateAttendee(index: number, field: keyof CheckoutAttendee, value: string): void {
+        this.updateUnitField(index, field as string, value);
+    }
+
+    public copyPrimaryToAll(): void {
+        const primary = this.units()[0];
+        if (!primary) return;
+        const list = this.units().map((unit, i) => {
+            if (i === 0) return unit;
+            return {
+                ...unit,
+                company: primary['company'] || unit['company']
+            };
+        });
+        this.units.set(list);
+    }
+
+    public isFormValid(): boolean {
+        const em = this.email().trim();
+        if (!em || !em.includes('@')) return false;
+        if (!this.firstName().trim() || !this.lastName().trim()) return false;
+
+        const currentUnits = this.units();
+        const fields = this.activeFieldDefs();
+
+        if (this.isMultiUnit()) {
+            for (const unit of currentUnits) {
+                for (const field of fields) {
+                    if (field.required) {
+                        const val = unit[field.name];
+                        if (val === undefined || val === null || String(val).trim() === '') {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!this.isFree() && !this.isPaymentReady) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public handleSubmit(): void {
+        if (!this.isFormValid() || this.isProcessing) return;
+
+        const sessionKey = 'ck_sess_' + Math.random().toString(36).substring(2, 15);
+        const currentUnits = this.units();
+
+        const submission: CheckoutSubmissionEvent = {
+            email: this.email().trim().toLowerCase(),
+            quantity: this.quantity(),
+            attendees: this.attendees(),
+            extensionData: {
+                entityName: this.config?.extensionEntityName,
+                fields: currentUnits[0] || {},
+                units: currentUnits
+            },
+            totalGross: this.totalGross(),
+            stripePaymentMethodId: this.isFree() ? undefined : (this.stripePaymentMethodId ?? 'pm_stripe_token_' + Math.random().toString(36).substring(2, 8)),
+            sessionKey
+        };
+
+        // Execute custom validation hook if present
+        const customValidationResult = this.executeLifecycleHook('onValidate', submission);
+        if (customValidationResult === false || typeof customValidationResult === 'string') {
+            this.errorMessage = typeof customValidationResult === 'string' ? customValidationResult : 'Submission validation rejected.';
+            return;
+        }
+
+        // Execute pre-submit enrichment hook
+        this.executeLifecycleHook('onBeforeSubmit', submission);
+
+        this.submitted.emit(submission);
+    }
+}

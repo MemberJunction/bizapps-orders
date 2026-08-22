@@ -86,6 +86,222 @@ export const mjBizAppsOrdersChargeTypeSchema = z.object({
 export type mjBizAppsOrdersChargeTypeEntityType = z.infer<typeof mjBizAppsOrdersChargeTypeSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Checkout Sessions
+ */
+export const mjBizAppsOrdersCheckoutSessionSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    CheckoutWidgetID: z.string().describe(`
+        * * Field Name: CheckoutWidgetID
+        * * Display Name: Checkout Widget ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widgets (vwCheckoutWidgets.ID)`),
+    DistributionID: z.string().nullable().describe(`
+        * * Field Name: DistributionID
+        * * Display Name: Distribution ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widget Distributions (vwCheckoutWidgetDistributions.ID)`),
+    ClientSessionKey: z.string().describe(`
+        * * Field Name: ClientSessionKey
+        * * Display Name: Client Session Key
+        * * SQL Data Type: nvarchar(100)`),
+    Email: z.string().nullable().describe(`
+        * * Field Name: Email
+        * * Display Name: Email
+        * * SQL Data Type: nvarchar(255)`),
+    PersonID: z.string().nullable().describe(`
+        * * Field Name: PersonID
+        * * Display Name: Person ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Common: People (vwPeople.ID)`),
+    DraftOrderID: z.string().nullable().describe(`
+        * * Field Name: DraftOrderID
+        * * Display Name: Draft Order ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)`),
+    PaymentIntentID: z.string().nullable().describe(`
+        * * Field Name: PaymentIntentID
+        * * Display Name: Payment Intent ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Intents (vwPaymentIntents.ID)`),
+    Status: z.union([z.literal('Abandoned'), z.literal('Confirmed'), z.literal('Expired'), z.literal('Open'), z.literal('Processing')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Open
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Abandoned
+    *   * Confirmed
+    *   * Expired
+    *   * Open
+    *   * Processing`),
+    ExpiresAt: z.date().describe(`
+        * * Field Name: ExpiresAt
+        * * Display Name: Expires At
+        * * SQL Data Type: datetimeoffset`),
+    MetadataJSON: z.string().nullable().describe(`
+        * * Field Name: MetadataJSON
+        * * Display Name: Metadata JSON
+        * * SQL Data Type: nvarchar(MAX)`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    CheckoutWidget: z.string().describe(`
+        * * Field Name: CheckoutWidget
+        * * Display Name: Checkout Widget
+        * * SQL Data Type: nvarchar(100)`),
+    Person: z.string().nullable().describe(`
+        * * Field Name: Person
+        * * Display Name: Person
+        * * SQL Data Type: nvarchar(201)`),
+    DraftOrder: z.string().nullable().describe(`
+        * * Field Name: DraftOrder
+        * * Display Name: Draft Order
+        * * SQL Data Type: nvarchar(40)`),
+    PaymentIntent: z.string().nullable().describe(`
+        * * Field Name: PaymentIntent
+        * * Display Name: Payment Intent
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersCheckoutSessionEntityType = z.infer<typeof mjBizAppsOrdersCheckoutSessionSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Checkout Widget Distributions
+ */
+export const mjBizAppsOrdersCheckoutWidgetDistributionSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    CheckoutWidgetID: z.string().describe(`
+        * * Field Name: CheckoutWidgetID
+        * * Display Name: Checkout Widget
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widgets (vwCheckoutWidgets.ID)`),
+    Slug: z.string().describe(`
+        * * Field Name: Slug
+        * * Display Name: Vanity Slug
+        * * SQL Data Type: nvarchar(255)`),
+    MagicLinkInviteID: z.string().nullable().describe(`
+        * * Field Name: MagicLinkInviteID
+        * * Display Name: Magic Link Invite
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Magic Link Invites (vwMagicLinkInvites.ID)`),
+    Status: z.union([z.literal('Active'), z.literal('Revoked')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Active
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Revoked`),
+    RevokedAt: z.date().nullable().describe(`
+        * * Field Name: RevokedAt
+        * * Display Name: Revoked At
+        * * SQL Data Type: datetimeoffset`),
+    RevocationReason: z.string().nullable().describe(`
+        * * Field Name: RevocationReason
+        * * Display Name: Revocation Reason
+        * * SQL Data Type: nvarchar(500)`),
+    EmbedSnippet: z.string().nullable().describe(`
+        * * Field Name: EmbedSnippet
+        * * Display Name: Embed Snippet
+        * * SQL Data Type: nvarchar(MAX)`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    CheckoutWidget: z.string().describe(`
+        * * Field Name: CheckoutWidget
+        * * Display Name: Checkout Widget Name
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersCheckoutWidgetDistributionEntityType = z.infer<typeof mjBizAppsOrdersCheckoutWidgetDistributionSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Checkout Widgets
+ */
+export const mjBizAppsOrdersCheckoutWidgetSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    Name: z.string().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(100)`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * Display Name: Description
+        * * SQL Data Type: nvarchar(MAX)`),
+    CompanyID: z.string().describe(`
+        * * Field Name: CompanyID
+        * * Display Name: Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)`),
+    Status: z.union([z.literal('Active'), z.literal('Disabled'), z.literal('Draft')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Draft
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Disabled
+    *   * Draft`),
+    Configuration: z.string().nullable().describe(`
+        * * Field Name: Configuration
+        * * Display Name: Configuration
+        * * SQL Data Type: nvarchar(MAX)`),
+    CustomCSS: z.string().nullable().describe(`
+        * * Field Name: CustomCSS
+        * * Display Name: Custom CSS
+        * * SQL Data Type: nvarchar(MAX)`),
+    CustomJS: z.string().nullable().describe(`
+        * * Field Name: CustomJS
+        * * Display Name: Custom JavaScript
+        * * SQL Data Type: nvarchar(MAX)`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Company: z.string().describe(`
+        * * Field Name: Company
+        * * Display Name: Company
+        * * SQL Data Type: nvarchar(50)`),
+});
+
+export type mjBizAppsOrdersCheckoutWidgetEntityType = z.infer<typeof mjBizAppsOrdersCheckoutWidgetSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Customer Payment Methods
  */
 export const mjBizAppsOrdersCustomerPaymentMethodSchema = z.object({
@@ -1147,13 +1363,13 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)`),
     BillToAddressID: z.string().nullable().describe(`
         * * Field Name: BillToAddressID
-        * * Display Name: Billing Address
+        * * Display Name: Bill To Address
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
         * * Description: FK to __mj_BizAppsCommon.Address — the billing address for this order/invoice. Nullable.`),
     ShipToAddressID: z.string().nullable().describe(`
         * * Field Name: ShipToAddressID
-        * * Display Name: Shipping Address
+        * * Display Name: Ship To Address
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
         * * Description: FK to __mj_BizAppsCommon.Address — the shipping/service address; drives tax jurisdiction when tax lands. Nullable.`),
@@ -1263,7 +1479,7 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Description: Optional free-text description / memo for the order.`),
     Notes: z.string().nullable().describe(`
         * * Field Name: Notes
-        * * Display Name: Notes
+        * * Display Name: Internal Notes
         * * SQL Data Type: nvarchar(MAX)
         * * Description: Internal notes on the order (Description is the customer-facing memo).`),
     ConfirmedAt: z.date().nullable().describe(`
@@ -1281,6 +1497,16 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    Origin: z.string().describe(`
+        * * Field Name: Origin
+        * * Display Name: Origin
+        * * SQL Data Type: nvarchar(50)
+        * * Default Value: Direct`),
+    SourceCheckoutWidgetID: z.string().nullable().describe(`
+        * * Field Name: SourceCheckoutWidgetID
+        * * Display Name: Source Checkout Widget
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widgets (vwCheckoutWidgets.ID)`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -1299,11 +1525,11 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * SQL Data Type: nvarchar(100)`),
     BillToAddress: z.string().nullable().describe(`
         * * Field Name: BillToAddress
-        * * Display Name: Billing Address Detail
+        * * Display Name: Bill To Address Details
         * * SQL Data Type: nvarchar(255)`),
     ShipToAddress: z.string().nullable().describe(`
         * * Field Name: ShipToAddress
-        * * Display Name: Shipping Address Detail
+        * * Display Name: Ship To Address Details
         * * SQL Data Type: nvarchar(255)`),
     ShipToOrganization: z.string().nullable().describe(`
         * * Field Name: ShipToOrganization
@@ -1327,12 +1553,16 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * SQL Data Type: char(4)`),
     PostedByUser: z.string().nullable().describe(`
         * * Field Name: PostedByUser
-        * * Display Name: Posted By User
+        * * Display Name: Posted By User Name
         * * SQL Data Type: nvarchar(100)`),
     ReversesOrderHeader: z.string().nullable().describe(`
         * * Field Name: ReversesOrderHeader
-        * * Display Name: Reverses Order Name
+        * * Display Name: Reversed Order Name
         * * SQL Data Type: nvarchar(40)`),
+    SourceCheckoutWidget: z.string().nullable().describe(`
+        * * Field Name: SourceCheckoutWidget
+        * * Display Name: Source Checkout Widget Name
+        * * SQL Data Type: nvarchar(100)`),
     __mj_Latitude: z.number().nullable().describe(`
         * * Field Name: __mj_Latitude
         * * Display Name: Latitude
@@ -3169,7 +3399,7 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * Description: MJ entity name of the IsA OrderLine-level extension for this type (e.g. MJ_BizApps_Orders: Event Order Lines). NULL = no extension (BO-D37).`),
     IsActive: z.boolean().describe(`
         * * Field Name: IsActive
-        * * Display Name: Active
+        * * Display Name: Is Active
         * * SQL Data Type: bit
         * * Default Value: 1
         * * Description: Whether this type is active and selectable.`),
@@ -3218,6 +3448,11 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * Display Name: Pricing Driver Class
         * * SQL Data Type: nvarchar(255)
         * * Description: ClassFactory key of a BasePriceResolver subclass for every product of this type, or NULL. The natural home for behaviour-wide pricing such as usage metering.`),
+    Configuration: z.string().nullable().describe(`
+        * * Field Name: Configuration
+        * * Display Name: Configuration
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: Extensible JSON configuration for this product type including customUI (js, css, theme, componentOverrideKey), unitMode, allowQuantity, and fieldOverrides.`),
     DefaultRevenueRecognitionType: z.string().nullable().describe(`
         * * Field Name: DefaultRevenueRecognitionType
         * * Display Name: Default Revenue Recognition Type
@@ -4820,6 +5055,570 @@ export class mjBizAppsOrdersChargeTypeEntity extends BaseEntity<mjBizAppsOrdersC
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Checkout Sessions - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: CheckoutSession
+ * * Base View: vwCheckoutSessions
+ * * @description Server-side state tracking for an anonymous or authenticated checkout attempt, linking client session key to draft orders and payment intents.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Checkout Sessions')
+export class mjBizAppsOrdersCheckoutSessionEntity extends BaseEntity<mjBizAppsOrdersCheckoutSessionEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Checkout Sessions record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Checkout Sessions record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersCheckoutSessionEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: CheckoutWidgetID
+    * * Display Name: Checkout Widget ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widgets (vwCheckoutWidgets.ID)
+    */
+    get CheckoutWidgetID(): string {
+        return this.Get('CheckoutWidgetID');
+    }
+    set CheckoutWidgetID(value: string) {
+        this.Set('CheckoutWidgetID', value);
+    }
+
+    /**
+    * * Field Name: DistributionID
+    * * Display Name: Distribution ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widget Distributions (vwCheckoutWidgetDistributions.ID)
+    */
+    get DistributionID(): string | null {
+        return this.Get('DistributionID');
+    }
+    set DistributionID(value: string | null) {
+        this.Set('DistributionID', value);
+    }
+
+    /**
+    * * Field Name: ClientSessionKey
+    * * Display Name: Client Session Key
+    * * SQL Data Type: nvarchar(100)
+    */
+    get ClientSessionKey(): string {
+        return this.Get('ClientSessionKey');
+    }
+    set ClientSessionKey(value: string) {
+        this.Set('ClientSessionKey', value);
+    }
+
+    /**
+    * * Field Name: Email
+    * * Display Name: Email
+    * * SQL Data Type: nvarchar(255)
+    */
+    get Email(): string | null {
+        return this.Get('Email');
+    }
+    set Email(value: string | null) {
+        this.Set('Email', value);
+    }
+
+    /**
+    * * Field Name: PersonID
+    * * Display Name: Person ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Common: People (vwPeople.ID)
+    */
+    get PersonID(): string | null {
+        return this.Get('PersonID');
+    }
+    set PersonID(value: string | null) {
+        this.Set('PersonID', value);
+    }
+
+    /**
+    * * Field Name: DraftOrderID
+    * * Display Name: Draft Order ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
+    */
+    get DraftOrderID(): string | null {
+        return this.Get('DraftOrderID');
+    }
+    set DraftOrderID(value: string | null) {
+        this.Set('DraftOrderID', value);
+    }
+
+    /**
+    * * Field Name: PaymentIntentID
+    * * Display Name: Payment Intent ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Intents (vwPaymentIntents.ID)
+    */
+    get PaymentIntentID(): string | null {
+        return this.Get('PaymentIntentID');
+    }
+    set PaymentIntentID(value: string | null) {
+        this.Set('PaymentIntentID', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Open
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Abandoned
+    *   * Confirmed
+    *   * Expired
+    *   * Open
+    *   * Processing
+    */
+    get Status(): 'Abandoned' | 'Confirmed' | 'Expired' | 'Open' | 'Processing' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Abandoned' | 'Confirmed' | 'Expired' | 'Open' | 'Processing') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: ExpiresAt
+    * * Display Name: Expires At
+    * * SQL Data Type: datetimeoffset
+    */
+    get ExpiresAt(): Date {
+        return this.Get('ExpiresAt');
+    }
+    set ExpiresAt(value: Date) {
+        this.Set('ExpiresAt', value);
+    }
+
+    /**
+    * * Field Name: MetadataJSON
+    * * Display Name: Metadata JSON
+    * * SQL Data Type: nvarchar(MAX)
+    */
+    get MetadataJSON(): string | null {
+        return this.Get('MetadataJSON');
+    }
+    set MetadataJSON(value: string | null) {
+        this.Set('MetadataJSON', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: CheckoutWidget
+    * * Display Name: Checkout Widget
+    * * SQL Data Type: nvarchar(100)
+    */
+    get CheckoutWidget(): string {
+        return this.Get('CheckoutWidget');
+    }
+
+    /**
+    * * Field Name: Person
+    * * Display Name: Person
+    * * SQL Data Type: nvarchar(201)
+    */
+    get Person(): string | null {
+        return this.Get('Person');
+    }
+
+    /**
+    * * Field Name: DraftOrder
+    * * Display Name: Draft Order
+    * * SQL Data Type: nvarchar(40)
+    */
+    get DraftOrder(): string | null {
+        return this.Get('DraftOrder');
+    }
+
+    /**
+    * * Field Name: PaymentIntent
+    * * Display Name: Payment Intent
+    * * SQL Data Type: nvarchar(100)
+    */
+    get PaymentIntent(): string | null {
+        return this.Get('PaymentIntent');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Checkout Widget Distributions - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: CheckoutWidgetDistribution
+ * * Base View: vwCheckoutWidgetDistributions
+ * * @description Public distribution endpoint for a CheckoutWidget, wrapping an anonymous scoped magic link invite and vanity slug with instant revocation capability.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Checkout Widget Distributions')
+export class mjBizAppsOrdersCheckoutWidgetDistributionEntity extends BaseEntity<mjBizAppsOrdersCheckoutWidgetDistributionEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Checkout Widget Distributions record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Checkout Widget Distributions record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersCheckoutWidgetDistributionEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: CheckoutWidgetID
+    * * Display Name: Checkout Widget
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widgets (vwCheckoutWidgets.ID)
+    */
+    get CheckoutWidgetID(): string {
+        return this.Get('CheckoutWidgetID');
+    }
+    set CheckoutWidgetID(value: string) {
+        this.Set('CheckoutWidgetID', value);
+    }
+
+    /**
+    * * Field Name: Slug
+    * * Display Name: Vanity Slug
+    * * SQL Data Type: nvarchar(255)
+    */
+    get Slug(): string {
+        return this.Get('Slug');
+    }
+    set Slug(value: string) {
+        this.Set('Slug', value);
+    }
+
+    /**
+    * * Field Name: MagicLinkInviteID
+    * * Display Name: Magic Link Invite
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Magic Link Invites (vwMagicLinkInvites.ID)
+    */
+    get MagicLinkInviteID(): string | null {
+        return this.Get('MagicLinkInviteID');
+    }
+    set MagicLinkInviteID(value: string | null) {
+        this.Set('MagicLinkInviteID', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Active
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Revoked
+    */
+    get Status(): 'Active' | 'Revoked' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Active' | 'Revoked') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: RevokedAt
+    * * Display Name: Revoked At
+    * * SQL Data Type: datetimeoffset
+    */
+    get RevokedAt(): Date | null {
+        return this.Get('RevokedAt');
+    }
+    set RevokedAt(value: Date | null) {
+        this.Set('RevokedAt', value);
+    }
+
+    /**
+    * * Field Name: RevocationReason
+    * * Display Name: Revocation Reason
+    * * SQL Data Type: nvarchar(500)
+    */
+    get RevocationReason(): string | null {
+        return this.Get('RevocationReason');
+    }
+    set RevocationReason(value: string | null) {
+        this.Set('RevocationReason', value);
+    }
+
+    /**
+    * * Field Name: EmbedSnippet
+    * * Display Name: Embed Snippet
+    * * SQL Data Type: nvarchar(MAX)
+    */
+    get EmbedSnippet(): string | null {
+        return this.Get('EmbedSnippet');
+    }
+    set EmbedSnippet(value: string | null) {
+        this.Set('EmbedSnippet', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: CheckoutWidget
+    * * Display Name: Checkout Widget Name
+    * * SQL Data Type: nvarchar(100)
+    */
+    get CheckoutWidget(): string {
+        return this.Get('CheckoutWidget');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Checkout Widgets - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: CheckoutWidget
+ * * Base View: vwCheckoutWidgets
+ * * @description Metadata configuration for an embeddable checkout widget instance. Specifies selling company, product lines, layout rules, theme variables, and security policies.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Checkout Widgets')
+export class mjBizAppsOrdersCheckoutWidgetEntity extends BaseEntity<mjBizAppsOrdersCheckoutWidgetEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Checkout Widgets record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Checkout Widgets record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersCheckoutWidgetEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(100)
+    */
+    get Name(): string {
+        return this.Get('Name');
+    }
+    set Name(value: string) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * Display Name: Description
+    * * SQL Data Type: nvarchar(MAX)
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: CompanyID
+    * * Display Name: Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    */
+    get CompanyID(): string {
+        return this.Get('CompanyID');
+    }
+    set CompanyID(value: string) {
+        this.Set('CompanyID', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Draft
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Active
+    *   * Disabled
+    *   * Draft
+    */
+    get Status(): 'Active' | 'Disabled' | 'Draft' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Active' | 'Disabled' | 'Draft') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: Configuration
+    * * Display Name: Configuration
+    * * SQL Data Type: nvarchar(MAX)
+    */
+    get Configuration(): string | null {
+        return this.Get('Configuration');
+    }
+    set Configuration(value: string | null) {
+        this.Set('Configuration', value);
+    }
+
+    /**
+    * * Field Name: CustomCSS
+    * * Display Name: Custom CSS
+    * * SQL Data Type: nvarchar(MAX)
+    */
+    get CustomCSS(): string | null {
+        return this.Get('CustomCSS');
+    }
+    set CustomCSS(value: string | null) {
+        this.Set('CustomCSS', value);
+    }
+
+    /**
+    * * Field Name: CustomJS
+    * * Display Name: Custom JavaScript
+    * * SQL Data Type: nvarchar(MAX)
+    */
+    get CustomJS(): string | null {
+        return this.Get('CustomJS');
+    }
+    set CustomJS(value: string | null) {
+        this.Set('CustomJS', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Company
+    * * Display Name: Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get Company(): string {
+        return this.Get('Company');
     }
 }
 
@@ -8238,7 +9037,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: BillToAddressID
-    * * Display Name: Billing Address
+    * * Display Name: Bill To Address
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
     * * Description: FK to __mj_BizAppsCommon.Address — the billing address for this order/invoice. Nullable.
@@ -8252,7 +9051,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: ShipToAddressID
-    * * Display Name: Shipping Address
+    * * Display Name: Ship To Address
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
     * * Description: FK to __mj_BizAppsCommon.Address — the shipping/service address; drives tax jurisdiction when tax lands. Nullable.
@@ -8522,7 +9321,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: Notes
-    * * Display Name: Notes
+    * * Display Name: Internal Notes
     * * SQL Data Type: nvarchar(MAX)
     * * Description: Internal notes on the order (Description is the customer-facing memo).
     */
@@ -8567,6 +9366,32 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: Origin
+    * * Display Name: Origin
+    * * SQL Data Type: nvarchar(50)
+    * * Default Value: Direct
+    */
+    get Origin(): string {
+        return this.Get('Origin');
+    }
+    set Origin(value: string) {
+        this.Set('Origin', value);
+    }
+
+    /**
+    * * Field Name: SourceCheckoutWidgetID
+    * * Display Name: Source Checkout Widget
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widgets (vwCheckoutWidgets.ID)
+    */
+    get SourceCheckoutWidgetID(): string | null {
+        return this.Get('SourceCheckoutWidgetID');
+    }
+    set SourceCheckoutWidgetID(value: string | null) {
+        this.Set('SourceCheckoutWidgetID', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company Name
     * * SQL Data Type: nvarchar(50)
@@ -8604,7 +9429,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: BillToAddress
-    * * Display Name: Billing Address Detail
+    * * Display Name: Bill To Address Details
     * * SQL Data Type: nvarchar(255)
     */
     get BillToAddress(): string | null {
@@ -8613,7 +9438,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: ShipToAddress
-    * * Display Name: Shipping Address Detail
+    * * Display Name: Ship To Address Details
     * * SQL Data Type: nvarchar(255)
     */
     get ShipToAddress(): string | null {
@@ -8667,7 +9492,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: PostedByUser
-    * * Display Name: Posted By User
+    * * Display Name: Posted By User Name
     * * SQL Data Type: nvarchar(100)
     */
     get PostedByUser(): string | null {
@@ -8676,11 +9501,20 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: ReversesOrderHeader
-    * * Display Name: Reverses Order Name
+    * * Display Name: Reversed Order Name
     * * SQL Data Type: nvarchar(40)
     */
     get ReversesOrderHeader(): string | null {
         return this.Get('ReversesOrderHeader');
+    }
+
+    /**
+    * * Field Name: SourceCheckoutWidget
+    * * Display Name: Source Checkout Widget Name
+    * * SQL Data Type: nvarchar(100)
+    */
+    get SourceCheckoutWidget(): string | null {
+        return this.Get('SourceCheckoutWidget');
     }
 
     /**
@@ -14182,7 +15016,7 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: IsActive
-    * * Display Name: Active
+    * * Display Name: Is Active
     * * SQL Data Type: bit
     * * Default Value: 1
     * * Description: Whether this type is active and selectable.
@@ -14279,6 +15113,19 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     }
     set PricingDriverClass(value: string | null) {
         this.Set('PricingDriverClass', value);
+    }
+
+    /**
+    * * Field Name: Configuration
+    * * Display Name: Configuration
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: Extensible JSON configuration for this product type including customUI (js, css, theme, componentOverrideKey), unitMode, allowQuantity, and fieldOverrides.
+    */
+    get Configuration(): string | null {
+        return this.Get('Configuration');
+    }
+    set Configuration(value: string | null) {
+        this.Set('Configuration', value);
     }
 
     /**

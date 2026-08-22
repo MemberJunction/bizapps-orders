@@ -20,7 +20,8 @@ export class mjBizAppsOrdersPaymentIntentFormComponent extends BaseFormComponent
             { sectionKey: 'paymentStatusAndAmount', sectionName: 'Payment Status and Amount', isExpanded: true },
             { sectionKey: 'associatedEntities', sectionName: 'Associated Entities', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPaymentHeaders', sectionName: 'Payment Headers', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersCheckoutSessions', sectionName: 'Checkout Sessions', isExpanded: false }
         ]);
     }
 }
