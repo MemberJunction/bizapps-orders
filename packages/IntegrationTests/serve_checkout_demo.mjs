@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config({ path: '/Users/amith/Dropbox/develop/M5/MJ/packages/MJAPI/.env' });
+
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import sql from '/Users/amith/Dropbox/develop/M5/bizapps-issues/node_modules/.pnpm/mssql@11.0.1/node_modules/mssql/index.js';
@@ -8,6 +11,8 @@ import { IdentityClaimEngine } from '@memberjunction/core-entities';
 import '@mj-biz-apps/common-entities';
 import '@mj-biz-apps/orders-entities';
 import '@mj-biz-apps/orders-core-entities-server';
+import { LoadBizAppsOrdersServer } from '@mj-biz-apps/orders-server';
+import { LoadBizAppsAccountingServer } from '@mj-biz-apps/accounting-server';
 
 const PORT = 4205;
 
@@ -29,6 +34,8 @@ let contextUser = null;
 
 async function getDbPool() {
     if (!dbPool) {
+        LoadBizAppsAccountingServer();
+        LoadBizAppsOrdersServer();
         dbPool = await sql.connect(DB_CONFIG);
         const configData = new SQLServerProviderConfigData(dbPool, '__mj', 0);
         mjProvider = await setupSQLServerClient(configData, { mode: 'minimal' });
