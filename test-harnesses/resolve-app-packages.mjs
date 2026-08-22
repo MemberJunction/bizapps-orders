@@ -1,11 +1,13 @@
 /**
  * Resolve @mj-biz-apps/accounting-* through packages/IntegrationTests, the
- * package that DECLARES them (as mandatory peers). The repo root cannot declare
- * them: no accounting package is published, so a root declaration makes the
- * root unresolvable from the registry and no lockfile can exist. In a dev
- * workspace (accounting materialized as a sibling) the peers are linked into
- * IntegrationTests' node_modules and this resolves; anywhere else it throws
- * the honest error that the environment has no accounting.
+ * package that DECLARES them (as mandatory peers), rather than from the repo
+ * root. Historically the root could not declare them because no accounting
+ * package was published; that is no longer true (accounting-engine-base and
+ * accounting-server are both on npm at 0.1.0, and resolve here from the
+ * registry alone). Keeping the declaration on the package that actually
+ * imports them is still the right shape, and a dev workspace with accounting
+ * materialized as a sibling continues to work. If neither is available this
+ * throws the honest error that the environment has no accounting.
  */
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';

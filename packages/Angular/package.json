@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-ng",
   "type": "module",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "BizApps Orders Angular bootstrap - generated form components and module for the unified order-management Open App",
   "main": "dist/public-api.js",
   "types": "dist/public-api.d.ts",
@@ -12,19 +12,19 @@
     "/dist"
   ],
   "scripts": {
-    "build": "ngc && npm run build:styles",
+    "build": "ngc && tsc-alias -f && npm run build:styles",
     "test": "echo \"No tests configured yet\"",
     "build:styles": "node -e \"require('node:fs').mkdirSync('dist/lib/styles',{recursive:true});require('node:fs').copyFileSync('src/lib/styles/orders-kit.css','dist/lib/styles/orders-kit.css')\""
   },
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",
   "dependencies": {
-    "@memberjunction/ng-hierarchy-tree": "6.1.0-edge.2",
+    "@memberjunction/ng-hierarchy-tree": "6.1.0-edge.3",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-ng": ">=0.1.0",
-    "@mj-biz-apps/common-entities": "5.33.2",
-    "@mj-biz-apps/common-ng": "5.33.2",
-    "@mj-biz-apps/orders-entities": "5.0.0",
+    "@mj-biz-apps/common-entities": ">=5.35.0",
+    "@mj-biz-apps/common-ng": ">=5.35.0",
+    "@mj-biz-apps/orders-entities": "5.1.0",
     "ag-grid-angular": "^35.0.1",
     "ag-grid-community": "^35.0.1"
   },
@@ -46,12 +46,13 @@
     "@memberjunction/ng-ui-components": "^6.1.0-edge.1"
   },
   "devDependencies": {
-    "@angular/compiler": "21.1.3",
-    "@angular/compiler-cli": "21.1.3",
     "@angular/animations": "21.1.3",
     "@angular/common": "21.1.3",
+    "@angular/compiler": "21.1.3",
+    "@angular/compiler-cli": "21.1.3",
     "@angular/core": "21.1.3",
     "@angular/forms": "21.1.3",
+    "@mj-biz-apps/accounting-entities": ">=0.1.0",
     "typescript": "^5.9.3"
   },
   "repository": {

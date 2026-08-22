@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-server",
   "type": "module",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "description": "BizApps Orders server bootstrap - GraphQL resolvers and class registrations for the unified order-management Open App",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -18,13 +18,16 @@
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",
   "devDependencies": {
+    "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
+    "@mj-biz-apps/accounting-entities": ">=0.1.0",
+    "@mj-biz-apps/accounting-server": ">=0.1.0",
     "@types/express": "^5.0.6",
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-actions": "5.0.0",
-    "@mj-biz-apps/orders-core-entities-server": "5.0.0",
-    "@mj-biz-apps/orders-entities": "5.0.0",
+    "@mj-biz-apps/orders-actions": "5.1.0",
+    "@mj-biz-apps/orders-core-entities-server": "5.1.0",
+    "@mj-biz-apps/orders-entities": "5.1.0",
     "body-parser": "^2.2.0",
     "class-validator": "^0.14.3"
   },

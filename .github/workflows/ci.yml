@@ -169,7 +169,7 @@ jobs:
       - name: State plainly what this gate does not cover
         if: always()
         run: |
-          echo "::notice title=Integration checks are not run here::The 366 database checks need a local environment. Run 'RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs' before merging — see .github/workflows/ci.yml for why."
+          echo "::notice title=Integration checks are not run here::The 392 database checks need a local environment. Run 'RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs' before merging — see .github/workflows/ci.yml for why."
 
       # THE GATE, and it is last on purpose. Failing earlier would skip every step above that is not
       # marked `always()` — including the changeset reminder — and, more importantly, would collapse
