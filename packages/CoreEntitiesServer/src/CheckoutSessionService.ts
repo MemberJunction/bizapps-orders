@@ -8,10 +8,11 @@
  * @module @mj-biz-apps/orders-core-entities-server/CheckoutSessionService
  */
 
-import { BaseEntity, Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { BaseEntity, EntityFieldInfo, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import {
     OrderHeaderEntity,
     OrderLineEntity,
+    mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersCheckoutSessionEntity,
     mjBizAppsOrdersCheckoutWidgetDistributionEntity,
     mjBizAppsOrdersCheckoutWidgetEntity,
@@ -213,12 +214,13 @@ export class CheckoutSessionService {
 
     /**
      * Resolves or creates a Person entity record based on provided fields.
+     * Resolves or ensures a Person entity record based on provided fields.
      */
     private static async resolveOrEnsurePerson(
         fields: Record<string, unknown>,
         contextUser?: UserInfo
     ): Promise<string | null> {
-        const email = (fields['Email'] || fields['email'] || fields['PrimaryEmail']) as string | undefined;
+        const email = (fields['Email'] || fields['email'] || fields['AttendeeEmail'] || fields['attendeeEmail']) as string | undefined;
         if (!email || !email.trim()) {
             return null;
         }
@@ -226,56 +228,93 @@ export class CheckoutSessionService {
         const normalized = email.trim().toLowerCase();
         const rv = new RunView();
         const escaped = normalized.replace(/'/g, "''");
-        const personRes = await rv.RunView<{ ID: string }>({
-            EntityName: PERSON_ENTITY,
-            ExtraFilter: `Email = '${escaped}' OR PrimaryEmail = '${escaped}'`,
-            ResultType: 'simple'
-        }, contextUser);
+        try {
+            const personRes = await rv.RunView<{ ID: string }>({
+                EntityName: PERSON_ENTITY,
+                ExtraFilter: `Email = '${escaped}'`,
+                ResultType: 'simple'
+            }, contextUser);
 
-        if (personRes.Success && personRes.Results && personRes.Results.length > 0) {
-            return personRes.Results[0].ID;
+            if (personRes?.Success && personRes.Results && personRes.Results.length > 0) {
+                return personRes.Results[0].ID;
+            }
+        } catch (err) {
+            console.warn('[CheckoutSessionService] RunView Person lookup error:', err);
         }
 
-        const firstName = (fields['FirstName'] || fields['firstName'] || '') as string;
-        const lastName = (fields['LastName'] || fields['lastName'] || '') as string;
+        let firstName = (fields['FirstName'] || fields['firstName'] || '') as string;
+        let lastName = (fields['LastName'] || fields['lastName'] || '') as string;
+
+        if (!firstName && !lastName && (fields['AttendeeName'] || fields['Name'] || fields['name'])) {
+            const fullName = String(fields['AttendeeName'] || fields['Name'] || fields['name']).trim();
+            const parts = fullName.split(/\s+/);
+            firstName = parts[0] || '';
+            lastName = parts.slice(1).join(' ') || '';
+        }
+
         if (firstName || lastName) {
             try {
                 const md = new Metadata();
                 const person = await md.GetEntityObject<BaseEntity>(PERSON_ENTITY, contextUser);
-                person.NewRecord();
-                person.Set('FirstName', firstName);
-                person.Set('LastName', lastName);
-                person.Set('Email', normalized);
-                person.Set('PrimaryEmail', normalized);
-                if (fields['Company'] || fields['company']) {
-                    person.Set('CompanyName', fields['Company'] || fields['company']);
+                if (person) {
+                    person.NewRecord();
+                    person.Set('FirstName', firstName);
+                    person.Set('LastName', lastName || firstName);
+                    person.Set('Email', normalized);
+                    if (fields['Title'] || fields['title']) {
+                        person.Set('Title', String(fields['Title'] || fields['title']));
+                    }
+                    if (fields['Phone'] || fields['phone']) {
+                        person.Set('Phone', String(fields['Phone'] || fields['phone']));
+                    }
+                    const saved = await person.Save();
+                    if (saved) {
+                        return person.Get('ID') as string;
+                    } else {
+                        console.error('[CheckoutSessionService] Person save error:', person.LatestResult?.CompleteMessage);
+                    }
                 }
-                const saved = await person.Save();
-                if (saved) {
-                    return person.Get('ID') as string;
-                }
-            } catch {
-                // Person creation is non-blocking
+            } catch (err) {
+                console.error('[CheckoutSessionService] Person creation exception:', err);
             }
         }
         return null;
     }
 
     /**
+     * Creates an order line entity instance, using polymorphic IS-A entity if available or standard line.
+     */
+    private static async createOrderLine(
+        order: OrderHeaderEntity,
+        targetExtensionEntity: string | null,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<mjBizAppsOrdersOrderLineEntity> {
+        if (targetExtensionEntity) {
+            try {
+                const extObj = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(targetExtensionEntity, contextUser);
+                if (extObj && extObj.ISAParent) {
+                    extObj.NewRecord();
+                    order.Lines.Add(extObj);
+                    return extObj;
+                }
+            } catch {
+                // Fall back to standard line creation
+            }
+        }
+        return (await order.Lines.Create()) as OrderLineEntity;
+    }
+
+    /**
      * Dynamically populates and coerces extension companion properties from a field map.
      */
     private static async hydrateLineExtension(
-        line: OrderLineEntity,
+        line: mjBizAppsOrdersOrderLineEntity,
         extensionEntityName: string | null | undefined,
         fieldValues: Record<string, unknown>,
         contextUser?: UserInfo
     ): Promise<void> {
-        if (!extensionEntityName || !fieldValues || Object.keys(fieldValues).length === 0) {
-            return;
-        }
-
-        const ext = await line.Extension.EnsureEntity(extensionEntityName);
-        if (!ext) {
+        if (!fieldValues || Object.keys(fieldValues).length === 0) {
             return;
         }
 
@@ -290,25 +329,23 @@ export class CheckoutSessionService {
         ].filter(Boolean).join(' ');
 
         if (nameOrEmail) {
-            line.Description = nameOrEmail;
+            line.Description = String(nameOrEmail);
         }
 
-        // Auto-resolve PersonID if person fields exist on the extension entity
-        const personIdField = ext.EntityInfo.Fields.find(f => f.Name === 'PersonID' || f.Name === 'AttendeePersonID');
-        if (personIdField && !fieldValues['PersonID'] && !fieldValues['personId']) {
-            if (email) {
-                const resolvedPersonID = await this.resolveOrEnsurePerson(fieldValues, contextUser);
-                if (resolvedPersonID) {
-                    ext.Set(personIdField.Name, resolvedPersonID);
-                }
+        // Auto-resolve PersonID if person fields exist on the entity or extension
+        const resolvedPersonID = await this.resolveOrEnsurePerson(fieldValues, contextUser);
+
+        // 1. Direct field assignment on polymorphic line (e.g. EventOrderLineEntity)
+        const lineFieldsByName = new Map<string, EntityFieldInfo>((line.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f]));
+        if (resolvedPersonID) {
+            const pField = lineFieldsByName.get('personid') || lineFieldsByName.get('attendeepersonid');
+            if (pField && !pField.IsPrimaryKey && !pField.IsVirtual && pField.AllowUpdateAPI) {
+                line.Set(pField.Name, resolvedPersonID);
             }
         }
 
-        // Dynamic field assignment with type coercion
-        const fieldsByName = new Map(ext.EntityInfo.Fields.map(f => [f.Name.toLowerCase(), f]));
-
         for (const [key, rawValue] of Object.entries(fieldValues)) {
-            const field = fieldsByName.get(key.toLowerCase());
+            const field = lineFieldsByName.get(key.toLowerCase());
             if (field && !field.IsPrimaryKey && !field.IsVirtual && field.AllowUpdateAPI) {
                 let coerced = rawValue;
                 if (field.Type.toLowerCase().includes('int') && typeof rawValue === 'string') {
@@ -318,7 +355,35 @@ export class CheckoutSessionService {
                 } else if (field.Type.toLowerCase() === 'bit' && typeof rawValue === 'string') {
                     coerced = rawValue === 'true' || rawValue === '1';
                 }
-                ext.Set(field.Name, coerced);
+                line.Set(field.Name, coerced);
+            }
+        }
+
+        // 2. Also populate companion if line is base OrderLineEntity
+        if (line instanceof OrderLineEntity && extensionEntityName && line.EntityInfo?.Name !== extensionEntityName) {
+            const ext = await line.Extension.EnsureEntity(extensionEntityName);
+            if (ext) {
+                const extFieldsByName = new Map<string, EntityFieldInfo>((ext.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f]));
+                if (resolvedPersonID) {
+                    const extPField = extFieldsByName.get('personid') || extFieldsByName.get('attendeepersonid');
+                    if (extPField && !extPField.IsPrimaryKey && !extPField.IsVirtual && extPField.AllowUpdateAPI) {
+                        ext.Set(extPField.Name, resolvedPersonID);
+                    }
+                }
+                for (const [key, rawValue] of Object.entries(fieldValues)) {
+                    const field = extFieldsByName.get(key.toLowerCase());
+                    if (field && !field.IsPrimaryKey && !field.IsVirtual && field.AllowUpdateAPI) {
+                        let coerced = rawValue;
+                        if (field.Type.toLowerCase().includes('int') && typeof rawValue === 'string') {
+                            coerced = parseInt(rawValue, 10);
+                        } else if ((field.Type.toLowerCase().includes('decimal') || field.Type.toLowerCase().includes('money')) && typeof rawValue === 'string') {
+                            coerced = parseFloat(rawValue);
+                        } else if (field.Type.toLowerCase() === 'bit' && typeof rawValue === 'string') {
+                            coerced = rawValue === 'true' || rawValue === '1';
+                        }
+                        ext.Set(field.Name, coerced);
+                    }
+                }
             }
         }
     }
@@ -363,13 +428,27 @@ export class CheckoutSessionService {
         lines: CheckoutLineInput[],
         contextUser?: UserInfo
     ): Promise<UpdateDraftResult> {
-        const md = new Metadata();
-        const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
-        const loaded = await session.Load(sessionID);
-        if (!loaded || session.Status !== 'Open') {
+        if (!sessionID) {
             return {
                 Success: false,
-                ErrorMessage: 'Invalid or expired checkout session',
+                ErrorMessage: 'Session ID is required.',
+                SessionID: '',
+                Subtotal: 0,
+                Tax: 0,
+                Adjustments: 0,
+                TotalGross: 0,
+                RequiresPayment: false,
+                Lines: []
+            };
+        }
+
+        const md = new Metadata();
+        const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
+        const sessionLoaded = await session.Load(sessionID);
+        if (!sessionLoaded || session.Status !== 'Open') {
+            return {
+                Success: false,
+                ErrorMessage: 'Checkout session is not valid or has expired.',
                 SessionID: sessionID,
                 Subtotal: 0,
                 Tax: 0,
@@ -451,7 +530,7 @@ export class CheckoutSessionService {
             // If product enforces 1-unit per line (e.g. conference tickets) and multiple unit payloads exist:
             if ((maxQuantityPerLine === 1 || unitPayloads.length > 1) && unitPayloads.length > 0) {
                 for (const unitData of unitPayloads) {
-                    const line = (await order.Lines.Create()) as OrderLineEntity;
+                    const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
                     line.ProductID = inputLine.ProductID;
                     line.Quantity = 1;
                     line.LineNumber = sequence++;
@@ -459,7 +538,7 @@ export class CheckoutSessionService {
                     await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser);
                 }
             } else {
-                const line = (await order.Lines.Create()) as OrderLineEntity;
+                const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
                 line.ProductID = inputLine.ProductID;
                 line.Quantity = inputLine.Quantity;
                 line.LineNumber = sequence++;

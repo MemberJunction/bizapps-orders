@@ -3,150 +3,173 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockWidgetSave = vi.fn().mockResolvedValue(true);
-const mockWidgetLoad = vi.fn().mockResolvedValue(true);
-const mockSessionSave = vi.fn().mockResolvedValue(true);
-const mockSessionLoad = vi.fn().mockResolvedValue(true);
-const mockOrderSave = vi.fn().mockResolvedValue(true);
-const mockOrderLoad = vi.fn().mockResolvedValue(true);
-const mockProductLoad = vi.fn().mockResolvedValue(true);
-const mockProductTypeLoad = vi.fn().mockResolvedValue(true);
-const mockPersonSave = vi.fn().mockResolvedValue(true);
+const mocks = vi.hoisted(() => {
+    const mockWidgetSave = vi.fn().mockResolvedValue(true);
+    const mockWidgetLoad = vi.fn().mockResolvedValue(true);
+    const mockSessionSave = vi.fn().mockResolvedValue(true);
+    const mockSessionLoad = vi.fn().mockResolvedValue(true);
+    const mockOrderSave = vi.fn().mockResolvedValue(true);
+    const mockOrderLoad = vi.fn().mockResolvedValue(true);
+    const mockProductLoad = vi.fn().mockResolvedValue(true);
+    const mockProductTypeLoad = vi.fn().mockResolvedValue(true);
+    const mockPersonSave = vi.fn().mockResolvedValue(true);
 
-class MockCheckoutWidget {
-    ID = 'widget-1';
-    Name = 'Annual AI Summit Registration';
-    CompanyID = 'comp-10';
-    Status = 'Active';
-    Configuration = JSON.stringify({
-        theme: { primaryColor: '#2563eb' },
-        allowCoupons: true,
-        customUI: {
-            css: '.custom-summit { border: 2px solid red; }',
-            js: 'console.log("Summit Widget Loaded");',
-            theme: { primaryColor: '#059669' }
-        }
-    });
-    CustomCSS: string | null = null;
-    CustomJS: string | null = null;
-    Load = mockWidgetLoad;
-    Save = mockWidgetSave;
-}
+    class MockCheckoutWidget {
+        ID = 'widget-1';
+        Name = 'Annual AI Summit Registration';
+        CompanyID = 'comp-10';
+        Status = 'Active';
+        Configuration = JSON.stringify({
+            theme: { primaryColor: '#2563eb' },
+            allowCoupons: true,
+            customUI: {
+                css: '.custom-summit { border: 2px solid red; }',
+                js: 'console.log("Summit Widget Loaded");',
+                theme: { primaryColor: '#059669' }
+            }
+        });
+        CustomCSS: string | null = null;
+        CustomJS: string | null = null;
+        Load = mockWidgetLoad;
+        Save = mockWidgetSave;
+    }
 
-class MockCheckoutSession {
-    ID = 'sess-123';
-    CheckoutWidgetID = 'widget-1';
-    DistributionID = 'dist-1';
-    ClientSessionKey = 'client-xyz';
-    Email: string | null = null;
-    DraftOrderID: string | null = null;
-    Status = 'Open';
-    ExpiresAt = new Date(Date.now() + 7200000);
-    NewRecord = vi.fn();
-    Load = mockSessionLoad;
-    Save = mockSessionSave;
-}
+    class MockCheckoutSession {
+        ID = 'sess-123';
+        CheckoutWidgetID = 'widget-1';
+        DistributionID = 'dist-1';
+        ClientSessionKey = 'client-xyz';
+        Email: string | null = null;
+        DraftOrderID: string | null = null;
+        Status = 'Open';
+        ExpiresAt = new Date(Date.now() + 7200000);
+        NewRecord = vi.fn();
+        Load = mockSessionLoad;
+        Save = mockSessionSave;
+    }
 
-class MockProduct {
-    ID = 'prod-1';
-    Name = 'Conference VIP Pass';
-    ProductTypeID = 'ptype-event';
-    MaxQuantityPerLine: number | null = 1;
-    Load = mockProductLoad;
-}
+    class MockProduct {
+        ID = 'prod-1';
+        Name = 'Conference VIP Pass';
+        ProductTypeID = 'ptype-event';
+        MaxQuantityPerLine: number | null = 1;
+        Load = mockProductLoad;
+    }
 
-class MockProductType {
-    ID = 'ptype-event';
-    Name = 'Event Registration';
-    OrderLineExtensionEntity = 'MJ_BizApps_Orders: Event Order Lines';
-    Configuration = JSON.stringify({
-        unitMode: 'perUnit',
-        customUI: {
-            css: '.event-line { background: #f0fdf4; }',
-            js: 'console.log("Event Type Hook");'
-        }
-    });
-    Load = mockProductTypeLoad;
-}
+    class MockProductType {
+        ID = 'ptype-event';
+        Name = 'Event Registration';
+        OrderLineExtensionEntity = 'MJ_BizApps_Orders: Event Order Lines';
+        Configuration = JSON.stringify({
+            unitMode: 'perUnit',
+            customUI: {
+                css: '.event-line { background: #f0fdf4; }',
+                js: 'console.log("Event Type Hook");'
+            }
+        });
+        Load = mockProductTypeLoad;
+    }
 
-class MockPerson {
-    ID = 'person-new-1';
-    Set = vi.fn();
-    Get = vi.fn().mockReturnValue('person-new-1');
-    NewRecord = vi.fn();
-    Save = mockPersonSave;
-}
+    class MockPerson {
+        ID = 'person-new-1';
+        Set = vi.fn();
+        Get = vi.fn().mockReturnValue('person-new-1');
+        NewRecord = vi.fn();
+        Save = mockPersonSave;
+    }
 
-class MockExtensionEntity {
-    Set = vi.fn();
-    Get = vi.fn();
-    EntityInfo = {
-        Fields: [
-            { Name: 'PersonID', Type: 'uniqueidentifier', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
-            { Name: 'DietaryPreferences', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
-            { Name: 'Comments', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
-            { Name: 'CustomCount', Type: 'int', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
-            { Name: 'IsVIP', Type: 'bit', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false }
-        ]
+    class MockExtensionEntity {
+        Set = vi.fn();
+        Get = vi.fn();
+        EntityInfo = {
+            Fields: [
+                { Name: 'PersonID', Type: 'uniqueidentifier', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
+                { Name: 'DietaryPreferences', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
+                { Name: 'Comments', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
+                { Name: 'CustomCount', Type: 'int', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
+                { Name: 'IsVIP', Type: 'bit', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false }
+            ]
+        };
+    }
+
+    class MockOrderLine {
+        ID = 'line-1';
+        OrderHeaderID = 'order-999';
+        ProductID = 'prod-1';
+        Quantity = 1;
+        LineNumber = 1;
+        UnitPrice = 0;
+        LineTotalGross = 0;
+        Description: string | null = null;
+        extensionInstance = new MockExtensionEntity();
+        Extension = {
+            EnsureEntity: vi.fn().mockImplementation(() => Promise.resolve(this.extensionInstance))
+        };
+    }
+
+    class MockOrderHeader {
+        ID = 'order-999';
+        OrderNumber = 'ORD-2026-0001';
+        CompanyID = 'comp-10';
+        Status = 'Draft';
+        Origin = 'Widget';
+        SourceCheckoutWidgetID = 'widget-1';
+        TotalGross = 0;
+        OrderDate: Date | null = null;
+        LatestResult = { Success: true, Message: '' };
+        NewRecord = vi.fn();
+        Load = mockOrderLoad;
+        LoadWithLines = vi.fn().mockResolvedValue(true);
+        Save = mockOrderSave;
+        Lines = {
+            Items: [] as MockOrderLine[],
+            Create: vi.fn().mockImplementation(() => {
+                const line = new MockOrderLine();
+                line.ID = `line-${this.Lines.Items.length + 1}`;
+                this.Lines.Items.push(line);
+                return Promise.resolve(line);
+            }),
+            Add: vi.fn().mockImplementation((line: MockOrderLine) => {
+                this.Lines.Items.push(line);
+            }),
+            Clear: vi.fn().mockImplementation(() => {
+                this.Lines.Items = [];
+            })
+        };
+    }
+
+    return {
+        MockCheckoutWidget,
+        MockCheckoutSession,
+        MockProduct,
+        MockProductType,
+        MockPerson,
+        MockExtensionEntity,
+        MockOrderLine,
+        MockOrderHeader,
+        mockWidgetSave,
+        mockWidgetLoad,
+        mockSessionSave,
+        mockSessionLoad,
+        mockOrderSave,
+        mockOrderLoad,
+        mockProductLoad,
+        mockProductTypeLoad,
+        mockPersonSave,
+        mockClaimCreate: vi.fn().mockResolvedValue({}),
+        mockWidgetInstance: new MockCheckoutWidget(),
+        mockSessionInstance: new MockCheckoutSession(),
+        mockOrderInstance: new MockOrderHeader(),
+        mockProductInstance: new MockProduct(),
+        mockProductTypeInstance: new MockProductType(),
+        mockPersonInstance: new MockPerson()
     };
-}
-
-class MockOrderLine {
-    ID = 'line-1';
-    OrderHeaderID = 'order-999';
-    ProductID = 'prod-1';
-    Quantity = 1;
-    LineNumber = 1;
-    UnitPrice = 0;
-    LineTotalGross = 0;
-    Description: string | null = null;
-    extensionInstance = new MockExtensionEntity();
-    Extension = {
-        EnsureEntity: vi.fn().mockImplementation(() => Promise.resolve(this.extensionInstance))
-    };
-}
-
-class MockOrderHeader {
-    ID = 'order-999';
-    OrderNumber = 'ORD-2026-0001';
-    CompanyID = 'comp-10';
-    Status = 'Draft';
-    Origin = 'Widget';
-    SourceCheckoutWidgetID = 'widget-1';
-    TotalGross = 0;
-    OrderDate: Date | null = null;
-    LatestResult = { Success: true, Message: '' };
-    NewRecord = vi.fn();
-    Load = mockOrderLoad;
-    LoadWithLines = vi.fn().mockResolvedValue(true);
-    Save = mockOrderSave;
-    Lines = {
-        Items: [] as MockOrderLine[],
-        Create: vi.fn().mockImplementation(() => {
-            const line = new MockOrderLine();
-            line.ID = `line-${this.Lines.Items.length + 1}`;
-            this.Lines.Items.push(line);
-            return Promise.resolve(line);
-        }),
-        Clear: vi.fn().mockImplementation(() => {
-            this.Lines.Items = [];
-        })
-    };
-}
-
-const mockWidgetInstance = new MockCheckoutWidget();
-const mockSessionInstance = new MockCheckoutSession();
-const mockOrderInstance = new MockOrderHeader();
-const mockProductInstance = new MockProduct();
-const mockProductTypeInstance = new MockProductType();
-const mockPersonInstance = new MockPerson();
-
-const mockClaimCreate = vi.fn().mockResolvedValue({});
+});
 
 vi.mock('@memberjunction/core-entities-server', () => ({
     IdentityClaimEngineServer: {
         Instance: {
-            CreateClaim: (params: unknown, user?: unknown) => mockClaimCreate(params, user)
+            CreateClaim: (params: unknown, user?: unknown) => mocks.mockClaimCreate(params, user)
         }
     }
 }));
@@ -157,12 +180,12 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
         ...actual,
         Metadata: class {
             GetEntityObject = vi.fn().mockImplementation((name: string) => {
-                if (name.includes('Checkout Widgets')) return Promise.resolve(mockWidgetInstance);
-                if (name.includes('Checkout Sessions')) return Promise.resolve(mockSessionInstance);
-                if (name.includes('Order Headers')) return Promise.resolve(mockOrderInstance);
-                if (name.includes('Products') && !name.includes('Product Types')) return Promise.resolve(mockProductInstance);
-                if (name.includes('Product Types')) return Promise.resolve(mockProductTypeInstance);
-                if (name.includes('People') || name.includes('Persons')) return Promise.resolve(mockPersonInstance);
+                if (name.includes('Checkout Widgets')) return Promise.resolve(mocks.mockWidgetInstance);
+                if (name.includes('Checkout Sessions')) return Promise.resolve(mocks.mockSessionInstance);
+                if (name.includes('Order Headers')) return Promise.resolve(mocks.mockOrderInstance);
+                if (name.includes('Products') && !name.includes('Product Types')) return Promise.resolve(mocks.mockProductInstance);
+                if (name.includes('Product Types')) return Promise.resolve(mocks.mockProductTypeInstance);
+                if (name.includes('People') || name.includes('Persons')) return Promise.resolve(mocks.mockPersonInstance);
                 return Promise.resolve({});
             });
         },
@@ -177,7 +200,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 if (params.EntityName.includes('Checkout Sessions')) {
                     return Promise.resolve({
                         Success: true,
-                        Results: [mockSessionInstance]
+                        Results: [mocks.mockSessionInstance]
                     });
                 }
                 if (params.EntityName.includes('People') || params.EntityName.includes('Persons')) {
@@ -193,13 +216,14 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
 });
 
 vi.mock('@mj-biz-apps/orders-entities', () => ({
-    OrderHeaderEntity: MockOrderHeader,
-    OrderLineEntity: MockOrderLine,
-    mjBizAppsOrdersCheckoutSessionEntity: MockCheckoutSession,
+    OrderHeaderEntity: mocks.MockOrderHeader,
+    OrderLineEntity: mocks.MockOrderLine,
+    mjBizAppsOrdersOrderLineEntity: mocks.MockOrderLine,
+    mjBizAppsOrdersCheckoutSessionEntity: mocks.MockCheckoutSession,
     mjBizAppsOrdersCheckoutWidgetDistributionEntity: class {},
-    mjBizAppsOrdersCheckoutWidgetEntity: MockCheckoutWidget,
-    mjBizAppsOrdersProductEntity: MockProduct,
-    mjBizAppsOrdersProductTypeEntity: MockProductType
+    mjBizAppsOrdersCheckoutWidgetEntity: mocks.MockCheckoutWidget,
+    mjBizAppsOrdersProductEntity: mocks.MockProduct,
+    mjBizAppsOrdersProductTypeEntity: mocks.MockProductType
 }));
 
 import { CheckoutSessionService } from '../CheckoutSessionService.js';
@@ -207,16 +231,16 @@ import { CheckoutSessionService } from '../CheckoutSessionService.js';
 describe('CheckoutSessionService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        mockSessionInstance.Status = 'Open';
-        mockSessionInstance.DraftOrderID = 'order-999';
-        mockOrderInstance.Status = 'Draft';
-        mockOrderInstance.TotalGross = 0;
-        mockOrderInstance.Lines.Items = [];
-        mockWidgetLoad.mockResolvedValue(true);
-        mockSessionLoad.mockResolvedValue(true);
-        mockOrderLoad.mockResolvedValue(true);
-        mockProductLoad.mockResolvedValue(true);
-        mockProductTypeLoad.mockResolvedValue(true);
+        mocks.mockSessionInstance.Status = 'Open';
+        mocks.mockSessionInstance.DraftOrderID = 'order-999';
+        mocks.mockOrderInstance.Status = 'Draft';
+        mocks.mockOrderInstance.TotalGross = 0;
+        mocks.mockOrderInstance.Lines.Items = [];
+        mocks.mockWidgetLoad.mockResolvedValue(true);
+        mocks.mockSessionLoad.mockResolvedValue(true);
+        mocks.mockOrderLoad.mockResolvedValue(true);
+        mocks.mockProductLoad.mockResolvedValue(true);
+        mocks.mockProductTypeLoad.mockResolvedValue(true);
     });
 
     describe('InitializeSession', () => {
@@ -247,8 +271,8 @@ describe('CheckoutSessionService', () => {
 
             const res = await CheckoutSessionService.UpdateDraft('sess-123', 'guest@example.com', linesInput);
             expect(res.Success).toBe(true);
-            expect(mockOrderInstance.Save).toHaveBeenCalled();
-            expect(mockSessionInstance.Save).toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Save).toHaveBeenCalled();
+            expect(mocks.mockSessionInstance.Save).toHaveBeenCalled();
             expect(res.Lines.length).toBe(1);
             expect(res.Lines[0].ProductID).toBe('prod-1');
         });
@@ -266,7 +290,7 @@ describe('CheckoutSessionService', () => {
 
             const res = await CheckoutSessionService.UpdateDraft('sess-123', 'alice@example.com', linesInput);
             expect(res.Success).toBe(true);
-            expect(mockOrderInstance.Save).toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Save).toHaveBeenCalled();
             expect(res.Lines[0].Description).toContain('Alice Smith');
         });
 
@@ -290,12 +314,12 @@ describe('CheckoutSessionService', () => {
 
             const res = await CheckoutSessionService.UpdateDraft('sess-123', 'bob@example.com', linesInput);
             expect(res.Success).toBe(true);
-            expect(mockOrderInstance.Save).toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Save).toHaveBeenCalled();
             expect(res.Lines[0].Description).toContain('Bob Jones');
         });
 
         it('splits multi-unit purchases into discrete lines when ProductType Configuration unitMode is perUnit', async () => {
-            mockProductInstance.MaxQuantityPerLine = null; // Let ProductType Configuration enforce unitMode
+            mocks.mockProductInstance.MaxQuantityPerLine = null; // Let ProductType Configuration enforce unitMode
             const linesInput = [
                 {
                     ProductID: 'prod-1',
@@ -309,30 +333,30 @@ describe('CheckoutSessionService', () => {
 
             const res = await CheckoutSessionService.UpdateDraft('sess-123', 'a1@test.com', linesInput);
             expect(res.Success).toBe(true);
-            expect(mockOrderInstance.Lines.Items.length).toBe(2);
+            expect(mocks.mockOrderInstance.Lines.Items.length).toBe(2);
         });
     });
 
     describe('CompleteCheckout', () => {
         it('confirms $0 order immediately and creates identity claim via IdentityClaimEngineServer', async () => {
-            mockOrderInstance.TotalGross = 0;
-            mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockOrderInstance.TotalGross = 0;
+            mocks.mockSessionInstance.Email = 'guest@example.com';
 
             const res = await CheckoutSessionService.CompleteCheckout('sess-123');
             expect(res.Success).toBe(true);
             expect(res.Status).toBe('Confirmed');
-            expect(mockOrderInstance.Status).toBe('Confirmed');
-            expect(mockOrderInstance.Save).toHaveBeenCalled();
-            expect(mockClaimCreate).toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Status).toBe('Confirmed');
+            expect(mocks.mockOrderInstance.Save).toHaveBeenCalled();
+            expect(mocks.mockClaimCreate).toHaveBeenCalled();
         });
 
         it('returns processing status for orders with a balance due', async () => {
-            mockOrderInstance.TotalGross = 500;
+            mocks.mockOrderInstance.TotalGross = 500;
 
             const res = await CheckoutSessionService.CompleteCheckout('sess-123');
             expect(res.Success).toBe(true);
             expect(res.Status).toBe('Processing');
-            expect(mockSessionInstance.Status).toBe('Processing');
+            expect(mocks.mockSessionInstance.Status).toBe('Processing');
         });
     });
 });
