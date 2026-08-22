@@ -1,68 +1,28 @@
 /**
- * @fileoverview CheckoutSessionService — server-side machinery for public embeddable checkout widgets.
+ * @fileoverview CheckoutSessionService
  *
- * Coordinates anonymous sessions, slug resolution, draft order assembly, pricing recalculation,
- * payment tokenization, and post-checkout entitlement/identity claim generation.
+ * Provides server-side orchestration for anonymous checkout sessions, widget token
+ * initialization, draft order graph composition, and payment completion handling.
  *
  * @module @mj-biz-apps/orders-core-entities-server/CheckoutSessionService
  */
 
 import { Metadata, RunView, UserInfo } from '@memberjunction/core';
 import {
+    OrderHeaderEntity,
+    OrderLineEntity,
     mjBizAppsOrdersCheckoutSessionEntity,
     mjBizAppsOrdersCheckoutWidgetDistributionEntity,
-    mjBizAppsOrdersCheckoutWidgetEntity,
-    mjBizAppsOrdersOrderHeaderEntity,
-    mjBizAppsOrdersOrderLineEntity,
+    mjBizAppsOrdersCheckoutWidgetEntity
 } from '@mj-biz-apps/orders-entities';
-import { IdentityClaimEngine } from '@memberjunction/core-entities';
+import { IdentityClaimEngineServer } from '@memberjunction/core-entities-server';
 
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
 const CHECKOUT_SESSION_ENTITY = 'MJ_BizApps_Orders: Checkout Sessions';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
-const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const EVENT_ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Event Order Lines';
-const PERSON_ENTITY = 'MJ_BizApps_Common: Persons';
 
-/**
- * Attendee registration information for event line extensions
- */
-export interface AttendeeInput {
-    FirstName: string;
-    LastName: string;
-    Email: string;
-    Company?: string;
-    Title?: string;
-    Notes?: string;
-}
-
-/**
- * Single line item requested in a checkout draft
- */
-export interface CheckoutLineInput {
-    ProductID: string;
-    Quantity: number;
-    PriceTierID?: string;
-    ExtensionData?: Record<string, unknown>;
-    Attendees?: AttendeeInput[];
-}
-
-/**
- * Summary of a priced line item in a checkout draft
- */
-export interface CheckoutLineSummary {
-    ID?: string;
-    ProductID: string;
-    Quantity: number;
-    UnitPrice: number;
-    ExtendedPrice: number;
-    Description?: string;
-}
-
-/**
- * Result of initializing or loading a checkout session
- */
 export interface InitSessionResult {
     Success: boolean;
     ErrorMessage?: string;
@@ -77,9 +37,33 @@ export interface InitSessionResult {
     ExpiresAt?: string;
 }
 
-/**
- * Result of updating a checkout draft
- */
+export interface CheckoutAttendeeInput {
+    FirstName: string;
+    LastName: string;
+    Email: string;
+    Company?: string;
+    PersonID?: string;
+    DietaryPreferences?: string;
+    Comments?: string;
+}
+
+export type AttendeeInput = CheckoutAttendeeInput;
+
+export interface CheckoutLineInput {
+    ProductID: string;
+    Quantity: number;
+    Attendees?: CheckoutAttendeeInput[];
+}
+
+export interface CheckoutLineSummary {
+    ID: string;
+    ProductID: string;
+    Quantity: number;
+    UnitPrice: number;
+    ExtendedPrice: number;
+    Description?: string;
+}
+
 export interface UpdateDraftResult {
     Success: boolean;
     ErrorMessage?: string;
@@ -94,9 +78,6 @@ export interface UpdateDraftResult {
     Lines: CheckoutLineSummary[];
 }
 
-/**
- * Result of submitting a checkout session
- */
 export interface CompleteCheckoutResult {
     Success: boolean;
     ErrorMessage?: string;
@@ -197,7 +178,8 @@ export class CheckoutSessionService {
     }
 
     /**
-     * Assembles or updates a draft Order for an open checkout session, running pricing calculations.
+     * Assembles or updates a draft Order using the in-memory order graph (`order.Lines` and
+     * companion extensions) and persists the complete order graph in a single atomic transaction.
      */
     public static async UpdateDraft(
         sessionID: string,
@@ -225,13 +207,13 @@ export class CheckoutSessionService {
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
         await widget.Load(session.CheckoutWidgetID);
 
-        // Load or create Draft OrderHeader
-        let order: mjBizAppsOrdersOrderHeaderEntity;
+        // Load existing draft order with lines or create a new OrderHeaderEntity
+        const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
         if (session.DraftOrderID) {
-            order = await md.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
-            await order.Load(session.DraftOrderID);
+            await order.LoadWithLines(session.DraftOrderID);
+            // Clear existing in-memory lines to rebuild from current input
+            order.Lines.Clear();
         } else {
-            order = await md.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
             order.NewRecord();
             order.CompanyID = widget.CompanyID;
             order.Status = 'Draft';
@@ -243,11 +225,44 @@ export class CheckoutSessionService {
         const normalizedEmail = (email || '').trim().toLowerCase();
         session.Email = normalizedEmail;
 
+        if (session.PersonID) {
+            order.BillToPersonID = session.PersonID;
+            order.ShipToPersonID = session.PersonID;
+        }
+
+        let sequence = 1;
+        for (const inputLine of lines) {
+            const line = (await order.Lines.Create()) as OrderLineEntity;
+            line.ProductID = inputLine.ProductID;
+            line.Quantity = inputLine.Quantity;
+            line.LineNumber = sequence++;
+
+            // Handle multi-attendee event lines or companion extensions
+            if (inputLine.Attendees && inputLine.Attendees.length > 0) {
+                const primaryAttendee = inputLine.Attendees[0];
+                line.Description = `${primaryAttendee.FirstName} ${primaryAttendee.LastName} (${primaryAttendee.Email})`;
+
+                const ext = await line.Extension.EnsureEntity(EVENT_ORDER_LINE_ENTITY);
+                if (ext) {
+                    if (primaryAttendee.PersonID) {
+                        ext.Set('PersonID', primaryAttendee.PersonID);
+                    }
+                    if (primaryAttendee.DietaryPreferences) {
+                        ext.Set('DietaryPreferences', primaryAttendee.DietaryPreferences);
+                    }
+                    if (primaryAttendee.Comments) {
+                        ext.Set('Comments', primaryAttendee.Comments);
+                    }
+                }
+            }
+        }
+
+        // Single atomic graph save for order header + lines + companions
         const savedOrder = await order.Save();
         if (!savedOrder) {
             return {
                 Success: false,
-                ErrorMessage: `Failed to save draft order: ${order.LatestResult?.Message}`,
+                ErrorMessage: `Failed to save draft order: ${order.LatestResult?.Message ?? 'Validation error'}`,
                 SessionID: sessionID,
                 Subtotal: 0,
                 Tax: 0,
@@ -261,53 +276,15 @@ export class CheckoutSessionService {
         session.DraftOrderID = order.ID;
         await session.Save();
 
-        // Populate order lines
-        const rv = new RunView();
-        const existingLinesRes = await rv.RunView<mjBizAppsOrdersOrderLineEntity>({
-            EntityName: ORDER_LINE_ENTITY,
-            ExtraFilter: `OrderHeaderID = '${order.ID}'`,
-            ResultType: 'entity_object'
-        }, contextUser);
-
-        // Remove old lines if reconstructing draft
-        if (existingLinesRes.Success && existingLinesRes.Results) {
-            for (const oldLine of existingLinesRes.Results) {
-                await oldLine.Delete();
-            }
-        }
-
-        let sequence = 1;
-        const lineSummaries: CheckoutLineSummary[] = [];
-
-        for (const inputLine of lines) {
-            const line = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, contextUser);
-            line.NewRecord();
-            line.OrderHeaderID = order.ID;
-            line.ProductID = inputLine.ProductID;
-            line.Quantity = inputLine.Quantity;
-            line.LineNumber = sequence++;
-
-            // Handle multi-attendee event lines or extensions
-            if (inputLine.Attendees && inputLine.Attendees.length > 0) {
-                // First attendee linked on primary line
-                const primaryAttendee = inputLine.Attendees[0];
-                line.Description = `${primaryAttendee.FirstName} ${primaryAttendee.LastName} (${primaryAttendee.Email})`;
-            }
-
-            await line.Save();
-
-            lineSummaries.push({
-                ID: line.ID,
-                ProductID: line.ProductID,
-                Quantity: line.Quantity,
-                UnitPrice: line.UnitPrice ?? 0,
-                ExtendedPrice: line.LineTotalGross ?? ((line.UnitPrice ?? 0) * line.Quantity),
-                Description: line.Description ?? undefined
-            });
-        }
-
-        // Re-load order to get trigger-calculated totals
-        await order.Load(order.ID);
+        // Build line summaries from the saved order graph
+        const lineSummaries: CheckoutLineSummary[] = (order.Lines.Items as OrderLineEntity[]).map(l => ({
+            ID: l.ID,
+            ProductID: l.ProductID,
+            Quantity: l.Quantity,
+            UnitPrice: l.UnitPrice ?? 0,
+            ExtendedPrice: l.LineTotalGross ?? ((l.UnitPrice ?? 0) * l.Quantity),
+            Description: l.Description ?? undefined
+        }));
 
         const totalGross = order.TotalGross ?? lineSummaries.reduce((sum, l) => sum + l.ExtendedPrice, 0);
 
@@ -353,7 +330,7 @@ export class CheckoutSessionService {
             };
         }
 
-        const order = await md.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
+        const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
         await order.Load(session.DraftOrderID);
 
         const totalGross = order.TotalGross ?? 0;
@@ -377,12 +354,13 @@ export class CheckoutSessionService {
             // If session has email and entitlement was generated, ensure identity claims exist for external access
             if (session.Email) {
                 try {
-                    await IdentityClaimEngine.Instance.CreateClaim({
+                    await IdentityClaimEngineServer.Instance.CreateClaim({
                         ClaimTypeName: 'EntitlementGrant',
                         NormalizedEmail: session.Email,
                         EntityID: ORDER_HEADER_ENTITY,
                         RecordID: order.ID,
-                        Payload: { OrderID: order.ID, OrderNumber: order.OrderNumber }
+                        Payload: { OrderID: order.ID, OrderNumber: order.OrderNumber },
+                        SendEmail: true
                     }, contextUser);
                 } catch {
                     // Identity claim creation logged but non-blocking for completion
