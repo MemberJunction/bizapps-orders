@@ -114,6 +114,8 @@ declare global {
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
+    public readonly widgetInstanceId: string = 'mj-cw-' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 9));
+    private _fallbackSessionKey: string = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'ck_sess_' + Math.random().toString(36).substring(2, 15);
     private _config = signal<CheckoutWidgetConfig | null>(null);
     private _lastMountedJS: string | null = null;
     private _customStyleEl: HTMLStyleElement | null = null;
@@ -190,11 +192,11 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         return cfg?.customUI?.componentOverrideKey || null;
     });
 
-    // Dynamic field list
+    // Active field definitions
     public activeFieldDefs = computed<ExtensionFieldDef[]>(() => {
-        const custom = this._config()?.extensionFields;
-        if (custom && custom.length > 0) {
-            return custom;
+        const customFields = this._config()?.extensionFields;
+        if (customFields && Array.isArray(customFields) && customFields.length > 0) {
+            return customFields;
         }
         // Default standard attendee fields
         return [
@@ -234,7 +236,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     public ngOnInit(): void {
         this.syncUnits();
         this.applyCustomCSS(this.activeCSS());
-        if (this.activeJS()) {
+        if (this.activeJS() && this.activeJS() !== this._lastMountedJS) {
             this.mountCustomJS(this.activeJS());
         }
         this.executeLifecycleHook('onInit', {
@@ -271,16 +273,17 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             return;
         }
 
+        const styleId = `mj-checkout-custom-css-${this.widgetInstanceId}`;
         if (!this._customStyleEl) {
             if (this.renderer && this.el) {
                 this._customStyleEl = this.renderer.createElement('style');
                 this.renderer.setAttribute(this._customStyleEl, 'type', 'text/css');
-                this.renderer.setAttribute(this._customStyleEl, 'id', 'mj-checkout-custom-css');
+                this.renderer.setAttribute(this._customStyleEl, 'id', styleId);
                 this.renderer.appendChild(this.el.nativeElement, this._customStyleEl);
             } else {
                 this._customStyleEl = document.createElement('style');
                 this._customStyleEl.type = 'text/css';
-                this._customStyleEl.id = 'mj-checkout-custom-css';
+                this._customStyleEl.id = styleId;
                 document.head.appendChild(this._customStyleEl);
             }
         }
@@ -452,7 +455,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
 
         const currentUnits = this.units();
         const isPerUnit = this.isPerUnit();
-        const finalSessionKey = this.sessionKey || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'ck_sess_' + Math.random().toString(36).substring(2, 15));
+        const finalSessionKey = this.sessionKey || this._fallbackSessionKey;
 
         const submission: CheckoutSubmissionEvent = {
             email: String(currentUnits[0]?.['email'] || this.email()).trim().toLowerCase(),

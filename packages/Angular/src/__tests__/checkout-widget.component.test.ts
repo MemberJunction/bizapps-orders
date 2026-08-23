@@ -200,5 +200,50 @@ describe('MJCheckoutWidgetComponent', () => {
 
             expect(component.isFormValid()).toBe(true);
         });
+
+        it('mounts custom JS exactly once during component initialization and ngOnChanges cycle', () => {
+            let evalCount = 0;
+            // Define global counter incremented by script execution
+            (window as unknown as { __testScriptRunCount: number }).__testScriptRunCount = 0;
+            
+            const script = `window.__testScriptRunCount = (window.__testScriptRunCount || 0) + 1;`;
+            component.config = { customJS: script } as CheckoutWidgetConfig;
+            component.ngOnChanges({
+                config: {
+                    currentValue: component.config,
+                    previousValue: null,
+                    firstChange: true,
+                    isFirstChange: () => true
+                }
+            });
+            component.ngOnInit();
+
+            expect((window as unknown as { __testScriptRunCount: number }).__testScriptRunCount).toBe(1);
+        });
+
+        it('caches generated fallback sessionKey across multiple submit retries', () => {
+            component.config = { unitPrice: 0 } as CheckoutWidgetConfig;
+            component.email.set('jane@example.com');
+            component.firstName.set('Jane');
+            component.lastName.set('Doe');
+
+            const emitSpy = vi.spyOn(component.submitted, 'emit');
+            
+            component.handleSubmit();
+            const firstSessionKey = emitSpy.mock.calls[0][0].sessionKey;
+            expect(firstSessionKey).toBeDefined();
+
+            component.handleSubmit();
+            const secondSessionKey = emitSpy.mock.calls[1][0].sessionKey;
+            expect(secondSessionKey).toBe(firstSessionKey);
+        });
+
+        it('generates a unique per-instance widgetInstanceId', () => {
+            const comp1 = new MJCheckoutWidgetComponent();
+            const comp2 = new MJCheckoutWidgetComponent();
+            expect(comp1.widgetInstanceId).toBeDefined();
+            expect(comp2.widgetInstanceId).toBeDefined();
+            expect(comp1.widgetInstanceId).not.toBe(comp2.widgetInstanceId);
+        });
     });
 });

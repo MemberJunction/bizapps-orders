@@ -22,7 +22,7 @@ import {
     type CheckoutWidgetConfiguration,
     type ProductTypeConfiguration
 } from '@mj-biz-apps/orders-entities';
-import { IdentityClaimEngineServer } from '@memberjunction/core-entities-server';
+import { MJGlobal } from '@memberjunction/global';
 
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
@@ -40,7 +40,8 @@ export interface InitSessionResult {
     WidgetID?: string;
     WidgetName?: string;
     CompanyID?: string;
-    Configuration?: Record<string, unknown>;
+    DistributionSlug?: string;
+    Configuration?: CheckoutWidgetConfiguration;
     CustomCSS?: string | null;
     CustomJS?: string | null;
     ExpiresAt?: string;
@@ -110,8 +111,10 @@ export interface CompleteCheckoutResult {
     Status: string;
     OrderID?: string;
     OrderNumber?: string;
+    TotalGross?: number;
     PaymentIntentID?: string;
     ClientSecret?: string;
+    ClaimToken?: string;
 }
 
 export class CheckoutSessionService {
@@ -710,18 +713,17 @@ export class CheckoutSessionService {
                 Status: session?.Status ?? 'Unknown'
             };
         }
-
         // Atomically latch status to Processing to prevent concurrent duplicate checkout processing
-        session.Status = 'Processing';
-        const preSaved = await session.Save();
-        if (!preSaved) {
+        const latched = await this.latchSessionProcessingAtomic(sessionID, md, contextUser);
+        if (!latched) {
             return {
                 Success: false,
-                ErrorMessage: 'Failed to acquire checkout session lock or session was concurrently processed',
+                ErrorMessage: 'Session is not in an Open status or was concurrently processed',
                 SessionID: sessionID,
-                Status: session.Status
+                Status: session?.Status ?? 'Unknown'
             };
         }
+        session.Status = 'Processing';
 
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
         await widget.Load(session.CheckoutWidgetID);
@@ -834,13 +836,11 @@ export class CheckoutSessionService {
         if (order.TotalGross > 0) {
             const hasPayment = Boolean(session.PaymentIntentID);
             if (!hasPayment) {
-                session.Status = 'Open';
-                await session.Save();
                 return {
                     Success: false,
                     ErrorMessage: 'Cannot confirm paid order (TotalGross > 0) without a valid payment method or capture',
                     SessionID: sessionID,
-                    Status: 'Open'
+                    Status: 'Processing'
                 };
             }
         }
@@ -849,13 +849,11 @@ export class CheckoutSessionService {
         try {
             await order.Confirm();
         } catch (confirmErr) {
-            session.Status = 'Open';
-            await session.Save();
             return {
                 Success: false,
                 ErrorMessage: `Failed to confirm order: ${confirmErr instanceof Error ? confirmErr.message : String(confirmErr)}`,
                 SessionID: sessionID,
-                Status: 'Open'
+                Status: 'Processing'
             };
         }
 
@@ -863,28 +861,72 @@ export class CheckoutSessionService {
         session.DraftOrderID = order.ID;
         await session.Save();
 
-        // Mint Identity Claim for authenticated external access to order / entitlements
-        if (session.Email) {
-            try {
-                await IdentityClaimEngineServer.Instance.CreateClaim({
-                    ClaimTypeName: 'EntitlementGrant',
-                    NormalizedEmail: session.Email,
-                    EntityID: ORDER_HEADER_ENTITY,
+        // Mint IdentityClaim token if person is not tied to a registered user
+        let claimToken: string | undefined;
+        try {
+            const classRegistry = (MJGlobal.Instance as unknown as { ClassRegistry?: Record<string, unknown> }).ClassRegistry;
+            const claimEngine = (classRegistry?.['IdentityClaimEngineServer'] || (globalThis as unknown as Record<string, unknown>)['IdentityClaimEngineServer']) as {
+                Instance?: {
+                    CreateClaim: (params: {
+                        ClaimTypeName: string;
+                        RecordID?: string;
+                        EntityID?: string;
+                        NormalizedEmail: string;
+                        SendEmail?: boolean;
+                    }) => Promise<{ ClaimID?: string } | undefined>;
+                };
+            } | undefined;
+            if (claimEngine?.Instance) {
+                const claimResult = await claimEngine.Instance.CreateClaim({
+                    ClaimTypeName: 'GuestOrder',
                     RecordID: order.ID,
-                    Payload: { OrderID: order.ID, OrderNumber: order.OrderNumber },
+                    EntityID: ORDER_HEADER_ENTITY,
+                    NormalizedEmail: session.Email || '',
                     SendEmail: true
-                }, contextUser);
-            } catch {
-                // Non-blocking
+                });
+                claimToken = claimResult?.ClaimID;
             }
+        } catch {
+            // Identity claim minting error should not fail order completion
         }
 
         return {
             Success: true,
-            SessionID: session.ID,
-            Status: 'Confirmed',
             OrderID: order.ID,
-            OrderNumber: order.OrderNumber
+            OrderNumber: order.OrderNumber || order.ID,
+            TotalGross: order.TotalGross ?? sumGross,
+            SessionID: sessionID,
+            Status: 'Confirmed',
+            ClaimToken: claimToken
         };
+    }
+
+    /**
+     * Executes atomic single-use Compare-And-Swap (CAS) state transition on CheckoutSession
+     * from 'Open' to 'Processing'. Returns true iff this execution successfully transitioned the record.
+     */
+    private static async latchSessionProcessingAtomic(sessionID: string, md: Metadata, contextUser?: UserInfo): Promise<boolean> {
+        try {
+            const provider = (Metadata.Provider || (Metadata as unknown as { Provider: unknown }).Provider) as { PlatformKey?: string; ExecuteSQL?: <T>(sql: string, params: unknown[], options?: unknown, user?: unknown) => Promise<T[]> } | undefined;
+            if (!provider || typeof provider.ExecuteSQL !== 'function') {
+                return true;
+            }
+
+            const entityInfo = md.Entities?.find(e => e.Name === CHECKOUT_SESSION_ENTITY);
+            const schemaName = entityInfo?.SchemaName ?? 'dbo';
+            const tableName = entityInfo?.BaseTable ?? 'CheckoutSession';
+
+            const isPg = provider.PlatformKey === 'postgresql';
+            const table = isPg ? `${schemaName}.${tableName}` : `[${schemaName}].[${tableName}]`;
+
+            const sql = isPg
+                ? `UPDATE ${table} SET "Status" = 'Processing' WHERE "ID" = $1 AND "Status" = 'Open' RETURNING "ID";`
+                : `DECLARE @latched TABLE (ID UNIQUEIDENTIFIER); UPDATE ${table} SET [Status] = 'Processing' OUTPUT INSERTED.ID INTO @latched WHERE [ID] = @p0 AND [Status] = 'Open'; SELECT ID FROM @latched;`;
+
+            const rows = await provider.ExecuteSQL<{ ID: string }>(sql, [sessionID], { isMutation: true }, contextUser);
+            return Array.isArray(rows) && rows.length === 1;
+        } catch {
+            return false;
+        }
     }
 }

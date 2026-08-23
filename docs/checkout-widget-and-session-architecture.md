@@ -203,22 +203,19 @@ Custom JS defined in `customUI.js` executes safely within the widget sandbox:
 
 ```javascript
 window.MJCheckoutHooks = {
-    onInit({ session, config }) {
-        console.log("Widget initialized for session:", session.SessionID);
+    onInit({ config, distributionSlug }) {
+        console.log("Widget initialized for distribution:", distributionSlug);
     },
-    onValidate({ form, errors }) {
-        if (form.company === "Acme" && !form.comments) {
-            errors.push("Acme employees must provide a department code in Comments.");
+    onValidate(submission) {
+        if (submission.email.endsWith("@competitor.com")) {
+            return "Registrations from this domain are not accepted.";
         }
     },
-    onQuantityChange({ quantity, currentTotal }) {
-        console.log(`User selected ${quantity} items. Total: $${currentTotal}`);
+    onQuantityChange(newQuantity) {
+        console.log("Quantity updated to:", newQuantity);
     },
-    onBeforeSubmit({ payload }) {
-        payload.metadata = { source: "marketing-campaign-q1" };
-    },
-    onSuccess({ order, claimToken }) {
-        console.log("Order confirmed! Order #:", order.OrderNumber);
+    onBeforeSubmit(submission) {
+        submission.extensionData.fields['source'] = 'marketing-campaign-q1';
     }
 };
 ```
@@ -273,6 +270,9 @@ if (!confirmed) {
     throw new Error(`Order confirmation failed: ${order.LatestResult?.Message}`);
 }
 ```
+
+> [!IMPORTANT]
+> **Payment Verification Status**: Free/zero-dollar checkouts ($0) book and confirm immediately upon submission. For orders with `TotalGross > 0`, `CompleteCheckout` verifies `PaymentIntentID` on the session before confirming. Host applications integrate gateway payment intents via `PaymentIntentService` and `CapturePaymentOperation`.
 
 #### What Happens During `order.Confirm()`:
 1. Validates payment capture / authorization.

@@ -261,10 +261,17 @@ vi.mock('@mj-biz-apps/orders-entities', () => ({
 }));
 
 import { CheckoutSessionService } from '../CheckoutSessionService.js';
+import { Metadata } from '@memberjunction/core';
 
 describe('CheckoutSessionService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        (globalThis as unknown as Record<string, unknown>)['IdentityClaimEngineServer'] = {
+            Instance: {
+                CreateClaim: mocks.mockClaimCreate
+            }
+        };
+        (Metadata as unknown as { Provider: unknown }).Provider = undefined;
         mocks.mockSessionInstance.Status = 'Open';
         mocks.mockSessionInstance.DraftOrderID = 'order-999';
         mocks.mockSessionInstance.StripePaymentMethodID = null;
@@ -461,6 +468,35 @@ describe('CheckoutSessionService', () => {
             expect(res.Success).toBe(true);
             expect(mocks.mockOrderInstance.Lines.Items).toHaveLength(1);
             expect(mocks.mockOrderInstance.Lines.Items[0].Quantity).toBe(3);
+        });
+
+        it('spawns two concurrent CompleteCheckout calls and ensures only one succeeds via database CAS', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+
+            let callCount = 0;
+            const mockExecuteSQL = vi.fn().mockImplementation(() => {
+                callCount++;
+                if (callCount === 1) {
+                    return Promise.resolve([{ ID: 'sess-123' }]);
+                }
+                return Promise.resolve([]);
+            });
+
+            (Metadata as unknown as { Provider: unknown }).Provider = {
+                PlatformKey: 'sqlserver',
+                ExecuteSQL: mockExecuteSQL
+            };
+
+            const [res1, res2] = await Promise.all([
+                CheckoutSessionService.CompleteCheckout('sess-123'),
+                CheckoutSessionService.CompleteCheckout('sess-123')
+            ]);
+
+            const successCount = (res1.Success ? 1 : 0) + (res2.Success ? 1 : 0);
+            expect(successCount).toBe(1);
+            expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalledTimes(1);
         });
     });
 });
