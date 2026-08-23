@@ -225,10 +225,21 @@ export interface ProductTypeConfiguration {
     [key: string]: unknown;
 }
 
+export interface ExtensionFieldDef {
+    name: string;
+    label: string;
+    type: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select';
+    required?: boolean;
+    placeholder?: string;
+    defaultValue?: unknown;
+    options?: Array<{ label: string; value: string | number }>;
+}
+
 export interface CheckoutWidgetConfiguration {
     title?: string;
     description?: string;
     productId?: string;
+    productSku?: string;
     productName?: string;
     unitPrice?: number;
     currency?: string;
@@ -239,6 +250,7 @@ export interface CheckoutWidgetConfiguration {
     successMessage?: string;
     redirectUrl?: string;
     extensionEntityName?: string;
+    extensionFields?: ExtensionFieldDef[];
     /**
      * Custom UI section containing JS hooks, custom CSS, theme tokens, and component overrides.
      */
@@ -251,13 +263,13 @@ export interface CheckoutWidgetConfiguration {
 
 When rendered, the checkout component applies theme tokens directly as CSS variables:
 - `--mj-primary-color`: Primary action buttons and focus rings (default: `#2563eb`)
-- `--mj-accent-color`: Highlights and status badges (default: `#10b981`)
+- `--mj-accent-color`: Highlights and status badges (default: `#3b82f6`)
 - `--mj-border-radius`: Input and container corner radiuses (default: `8px`)
 - `--mj-font-family`: Custom typography font family
-- `--mj-background-color`: Container background surface
-- `--mj-text-color`: Primary text color
+- `--mj-bg-color`: Container background surface (default: `#ffffff`)
+- `--mj-text-color`: Primary text color (default: `#0f172a`)
 
-If `customUI.css` is supplied in the widget or product type configuration, the rules are injected into a scoped style tag targeting the checkout container for granular design customization.
+If `customUI.css` is supplied in the widget or product type configuration, the rules are injected into a custom style tag for granular design customization.
 
 ### Client-Side Lifecycle JavaScript Hooks
 Custom JS defined in `customUI.js` executes within the widget context:
