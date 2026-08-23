@@ -8,7 +8,7 @@
  * @module @mj-biz-apps/orders-core-entities-server/CheckoutSessionService
  */
 
-import { BaseEntity, EntityFieldInfo, IMetadataProvider, Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { BaseEntity, EntityFieldInfo, IMetadataProvider, LogError, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import {
     OrderHeaderEntity,
     OrderLineEntity,
@@ -766,7 +766,7 @@ export class CheckoutSessionService {
 
         let sequence = 1;
         for (const inputLine of linesInput) {
-            let targetExtensionEntity = inputLine.ExtensionData?.EntityName ?? null;
+            let targetExtensionEntity: string | null = null;
             let maxQuantityPerLine: number | null = null;
 
             if (inputLine.ProductID) {
@@ -777,9 +777,7 @@ export class CheckoutSessionService {
                         if (product.ProductTypeID) {
                             const pType = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, contextUser);
                             if (await pType.Load(product.ProductTypeID)) {
-                                if (!targetExtensionEntity) {
-                                    targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
-                                }
+                                targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
                                 if (pType.Configuration) {
                                     try {
                                         const pTypeConfig = JSON.parse(pType.Configuration) as ProductTypeConfiguration;
@@ -849,11 +847,12 @@ export class CheckoutSessionService {
         if (order.TotalGross > 0) {
             const hasPayment = Boolean(session.PaymentIntentID);
             if (!hasPayment) {
+                await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
                 return {
                     Success: false,
                     ErrorMessage: 'Cannot confirm paid order (TotalGross > 0) without a valid payment method or capture',
                     SessionID: sessionID,
-                    Status: 'Processing'
+                    Status: 'Open'
                 };
             }
         }
@@ -862,11 +861,12 @@ export class CheckoutSessionService {
         try {
             await order.Confirm();
         } catch (confirmErr) {
+            await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
             return {
                 Success: false,
                 ErrorMessage: `Failed to confirm order: ${confirmErr instanceof Error ? confirmErr.message : String(confirmErr)}`,
                 SessionID: sessionID,
-                Status: 'Processing'
+                Status: 'Open'
             };
         }
 
@@ -922,11 +922,12 @@ export class CheckoutSessionService {
         try {
             const provider = (Metadata.Provider || (Metadata as unknown as { Provider: unknown }).Provider) as { PlatformKey?: string; ExecuteSQL?: <T>(sql: string, params: unknown[], options?: unknown, user?: unknown) => Promise<T[]> } | undefined;
             if (!provider || typeof provider.ExecuteSQL !== 'function') {
+                LogError('latchSessionProcessingAtomic: provider or ExecuteSQL not available for atomic CAS');
                 return false;
             }
 
             const entityInfo = md.Entities?.find(e => e.Name === CHECKOUT_SESSION_ENTITY);
-            const schemaName = entityInfo?.SchemaName ?? 'dbo';
+            const schemaName = entityInfo?.SchemaName ?? '__mj_BizAppsOrders';
             const tableName = entityInfo?.BaseTable ?? 'CheckoutSession';
 
             const isPg = provider.PlatformKey === 'postgresql';
@@ -939,6 +940,36 @@ export class CheckoutSessionService {
             const rows = await provider.ExecuteSQL<{ ID: string }>(sql, [sessionID], { isMutation: true }, contextUser);
             return Array.isArray(rows) && rows.length === 1;
         } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Reverts atomic CAS state from 'Processing' back to 'Open' if order confirmation fails.
+     */
+    private static async revertSessionOpenAtomic(sessionID: string, md: Metadata, contextUser?: UserInfo): Promise<boolean> {
+        try {
+            const provider = (Metadata.Provider || (Metadata as unknown as { Provider: unknown }).Provider) as { PlatformKey?: string; ExecuteSQL?: <T>(sql: string, params: unknown[], options?: unknown, user?: unknown) => Promise<T[]> } | undefined;
+            if (!provider || typeof provider.ExecuteSQL !== 'function') {
+                return false;
+            }
+
+            const entityInfo = md.Entities?.find(e => e.Name === CHECKOUT_SESSION_ENTITY);
+            const schemaName = entityInfo?.SchemaName ?? '__mj_BizAppsOrders';
+            const tableName = entityInfo?.BaseTable ?? 'CheckoutSession';
+
+            const isPg = provider.PlatformKey === 'postgresql';
+            const table = isPg ? `${schemaName}.${tableName}` : `[${schemaName}].[${tableName}]`;
+
+            const sql = isPg
+                ? `UPDATE ${table} SET "Status" = 'Open' WHERE "ID" = $1 AND "Status" = 'Processing' RETURNING "ID";`
+                : `DECLARE @reverted TABLE (ID UNIQUEIDENTIFIER); UPDATE ${table} SET [Status] = 'Open' OUTPUT INSERTED.ID INTO @reverted WHERE [ID] = @p0 AND [Status] = 'Processing'; SELECT ID FROM @reverted;`;
+
+            const rows = await provider.ExecuteSQL<{ ID: string }>(sql, [sessionID], { isMutation: true }, contextUser);
+            return Array.isArray(rows) && rows.length === 1;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            LogError(`[CheckoutSessionService] revertSessionOpenAtomic failed for session ${sessionID}: ${msg}`);
             return false;
         }
     }
