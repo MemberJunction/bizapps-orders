@@ -50,14 +50,14 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 7. [Zero-DB-Draft In-Memory Pricing & Atomic Booking](#zero-db-draft-in-memory-pricing--atomic-booking)
 8. [Guest Record Claiming Workflow](#guest-record-claiming-workflow)
 9. [Embedding the Widget in Your Applications](#embedding-the-widget-in-your-applications)
-10. [REST / Server API Reference](#rest--server-api-reference)
+10. [Server API & Service Reference](#server-api--service-reference)
 
 ---
 
 ## Key Features
 
 - 🪄 **Zero-Code Auto-Discovery**: Point a widget at a product. The engine automatically inspects the entity schema of the product type's companion extension entity (e.g. `EventOrderLine`, `CourseOrderLine`, `MembershipOrderLine`) and generates the UI form inputs (`text`, `textarea`, `select`, `date`, `number`, `boolean`).
-- 🎨 **Extensible `customUI` Theming**: Complete control over brand styling, CSS token overrides, scoped CSS stylesheets, and client-side lifecycle JavaScript hooks (`onInit`, `onValidate`, `onQuantityChange`, `onBeforeSubmit`, `onSuccess`).
+- 🎨 **Extensible `customUI` Theming**: Complete control over brand styling, CSS token overrides, custom CSS stylesheets, and client-side lifecycle JavaScript hooks (`onInit`, `onValidate`, `onQuantityChange`, `onBeforeSubmit`, `onDestroy`).
 - 🎟️ **Multi-Attendee / Discrete Unit Expansion**: When buying multiple tickets or seats (`unitMode: 'perUnit'`), the widget dynamically expands discrete attendee cards and creates individual, fully-associated order lines in the database.
 - ⚡ **Zero Database Clutter During Shopping**: Real-time line calculations and discount pricing execute 100% in-memory via `OrderPricingService`. No temporary draft rows pollute `OrderHeader`.
 - 📒 **Double-Entry Accounting on Confirm**: Paid and free ($0) orders immediately execute `order.Confirm()`, posting balanced debits and credits into [BizApps Accounting](https://github.com/MemberJunction/bizapps-accounting) and generating Revenue Recognition schedules.
@@ -365,8 +365,8 @@ Embed into WordPress, Webflow, Shopify, or static websites:
       primaryColor: '#059669',
       borderRadius: '12px'
     },
-    onSuccess: function(result) {
-      window.location.href = '/thank-you?order=' + result.orderNumber;
+    onSubmitted: function(event) {
+      window.location.href = '/thank-you?session=' + event.sessionKey;
     }
   });
 </script>
@@ -376,12 +376,12 @@ Embed into WordPress, Webflow, Shopify, or static websites:
 
 ## Server API & Service Reference
 
-The server orchestration is implemented by `CheckoutSessionService` in `@mj-biz-apps/orders-core-entities-server` (and exposed via REST/GraphQL gateway endpoints in host applications):
+The server orchestration is implemented by `CheckoutSessionService` in `@mj-biz-apps/orders-core-entities-server` (which host applications can expose via their preferred REST, GraphQL, or Remotable Operations endpoints):
 
 ### 1. `InitializeSession(distributionSlug, clientSessionKey)`
 Initializes a new checkout session.
 
-**Request Payload:**
+**Request Parameters:**
 ```json
 {
   "distributionSlug": "summit-2027",
@@ -414,10 +414,10 @@ Initializes a new checkout session.
 }
 ```
 
-### 2. `POST /api/checkout/update-draft`
+### 2. `UpdateDraft(sessionID, email, lines)`
 Recalculates draft pricing in memory.
 
-**Request Payload:**
+**Request Parameters:**
 ```json
 {
   "sessionId": "d1c080b0-379e-4b7f-a2e6-64156641e7d2",
@@ -431,10 +431,10 @@ Recalculates draft pricing in memory.
 }
 ```
 
-### 3. `POST /api/checkout/complete`
+### 3. `CompleteCheckout(sessionID)`
 Executes payment verification, line creation, companion extension hydration, lifecycle booking, and claim generation.
 
-**Request Payload:**
+**Request Parameters:**
 ```json
 {
   "sessionId": "d1c080b0-379e-4b7f-a2e6-64156641e7d2",
