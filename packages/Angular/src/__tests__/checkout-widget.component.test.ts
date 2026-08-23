@@ -151,7 +151,7 @@ describe('MJCheckoutWidgetComponent', () => {
             component.handleSubmit();
 
             expect(emitSpy).not.toHaveBeenCalled();
-            expect(component.errorMessage).toBe('Domain @competitor.com is not allowed.');
+            expect(component.displayErrorMessage()).toBe('Domain @competitor.com is not allowed.');
         });
 
         it('executes onBeforeSubmit hook to enrich payload before emission', () => {

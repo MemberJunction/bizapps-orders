@@ -314,7 +314,7 @@ Import `MJCheckoutWidgetComponent` from `@mj-biz-apps/orders-ng`:
 
 ```typescript
 import { Component } from '@angular/core';
-import { MJCheckoutWidgetComponent } from '@mj-biz-apps/orders-ng';
+import { MJCheckoutWidgetComponent, type CheckoutSubmissionEvent, type CheckoutWidgetConfig } from '@mj-biz-apps/orders-ng';
 
 @Component({
   standalone: true,
@@ -322,16 +322,24 @@ import { MJCheckoutWidgetComponent } from '@mj-biz-apps/orders-ng';
   template: `
     <div class="checkout-container">
       <mj-checkout-widget 
+        [config]="config"
         [distributionSlug]="'summit-2027'"
-        [apiBaseUrl]="'https://api.example.com'"
-        (checkoutComplete)="onComplete($event)">
+        [isPaymentReady]="isPaymentReady"
+        (submitted)="onSubmitted($event)">
       </mj-checkout-widget>
     </div>
   `
 })
 export class RegistrationPageComponent {
-  onComplete(event: any) {
-    console.log("Thank you for registering!", event.orderNumber);
+  public config: CheckoutWidgetConfig = {
+    title: '2027 Annual AI Summit',
+    unitPrice: 275.00,
+    allowQuantity: true
+  };
+  public isPaymentReady = false;
+
+  public onSubmitted(event: CheckoutSubmissionEvent): void {
+    console.log("Checkout submitted:", event.sessionKey, event.totalGross, event.email);
   }
 }
 ```

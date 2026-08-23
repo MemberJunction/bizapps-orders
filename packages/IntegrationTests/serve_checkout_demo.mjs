@@ -1,9 +1,11 @@
 import dotenv from 'dotenv';
-dotenv.config({ path: '/Users/amith/Dropbox/develop/M5/MJ/packages/MJAPI/.env' });
+dotenv.config();
 
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import sql from '/Users/amith/Dropbox/develop/M5/bizapps-issues/node_modules/.pnpm/mssql@11.0.1/node_modules/mssql/index.js';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const sql = require('mssql');
 import { setupSQLServerClient, SQLServerProviderConfigData } from '@memberjunction/sqlserver-dataprovider';
 import { UserCache } from '@memberjunction/generic-database-provider';
 import { Metadata, RunView } from '@memberjunction/core';
@@ -14,14 +16,14 @@ import '@mj-biz-apps/orders-core-entities-server';
 import { LoadBizAppsOrdersServer } from '@mj-biz-apps/orders-server';
 import { LoadBizAppsAccountingServer } from '@mj-biz-apps/accounting-server';
 
-const PORT = 4205;
+const PORT = process.env.DEMO_PORT ? parseInt(process.env.DEMO_PORT, 10) : 4205;
 
 const DB_CONFIG = {
-    server: 'localhost',
-    port: 1433,
-    user: 'sa',
-    password: 'KRiUffvIjuP5GoLtxYvVkWIQ1BxHQEEMO7j4T684oPR7',
-    database: 'bizapps_orders',
+    server: process.env.DB_SERVER || process.env.DB_HOST || 'localhost',
+    port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 1433,
+    user: process.env.DB_USER || process.env.DB_USERNAME || 'sa',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_DATABASE || process.env.DB_NAME || 'bizapps_orders',
     options: {
         trustServerCertificate: true,
         enableArithAbort: true

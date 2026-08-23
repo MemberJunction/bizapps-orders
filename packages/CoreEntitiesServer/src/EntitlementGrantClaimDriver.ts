@@ -14,7 +14,7 @@ import { Metadata, RunView, UserInfo } from '@memberjunction/core';
 import { mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
 
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
-const PERSON_ENTITY = 'MJ_BizApps_Common: Persons';
+const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 
 /**
  * Pluggable driver for EntitlementGrant identity claims.

@@ -182,9 +182,16 @@ export class CheckoutSessionService {
         let configObj: CheckoutWidgetConfiguration = {};
         if (widget.Configuration) {
             try {
-                configObj = JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration;
-            } catch {
-                configObj = {};
+                const parsed = JSON.parse(widget.Configuration);
+                if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                    throw new Error('Widget Configuration must be a JSON object');
+                }
+                configObj = parsed as CheckoutWidgetConfiguration;
+            } catch (err) {
+                return {
+                    Success: false,
+                    ErrorMessage: `Invalid widget configuration: ${err instanceof Error ? err.message : String(err)}`
+                };
             }
         }
 
@@ -704,6 +711,18 @@ export class CheckoutSessionService {
             };
         }
 
+        // Atomically latch status to Processing to prevent concurrent duplicate checkout processing
+        session.Status = 'Processing';
+        const preSaved = await session.Save();
+        if (!preSaved) {
+            return {
+                Success: false,
+                ErrorMessage: 'Failed to acquire checkout session lock or session was concurrently processed',
+                SessionID: sessionID,
+                Status: session.Status
+            };
+        }
+
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
         await widget.Load(session.CheckoutWidgetID);
 
@@ -810,15 +829,33 @@ export class CheckoutSessionService {
             sumGross += extPrice;
         }
         order.TotalGross = Math.round(sumGross * 100) / 100;
+
+        // Money-path safety: Refuse to confirm paid order without captured/authorized payment
+        if (order.TotalGross > 0) {
+            const hasPayment = Boolean(session.PaymentIntentID);
+            if (!hasPayment) {
+                session.Status = 'Open';
+                await session.Save();
+                return {
+                    Success: false,
+                    ErrorMessage: 'Cannot confirm paid order (TotalGross > 0) without a valid payment method or capture',
+                    SessionID: sessionID,
+                    Status: 'Open'
+                };
+            }
+        }
+
         // Confirm order via BaseEntity lifecycle (executes GL booking, entitlement issuance, status latching)
         try {
             await order.Confirm();
         } catch (confirmErr) {
+            session.Status = 'Open';
+            await session.Save();
             return {
                 Success: false,
                 ErrorMessage: `Failed to confirm order: ${confirmErr instanceof Error ? confirmErr.message : String(confirmErr)}`,
                 SessionID: sessionID,
-                Status: session.Status
+                Status: 'Open'
             };
         }
 

@@ -16,7 +16,11 @@ import {
     EventEmitter,
     OnInit,
     OnChanges,
+    OnDestroy,
     SimpleChanges,
+    ElementRef,
+    Renderer2,
+    inject,
     signal,
     computed,
     ChangeDetectionStrategy
@@ -109,8 +113,15 @@ declare global {
     styleUrls: ['./checkout-widget.component.css'],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
+export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     private _config = signal<CheckoutWidgetConfig | null>(null);
+    private _lastMountedJS: string | null = null;
+    private _customStyleEl: HTMLStyleElement | null = null;
+
+    constructor(
+        private el?: ElementRef,
+        private renderer?: Renderer2
+    ) {}
 
     @Input()
     public set config(val: CheckoutWidgetConfig | null) {
@@ -122,13 +133,18 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
     }
 
     @Input() public distributionSlug: string = '';
+    @Input() public sessionKey: string = '';
     @Input() public isProcessing: boolean = false;
     @Input() public errorMessage: string | null = null;
-    @Input() public isPaymentReady: boolean = true;
+    @Input() public isPaymentReady: boolean = false;
     @Input() public stripePaymentMethodId: string | null = null;
 
     @Output() public submitted = new EventEmitter<CheckoutSubmissionEvent>();
     @Output() public cancelled = new EventEmitter<void>();
+
+    // Internal error message for client-side validation failures
+    public internalErrorMessage = signal<string | null>(null);
+    public displayErrorMessage = computed<string | null>(() => this.errorMessage || this.internalErrorMessage());
 
     // Form state signals
     public email = signal<string>('');
@@ -217,6 +233,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
 
     public ngOnInit(): void {
         this.syncUnits();
+        this.applyCustomCSS(this.activeCSS());
         if (this.activeJS()) {
             this.mountCustomJS(this.activeJS());
         }
@@ -229,19 +246,59 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
     public ngOnChanges(changes: SimpleChanges): void {
         if (changes['config']) {
             this.syncUnits();
-            if (this.activeJS()) {
+            this.applyCustomCSS(this.activeCSS());
+            if (this.activeJS() && this.activeJS() !== this._lastMountedJS) {
                 this.mountCustomJS(this.activeJS());
             }
         }
     }
 
+    public ngOnDestroy(): void {
+        if (this._customStyleEl && this._customStyleEl.parentNode) {
+            this._customStyleEl.parentNode.removeChild(this._customStyleEl);
+            this._customStyleEl = null;
+        }
+    }
+
+    private applyCustomCSS(cssContent: string): void {
+        if (typeof document === 'undefined') return;
+
+        if (!cssContent) {
+            if (this._customStyleEl && this._customStyleEl.parentNode) {
+                this._customStyleEl.parentNode.removeChild(this._customStyleEl);
+                this._customStyleEl = null;
+            }
+            return;
+        }
+
+        if (!this._customStyleEl) {
+            if (this.renderer && this.el) {
+                this._customStyleEl = this.renderer.createElement('style');
+                this.renderer.setAttribute(this._customStyleEl, 'type', 'text/css');
+                this.renderer.setAttribute(this._customStyleEl, 'id', 'mj-checkout-custom-css');
+                this.renderer.appendChild(this.el.nativeElement, this._customStyleEl);
+            } else {
+                this._customStyleEl = document.createElement('style');
+                this._customStyleEl.type = 'text/css';
+                this._customStyleEl.id = 'mj-checkout-custom-css';
+                document.head.appendChild(this._customStyleEl);
+            }
+        }
+
+        if (this._customStyleEl) {
+            this._customStyleEl.textContent = cssContent;
+        }
+    }
+
     private mountCustomJS(scriptContent: string): void {
         if (!scriptContent || typeof window === 'undefined') return;
+        this._lastMountedJS = scriptContent;
         try {
             const runner = new Function('widgetContext', scriptContent);
             runner({ component: this, config: this.config });
         } catch (err) {
             console.warn('[MJCheckoutWidget] CustomJS evaluation notice:', err);
+            this.internalErrorMessage.set('Notice: Custom widget scripts could not be evaluated under current security policy.');
         }
     }
 
@@ -253,6 +310,10 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
             }
         } catch (err) {
             console.warn(`[MJCheckoutWidget] Hook error in ${hookName}:`, err);
+            if (hookName === 'onValidate') {
+                // Fail closed on validation errors
+                return 'Validation hook encountered an internal error.';
+            }
         }
         return undefined;
     }
@@ -268,23 +329,28 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
         const currentQty = this.quantity();
         const currentUnits = this.units();
         const updated: Array<Record<string, unknown>> = [];
+        const fields = this.activeFieldDefs();
 
         for (let i = 0; i < currentQty; i++) {
             if (i === 0) {
                 const primary = currentUnits[0] || {};
-                updated.push({
-                    ...primary,
-                    firstName: this.firstName() || (primary['firstName'] as string) || '',
-                    lastName: this.lastName() || (primary['lastName'] as string) || '',
-                    email: this.email() || (primary['email'] as string) || '',
-                    company: this.company() || (primary['company'] as string) || '',
-                    title: this.title() || (primary['title'] as string) || '',
-                });
+                const unit0: Record<string, unknown> = { ...primary };
+                for (const field of fields) {
+                    if (unit0[field.name] === undefined) {
+                        unit0[field.name] = field.defaultValue ?? '';
+                    }
+                }
+                if (this.firstName()) unit0['firstName'] = this.firstName();
+                if (this.lastName()) unit0['lastName'] = this.lastName();
+                if (this.email()) unit0['email'] = this.email();
+                if (this.company()) unit0['company'] = this.company();
+                if (this.title()) unit0['title'] = this.title();
+                updated.push(unit0);
             } else if (currentUnits[i]) {
                 updated.push({ ...currentUnits[i] });
             } else {
                 const initial: Record<string, unknown> = {};
-                for (const field of this.activeFieldDefs()) {
+                for (const field of fields) {
                     initial[field.name] = field.defaultValue ?? '';
                 }
                 if (this.company()) {
@@ -321,30 +387,53 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
         if (!primary) return;
         const list = this.units().map((unit, i) => {
             if (i === 0) return unit;
-            return {
-                ...unit,
-                company: primary['company'] || unit['company']
-            };
+            const copied: Record<string, unknown> = { ...unit };
+            for (const [key, val] of Object.entries(primary)) {
+                if (key !== 'firstName' && key !== 'lastName' && key !== 'email' && key !== 'FirstName' && key !== 'LastName' && key !== 'Email') {
+                    copied[key] = val;
+                }
+            }
+            return copied;
         });
         this.units.set(list);
     }
 
     public isFormValid(): boolean {
-        const em = this.email().trim();
-        if (!em || !em.includes('@')) return false;
-        if (!this.firstName().trim() || !this.lastName().trim()) return false;
-
         const currentUnits = this.units();
         const fields = this.activeFieldDefs();
 
-        if (this.isMultiUnit()) {
-            for (const unit of currentUnits) {
-                for (const field of fields) {
-                    if (field.required) {
-                        const val = unit[field.name];
-                        if (val === undefined || val === null || String(val).trim() === '') {
-                            return false;
-                        }
+        if (!currentUnits || currentUnits.length === 0) {
+            const em = this.email().trim();
+            const fn = this.firstName().trim();
+            const ln = this.lastName().trim();
+            if (!em || !em.includes('@') || !fn || !ln) return false;
+            if (!this.isFree() && !this.isPaymentReady) return false;
+            return true;
+        }
+
+        for (let i = 0; i < currentUnits.length; i++) {
+            const unit = currentUnits[i];
+            for (const field of fields) {
+                let val = unit[field.name];
+                if (i === 0) {
+                    if (field.name === 'firstName' && this.firstName()) val = this.firstName();
+                    if (field.name === 'lastName' && this.lastName()) val = this.lastName();
+                    if (field.name === 'email' && this.email()) val = this.email();
+                    if (field.name === 'company' && this.company()) val = this.company();
+                    if (field.name === 'title' && this.title()) val = this.title();
+                }
+                if (field.required) {
+                    if (val === undefined || val === null || String(val).trim() === '') {
+                        return false;
+                    }
+                }
+                if (field.name.toLowerCase().includes('email')) {
+                    const emVal = String(val || '').trim();
+                    if (field.required && (!emVal || !emVal.includes('@'))) {
+                        return false;
+                    }
+                    if (emVal && !emVal.includes('@')) {
+                        return false;
                     }
                 }
             }
@@ -359,28 +448,35 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges {
 
     public handleSubmit(): void {
         if (!this.isFormValid() || this.isProcessing) return;
+        this.internalErrorMessage.set(null);
 
-        const sessionKey = 'ck_sess_' + Math.random().toString(36).substring(2, 15);
         const currentUnits = this.units();
+        const isPerUnit = this.isPerUnit();
+        const finalSessionKey = this.sessionKey || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'ck_sess_' + Math.random().toString(36).substring(2, 15));
 
         const submission: CheckoutSubmissionEvent = {
-            email: this.email().trim().toLowerCase(),
+            email: String(currentUnits[0]?.['email'] || this.email()).trim().toLowerCase(),
             quantity: this.quantity(),
-            attendees: this.attendees(),
+            attendees: isPerUnit ? this.attendees() : [],
             extensionData: {
                 entityName: this.config?.extensionEntityName,
                 fields: currentUnits[0] || {},
-                units: currentUnits
+                units: isPerUnit ? currentUnits : undefined
             },
             totalGross: this.totalGross(),
-            stripePaymentMethodId: this.isFree() ? undefined : (this.stripePaymentMethodId ?? 'pm_stripe_token_' + Math.random().toString(36).substring(2, 8)),
-            sessionKey
+            stripePaymentMethodId: this.isFree() ? undefined : (this.stripePaymentMethodId ?? undefined),
+            sessionKey: finalSessionKey
         };
 
-        // Execute custom validation hook if present
-        const customValidationResult = this.executeLifecycleHook('onValidate', submission);
-        if (customValidationResult === false || typeof customValidationResult === 'string') {
-            this.errorMessage = typeof customValidationResult === 'string' ? customValidationResult : 'Submission validation rejected.';
+        // Execute custom validation hook if present (fails closed)
+        try {
+            const customValidationResult = this.executeLifecycleHook('onValidate', submission);
+            if (customValidationResult === false || typeof customValidationResult === 'string') {
+                this.internalErrorMessage.set(typeof customValidationResult === 'string' ? customValidationResult : 'Submission validation rejected.');
+                return;
+            }
+        } catch (hookErr) {
+            this.internalErrorMessage.set('Validation failed: ' + (hookErr instanceof Error ? hookErr.message : String(hookErr)));
             return;
         }
 

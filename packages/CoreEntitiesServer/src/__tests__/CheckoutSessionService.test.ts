@@ -43,6 +43,7 @@ const mocks = vi.hoisted(() => {
         Email: string | null = null;
         DraftOrderID: string | null = null;
         Status = 'Open';
+        PaymentIntentID: string | null = null;
         ExpiresAt = new Date(Date.now() + 7200000);
         NewRecord = vi.fn();
         Load = mockSessionLoad;
@@ -143,14 +144,17 @@ const mocks = vi.hoisted(() => {
         };
     }
 
+    const mockPricingPrice = vi.fn().mockImplementation((ctx: { Lines: MockOrderLine[] }) => {
+        for (const line of ctx.Lines) {
+            const price = line.UnitPrice ?? 0;
+            line.UnitPrice = price;
+            line.LineTotalGross = price * line.Quantity;
+        }
+        return Promise.resolve({});
+    });
+
     class MockOrderPricingService {
-        Price = vi.fn().mockImplementation((ctx: { Lines: MockOrderLine[] }) => {
-            for (const line of ctx.Lines) {
-                line.UnitPrice = 100;
-                line.LineTotalGross = 100 * line.Quantity;
-            }
-            return Promise.resolve({});
-        });
+        Price = mockPricingPrice;
     }
 
     return {
@@ -163,6 +167,7 @@ const mocks = vi.hoisted(() => {
         MockOrderLine,
         MockOrderHeader,
         MockOrderPricingService,
+        mockPricingPrice,
         mockWidgetSave,
         mockWidgetLoad,
         mockSessionSave,
@@ -172,7 +177,7 @@ const mocks = vi.hoisted(() => {
         mockProductLoad,
         mockProductTypeLoad,
         mockPersonSave,
-        mockClaimCreate: vi.fn().mockResolvedValue({}),
+        mockClaimCreate: vi.fn().mockResolvedValue(true),
         mockWidgetInstance: new MockCheckoutWidget(),
         mockSessionInstance: new MockCheckoutSession(),
         mockOrderInstance: new MockOrderHeader(),
@@ -219,10 +224,10 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
         },
         RunView: class {
             RunView = vi.fn().mockImplementation((params: { EntityName: string }) => {
-                if (params.EntityName.includes('Distributions')) {
+                if (params.EntityName.includes('Checkout Widget Distributions')) {
                     return Promise.resolve({
                         Success: true,
-                        Results: [{ ID: 'dist-1', CheckoutWidgetID: 'widget-1', Slug: 'summit-2026', Status: 'Active' }]
+                        Results: [{ ID: 'dist-1', CheckoutWidgetID: 'widget-1', IsActive: true }]
                     });
                 }
                 if (params.EntityName.includes('Checkout Sessions')) {
@@ -262,6 +267,8 @@ describe('CheckoutSessionService', () => {
         vi.clearAllMocks();
         mocks.mockSessionInstance.Status = 'Open';
         mocks.mockSessionInstance.DraftOrderID = 'order-999';
+        mocks.mockSessionInstance.StripePaymentMethodID = null;
+        mocks.mockSessionInstance.StripePaymentIntentID = null;
         mocks.mockOrderInstance.Status = 'Draft';
         mocks.mockOrderInstance.TotalGross = 0;
         mocks.mockOrderInstance.Lines.Items = [];
@@ -396,7 +403,8 @@ describe('CheckoutSessionService', () => {
             expect(mocks.mockClaimCreate).toHaveBeenCalled();
         });
 
-        it('confirms paid order and executes BaseEntity lifecycle booking', async () => {
+        it('confirms paid order when payment method is present and executes BaseEntity lifecycle booking', async () => {
+            mocks.mockSessionInstance.PaymentIntentID = 'pi_card_visa';
             mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
                 Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
             });
@@ -406,6 +414,53 @@ describe('CheckoutSessionService', () => {
             expect(res.Status).toBe('Confirmed');
             expect(mocks.mockSessionInstance.Status).toBe('Confirmed');
             expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalled();
+        });
+
+        it('rejects paid order confirmation when payment capture is missing', async () => {
+            mocks.mockSessionInstance.PaymentIntentID = null;
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+
+            // Make pricing service set total gross > 0
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: MockOrderLine[] }) => {
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = 100;
+                    line.LineTotalGross = 100 * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123');
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('Cannot confirm paid order');
+        });
+
+        it('rejects duplicate or concurrent CompleteCheckout calls when status is not Open', async () => {
+            mocks.mockSessionInstance.Status = 'Processing';
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123');
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('Session is not in an Open status');
+        });
+
+        it('creates a single order line with Quantity 3 when unitMode is perLine', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{
+                    ProductID: 'prod-1',
+                    Quantity: 3,
+                    ExtensionFields: { DietaryPreferences: 'Vegetarian' }
+                }]
+            });
+
+            // Mock Product without perUnit configuration
+            mocks.mockProductTypeInstance.Configuration = JSON.stringify({ unitMode: 'perLine' });
+            mocks.mockProductInstance.MaxQuantityPerLine = null;
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123');
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOrderInstance.Lines.Items).toHaveLength(1);
+            expect(mocks.mockOrderInstance.Lines.Items[0].Quantity).toBe(3);
         });
     });
 });
