@@ -192,14 +192,14 @@ export interface CheckoutWidgetConfiguration {
 Themes and custom styles resolve in a cascading hierarchy:
 $$\text{Base Default Theme} \longrightarrow \text{ProductType.Configuration.customUI} \longrightarrow \text{Widget.Configuration.customUI}$$
 
-CSS variables injected automatically into the widget DOM:
-- `--mj-color-primary`: Primary action buttons and focus rings
-- `--mj-color-accent`: Highlights and status badges
+CSS variables injected into the widget container:
+- `--mj-primary-color`: Primary action buttons and focus rings
+- `--mj-accent-color`: Highlights and status badges
 - `--mj-border-radius`: Input and container corner radiuses
 - `--mj-font-family`: Custom typography
 
-### Scoped Client-Side Lifecycle JavaScript Hooks
-Custom JS defined in `customUI.js` executes safely within the widget sandbox:
+### Client-Side Lifecycle JavaScript Hooks
+Custom JS defined in `customUI.js` executes within the widget context:
 
 ```javascript
 window.MJCheckoutHooks = {
@@ -211,11 +211,14 @@ window.MJCheckoutHooks = {
             return "Registrations from this domain are not accepted.";
         }
     },
-    onQuantityChange(newQuantity) {
-        console.log("Quantity updated to:", newQuantity);
+    onQuantityChange({ quantity }) {
+        console.log("Quantity updated to:", quantity);
     },
     onBeforeSubmit(submission) {
         submission.extensionData.fields['source'] = 'marketing-campaign-q1';
+    },
+    onDestroy({ component }) {
+        console.log("Widget instance unmounted");
     }
 };
 ```
@@ -371,9 +374,11 @@ Embed into WordPress, Webflow, Shopify, or static websites:
 
 ---
 
-## REST / Server API Reference
+## Server API & Service Reference
 
-### 1. `POST /api/checkout/initialize`
+The server orchestration is implemented by `CheckoutSessionService` in `@mj-biz-apps/orders-core-entities-server` (and exposed via REST/GraphQL gateway endpoints in host applications):
+
+### 1. `InitializeSession(distributionSlug, clientSessionKey)`
 Initializes a new checkout session.
 
 **Request Payload:**
