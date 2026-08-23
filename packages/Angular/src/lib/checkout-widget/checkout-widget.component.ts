@@ -137,7 +137,16 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     @Input() public distributionSlug: string = '';
     @Input() public sessionKey: string = '';
     @Input() public isProcessing: boolean = false;
-    @Input() public errorMessage: string | null = null;
+    
+    private _errorMessage = signal<string | null>(null);
+    @Input()
+    public set errorMessage(val: string | null) {
+        this._errorMessage.set(val);
+    }
+    public get errorMessage(): string | null {
+        return this._errorMessage();
+    }
+
     @Input() public isPaymentReady: boolean = false;
     @Input() public stripePaymentMethodId: string | null = null;
 
@@ -146,7 +155,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
 
     // Internal error message for client-side validation failures
     public internalErrorMessage = signal<string | null>(null);
-    public displayErrorMessage = computed<string | null>(() => this.errorMessage || this.internalErrorMessage());
+    public displayErrorMessage = computed<string | null>(() => this._errorMessage() || this.internalErrorMessage());
 
     // Form state signals
     public email = signal<string>('');
@@ -256,6 +265,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     }
 
     public ngOnDestroy(): void {
+        this.executeLifecycleHook('onDestroy', { component: this });
         if (this._customStyleEl && this._customStyleEl.parentNode) {
             this._customStyleEl.parentNode.removeChild(this._customStyleEl);
             this._customStyleEl = null;
@@ -414,8 +424,9 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             return true;
         }
 
-        for (let i = 0; i < currentUnits.length; i++) {
-            const unit = currentUnits[i];
+        const unitsToValidate = this.isPerUnit() ? currentUnits : currentUnits.slice(0, 1);
+        for (let i = 0; i < unitsToValidate.length; i++) {
+            const unit = unitsToValidate[i];
             for (const field of fields) {
                 let val = unit[field.name];
                 if (i === 0) {

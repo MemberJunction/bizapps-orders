@@ -446,6 +446,17 @@ export class CheckoutSessionService {
         // Auto-resolve PersonID if person fields exist on the entity or extension
         const resolvedPersonID = await this.resolveOrEnsurePerson(fieldValues, contextUser);
 
+        const excludedClientFields = new Set([
+            'id',
+            'orderlineid',
+            'personid',
+            'attendeepersonid',
+            'checkinat',
+            'checkedin',
+            '__mj_createdat',
+            '__mj_updatedat'
+        ]);
+
         if (extensionEntityName && line.Extension) {
             const ext = await line.Extension.EnsureEntity(extensionEntityName);
             if (ext) {
@@ -459,7 +470,11 @@ export class CheckoutSessionService {
                     }
                 }
                 for (const [key, rawValue] of Object.entries(fieldValues)) {
-                    const field = extFieldsByName.get(key.toLowerCase());
+                    const lowerKey = key.toLowerCase();
+                    if (excludedClientFields.has(lowerKey) || lowerKey.startsWith('__mj_')) {
+                        continue;
+                    }
+                    const field = extFieldsByName.get(lowerKey);
                     if (field && !field.IsPrimaryKey && !field.IsVirtual && field.AllowUpdateAPI) {
                         let coerced = rawValue;
                         if (field.Type.toLowerCase().includes('int') && typeof rawValue === 'string') {
@@ -569,7 +584,7 @@ export class CheckoutSessionService {
 
         let sequence = 1;
         for (const inputLine of lines) {
-            let targetExtensionEntity = inputLine.ExtensionData?.EntityName ?? null;
+            let targetExtensionEntity: string | null = null;
             let maxQuantityPerLine: number | null = null;
 
             if (inputLine.ProductID) {
@@ -582,9 +597,7 @@ export class CheckoutSessionService {
                             const pType = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, contextUser);
                             const pTypeLoaded = await pType.Load(product.ProductTypeID);
                             if (pTypeLoaded) {
-                                if (!targetExtensionEntity) {
-                                    targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
-                                }
+                                targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
                                 if (pType.Configuration) {
                                     try {
                                         const pTypeConfig = JSON.parse(pType.Configuration) as ProductTypeConfiguration;
@@ -909,7 +922,7 @@ export class CheckoutSessionService {
         try {
             const provider = (Metadata.Provider || (Metadata as unknown as { Provider: unknown }).Provider) as { PlatformKey?: string; ExecuteSQL?: <T>(sql: string, params: unknown[], options?: unknown, user?: unknown) => Promise<T[]> } | undefined;
             if (!provider || typeof provider.ExecuteSQL !== 'function') {
-                return true;
+                return false;
             }
 
             const entityInfo = md.Entities?.find(e => e.Name === CHECKOUT_SESSION_ENTITY);

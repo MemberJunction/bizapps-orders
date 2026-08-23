@@ -271,7 +271,10 @@ describe('CheckoutSessionService', () => {
                 CreateClaim: mocks.mockClaimCreate
             }
         };
-        (Metadata as unknown as { Provider: unknown }).Provider = undefined;
+        (Metadata as unknown as { Provider: unknown }).Provider = {
+            PlatformKey: 'sqlserver',
+            ExecuteSQL: vi.fn().mockResolvedValue([{ ID: 'sess-123' }])
+        };
         mocks.mockSessionInstance.Status = 'Open';
         mocks.mockSessionInstance.DraftOrderID = 'order-999';
         mocks.mockSessionInstance.StripePaymentMethodID = null;

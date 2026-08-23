@@ -7,6 +7,7 @@ import { DaysSince, FormatMoney, MJOMoneyPipe } from '../../panels/money-format'
 import { MJAlertComponent, MJEmptyStateComponent, MJTabNavComponent, type TabConfig, type MJAlertVariant } from '@memberjunction/ng-ui-components';
 import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
+import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { GetOrders } from '../../data/orders-queries';
 import { LocalDay, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 
@@ -206,7 +207,7 @@ interface MJOAttentionItem {
                     @if (OrderEntityInfo) {
                         <mj-entity-viewer
                             [Entity]="OrderEntityInfo"
-                            [FilterText]="ExplorerFilter"
+                            [ViewEntity]="ExplorerView"
                             (RecordOpened)="OnRecordOpened($event)">
                         </mj-entity-viewer>
                     } @else {
@@ -390,7 +391,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     ];
 
     public OrderEntityInfo: EntityInfo | null = null;
-    public ExplorerFilter: string | null = null;
+    public ExplorerView: MJUserViewEntityExtended | null = null;
 
     private orders: mjBizAppsOrdersOrderHeaderEntity[] = [];
 
@@ -404,30 +405,49 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     public OnTabChange(tabKey: string): void {
         this.ActiveTab = tabKey;
         if (tabKey !== 'explorer') {
-            this.ExplorerFilter = null;
+            this.ExplorerView = null;
         }
         this.cdr.detectChanges();
     }
 
     public OpenExplorerPreset(preset: string): void {
         const today = new Date().toISOString().slice(0, 10);
+        let whereClause: string | null = null;
+        let presetName = 'All Orders';
         switch (preset) {
             case 'overdue':
-                this.ExplorerFilter = `Balance > 0 AND DueDate IS NOT NULL AND DueDate < '${today}' AND Status NOT IN ('Draft','Quoted','Voided')`;
+                whereClause = `Balance > 0 AND DueDate IS NOT NULL AND DueDate < '${today}' AND Status NOT IN ('Draft','Quoted','Voided')`;
+                presetName = 'Overdue Orders';
                 break;
             case 'unpaid':
-                this.ExplorerFilter = `Balance > 0 AND Status NOT IN ('Draft','Quoted','Voided')`;
+                whereClause = `Balance > 0 AND Status NOT IN ('Draft','Quoted','Voided')`;
+                presetName = 'Unpaid Orders';
                 break;
             case 'drafts':
-                this.ExplorerFilter = `Status IN ('Draft','Quoted')`;
+                whereClause = `Status IN ('Draft','Quoted')`;
+                presetName = 'Draft & Quoted Orders';
                 break;
             case 'credits':
-                this.ExplorerFilter = `Balance < 0 AND Status NOT IN ('Draft','Quoted','Voided')`;
+                whereClause = `Balance < 0 AND Status NOT IN ('Draft','Quoted','Voided')`;
+                presetName = 'Credit Balance Orders';
                 break;
             default:
-                this.ExplorerFilter = null;
+                whereClause = null;
                 break;
         }
+
+        if (whereClause && this.OrderEntityInfo) {
+            this.ExplorerView = {
+                EntityID: this.OrderEntityInfo.ID,
+                Entity: this.OrderEntityInfo.Name,
+                WhereClause: whereClause,
+                ID: `preset-${preset}`,
+                Name: presetName
+            } as unknown as MJUserViewEntityExtended;
+        } else {
+            this.ExplorerView = null;
+        }
+
         this.ActiveTab = 'explorer';
         this.cdr.detectChanges();
     }
