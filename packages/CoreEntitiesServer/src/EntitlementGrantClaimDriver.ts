@@ -8,13 +8,46 @@
  * @module @mj-biz-apps/orders-core-entities-server/EntitlementGrantClaimDriver
  */
 
-import { BaseIdentityClaimDriver, ClaimContext, ClaimRedeemContext, ClaimResult } from '@memberjunction/core-entities';
 import { RegisterClass } from '@memberjunction/global';
 import { Metadata, RunView, UserInfo } from '@memberjunction/core';
 import { mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
 
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
-const PERSON_ENTITY = 'MJ_BizApps_Common: Persons';
+const PERSON_ENTITY = 'MJ_BizApps_Common: People';
+
+export interface ClaimContext {
+    Claim: {
+        ID?: string;
+        ClaimTypeID?: string;
+        Status?: string;
+        EntityID?: string | null;
+        RecordID?: string | null;
+        NormalizedEmail?: string;
+        MetadataJSON?: string | null;
+        PayloadJSON?: string | null;
+        [key: string]: unknown;
+    };
+    User?: UserInfo;
+    [key: string]: unknown;
+}
+
+export interface ClaimRedeemContext extends ClaimContext {
+    User: UserInfo;
+    RedemptionToken?: string;
+}
+
+export interface ClaimResult {
+    Success: boolean;
+    ErrorMessage?: string;
+    Data?: Record<string, unknown>;
+}
+
+export abstract class BaseIdentityClaimDriver {
+    public abstract OnCreate(context: ClaimContext): Promise<void>;
+    public abstract OnClaim(context: ClaimRedeemContext): Promise<ClaimResult>;
+    public abstract OnRevoke(context: ClaimContext): Promise<void>;
+    public abstract OnExpire(context: ClaimContext): Promise<void>;
+}
 
 /**
  * Pluggable driver for EntitlementGrant identity claims.

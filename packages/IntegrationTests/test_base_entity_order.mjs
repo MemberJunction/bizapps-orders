@@ -10,11 +10,11 @@ import '@mj-biz-apps/orders-core-entities-server';
 async function test() {
     console.log('🔌 Connecting to SQL Server via setupSQLServerClient...');
     const pool = await sql.connect({
-        server: 'localhost',
-        port: 1433,
-        user: 'sa',
-        password: 'KRiUffvIjuP5GoLtxYvVkWIQ1BxHQEEMO7j4T684oPR7',
-        database: 'bizapps_orders',
+        server: process.env.DB_HOST || 'localhost',
+        port: parseInt(process.env.DB_PORT || '1433', 10),
+        user: process.env.DB_USER || 'sa',
+        password: process.env.DB_PASSWORD || '',
+        database: process.env.DB_DATABASE || 'bizapps_orders',
         options: { trustServerCertificate: true }
     });
 

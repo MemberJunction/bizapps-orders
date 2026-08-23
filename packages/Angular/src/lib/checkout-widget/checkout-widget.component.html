@@ -6,10 +6,6 @@
     [style.--mj-text-color]="activeTheme()?.textColor || '#0f172a'"
     [style.--mj-font-family]="activeTheme()?.fontFamily || 'inherit'">
 
-    @if (activeCSS()) {
-        <style>{{ activeCSS() }}</style>
-    }
-
     <!-- Widget Header -->
     <header class="mj-widget-header">
         <h2 class="mj-widget-title">{{ config?.title || 'Checkout' }}</h2>
@@ -19,10 +15,10 @@
     </header>
 
     <!-- Error Banner -->
-    @if (errorMessage) {
+    @if (displayErrorMessage()) {
         <div class="mj-widget-error-banner" role="alert">
             <span class="mj-error-icon">⚠️</span>
-            <span>{{ errorMessage }}</span>
+            <span>{{ displayErrorMessage() }}</span>
         </div>
     }
 
@@ -44,7 +40,7 @@
             </div>
         </div>
 
-        @if (config?.allowQuantity && !isFree()) {
+        @if (config?.allowQuantity) {
             <div class="mj-quantity-selector-row">
                 <label for="quantityInput" class="mj-label">Quantity</label>
                 <div class="mj-qty-controls">
@@ -87,9 +83,9 @@
                                     [ngModel]="units()[0]?.[field.name]"
                                     (ngModelChange)="updateUnitField(0, field.name, $event)"
                                     [required]="field.required || false">
-                                    <option value="">Select {{ field.label }}</option>
+                                    <option [ngValue]="''">Select {{ field.label }}</option>
                                     @for (opt of field.options; track opt.value) {
-                                        <option [value]="opt.value">{{ opt.label }}</option>
+                                        <option [ngValue]="opt.value">{{ opt.label }}</option>
                                     }
                                 </select>
                             }
@@ -169,9 +165,9 @@
                                                 [ngModel]="unit[field.name]"
                                                 (ngModelChange)="updateUnitField($index, field.name, $event)"
                                                 [required]="field.required || false">
-                                                <option value="">Select {{ field.label }}</option>
+                                                <option [ngValue]="''">Select {{ field.label }}</option>
                                                 @for (opt of field.options; track opt.value) {
-                                                    <option [value]="opt.value">{{ opt.label }}</option>
+                                                    <option [ngValue]="opt.value">{{ opt.label }}</option>
                                                 }
                                             </select>
                                         }

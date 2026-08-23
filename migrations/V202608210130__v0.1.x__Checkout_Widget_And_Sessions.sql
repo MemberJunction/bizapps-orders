@@ -404,6 +404,7 @@ INSERT INTO [${mjSchema}].[EntityPermission]
 
 /* SQL text to update existing entities from schema */
 EXEC [${mjSchema}].[spUpdateExistingEntitiesFromSchema] @ExcludedSchemaNames='sys,staging,dbo,${mjSchema},${mjSchema}_BizAppsCommon,${mjSchema}_BizAppsAccounting,${mjSchema}_BizAppsTasks,${mjSchema}_BizAppsIssues,${mjSchema}_BizAppsCommittees,${mjSchema}_BizAppsSecureMessaging';
+GO
 
 /* SQL text to drop default existing default constraints in entity ${flyway:defaultSchema}.CheckoutSession */
 DECLARE @constraintName NVARCHAR(255);
@@ -421,9 +422,11 @@ IF @constraintName IS NOT NULL
 BEGIN
     EXEC('ALTER TABLE [${flyway:defaultSchema}].[CheckoutSession] DROP CONSTRAINT ' + @constraintName);
 END;
+GO
 
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity ${flyway:defaultSchema}.CheckoutSession */
 ALTER TABLE [${flyway:defaultSchema}].[CheckoutSession] ADD CONSTRAINT [DF___mj_BizAppsOrders_CheckoutSession___mj_CreatedAt] DEFAULT GETUTCDATE() FOR [__mj_CreatedAt];
+GO
 
 /* SQL text to drop default existing default constraints in entity ${flyway:defaultSchema}.CheckoutSession */
 DECLARE @constraintName NVARCHAR(255);
@@ -441,9 +444,11 @@ IF @constraintName IS NOT NULL
 BEGIN
     EXEC('ALTER TABLE [${flyway:defaultSchema}].[CheckoutSession] DROP CONSTRAINT ' + @constraintName);
 END;
+GO
 
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity ${flyway:defaultSchema}.CheckoutSession */
 ALTER TABLE [${flyway:defaultSchema}].[CheckoutSession] ADD CONSTRAINT [DF___mj_BizAppsOrders_CheckoutSession___mj_UpdatedAt] DEFAULT GETUTCDATE() FOR [__mj_UpdatedAt];
+GO
 
 /* SQL text to drop default existing default constraints in entity ${flyway:defaultSchema}.CheckoutWidget */
 DECLARE @constraintName NVARCHAR(255);
@@ -461,9 +466,11 @@ IF @constraintName IS NOT NULL
 BEGIN
     EXEC('ALTER TABLE [${flyway:defaultSchema}].[CheckoutWidget] DROP CONSTRAINT ' + @constraintName);
 END;
+GO
 
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity ${flyway:defaultSchema}.CheckoutWidget */
 ALTER TABLE [${flyway:defaultSchema}].[CheckoutWidget] ADD CONSTRAINT [DF___mj_BizAppsOrders_CheckoutWidget___mj_CreatedAt] DEFAULT GETUTCDATE() FOR [__mj_CreatedAt];
+GO
 
 /* SQL text to drop default existing default constraints in entity ${flyway:defaultSchema}.CheckoutWidget */
 DECLARE @constraintName NVARCHAR(255);
@@ -481,9 +488,11 @@ IF @constraintName IS NOT NULL
 BEGIN
     EXEC('ALTER TABLE [${flyway:defaultSchema}].[CheckoutWidget] DROP CONSTRAINT ' + @constraintName);
 END;
+GO
 
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity ${flyway:defaultSchema}.CheckoutWidget */
 ALTER TABLE [${flyway:defaultSchema}].[CheckoutWidget] ADD CONSTRAINT [DF___mj_BizAppsOrders_CheckoutWidget___mj_UpdatedAt] DEFAULT GETUTCDATE() FOR [__mj_UpdatedAt];
+GO
 
 /* SQL text to drop default existing default constraints in entity ${flyway:defaultSchema}.CheckoutWidgetDistribution */
 DECLARE @constraintName NVARCHAR(255);
@@ -501,9 +510,11 @@ IF @constraintName IS NOT NULL
 BEGIN
     EXEC('ALTER TABLE [${flyway:defaultSchema}].[CheckoutWidgetDistribution] DROP CONSTRAINT ' + @constraintName);
 END;
+GO
 
 /* SQL text to add default constraint for special date field __mj_CreatedAt in entity ${flyway:defaultSchema}.CheckoutWidgetDistribution */
 ALTER TABLE [${flyway:defaultSchema}].[CheckoutWidgetDistribution] ADD CONSTRAINT [DF___mj_BizAppsOrders_CheckoutWidgetDistribution___mj_CreatedAt] DEFAULT GETUTCDATE() FOR [__mj_CreatedAt];
+GO
 
 /* SQL text to drop default existing default constraints in entity ${flyway:defaultSchema}.CheckoutWidgetDistribution */
 DECLARE @constraintName NVARCHAR(255);
@@ -521,9 +532,11 @@ IF @constraintName IS NOT NULL
 BEGIN
     EXEC('ALTER TABLE [${flyway:defaultSchema}].[CheckoutWidgetDistribution] DROP CONSTRAINT ' + @constraintName);
 END;
+GO
 
 /* SQL text to add default constraint for special date field __mj_UpdatedAt in entity ${flyway:defaultSchema}.CheckoutWidgetDistribution */
 ALTER TABLE [${flyway:defaultSchema}].[CheckoutWidgetDistribution] ADD CONSTRAINT [DF___mj_BizAppsOrders_CheckoutWidgetDistribution___mj_UpdatedAt] DEFAULT GETUTCDATE() FOR [__mj_UpdatedAt];
+GO
 
 /* SQL text to insert 35 new entity field(s) */
 
