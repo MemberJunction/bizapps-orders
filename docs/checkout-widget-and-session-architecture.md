@@ -5,7 +5,7 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
 │                                   ANY WEB CLIENT                                        │
-│  Angular (<mj-checkout-widget>) · Standalone JS Snippet · React / Vue / Static HTML     │
+│  Angular (<mj-checkout-widget>) · Host App Routing · Headless API / Webhooks             │
 └─────────────────────────────────────────┬────────────────────────────────────────────────┘
                                           │  Slug + Session Key
                                           ▼
@@ -15,12 +15,12 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 │  1. InitializeSession(slug)                                                              │
 │     ├── Resolve Distribution & Widget Config                                            │
 │     ├── Auto-Discover ProductType.OrderLineExtensionEntity via Metadata                 │
-│     └── Merge customUI (Theming + Scoped CSS + Lifecycle JS Hooks)                       │
+│     └── Merge customUI (Theming + Custom CSS + Lifecycle JS Hooks)                       │
 │                                                                                          │
 │  2. UpdateDraft(sessionId, lines)                                                        │
 │     └── In-Memory Pricing Engine (OrderPricingService) — No DB clutter                  │
 │                                                                                          │
-│  3. CompleteCheckout(sessionId, paymentToken, attendees)                                 │
+│  3. CompleteCheckout(sessionId)                                                          │
 │     ├── Resolve / Create Person Records                                                  │
 │     ├── Multi-Unit Line Splitting (unitMode: 'perUnit' vs 'perLine')                      │
 │     ├── Atomic Companion Persistence (OrderLine.Extension BaseEntity)                    │
@@ -100,9 +100,11 @@ In **MemberJunction Explorer** (or via code/migrations):
      ```json
      {
        "productSku": "SUMMIT-2027",
-       "theme": {
-         "primaryColor": "#2563eb",
-         "borderRadius": "8px"
+       "customUI": {
+         "theme": {
+           "primaryColor": "#2563eb",
+           "borderRadius": "8px"
+         }
        }
      }
      ```
@@ -116,7 +118,7 @@ In **MemberJunction Explorer** (or via code/migrations):
    - **AllowAnonymous**: `true`
 3. Save the record.
 
-Your checkout widget is now live and accessible at `/checkout/summit-2027` or embeddable via the `<mj-checkout-widget slug="summit-2027">` Angular component!
+Your checkout widget distribution is now active for `summit-2027` and ready to be loaded via the `<mj-checkout-widget [distributionSlug]="'summit-2027'">` Angular component or host application routes.
 
 ---
 
@@ -153,7 +155,7 @@ Product (SKU: 'CONF-2027')
 
 ## The `Configuration` JSONType & `customUI` Engine
 
-Both `ProductType` and `CheckoutWidget` feature an extensible `Configuration` JSON column typed with `CustomUIConfiguration`.
+Both `ProductType` and `CheckoutWidget` feature an extensible `Configuration` JSON column typed with schema interfaces from `@mj-biz-apps/orders-entities/configuration-types`.
 
 ### TypeScript Interface Structure
 
@@ -161,42 +163,101 @@ Both `ProductType` and `CheckoutWidget` feature an extensible `Configuration` JS
 export interface CustomUIThemeConfiguration {
     primaryColor?: string;
     accentColor?: string;
-    backgroundColor?: string;
-    surfaceColor?: string;
-    textColor?: string;
     borderRadius?: string;
     fontFamily?: string;
+    backgroundColor?: string;
+    textColor?: string;
+    [key: string]: unknown;
 }
 
 export interface CustomUIConfiguration {
-    theme?: CustomUIThemeConfiguration;
-    css?: string;
+    /**
+     * Custom JavaScript code string containing lifecycle hooks or UI handlers.
+     */
     js?: string;
+    /**
+     * Custom CSS stylesheet string containing custom styling rules.
+     */
+    css?: string;
+    /**
+     * Theme tokens and color customizations.
+     */
+    theme?: CustomUIThemeConfiguration;
+    /**
+     * Registered custom component override key/class name.
+     */
     componentOverrideKey?: string;
+    [key: string]: unknown;
+}
+
+export interface FieldOverrideConfiguration {
+    label?: string;
+    placeholder?: string;
+    hidden?: boolean;
+    required?: boolean;
+    defaultValue?: unknown;
+    order?: number;
+    options?: Array<{ label: string; value: string | number }>;
+    [key: string]: unknown;
+}
+
+export interface ProductTypeConfiguration {
+    /**
+     * Unit mode: 'perUnit' (discrete repeating fieldsets) vs 'perLine' (single fieldset for the line).
+     */
+    unitMode?: 'perUnit' | 'perLine';
+    /**
+     * Maximum quantity allowed per order or line.
+     */
+    maxQuantity?: number;
+    /**
+     * Whether quantity selection is permitted in self-service checkout surfaces.
+     */
+    allowQuantity?: boolean;
+    /**
+     * Field overrides and customizations for line extension entity fields.
+     */
+    fieldOverrides?: Record<string, FieldOverrideConfiguration>;
+    /**
+     * Custom UI section containing JS hooks, custom CSS, theme tokens, and component overrides.
+     */
+    customUI?: CustomUIConfiguration;
+    [key: string]: unknown;
 }
 
 export interface CheckoutWidgetConfiguration {
+    title?: string;
+    description?: string;
     productId?: string;
-    productSku?: string;
+    productName?: string;
+    unitPrice?: number;
+    currency?: string;
     unitMode?: 'perUnit' | 'perLine';
-    customUI?: CustomUIConfiguration;
+    allowQuantity?: boolean;
+    maxQuantity?: number;
+    stripePublishableKey?: string;
+    successMessage?: string;
+    redirectUrl?: string;
     extensionEntityName?: string;
-    extensionFields?: ExtensionFieldDef[];
-    allowCoupons?: boolean;
-    requireBillingAddress?: boolean;
-    requireShippingAddress?: boolean;
+    /**
+     * Custom UI section containing JS hooks, custom CSS, theme tokens, and component overrides.
+     */
+    customUI?: CustomUIConfiguration;
+    [key: string]: unknown;
 }
 ```
 
-### Cascading Theme Resolution
-Themes and custom styles resolve in a cascading hierarchy:
-$$\text{Base Default Theme} \longrightarrow \text{ProductType.Configuration.customUI} \longrightarrow \text{Widget.Configuration.customUI}$$
+### Theme & Styling Token Application
 
-CSS variables injected into the widget container:
-- `--mj-primary-color`: Primary action buttons and focus rings
-- `--mj-accent-color`: Highlights and status badges
-- `--mj-border-radius`: Input and container corner radiuses
-- `--mj-font-family`: Custom typography
+When rendered, the checkout component applies theme tokens directly as CSS variables:
+- `--mj-primary-color`: Primary action buttons and focus rings (default: `#2563eb`)
+- `--mj-accent-color`: Highlights and status badges (default: `#10b981`)
+- `--mj-border-radius`: Input and container corner radiuses (default: `8px`)
+- `--mj-font-family`: Custom typography font family
+- `--mj-background-color`: Container background surface
+- `--mj-text-color`: Primary text color
+
+If `customUI.css` is supplied in the widget or product type configuration, the rules are injected into a scoped style tag targeting the checkout container for granular design customization.
 
 ### Client-Side Lifecycle JavaScript Hooks
 Custom JS defined in `customUI.js` executes within the widget context:
@@ -347,30 +408,39 @@ export class RegistrationPageComponent {
 }
 ```
 
-### 2. Standalone HTML / Vanilla JS Embed
+### 2. Host Application Route Integration
 
-Embed into WordPress, Webflow, Shopify, or static websites:
+In MemberJunction host applications (such as MemberJunction Explorer or custom Angular portals), route to a wrapper component passing the distribution slug parameter:
 
-```html
-<!-- Container -->
-<div id="mj-checkout-container"></div>
-
-<!-- MemberJunction Widget Bundle -->
-<script src="https://cdn.example.com/mj-checkout-widget.js"></script>
-<script>
-  MJCheckout.mount('#mj-checkout-container', {
-    distributionSlug: 'summit-2027',
-    apiBaseUrl: 'https://api.example.com',
-    theme: {
-      primaryColor: '#059669',
-      borderRadius: '12px'
-    },
-    onSubmitted: function(event) {
-      window.location.href = '/thank-you?session=' + event.sessionKey;
-    }
-  });
-</script>
+```typescript
+// app.routes.ts
+export const routes: Routes = [
+  {
+    path: 'checkout/:slug',
+    loadComponent: () => import('./checkout-route.component').then(m => m.CheckoutRouteComponent)
+  }
+];
 ```
+
+Inside `CheckoutRouteComponent`:
+```typescript
+@Component({
+  standalone: true,
+  imports: [MJCheckoutWidgetComponent],
+  template: `<mj-checkout-widget [distributionSlug]="slug()"></mj-checkout-widget>`
+})
+export class CheckoutRouteComponent {
+  private route = inject(ActivatedRoute);
+  public slug = toSignal(this.route.paramMap.pipe(map(params => params.get('slug') ?? '')));
+}
+```
+
+### 3. Headless & Custom Frontend Integration
+
+For React, Vue, mobile apps, or static landing pages, your frontend interacts with the backend service via REST or GraphQL:
+1. `POST /api/checkout/initialize` ➔ calls `CheckoutSessionService.InitializeSession(slug, clientKey)`
+2. `POST /api/checkout/draft` ➔ calls `CheckoutSessionService.UpdateDraft(sessionID, email, lines)`
+3. `POST /api/checkout/complete` ➔ calls `CheckoutSessionService.CompleteCheckout(sessionID)`
 
 ---
 

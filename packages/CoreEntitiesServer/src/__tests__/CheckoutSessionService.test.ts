@@ -54,7 +54,7 @@ const mocks = vi.hoisted(() => {
         ID = 'prod-1';
         Name = 'Conference VIP Pass';
         ProductTypeID = 'ptype-event';
-        MaxQuantityPerLine: number | null = 1;
+        MaxQuantityPerLine: number | null = null;
         Load = mockProductLoad;
     }
 
@@ -86,6 +86,8 @@ const mocks = vi.hoisted(() => {
         EntityInfo = {
             Fields: [
                 { Name: 'PersonID', Type: 'uniqueidentifier', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
+                { Name: 'CheckInAt', Type: 'datetime', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
+                { Name: '__mj_CreatedAt', Type: 'datetimeoffset', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
                 { Name: 'DietaryPreferences', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
                 { Name: 'Comments', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
                 { Name: 'CustomCount', Type: 'int', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
@@ -356,17 +358,20 @@ describe('CheckoutSessionService', () => {
             expect(res.Lines[0].Description).toContain('Alice Smith');
         });
 
-        it('handles generic polymorphic extension fields with type coercion', async () => {
+        it('handles generic polymorphic extension fields with type coercion, strictly enforces catalog derivation, and drops blocked fields', async () => {
             const linesInput = [
                 {
                     ProductID: 'prod-1',
                     Quantity: 1,
                     ExtensionData: {
-                        EntityName: 'MJ_BizApps_Orders: Event Order Lines',
+                        EntityName: 'AttackerMaliciousEntityOverride', // Client tries to override entity name
                         Fields: {
                             FirstName: 'Bob',
                             LastName: 'Jones',
                             Email: 'bob@example.com',
+                            PersonID: 'attacker-injected-guid', // Blocked field
+                            CheckInAt: '2026-01-01T00:00:00Z', // Blocked field
+                            __mj_CreatedAt: '2026-01-01T00:00:00Z', // Blocked field
                             CustomCount: '42',
                             IsVIP: 'true'
                         }
@@ -378,10 +383,50 @@ describe('CheckoutSessionService', () => {
             expect(res.Success).toBe(true);
             expect(mocks.mockSessionInstance.Save).toHaveBeenCalled();
             expect(res.Lines[0].Description).toContain('Bob Jones');
+
+            // Assert catalog entity was used for EnsureEntity, NOT the client override
+            const orderLine = mocks.mockOrderInstance.Lines.Items[0] as unknown as {
+                Extension: { EnsureEntity: ReturnType<typeof vi.fn> };
+                extensionInstance: { Set: ReturnType<typeof vi.fn> };
+            };
+            expect(orderLine.Extension.EnsureEntity).toHaveBeenCalledWith('MJ_BizApps_Orders: Event Order Lines');
+            expect(orderLine.Extension.EnsureEntity).not.toHaveBeenCalledWith('AttackerMaliciousEntityOverride');
+
+            // Assert blocked fields were never passed to Set
+            expect(orderLine.extensionInstance.Set).not.toHaveBeenCalledWith('PersonID', 'attacker-injected-guid');
+            expect(orderLine.extensionInstance.Set).not.toHaveBeenCalledWith('CheckInAt', expect.anything());
+            expect(orderLine.extensionInstance.Set).not.toHaveBeenCalledWith('__mj_CreatedAt', expect.anything());
+            // Assert allowed fields WERE set
+            expect(orderLine.extensionInstance.Set).toHaveBeenCalledWith('CustomCount', 42);
+            expect(orderLine.extensionInstance.Set).toHaveBeenCalledWith('IsVIP', true);
+        });
+
+        it('rejects invalid or out-of-range quantities in UpdateDraft', async () => {
+            // Negative quantity
+            const resNeg = await CheckoutSessionService.UpdateDraft('sess-123', 'a@b.com', [{ ProductID: 'prod-1', Quantity: -1 }]);
+            expect(resNeg.Success).toBe(false);
+            expect(resNeg.ErrorMessage).toContain('positive integer');
+
+            // Zero quantity
+            const resZero = await CheckoutSessionService.UpdateDraft('sess-123', 'a@b.com', [{ ProductID: 'prod-1', Quantity: 0 }]);
+            expect(resZero.Success).toBe(false);
+            expect(resZero.ErrorMessage).toContain('positive integer');
+
+            // Float quantity
+            const resFloat = await CheckoutSessionService.UpdateDraft('sess-123', 'a@b.com', [{ ProductID: 'prod-1', Quantity: 2.5 }]);
+            expect(resFloat.Success).toBe(false);
+            expect(resFloat.ErrorMessage).toContain('positive integer');
+
+            // Exceeds maxQuantityPerLine
+            mocks.mockProductInstance.MaxQuantityPerLine = 5;
+            const resMax = await CheckoutSessionService.UpdateDraft('sess-123', 'a@b.com', [{ ProductID: 'prod-1', Quantity: 10 }]);
+            expect(resMax.Success).toBe(false);
+            expect(resMax.ErrorMessage).toContain('exceeds maximum allowed quantity of 5');
+            mocks.mockProductInstance.MaxQuantityPerLine = null;
         });
 
         it('splits multi-unit purchases into discrete lines when ProductType Configuration unitMode is perUnit', async () => {
-            mocks.mockProductInstance.MaxQuantityPerLine = null; // Let ProductType Configuration enforce unitMode
+            mocks.mockProductTypeInstance.Configuration = JSON.stringify({ unitMode: 'perUnit' });
             const linesInput = [
                 {
                     ProductID: 'prod-1',
@@ -471,6 +516,39 @@ describe('CheckoutSessionService', () => {
             expect(res.Success).toBe(true);
             expect(mocks.mockOrderInstance.Lines.Items).toHaveLength(1);
             expect(mocks.mockOrderInstance.Lines.Items[0].Quantity).toBe(3);
+        });
+
+        it('rejects invalid or out-of-range quantities in CompleteCheckout and unlatches session to Open', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: -3 }]
+            });
+
+            const resNeg = await CheckoutSessionService.CompleteCheckout('sess-123');
+            expect(resNeg.Success).toBe(false);
+            expect(resNeg.ErrorMessage).toContain('positive integer');
+            expect(resNeg.Status).toBe('Open');
+
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 0 }]
+            });
+            const resZero = await CheckoutSessionService.CompleteCheckout('sess-123');
+            expect(resZero.Success).toBe(false);
+            expect(resZero.ErrorMessage).toContain('positive integer');
+            expect(resZero.Status).toBe('Open');
+        });
+
+        it('recovers and unlatches session to Open when pricing or order execution throws an unexpected error', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+
+            // Make PricingService throw an unexpected exception
+            mocks.mockPricingPrice.mockRejectedValueOnce(new Error('Downstream GL mapping service timeout'));
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123');
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(res.ErrorMessage).toContain('Downstream GL mapping service timeout');
         });
 
         it('spawns two concurrent CompleteCheckout calls and ensures only one succeeds via database CAS', async () => {
