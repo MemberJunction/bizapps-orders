@@ -1,0 +1,15 @@
+name: Token Check
+on: workflow_dispatch
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      - run: |
+          curl -sf -H "Authorization: Bearer ${{ steps.app-token.outputs.token }}" \
+            https://api.github.com/installation/repositories \
+            | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['total_count'],'repos visible')"
