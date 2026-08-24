@@ -134,7 +134,7 @@
   },
   {
     "_comments": [
-      "Line-level Order Lines do not belong on a Person form — the header is enough."
+      "Line-level Order Lines do not belong on a Person form \u2014 the header is enough."
     ],
     "fields": {
       "DisplayInForm": false
@@ -331,7 +331,7 @@
   },
   {
     "_comments": [
-      "Payment form: allocations (lines) are the document body — always first-class."
+      "Payment form: allocations (lines) are the document body \u2014 always first-class."
     ],
     "fields": {
       "DisplayName": "Lines",
@@ -352,7 +352,7 @@
   {
     "_comments": [
       "Payment form: reversing payments are the other end of the same header.",
-      "Not a candidate — same as Order Headers.ReversesOrderHeaderID."
+      "Not a candidate \u2014 same as Order Headers.ReversesOrderHeaderID."
     ],
     "fields": {
       "Configuration": {
@@ -470,7 +470,7 @@
   },
   {
     "_comments": [
-      "Subscription form: migrate-to is an audit hang-on — More."
+      "Subscription form: migrate-to is an audit hang-on \u2014 More."
     ],
     "fields": {
       "Configuration": {
@@ -489,7 +489,7 @@
   },
   {
     "_comments": [
-      "Subscription form: migrate-from is an audit hang-on — More."
+      "Subscription form: migrate-from is an audit hang-on \u2014 More."
     ],
     "fields": {
       "Configuration": {
@@ -508,7 +508,7 @@
   },
   {
     "_comments": [
-      "Subscription form: originating order line is a pointer, not a child collection — More."
+      "Subscription form: originating order line is a pointer, not a child collection \u2014 More."
     ],
     "fields": {
       "Configuration": {
@@ -1004,7 +1004,7 @@
   },
   {
     "_comments": [
-      "Order form owns charges on the Charges tab — not a leftover candidate."
+      "Order form owns charges on the Charges tab \u2014 not a leftover candidate."
     ],
     "fields": {
       "Configuration": {
@@ -1023,7 +1023,7 @@
   },
   {
     "_comments": [
-      "Order form does not surface adjustments as a related grid — not a candidate."
+      "Order form does not surface adjustments as a related grid \u2014 not a candidate."
     ],
     "fields": {
       "Configuration": {
@@ -1042,7 +1042,7 @@
   },
   {
     "_comments": [
-      "Order form owns payment on the Payment tab — not a leftover candidate."
+      "Order form owns payment on the Payment tab \u2014 not a leftover candidate."
     ],
     "fields": {
       "Configuration": {
@@ -1061,7 +1061,7 @@
   },
   {
     "_comments": [
-      "Order form owns payment allocations on the Payment tab — not a leftover candidate."
+      "Order form owns payment allocations on the Payment tab \u2014 not a leftover candidate."
     ],
     "fields": {
       "Configuration": {
@@ -1152,6 +1152,54 @@
     "sync": {
       "lastModified": "2026-08-15T02:45:18.884Z",
       "checksum": "9cefa22b1ba112e419ae4bb1b3a7c0523ed4d83203e6d34e454e6ae81d2a1f62"
+    }
+  },
+  {
+    "_comments": [
+      "Journal Entry form: posted order lines are not a JE working surface.",
+      "Lives here, not in bizapps-accounting: the EntityRelationship row exists only because",
+      "Order Lines carries the JournalEntryID FK, so CodeGen creates it when THIS app installs.",
+      "Accounting cannot reference it \u2014 the lookup fails on any host without orders."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Accounting: Journal Entries&RelatedEntity=MJ_BizApps_Orders: Order Lines&RelatedEntityJoinField=JournalEntryID"
+    }
+  },
+  {
+    "_comments": [
+      "Journal Entry form: posted payment headers are not a JE working surface."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "None"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Accounting: Journal Entries&RelatedEntity=MJ_BizApps_Orders: Payment Headers&RelatedEntityJoinField=JournalEntryID"
+    }
+  },
+  {
+    "_comments": [
+      "Dimension form: order-line tags sit in More."
+    ],
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "inclusion": "More"
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Accounting: Dimensions&RelatedEntity=MJ_BizApps_Orders: Order Line Dimensions&RelatedEntityJoinField=DimensionID"
     }
   }
 ]
