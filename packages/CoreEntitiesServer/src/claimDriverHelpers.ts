@@ -4,6 +4,7 @@
  * @module @mj-biz-apps/orders-core-entities-server/claimDriverHelpers
  */
 
+import { EscapeSQLString } from '@memberjunction/global';
 import { RunView, UserInfo, IRunViewProvider, IEntityDataProvider, IMetadataProvider } from '@memberjunction/core';
 
 const PERSON_ENTITY = 'MJ_BizApps_Common: People';
@@ -25,7 +26,7 @@ export async function resolvePersonID(
 
     const runViewProvider = (provider && 'RunView' in provider) ? (provider as unknown as IRunViewProvider) : null;
     const rv = new RunView(runViewProvider);
-    const escaped = user.Email.trim().toLowerCase().replace(/'/g, "''");
+    const escaped = EscapeSQLString(user.Email.trim().toLowerCase());
     const personResult = await rv.RunView<{ ID: string }>({
         EntityName: PERSON_ENTITY,
         ExtraFilter: `Email = '${escaped}'`,

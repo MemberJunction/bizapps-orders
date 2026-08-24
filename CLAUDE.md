@@ -46,3 +46,12 @@ form layout), its home is `metadata/` and `mj sync push`, not a migration.
 
 The review test: *if a colleague pulls this branch onto a database that already has last week's
 schema and runs `pnpm run mj:migrate`, do they get exactly the schema this branch describes?*
+
+
+## SQL Safety — NO MANUAL REGEX ESCAPING IN FILTERS
+
+**Never use plain inline regex like `.replace(/'/g, "''")` when constructing SQL `ExtraFilter` or `Where` clauses.**
+- For SQL string escaping, always use `EscapeSQLString` from `@memberjunction/global` (or `EscapeText` in `packages/CoreEntitiesServer/src/sql-guards.ts`).
+- For boundary validation of IDs and dates from remote callers, use `RequireUUID`, `RequireUUIDs`, and `RequireDate` from `sql-guards.ts`.
+- Plain regex escaping is fragile, misses null-byte injection (`\0`), breaks on `null`/`undefined`, and creates divergent ad-hoc sanitization.
+

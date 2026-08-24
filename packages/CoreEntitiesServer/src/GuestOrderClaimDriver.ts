@@ -8,7 +8,7 @@
  * @module @mj-biz-apps/orders-core-entities-server/GuestOrderClaimDriver
  */
 
-import { RegisterClass } from '@memberjunction/global';
+import { RegisterClass, EscapeSQLString } from '@memberjunction/global';
 import { Metadata, RunView, UserInfo, IRunViewProvider } from '@memberjunction/core';
 import {
     BaseIdentityClaimDriver,
@@ -113,7 +113,7 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
         try {
             const runViewProvider = (provider && 'RunView' in provider) ? (provider as unknown as IRunViewProvider) : null;
             const rv = new RunView(runViewProvider);
-            const escapedOrderID = orderID.replace(/'/g, "''");
+            const escapedOrderID = EscapeSQLString(orderID);
             const grantResult = await rv.RunView<{ ID: string; Status: string }>({
                 EntityName: ENTITLEMENT_GRANT_ENTITY,
                 ExtraFilter: `OrderLineID IN (SELECT ID FROM vwOrderLines WHERE OrderID = '${escapedOrderID}')`,
