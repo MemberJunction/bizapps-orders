@@ -1,5 +1,5 @@
 ---
-'@mj-biz-apps/orders-integration-tests': patch
+'@mj-biz-apps/orders-server': patch
 ---
 
 Split the release into a version step and a publish step, so neither writes to a protected branch.

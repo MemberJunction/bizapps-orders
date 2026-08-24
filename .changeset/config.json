@@ -10,8 +10,5 @@
   "linked": [],
   "access": "public",
   "baseBranch": "next",
-  "updateInternalDependencies": "patch",
-  "ignore": [
-    "@mj-biz-apps/orders-integration-tests"
-  ]
+  "updateInternalDependencies": "patch"
 }
