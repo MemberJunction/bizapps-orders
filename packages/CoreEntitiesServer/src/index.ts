@@ -419,6 +419,8 @@ export { AddDays, BestCustomerTerms, CustomerTermsApply, ResolveDueDate } from '
 export type { CustomerTermsFacts, TermsFacts, TermsResolution, TermsResolutionInput, TermsSource } from './PaymentTermsBehavior.js';
 
 export { EntitlementGrantClaimDriver, LoadEntitlementGrantClaimDriver } from './EntitlementGrantClaimDriver.js';
+export { GuestOrderClaimDriver, LoadGuestOrderClaimDriver } from './GuestOrderClaimDriver.js';
+export { resolvePersonID } from './claimDriverHelpers.js';
 export { CheckoutSessionService } from './CheckoutSessionService.js';
 export type {
     AttendeeInput,

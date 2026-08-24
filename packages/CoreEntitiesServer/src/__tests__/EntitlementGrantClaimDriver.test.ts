@@ -2,8 +2,9 @@
  * Unit tests for EntitlementGrantClaimDriver
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { MJGlobal } from '@memberjunction/global';
 import type { UserInfo } from '@memberjunction/core';
-import type { ClaimRedeemContext, ClaimContext, MJIdentityClaimEntity } from '@memberjunction/core-entities';
+import { BaseIdentityClaimDriver, type ClaimRedeemContext, type ClaimContext, type MJIdentityClaimEntity } from '@memberjunction/core-entities';
 
 const mockGrantSave = vi.fn().mockResolvedValue(true);
 const mockGrantLoad = vi.fn().mockResolvedValue(true);
@@ -136,6 +137,16 @@ describe('EntitlementGrantClaimDriver', () => {
             await driver.OnExpire(context);
             expect(mockGrantInstance.Status).toBe('Expired');
             expect(mockGrantSave).toHaveBeenCalled();
+        });
+    });
+
+    describe('ClassFactory Registration', () => {
+        it('resolves EntitlementGrantClaimDriver by BaseIdentityClaimDriver class identity', () => {
+            const instance = MJGlobal.Instance.ClassFactory.CreateInstance<BaseIdentityClaimDriver>(
+                BaseIdentityClaimDriver,
+                'EntitlementGrantClaimDriver'
+            );
+            expect(instance).toBeInstanceOf(EntitlementGrantClaimDriver);
         });
     });
 });

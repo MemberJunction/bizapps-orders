@@ -9,45 +9,17 @@
  */
 
 import { RegisterClass } from '@memberjunction/global';
-import { Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { Metadata, UserInfo, IRunViewProvider } from '@memberjunction/core';
+import {
+    BaseIdentityClaimDriver,
+    type ClaimContext,
+    type ClaimRedeemContext,
+    type ClaimResult,
+} from '@memberjunction/core-entities';
 import { mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
+import { resolvePersonID } from './claimDriverHelpers.js';
 
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
-const PERSON_ENTITY = 'MJ_BizApps_Common: People';
-
-export interface ClaimContext {
-    Claim: {
-        ID?: string;
-        ClaimTypeID?: string;
-        Status?: string;
-        EntityID?: string | null;
-        RecordID?: string | null;
-        NormalizedEmail?: string;
-        MetadataJSON?: string | null;
-        PayloadJSON?: string | null;
-        [key: string]: unknown;
-    };
-    User?: UserInfo;
-    [key: string]: unknown;
-}
-
-export interface ClaimRedeemContext extends ClaimContext {
-    User: UserInfo;
-    RedemptionToken?: string;
-}
-
-export interface ClaimResult {
-    Success: boolean;
-    ErrorMessage?: string;
-    Data?: Record<string, unknown>;
-}
-
-export abstract class BaseIdentityClaimDriver {
-    public abstract OnCreate(context: ClaimContext): Promise<void>;
-    public abstract OnClaim(context: ClaimRedeemContext): Promise<ClaimResult>;
-    public abstract OnRevoke(context: ClaimContext): Promise<void>;
-    public abstract OnExpire(context: ClaimContext): Promise<void>;
-}
 
 /**
  * Pluggable driver for EntitlementGrant identity claims.
@@ -59,29 +31,6 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
      */
     public async OnCreate(context: ClaimContext): Promise<void> {
         // Claim registered in pending state
-    }
-
-    /**
-     * Resolves or ensures a Person record exists for the redeeming user.
-     */
-    private async resolvePersonID(user: UserInfo): Promise<string | null> {
-        if (!user || !user.Email) {
-            return null;
-        }
-
-        const rv = new RunView();
-        const escaped = user.Email.trim().toLowerCase().replace(/'/g, "''");
-        const personResult = await rv.RunView<{ ID: string }>({
-            EntityName: PERSON_ENTITY,
-            ExtraFilter: `Email = '${escaped}'`,
-            ResultType: 'simple'
-        });
-
-        if (personResult.Success && personResult.Results && personResult.Results.length > 0) {
-            return personResult.Results[0].ID;
-        }
-
-        return null;
     }
 
     /**
@@ -125,7 +74,7 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
             };
         }
 
-        const personID = await this.resolvePersonID(User);
+        const personID = await resolvePersonID(User, Claim.ProviderToUse);
         if (personID && (!grant.BeneficiaryPersonID || grant.BeneficiaryPersonID !== personID)) {
             grant.BeneficiaryPersonID = personID;
         }
