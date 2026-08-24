@@ -1,10 +1,11 @@
 import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
-
+import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
+import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetPriceLists, GetPriceTiers, GetProductPrices, GetPromotions } from '../../data/orders-queries';
+import { MJO_ENTITIES } from '../../data/entity-names';
 import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersPromotionEntity } from '@mj-biz-apps/orders-entities';
 
 /**
@@ -33,7 +34,7 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
 @Component({
     selector: 'mjo-pricing-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent, MJAlertComponent],
+    imports: [CommonModule, EntityViewerModule, MJAlertComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-tags" class="mjo-pr__note">
                 <strong>One row is one price rule.</strong>
@@ -42,16 +43,15 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
                 <b>saved</b> — a price that depends on row order is a price nobody can explain.
         </mj-alert>
 
-        <mjo-worklist-table
-            [Columns]="Columns"
-            [Rows]="Rows"
-            [Presets]="[]"
-            [Searchable]="false"
-            RowKey="ID"
-            EmptyIcon="fa-solid fa-tags"
-            EmptyTitle="No price rules"
-            EmptyHint="Without a rule, a line falls back to the product's list price."
-            FootNote="Direct entry on an order line always wins over every rule here — pricing layers suggestion on top of it rather than replacing it, so it can never block a baseline flow." />
+        <div class="mjo-pr__viewer-host">
+            @if (ProductPriceEntityInfo) {
+                <mj-entity-viewer
+                    [Entity]="ProductPriceEntityInfo">
+                </mj-entity-viewer>
+            } @else {
+                <div class="small muted" style="padding: 24px;">Loading price rules...</div>
+            }
+        </div>
 
         <div class="mjo-pr__grid">
             <div class="mj-card">
@@ -212,6 +212,24 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
                 padding: var(--mj-space-6);
             }
             .mjo-pr__note { margin-bottom: var(--mj-space-4); }
+            .mjo-pr__viewer-host {
+                height: 520px;
+                min-height: 450px;
+                background: var(--mj-bg-surface);
+                border: 1px solid var(--mj-border-default);
+                border-radius: var(--mj-radius-md);
+                overflow: hidden;
+                margin-bottom: var(--mj-space-4);
+                display: flex;
+                flex-direction: column;
+            }
+            mj-entity-viewer {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+                height: 100%;
+                width: 100%;
+            }
             .mjo-pr__grid {
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -231,66 +249,17 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
     ],
 })
 export class MJOPricingPageComponent implements OnInit {
-    /**
-     * Render what was just loaded.
-     *
-     * These pages are created imperatively by the section shell through
-     * `ViewContainerRef.createComponent`. When an async load assigns across
-     * Angular's check/verify boundary, dev mode raises NG0100 and ABORTS the DOM
-     * write. Nothing re-renders afterwards, so the recorded "previous" value stays
-     * pre-load while the getter returns the loaded one — the mismatch then repeats
-     * on every tick and the view is frozen for good. It is not a flicker: the
-     * Orders dashboard sat at "0 open orders / $0.00" against 73 real orders, and
-     * read as a quiet day rather than a broken screen.
-     *
-     * Writing the DOM here ends it: the rendered value matches the getter from the
-     * first pass on, so later verify passes agree.
-     */
     private readonly cdr = inject(ChangeDetectorRef);
 
+    public ProductPriceEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersProductPriceEntity[] = [];
-
-    public readonly Columns: MJOColumn[] = [
-        // No SKU on a price row — it belongs to the product. The price list is the
-        // useful second line here anyway: it says WHICH price this is.
-        { Key: 'Product', Label: 'Product', Secondary: (r) => (r['Description'] as string) ?? null },
-        { Key: 'PriceList', Label: 'Price list', Width: '150px' },
-        { Key: 'PricingModel', Label: 'Model', Width: '110px' },
-        {
-            Key: 'Amount',
-            Label: 'Unit',
-            Kind: 'money',
-            Width: '110px',
-            // The column is Amount on Product Prices. UnitPrice is the ORDER LINE's
-            // field; naming them alike is what made the mix-up easy.
-            Format: (r) => FormatMoney(Number(r['Amount'] ?? 0)),
-        },
-        {
-            Key: 'Priority',
-            Label: 'Priority',
-            Kind: 'number',
-            Width: '90px',
-            HideBelow: 760,
-            // Higher wins. Shown because it is the only thing that resolves a
-            // genuine overlap, and hiding it makes overlaps look arbitrary.
-        },
-        {
-            Key: 'Effective',
-            Label: 'Effective',
-            Width: '190px',
-            HideBelow: 1000,
-            Format: (r) => {
-                const from = r['EffectiveFrom'] ? FormatDate(String(r['EffectiveFrom']), { Short: true }) : '—';
-                const to = r['EffectiveTo'] ? FormatDate(String(r['EffectiveTo']), { Short: true }) : 'open';
-                return `${from} → ${to}`;
-            },
-        },
-    ];
 
     public PriceLists: mjBizAppsOrdersPriceListEntity[] = [];
     public Tiers: mjBizAppsOrdersPriceTierEntity[] = [];
 
     public async ngOnInit(): Promise<void> {
+        const md = new Metadata();
+        this.ProductPriceEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.ProductPrice) || null;
         const [rows, lists, tiers] = await Promise.all([
             GetProductPrices(),
             GetPriceLists(),
@@ -383,7 +352,7 @@ export class MJOPricingPageComponent implements OnInit {
 @Component({
     selector: 'mjo-promotions-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent, MJAlertComponent],
+    imports: [CommonModule, EntityViewerModule, MJAlertComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-percent" class="mjo-pr__note">
                 <strong>A promotion is the offer; a code is a string pointing at it.</strong>
@@ -391,16 +360,15 @@ export class MJOPricingPageComponent implements OnInit {
                 same promotion rather than into three whose numbers have to be added up by hand.
         </mj-alert>
 
-        <mjo-worklist-table
-            [Columns]="Columns"
-            [Rows]="Rows"
-            [Presets]="[]"
-            [Searchable]="false"
-            RowKey="ID"
-            EmptyIcon="fa-solid fa-percent"
-            EmptyTitle="No promotions"
-            EmptyHint="An order with no matching promotion simply prices at list."
-            FootNote="Stacking is configured per company and defaults to Sequential, because sequential discounts less — when two configurations are both defensible, the safer one should be what happens when nobody chose." />
+        <div class="mjo-pr__viewer-host">
+            @if (PromotionEntityInfo) {
+                <mj-entity-viewer
+                    [Entity]="PromotionEntityInfo">
+                </mj-entity-viewer>
+            } @else {
+                <div class="small muted" style="padding: 24px;">Loading promotions...</div>
+            }
+        </div>
     `,
     styles: [
         `
@@ -411,6 +379,23 @@ export class MJOPricingPageComponent implements OnInit {
                 padding: var(--mj-space-6);
             }
             .mjo-pr__note { margin-bottom: var(--mj-space-4); }
+            .mjo-pr__viewer-host {
+                height: 600px;
+                min-height: 500px;
+                background: var(--mj-bg-surface);
+                border: 1px solid var(--mj-border-default);
+                border-radius: var(--mj-radius-md);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+            mj-entity-viewer {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+                height: 100%;
+                width: 100%;
+            }
             @media (max-width: 760px) {
                 :host { padding: var(--mj-space-4); }
             }
@@ -418,49 +403,14 @@ export class MJOPricingPageComponent implements OnInit {
     ],
 })
 export class MJOPromotionsPageComponent implements OnInit {
-    /**
-     * Render what was just loaded. See orders-dashboard.page.ts for the full
-     * reasoning: these pages are created imperatively by the section shell, and an
-     * async assignment across Angular's check/verify boundary raises NG0100, aborts
-     * the DOM write, and freezes the view on its pre-load values permanently.
-     */
     private readonly cdr = inject(ChangeDetectorRef);
 
+    public PromotionEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersPromotionEntity[] = [];
 
-    public readonly Columns: MJOColumn[] = [
-        { Key: 'Name', Label: 'Promotion', Secondary: (r) => (r['Description'] as string) ?? null },
-        { Key: 'PromotionType', Label: 'Type', Width: '130px' },
-        {
-            Key: 'AppliesAt',
-            Label: 'Scope',
-            Kind: 'chip',
-            Width: '100px',
-            Format: (r) => String(r['AppliesAt'] ?? 'Line'),
-            ChipClass: () => 'mj-chip--outline',
-        },
-        {
-            Key: 'Window',
-            Label: 'Window',
-            Width: '190px',
-            HideBelow: 1000,
-            Format: (r) => {
-                const from = r['EffectiveFrom'] ? FormatDate(String(r['EffectiveFrom']), { Short: true }) : '—';
-                const to = r['EffectiveTo'] ? FormatDate(String(r['EffectiveTo']), { Short: true }) : 'open';
-                return `${from} → ${to}`;
-            },
-        },
-        {
-            Key: 'Status',
-            Label: 'Status',
-            Kind: 'chip',
-            Width: '100px',
-            Format: (r) => String(r['Status'] ?? 'Active'),
-            ChipClass: (r) => (r['Status'] === 'Active' ? 'mj-chip--success' : 'mj-chip--outline'),
-        },
-    ];
-
     public async ngOnInit(): Promise<void> {
+        const md = new Metadata();
+        this.PromotionEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.Promotion) || null;
         this.Rows = await GetPromotions();
         this.cdr.detectChanges();
     }

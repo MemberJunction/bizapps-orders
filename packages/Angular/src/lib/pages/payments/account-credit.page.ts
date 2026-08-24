@@ -1,10 +1,13 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { Metadata, type EntityInfo } from '@memberjunction/core';
+import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
-import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
+import { MJO_ENTITIES } from '../../data/entity-names';
 
 import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
 import { GetOrders } from '../../data/orders-queries';
@@ -37,7 +40,7 @@ import { GetOrders } from '../../data/orders-queries';
 @Component({
     selector: 'mjo-account-credit-page',
     standalone: true,
-    imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, MJOWorklistTableComponent, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
+    imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, EntityViewerModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-piggy-bank" class="mjo-cr__note">
                 <strong>A credit is an order with a negative balance.</strong>
@@ -53,17 +56,18 @@ import { GetOrders } from '../../data/orders-queries';
                 <h3>Credits customers are holding</h3>
                 <span class="right small muted">{{ TotalDisplay }} across {{ Credits.length }}</span>
             </div>
-            <mjo-worklist-table
-                [Columns]="CreditColumns"
-                [Rows]="Credits"
-                [Presets]="[]"
-                [Searchable]="false"
-                RowKey="ID"
-                [SelectedKey]="SourceID"
-                EmptyIcon="fa-solid fa-check"
-                EmptyTitle="No credits outstanding"
-                EmptyHint="Nobody is holding money that has not been spent."
-                (RowClicked)="SelectSource($any($event))" />
+            <div class="mjo-cr__viewer-host">
+                @if (OrderEntityInfo) {
+                    <mj-entity-viewer
+                        [Entity]="OrderEntityInfo"
+                        [ViewEntity]="CreditOrdersView"
+                        (RecordSelected)="OnRecordSelected($event)"
+                        (RecordOpened)="OnRecordOpened($event)">
+                    </mj-entity-viewer>
+                } @else {
+                    <div class="small muted" style="padding: 24px;">Loading credits...</div>
+                }
+            </div>
         </div>
 
         @if (Source) {
@@ -150,7 +154,28 @@ import { GetOrders } from '../../data/orders-queries';
                 padding: var(--mj-space-6);
             }
             .mjo-cr__note { margin-bottom: var(--mj-space-4); }
-            .mjo-cr__list { margin-bottom: var(--mj-space-6); }
+            .mjo-cr__list {
+                margin-bottom: var(--mj-space-6);
+                display: flex;
+                flex-direction: column;
+                height: 520px;
+                min-height: 450px;
+            }
+            .mjo-cr__viewer-host {
+                flex: 1 1 auto;
+                height: 100%;
+                min-height: 380px;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+            mj-entity-viewer {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+                height: 100%;
+                width: 100%;
+            }
             .mjo-cr__flow {
                 display: grid;
                 grid-template-columns: 1fr auto 1fr;
@@ -188,28 +213,25 @@ import { GetOrders } from '../../data/orders-queries';
     ],
 })
 export class MJOAccountCreditPageComponent implements OnInit {
-    /**
-     * Render what was just loaded.
-     *
-     * These pages are created imperatively by the section shell through
-     * `ViewContainerRef.createComponent`. When an async load assigns across
-     * Angular's check/verify boundary, dev mode raises NG0100 and ABORTS the DOM
-     * write. Nothing re-renders afterwards, so the recorded "previous" value stays
-     * pre-load while the getter returns the loaded one — the mismatch then repeats
-     * on every tick and the view is frozen for good. It is not a flicker: the
-     * Orders dashboard sat at "0 open orders / $0.00" against 73 real orders, and
-     * read as a quiet day rather than a broken screen.
-     *
-     * Writing the DOM here ends it: the rendered value matches the getter from the
-     * first pass on, so later verify passes agree.
-     */
     private readonly cdr = inject(ChangeDetectorRef);
 
     /** A credit was applied. */
     @Output() Applied = new EventEmitter<void>();
 
+    public OrderEntityInfo: EntityInfo | null = null;
     public Credits: mjBizAppsOrdersOrderHeaderEntity[] = [];
     public Targets: mjBizAppsOrdersOrderHeaderEntity[] = [];
+
+    public get CreditOrdersView(): MJUserViewEntityExtended | null {
+        if (!this.OrderEntityInfo) return null;
+        return {
+            EntityID: this.OrderEntityInfo.ID,
+            Entity: this.OrderEntityInfo.Name,
+            WhereClause: `Balance < 0`,
+            ID: 'preset-credit-orders',
+            Name: 'Credits Held'
+        } as unknown as MJUserViewEntityExtended;
+    }
 
     /**
      * The target list with its label precomputed.
@@ -227,27 +249,27 @@ export class MJOAccountCreditPageComponent implements OnInit {
     public Busy = false;
     public Error: string | null = null;
 
-    public readonly CreditColumns: MJOColumn<mjBizAppsOrdersOrderHeaderEntity>[] = [
-        { Key: 'OrderNumber', Label: 'Credit order', Kind: 'mono', Width: '130px' },
-        {
-            Key: 'Customer',
-            Label: 'Customer',
-            Format: (r) => (r.BillToOrganization ?? r.BillToPerson ?? '—') as string,
-            Secondary: (r) =>
-                r.OrderType === 'Return' ? 'from a return' : 'from an over-payment',
-        },
-        { Key: 'Company', Label: 'Co.', Width: '110px', HideBelow: 760 },
-        {
-            Key: 'Balance',
-            Label: 'Available',
-            Kind: 'money',
-            Width: '124px',
-            Format: (r) => FormatMoney(Math.abs((r.Balance ?? 0))),
-        },
-    ];
-
     public async ngOnInit(): Promise<void> {
+        const md = new Metadata();
+        this.OrderEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.OrderHeader) || null;
         await this.load();
+        this.cdr.detectChanges();
+    }
+
+    public OnRecordSelected(event: RecordSelectedEvent): void {
+        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+        if (id) {
+            const row = this.Credits.find((c) => c.ID === id) || ({ ID: id } as mjBizAppsOrdersOrderHeaderEntity);
+            void this.SelectSource(row);
+        }
+    }
+
+    public OnRecordOpened(event: RecordOpenedEvent): void {
+        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+        if (id) {
+            const row = this.Credits.find((c) => c.ID === id) || ({ ID: id } as mjBizAppsOrdersOrderHeaderEntity);
+            void this.SelectSource(row);
+        }
     }
 
     public get Source(): mjBizAppsOrdersOrderHeaderEntity | undefined {

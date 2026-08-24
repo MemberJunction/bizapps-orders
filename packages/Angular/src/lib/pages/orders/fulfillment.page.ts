@@ -1,41 +1,16 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
 import {
     OrdersFulfillOrderLinesOperation,
-    OrdersGetFulfillmentQueueOperation,
-    type FulfillmentQueueOrder,
     Today,
     type DateCell,
 } from '@mj-biz-apps/orders-entities';
 import { DaysSince, FormatDate } from '../../panels/money-format';
-import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
-
-/**
- * One pickable line, flattened from the queue's order/line nesting.
- *
- * The queue nests lines under orders because that is how they are filed; a picker
- * works a flat list because that is how a shelf is walked. Each row therefore
- * carries its order's identity alongside the line's own.
- */
-interface MJOFulfillmentRow extends Record<string, unknown> {
-    ID: string;
-    OrderHeaderID: string;
-    OrderNumber: string;
-    LineNumber: number;
-    Product: string;
-    SKU: string | null;
-    Quantity: number;
-    Customer: string;
-    /** Where this LINE goes, which may differ from the order's. Null follows the header. */
-    ShipTo: string | null;
-    /** "2 of 5" — how much of this order is still outstanding. */
-    Remaining: string;
-    ConfirmedAt: DateCell;
-    FulfillmentStatus: string;
-    /** A component from a bundle; keep it with its siblings. */
-    FromBundle: boolean;
-}
+import { MJAlertComponent, MJButtonDirective, MJTabNavComponent, type TabConfig } from '@memberjunction/ng-ui-components';
+import { EntityViewerModule, type RecordOpenedEvent, type RecordSelectedEvent } from '@memberjunction/ng-entity-viewer';
+import { Metadata, type EntityInfo } from '@memberjunction/core';
+import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
+import { MJO_ENTITIES } from '../../data/entity-names';
 
 /**
  * `mjo-fulfillment-page` — physical lines waiting to ship.
@@ -58,7 +33,7 @@ interface MJOFulfillmentRow extends Record<string, unknown> {
 @Component({
     selector: 'mjo-fulfillment-page',
     standalone: true,
-    imports: [MJButtonDirective, CommonModule, MJOWorklistTableComponent, MJAlertComponent],
+    imports: [MJButtonDirective, CommonModule, EntityViewerModule, MJAlertComponent, MJTabNavComponent],
     template: `
         <!-- A standing explanation of how a screen works is not an ALERT — an alert is for
              something that happened or needs attention. These were two info cards saying the same
@@ -84,18 +59,16 @@ interface MJOFulfillmentRow extends Record<string, unknown> {
                 }
                 @if (Result.RefusedCount) {
                     {{ Result.RefusedCount }} refused — those lines were already shipped or are
-                    not fulfillable. The rest went through, so a picker who scans one
-                    already-shipped item does not lose the other nine scans.
+                    not fulfillable.
                 }
             </mj-alert>
         }
 
         @if (Error) {
             <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-fq__note" role="alert">
-<strong>Nothing was marked.</strong> {{ Error }}
+                <strong>Nothing was marked.</strong> {{ Error }}
             </mj-alert>
         }
-
 
         <div class="mjo-fq__actions">
             <button
@@ -106,51 +79,65 @@ interface MJOFulfillmentRow extends Record<string, unknown> {
                 <i class="fa-solid fa-check" aria-hidden="true"></i>
                 {{ Busy ? 'Marking…' : 'Mark ' + SelectedCount + ' fulfilled' }}
             </button>
-            <button
-                type="button"
-                mjButton variant="outline"
-                [disabled]="!Rows.length"
-                (click)="ToggleAll()">
-                <!-- Guarded on a NON-EMPTY selection: with no rows, 0 === 0 read
-                     as "everything is selected" and offered to clear nothing. -->
-                {{ SelectedCount && SelectedCount === Rows.length ? 'Clear selection' : 'Select all' }}
-            </button>
-            @if (Truncated) {
-                <span class="small muted">
-                    Showing the first {{ Rows.length }} lines — the queue is longer than this page.
-                </span>
-            }
+            <div class="mjo-fq__tabs">
+                <mj-tab-nav [Tabs]="Tabs" [ActiveKey]="Preset" (TabChange)="OnPreset($event)"></mj-tab-nav>
+            </div>
         </div>
 
-        <mjo-worklist-table
-            [Columns]="Columns"
-            [Rows]="Rows"
-            [Presets]="Presets"
-            [ActivePreset]="Preset"
-            [Searchable]="false"
-            RowKey="ID"
-            EmptyIcon="fa-solid fa-box-open"
-            EmptyTitle="Nothing waiting to ship"
-            EmptyHint="Every physical line on a posted order has gone out."
-            (PresetChanged)="OnPreset($event)"
-            (RowClicked)="ToggleRow($any($event))" />
+        <div class="mjo-fq__viewer-host">
+            @if (OrderLineEntityInfo) {
+                <mj-entity-viewer
+                    [Entity]="OrderLineEntityInfo"
+                    [ViewEntity]="FulfillmentQueueView"
+                    (RecordSelected)="OnRecordSelected($event)"
+                    (RecordOpened)="OnRecordOpened($event)">
+                </mj-entity-viewer>
+            } @else {
+                <div class="small muted" style="padding: 24px;">Loading fulfillment queue...</div>
+            }
+        </div>
     `,
     styles: [
         `
             :host {
-                display: block;
+                display: flex;
+                flex-direction: column;
                 height: 100%;
-                overflow: auto;
+                width: 100%;
+                min-height: 0;
+                overflow: hidden;
                 padding: var(--mj-space-6);
+                box-sizing: border-box;
             }
             .mjo-fq__note {
                 margin-bottom: var(--mj-space-4);
+                flex-shrink: 0;
             }
             .mjo-fq__actions {
                 display: flex;
                 align-items: center;
-                gap: var(--mj-space-2);
+                justify-content: space-between;
+                gap: var(--mj-space-3);
                 margin-bottom: var(--mj-space-3);
+                flex-shrink: 0;
+            }
+            .mjo-fq__viewer-host {
+                flex: 1 1 auto;
+                height: 100%;
+                min-height: 500px;
+                background: var(--mj-bg-surface);
+                border: 1px solid var(--mj-border-default);
+                border-radius: var(--mj-radius-md);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+            mj-entity-viewer {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+                height: 100%;
+                width: 100%;
             }
             @media (max-width: 760px) {
                 :host {
@@ -161,31 +148,40 @@ interface MJOFulfillmentRow extends Record<string, unknown> {
     ],
 })
 export class MJOFulfillmentPageComponent implements OnInit {
-    /**
-     * Render what was just loaded.
-     *
-     * These pages are created imperatively by the section shell through
-     * `ViewContainerRef.createComponent`. When an async load assigns across
-     * Angular's check/verify boundary, dev mode raises NG0100 and ABORTS the DOM
-     * write. Nothing re-renders afterwards, so the recorded "previous" value stays
-     * pre-load while the getter returns the loaded one — the mismatch then repeats
-     * on every tick and the view is frozen for good. It is not a flicker: the
-     * Orders dashboard sat at "0 open orders / $0.00" against 73 real orders, and
-     * read as a quiet day rather than a broken screen.
-     *
-     * Writing the DOM here ends it: the rendered value matches the getter from the
-     * first pass on, so later verify passes agree.
-     */
     private readonly cdr = inject(ChangeDetectorRef);
 
-    public Rows: MJOFulfillmentRow[] = [];
+    @Output() OrderOpened = new EventEmitter<string>();
+
+    public OrderLineEntityInfo: EntityInfo | null = null;
     public Preset = 'pending';
+
+    public readonly Tabs: TabConfig[] = [
+        { key: 'pending', label: 'Pending Fulfillment' },
+        { key: 'done', label: 'Fulfilled' },
+        { key: 'all', label: 'All Lines' },
+    ];
+
+    public get FulfillmentQueueView(): MJUserViewEntityExtended | null {
+        if (!this.OrderLineEntityInfo) return null;
+        let whereClause = `FulfillmentStatus IN ('Pending', 'PartiallyFulfilled', 'Unfulfilled')`;
+        if (this.Preset === 'done') {
+            whereClause = `FulfillmentStatus = 'Fulfilled'`;
+        } else if (this.Preset === 'all') {
+            whereClause = '';
+        }
+        return {
+            EntityID: this.OrderLineEntityInfo.ID,
+            Entity: this.OrderLineEntityInfo.Name,
+            WhereClause: whereClause,
+            ID: `preset-fulfillment-${this.Preset}`,
+            Name: 'Fulfillment Queue'
+        } as unknown as MJUserViewEntityExtended;
+    }
 
     /** Line ids the picker has ticked. */
     public Selected = new Set<string>();
     public Busy = false;
     public Error: string | null = null;
-    public Truncated = false;
 
     /** What the last flip did. Kept on screen so a partial result is legible. */
     public Result: { FulfilledCount: number; RefusedCount: number; AdvancedCount: number } | null = null;
@@ -194,36 +190,23 @@ export class MJOFulfillmentPageComponent implements OnInit {
         return this.Selected.size;
     }
 
-    /** Clicking a row toggles it — the whole page is a picking list. */
-    public ToggleRow(row: MJOFulfillmentRow): void {
-        const id = String(row.ID);
+    public OnRecordSelected(event: RecordSelectedEvent): void {
+        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? (event.record as Record<string, unknown> | null)?.['ID']) as string | undefined;
+        if (!id) return;
         if (this.Selected.has(id)) this.Selected.delete(id);
         else this.Selected.add(id);
+        this.cdr.detectChanges();
     }
 
-    public ToggleAll(): void {
-        if (this.Selected.size === this.Rows.length) this.Selected.clear();
-        else this.Rows.forEach((r) => this.Selected.add(String(r.ID)));
-    }
-
-    /**
-     * Drop selections for lines that are no longer in the queue.
-     *
-     * Without this, a reload after a partial fulfilment leaves ids selected that
-     * the next call would refuse — the picker would see a count that does not
-     * match what is on screen.
-     */
-    private pruneSelection(): void {
-        const present = new Set(this.Rows.map((r) => String(r.ID)));
-        for (const id of [...this.Selected]) if (!present.has(id)) this.Selected.delete(id);
+    public OnRecordOpened(event: RecordOpenedEvent): void {
+        const orderId = (event.record as Record<string, unknown> | null)?.['OrderHeaderID'] as string | undefined;
+        if (orderId) {
+            this.OrderOpened.emit(orderId);
+        }
     }
 
     /**
      * Mark the ticked lines fulfilled.
-     *
-     * `AllOrNothing` is deliberately left false. A picker who scans one
-     * already-shipped item should not lose the other nine scans — the operation
-     * does what it can and reports the rest, and the banner says so.
      */
     public async FulfillSelected(): Promise<void> {
         if (!this.Selected.size || this.Busy) return;
@@ -245,7 +228,6 @@ export class MJOFulfillmentPageComponent implements OnInit {
                 AdvancedCount: output.AdvancedCount,
             };
             this.Selected.clear();
-            await this.load();
         } catch (e) {
             this.Error = e instanceof Error ? e.message : String(e);
         } finally {
@@ -254,168 +236,15 @@ export class MJOFulfillmentPageComponent implements OnInit {
         }
     }
 
-    public readonly Presets: MJOPreset[] = [
-        { Key: 'pending', Label: 'Pending' },
-        { Key: 'late', Label: 'Waiting over a week', Icon: 'fa-solid fa-triangle-exclamation' },
-        { Key: 'done', Label: 'Fulfilled' },
-        { Key: 'all', Label: 'All' },
-    ];
-
-    public readonly Columns: MJOColumn<MJOFulfillmentRow>[] = [
-        { Key: 'OrderNumber', Label: 'Order', Kind: 'mono', Width: '112px', Secondary: (r) => `line ${r.LineNumber}` },
-        {
-            Key: 'Product',
-            Label: 'Item',
-            Secondary: (r) => (r.SKU ? `${r.SKU} · ${r.Customer}` : r.Customer),
-        },
-        { Key: 'Quantity', Label: 'Qty', Kind: 'number', Width: '70px' },
-        {
-            // Where the LINE goes, which is not always where the order goes — a
-            // seat bought for a colleague, a gift shipped elsewhere. Blank means
-            // it follows the header, which is the common case.
-            Key: 'ShipTo',
-            Label: 'Ship to',
-            Width: '160px',
-            HideBelow: 1000,
-            Format: (r) => (r.ShipTo as string) ?? '—',
-        },
-        {
-            Key: 'Remaining',
-            Label: 'Of order',
-            Width: '90px',
-            HideBelow: 760,
-            // "1 of 3" rather than "1", so a nearly-finished order is legible.
-            Format: (r) => r.Remaining as string,
-        },
-        {
-            Key: 'ConfirmedAt',
-            Label: 'Waiting',
-            Width: '120px',
-            Format: (r) => (r.ConfirmedAt ? FormatDate(r.ConfirmedAt, { Short: true }) : '—'),
-            Secondary: (r) => {
-                if (!r.ConfirmedAt || r.FulfillmentStatus === 'Fulfilled') return null;
-                const days = DaysSince(r.ConfirmedAt, Today());
-                return days > 0 ? `${days}d waiting` : null;
-            },
-        },
-        {
-            Key: 'FulfillmentStatus',
-            Label: 'Status',
-            Kind: 'chip',
-            Width: '110px',
-            ChipClass: (r) =>
-                r.FulfillmentStatus === 'Fulfilled'
-                    ? 'mj-chip--success'
-                    : this.isLate(r)
-                      ? 'mj-chip--error'
-                      : 'mj-chip--warning',
-            Format: (r) => (r.FulfillmentStatus === 'Pending' && this.isLate(r) ? 'Late' : r.FulfillmentStatus),
-        },
-    ];
-
-    public async ngOnInit(): Promise<void> {
-        await this.load();
+    public ngOnInit(): void {
+        const md = new Metadata();
+        this.OrderLineEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.OrderLine) || null;
+        this.cdr.detectChanges();
     }
 
-    public async OnPreset(preset: string): Promise<void> {
+    public OnPreset(preset: string): void {
         this.Preset = preset;
-        await this.load();
+        this.Selected.clear();
         this.cdr.detectChanges();
-    }
-
-    /**
-     * Waiting longer than a working week.
-     *
-     * Measured from CONFIRMATION, because that is when the promise was made. The
-     * queue carries no requested-delivery date — that lives on the order and is
-     * not what a warehouse queue is sorted by.
-     */
-    private isLate(row: MJOFulfillmentRow): boolean {
-        if (row.FulfillmentStatus !== 'Pending' || !row.ConfirmedAt) return false;
-        return DaysSince(row.ConfirmedAt, Today()) > 5;
-    }
-
-    /**
-     * The backlog, as the server computes it.
-     *
-     * COMPUTED AT READ TIME, not stored. "Awaiting fulfilment" depends on the
-     * order's stage and each line's status together, and a stored flag would need
-     * a job to keep it honest — the day that job fails the warehouse works from a
-     * stale list. `Orders.GetFulfillmentQueue` derives it per call.
-     *
-     * This replaces a client-side reconstruction that read every posted order,
-     * fetched their lines, and filtered for a fulfilment status. That worked, but
-     * it decided what "awaiting" means in the browser, which is the second place
-     * for a definition to live.
-     */
-    private async load(): Promise<void> {
-        const op = new OrdersGetFulfillmentQueueOperation();
-        const result = await op.Execute({ IncludeCompleted: this.Preset === 'all' });
-        const output = result.Output;
-
-        if (!output?.Success) {
-            // An empty queue and a failed one both render "Nothing waiting to
-            // ship", which is the most reassuring sentence on a warehouse screen.
-            this.Error =
-                output?.Message ?? result.ErrorMessage ?? 'The fulfillment queue could not be read.';
-            this.Rows = [];
-            this.Truncated = false;
-            return;
-        }
-
-        this.Error = null;
-        this.Truncated = output.Truncated;
-
-        // The queue already narrows to what is fulfillable; the presets narrow
-        // further, and those are cheap over rows this page is holding.
-        const rows = this.flatten(output.Orders);
-        this.Rows = rows.filter((row) => {
-            switch (this.Preset) {
-                case 'pending':
-                    return row.FulfillmentStatus === 'Pending';
-                case 'late':
-                    return this.isLate(row);
-                case 'done':
-                    return row.FulfillmentStatus === 'Fulfilled';
-                default:
-                    return true;
-            }
-        });
-        this.pruneSelection();
-        this.cdr.detectChanges();
-    }
-
-    /**
-     * One row per LINE, carrying its order for context.
-     *
-     * A picker works a shelf, not an order, so the line is the unit of work — but
-     * the order number is what everything else is filed under, so each row keeps
-     * it. `FulfillableCount` lets a row say "1 of 3 remaining" rather than
-     * implying the order is nearly done when it is not.
-     */
-    private flatten(orders: FulfillmentQueueOrder[]): MJOFulfillmentRow[] {
-        const rows: MJOFulfillmentRow[] = [];
-        for (const order of orders) {
-            for (const line of order.Lines) {
-                rows.push({
-                    ID: line.OrderLineID,
-                    OrderHeaderID: order.OrderHeaderID,
-                    OrderNumber: order.OrderNumber,
-                    LineNumber: line.LineNumber,
-                    Product: line.ProductName,
-                    SKU: line.SKU ?? null,
-                    Quantity: line.Quantity,
-                    Customer: order.CustomerName,
-                    ShipTo: line.ShipToName ?? null,
-                    Remaining: `${order.Lines.length} of ${order.FulfillableCount}`,
-                    ConfirmedAt: order.ConfirmedAt ?? null,
-                    FulfillmentStatus: line.FulfillmentStatus,
-                    // A component from a bundle: the picker should keep it with
-                    // its siblings rather than treat it as a loose item.
-                    FromBundle: !!line.ParentOrderLineID,
-                });
-            }
-        }
-        return rows;
     }
 }

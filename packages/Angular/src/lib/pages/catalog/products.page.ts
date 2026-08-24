@@ -1,10 +1,12 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
-
+import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetChargeTypes, GetProducts, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
+import { MJO_ENTITIES } from '../../data/entity-names';
 import {
     IsBefore,
     Today,
@@ -35,7 +37,7 @@ import {
 @Component({
     selector: 'mjo-products-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent, MJAlertComponent],
+    imports: [CommonModule, MJAlertComponent, EntityViewerModule],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-sitemap" class="mjo-cat__note">
                 <strong>The catalog is the behaviour root.</strong>
@@ -44,18 +46,16 @@ import {
                 again.
         </mj-alert>
 
-        <mjo-worklist-table
-            [Columns]="Columns"
-            [Rows]="Rows"
-            [Presets]="[]"
-            [Search]="Search"
-            SearchPlaceholder="Product name or SKU…"
-            RowKey="ID"
-            EmptyIcon="fa-solid fa-boxes-stacked"
-            EmptyTitle="No products match"
-            EmptyHint="Try a different search."
-            (SearchChanged)="OnSearch($event)"
-            (RowClicked)="ProductOpened.emit($any($event))" />
+        <div class="mjo-products-viewer-container">
+            @if (ProductEntityInfo) {
+                <mj-entity-viewer
+                    [Entity]="ProductEntityInfo"
+                    (RecordOpened)="OnRecordOpened($event)">
+                </mj-entity-viewer>
+            } @else {
+                <div class="small muted" style="padding: 24px;">Loading products...</div>
+            }
+        </div>
 
         <div class="mjo-cat__grid">
             <div class="mj-card">
@@ -152,6 +152,23 @@ import {
                 overflow: auto;
                 padding: var(--mj-space-6);
             }
+            .mjo-products-viewer-container {
+                height: 600px;
+                min-height: 500px;
+                background: var(--mj-bg-surface);
+                border: 1px solid var(--mj-border-default);
+                border-radius: var(--mj-radius-md);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+            mj-entity-viewer {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+                height: 100%;
+                width: 100%;
+            }
             .mjo-cat__note { margin-bottom: var(--mj-space-4); }
             .mjo-cat__grid {
                 display: grid;
@@ -170,81 +187,31 @@ import {
     ],
 })
 export class MJOProductsPageComponent implements OnInit {
-    /**
-     * Render what was just loaded.
-     *
-     * These pages are created imperatively by the section shell through
-     * `ViewContainerRef.createComponent`. When an async load assigns across
-     * Angular's check/verify boundary, dev mode raises NG0100 and ABORTS the DOM
-     * write. Nothing re-renders afterwards, so the recorded "previous" value stays
-     * pre-load while the getter returns the loaded one — the mismatch then repeats
-     * on every tick and the view is frozen for good. It is not a flicker: the
-     * Orders dashboard sat at "0 open orders / $0.00" against 73 real orders, and
-     * read as a quiet day rather than a broken screen.
-     *
-     * Writing the DOM here ends it: the rendered value matches the getter from the
-     * first pass on, so later verify passes agree.
-     */
     private readonly cdr = inject(ChangeDetectorRef);
 
     @Output() ProductOpened = new EventEmitter<mjBizAppsOrdersProductEntity>();
 
-    public Rows: mjBizAppsOrdersProductEntity[] = [];
-    public Search = '';
-
-    public readonly Columns: MJOColumn<mjBizAppsOrdersProductEntity>[] = [
-        { Key: 'SKU', Label: 'SKU', Kind: 'mono', Width: '120px' },
-        { Key: 'Name', Label: 'Product', Secondary: (r) => (r.ProductCategory as string) ?? null },
-        { Key: 'ProductType', Label: 'Type', Width: '140px' },
-        { Key: 'Company', Label: 'Company', Width: '150px', HideBelow: 1000 },
-        {
-            Key: 'Behaviour',
-            Label: 'Behaviour',
-            HideBelow: 760,
-            // What this product will DO to an order, which is the reason to look at
-            // this screen at all.
-            Format: (r) => {
-                const traits: string[] = [];
-                if (r.SubscriptionTypeID) traits.push('subscription');
-                return traits.length ? traits.join(' · ') : '—';
-            },
-        },
-        {
-            Key: 'Status',
-            Label: 'Status',
-            Kind: 'chip',
-            Width: '100px',
-            ChipClass: (r) =>
-                r.Status === 'Active'
-                    ? 'mj-chip--success'
-                    : r.Status === 'Draft'
-                      ? ''
-                      : 'mj-chip--outline',
-        },
-    ];
-
-    public async ngOnInit(): Promise<void> {
-        await this.load();
-        this.cdr.detectChanges();
-    }
-
-    public async OnSearch(text: string): Promise<void> {
-        this.Search = text;
-        await this.load();
-        this.cdr.detectChanges();
-    }
-
+    public ProductEntityInfo: EntityInfo | null = null;
     public Categories: Array<Record<string, unknown>> = [];
     public Types: Array<Record<string, unknown>> = [];
+
+    public async ngOnInit(): Promise<void> {
+        const md = new Metadata();
+        this.ProductEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.Product) || null;
+        this.cdr.detectChanges();
+    }
+
+    public OnRecordOpened(event: RecordOpenedEvent): void {
+        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+        if (id) {
+            const surrogate = { ID: id } as mjBizAppsOrdersProductEntity;
+            this.ProductOpened.emit(surrogate);
+        }
+    }
 
     /** 'MJ_BizApps_Orders: Event Products' → 'Event Products'. */
     protected shortEntity(name: unknown): string {
         return String(name ?? '').split(':').pop()?.trim() ?? '';
-    }
-
-    private async load(): Promise<void> {
-        this.Rows = await GetProducts({ Search: this.Search });
-        this.cdr.detectChanges();
     }
 }
 
@@ -269,7 +236,7 @@ export class MJOProductsPageComponent implements OnInit {
 @Component({
     selector: 'mjo-charges-tax-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent, MJAlertComponent],
+    imports: [CommonModule, EntityViewerModule, MJAlertComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-layer-group" class="mjo-cat__note">
                 <strong>Tax is a charge.</strong>
@@ -278,16 +245,15 @@ export class MJOProductsPageComponent implements OnInit {
                 when it computes and its <b>basis</b> decides what it computes on.
         </mj-alert>
 
-        <mjo-worklist-table
-            [Columns]="Columns"
-            [Rows]="Rows"
-            [Presets]="[]"
-            [Searchable]="false"
-            RowKey="ID"
-            EmptyIcon="fa-solid fa-receipt"
-            EmptyTitle="No charge types configured"
-            EmptyHint="Shipping, handling and each tax jurisdiction are charge types."
-            FootNote="Non-tax charges enlarge the taxable base; tax charges never do. That is what stops county tax being charged on state tax." />
+        <div class="mjo-tax__viewer-host">
+            @if (ChargeTypeEntityInfo) {
+                <mj-entity-viewer
+                    [Entity]="ChargeTypeEntityInfo">
+                </mj-entity-viewer>
+            } @else {
+                <div class="small muted" style="padding: 24px;">Loading charge types...</div>
+            }
+        </div>
 
         <div class="mjo-tax__grid">
             <div class="mj-card">
@@ -449,6 +415,24 @@ export class MJOProductsPageComponent implements OnInit {
                 padding: var(--mj-space-6);
             }
             .mjo-cat__note { margin-bottom: var(--mj-space-4); }
+            .mjo-tax__viewer-host {
+                height: 520px;
+                min-height: 450px;
+                background: var(--mj-bg-surface);
+                border: 1px solid var(--mj-border-default);
+                border-radius: var(--mj-radius-md);
+                overflow: hidden;
+                margin-bottom: var(--mj-space-4);
+                display: flex;
+                flex-direction: column;
+            }
+            mj-entity-viewer {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+                height: 100%;
+                width: 100%;
+            }
             .mjo-tax__grid {
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -466,50 +450,10 @@ export class MJOProductsPageComponent implements OnInit {
     ],
 })
 export class MJOChargesTaxPageComponent implements OnInit {
-    /**
-     * Render what was just loaded. See orders-dashboard.page.ts for the full
-     * reasoning: these pages are created imperatively by the section shell, and an
-     * async assignment across Angular's check/verify boundary raises NG0100, aborts
-     * the DOM write, and freezes the view on its pre-load values permanently.
-     */
     private readonly cdr = inject(ChangeDetectorRef);
 
+    public ChargeTypeEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersChargeTypeEntity[] = [];
-
-    public readonly Columns: MJOColumn[] = [
-        { Key: 'Sequence', Label: 'Seq', Kind: 'number', Width: '70px' },
-        { Key: 'Name', Label: 'Charge type', Secondary: (r) => (r['Description'] as string) ?? null },
-        { Key: 'Basis', Label: 'Basis', Width: '190px' },
-        {
-            // Tax-ness is the CATEGORY, not a boolean. `IsTax` is not a column on
-            // this entity, so both this chip and the column below read undefined
-            // and every row claimed to be an ordinary charge that enlarges the tax
-            // base — the exact opposite of the truth for the tax rows.
-            Key: 'Category',
-            Label: 'Kind',
-            Kind: 'chip',
-            Width: '100px',
-            Format: (r) => (r['Category'] === 'Tax' ? 'tax' : 'charge'),
-            ChipClass: (r) => (r['Category'] === 'Tax' ? 'mj-chip--info' : 'mj-chip--outline'),
-        },
-        {
-            Key: 'EnlargesBase',
-            Label: 'Enlarges tax base',
-            Width: '160px',
-            HideBelow: 760,
-            // The single most consequential flag on this screen: a tax never
-            // enlarges the base another tax is computed on, so taxes cannot compound.
-            Format: (r) => (r['Category'] === 'Tax' ? 'no — never compounds' : 'yes'),
-        },
-        {
-            Key: 'IsActive',
-            Label: 'Active',
-            Kind: 'chip',
-            Width: '96px',
-            Format: (r) => (r['IsActive'] === false ? 'Off' : 'Active'),
-            ChipClass: (r) => (r['IsActive'] === false ? '' : 'mj-chip--success'),
-        },
-    ];
 
     public Jurisdictions: Array<Record<string, unknown>> = [];
     public Rates: Array<Record<string, unknown>> = [];
@@ -517,8 +461,8 @@ export class MJOChargesTaxPageComponent implements OnInit {
     public Exemptions: mjBizAppsOrdersCustomerTaxExemptionEntity[] = [];
 
     public async ngOnInit(): Promise<void> {
-        // Four independent reads, so they go together rather than in sequence —
-        // none of them needs another's answer.
+        const md = new Metadata();
+        this.ChargeTypeEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.ChargeType) || null;
         const [rows, jurisdictions, rates, nexus, exemptions] = await Promise.all([
             GetChargeTypes(),
             GetTaxJurisdictions(),

@@ -5,8 +5,11 @@ import { MJODayBarsComponent, type MJODayBar } from '../../panels/day-bars.compo
 
 import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
+import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { GetPayments } from '../../data/orders-queries';
 import { LocalDay, ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { MJO_ENTITIES } from '../../data/entity-names';
 
 /**
  * `mjo-payments-dashboard-page` — what came in, and does it tie?
@@ -25,7 +28,14 @@ import { LocalDay, ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@m
 @Component({
     selector: 'mjo-payments-dashboard-page',
     standalone: true,
-    imports: [CommonModule, MJOStatTileComponent, MJOBarListComponent, MJODayBarsComponent, MJOMoneyPipe, MJAlertComponent],
+    imports: [
+        CommonModule,
+        MJOStatTileComponent,
+        MJOBarListComponent,
+        MJODayBarsComponent,
+        MJAlertComponent,
+        EntityViewerModule
+    ],
     template: `
         <div class="mj-stat-grid">
             <mjo-stat-tile
@@ -95,34 +105,20 @@ import { LocalDay, ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@m
         </div>
 
         <div class="mjo-pd__split">
-            <div class="mj-card">
+            <div class="mj-card mjo-pd__viewer-card">
                 <div class="mj-card-head">
                     <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
-                    <h3>Latest payments</h3>
+                    <h3>Payments List</h3>
                 </div>
-                <div class="mj-table-wrap">
-                    <table class="mj-table mj-table--compact">
-                        <thead>
-                            <tr>
-                                <th>Payment</th>
-                                <th>Payer</th>
-                                <th>Tender</th>
-                                <th class="num">Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @for (payment of LatestPayments; track payment.ID) {
-                                <tr (click)="PaymentOpened.emit(payment)" style="cursor: pointer;">
-                                    <td><span class="mono">{{ payment.PaymentNumber }}</span></td>
-                                    <td>{{ payerOf(payment) }}</td>
-                                    <td>{{ payment.PaymentType ?? '—' }}</td>
-                                    <td class="num">{{ (payment.Amount ?? 0) | mjoMoney }}</td>
-                                </tr>
-                            } @empty {
-                                <tr><td colspan="4" class="small muted">No payments yet.</td></tr>
-                            }
-                        </tbody>
-                    </table>
+                <div class="mjo-pd__viewer-host">
+                    @if (PaymentEntityInfo) {
+                        <mj-entity-viewer
+                            [Entity]="PaymentEntityInfo"
+                            (RecordOpened)="OnRecordOpened($event)">
+                        </mj-entity-viewer>
+                    } @else {
+                        <div class="small muted" style="padding: 24px;">Loading payments...</div>
+                    }
                 </div>
             </div>
 
@@ -161,6 +157,30 @@ import { LocalDay, ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@m
                 gap: var(--mj-space-4);
                 margin-top: var(--mj-space-4);
             }
+            .mjo-pd__viewer-card {
+                background: var(--mj-bg-surface);
+                border: 1px solid var(--mj-border-default);
+                border-radius: var(--mj-radius-md);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                height: 560px;
+                min-height: 480px;
+            }
+            .mjo-pd__viewer-host {
+                flex: 1 1 auto;
+                height: 100%;
+                min-height: 400px;
+                display: flex;
+                flex-direction: column;
+            }
+            mj-entity-viewer {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+                height: 100%;
+                width: 100%;
+            }
             .mjo-pd__row {
                 display: flex;
                 justify-content: space-between;
@@ -178,10 +198,8 @@ import { LocalDay, ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@m
                 height: 100%;
                 overflow: auto;
                 padding: var(--mj-space-6);
+                box-sizing: border-box;
             }
-            /* The three-card row: all three abreast, so nothing is left orphaned on a second
-               line. auto-fit rather than a fixed 3 so it reflows to 2 then 1 as the pane
-               narrows instead of squeezing three unreadable columns. */
             .mjo-pd__split--three {
                 grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
                 margin-top: var(--mj-space-6);
@@ -197,30 +215,27 @@ import { LocalDay, ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@m
     ],
 })
 export class MJOPaymentsDashboardPageComponent implements OnInit {
-    /**
-     * Render what was just loaded.
-     *
-     * These pages are created imperatively by the section shell through
-     * `ViewContainerRef.createComponent`. When an async load assigns across
-     * Angular's check/verify boundary, dev mode raises NG0100 and ABORTS the DOM
-     * write. Nothing re-renders afterwards, so the recorded "previous" value stays
-     * pre-load while the getter returns the loaded one — the mismatch then repeats
-     * on every tick and the view is frozen for good. It is not a flicker: the
-     * Orders dashboard sat at "0 open orders / $0.00" against 73 real orders, and
-     * read as a quiet day rather than a broken screen.
-     *
-     * Writing the DOM here ends it: the rendered value matches the getter from the
-     * first pass on, so later verify passes agree.
-     */
     private readonly cdr = inject(ChangeDetectorRef);
 
     @Output() PaymentOpened = new EventEmitter<mjBizAppsOrdersPaymentHeaderEntity>();
 
+    public PaymentEntityInfo: EntityInfo | null = null;
     private payments: mjBizAppsOrdersPaymentHeaderEntity[] = [];
 
     public async ngOnInit(): Promise<void> {
+        const md = new Metadata();
+        this.PaymentEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.PaymentHeader) || null;
+        this.cdr.detectChanges();
         this.payments = await GetPayments({ Preset: 'all' });
         this.cdr.detectChanges();
+    }
+
+    public OnRecordOpened(event: RecordOpenedEvent): void {
+        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+        if (id) {
+            const surrogate = { ID: id } as mjBizAppsOrdersPaymentHeaderEntity;
+            this.PaymentOpened.emit(surrogate);
+        }
     }
 
     private get captured(): mjBizAppsOrdersPaymentHeaderEntity[] {

@@ -1,10 +1,10 @@
 import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
+import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
-import { RunView, Metadata } from '@memberjunction/core';
+import { RunView, Metadata, type EntityInfo } from '@memberjunction/core';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetSubscriptionEvents, GetSubscriptionTerms } from '../../data/orders-queries';
 import {
@@ -64,7 +64,7 @@ interface MJORecognitionPeriod {
 @Component({
     selector: 'mjo-subscriptions-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
+    imports: [CommonModule, EntityViewerModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
     template: `
         <div class="mjo-sub__split">
             <div class="mjo-sub__left">
@@ -77,19 +77,17 @@ interface MJORecognitionPeriod {
                         answer.
                 </p>
 
-                <mjo-worklist-table
-                    [Columns]="Columns"
-                    [Rows]="Rows"
-                    [Presets]="Presets"
-                    [ActivePreset]="Preset"
-                    [Searchable]="false"
-                    RowKey="ID"
-                    [SelectedKey]="SelectedID"
-                    EmptyIcon="fa-solid fa-rotate"
-                    EmptyTitle="No subscriptions"
-                    EmptyHint="A subscription is created the first time a recurring product is sold."
-                    (PresetChanged)="OnPreset($event)"
-                    (RowClicked)="Select($any($event))" />
+                <div class="mjo-sub__viewer-host">
+                    @if (SubscriptionEntityInfo) {
+                        <mj-entity-viewer
+                            [Entity]="SubscriptionEntityInfo"
+                            (RecordSelected)="OnRecordSelected($event)"
+                            (RecordOpened)="OnRecordOpened($event)">
+                        </mj-entity-viewer>
+                    } @else {
+                        <div class="small muted" style="padding: 24px;">Loading subscriptions...</div>
+                    }
+                </div>
             </div>
 
             @if (Selected) {
@@ -242,6 +240,23 @@ interface MJORecognitionPeriod {
             .mjo-sub__split { display: flex; gap: var(--mj-space-4); align-items: flex-start; }
             .mjo-sub__left { flex: 1; min-width: 0; }
             .mjo-sub__right { flex: 0 0 360px; min-width: 0; }
+            .mjo-sub__viewer-host {
+                height: 600px;
+                min-height: 500px;
+                background: var(--mj-bg-surface);
+                border: 1px solid var(--mj-border-default);
+                border-radius: var(--mj-radius-md);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+            mj-entity-viewer {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+                height: 100%;
+                width: 100%;
+            }
             .mjo-sub__recog { margin-top: var(--mj-space-4); }
             .mjo-sub__note { margin-top: var(--mj-space-3); }
             .mjo-sub__event {
@@ -280,60 +295,17 @@ interface MJORecognitionPeriod {
     ],
 })
 export class MJOSubscriptionsPageComponent implements OnInit {
-    /**
-     * Render what was just loaded. See orders-dashboard.page.ts for the full
-     * reasoning: these pages are created imperatively by the section shell, and an
-     * async assignment across Angular's check/verify boundary raises NG0100, aborts
-     * the DOM write, and freezes the view on its pre-load values permanently.
-     */
     private readonly cdr = inject(ChangeDetectorRef);
 
+    public SubscriptionEntityInfo: EntityInfo | null = null;
     public AllRows: MJOSubscriptionRow[] = [];
     public Rows: MJOSubscriptionRow[] = [];
     public SelectedID: string | null = null;
     public Preset = 'active';
 
-    public readonly Presets: MJOPreset[] = [
-        { Key: 'active', Label: 'Active' },
-        { Key: 'renewing', Label: 'Renewing soon', Icon: 'fa-solid fa-hourglass-half' },
-        { Key: 'norenew', Label: 'Will not renew' },
-        { Key: 'all', Label: 'All' },
-    ];
-
-    public readonly Columns: MJOColumn<MJOSubscriptionRow>[] = [
-        { Key: 'SubscriptionNumber', Label: 'Subscription', Kind: 'mono', Width: '140px' },
-        {
-            Key: 'Beneficiary',
-            Label: 'Beneficiary',
-            Format: (r) => (r.BeneficiaryPerson ?? r.HolderOrganization ?? '—') as string,
-            Secondary: (r) => (r.BeneficiaryPerson ? (r.HolderOrganization as string) : null),
-        },
-        { Key: 'Product', Label: 'Product', HideBelow: 1000 },
-        {
-            Key: 'EndDate',
-            Label: 'Covered to',
-            Width: '120px',
-            Format: (r) => FormatDate(r.EndDate, { Short: true }),
-        },
-        {
-            Key: 'AutoRenew',
-            Label: 'Auto-renew',
-            Kind: 'chip',
-            Width: '120px',
-            HideBelow: 760,
-            Format: (r) => (r.AutoRenew ? 'On' : 'Off'),
-            ChipClass: (r) => (r.AutoRenew ? 'mj-chip--success' : 'mj-chip--outline'),
-        },
-        {
-            Key: 'Status',
-            Label: 'Status',
-            Kind: 'chip',
-            Width: '110px',
-            ChipClass: (r) => this.statusClass(r),
-        },
-    ];
-
     public async ngOnInit(): Promise<void> {
+        const md = new Metadata();
+        this.SubscriptionEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.Subscription) || null;
         const rv = new RunView();
         const result = await rv.RunView<MJOSubscriptionRow>(
             {
@@ -341,7 +313,7 @@ export class MJOSubscriptionsPageComponent implements OnInit {
                 OrderBy: 'EndDate',
                 ResultType: 'simple',
             },
-            new Metadata().CurrentUser,
+            md.CurrentUser,
         );
         this.AllRows = result.Success ? (result.Results ?? []) : [];
         this.applyPreset();
@@ -350,6 +322,22 @@ export class MJOSubscriptionsPageComponent implements OnInit {
             await this.loadDetail(this.SelectedID);
         }
         this.cdr.detectChanges();
+    }
+
+    public OnRecordSelected(event: RecordSelectedEvent): void {
+        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+        if (id) {
+            this.SelectedID = id;
+            void this.loadDetail(id);
+        }
+    }
+
+    public OnRecordOpened(event: RecordOpenedEvent): void {
+        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+        if (id) {
+            this.SelectedID = id;
+            void this.loadDetail(id);
+        }
     }
 
     public Terms: mjBizAppsOrdersSubscriptionTermEntity[] = [];
