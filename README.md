@@ -88,7 +88,7 @@ mj app remove mj-bizapps-orders   # Uninstall (--keep-data to preserve schema)
 | **Catalog** | `ProductType`, `Product`, `ProductCategory`, `ProductPrice`, `PriceList`, `PriceTier` | Sellable items with type-driven behavior, per-company categories, segmented & tiered pricing, rev-rec policy. **No GL account columns anywhere** — routing is role-based via Accounting (D5) |
 | **Composite & policy** | `ProductBundleItem`, `ProductPerformanceObligation`, `ProductEntitlement` | Bundles/kits, ASC-606 performance obligations (SSP fields now, allocation engine later), and *what a purchase grants* |
 | **Type extensions (IsA)** | `EventProduct` / `EventOrderLine` | Per-type attributes via MJ IsA disjoint subtypes (shared UUID) at Product *and* OrderLine level — Event ships as the first pair; `ProductType` names the extension entities so new types add their own |
-| **Orders & A/R** | `Order`, `OrderLine`, `OrderLineDimension`, `OrderSequence` | The commitment **and the receivable** (Order carries `TotalGross` / `Balance` / `PaymentStatus` / `DueDate`); one JE per line via `OrderLine.JournalEntryID`; accounting dimension tags per line; `ORD-{seq}` numbering |
+| **Orders & A/R** | `Order`, `OrderLine`, `OrderLineDimension`, `OrderSequence` | The commitment **and the receivable** (Order carries `TotalGross` / `Balance` / `FulfillmentStatus` / `DueDate`); one JE per line via `OrderLine.JournalEntryID`; accounting dimension tags per line; `ORD-{seq}` numbering |
 | **Payments** | `Payment`, `PaymentProvider`, `PaymentIntent`, `PaymentLine`, `CustomerPaymentMethod`, `PaymentSequence` | Provider-agnostic capture / refund / chargeback; `PaymentLine` applies cash to Orders; saved-instrument token vault (charge-on-file) |
 | **Stored value** | `StoredValueAccount`, `StoredValueTransaction` | Gift cards / stored value — schema ships now; issuance/redemption flows are a later named item (§21) |
 | **Subscriptions** | `SubscriptionPlan`, `Subscription`, `SubscriptionEvent` | Continuity record that spawns a renewal Order each cycle (Draft at launch, D20); lifecycle + immutable event log |
@@ -104,16 +104,16 @@ Tax tables (`ProductTaxCategory`, `OrderLineTaxLine`) land with the tax build (D
 |---|---|---|
 | **Entities** | `@mj-biz-apps/orders-entities` | Strongly-typed entity classes with Zod validation |
 | **Actions** | `@mj-biz-apps/orders-actions` | Server-side action handlers (webhook processing, scheduled work) |
-| **Server** | `@mj-biz-apps/orders-server` | GraphQL resolvers, remote operations (`Orders.ConfirmOrder`, `Orders.RefundPayment`), the server `OrdersEngine`, the `OrderJournalEntryFactory`, and pluggable `PaymentProvider` implementations |
-| **Angular** | `@mj-biz-apps/orders-ng` | UI components, form overrides, custom widgets (forms-first, D33). The Order Header form puts **Ship To** on the left (starts expanded) and **Bill To** as a slim rail that takes the width when selected. Person and Organization **Orders** grids pass every filter join field as `NewRecordValues` so **New** opens an order already linked to that party (`BillToPersonID` + `ShipToPersonID`, or the org equivalents). |
-| **Core Entities Server** | `@mj-biz-apps/orders-core-entities-server` | Server-only entity subclasses — the Order `Save()` override that books on lock, numbering, totals & balance maintenance |
+| **Server** | `@mj-biz-apps/orders-server` | GraphQL resolvers, remote operations (`Orders.CapturePayment`, `Orders.RefundPayment`, `Orders.FulfillOrderLines`), the server `OrdersEngine`, the `OrderJournalEntryFactory`, and pluggable `PaymentProvider` implementations |
+| **Angular** | `@mj-biz-apps/orders-ng` | UI components, form overrides, custom widgets (forms-first, D33). The Order Header form puts **Ship To** on the left (starts expanded) and **Bill To** as a slim rail that takes the width when selected. Person and Organization **Orders** grids pass every filter join field as `NewRecordValues` so **New** opens an order already linked to that party (`BillToPersonID` + `ShipToPersonID`, or the org equivalents). For new orders, selecting a Person with a singular active employer relationship auto-populates the Organization. |
+| **Core Entities Server** | `@mj-biz-apps/orders-core-entities-server` | Server-only entity subclasses — the Order `Save()` override that books on lock, numbering, totals, fulfillment rollup & balance maintenance |
 
 ---
 
 ## Core Principles
 
 ### Order is the substrate *and* the A/R primitive
-The `Order` is the customer's commitment **and the bill**. Subscriptions are born from order lines; payments apply to orders; rev-rec hangs off lines. There is **no Invoice entity** — a confirmed/posted Order *is* the receivable, with `Balance = TotalGross − SUM(posted PaymentLine.Amount)` and a `PaymentStatus`. A **credit memo is a negative-balance Order** (`ReversesOrderID` set). The customer-facing "invoice" and any consolidated statement are **rendered reports**, not entities *(D1, D2)*.
+The `Order` is the customer's commitment **and the bill**. Subscriptions are born from order lines; payments apply to orders; rev-rec hangs off lines. There is **no Invoice entity** — a confirmed Order *is* the receivable, with `Balance = TotalGross − SUM(posted PaymentLine.Amount)` and trigger-maintained `FulfillmentStatus`. Payment progress is dynamically derived from real-time balances. A **credit memo is a negative-balance Order** (`ReversesOrderID` set). The customer-facing "invoice" and any consolidated statement are **rendered reports**, not entities *(D1, D2)*.
 
 ### One JE per order line — always
 Every order line books its **own complete, single-company journal entry** — even multiple lines of the same company. The "order-level JE" is a **UI aggregation concept**, never a row; batching nets the line JEs later anyway. Linkage is `OrderLine.JournalEntryID` (the Order header carries no JE ref; no junction table) *(D10)*.

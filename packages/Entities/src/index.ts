@@ -23,6 +23,7 @@ export * from './generated/remote_operations';
  * same lifecycle the server does rather than a hand-copied approximation.
  */
 export * from './OrderStatusBehavior';
+export * from './PartyAffiliationBehavior';
 export * from './booked-money';
 export * from './line-quantity';
 
