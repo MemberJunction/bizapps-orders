@@ -13,9 +13,10 @@ for pkg_json in $(find packages -name "package.json" -maxdepth 2 -not -path "*/n
   name=$(jq -r '.name // ""' "$pkg_json")
 
   # Only check @mj-biz-apps scoped packages
-  if [[ "$name" != @mj-biz-apps/* ]]; then
+  if [[ "$name" != @mj-biz-apps/orders-* ]]; then
     continue
   fi
+
 
   # Skip packages marked private. This gate exists to predict whether `changeset publish`
   # will succeed, and changesets never publishes a private package

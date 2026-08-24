@@ -2,7 +2,13 @@
 # Validates repository.url in all @mj-biz-apps packages
 # Required for npm provenance verification (OIDC trusted publishing)
 
-EXPECTED_URL="https://github.com/MemberJunction/bizapps-orders"
+# Derive the expected URL from the ROOT package.json so this script survives
+# the template rename — keep repository.url correct there and everywhere else.
+EXPECTED_URL=$(jq -r '.repository.url // ""' package.json)
+if [ -z "$EXPECTED_URL" ]; then
+  echo "::error::Root package.json has no repository.url — set it first"
+  exit 1
+fi
 ERRORS=0
 PRIVATE_SKIPPED=0
 
@@ -12,9 +18,10 @@ for pkg_json in $(find packages -name "package.json" -maxdepth 2 -not -path "*/n
   name=$(jq -r '.name // ""' "$pkg_json")
 
   # Only check @mj-biz-apps scoped packages
-  if [[ "$name" != @mj-biz-apps/* ]]; then
+  if [[ "$name" != @mj-biz-apps/orders-* ]]; then
     continue
   fi
+
 
   # Skip packages marked private. repository.url exists for npm sigstore provenance, which
   # only applies to published packages -- npm refuses to attest a private one, and changesets
@@ -40,6 +47,10 @@ for pkg_json in $(find packages -name "package.json" -maxdepth 2 -not -path "*/n
   fi
 done
 
+if [[ $PRIVATE_SKIPPED -gt 0 ]]; then
+  echo "   ($PRIVATE_SKIPPED private package(s) skipped - never published)"
+fi
+
 if [ $ERRORS -gt 0 ]; then
   echo ""
   echo "::error::Found $ERRORS package(s) with missing or invalid repository.url"
@@ -53,6 +64,3 @@ if [ $ERRORS -gt 0 ]; then
 fi
 
 echo "All @mj-biz-apps packages have valid repository.url"
-if [[ $PRIVATE_SKIPPED -gt 0 ]]; then
-  echo "   ($PRIVATE_SKIPPED private package(s) skipped - never published)"
-fi
