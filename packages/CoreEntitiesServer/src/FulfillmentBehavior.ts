@@ -91,7 +91,7 @@ export type FlipRefusal =
     | 'OrderNotPosted';
 
 /** The statuses from which a line may be flipped to Fulfilled. */
-const ORDER_STATES_ALLOWING_FULFILLMENT = new Set(['Confirmed', 'Posted', 'Fulfilled']);
+const ORDER_STATES_ALLOWING_FULFILLMENT = new Set(['Confirmed']);
 
 /**
  * May this line be flipped to Fulfilled right now?
@@ -120,7 +120,7 @@ export function ExplainRefusal(reason: FlipRefusal, lineID: string): string {
             return `Order line ${lineID} does not exist.`;
         case 'OrderNotPosted':
             return (
-                `Order line ${lineID} cannot be fulfilled because its order is not Confirmed or later. ` +
+                `Order line ${lineID} cannot be fulfilled because its order is not Confirmed. ` +
                 `Nothing is owed until an order is confirmed, so nothing can ship.`
             );
         case 'DoesNotRequireFulfillment':

@@ -247,7 +247,7 @@ export class MJOOrderWorkspacePageComponent implements OnDestroy {
      */
     private StageOf(status: string | undefined | null): MJOOrderStage {
         if (!status) return 'Draft';
-        const known: MJOOrderStage[] = ['Draft', 'Quoted', 'Confirmed', 'Posted', 'Fulfilled'];
+        const known: MJOOrderStage[] = ['Draft', 'Quoted', 'Confirmed', 'Voided'];
         return known.find((s) => s.toLowerCase() === status.toLowerCase()) ?? 'Confirmed';
     }
 

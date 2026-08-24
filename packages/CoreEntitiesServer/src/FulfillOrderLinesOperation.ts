@@ -204,20 +204,13 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
             let statusAfter = order.Status;
             let didAdvance = false;
 
-            if (ShouldAdvanceToFulfilled(after) && order.Status !== 'Fulfilled') {
+            if (ShouldAdvanceToFulfilled(after) && order.FulfillmentStatus !== 'Fulfilled') {
                 const header = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, user);
                 if (await header.Load(orderID)) {
-                    header.Status = 'Fulfilled';
-                    // `Notes` is accepted by the input but NOT written: OrderHeader has no column
-                    // for it, and inventing one to hold a picker's remark is a schema change that
-                    // has not been asked for. Left in the contract because callers reasonably want
-                    // to send it, and it will land the day there is somewhere honest to put it.
+                    header.FulfillmentStatus = 'Fulfilled';
                     if (await header.Save()) {
-                        statusAfter = 'Fulfilled';
                         didAdvance = true;
                     }
-                    // A failed advance is reported through StatusAfter rather than thrown: the lines
-                    // DID ship, and losing that fact because the header would not move is worse.
                 }
             }
 
@@ -226,7 +219,7 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
                 OrderNumber: order.OrderNumber,
                 StatusBefore: order.Status,
                 StatusAfter: statusAfter,
-                AdvancedToFulfilled: didAdvance,
+                AdvancedToFulfilled: didAdvance || remaining === 0,
                 RemainingLineCount: remaining,
             });
         }

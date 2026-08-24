@@ -122,12 +122,12 @@ async function loadCountFigures(
         {
             Label: 'Open',
             EntityName: MJO_ENTITIES.OrderHeader,
-            Filter: `${partyCol}='${id}' AND PaymentStatus IN ('Unpaid','PartiallyPaid','Overdue')`,
+            Filter: `${partyCol}='${id}' AND Balance > 0 AND Status<>'Voided'`,
         },
         {
             Label: 'Overdue',
             EntityName: MJO_ENTITIES.OrderHeader,
-            Filter: `${partyCol}='${id}' AND PaymentStatus='Overdue'`,
+            Filter: `${partyCol}='${id}' AND Balance > 0 AND DueDate < GETUTCDATE() AND Status<>'Voided'`,
             Tone: 'muted',
         },
         {

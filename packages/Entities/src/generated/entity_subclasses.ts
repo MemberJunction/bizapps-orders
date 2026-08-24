@@ -7,7 +7,7 @@ export const loadModule = () => {
 }
 
      
-import { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
+ import { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Charge Types
@@ -145,7 +145,7 @@ export const mjBizAppsOrdersCheckoutSessionSchema = z.object({
         * * SQL Data Type: datetimeoffset`),
     MetadataJSON: z.string().nullable().describe(`
         * * Field Name: MetadataJSON
-        * * Display Name: Metadata JSON
+        * * Display Name: Metadata
         * * SQL Data Type: nvarchar(MAX)`),
     __mj_CreatedAt: z.date().describe(`
         * * Field Name: __mj_CreatedAt
@@ -161,6 +161,10 @@ export const mjBizAppsOrdersCheckoutSessionSchema = z.object({
         * * Field Name: CheckoutWidget
         * * Display Name: Checkout Widget
         * * SQL Data Type: nvarchar(100)`),
+    Distribution: z.string().nullable().describe(`
+        * * Field Name: Distribution
+        * * Display Name: Distribution
+        * * SQL Data Type: nvarchar(255)`),
     Person: z.string().nullable().describe(`
         * * Field Name: Person
         * * Display Name: Person
@@ -1325,7 +1329,7 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Order Date
         * * SQL Data Type: date
         * * Description: Effective date of the order; used as the journal entry EffectiveDate and the as-of date for GL-account link resolution.`),
-    Status: z.union([z.literal('Confirmed'), z.literal('Draft'), z.literal('Fulfilled'), z.literal('Posted'), z.literal('Quoted'), z.literal('Voided')]).describe(`
+    Status: z.union([z.literal('Confirmed'), z.literal('Draft'), z.literal('Quoted'), z.literal('Voided')]).describe(`
         * * Field Name: Status
         * * Display Name: Status
         * * SQL Data Type: nvarchar(20)
@@ -1334,8 +1338,6 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
     * * Possible Values 
     *   * Confirmed
     *   * Draft
-    *   * Fulfilled
-    *   * Posted
     *   * Quoted
     *   * Voided
         * * Description: Draft | Quoted | Confirmed | Posted | Fulfilled | Voided. Voided is reachable only from Draft/Quoted; the JE fires once on the first Confirmed.`),
@@ -1363,13 +1365,13 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)`),
     BillToAddressID: z.string().nullable().describe(`
         * * Field Name: BillToAddressID
-        * * Display Name: Bill To Address
+        * * Display Name: Billing Address
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
         * * Description: FK to __mj_BizAppsCommon.Address — the billing address for this order/invoice. Nullable.`),
     ShipToAddressID: z.string().nullable().describe(`
         * * Field Name: ShipToAddressID
-        * * Display Name: Ship To Address
+        * * Display Name: Shipping Address
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
         * * Description: FK to __mj_BizAppsCommon.Address — the shipping/service address; drives tax jurisdiction when tax lands. Nullable.`),
@@ -1409,19 +1411,6 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Due Date
         * * SQL Data Type: date
         * * Description: Payment due date, derived at Confirm/Post from PaymentTermsType.NetDays (posting date + net days) when not manually supplied. Editable override.`),
-    PaymentStatus: z.union([z.literal('Overdue'), z.literal('Paid'), z.literal('PartiallyPaid'), z.literal('Unpaid'), z.literal('WrittenOff')]).describe(`
-        * * Field Name: PaymentStatus
-        * * Display Name: Payment Status
-        * * SQL Data Type: nvarchar(20)
-        * * Default Value: Unpaid
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Overdue
-    *   * Paid
-    *   * PartiallyPaid
-    *   * Unpaid
-    *   * WrittenOff
-        * * Description: Unpaid | PartiallyPaid | Paid | Overdue | WrittenOff. Engine-derived from AmountPaid vs TotalGross; Overdue is time-derived in views/UI, WrittenOff is an explicit action.`),
     ExternalDocumentNumber: z.string().nullable().describe(`
         * * Field Name: ExternalDocumentNumber
         * * Display Name: External Document Number
@@ -1479,7 +1468,7 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Description: Optional free-text description / memo for the order.`),
     Notes: z.string().nullable().describe(`
         * * Field Name: Notes
-        * * Display Name: Internal Notes
+        * * Display Name: Notes
         * * SQL Data Type: nvarchar(MAX)
         * * Description: Internal notes on the order (Description is the customer-facing memo).`),
     ConfirmedAt: z.date().nullable().describe(`
@@ -1507,6 +1496,19 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Source Checkout Widget
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widgets (vwCheckoutWidgets.ID)`),
+    FulfillmentStatus: z.union([z.literal('Fulfilled'), z.literal('NotApplicable'), z.literal('PartiallyFulfilled'), z.literal('Pending'), z.literal('Returned')]).describe(`
+        * * Field Name: FulfillmentStatus
+        * * Display Name: Fulfillment Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Fulfilled
+    *   * NotApplicable
+    *   * PartiallyFulfilled
+    *   * Pending
+    *   * Returned
+        * * Description: Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -1525,11 +1527,11 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * SQL Data Type: nvarchar(100)`),
     BillToAddress: z.string().nullable().describe(`
         * * Field Name: BillToAddress
-        * * Display Name: Bill To Address Details
+        * * Display Name: Billing Address Text
         * * SQL Data Type: nvarchar(255)`),
     ShipToAddress: z.string().nullable().describe(`
         * * Field Name: ShipToAddress
-        * * Display Name: Ship To Address Details
+        * * Display Name: Shipping Address Text
         * * SQL Data Type: nvarchar(255)`),
     ShipToOrganization: z.string().nullable().describe(`
         * * Field Name: ShipToOrganization
@@ -1549,7 +1551,7 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * SQL Data Type: nvarchar(200)`),
     InitialPaymentDetail: z.string().nullable().describe(`
         * * Field Name: InitialPaymentDetail
-        * * Display Name: Initial Payment Detail Info
+        * * Display Name: Initial Payment Detail Text
         * * SQL Data Type: char(4)`),
     PostedByUser: z.string().nullable().describe(`
         * * Field Name: PostedByUser
@@ -1557,7 +1559,7 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * SQL Data Type: nvarchar(100)`),
     ReversesOrderHeader: z.string().nullable().describe(`
         * * Field Name: ReversesOrderHeader
-        * * Display Name: Reversed Order Name
+        * * Display Name: Reverses Order Name
         * * SQL Data Type: nvarchar(40)`),
     SourceCheckoutWidget: z.string().nullable().describe(`
         * * Field Name: SourceCheckoutWidget
@@ -5225,7 +5227,7 @@ export class mjBizAppsOrdersCheckoutSessionEntity extends BaseEntity<mjBizAppsOr
 
     /**
     * * Field Name: MetadataJSON
-    * * Display Name: Metadata JSON
+    * * Display Name: Metadata
     * * SQL Data Type: nvarchar(MAX)
     */
     get MetadataJSON(): string | null {
@@ -5262,6 +5264,15 @@ export class mjBizAppsOrdersCheckoutSessionEntity extends BaseEntity<mjBizAppsOr
     */
     get CheckoutWidget(): string {
         return this.Get('CheckoutWidget');
+    }
+
+    /**
+    * * Field Name: Distribution
+    * * Display Name: Distribution
+    * * SQL Data Type: nvarchar(255)
+    */
+    get Distribution(): string | null {
+        return this.Get('Distribution');
     }
 
     /**
@@ -8968,16 +8979,14 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     * * Possible Values 
     *   * Confirmed
     *   * Draft
-    *   * Fulfilled
-    *   * Posted
     *   * Quoted
     *   * Voided
     * * Description: Draft | Quoted | Confirmed | Posted | Fulfilled | Voided. Voided is reachable only from Draft/Quoted; the JE fires once on the first Confirmed.
     */
-    get Status(): 'Confirmed' | 'Draft' | 'Fulfilled' | 'Posted' | 'Quoted' | 'Voided' {
+    get Status(): 'Confirmed' | 'Draft' | 'Quoted' | 'Voided' {
         return this.Get('Status');
     }
-    set Status(value: 'Confirmed' | 'Draft' | 'Fulfilled' | 'Posted' | 'Quoted' | 'Voided') {
+    set Status(value: 'Confirmed' | 'Draft' | 'Quoted' | 'Voided') {
         this.Set('Status', value);
     }
 
@@ -9037,7 +9046,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: BillToAddressID
-    * * Display Name: Bill To Address
+    * * Display Name: Billing Address
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
     * * Description: FK to __mj_BizAppsCommon.Address — the billing address for this order/invoice. Nullable.
@@ -9051,7 +9060,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: ShipToAddressID
-    * * Display Name: Ship To Address
+    * * Display Name: Shipping Address
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Common: Addresses (vwAddresses.ID)
     * * Description: FK to __mj_BizAppsCommon.Address — the shipping/service address; drives tax jurisdiction when tax lands. Nullable.
@@ -9153,27 +9162,6 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
     set DueDate(value: Date | null) {
         this.Set('DueDate', value);
-    }
-
-    /**
-    * * Field Name: PaymentStatus
-    * * Display Name: Payment Status
-    * * SQL Data Type: nvarchar(20)
-    * * Default Value: Unpaid
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Overdue
-    *   * Paid
-    *   * PartiallyPaid
-    *   * Unpaid
-    *   * WrittenOff
-    * * Description: Unpaid | PartiallyPaid | Paid | Overdue | WrittenOff. Engine-derived from AmountPaid vs TotalGross; Overdue is time-derived in views/UI, WrittenOff is an explicit action.
-    */
-    get PaymentStatus(): 'Overdue' | 'Paid' | 'PartiallyPaid' | 'Unpaid' | 'WrittenOff' {
-        return this.Get('PaymentStatus');
-    }
-    set PaymentStatus(value: 'Overdue' | 'Paid' | 'PartiallyPaid' | 'Unpaid' | 'WrittenOff') {
-        this.Set('PaymentStatus', value);
     }
 
     /**
@@ -9321,7 +9309,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: Notes
-    * * Display Name: Internal Notes
+    * * Display Name: Notes
     * * SQL Data Type: nvarchar(MAX)
     * * Description: Internal notes on the order (Description is the customer-facing memo).
     */
@@ -9392,6 +9380,27 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: FulfillmentStatus
+    * * Display Name: Fulfillment Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Fulfilled
+    *   * NotApplicable
+    *   * PartiallyFulfilled
+    *   * Pending
+    *   * Returned
+    * * Description: Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.
+    */
+    get FulfillmentStatus(): 'Fulfilled' | 'NotApplicable' | 'PartiallyFulfilled' | 'Pending' | 'Returned' {
+        return this.Get('FulfillmentStatus');
+    }
+    set FulfillmentStatus(value: 'Fulfilled' | 'NotApplicable' | 'PartiallyFulfilled' | 'Pending' | 'Returned') {
+        this.Set('FulfillmentStatus', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company Name
     * * SQL Data Type: nvarchar(50)
@@ -9429,7 +9438,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: BillToAddress
-    * * Display Name: Bill To Address Details
+    * * Display Name: Billing Address Text
     * * SQL Data Type: nvarchar(255)
     */
     get BillToAddress(): string | null {
@@ -9438,7 +9447,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: ShipToAddress
-    * * Display Name: Ship To Address Details
+    * * Display Name: Shipping Address Text
     * * SQL Data Type: nvarchar(255)
     */
     get ShipToAddress(): string | null {
@@ -9483,7 +9492,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: InitialPaymentDetail
-    * * Display Name: Initial Payment Detail Info
+    * * Display Name: Initial Payment Detail Text
     * * SQL Data Type: char(4)
     */
     get InitialPaymentDetail(): string | null {
@@ -9501,7 +9510,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
 
     /**
     * * Field Name: ReversesOrderHeader
-    * * Display Name: Reversed Order Name
+    * * Display Name: Reverses Order Name
     * * SQL Data Type: nvarchar(40)
     */
     get ReversesOrderHeader(): string | null {

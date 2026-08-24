@@ -342,8 +342,6 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public get StatusChipClass(): string {
         switch (this.record?.Status) {
             case 'Confirmed':
-            case 'Posted':
-            case 'Fulfilled':
                 return 'mjo-oh-chip mjo-oh-chip--ok';
             case 'Voided':
                 return 'mjo-oh-chip mjo-oh-chip--void';

@@ -116,7 +116,7 @@ const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 
 /** Statuses at or beyond the booking lock (plan D8/D9). */
-const BOOKED_STATUSES = new Set(['Confirmed', 'Posted', 'Fulfilled']);
+const BOOKED_STATUSES = new Set(['Confirmed']);
 
 /**
  * The subset of `AccountingEngineBase` this class uses. Declared structurally so the accounting

@@ -285,6 +285,10 @@ export class mjBizAppsOrdersCheckoutSession_ {
     CheckoutWidget: string;
         
     @Field({nullable: true}) 
+    @MaxLength(255)
+    Distribution?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
         
@@ -3781,10 +3785,6 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field({nullable: true, description: `Payment due date, derived at Confirm/Post from PaymentTermsType.NetDays (posting date + net days) when not manually supplied. Editable override.`}) 
     DueDate?: Date;
         
-    @Field({description: `Unpaid | PartiallyPaid | Paid | Overdue | WrittenOff. Engine-derived from AmountPaid vs TotalGross; Overdue is time-derived in views/UI, WrittenOff is an explicit action.`}) 
-    @MaxLength(20)
-    PaymentStatus: string;
-        
     @Field({nullable: true, description: `External document/invoice number for downstream systems (e.g. bill.com sync, UPD-1). Free-form; may equal OrderNumber. Not unique pending the dual-numbering decision.`}) 
     @MaxLength(80)
     ExternalDocumentNumber?: string;
@@ -3843,6 +3843,10 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field({nullable: true}) 
     @MaxLength(36)
     SourceCheckoutWidgetID?: string;
+        
+    @Field({description: `Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.`}) 
+    @MaxLength(20)
+    FulfillmentStatus: string;
         
     @Field() 
     @MaxLength(50)
@@ -3971,9 +3975,6 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     DueDate: Date | null;
 
     @Field({ nullable: true })
-    PaymentStatus?: string;
-
-    @Field({ nullable: true })
     ExternalDocumentNumber: string | null;
 
     @Field({ nullable: true })
@@ -4017,6 +4018,9 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     SourceCheckoutWidgetID: string | null;
+
+    @Field({ nullable: true })
+    FulfillmentStatus?: string;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -4083,9 +4087,6 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
     DueDate?: Date | null;
 
     @Field({ nullable: true })
-    PaymentStatus?: string;
-
-    @Field({ nullable: true })
     ExternalDocumentNumber?: string | null;
 
     @Field({ nullable: true })
@@ -4129,6 +4130,9 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     SourceCheckoutWidgetID?: string | null;
+
+    @Field({ nullable: true })
+    FulfillmentStatus?: string;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

@@ -4,16 +4,19 @@
  * Separate from the stepper COMPONENT on purpose. These rules mirror what the
  * database triggers enforce, so they are the kind of logic that quietly diverges
  * from the server's view of the same question — which makes them exactly the
- * logic that should be unit-testable without a rendering environment. Importing
- * `@angular/common` into a test to check a state machine is a smell.
+ * logic that should be unit-testable without a rendering environment.
  *
- * It also means a non-Angular host can ask "what can this order do next?".
+ * 3-way orthogonal model:
+ * 1. Commercial Status: Draft -> Quoted -> Confirmed; Voided <-> Draft/Quoted
+ * 2. Operational Fulfillment: Pending | PartiallyFulfilled | Fulfilled | NotApplicable | Returned
+ * 3. Payment: Real-time numeric balance
  *
  * @module @mj-biz-apps/orders-ng
  */
+import type { mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 
-/** The fixed order stages. */
-export type MJOOrderStage = 'Draft' | 'Quoted' | 'Confirmed' | 'Posted' | 'Fulfilled' | 'Voided';
+/** The fixed order commercial stages. */
+export type MJOOrderStage = mjBizAppsOrdersOrderHeaderEntity['Status'];
 
 /** One stage as the stepper renders it. */
 export interface MJOStepperStage {
@@ -45,8 +48,8 @@ export class MJOStageChangeRequestEventArgs {
     ) {}
 }
 
-/** The stage progression, excluding the terminal `Voided`. */
-const STAGE_ORDER: MJOOrderStage[] = ['Draft', 'Quoted', 'Confirmed', 'Posted', 'Fulfilled'];
+/** The commercial stage progression, excluding the terminal `Voided`. */
+const STAGE_ORDER: MJOOrderStage[] = ['Draft', 'Quoted', 'Confirmed'];
 
 /**
  * The stage list for an order at a given status, with reachability applied and
@@ -57,23 +60,16 @@ const STAGE_ORDER: MJOOrderStage[] = ['Draft', 'Quoted', 'Confirmed', 'Posted', 
  * - **Forward skipping is legal.** Draft straight to Confirmed is a real thing
  *   people do; what is fixed is the ORDER of stages, not that each must be
  *   visited.
- * - **Posted is never a button.** It follows Confirmed near-instantly — it is an
- *   outcome of booking, not an action someone takes.
- * - **Fulfilled is never a button either.** It either auto-advances (nothing on
- *   the order ships) or comes from the fulfillment queue.
  * - **Nothing is reachable once confirmed.** After booking, corrections are
  *   reversing orders rather than status changes.
- * - **Voided is terminal** and reachable only from Draft or Quoted, so an order
- *   that reached it shows a single stage rather than a greyed-out progression
- *   implying it might still move.
+ * - **Voided is reachable only from Draft or Quoted**, and an unconfirmed voided order
+ *   can be reopened as Draft or Quoted.
  *
  * @param current Where the order is.
- * @param requiresFulfillment Whether any line must ship — changes only the
- *   explanation on `Fulfilled`, not its reachability.
  */
 export function BuildOrderStages(
     current: MJOOrderStage,
-    requiresFulfillment = false,
+    _requiresFulfillment?: boolean,
 ): MJOStepperStage[] {
     if (current === 'Voided') {
         return [
@@ -101,20 +97,6 @@ export function BuildOrderStages(
                     Reachable: at < STAGE_ORDER.indexOf('Confirmed'),
                     Note: 'Books one journal entry per line. Fires exactly once, and is not undoable.',
                 };
-            case 'Posted':
-                return {
-                    Stage: stage,
-                    Reachable: false,
-                    Note: 'Reached by confirming — the entries land in the sub-ledger.',
-                };
-            case 'Fulfilled':
-                return {
-                    Stage: stage,
-                    Reachable: false,
-                    Note: requiresFulfillment
-                        ? 'A line must ship — this advances from the fulfillment queue.'
-                        : 'Auto-advances from Posted, because nothing on this order ships.',
-                };
             default:
                 return { Stage: stage, Reachable: false, Note: null };
         }
@@ -125,7 +107,7 @@ export function BuildOrderStages(
  * The verbs that actually apply to an order in a given state.
  *
  * Edit gating shows the state's REAL actions rather than a disabled Save: a
- * posted order offers "Create reversal", not a greyed-out edit control that
+ * confirmed order offers "Create reversal", not a greyed-out edit control that
  * leaves the user guessing what they are allowed to do.
  */
 export function ActionsForStage(current: MJOOrderStage): Array<{ Key: string; Label: string; Danger?: boolean }> {
@@ -138,8 +120,6 @@ export function ActionsForStage(current: MJOOrderStage): Array<{ Key: string; La
                 { Key: 'void', Label: 'Void', Danger: true },
             ];
         case 'Confirmed':
-        case 'Posted':
-        case 'Fulfilled':
             return [
                 { Key: 'reverse', Label: 'Create reversal…' },
                 { Key: 'payment', Label: 'Take payment' },
