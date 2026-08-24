@@ -50,8 +50,7 @@ interface MJOAttentionItem {
         MJEmptyStateComponent,
         MJOStatTileComponent,
         MJOBarListComponent,
-        MJODayBarsComponent,
-        MJOMoneyPipe
+        MJODayBarsComponent
     ],
     template: `
         <div class="mjo-dashboard-container">
@@ -141,43 +140,23 @@ interface MJOAttentionItem {
                 </div>
 
                 <div class="mjo-dash__split mjo-dash__split--wide">
-                    <div class="mj-card">
+                    <div class="mj-card mjo-dash__viewer-card">
                         <div class="mj-card-head">
-                            <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
-                            <h3>Latest orders</h3>
+                            <i class="fa-solid fa-table-list" aria-hidden="true"></i>
+                            <h3>Active Orders</h3>
                             <span class="right">
-                                <a href="#" class="small" (click)="OpenExplorerPreset('all')">Open in Explorer →</a>
+                                <a href="#" class="small" (click)="OnTabChange('explorer')">Full-screen Explorer →</a>
                             </span>
                         </div>
-                        <div class="mj-table-wrap">
-                            <table class="mj-table mj-table--compact">
-                                <thead>
-                                    <tr>
-                                        <th>Order</th>
-                                        <th>Customer</th>
-                                        <th>Status</th>
-                                        <th class="num">Total</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @for (order of LatestOrders; track order.ID) {
-                                        <tr class="is-clickable" (click)="OrderOpened.emit(order)">
-                                            <td><span class="mono">{{ order.OrderNumber }}</span></td>
-                                            <td>{{ customerOf(order) }}</td>
-                                            <td>
-                                                <span class="mj-chip" [class]="statusClass(order)">
-                                                    {{ order.Status }}
-                                                </span>
-                                            </td>
-                                            <td class="num" [class.mj-money--neg]="(order.TotalGross ?? 0) < 0">
-                                                {{ (order.TotalGross ?? 0) | mjoMoney }}
-                                            </td>
-                                        </tr>
-                                    } @empty {
-                                        <tr><td colspan="4" class="small muted">No orders yet.</td></tr>
-                                    }
-                                </tbody>
-                            </table>
+                        <div class="mjo-dash__viewer-host">
+                            @if (OrderEntityInfo) {
+                                <mj-entity-viewer
+                                    [Entity]="OrderEntityInfo"
+                                    (RecordOpened)="OnRecordOpened($event)">
+                                </mj-entity-viewer>
+                            } @else {
+                                <div class="small muted" style="padding: 24px;">Loading order metadata...</div>
+                            }
                         </div>
                     </div>
 
@@ -214,6 +193,24 @@ interface MJOAttentionItem {
                         <div class="small muted" style="padding: 24px;">Loading order metadata...</div>
                     }
                 </div>
+            } @else if (ActiveTab === 'fulfillment') {
+                <div class="mjo-fulfillment-pane">
+                    <p class="mjo-note mjo-fq__note">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        Everything here is already paid for and booked. What is outstanding is the goods, and what this queue controls is the physical line fulfillment state.
+                    </p>
+                    <div class="mjo-explorer-wrapper">
+                        @if (OrderLineEntityInfo) {
+                            <mj-entity-viewer
+                                [Entity]="OrderLineEntityInfo"
+                                [ViewEntity]="FulfillmentQueueView"
+                                (RecordOpened)="OnRecordOpened($event)">
+                            </mj-entity-viewer>
+                        } @else {
+                            <div class="small muted" style="padding: 24px;">Loading fulfillment queue...</div>
+                        }
+                    </div>
+                </div>
             } @else if (ActiveTab === 'aging') {
                 <div class="mjo-aging-pane">
                     <div class="mj-stat-grid">
@@ -243,39 +240,24 @@ interface MJOAttentionItem {
                     </div>
 
                     <div class="mjo-dash__split mjo-dash__split--wide" style="margin-top: var(--mj-space-6);">
-                        <div class="mj-card">
+                        <div class="mj-card mjo-dash__viewer-card" style="grid-column: 1 / -1; height: 600px;">
                             <div class="mj-card-head">
-                                <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
-                                <h3>Overdue Collections Queue</h3>
+                                <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i>
+                                <h3>Overdue Collections Worklist</h3>
                                 <span class="right">
-                                    <a href="#" class="small" (click)="OpenExplorerPreset('overdue')">View all overdue in Explorer →</a>
+                                    <a href="#" class="small" (click)="OpenExplorerPreset('overdue')">Open in Explorer →</a>
                                 </span>
                             </div>
-                            <div class="mj-table-wrap">
-                                <table class="mj-table mj-table--compact">
-                                    <thead>
-                                        <tr>
-                                            <th>Order</th>
-                                            <th>Customer</th>
-                                            <th>Due Date</th>
-                                            <th class="num">Balance Due</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @for (order of overdue; track order.ID) {
-                                            <tr class="is-clickable" (click)="OrderOpened.emit(order)">
-                                                <td><span class="mono">{{ order.OrderNumber }}</span></td>
-                                                <td>{{ customerOf(order) }}</td>
-                                                <td>{{ order.DueDate ? (order.DueDate | date:'mediumDate') : '—' }}</td>
-                                                <td class="num" style="color: var(--mj-status-error-text); font-weight: bold;">
-                                                    {{ (order.Balance ?? 0) | mjoMoney }}
-                                                </td>
-                                            </tr>
-                                        } @empty {
-                                            <tr><td colspan="4" class="small muted">No overdue orders! Everything is current.</td></tr>
-                                        }
-                                    </tbody>
-                                </table>
+                            <div class="mjo-dash__viewer-host" style="min-height: 520px;">
+                                @if (OrderEntityInfo) {
+                                    <mj-entity-viewer
+                                        [Entity]="OrderEntityInfo"
+                                        [ViewEntity]="AgingOverdueView"
+                                        (RecordOpened)="OnRecordOpened($event)">
+                                    </mj-entity-viewer>
+                                } @else {
+                                    <div class="small muted" style="padding: 24px;">Loading order metadata...</div>
+                                }
                             </div>
                         </div>
                     </div>
@@ -286,27 +268,71 @@ interface MJOAttentionItem {
     styles: [
         `
             :host {
-                display: block;
-                height: 100%;
-                overflow: auto;
-            }
-            .mjo-dashboard-container {
-                padding: var(--mj-space-6);
                 display: flex;
                 flex-direction: column;
+                height: 100%;
+                width: 100%;
+                min-height: 0;
+                overflow: hidden;
+            }
+            .mjo-dashboard-container {
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                width: 100%;
+                min-height: 0;
+                overflow-y: auto;
+                padding: var(--mj-space-6);
+                box-sizing: border-box;
                 gap: var(--mj-space-4);
-                min-height: 100%;
             }
             .mjo-tab-container {
+                flex-shrink: 0;
                 margin-bottom: var(--mj-space-2);
             }
             .mjo-explorer-wrapper {
-                flex: 1;
-                min-height: 650px;
+                flex: 1 1 auto;
+                min-height: 600px;
+                height: 100%;
                 background: var(--mj-bg-surface);
                 border: 1px solid var(--mj-border-default);
                 border-radius: var(--mj-radius-md);
                 overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+            .mjo-fulfillment-pane {
+                flex: 1 1 auto;
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+                min-height: 600px;
+                gap: var(--mj-space-4);
+            }
+            .mjo-dash__viewer-card {
+                background: var(--mj-bg-surface);
+                border: 1px solid var(--mj-border-default);
+                border-radius: var(--mj-radius-md);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                height: 560px;
+                min-height: 480px;
+            }
+            .mjo-dash__viewer-host {
+                flex: 1 1 auto;
+                height: 100%;
+                min-height: 400px;
+                display: flex;
+                flex-direction: column;
+            }
+            mj-entity-viewer {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+                height: 100%;
+                min-height: 350px;
+                width: 100%;
             }
             .mjo-aging-pane {
                 display: flex;
@@ -387,17 +413,43 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     public Tabs: TabConfig[] = [
         { key: 'overview', label: 'Executive Overview', icon: 'fa-solid fa-chart-pie' },
         { key: 'explorer', label: 'Orders Explorer', icon: 'fa-solid fa-table-list' },
+        { key: 'fulfillment', label: 'Fulfillment Queue', icon: 'fa-solid fa-dolly' },
         { key: 'aging', label: 'Receivables & Aging', icon: 'fa-solid fa-hourglass-half' }
     ];
 
     public OrderEntityInfo: EntityInfo | null = null;
+    public OrderLineEntityInfo: EntityInfo | null = null;
     public ExplorerView: MJUserViewEntityExtended | null = null;
+
+    public get AgingOverdueView(): MJUserViewEntityExtended | null {
+        if (!this.OrderEntityInfo) return null;
+        const today = new Date().toISOString().slice(0, 10);
+        return {
+            EntityID: this.OrderEntityInfo.ID,
+            Entity: this.OrderEntityInfo.Name,
+            WhereClause: `Balance > 0 AND DueDate IS NOT NULL AND DueDate < '${today}' AND Status NOT IN ('Draft','Quoted','Voided')`,
+            ID: 'preset-aging-overdue',
+            Name: 'Overdue Collections'
+        } as unknown as MJUserViewEntityExtended;
+    }
+
+    public get FulfillmentQueueView(): MJUserViewEntityExtended | null {
+        if (!this.OrderLineEntityInfo) return null;
+        return {
+            EntityID: this.OrderLineEntityInfo.ID,
+            Entity: this.OrderLineEntityInfo.Name,
+            WhereClause: `FulfillmentStatus IN ('Pending', 'PartiallyFulfilled', 'Unfulfilled')`,
+            ID: 'preset-fulfillment-queue',
+            Name: 'Fulfillment Queue'
+        } as unknown as MJUserViewEntityExtended;
+    }
 
     private orders: mjBizAppsOrdersOrderHeaderEntity[] = [];
 
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
         this.OrderEntityInfo = md.Entities.find(e => e.Name === 'MJ_BizApps_Orders: Order Headers') || null;
+        this.OrderLineEntityInfo = md.Entities.find(e => e.Name === 'MJ_BizApps_Orders: Order Lines') || null;
         this.orders = await GetOrders({ Preset: 'all' });
         this.cdr.detectChanges();
     }
@@ -638,6 +690,14 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
                 PageId: 'list',
                 Preset: 'all'
             },
+            {
+                Label: 'Fulfillment queue (items waiting to ship)',
+                Note: 'Order lines ready for picking and shipment',
+                Count: this.orders.filter(o => o.Status === 'Posted' || o.Status === 'Confirmed').length,
+                Icon: 'fa-solid fa-dolly',
+                Tone: 'warning',
+                PageId: 'fulfillment'
+            },
             { Label: 'Overdue invoices', Count: this.overdue.length, Icon: 'fa-solid fa-hourglass-half', Tone: 'error', PageId: 'list', Preset: 'overdue' },
             {
                 Label: 'Credits customers are holding',
@@ -665,6 +725,10 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
 
     protected goQueue(event: Event, queue: MJOQueue): void {
         event.preventDefault();
+        if (queue.PageId === 'fulfillment') {
+            this.OnTabChange('fulfillment');
+            return;
+        }
         if (queue.Preset) {
             this.OpenExplorerPreset(queue.Preset);
         } else {

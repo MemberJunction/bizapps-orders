@@ -1,14 +1,17 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { Metadata, type EntityInfo } from '@memberjunction/core';
+import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import {
     OrdersGetOverdueWorklistOperation,
     type OverdueWorklistRow,
 } from '@mj-biz-apps/orders-entities';
-import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
 import { MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
 import { MJOStatTileComponent } from '../../panels/stat-tile.component';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
+import { MJO_ENTITIES } from '../../data/entity-names';
 
 /** What to do next with a row. */
 interface MJONextAction {
@@ -43,7 +46,7 @@ interface MJONextAction {
 @Component({
     selector: 'mjo-overdue-page',
     standalone: true,
-    imports: [CommonModule, MJOWorklistTableComponent, MJOAgingBarComponent, MJOStatTileComponent, MJAlertComponent],
+    imports: [CommonModule, EntityViewerModule, MJOAgingBarComponent, MJOStatTileComponent, MJAlertComponent],
     template: `
         <div class="mj-stat-grid mjo-ov__tiles">
             <mjo-stat-tile
@@ -105,19 +108,17 @@ interface MJONextAction {
             </mj-alert>
         }
 
-        <mjo-worklist-table
-            [Columns]="Columns"
-            [Rows]="Rows"
-            [Presets]="Presets"
-            [ActivePreset]="Preset"
-            [Searchable]="false"
-            RowKey="OrderHeaderID"
-            EmptyIcon="fa-solid fa-check"
-            EmptyTitle="Nothing overdue"
-            EmptyHint="Every confirmed order is either paid or still within terms."
-            FootNote="Dunning notifies a person; nothing here auto-cancels. A failed card is usually an expired card, not a lost customer."
-            (PresetChanged)="OnPreset($event)"
-            (RowClicked)="OrderOpened.emit($any($event))" />
+        <div class="mjo-ov__viewer-host">
+            @if (OrderEntityInfo) {
+                <mj-entity-viewer
+                    [Entity]="OrderEntityInfo"
+                    [ViewEntity]="OverdueView"
+                    (RecordOpened)="OnRecordOpened($event)">
+                </mj-entity-viewer>
+            } @else {
+                <div class="small muted" style="padding: 24px;">Loading overdue orders...</div>
+            }
+        </div>
     `,
     styles: [
         `
@@ -131,6 +132,24 @@ interface MJONextAction {
             .mjo-ov__error { margin-bottom: var(--mj-space-4); }
             .mjo-ov__aging { margin-bottom: var(--mj-space-4); }
             .mjo-ov__truncated { margin-bottom: var(--mj-space-4); }
+            .mjo-ov__viewer-host {
+                height: 600px;
+                min-height: 500px;
+                background: var(--mj-bg-surface);
+                border: 1px solid var(--mj-border-default);
+                border-radius: var(--mj-radius-md);
+                overflow: hidden;
+                margin-top: var(--mj-space-4);
+                display: flex;
+                flex-direction: column;
+            }
+            mj-entity-viewer {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+                height: 100%;
+                width: 100%;
+            }
             @media (max-width: 760px) {
                 :host { padding: var(--mj-space-4); }
             }
@@ -151,6 +170,7 @@ export class MJOOverduePageComponent implements OnInit {
     public LoadError: string | null = null;
     @Output() OrderOpened = new EventEmitter<OverdueWorklistRow>();
 
+    public OrderEntityInfo: EntityInfo | null = null;
     public AllRows: OverdueWorklistRow[] = [];
     public Rows: OverdueWorklistRow[] = [];
     public Buckets: MJOAgingBuckets = { Current: 0, Days1To30: 0, Days31To60: 0, Days61Plus: 0 };
@@ -160,53 +180,31 @@ export class MJOOverduePageComponent implements OnInit {
     /** Exposed so the template can stringify without a pipe. */
     public readonly String = String;
 
-    public readonly Presets: MJOPreset[] = [
-        { Key: 'all', Label: 'All overdue' },
-        { Key: 't1', Label: '1–30 days' },
-        { Key: 't2', Label: '31–60' },
-        { Key: 't3', Label: '61+' },
-        { Key: 'credit', Label: 'Holding credit', Icon: 'fa-solid fa-piggy-bank' },
-    ];
-
-    public readonly Columns: MJOColumn<OverdueWorklistRow>[] = [
-        {
-            Key: 'DaysOverdue',
-            Label: 'Late',
-            Kind: 'number',
-            Width: '80px',
-            Format: (r) => `${r.DaysOverdue}d`,
-        },
-        { Key: 'OrderNumber', Label: 'Order', Kind: 'mono', Width: '116px' },
-        {
-            Key: 'CustomerName',
-            Label: 'Customer',
-            Secondary: (r) =>
-                r.AvailableCredit > 0 ? `holds ${FormatMoney(r.AvailableCredit)} credit` : (r.Description ?? null),
-        },
-        { Key: 'CompanyName', Label: 'Co.', Width: '96px', HideBelow: 1000 },
-        {
-            Key: 'Balance',
-            Label: 'Balance',
-            Kind: 'money',
-            Width: '118px',
-            Format: (r) => FormatMoney(r.Balance),
-        },
-        {
-            Key: 'DueDate',
-            Label: 'Due',
-            Width: '100px',
-            HideBelow: 760,
-            Format: (r) => FormatDate(r.DueDate, { Short: true }),
-        },
-        {
-            Key: 'NextAction',
-            Label: 'Next action',
-            Format: (r) => this.nextAction(r).Text,
-        },
-    ];
+    public get OverdueView(): MJUserViewEntityExtended | null {
+        if (!this.OrderEntityInfo) return null;
+        const today = new Date().toISOString().slice(0, 10);
+        return {
+            EntityID: this.OrderEntityInfo.ID,
+            Entity: this.OrderEntityInfo.Name,
+            WhereClause: `Balance > 0 AND DueDate IS NOT NULL AND DueDate < '${today}' AND Status NOT IN ('Draft','Quoted','Voided')`,
+            ID: 'preset-overdue-worklist',
+            Name: 'Overdue Collections'
+        } as unknown as MJUserViewEntityExtended;
+    }
 
     public async ngOnInit(): Promise<void> {
+        const md = new Metadata();
+        this.OrderEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.OrderHeader) || null;
         await this.load();
+        this.cdr.detectChanges();
+    }
+
+    public OnRecordOpened(event: RecordOpenedEvent): void {
+        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+        if (id) {
+            const surrogate = { OrderHeaderID: id } as OverdueWorklistRow;
+            this.OrderOpened.emit(surrogate);
+        }
     }
 
     public OnPreset(preset: string): void {

@@ -1,12 +1,14 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { Metadata, type EntityInfo } from '@memberjunction/core';
+import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
-import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
-
 import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
+import { MJO_ENTITIES } from '../../data/entity-names';
 import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 
 /** A customer with a balance, as the left rail lists them. */
@@ -43,7 +45,7 @@ interface MJOCustomerSummary {
 @Component({
     selector: 'mjo-customer-ar-page',
     standalone: true,
-    imports: [CommonModule, MJOAgingBarComponent, MJOMoneyStripComponent, MJOWorklistTableComponent, MJAlertComponent],
+    imports: [CommonModule, EntityViewerModule, MJOAgingBarComponent, MJOMoneyStripComponent, MJAlertComponent],
     template: `
         <div class="mjo-ar__split">
             <!-- ── Customers ── -->
@@ -142,16 +144,17 @@ interface MJOCustomerSummary {
                             <h3>Open items</h3>
                             <span class="right small muted">oldest first</span>
                         </div>
-                        <mjo-worklist-table
-                            [Columns]="Columns"
-                            [Rows]="OpenItems"
-                            [Presets]="[]"
-                            [Searchable]="false"
-                            RowKey="ID"
-                            EmptyIcon="fa-solid fa-check"
-                            EmptyTitle="Nothing outstanding"
-                            EmptyHint="Every confirmed order is settled."
-                            (RowClicked)="OrderOpened.emit($any($event))" />
+                        <div class="mjo-ar__viewer-host">
+                            @if (OrderEntityInfo) {
+                                <mj-entity-viewer
+                                    [Entity]="OrderEntityInfo"
+                                    [ViewEntity]="CustomerOpenOrdersView"
+                                    (RecordOpened)="OnRecordOpened($event)">
+                                </mj-entity-viewer>
+                            } @else {
+                                <div class="small muted" style="padding: 24px;">Loading open items...</div>
+                            }
+                        </div>
                     </div>
 
                     <div class="mjo-ar__grid">
@@ -310,7 +313,28 @@ interface MJOCustomerSummary {
             .mjo-ar__strip { display: block; margin-top: var(--mj-space-4); }
             .mjo-ar__aging { margin-top: var(--mj-space-4); }
             .mjo-ar__credit { margin-top: var(--mj-space-4); }
-            .mjo-ar__items { margin-top: var(--mj-space-4); }
+            .mjo-ar__items {
+                margin-top: var(--mj-space-4);
+                display: flex;
+                flex-direction: column;
+                height: 520px;
+                min-height: 450px;
+            }
+            .mjo-ar__viewer-host {
+                flex: 1 1 auto;
+                height: 100%;
+                min-height: 380px;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            }
+            mj-entity-viewer {
+                display: flex;
+                flex-direction: column;
+                flex: 1 1 auto;
+                height: 100%;
+                width: 100%;
+            }
             .mjo-ar__empty { padding: var(--mj-space-12); }
 
             /* These four hooks were in the markup with no rule anywhere, so the
@@ -349,43 +373,39 @@ interface MJOCustomerSummary {
     ],
 })
 export class MJOCustomerARPageComponent implements OnInit {
-    /**
-     * Render what was just loaded. See orders-dashboard.page.ts for the full
-     * reasoning: these pages are created imperatively by the section shell, and an
-     * async assignment across Angular's check/verify boundary raises NG0100, aborts
-     * the DOM write, and freezes the view on its pre-load values permanently.
-     */
     private readonly cdr = inject(ChangeDetectorRef);
 
     @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
 
+    public OrderEntityInfo: EntityInfo | null = null;
     public Customers: MJOCustomerSummary[] = [];
     public SelectedKey: string | null = null;
 
-    public readonly Columns: MJOColumn<mjBizAppsOrdersOrderHeaderEntity>[] = [
-        { Key: 'OrderNumber', Label: 'Order', Kind: 'mono', Width: '116px' },
-        { Key: 'Description', Label: 'Memo', Format: (r) => (r.Description as string) ?? '—' },
-        { Key: 'Company', Label: 'Co.', Width: '96px', HideBelow: 1000 },
-        {
-            Key: 'DueDate',
-            Label: 'Due',
-            Width: '100px',
-            Format: (r) => (r.DueDate ? FormatDate(r.DueDate, { Short: true }) : '—'),
-        },
-        { Key: 'TotalGross', Label: 'Total', Kind: 'money', Width: '112px', Format: (r) => FormatMoney((r.TotalGross ?? 0)) },
-        { Key: 'Balance', Label: 'Balance', Kind: 'money', Width: '116px', Format: (r) => FormatMoney((r.Balance ?? 0)) },
-        {
-            Key: 'Age',
-            Label: 'Age',
-            Width: '86px',
-            Kind: 'chip',
-            Format: (r) => this.ageLabel(r),
-            ChipClass: (r) => this.ageClass(r),
-        },
-    ];
+    public get CustomerOpenOrdersView(): MJUserViewEntityExtended | null {
+        if (!this.OrderEntityInfo || !this.Selected) return null;
+        const col = this.Selected.IsOrganization ? 'BillToOrganizationID' : 'BillToPersonID';
+        return {
+            EntityID: this.OrderEntityInfo.ID,
+            Entity: this.OrderEntityInfo.Name,
+            WhereClause: `${col} = '${this.Selected.Key}' AND Balance > 0`,
+            ID: `preset-customer-orders-${this.Selected.Key}`,
+            Name: `${this.Selected.Name} Open Items`
+        } as unknown as MJUserViewEntityExtended;
+    }
 
     public async ngOnInit(): Promise<void> {
+        const md = new Metadata();
+        this.OrderEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.OrderHeader) || null;
         await this.load();
+        this.cdr.detectChanges();
+    }
+
+    public OnRecordOpened(event: RecordOpenedEvent): void {
+        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+        if (id) {
+            const surrogate = { ID: id } as mjBizAppsOrdersOrderHeaderEntity;
+            this.OrderOpened.emit(surrogate);
+        }
     }
 
     public Payments: mjBizAppsOrdersPaymentHeaderEntity[] = [];
