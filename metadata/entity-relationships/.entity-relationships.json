@@ -24,7 +24,7 @@
       "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Lines"
     },
     "sync": {
-      "lastModified": "2026-08-13T21:31:03.414Z",
+      "lastModified": "2026-08-24T20:19:38.570Z",
       "checksum": "488e55e9386d181b7f748126e844f123395804b65294e08b3c69030096abf400"
     }
   },
@@ -53,7 +53,7 @@
       "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Payment Headers&RelatedEntity=MJ_BizApps_Orders: Payment Lines"
     },
     "sync": {
-      "lastModified": "2026-08-13T21:31:03.433Z",
+      "lastModified": "2026-08-24T20:19:38.609Z",
       "checksum": "bfcabc5922ad680a98754275c3f6b331bc0e8fd247872f2354de8301cc43e45b"
     }
   },
@@ -81,7 +81,7 @@
       "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Charges"
     },
     "sync": {
-      "lastModified": "2026-08-13T21:31:03.469Z",
+      "lastModified": "2026-08-24T20:19:38.550Z",
       "checksum": "dbb08f4944581b35e35ce3456506bdda2020917d7b64dcc81e953adc6f923926"
     }
   },
@@ -109,7 +109,7 @@
       "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Adjustments"
     },
     "sync": {
-      "lastModified": "2026-08-13T21:31:03.451Z",
+      "lastModified": "2026-08-24T20:19:38.590Z",
       "checksum": "59ee22ef08f01d52c6e3631d5007658abc56699ce43678d9318114372f7a0f26"
     }
   },
@@ -128,7 +128,7 @@
       "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Product Prices&RelatedEntityJoinField=ProductID"
     },
     "sync": {
-      "lastModified": "2026-08-19T01:45:44.536Z",
+      "lastModified": "2026-08-24T20:19:38.626Z",
       "checksum": "4efa7a1101423c98ac5ca100fd10f44b127e74952955971d46dc7c7ad653b26f"
     }
   }

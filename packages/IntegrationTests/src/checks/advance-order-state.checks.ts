@@ -131,23 +131,23 @@ const entriesOf = (ctx: IntegrationCheckContext, orderID: string) =>
   );
 
 const headerOf = (ctx: IntegrationCheckContext, orderID: string) =>
-  TxOne<{ Status: string; OrderDate: string; TotalGross: number; Description: string | null }>(
+  TxOne<{ Status: string; FulfillmentStatus: string; OrderDate: string; TotalGross: number; Description: string | null }>(
     ctx,
-    `SELECT Status, OrderDate, TotalGross, Description FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
+    `SELECT Status, FulfillmentStatus, OrderDate, TotalGross, Description FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
   );
 
 export const AdvanceOrderStateChecks: NamedCheck[] = [
   {
     Id: "advance-order-state.ADV1",
-    Name: "ADV1: Confirmed advances to Posted, and books exactly once",
+    Name: "ADV1: Confirmed advances to Fulfilled, and books exactly once",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const id = await booked(ctx);
-        const out = await advance(ctx, { OrderHeaderID: id, TargetStatus: "Posted" });
+        const out = await advance(ctx, { OrderHeaderID: id, TargetStatus: "Fulfilled" });
         Assert(out.Success, `advance failed: ${out.Message} ${JSON.stringify(out.Blockers)}`);
-        AssertEqual(out.Status, "Posted", "reached Posted");
-        AssertEqual((await headerOf(ctx, id)).Status, "Posted", "and it stuck");
+        AssertEqual(out.Status, "Fulfilled", "reached Fulfilled");
+        AssertEqual((await headerOf(ctx, id)).FulfillmentStatus, "Fulfilled", "and it stuck");
 
         // Booking fires on the FIRST lock transition. Advancing past it must not book again, or the
         // revenue would be counted twice and both entries would balance.
@@ -230,16 +230,11 @@ export const AdvanceOrderStateChecks: NamedCheck[] = [
         const out = await advance(ctx, { OrderHeaderID: id, TargetStatus: "Fulfilled" });
         Assert(out.Success, `advance failed: ${out.Message}`);
 
-        // A caller importing a thousand orders needs to see WHERE one stopped, not just that it did.
         const steps = out.Transitions ?? [];
-        Assert(steps.length >= 2, `both rungs are recorded: ${JSON.stringify(steps)}`);
+        Assert(steps.length >= 1, `step is recorded: ${JSON.stringify(steps)}`);
         Assert(
-          steps.some((t) => t.From === "Confirmed" && t.To === "Posted" && t.Applied),
-          "the Posted step is recorded as applied",
-        );
-        Assert(
-          steps.some((t) => t.From === "Posted" && t.To === "Fulfilled" && t.Applied),
-          "and so is the Fulfilled step",
+          steps.some((t) => t.From === "Pending" && t.To === "Fulfilled" && t.Applied),
+          "the Fulfilled step is recorded as applied",
         );
       }),
   },
@@ -251,7 +246,7 @@ export const AdvanceOrderStateChecks: NamedCheck[] = [
       InRolledBackTransaction(ctx, async () => {
         const id = await booked(ctx);
         const before = (await headerOf(ctx, id)).Status;
-        for (const target of ["Draft", "Quoted", "Confirmed"]) {
+        for (const target of ["Draft", "Quoted", "Confirmed", "Posted"]) {
           const out = await advance(ctx, { OrderHeaderID: id, TargetStatus: target });
           AssertEqual(out.Success, false, `${target} is refused`);
           Assert(
@@ -314,7 +309,7 @@ export const AdvanceOrderStateChecks: NamedCheck[] = [
         const id = await booked(ctx);
         const out = await advance(ctx, {
           OrderHeaderID: id,
-          TargetStatus: "Posted",
+          TargetStatus: "Fulfilled",
           Reason: "Migrated from the counter system",
         });
         Assert(out.Success, `advance failed: ${out.Message}`);
@@ -353,12 +348,12 @@ export const AdvanceOrderStateChecks: NamedCheck[] = [
         // A migration that dies half way gets re-run. Reporting a failure for the orders that already
         // landed would make a resumed import indistinguishable from a broken one.
         const id = await booked(ctx);
-        Assert((await advance(ctx, { OrderHeaderID: id, TargetStatus: "Posted" })).Success, "first advance");
+        Assert((await advance(ctx, { OrderHeaderID: id, TargetStatus: "Fulfilled" })).Success, "first advance");
         const entries = (await entriesOf(ctx, id)).length;
 
-        const again = await advance(ctx, { OrderHeaderID: id, TargetStatus: "Posted" });
+        const again = await advance(ctx, { OrderHeaderID: id, TargetStatus: "Fulfilled" });
         AssertEqual(again.Success, true, "the second advance is not an error");
-        AssertEqual(again.Status, "Posted", "and the order is where it was asked to be");
+        AssertEqual(again.Status, "Fulfilled", "and the order is where it was asked to be");
         AssertEqual((await entriesOf(ctx, id)).length, entries, "with no second booking");
       }),
   },

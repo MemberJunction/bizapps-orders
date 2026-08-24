@@ -201,7 +201,7 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
                     (l.FulfillmentStatus ?? 'Pending') === 'Pending',
             ).length;
 
-            let statusAfter = order.Status;
+            let statusAfter = order.FulfillmentStatus ?? 'Pending';
             let didAdvance = false;
 
             if (ShouldAdvanceToFulfilled(after) && order.FulfillmentStatus !== 'Fulfilled') {
@@ -210,6 +210,7 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
                     header.FulfillmentStatus = 'Fulfilled';
                     if (await header.Save()) {
                         didAdvance = true;
+                        statusAfter = 'Fulfilled';
                     }
                 }
             }
@@ -217,7 +218,7 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
             advanced.push({
                 OrderHeaderID: orderID,
                 OrderNumber: order.OrderNumber,
-                StatusBefore: order.Status,
+                StatusBefore: order.FulfillmentStatus ?? 'Pending',
                 StatusAfter: statusAfter,
                 AdvancedToFulfilled: didAdvance || remaining === 0,
                 RemainingLineCount: remaining,

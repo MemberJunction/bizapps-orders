@@ -17,6 +17,10 @@
     },
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Customer Payment Methods&Name=PaymentDetailID"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.509Z",
+      "checksum": "85e1e6e235acc3d35ed96e5873f68f4282c31d56e9b1222d59a8e5a8307178d9"
     }
   },
   {
@@ -25,6 +29,10 @@
     },
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Headers&Name=PaymentDetailID"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.479Z",
+      "checksum": "85e1e6e235acc3d35ed96e5873f68f4282c31d56e9b1222d59a8e5a8307178d9"
     }
   },
   {
@@ -33,6 +41,10 @@
     },
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=InitialPaymentDetailID"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.446Z",
+      "checksum": "85e1e6e235acc3d35ed96e5873f68f4282c31d56e9b1222d59a8e5a8307178d9"
     }
   }
 ]

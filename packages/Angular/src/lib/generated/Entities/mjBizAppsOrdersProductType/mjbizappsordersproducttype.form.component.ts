@@ -20,6 +20,7 @@ export class mjBizAppsOrdersProductTypeFormComponent extends BaseFormComponent {
             { sectionKey: 'fulfillmentAndEntitlements', sectionName: 'Fulfillment and Entitlements', isExpanded: true },
             { sectionKey: 'financialDefaults', sectionName: 'Financial Defaults', isExpanded: true },
             { sectionKey: 'configurationAndExtensions', sectionName: 'Configuration and Extensions', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false }
         ]);

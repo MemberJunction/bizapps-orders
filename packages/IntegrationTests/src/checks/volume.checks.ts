@@ -1083,7 +1083,7 @@ export const VolumeChecks: NamedCheck[] = [
         const r = await TxOne<{ Orders: number; Lines: number; PaidMismatch: number; BalanceMismatch: number; NotPaid: number }>(
           ctx,
           `WITH x AS (
-              SELECT h.ID, h.TotalGross, h.AmountPaid, h.Balance, h.PaymentStatus,
+              SELECT h.ID, h.TotalGross, h.AmountPaid, h.Balance,
                      ISNULL((SELECT SUM(pl.Amount) FROM ${ORDERS_SCHEMA}.PaymentLine pl
                               WHERE pl.OrderHeaderID = h.ID), 0) AS Allocated,
                      ISNULL((SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.PaymentLine pl
@@ -1094,7 +1094,7 @@ export const VolumeChecks: NamedCheck[] = [
                   ISNULL(SUM(CASE WHEN AmountPaid <> Allocated THEN 1 ELSE 0 END),0) AS PaidMismatch,
                   ISNULL(SUM(CASE WHEN ISNULL(Balance,0) <> TotalGross - Allocated THEN 1 ELSE 0 END),0)
                     AS BalanceMismatch,
-                  ISNULL(SUM(CASE WHEN PaymentStatus <> 'Paid' THEN 1 ELSE 0 END),0) AS NotPaid
+                  ISNULL(SUM(CASE WHEN Balance > 0.005 THEN 1 ELSE 0 END),0) AS NotPaid
              FROM x`,
         );
         AssertEqual(Number(r.Orders), ORDERS, "the aggregate examined every order");

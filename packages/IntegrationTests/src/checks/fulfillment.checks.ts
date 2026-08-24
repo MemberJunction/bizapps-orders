@@ -125,7 +125,7 @@ const linesOf = (ctx: IntegrationCheckContext, orderID: string) =>
   );
 
 const statusOf = (ctx: IntegrationCheckContext, orderID: string) =>
-  TxOne<{ Status: string }>(ctx, `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`);
+  TxOne<{ FulfillmentStatus: string }>(ctx, `SELECT FulfillmentStatus FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`);
 
 /** Confirm an order of `spec` lines. */
 async function sell(ctx: IntegrationCheckContext, spec: Array<[string, number]>) {
@@ -191,7 +191,7 @@ export const FulfillmentChecks: NamedCheck[] = [
         AssertEqual(out.Orders[0].StatusAfter, "Fulfilled", "status advanced");
         AssertEqual(out.Orders[0].RemainingLineCount, 0, "nothing left");
 
-        AssertEqual((await statusOf(ctx, order.Order.ID as string)).Status, "Fulfilled", "and it stuck");
+        AssertEqual((await statusOf(ctx, order.Order.ID as string)).FulfillmentStatus, "Fulfilled", "and it stuck");
       }),
   },
   {
@@ -205,12 +205,13 @@ export const FulfillmentChecks: NamedCheck[] = [
         const lines = await linesOf(ctx, order.Order.ID as string);
 
         const out = await flip(ctx, { OrderLineIDs: [lines[0].ID] });
-        AssertEqual(out.FulfilledCount, 1, "one shipped");
-        AssertEqual(out.AdvancedCount, 0, "the order does NOT advance");
+        AssertEqual(out.FulfilledCount, 1, "one line shipped");
+        AssertEqual(out.AdvancedCount, 0, "the order stays open");
+        AssertEqual(out.Orders[0].AdvancedToFulfilled, false, "not advanced");
         AssertEqual(out.Orders[0].RemainingLineCount, 1, "and it says how many are left");
 
         const status = await statusOf(ctx, order.Order.ID as string);
-        Assert(status.Status !== "Fulfilled", `still open, got ${status.Status}`);
+        Assert(status.FulfillmentStatus !== "Fulfilled", `still open, got ${status.FulfillmentStatus}`);
       }),
   },
   {
@@ -240,7 +241,7 @@ export const FulfillmentChecks: NamedCheck[] = [
         // THE ASSERTION THAT MATTERS. "Every line Fulfilled" would be false here forever — the
         // subscription line has nothing to flip — and the order would never close.
         AssertEqual(out.AdvancedCount, 1, `a mixed order must advance: ${JSON.stringify(out.Orders)}`);
-        AssertEqual((await statusOf(ctx, result.Order.ID as string)).Status, "Fulfilled", "and it stuck");
+        AssertEqual((await statusOf(ctx, result.Order.ID as string)).FulfillmentStatus, "Fulfilled", "and it stuck");
       }),
   },
   {

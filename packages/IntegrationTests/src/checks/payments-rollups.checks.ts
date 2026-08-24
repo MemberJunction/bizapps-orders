@@ -20,6 +20,7 @@
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
 import { randomUUID } from 'node:crypto';
+import { DerivePaymentStatus } from '@mj-biz-apps/orders-entities';
 import {
     Assert,
     AssertEqual,
@@ -56,12 +57,17 @@ interface RollupRow {
     PaymentStatus: string;
 }
 
-const rollups = (ctx: IntegrationCheckContext, orderID: string) =>
-    TxOne<RollupRow>(
+const rollups = async (ctx: IntegrationCheckContext, orderID: string): Promise<RollupRow> => {
+    const row = await TxOne<{ OrderNumber: string; TotalGross: number; AmountPaid: number; Balance: number }>(
         ctx,
-        `SELECT OrderNumber, TotalGross, AmountPaid, Balance, PaymentStatus
+        `SELECT OrderNumber, TotalGross, AmountPaid, Balance
          FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`,
     );
+    return {
+        ...row,
+        PaymentStatus: DerivePaymentStatus(row.TotalGross, row.AmountPaid, row.Balance),
+    };
+};
 
 /** A $250 two-line order: 2 × $100 + 1 × $50. */
 async function confirm250(ctx: IntegrationCheckContext) {

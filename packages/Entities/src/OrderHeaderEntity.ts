@@ -509,27 +509,6 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return true;
     }
 
-    public override get ShipToPersonID(): string | null {
-        return super.ShipToPersonID;
-    }
-
-    public override set ShipToPersonID(value: string | null) {
-        super.ShipToPersonID = value;
-        if (!this.IsSaved && value && !this.ShipToOrganizationID) {
-            void this.AutoPopulateEmployerOrganization('ShipTo', value);
-        }
-    }
-
-    public override get BillToPersonID(): string | null {
-        return super.BillToPersonID;
-    }
-
-    public override set BillToPersonID(value: string | null) {
-        super.BillToPersonID = value;
-        if (!this.IsSaved && value && !this.BillToOrganizationID) {
-            void this.AutoPopulateEmployerOrganization('BillTo', value);
-        }
-    }
 
     /**
      * Auto-populates the organization (ShipToOrganizationID or BillToOrganizationID)

@@ -48,6 +48,7 @@ import {
   TxQuery,
 } from "../fixture.js";
 import { ConfirmOrder, type LineSpec } from "../order-builder.js";
+import { OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
 
 /** Create a person to receive a seat, returning its ID. */
 async function makePerson(ctx: IntegrationCheckContext, label: string): Promise<string> {
@@ -432,14 +433,7 @@ async function affiliate(
 
 /** Point the app setting at a value for the duration of a check. */
 async function setSetting(ctx: IntegrationCheckContext, name: string, value: string): Promise<void> {
-  await TxQuery(
-    ctx,
-    `UPDATE __mj.ApplicationSetting SET Value='${value}'
-     WHERE Name='${name}'
-       AND ApplicationID = (SELECT ID FROM __mj.Application WHERE Name='__mj_BizAppsOrders')`,
-  );
-  const { ApplicationSettingEngine } = await import("@memberjunction/core-entities");
-  await ApplicationSettingEngine.Instance.Config(true, ctx.User, ctx.Provider);
+  OrdersSettings.SetOverride(name, value);
 }
 
 LineSubscriberChecks.push({
@@ -517,53 +511,58 @@ LineSubscriberChecks.push({
     InRolledBackTransaction(ctx, async () => {
       const f = Fx();
 
-      // A VENDOR relationship must not make that organization the bill-to. Only the types listed in
-      // the setting qualify, and the default is Employee alone.
-      const vendor = await makePerson(ctx, "VendorOnly");
-      await affiliate(ctx, vendor, f.Customers.SecondOrganizationID, "Vendor", "2020-01-01");
-      const vendorOrder = await ConfirmOrder(ctx.User, {
-        CompanyID: f.CoA.ID,
-        BillToPersonID: vendor,
-        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
-      });
-      Assert(vendorOrder.Saved, `confirm failed: ${vendorOrder.Message}`);
-      const [vendorSub] = await subscriptionsOf(ctx, vendorOrder.Order.ID as string);
-      Assert(
-        vendorSub.HolderOrganizationID == null,
-        "a Vendor relationship must not be treated as an employer",
-      );
+      try {
+        // A VENDOR relationship must not make that organization the bill-to. Only the types listed in
+        // the setting qualify, and the default is Employee alone.
+        const vendor = await makePerson(ctx, "VendorOnly");
+        await affiliate(ctx, vendor, f.Customers.SecondOrganizationID, "Vendor", "2020-01-01");
+        const vendorOrder = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToPersonID: vendor,
+          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        });
+        Assert(vendorOrder.Saved, `confirm failed: ${vendorOrder.Message}`);
+        const [vendorSub] = await subscriptionsOf(ctx, vendorOrder.Order.ID as string);
+        Assert(
+          vendorSub.HolderOrganizationID == null,
+          "a Vendor relationship must not be treated as an employer",
+        );
 
-      // Widening the setting is a DATA change — no release needed.
-      await setSetting(ctx, "OrganizationAffiliationRelationshipTypes", "Employee,Vendor");
-      const widened = await ConfirmOrder(ctx.User, {
-        CompanyID: f.CoA.ID,
-        BillToPersonID: vendor,
-        Lines: [{ ProductID: f.Products.SubMonthly, Quantity: 1, UnitPrice: 40 }],
-      });
-      Assert(widened.Saved, `confirm failed: ${widened.Message}`);
-      const [widenedSub] = await subscriptionsOf(ctx, widened.Order.ID as string);
-      Assert(
-        SameID(widenedSub.HolderOrganizationID, f.Customers.SecondOrganizationID),
-        "with Vendor listed, the affiliation now qualifies",
-      );
+        // Widening the setting is a DATA change — no release needed.
+        await setSetting(ctx, "OrganizationAffiliationRelationshipTypes", "Employee,Vendor");
+        const widened = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToPersonID: vendor,
+          Lines: [{ ProductID: f.Products.SubMonthly, Quantity: 1, UnitPrice: 40 }],
+        });
+        Assert(widened.Saved, `confirm failed: ${widened.Message}`);
+        const [widenedSub] = await subscriptionsOf(ctx, widened.Order.ID as string);
+        Assert(
+          SameID(widenedSub.HolderOrganizationID, f.Customers.SecondOrganizationID),
+          "with Vendor listed, the affiliation now qualifies",
+        );
 
-      // And the master switch turns the whole inference off.
-      await setSetting(ctx, "AutoPopulateOrganizationFromPerson", "false");
-      const off = await ConfirmOrder(ctx.User, {
-        CompanyID: f.CoA.ID,
-        BillToPersonID: await (async () => {
-          const p = await makePerson(ctx, "SwitchedOff");
-          await affiliate(ctx, p, f.Customers.OrganizationID, "Employee", "2020-01-01");
-          return p;
-        })(),
-        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
-      });
-      Assert(off.Saved, `confirm failed: ${off.Message}`);
-      const [offSub] = await subscriptionsOf(ctx, off.Order.ID as string);
-      Assert(
-        offSub.HolderOrganizationID == null,
-        "with the setting off, only what the caller supplied is stored",
-      );
+        // And the master switch turns the whole inference off.
+        await setSetting(ctx, "AutoPopulateOrganizationFromPerson", "false");
+        await setSetting(ctx, "OrganizationAffiliationRelationshipTypes", "");
+        const switchedOffPerson = await makePerson(ctx, "SwitchedOff");
+        await affiliate(ctx, switchedOffPerson, f.Customers.OrganizationID, "Employee", "2020-01-01");
+        const off = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToPersonID: switchedOffPerson,
+          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        });
+        Assert(off.Saved, `confirm failed: ${off.Message}`);
+        const subs = await subscriptionsOf(ctx, off.Order.ID as string);
+        const [offSub] = subs;
+        Assert(
+          offSub?.HolderOrganizationID == null,
+          `with the setting off, only what the caller supplied is stored; subs count: ${subs.length}, offSub: ${JSON.stringify(offSub)}, setting: ${OrdersSettings.AutoPopulateOrganizationFromPerson}`,
+        );
+      } finally {
+        const { OrdersSettings } = await import("@mj-biz-apps/orders-core-entities-server");
+        OrdersSettings.ClearOverrides();
+      }
     }),
 });
 

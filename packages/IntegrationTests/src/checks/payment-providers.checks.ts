@@ -27,6 +27,7 @@
  *   DOC:  plans/archive/bizapps-orders-master.md D18, D19, D37
  */
 import { randomUUID } from "crypto";
+import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";
 import {
   Assert,
   AssertEqual,
@@ -466,12 +467,12 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         Assert(paid.Saved, "the capture succeeded");
         const paymentID = paid.ID!;
 
-        const header = await TxOne<{ Paid: number; Balance: number; Status: string }>(ctx,
-          `SELECT AmountPaid AS Paid, Balance, PaymentStatus AS Status
+        const header = await TxOne<{ Paid: number; Balance: number; TotalGross: number }>(ctx,
+          `SELECT AmountPaid AS Paid, Balance, TotalGross
              FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`);
         AssertEqual(Number(header.Paid), 300, "the order records the payment");
         AssertEqual(Number(header.Balance), 0, "and its balance clears");
-        AssertEqual(header.Status, "Paid", "and it reads as paid");
+        AssertEqual(DerivePaymentStatus(header.TotalGross, header.Paid, header.Balance), "Paid", "and it reads as paid");
       }),
   },
   {

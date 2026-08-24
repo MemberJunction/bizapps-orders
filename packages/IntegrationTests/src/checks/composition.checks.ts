@@ -23,6 +23,7 @@
  *   DOC:  plans/archive/pricing-charges-and-promotions.md §1 (the pipeline)
  */
 import { randomUUID } from "crypto";
+import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";
 import {
   Assert,
   AssertEqual,
@@ -300,16 +301,16 @@ export const CompositionChecks: NamedCheck[] = [
         });
         Assert(paid.Saved, `payment failed: ${paid.Message}`);
 
-        const after = await TxOne<{ Balance: number; PaymentStatus: string }>(
+        const after = await TxOne<{ TotalGross: number; AmountPaid: number; Balance: number }>(
           ctx,
-          `SELECT Balance, PaymentStatus FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
+          `SELECT TotalGross, AmountPaid, Balance FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
         );
         AssertEqual(
           Number(after.Balance),
           Math.round((Number(before.Gross) - half) * 100) / 100,
           "the balance is the gross less what was paid",
         );
-        AssertEqual(after.PaymentStatus, "PartiallyPaid", "and it is not marked Paid");
+        AssertEqual(DerivePaymentStatus(after.TotalGross, after.AmountPaid, after.Balance), "PartiallyPaid", "and it is not marked Paid");
       }),
   },
   {
