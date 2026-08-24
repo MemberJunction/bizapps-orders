@@ -1,0 +1,61 @@
+# The gate on anything that moves a version.
+#
+# Runs on two kinds of PR, with the same two assertions, from the same script:
+#
+#   * the Version Packages PR into `next` (head `changeset-release/next`) — the earliest
+#     point the resolved version exists, so a wrong bump level is one edit away from fixed:
+#     raise a changeset to minor and the PR regenerates itself.
+#   * any PR into `main` — the release itself, and the check that actually protects it.
+#
+# Deliberately a PR check rather than a step inside version.yml. A failure inside that job
+# lands on the push-to-next run, NOT on the Version Packages PR: the PR's checks reflect its
+# own head SHA, and with the default GITHUB_TOKEN it has no checks at all. A reviewer looking
+# at the PR would see nothing wrong, merge it, and hit the gate at `main` — the exact
+# backtrack this is meant to prevent. A PR check is visible where the decision is made, and
+# can be made blocking via required status checks.
+#
+# KNOWN GAP until the GitHub App token lands: PRs opened by GITHUB_TOKEN do not trigger
+# workflows, so the `next` half of this will not fire yet. The `main` half does, so the
+# release stays protected in the meantime — it just costs the longer recovery.
+#
+# Bypass: label the PR `bump-level-exempt`.
+name: Release readiness
+
+on:
+  pull_request:
+    branches: [next, main]
+
+permissions:
+  contents: read
+
+jobs:
+  release-readiness:
+    # On `next`, only the bot's version PR is in scope — ordinary feature PRs have changesets
+    # pending by design and must not be judged on bump level, since one minor anywhere in the
+    # release window covers the release.
+    if: github.base_ref == 'main' || github.head_ref == 'changeset-release/next'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true # both assertions compare against the last v* tag
+
+      - name: No changesets may be pending
+        run: |
+          PENDING=$(find .changeset -name "*.md" -not -name "README.md" 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$PENDING" -ne 0 ]; then
+            echo "::error::$PENDING changeset(s) are still pending. Versioning happens on next: merge the open \"Version Packages\" PR there first. Merging this would put unversioned work on main, and publish.yml would refuse to run."
+            find .changeset -name "*.md" -not -name "README.md" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "No pending changesets — releasing $(jq -r .version packages/Entities/package.json)"
+
+      - name: A release carrying migrations must be at least a minor
+        env:
+          BUMP_LEVEL_EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'bump-level-exempt') }}
+        run: ./ci/check-bump-level.sh
+
+      - name: Summary
+        run: echo "Releasing **$(jq -r .version packages/Entities/package.json)**" >> "$GITHUB_STEP_SUMMARY"

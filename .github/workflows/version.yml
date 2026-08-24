@@ -1,0 +1,76 @@
+# Maintains the "Version Packages" PR into `next`.
+#
+# This workflow NEVER publishes. Its only job is to turn the changesets sitting on `next`
+# into a reviewable pull request containing the version bumps, the generated CHANGELOGs,
+# the mj-app.json version sync, and a refreshed lockfile. Merging that PR is what makes
+# `next` genuinely hold the new version.
+#
+# Why it exists: the release used to compute the version at publish time and push the
+# result straight to `main` (and then to `next`). Both branches are covered by the
+# `main-next-protect` ruleset, which requires a pull request, and `github-actions[bot]`
+# cannot be granted a bypass — GitHub blocks that by design. Accounting's 0.2.0 published
+# to npm and then failed with `GH013`, leaving the registry at 0.2.0 and the repo at
+# 0.1.1 with no tag. Routing the bump through a PR removes the need to write to a
+# protected branch at all, which is also the pattern `changesets/action` is built for.
+name: Version Packages
+
+on:
+  push:
+    branches: [next]
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the changeset-release/next branch
+  pull-requests: write # open and update the Version Packages PR
+
+concurrency:
+  group: version-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true # the bump-level check compares migrations/ against the last v* tag
+
+      # Must precede setup-node: `cache: 'pnpm'` needs pnpm already on PATH.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: 'pnpm-lock.yaml'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: changesets/action@v1
+        with:
+          # Pinned to v1 because this repo runs Changesets CLI v2 (`@changesets/cli ^2.29.8`).
+          # The action version-gates on the CLI major and v2.x refuses outright:
+          #   "This version of the Changesets action is designed to work with Changesets CLI
+          #    v3. Changesets CLI v2 is not supported; use Changesets action v1 instead."
+          # Moving to action v2 therefore means upgrading the CLI to v3 first — a separate
+          # change with its own changeset-format and config implications, not a pin bump.
+          #
+          # Input names are major-specific, and Actions IGNORES unknown inputs rather than
+          # failing, so a mismatch silently runs the action's defaults. v1 takes
+          # `version`/`publish`/`title`/`commit`; v2 takes `version-script`/`publish-script`/
+          # `pr-title`/`commit-message`. Passing v2 names to v1 is what produced a Version
+          # Packages PR with no lockfile refresh and no mj-app.json sync — the tell was the
+          # PR title falling back to the default "Version Packages".
+          #
+          # No `publish` input: this workflow only ever versions.
+          version: pnpm run version:ci
+          title: 'chore(release): version packages'
+          commit: 'chore(release): version packages'
+          # NOTE: with the default GITHUB_TOKEN, PRs this action opens do NOT trigger other
+          # workflows (GitHub's anti-recursion rule), so build.yml will not run on the
+          # Version Packages PR and `--frozen-lockfile` goes unverified until merge. Swap in
+          # a GitHub App token to fix that — App-created PRs do trigger workflows.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
