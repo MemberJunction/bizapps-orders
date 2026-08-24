@@ -312,7 +312,7 @@ export class MJOOrderDocumentPageComponent implements OnInit {
     }
 
     public get IsPaid(): boolean {
-        return this.Order?.PaymentStatus === 'Paid' && (this.Order?.Balance ?? 0) === 0;
+        return (this.Order?.Balance ?? 0) <= 0 && (this.Order?.TotalGross ?? 0) > 0;
     }
 
     public get Subtotal(): number {

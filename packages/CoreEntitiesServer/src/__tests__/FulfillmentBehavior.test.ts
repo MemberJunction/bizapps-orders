@@ -119,10 +119,8 @@ describe('AutoAdvances', () => {
 });
 
 describe('RefuseFlip', () => {
-    it('allows a pending physical line on a Posted order', () => {
-        expect(RefuseFlip(line(), 'Posted')).toBeNull();
+    it('allows a pending physical line on a Confirmed order', () => {
         expect(RefuseFlip(line(), 'Confirmed')).toBeNull();
-        expect(RefuseFlip(line(), 'Fulfilled')).toBeNull();
     });
 
     it('refuses before Confirmed, and on a Voided order', () => {
@@ -133,11 +131,11 @@ describe('RefuseFlip', () => {
     });
 
     it('refuses a missing line, a non-fulfillable type, a reversal, a parent, and a repeat', () => {
-        expect(RefuseFlip(null, 'Posted')).toBe('LineNotFound');
-        expect(RefuseFlip(line({ RequiresFulfillment: false }), 'Posted')).toBe('DoesNotRequireFulfillment');
-        expect(RefuseFlip(line({ ReversesOrderLineID: 'x' }), 'Posted')).toBe('IsReversal');
-        expect(RefuseFlip(line({ IsRollupParent: true }), 'Posted')).toBe('IsRollupParent');
-        expect(RefuseFlip(line({ FulfillmentStatus: 'Fulfilled' }), 'Posted')).toBe('AlreadyFulfilled');
+        expect(RefuseFlip(null, 'Confirmed')).toBe('LineNotFound');
+        expect(RefuseFlip(line({ RequiresFulfillment: false }), 'Confirmed')).toBe('DoesNotRequireFulfillment');
+        expect(RefuseFlip(line({ ReversesOrderLineID: 'x' }), 'Confirmed')).toBe('IsReversal');
+        expect(RefuseFlip(line({ IsRollupParent: true }), 'Confirmed')).toBe('IsRollupParent');
+        expect(RefuseFlip(line({ FulfillmentStatus: 'Fulfilled' }), 'Confirmed')).toBe('AlreadyFulfilled');
     });
 
     it('checks the ORDER state before the line, so the message names the real blocker', () => {

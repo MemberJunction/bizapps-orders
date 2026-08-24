@@ -489,17 +489,20 @@ export class MJOOrderEditorPageComponent implements OnInit, OnChanges, OnDestroy
     }
 
     /**
-     * Null while the order is a draft — an unsaved order has no payment state to report.
-     *
-     * Narrowed rather than cast. `mjBizAppsOrdersOrderHeaderEntity.PaymentStatus` is a plain `string` off the view,
-     * and the strip takes the union; a cast would compile and then render an unstyled chip for
-     * any value the column grows later. Checking against the union means an unrecognised value
-     * shows nothing at all, which is the honest outcome.
+     * Null while the order is a draft or voided — an unsaved or draft order has no payment state to report.
+     * Derived dynamically from TotalGross, AmountPaid, Balance, and DueDate.
      */
     public get DisplayPaymentStatus(): MJOPaymentStatus | null {
-        const status = this.Persisted?.PaymentStatus;
-        const known: MJOPaymentStatus[] = ['Unpaid', 'PartiallyPaid', 'Paid', 'Overdue', 'WrittenOff'];
-        return known.find((s) => s === status) ?? null;
+        if (!this.Persisted || this.Persisted.Status === 'Draft' || this.Persisted.Status === 'Voided') {
+            return null;
+        }
+        const gross = Number(this.Persisted.TotalGross ?? 0);
+        const paid = Number(this.Persisted.AmountPaid ?? 0);
+        const bal = this.Persisted.Balance != null ? Number(this.Persisted.Balance) : gross - paid;
+        if (bal <= 0 && gross > 0) return 'Paid';
+        if (this.Persisted.DueDate && new Date(this.Persisted.DueDate) < new Date() && bal > 0) return 'Overdue';
+        if (paid > 0) return 'PartiallyPaid';
+        return 'Unpaid';
     }
 
     /** What has actually reached this order, summed from its allocations. */

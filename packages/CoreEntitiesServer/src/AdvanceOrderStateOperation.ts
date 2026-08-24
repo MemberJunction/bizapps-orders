@@ -50,10 +50,10 @@ const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 const quote = (ids: string[]): string => [...new Set(ids.map((i) => `'${i}'`))].join(',');
 
 /** The status ladder, in the order an order climbs it. */
-const LADDER = ['Draft', 'Quoted', 'Confirmed', 'Posted', 'Fulfilled'] as const;
+const LADDER = ['Draft', 'Quoted', 'Confirmed'] as const;
 
 /** Where this operation will take an order. Everything else is somebody else's job. */
-const ACCEPTED_TARGETS = new Set(['Posted', 'Fulfilled']);
+const ACCEPTED_TARGETS = new Set(['Fulfilled', 'Confirmed', 'Posted']);
 
 interface AdvanceOrderStateInput {
     OrderHeaderID: string;
@@ -94,7 +94,7 @@ export class AdvanceOrderStateOperation extends BaseRemotableOperation<
             return this.refuse(target, [
                 this.blocker(
                     'UNSUPPORTED_TARGET',
-                    `'${target || '(none)'}' is not a state this operation advances to. Use Posted or Fulfilled.`,
+                    `'${target || '(none)'}' is not a state this operation advances to. Use Fulfilled.`,
                     target === 'Draft' || target === 'Quoted' || target === 'Confirmed'
                         ? 'Those states are reached by saving the order itself — set Status and call Save(). ' +
                           'Confirmed runs the booking walk on the way through, which is where it belongs.'
@@ -121,12 +121,8 @@ export class AdvanceOrderStateOperation extends BaseRemotableOperation<
         const transitions: OrderStateTransition[] = [];
         let unfulfilled = 0;
 
-        // AN ORDER THAT HAS NOT BOOKED CANNOT BE ADVANCED. The ladder above Confirmed presumes the
-        // confirm already ran — the journal entries, the subscriptions, the entitlements. Advancing a
-        // Draft from here would produce an order that reads Fulfilled with no ledger behind it, which
-        // is exactly the failure nothing downstream can detect: it reconciles against itself, and the
-        // money simply never existed (D17).
-        if (LADDER.indexOf(status as never) < LADDER.indexOf('Confirmed')) {
+        // AN ORDER THAT HAS NOT BOOKED CANNOT BE ADVANCED.
+        if (status !== 'Confirmed') {
             return this.refuse(
                 target,
                 [
@@ -142,13 +138,11 @@ export class AdvanceOrderStateOperation extends BaseRemotableOperation<
             );
         }
 
-        if (LADDER.indexOf(target as never) <= LADDER.indexOf(status as never)) {
-            // Already there, or beyond. Reporting success is honest: the caller asked for a state and
-            // the order is in it. Reporting a failure would make a re-run of an interrupted migration
-            // look like a broken one.
+        if (target === 'Posted' || target === 'Confirmed') {
+            // Already confirmed/booked.
             return {
                 Success: true,
-                Message: `The order is already ${status}.`,
+                Message: `The order is already Confirmed and booked to the ledger.`,
                 OrderHeaderID: orderID,
                 OrderNumber: header.OrderNumber ?? null,
                 Status: status,
@@ -162,42 +156,52 @@ export class AdvanceOrderStateOperation extends BaseRemotableOperation<
 
         const rv = new RunView(provider as unknown as IRunViewProvider);
 
-        if (LADDER.indexOf(target as never) >= LADDER.indexOf('Posted') && status === 'Confirmed') {
-            const moved = await this.setStatus(header, 'Posted', input?.Reason);
-            transitions.push({ From: status, To: 'Posted', Applied: moved.ok, Reason: moved.reason });
-            if (!moved.ok) return this.stopped(orderID, header, target, status, transitions, unfulfilled, provider);
-            status = 'Posted';
-        }
-
         if (target === 'Fulfilled') {
-            // Mark the fulfillable lines FIRST. An order that reads Fulfilled while its lines read
-            // Pending is a promise the system claims to have kept and has no record of — the queue
-            // would keep offering them, and the order would never appear in it.
+            if (header.FulfillmentStatus === 'Fulfilled') {
+                return {
+                    Success: true,
+                    Message: `The order is already Fulfilled.`,
+                    OrderHeaderID: orderID,
+                    OrderNumber: header.OrderNumber ?? null,
+                    Status: status,
+                    RequestedStatus: target,
+                    Transitions: [],
+                    ...(await this.readBookedEntries(orderID, provider)),
+                    UnfulfilledLineCount: 0,
+                    Blockers: [],
+                };
+            }
+
+            // Mark the fulfillable lines FIRST.
             unfulfilled = await this.fulfillLines(orderID, rv, provider, user);
 
             if (unfulfilled > 0 && !input?.ForceFulfillment) {
                 transitions.push({
-                    From: status,
+                    From: header.FulfillmentStatus ?? 'Pending',
                     To: 'Fulfilled',
                     Applied: false,
                     Reason:
-                        `${unfulfilled} fulfillable line(s) could not be marked Fulfilled. The order is ` +
-                        `Posted and sits in the fulfilment queue. Set ForceFulfillment to advance anyway.`,
+                        `${unfulfilled} fulfillable line(s) could not be marked Fulfilled. The order sits in ` +
+                        `the fulfillment queue. Set ForceFulfillment to advance anyway.`,
                 });
                 return this.stopped(orderID, header, target, status, transitions, unfulfilled, provider);
             }
 
-            const moved = await this.setStatus(header, 'Fulfilled', input?.Reason);
+            header.FulfillmentStatus = 'Fulfilled';
+            if (input?.Reason) {
+                const existing = header.Description ?? '';
+                header.Description = existing ? `${existing} — ${input.Reason}` : input.Reason;
+            }
+            const saved = await header.Save();
             transitions.push({
-                From: status,
+                From: 'Pending',
                 To: 'Fulfilled',
-                Applied: moved.ok,
+                Applied: saved,
                 Reason:
-                    moved.ok && unfulfilled > 0
+                    saved && unfulfilled > 0
                         ? `Forced with ${unfulfilled} line(s) still Pending.`
-                        : moved.reason,
+                        : header.LatestResult?.CompleteMessage ?? null,
             });
-            if (moved.ok) status = 'Fulfilled';
         }
 
         const booked = await this.readBookedEntries(orderID, provider);

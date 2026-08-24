@@ -579,10 +579,9 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
 
     protected statusClass(order: mjBizAppsOrdersOrderHeaderEntity): string {
         switch (order.Status) {
-            case 'Posted':
-            case 'Fulfilled':
-                return 'mj-chip--success';
             case 'Confirmed':
+                return 'mj-chip--success';
+            case 'Quoted':
                 return 'mj-chip--info';
             case 'Voided':
                 return 'mj-chip--outline';
@@ -677,23 +676,16 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
 
     public get Queues(): MJOQueue[] {
         const drafts = this.orders.filter((o) => o.Status === 'Draft' || o.Status === 'Quoted').length;
-        const notPosted = this.orders.filter((o) => o.Status === 'Confirmed').length;
+        const awaitingFulfillment = this.orders.filter(
+            (o) => o.Status === 'Confirmed' && (o.FulfillmentStatus === 'Pending' || o.FulfillmentStatus === 'PartiallyFulfilled')
+        ).length;
 
         const all: MJOQueue[] = [
             { Label: 'Drafts waiting to be finished', Count: drafts, Icon: 'fa-solid fa-pen-ruler', Tone: 'neutral', PageId: 'list', Preset: 'drafts' },
             {
-                Label: 'Confirmed but not posted',
-                Note: 'Normally seconds — investigate if one lingers',
-                Count: notPosted,
-                Icon: 'fa-solid fa-clock',
-                Tone: 'info',
-                PageId: 'list',
-                Preset: 'all'
-            },
-            {
                 Label: 'Fulfillment queue (items waiting to ship)',
                 Note: 'Order lines ready for picking and shipment',
-                Count: this.orders.filter(o => o.Status === 'Posted' || o.Status === 'Confirmed').length,
+                Count: awaitingFulfillment,
                 Icon: 'fa-solid fa-dolly',
                 Tone: 'warning',
                 PageId: 'fulfillment'
@@ -717,7 +709,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         for (const order of this.orders) {
             counts.set(order.Status, (counts.get(order.Status) ?? 0) + 1);
         }
-        const order = ['Draft', 'Quoted', 'Confirmed', 'Posted', 'Fulfilled'];
+        const order = ['Draft', 'Quoted', 'Confirmed', 'Voided'];
         return order
             .filter((s) => counts.has(s))
             .map((s) => ({ Label: s, Value: counts.get(s)!, Display: String(counts.get(s)) }));

@@ -47,7 +47,7 @@ import {
 export type OrderEditorSection = 'header' | 'parties' | 'lines' | 'charges' | 'payment';
 
 /** Statuses that mean the order has been booked to the ledger (plan D8). */
-const BOOKED_STATUSES = new Set(['Confirmed', 'Posted', 'Fulfilled']);
+const BOOKED_STATUSES = new Set(['Confirmed']);
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Headers')
 export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {

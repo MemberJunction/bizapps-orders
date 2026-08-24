@@ -19,7 +19,8 @@ interface OrderRow {
     OrderNumber: string;
     OrderDate: Date | string | null;
     Status: string;
-    PaymentStatus: string;
+    FulfillmentStatus?: string;
+    PaymentStatus?: string;
     TotalGross: number;
     AmountPaid: number;
     Balance: number;
@@ -209,8 +210,8 @@ interface TimelineItem {
                                                 <td>{{ FormatDate(ord.OrderDate) }}</td>
                                                 <td class="mjo-table__amount">{{ FormatCurrency(ord.TotalGross) }}</td>
                                                 <td>
-                                                    <span [class]="GetPaymentBadgeClass(ord.PaymentStatus)">
-                                                        {{ ord.PaymentStatus || 'Paid' }}
+                                                    <span [class]="GetPaymentBadgeClass(GetPaymentStatus(ord))">
+                                                        {{ GetPaymentStatus(ord) }}
                                                     </span>
                                                 </td>
                                                 <td>
@@ -953,7 +954,7 @@ export class PartyOrdersOverviewComponent implements OnInit {
             this.Orders.forEach(ord => {
                 list.push({
                     Title: `Order ${ord.OrderNumber} ${ord.Status || 'Confirmed'}`,
-                    Subtitle: `${this.FormatCurrency(ord.TotalGross)} • ${ord.PaymentStatus || 'Paid'}`,
+                    Subtitle: `${this.FormatCurrency(ord.TotalGross)} • ${this.GetPaymentStatus(ord)}`,
                     TimeAgo: this.FormatDate(ord.OrderDate),
                     Icon: 'fa-solid fa-cart-shopping',
                     Tone: 'success',
@@ -1048,6 +1049,15 @@ export class PartyOrdersOverviewComponent implements OnInit {
         const date = d instanceof Date ? d : new Date(d);
         if (isNaN(date.getTime())) return '—';
         return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    public GetPaymentStatus(ord: OrderRow): string {
+        const bal = ord.Balance != null ? Number(ord.Balance) : (Number(ord.TotalGross ?? 0) - Number(ord.AmountPaid ?? 0));
+        const paid = Number(ord.AmountPaid ?? 0);
+        const gross = Number(ord.TotalGross ?? 0);
+        if (bal <= 0 && gross > 0) return 'Paid';
+        if (paid > 0) return 'PartiallyPaid';
+        return 'Unpaid';
     }
 
     public GetPaymentBadgeClass(status: string | null | undefined): string {

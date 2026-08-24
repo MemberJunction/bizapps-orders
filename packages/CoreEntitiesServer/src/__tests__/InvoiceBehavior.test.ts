@@ -111,7 +111,7 @@ describe('document kind', () => {
     });
 
     it('renders every other status', () => {
-        for (const status of ['Draft', 'Quoted', 'Confirmed', 'Posted', 'Fulfilled'])
+        for (const status of ['Draft', 'Quoted', 'Confirmed'])
             expect(CanRender(status).OK).toBe(true);
     });
 

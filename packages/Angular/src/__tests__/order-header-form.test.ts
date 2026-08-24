@@ -159,7 +159,7 @@ describe('order header link wiring', () => {
         expect(ts).toContain('RunConfirm()');
         expect(header).toContain('Check / ACH reference');
         expect(header).toMatch(/FieldName="Status"[\s\S]*?\[EditMode\]="false"/);
-        expect(header).toMatch(/FieldName="PaymentStatus"[\s\S]*?\[EditMode\]="false"/);
+        expect(header).toMatch(/FieldName="FulfillmentStatus"[\s\S]*?\[EditMode\]="false"/);
     });
 
     it('keeps existing line extensions collapsed behind a disclosure', () => {

@@ -71,10 +71,8 @@ export class GetFulfillmentQueueOperation extends OrdersGetFulfillmentQueueOpera
             ? RequireUUID(input.ShipToAddressID, 'ShipToAddressID')
             : null;
 
-        // ── the candidate ORDERS ──
-        // Confirmed and Posted only. A Draft owes nothing so nothing can ship; a Fulfilled order has
-        // no work left; a Voided one is out entirely.
-        const filters: string[] = [`Status IN ('Confirmed','Posted')`];
+        // Confirmed orders with pending/partial fulfillment.
+        const filters: string[] = [`Status = 'Confirmed' AND FulfillmentStatus IN ('Pending', 'PartiallyFulfilled')`];
         if (input?.CompanyIDs?.length) filters.push(`CompanyID IN (${quote(input.CompanyIDs)})`);
         if (input?.BillToOrganizationID) {
             filters.push(`BillToOrganizationID = '${RequireUUID(input.BillToOrganizationID, 'BillToOrganizationID')}'`);
