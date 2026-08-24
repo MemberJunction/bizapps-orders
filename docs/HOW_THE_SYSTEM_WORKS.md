@@ -89,6 +89,18 @@ Idempotency keys off `ConfirmedAt`. Re-saving a confirmed order updates the row 
 
 Failure **blocks** Confirm. A confirmed order without its journal entries is invalid state; there is no partial-success path.
 
+### 4.1 Order Lifecycle and 3-Way Orthogonal Status
+The order state is decoupled into three independent dimensions:
+1. **Commercial Status (`Status`)**: `'Draft' | 'Quoted' | 'Confirmed' | 'Voided'`.
+   - `'Confirmed'` is the irreversible booking gate (books JEs).
+2. **Operational Fulfillment (`FulfillmentStatus`)**: `'Pending' | 'PartiallyFulfilled' | 'Fulfilled' | 'NotApplicable' | 'Returned'`.
+   - Trigger-maintained and rolled up across lines via `spRecalcOrderHeaderTotals`.
+3. **Financial / Payment Progress**: Real-time numeric balance facts (`TotalGross`, `AmountPaid`, `Balance`, `DueDate`). No separate stored column.
+
+**Party Auto-Population**: On a new unsaved order (`!order.IsSaved`), setting `ShipToPersonID` or `BillToPersonID` queries `__mj_BizAppsCommon.Relationship` for active employer affiliations. If exactly one active employer organization exists, `ShipToOrganizationID` (or `BillToOrganizationID`) is auto-populated. Setting `ShipTo` cascades to `BillTo` if `BillTo` is completely empty.
+
+**Confirm Pre-Flight**: Confirm is a direct toolbar action and verb (`order.Confirm()`) that validates all conditions and books immediately in one transaction; no modal overlay is needed.
+
 ### What is still a remote operation
 
 An operation is an **act** the entity cannot express: decide over a set, talk to a third party, or stay atomic with a write that is not "save this graph."
@@ -97,13 +109,13 @@ An operation is an **act** the entity cannot express: decide over a set, talk to
 |---|---|
 | `Orders.PriceOrder` | Price without writing. Same `OrderPricingService` the save path uses. |
 | `Orders.PreviewPrice` | One product's advisory price. Promotions stack against totals, so this cannot be final. |
-| `Orders.AdvanceOrderState` | Climb above Confirmed. Marks a set of lines fulfilled. |
+| `Orders.AdvanceOrderState` | Advances fulfillment progress on Confirmed orders. |
 | `Orders.CapturePayment` | Settle with the provider, then record money. |
 | `Orders.RefundPayment` | Reversal payment + un-apply, atomically. |
 | `Orders.ApplyAccountCredit` | Spend a credit (zero-amount payment, two offsetting lines). |
-| `Orders.FulfillOrderLines` | Flip lines and close the order, one act. |
-| `Orders.GetFulfillmentQueue` | Computed backlog. |
-| `Orders.GetOverdueWorklist` | Computed overdue. |
+| `Orders.FulfillOrderLines` | Mark lines fulfilled and update header `FulfillmentStatus`. |
+| `Orders.GetFulfillmentQueue` | Computed backlog of unfulfilled confirmed order lines. |
+| `Orders.GetOverdueWorklist` | Computed overdue receivables. |
 | `Orders.CancelSubscription` | Policy in, reversal out. |
 | `Orders.SpawnRenewals` | Long-running: place renewal orders at lead time. |
 
@@ -146,7 +158,7 @@ Results persist as line price-component / charge / adjustment children so the bo
 
 `Payment Header` + `Payment Line` apply cash to Order Headers. Split tender (one payment, many orders) and partial application (one order, many payments) are first-class.
 
-- Header rollups (`TotalGross`, `AmountPaid`, `Balance`, `PaymentStatus`) are materialized from lines and payment lines. Do not author them.
+- Header rollups (`TotalGross`, `AmountPaid`, `Balance`, `FulfillmentStatus`) are materialized from lines and payment lines. Do not author them.
 - Capture books Dr Cash (net) / Dr Processing Fee / Cr A/R (gross).
 - Refund / chargeback / bank-return is a **negative** payment (`ReversesPaymentID`). Use `Orders.RefundPayment`.
 - Over-payment is a **negative Balance** — that *is* the account credit. Spend it with `Orders.ApplyAccountCredit`.

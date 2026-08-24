@@ -29,11 +29,12 @@
  *
  * @module @mj-biz-apps/orders-entities
  */
-import { BaseEntity, EmbeddedRecord, ValidationErrorInfo, ValidationErrorType, ValidationResult, type FieldValueCollection } from '@memberjunction/core';
+import { BaseEntity, EmbeddedRecord, ValidationErrorInfo, ValidationErrorType, ValidationResult, RunView, type FieldValueCollection, type IRunViewProvider } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import type { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentDetailEntity } from './generated/entity_subclasses';
 import { CanOfferConfirm, CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
+import { ResolveSingularActiveEmployerOrganization } from './PartyAffiliationBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
@@ -508,4 +509,71 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return true;
     }
 
+    public override get ShipToPersonID(): string | null {
+        return super.ShipToPersonID;
+    }
+
+    public override set ShipToPersonID(value: string | null) {
+        super.ShipToPersonID = value;
+        if (!this.IsSaved && value && !this.ShipToOrganizationID) {
+            void this.AutoPopulateEmployerOrganization('ShipTo', value);
+        }
+    }
+
+    public override get BillToPersonID(): string | null {
+        return super.BillToPersonID;
+    }
+
+    public override set BillToPersonID(value: string | null) {
+        super.BillToPersonID = value;
+        if (!this.IsSaved && value && !this.BillToOrganizationID) {
+            void this.AutoPopulateEmployerOrganization('BillTo', value);
+        }
+    }
+
+    /**
+     * Auto-populates the organization (ShipToOrganizationID or BillToOrganizationID)
+     * if the designated person has a singular active employer relationship, and the target
+     * organization is currently unset on this new unsaved order.
+     *
+     * When populating ShipTo on a new order, if BillTo is also completely empty, BillTo will
+     * sync from ShipTo.
+     */
+    public async AutoPopulateEmployerOrganization(
+        partyRole: 'ShipTo' | 'BillTo' = 'ShipTo',
+        personID?: string | null,
+    ): Promise<string | null> {
+        if (this.IsSaved) return null; // only on new/unsaved records
+
+        const targetPersonID = personID ?? (partyRole === 'ShipTo' ? this.ShipToPersonID : this.BillToPersonID);
+        if (!targetPersonID) return null;
+
+        const currentOrgID = partyRole === 'ShipTo' ? this.ShipToOrganizationID : this.BillToOrganizationID;
+        if (currentOrgID) return currentOrgID;
+
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        if (!provider) return null;
+
+        const asOf = this.OrderDate ?? new Date();
+        const orgId = await ResolveSingularActiveEmployerOrganization(provider, targetPersonID, asOf, this.ContextCurrentUser);
+
+        if (orgId) {
+            if (partyRole === 'ShipTo') {
+                if (!this.ShipToOrganizationID) {
+                    this.ShipToOrganizationID = orgId;
+                }
+                if (!this.BillToPersonID && !this.BillToOrganizationID) {
+                    this.BillToPersonID = targetPersonID;
+                    this.BillToOrganizationID = orgId;
+                }
+            } else {
+                if (!this.BillToOrganizationID) {
+                    this.BillToOrganizationID = orgId;
+                }
+            }
+            return orgId;
+        }
+
+        return null;
+    }
 }

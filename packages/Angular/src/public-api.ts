@@ -93,8 +93,6 @@ export * from './lib/data/entity-names';
 export * from './lib/data/orders-queries';
 
 /** Screens. */
-export * from './lib/pages/orders/order-editor.page';
-export * from './lib/pages/orders/order-workspace.page';
 export * from './lib/pages/orders/orders-list.page';
 export * from './lib/pages/orders/orders-dashboard.page';
 export * from './lib/pages/orders/fulfillment.page';
