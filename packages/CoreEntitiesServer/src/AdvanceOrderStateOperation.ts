@@ -53,7 +53,7 @@ const quote = (ids: string[]): string => [...new Set(ids.map((i) => `'${i}'`))].
 const LADDER = ['Draft', 'Quoted', 'Confirmed'] as const;
 
 /** Where this operation will take an order. Everything else is somebody else's job. */
-const ACCEPTED_TARGETS = new Set(['Fulfilled', 'Confirmed', 'Posted']);
+const ACCEPTED_TARGETS = new Set(['Fulfilled']);
 
 interface AdvanceOrderStateInput {
     OrderHeaderID: string;
@@ -117,7 +117,7 @@ export class AdvanceOrderStateOperation extends BaseRemotableOperation<
         }
 
         const orderID = header.ID;
-        let status = header.Status ?? 'Draft';
+        const status = header.Status ?? 'Draft';
         const transitions: OrderStateTransition[] = [];
         let unfulfilled = 0;
 
@@ -138,14 +138,15 @@ export class AdvanceOrderStateOperation extends BaseRemotableOperation<
             );
         }
 
-        if (target === 'Posted' || target === 'Confirmed') {
-            // Already confirmed/booked.
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+
+        if (header.FulfillmentStatus === 'Fulfilled') {
             return {
                 Success: true,
-                Message: `The order is already Confirmed and booked to the ledger.`,
+                Message: `The order is already Fulfilled.`,
                 OrderHeaderID: orderID,
                 OrderNumber: header.OrderNumber ?? null,
-                Status: status,
+                Status: 'Fulfilled',
                 RequestedStatus: target,
                 Transitions: [],
                 ...(await this.readBookedEntries(orderID, provider)),
@@ -154,65 +155,45 @@ export class AdvanceOrderStateOperation extends BaseRemotableOperation<
             };
         }
 
-        const rv = new RunView(provider as unknown as IRunViewProvider);
+        // Mark the fulfillable lines FIRST.
+        unfulfilled = await this.fulfillLines(orderID, rv, provider, user);
 
-        if (target === 'Fulfilled') {
-            if (header.FulfillmentStatus === 'Fulfilled') {
-                return {
-                    Success: true,
-                    Message: `The order is already Fulfilled.`,
-                    OrderHeaderID: orderID,
-                    OrderNumber: header.OrderNumber ?? null,
-                    Status: status,
-                    RequestedStatus: target,
-                    Transitions: [],
-                    ...(await this.readBookedEntries(orderID, provider)),
-                    UnfulfilledLineCount: 0,
-                    Blockers: [],
-                };
-            }
-
-            // Mark the fulfillable lines FIRST.
-            unfulfilled = await this.fulfillLines(orderID, rv, provider, user);
-
-            if (unfulfilled > 0 && !input?.ForceFulfillment) {
-                transitions.push({
-                    From: header.FulfillmentStatus ?? 'Pending',
-                    To: 'Fulfilled',
-                    Applied: false,
-                    Reason:
-                        `${unfulfilled} fulfillable line(s) could not be marked Fulfilled. The order sits in ` +
-                        `the fulfillment queue. Set ForceFulfillment to advance anyway.`,
-                });
-                return this.stopped(orderID, header, target, status, transitions, unfulfilled, provider);
-            }
-
-            header.FulfillmentStatus = 'Fulfilled';
-            if (input?.Reason) {
-                const existing = header.Description ?? '';
-                header.Description = existing ? `${existing} — ${input.Reason}` : input.Reason;
-            }
-            const saved = await header.Save();
+        if (unfulfilled > 0 && !input?.ForceFulfillment) {
             transitions.push({
-                From: 'Pending',
+                From: header.FulfillmentStatus ?? 'Pending',
                 To: 'Fulfilled',
-                Applied: saved,
+                Applied: false,
                 Reason:
-                    saved && unfulfilled > 0
-                        ? `Forced with ${unfulfilled} line(s) still Pending.`
-                        : header.LatestResult?.CompleteMessage ?? null,
+                    `${unfulfilled} fulfillable line(s) could not be marked Fulfilled. The order sits in ` +
+                    `the fulfillment queue. Set ForceFulfillment to advance anyway.`,
             });
+            return this.stopped(orderID, header, target, header.FulfillmentStatus ?? 'Pending', transitions, unfulfilled, provider);
         }
+
+        header.FulfillmentStatus = 'Fulfilled';
+        if (input?.Reason) {
+            const existing = header.Description ?? '';
+            header.Description = existing ? `${existing} — ${input.Reason}` : input.Reason;
+        }
+        const saved = await header.Save();
+        transitions.push({
+            From: 'Pending',
+            To: 'Fulfilled',
+            Applied: saved,
+            Reason:
+                saved && unfulfilled > 0
+                    ? `Forced with ${unfulfilled} line(s) still Pending.`
+                    : header.LatestResult?.CompleteMessage ?? null,
+        });
 
         const booked = await this.readBookedEntries(orderID, provider);
 
         return {
-            Success: status === target,
-            Message:
-                status === target ? undefined : `The order stopped at ${status} rather than ${target}.`,
+            Success: saved,
+            Message: saved ? undefined : `The order could not be advanced to Fulfilled: ${header.LatestResult?.CompleteMessage ?? 'Save failed'}`,
             OrderHeaderID: orderID,
             OrderNumber: header.OrderNumber ?? null,
-            Status: status,
+            Status: saved ? 'Fulfilled' : (header.FulfillmentStatus ?? 'Pending'),
             RequestedStatus: target,
             Transitions: transitions,
             EntryCount: booked.EntryCount,

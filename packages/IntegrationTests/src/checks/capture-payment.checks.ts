@@ -40,6 +40,7 @@
  *   DOC:  docs/spec-capture-payment-operation.md · plans/archive/bizapps-orders-master.md D68
  */
 import { randomUUID } from "node:crypto";
+import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";
 import { BaseRemotableOperation } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
 import {
@@ -129,11 +130,16 @@ const base = (ctx: IntegrationCheckContext, amount: number, orderID: string) => 
   };
 };
 
-const orderRow = (ctx: IntegrationCheckContext, orderID: string) =>
-  TxOne<{ AmountPaid: number; Balance: number; PaymentStatus: string }>(
+const orderRow = async (ctx: IntegrationCheckContext, orderID: string) => {
+  const row = await TxOne<{ TotalGross: number; AmountPaid: number; Balance: number }>(
     ctx,
-    `SELECT AmountPaid, Balance, PaymentStatus FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
+    `SELECT TotalGross, AmountPaid, Balance FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
   );
+  return {
+    ...row,
+    PaymentStatus: DerivePaymentStatus(row.TotalGross, row.AmountPaid, row.Balance),
+  };
+};
 
 export const CapturePaymentChecks: NamedCheck[] = [
   {

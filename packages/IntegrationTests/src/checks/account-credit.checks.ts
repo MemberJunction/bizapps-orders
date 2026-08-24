@@ -24,6 +24,7 @@
  *   DOC:   plans/archive/bizapps-orders-master.md D68
  */
 import { randomUUID } from "crypto";
+import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";
 import { BaseRemotableOperation } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
 import {
@@ -148,12 +149,17 @@ async function payToCoA(
   });
 }
 
-const orderRow = (ctx: IntegrationCheckContext, orderID: string) =>
-  TxOne<{ Balance: number; AmountPaid: number; TotalGross: number; PaymentStatus: string }>(
+const orderRow = async (ctx: IntegrationCheckContext, orderID: string) => {
+  const row = await TxOne<{ Balance: number; AmountPaid: number; TotalGross: number }>(
     ctx,
-    `SELECT Balance, AmountPaid, TotalGross, PaymentStatus
+    `SELECT Balance, AmountPaid, TotalGross
        FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
   );
+  return {
+    ...row,
+    PaymentStatus: DerivePaymentStatus(row.TotalGross, row.AmountPaid, row.Balance),
+  };
+};
 
 /** Run Orders.ApplyAccountCredit through the remote-operation seam. */
 async function applyCredit(

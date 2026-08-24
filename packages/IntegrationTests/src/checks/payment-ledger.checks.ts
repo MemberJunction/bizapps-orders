@@ -27,6 +27,7 @@
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
 import { randomUUID } from "node:crypto";
+import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";
 import { BaseRemotableOperation } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
 import {
@@ -416,12 +417,12 @@ export const PaymentLedgerChecks: NamedCheck[] = [
         AssertEqual(Number(cash.Net) - baseCash, 250, "and the cash landed");
 
         // The sub-ledger agrees with the ledger, which is the whole point.
-        const row = await TxOne<{ Balance: number; PaymentStatus: string }>(
+        const row = await TxOne<{ Balance: number; AmountPaid: number; TotalGross: number }>(
           ctx,
-          `SELECT Balance, PaymentStatus FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
+          `SELECT Balance, AmountPaid, TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
         );
         AssertEqual(Number(row.Balance), 0, "order balance");
-        AssertEqual(row.PaymentStatus, "Paid", "payment status");
+        AssertEqual(DerivePaymentStatus(row.TotalGross, row.AmountPaid, row.Balance), "Paid", "payment status");
       }),
   },
   {
@@ -561,9 +562,9 @@ export const PaymentLedgerChecks: NamedCheck[] = [
         );
         Assert(payment.ID != null, "the over-payment must be recordable");
 
-        const row = await TxOne<{ Balance: number; AmountPaid: number; PaymentStatus: string }>(
+        const row = await TxOne<{ Balance: number; AmountPaid: number }>(
           ctx,
-          `SELECT Balance, AmountPaid, PaymentStatus FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
+          `SELECT Balance, AmountPaid FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
         );
         AssertEqual(
           Number(row.AmountPaid),
@@ -673,12 +674,12 @@ export const PaymentLedgerChecks: NamedCheck[] = [
           "cash nets out",
         );
 
-        const row = await TxOne<{ Balance: number; PaymentStatus: string }>(
+        const row = await TxOne<{ Balance: number; AmountPaid: number; TotalGross: number }>(
           ctx,
-          `SELECT Balance, PaymentStatus FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
+          `SELECT Balance, AmountPaid, TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${order.Order.ID}'`,
         );
         AssertEqual(Number(row.Balance), 250, "the order is owed again");
-        AssertEqual(row.PaymentStatus, "Unpaid", "and reads unpaid");
+        AssertEqual(DerivePaymentStatus(row.TotalGross, row.AmountPaid, row.Balance), "Unpaid", "and reads unpaid");
       }),
   },
   {

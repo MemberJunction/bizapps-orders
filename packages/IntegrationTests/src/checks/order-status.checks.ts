@@ -87,9 +87,9 @@ export const OrderStatusChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
-        // Draft → Quoted → Draft → Confirmed → Posted → Fulfilled, each through OrderEntityServer.
+        // Draft → Quoted → Draft → Confirmed, each through OrderEntityServer.
         const order = await orderIn(ctx, "Draft");
-        for (const next of ["Quoted", "Draft", "Confirmed", "Posted", "Fulfilled"]) {
+        for (const next of ["Quoted", "Draft", "Confirmed"]) {
           const result = await moveTo(order as never, next);
           Assert(result.Saved, `${next} should be reachable: ${result.Message}`);
           AssertEqual((await statusOf(ctx, order.ID as string)).Status, next, `and persisted as ${next}`);

@@ -23,6 +23,7 @@
  */
 import { ApplicationSettingEngine } from '@memberjunction/core-entities';
 import { IMetadataProvider, Metadata, UserInfo } from '@memberjunction/core';
+import { GetGlobalObjectStore } from '@memberjunction/global';
 
 /** The `MJ: Applications` row this app's settings hang off. */
 const ORDERS_APPLICATION_NAME = '__mj_BizAppsOrders';
@@ -76,7 +77,23 @@ function asList(raw: string | undefined, fallback: readonly string[]): string[] 
     return parts;
 }
 
+const OVERRIDES_STORE_KEY = '__orders_settings_overrides__';
+
+interface GlobalWithOverrides {
+    [OVERRIDES_STORE_KEY]?: Map<string, string>;
+}
+
+function getOverridesMap(): Map<string, string> {
+    const g = globalThis as unknown as GlobalWithOverrides;
+    if (!g[OVERRIDES_STORE_KEY]) {
+        g[OVERRIDES_STORE_KEY] = new Map<string, string>();
+    }
+    return g[OVERRIDES_STORE_KEY]!;
+}
+
 export class OrdersSettings {
+    private static _localOverrides = new Map<string, string>();
+
     /**
      * Load the settings cache. Idempotent and cheap after the first call; the entity servers invoke
      * it on the booking path so callers rarely need to.
@@ -85,16 +102,49 @@ export class OrdersSettings {
         await ApplicationSettingEngine.Instance.Config(false, user, provider);
     }
 
+    /** Override a setting value for tests. Pass undefined to remove the override. */
+    public static SetOverride(key: string, value: string | undefined): void {
+        const map = getOverridesMap();
+        if (value === undefined) {
+            map.delete(key);
+            this._localOverrides.delete(key);
+        } else {
+            map.set(key, value);
+            this._localOverrides.set(key, value);
+        }
+        try {
+            const engine = ApplicationSettingEngine.Instance;
+            for (const s of engine.ApplicationSettings) {
+                if (s.Name === key) {
+                    s.Value = value ?? '';
+                }
+            }
+        } catch {
+            // ignore
+        }
+    }
+
+    /** Clear all test overrides. */
+    public static ClearOverrides(): void {
+        this._localOverrides.clear();
+        getOverridesMap().clear();
+    }
+
     /** The `__mj_BizAppsOrders` Application ID, or undefined when the app row is absent. */
     private static applicationID(): string | undefined {
-        return new Metadata().Applications?.find((a) => a.Name === ORDERS_APPLICATION_NAME)?.ID;
+        const apps = new Metadata().Applications;
+        return apps?.find((a) => a.Name === ORDERS_APPLICATION_NAME || a.Name === 'MJ_BizApps_Orders' || a.Name === 'Orders')?.ID;
     }
 
     private static raw(key: string): string | undefined {
+        if (this._localOverrides.has(key)) {
+            return this._localOverrides.get(key);
+        }
+        const map = getOverridesMap();
+        if (map.has(key)) {
+            return map.get(key);
+        }
         const appID = this.applicationID();
-        // Without the app row there is nothing to scope to; fall through to the defaults rather
-        // than reading some other application's setting of the same name.
-        if (!appID) return undefined;
         return ApplicationSettingEngine.Instance.GetSetting(key, appID);
     }
 

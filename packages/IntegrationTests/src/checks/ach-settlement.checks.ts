@@ -36,6 +36,7 @@
  *   DOC:  plans/archive/bizapps-orders-master.md D77, D78, D80
  */
 import { randomUUID } from "crypto";
+import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";
 import {
   Assert,
   AssertEqual,
@@ -210,11 +211,16 @@ const ledgerFor = (ctx: IntegrationCheckContext, paymentID: string) =>
        FROM e`,
   );
 
-const orderRow = (ctx: IntegrationCheckContext, orderID: string) =>
-  TxOne<{ Balance: number; AmountPaid: number; PaymentStatus: string | null }>(
+const orderRow = async (ctx: IntegrationCheckContext, orderID: string) => {
+  const row = await TxOne<{ Balance: number; AmountPaid: number; TotalGross: number }>(
     ctx,
-    `SELECT Balance, AmountPaid, PaymentStatus FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
+    `SELECT Balance, AmountPaid, TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
   );
+  return {
+    ...row,
+    PaymentStatus: DerivePaymentStatus(row.TotalGross, row.AmountPaid, row.Balance),
+  };
+};
 
 export const AchSettlementChecks: NamedCheck[] = [
   // ── Opening an intent ───────────────────────────────────────────────────────────────────────
