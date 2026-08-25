@@ -90,7 +90,7 @@ export async function LoadWorld(ctx: IntegrationCheckContext): Promise<WorldStat
         Assert(!!world.ProductTypeIDs[needed], `Product Type '${needed}' missing — push metadata/product-types`);
     }
 
-    await loadCompanies(ctx, world, currencyCode);
+    await loadCompanies(ctx, world, currencyCode, await resolveCFOUserID(ctx));
     await loadGLAccounts(ctx, world);
     await loadDimensions(ctx, world);
     await loadChargeTypeLinks(ctx, world, chargeTypeEntity?.ID);
@@ -135,7 +135,19 @@ async function productTypeMap(ctx: IntegrationCheckContext): Promise<Record<stri
     return out;
 }
 
-async function loadCompanies(ctx: IntegrationCheckContext, world: WorldState, currencyCode: string): Promise<void> {
+const SYSTEM_EMAILS = new Set(['not.set@nowhere.com', 'anonymous@magic-link.local']);
+
+/** Batching assigns the approval Task to ApprovalCFOUserID. Prefer a real Explorer user over the System API-key principal. */
+async function resolveCFOUserID(ctx: IntegrationCheckContext): Promise<string> {
+    const email = (ctx.User?.Email ?? '').toLowerCase();
+    if (ctx.User?.ID && email && !SYSTEM_EMAILS.has(email)) return ctx.User.ID;
+    const users = await FindRows<{ ID: string; Email: string }>(ctx, 'MJ: Users', `Email IS NOT NULL`, ['ID', 'Email']);
+    const human = users.find((u) => u.Email && !SYSTEM_EMAILS.has(u.Email.toLowerCase()));
+    Assert(!!human?.ID, 'no human MJ: User to stamp as ApprovalCFOUserID');
+    return human!.ID;
+}
+
+async function loadCompanies(ctx: IntegrationCheckContext, world: WorldState, currencyCode: string, cfoUserId: string): Promise<void> {
     for (const row of ReadCsv(join(DATA, 'companies.csv'))) {
         const id = await Upsert(
             ctx,
@@ -148,6 +160,7 @@ async function loadCompanies(ctx: IntegrationCheckContext, world: WorldState, cu
                 FunctionalCurrencyCode: currencyCode,
                 EntityType: row.EntityType,
                 IsActive: true,
+                ApprovalCFOUserID: cfoUserId,
             },
         );
         world.Companies[row.Code] = { ID: id, Name: row.Name, Linked: row.Linked === '1', Accounts: {} };
