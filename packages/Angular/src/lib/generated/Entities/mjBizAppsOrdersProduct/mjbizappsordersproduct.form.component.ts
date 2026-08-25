@@ -21,6 +21,7 @@ export class mjBizAppsOrdersProductFormComponent extends BaseFormComponent {
             { sectionKey: 'financialAndAccounting', sectionName: 'Financial and Accounting', isExpanded: true },
             { sectionKey: 'catalogLifecycle', sectionName: 'Catalog Lifecycle', isExpanded: true },
             { sectionKey: 'subscriptionAndEntitlements', sectionName: 'Subscription and Entitlements', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductEntitlements', sectionName: 'Entitlements', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductBundleItemsComponentProductID', sectionName: 'Product Bundle Items (Component Product ID)', isExpanded: false },
