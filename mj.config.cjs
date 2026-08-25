@@ -40,9 +40,13 @@ module.exports = {
    * consumers. This repo is the app under DEVELOPMENT: it generates the
    * __mj_BizAppsOrders schema locally and pulls its dependencies (common,
    * accounting, tasks) from their installed npm packages / soft UUID refs.
-   * Those dependency schemas are kept out of CodeGen via excludeSchemas below.
    */
-  entityPackageName: '@mj-biz-apps/orders-entities',
+  entityPackageName: {
+    '__mj_BizAppsOrders': '@mj-biz-apps/orders-entities',
+    '__mj_BizAppsCommon': '@mj-biz-apps/common-entities',
+    '__mj_BizAppsAccounting': '@mj-biz-apps/accounting-entities',
+    '__mj_BizAppsTasks': '@mj-biz-apps/tasks-entities',
+  },
 
   /**
    * Additional schema info CodeGen can't infer from the DB. Declares the IsA
@@ -175,11 +179,26 @@ module.exports = {
     ],
   },
 
-  // Exclude core (__mj) AND every dependency schema. Orders DOES take hard
-  // cross-schema foreign keys into common and accounting — those are real
-  // constraints, not soft UUID refs — but their ENTITIES ship from their own
-  // installed packages and must not be regenerated here.
-  excludeSchemas: ['sys', 'staging', 'dbo', '__mj', '__mj_BizAppsCommon', '__mj_BizAppsAccounting', '__mj_BizAppsTasks', '__mj_BizAppsIssues', '__mj_BizAppsCommittees', '__mj_BizAppsSecureMessaging'],
+  includeSchemas: ['__mj_BizAppsOrders'],
+  excludeSchemas: [
+    'sys',
+    'staging',
+    'dbo',
+    '__mj',
+    '__mj_UDT',
+    '__mj_BizAppsCommon',
+    '__mj_BizAppsAccounting',
+    '__mj_BizAppsTasks',
+    '__mj_BizAppsIssues',
+    '__mj_BizAppsForms',
+    '__mj_BizAppsCommittees',
+    '__mj_BizAppsSecureMessaging',
+    '__mj_BizAppsATS',
+    '__mj_BizAppsCaliber',
+    '__mj_BizAppsMarketing',
+    '__mj_BizAppsSonar',
+    '__mj_BizAppsBCSaaS',
+  ],
 
   /**
    * Server extensions — routes this app adds to MJServer.

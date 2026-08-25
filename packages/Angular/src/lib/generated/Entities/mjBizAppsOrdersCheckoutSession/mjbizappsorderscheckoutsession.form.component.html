@@ -128,16 +128,6 @@
 
     </mj-collapsible-panel>
 
-    <!-- Details Section -->
-    <mj-collapsible-panel
-        SectionKey="details"
-        SectionName="Details"
-        Icon="fa fa-align-left"
-        [Form]="this"
-        [FormContext]="formContext">
-
-    </mj-collapsible-panel>
-
     <!-- System Metadata Section -->
     <mj-collapsible-panel
         SectionKey="systemMetadata"
@@ -149,7 +139,7 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="MetadataJSON"
-            Type="code"
+            Type="textarea"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

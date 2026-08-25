@@ -90,3 +90,86 @@ DECLARE @descCo SQL_VARIANT = N'ClassFactory key of this company''s house BasePr
 IF NOT EXISTS (SELECT 1 FROM sys.extended_properties WHERE major_id = OBJECT_ID('__mj_BizAppsOrders.OrderCompanyPolicy') AND minor_id = COLUMNPROPERTY(OBJECT_ID('__mj_BizAppsOrders.OrderCompanyPolicy'), 'PricingDriverClass', 'ColumnId') AND name = 'MS_Description')
     EXEC sp_addextendedproperty 'MS_Description', @descCo, 'SCHEMA', '__mj_BizAppsOrders', 'TABLE', 'OrderCompanyPolicy', 'COLUMN', 'PricingDriverClass';
 GO
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- =============================================================================
+-- REFRESH METADATA
+-- =============================================================================
+
+/* SQL text to recompile all views */
+EXEC [__mj].spRecompileAllViews
+GO
+
+/* SQL text to update existing entities from schema */
+EXEC [__mj].spUpdateExistingEntitiesFromSchema @ExcludedSchemaNames='sys,staging'
+GO
+
+/* SQL text to sync schema info from database schemas */
+EXEC [__mj].spUpdateSchemaInfoFromDatabase @ExcludedSchemaNames='sys,staging'
+GO
+
+/* SQL text to delete unneeded entity fields */
+EXEC [__mj].spDeleteUnneededEntityFields @ExcludedSchemaNames='sys,staging'
+GO
+
+/* SQL text to update existing entity fields from schema */
+EXEC [__mj].spUpdateExistingEntityFieldsFromSchema @ExcludedSchemaNames='sys,staging'
+GO
+
+/* SQL text to set default column width where needed */
+EXEC [__mj].spSetDefaultColumnWidthWhereNeeded @ExcludedSchemaNames='sys,staging'
+GO
+
+/* SQL text to recompile all stored procedures in dependency order */
+EXEC [__mj].spRecompileAllProceduresInDependencyOrder @ExcludedSchemaNames='sys,staging', @LogOutput=0, @ContinueOnError=1
+GO

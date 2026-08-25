@@ -8,6 +8,8 @@
     "subscription-types",
     "payment-provider-types",
     "payment-types",
+    "query-categories",
+    "queries",
     "remote-operation-categories",
     "remote-operations",
     "applications"

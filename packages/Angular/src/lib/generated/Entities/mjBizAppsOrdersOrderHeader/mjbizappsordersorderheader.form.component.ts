@@ -21,7 +21,7 @@ export class mjBizAppsOrdersOrderHeaderFormComponent extends BaseFormComponent {
             { sectionKey: 'billingAndShipping', sectionName: 'Billing and Shipping', isExpanded: true },
             { sectionKey: 'financialSummary', sectionName: 'Financial Summary', isExpanded: true },
             { sectionKey: 'accountingAndAudit', sectionName: 'Accounting and Audit', isExpanded: true },
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'integrationAndLocation', sectionName: 'Integration and Location', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLines', sectionName: 'Order Lines', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentDetails', sectionName: 'Payment Details', isExpanded: false },

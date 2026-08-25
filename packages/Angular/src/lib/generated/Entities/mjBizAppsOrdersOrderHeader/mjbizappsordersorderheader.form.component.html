@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="orderIdentification"
         SectionName="Order Identification"
-        Icon="fa fa-shopping-cart"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -82,6 +82,14 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="Origin"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -126,7 +134,7 @@
     <mj-collapsible-panel
         SectionKey="billingAndShipping"
         SectionName="Billing and Shipping"
-        Icon="fa fa-truck"
+        Icon="fa fa-dollar-sign"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -170,6 +178,14 @@
             [ShowLabel]="true"
             FieldName="RequestedDeliveryDate"
             Type="datepicker"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="FulfillmentStatus"
+            Type="select"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
@@ -227,14 +243,6 @@
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
-            FieldName="PaymentStatus"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
             FieldName="InitialPaymentTypeID"
             Type="textbox"
             [EditMode]="EditMode"
@@ -273,7 +281,7 @@
     <mj-collapsible-panel
         SectionKey="accountingAndAudit"
         SectionName="Accounting and Audit"
-        Icon="fa fa-file-invoice"
+        Icon="fa fa-info-circle"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -329,32 +337,16 @@
 
     </mj-collapsible-panel>
 
-    <!-- Details Section -->
+    <!-- Integration and Location Section -->
     <mj-collapsible-panel
-        SectionKey="details"
-        SectionName="Details"
-        Icon="fa fa-align-left"
+        SectionKey="integrationAndLocation"
+        SectionName="Integration and Location"
+        Icon="fa fa-map-marker-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="true"
-            FieldName="FulfillmentStatus"
-            Type="select"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
-            FieldName="Origin"
-            Type="textbox"
-            [EditMode]="EditMode"
-            [FormContext]="formContext"
-        ></mj-form-field>
-        <mj-form-field 
-            [Record]="record"
-            [ShowLabel]="true"
+            [ShowLabel]="false"
             FieldName="SourceCheckoutWidgetID"
             Type="textbox"
             [EditMode]="EditMode"
@@ -383,6 +375,22 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="__mj_UpdatedAt"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="__mj_Latitude"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="__mj_Longitude"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"

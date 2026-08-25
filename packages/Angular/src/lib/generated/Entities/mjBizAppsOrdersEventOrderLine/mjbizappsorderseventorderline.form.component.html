@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="attendeeInformation"
         SectionName="Attendee Information"
-        Icon="fa fa-info-circle"
+        Icon="fa fa-user-check"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -34,16 +34,6 @@
             [FormContext]="formContext"
             LinkType="Record"
         ></mj-form-field>
-
-    </mj-collapsible-panel>
-
-    <!-- Attendee Preferences Section -->
-    <mj-collapsible-panel
-        SectionKey="attendeePreferences"
-        SectionName="Attendee Preferences"
-        Icon="fa fa-utensils"
-        [Form]="this"
-        [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
             [ShowLabel]="true"
