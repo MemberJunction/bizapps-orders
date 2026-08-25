@@ -1,3 +1,23 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ * ⚠️  SCRATCH DEMO HARNESS — NOT A REFERENCE IMPLEMENTATION. DO NOT COPY THIS FLOW.  ⚠️
+ *
+ * This file hand-rolls a checkout pipeline that BYPASSES `CheckoutSessionService` and, with
+ * it, the rules production checkout exists to enforce. Known divergences:
+ *   - It accepts `unitPrice`/`totalGross` FROM THE BROWSER — a direct violation of the
+ *     checkout pricing-input rule (the client may never supply an amount). The real service
+ *     prices server-side via OrderPricingService, twice.
+ *   - It assigns `order.PaymentStatus`, a column DROPPED in V202608241300 (payment progress
+ *     is now the numeric facts TotalGross/AmountPaid/Balance).
+ *   - It mints `ClaimTypeName: 'EntitlementGrant'` claims via the client-side
+ *     IdentityClaimEngine; the production path mints 'GuestOrder' via
+ *     IdentityClaimEngineServer inside CompleteCheckout.
+ *
+ * The REAL edge is `CheckoutServerExtension` (packages/Server) over `CheckoutSessionService`
+ * (packages/CoreEntitiesServer). Use that — this harness survives only as a local visual
+ * playground and is expected to drift.
+ * ═══════════════════════════════════════════════════════════════════════════════════════════
+ */
 import dotenv from 'dotenv';
 dotenv.config();
 

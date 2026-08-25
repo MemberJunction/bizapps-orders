@@ -431,4 +431,10 @@ export type {
     InitSessionResult,
     UpdateDraftResult,
     CompleteCheckoutResult,
+    OpenSessionPaymentIntentResult,
 } from './CheckoutSessionService.js';
+
+// SQL boundary guards — the sanctioned escaping/validation helpers for remote-caller input
+// (see the repo CLAUDE.md "SQL Safety" rule). Exported so the Server package's edge can use
+// the same audited helpers rather than hand-rolling its own.
+export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUID, RequireUUID, RequireUUIDs } from './sql-guards.js';

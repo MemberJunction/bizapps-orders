@@ -82,6 +82,8 @@ export interface CheckoutWidgetConfiguration {
     title?: string;
     description?: string;
     productId?: string;
+    /** Alternative product resolution by SKU when productId is not set. */
+    productSku?: string;
     productName?: string;
     unitPrice?: number;
     currency?: string;
@@ -92,6 +94,37 @@ export interface CheckoutWidgetConfiguration {
     successMessage?: string;
     redirectUrl?: string;
     extensionEntityName?: string;
+    /**
+     * Metadata-driven form field specs — auto-discovered from the product type's extension
+     * entity when not explicitly authored.
+     */
+    extensionFields?: Array<{
+        name: string;
+        label: string;
+        type: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select';
+        required?: boolean;
+        placeholder?: string;
+        options?: Array<string | { label: string; value: string | number }>;
+    }>;
+    /**
+     * The PaymentProvider row id used to open payment intents for this widget's sessions.
+     * Admin-authored, server-resolved — never accepted from the client. Required before a
+     * paid checkout can complete.
+     */
+    paymentProviderId?: string;
+    /**
+     * Origins (scheme + host [+ port]) allowed to embed and drive this widget through the
+     * anonymous checkout edge. When set, requests whose Origin header does not match are
+     * refused and receive no CORS grant. When absent, the edge allows any origin (the
+     * distribution slug remains the access control).
+     */
+    allowedOrigins?: string[];
+    /**
+     * When true, the anonymous checkout edge requires a Cloudflare Turnstile token on
+     * session initialization and completion (the edge must also be configured with a
+     * Turnstile secret for verification to run — fail-closed when it is not).
+     */
+    requireTurnstile?: boolean;
     /**
      * Custom UI section containing JS hooks, scoped CSS, theme tokens, and component overrides.
      */
