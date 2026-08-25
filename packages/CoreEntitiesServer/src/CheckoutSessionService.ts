@@ -9,6 +9,7 @@
  */
 
 import { BaseEntity, EntityFieldInfo, IMetadataProvider, LogError, Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { IdentityClaimEngineServer } from '@memberjunction/core-entities-server';
 import {
     OrderHeaderEntity,
     OrderLineEntity,
@@ -17,20 +18,35 @@ import {
     mjBizAppsOrdersCheckoutSessionEntity,
     mjBizAppsOrdersCheckoutWidgetDistributionEntity,
     mjBizAppsOrdersCheckoutWidgetEntity,
+    mjBizAppsOrdersPaymentIntentEntity,
     mjBizAppsOrdersProductEntity,
     mjBizAppsOrdersProductTypeEntity,
     type CheckoutWidgetConfiguration,
     type ProductTypeConfiguration
 } from '@mj-biz-apps/orders-entities';
-import { MJGlobal } from '@memberjunction/global';
+import { EscapeText } from './sql-guards.js';
+import { OpenPaymentIntent } from './PaymentIntentService.js';
 
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
 const CHECKOUT_SESSION_ENTITY = 'MJ_BizApps_Orders: Checkout Sessions';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
+const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const PERSON_ENTITY = 'MJ_BizApps_Common: People';
+
+/**
+ * Server-side quantity ceiling applied when neither `Product.MaxQuantityPerLine` nor
+ * `ProductType.Configuration.maxQuantity` is configured. Without it, quantity — and the
+ * per-unit line expansion driven by attendee arrays — is unbounded from an anonymous caller.
+ */
+const DEFAULT_MAX_QUANTITY_PER_LINE = 100;
+/** Ceiling on the number of input lines a single checkout may carry. */
+const MAX_LINES_PER_CHECKOUT = 50;
+
+/** PaymentIntent statuses that satisfy the paid-order gate at completion. */
+const SETTLED_INTENT_STATUSES: ReadonlyArray<string> = ['Succeeded'];
 
 export interface InitSessionResult {
     Success: boolean;
@@ -114,7 +130,22 @@ export interface CompleteCheckoutResult {
     TotalGross?: number;
     PaymentIntentID?: string;
     ClientSecret?: string;
+    /**
+     * The IdentityClaim row id minted for the buyer's email (the actual verification token is
+     * only ever delivered in the claim email — it is never returned through the checkout path).
+     */
     ClaimToken?: string;
+}
+
+export interface OpenSessionPaymentIntentResult {
+    Success: boolean;
+    ErrorMessage?: string;
+    SessionID: string;
+    PaymentIntentID?: string;
+    /** Returned to the caller for Stripe.js confirmation — never persisted. */
+    ClientSecret?: string;
+    Status?: string;
+    Amount?: number;
 }
 
 export class CheckoutSessionService {
@@ -134,7 +165,7 @@ export class CheckoutSessionService {
         }
 
         const rv = new RunView();
-        const escapedSlug = slug.trim().replace(/'/g, "''");
+        const escapedSlug = EscapeText(slug.trim());
         const distRes = await rv.RunView<mjBizAppsOrdersCheckoutWidgetDistributionEntity>({
             EntityName: CHECKOUT_DISTRIBUTION_ENTITY,
             ExtraFilter: `Slug = '${escapedSlug}' AND Status = 'Active'`,
@@ -153,11 +184,13 @@ export class CheckoutSessionService {
             return { Success: false, ErrorMessage: 'The requested checkout widget is currently unavailable' };
         }
 
-        // Check for existing unexpired session for this client
-        const escapedKey = clientSessionKey.trim().replace(/'/g, "''");
+        // Check for existing unexpired session for this client. An ISO-8601 literal compares
+        // correctly on both SQL Server and PostgreSQL — GETUTCDATE() is T-SQL-only.
+        const escapedKey = EscapeText(clientSessionKey.trim());
+        const nowUtc = new Date().toISOString();
         const sessRes = await rv.RunView<mjBizAppsOrdersCheckoutSessionEntity>({
             EntityName: CHECKOUT_SESSION_ENTITY,
-            ExtraFilter: `CheckoutWidgetID = '${widget.ID}' AND ClientSessionKey = '${escapedKey}' AND Status = 'Open' AND ExpiresAt > GETUTCDATE()`,
+            ExtraFilter: `CheckoutWidgetID = '${widget.ID}' AND ClientSessionKey = '${escapedKey}' AND Status = 'Open' AND ExpiresAt > '${nowUtc}'`,
             ResultType: 'entity_object'
         }, contextUser);
 
@@ -215,11 +248,69 @@ export class CheckoutSessionService {
             WidgetID: widget.ID,
             WidgetName: widget.Name,
             CompanyID: widget.CompanyID,
-            Configuration: configObj,
+            Configuration: this.sanitizeConfigurationForClient(configObj),
             CustomCSS: configObj.customUI.css || widget.CustomCSS,
             CustomJS: configObj.customUI.js || widget.CustomJS,
             ExpiresAt: session.ExpiresAt.toISOString()
         };
+    }
+
+    /**
+     * Strips obviously sensitive keys from a widget Configuration before it ships to an
+     * anonymous caller. `Configuration` is admin-authored JSON with an open index signature,
+     * so a future secret-shaped key (a webhook secret, an API credential, a server-side
+     * payment provider ref) must never ride along to the browser. `stripePublishableKey`
+     * is publishable by definition and survives.
+     */
+    private static sanitizeConfigurationForClient(configObj: CheckoutWidgetConfiguration): CheckoutWidgetConfiguration {
+        const sensitivePattern = /secret|password|credential|privatekey|apikey|webhooksecret/i;
+        const sanitized: CheckoutWidgetConfiguration = {};
+        for (const [key, value] of Object.entries(configObj)) {
+            if (key.toLowerCase() !== 'stripepublishablekey' && sensitivePattern.test(key)) {
+                continue;
+            }
+            sanitized[key] = value;
+        }
+        return sanitized;
+    }
+
+    /**
+     * Verifies a caller-presented client session key against the session row's stored key.
+     * The session GUID alone must never be sufficient to drive a session — both values are
+     * required on every mutating call. Constant-time comparison over char codes (this package
+     * deliberately avoids Node globals, so no crypto.timingSafeEqual); a length mismatch is a
+     * plain refusal — it leaks only the length, which the caller already knows from their own key.
+     */
+    private static verifyClientSessionKey(session: mjBizAppsOrdersCheckoutSessionEntity, clientSessionKey: string | null | undefined): boolean {
+        const stored = session.ClientSessionKey ?? '';
+        const presented = (clientSessionKey ?? '').trim();
+        if (!stored || !presented || stored.length !== presented.length) {
+            return false;
+        }
+        let diff = 0;
+        for (let i = 0; i < stored.length; i++) {
+            diff |= stored.charCodeAt(i) ^ presented.charCodeAt(i);
+        }
+        return diff === 0;
+    }
+
+    /**
+     * Enforces the session TTL on mutating calls (it was previously only enforced at
+     * session reuse). An expired-but-Open session is transitioned to 'Expired' (best-effort)
+     * and refused.
+     */
+    private static async enforceSessionExpiry(session: mjBizAppsOrdersCheckoutSessionEntity): Promise<boolean> {
+        if (session.ExpiresAt && new Date(session.ExpiresAt).getTime() <= Date.now()) {
+            if (session.Status === 'Open') {
+                session.Status = 'Expired';
+                const saved = await session.Save();
+                if (!saved) {
+                    LogError(`[CheckoutSessionService] Failed to mark session ${session.ID} Expired: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+                }
+            }
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -239,7 +330,7 @@ export class CheckoutSessionService {
 
         if (!productId && productSku) {
             const rv = new RunView();
-            const escapedSku = productSku.trim().replace(/'/g, "''");
+            const escapedSku = EscapeText(productSku.trim());
             const prodRes = await rv.RunView<{ ID: string }>({
                 EntityName: PRODUCT_ENTITY,
                 ExtraFilter: `SKU = '${escapedSku}'`,
@@ -332,12 +423,15 @@ export class CheckoutSessionService {
     }
 
     /**
-     * Resolves or creates a Person entity record based on provided fields.
-     * Resolves or ensures a Person entity record based on provided fields.
+     * Resolves — and optionally creates — a Person entity record based on provided fields.
+     * Lookup is by normalized email. Creation only happens when `createIfMissing` is true:
+     * draft updates resolve-only (so abandoned checkouts never mint Person rows), while
+     * completion creates the payer/attendee records it genuinely needs.
      */
     private static async resolveOrEnsurePerson(
         fields: Record<string, unknown>,
-        contextUser?: UserInfo
+        contextUser?: UserInfo,
+        createIfMissing = true
     ): Promise<string | null> {
         const email = (fields['Email'] || fields['email'] || fields['AttendeeEmail'] || fields['attendeeEmail']) as string | undefined;
         if (!email || !email.trim()) {
@@ -346,7 +440,7 @@ export class CheckoutSessionService {
 
         const normalized = email.trim().toLowerCase();
         const rv = new RunView();
-        const escaped = normalized.replace(/'/g, "''");
+        const escaped = EscapeText(normalized);
         try {
             const personRes = await rv.RunView<{ ID: string }>({
                 EntityName: PERSON_ENTITY,
@@ -359,6 +453,10 @@ export class CheckoutSessionService {
             }
         } catch (err) {
             console.warn('[CheckoutSessionService] RunView Person lookup error:', err);
+        }
+
+        if (!createIfMissing) {
+            return null;
         }
 
         let firstName = (fields['FirstName'] || fields['firstName'] || '') as string;
@@ -423,7 +521,8 @@ export class CheckoutSessionService {
         line: OrderLineEntity,
         extensionEntityName: string | null | undefined,
         fieldValues: Record<string, unknown>,
-        contextUser?: UserInfo
+        contextUser?: UserInfo,
+        createPersons = true
     ): Promise<void> {
         if (!fieldValues || Object.keys(fieldValues).length === 0) {
             return;
@@ -443,8 +542,10 @@ export class CheckoutSessionService {
             line.Description = String(nameOrEmail);
         }
 
-        // Auto-resolve PersonID if person fields exist on the entity or extension
-        const resolvedPersonID = await this.resolveOrEnsurePerson(fieldValues, contextUser);
+        // Auto-resolve PersonID if person fields exist on the entity or extension. Person
+        // creation only happens on the completion path — draft pricing passes createPersons=false
+        // so abandoned checkouts never mint Person rows.
+        const resolvedPersonID = await this.resolveOrEnsurePerson(fieldValues, contextUser, createPersons);
 
         const excludedClientFields = new Set([
             'id',
@@ -527,39 +628,41 @@ export class CheckoutSessionService {
      */
     public static async UpdateDraft(
         sessionID: string,
+        clientSessionKey: string,
         email: string,
         lines: CheckoutLineInput[],
         contextUser?: UserInfo
     ): Promise<UpdateDraftResult> {
+        const failed = (message: string): UpdateDraftResult => ({
+            Success: false,
+            ErrorMessage: message,
+            SessionID: sessionID ?? '',
+            Subtotal: 0,
+            Tax: 0,
+            Adjustments: 0,
+            TotalGross: 0,
+            RequiresPayment: false,
+            Lines: []
+        });
+
         if (!sessionID) {
-            return {
-                Success: false,
-                ErrorMessage: 'Session ID is required.',
-                SessionID: '',
-                Subtotal: 0,
-                Tax: 0,
-                Adjustments: 0,
-                TotalGross: 0,
-                RequiresPayment: false,
-                Lines: []
-            };
+            return failed('Session ID is required.');
+        }
+        if (!Array.isArray(lines) || lines.length > MAX_LINES_PER_CHECKOUT) {
+            return failed(`A checkout may carry at most ${MAX_LINES_PER_CHECKOUT} lines.`);
         }
 
         const md = new Metadata();
         const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
         const sessionLoaded = await session.Load(sessionID);
         if (!sessionLoaded || session.Status !== 'Open') {
-            return {
-                Success: false,
-                ErrorMessage: 'Checkout session is not valid or has expired.',
-                SessionID: sessionID,
-                Subtotal: 0,
-                Tax: 0,
-                Adjustments: 0,
-                TotalGross: 0,
-                RequiresPayment: false,
-                Lines: []
-            };
+            return failed('Checkout session is not valid or has expired.');
+        }
+        if (!this.verifyClientSessionKey(session, clientSessionKey)) {
+            return failed('Checkout session key does not match.');
+        }
+        if (!(await this.enforceSessionExpiry(session))) {
+            return failed('Checkout session has expired.');
         }
 
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
@@ -577,6 +680,16 @@ export class CheckoutSessionService {
         const normalizedEmail = (email || '').trim().toLowerCase();
         session.Email = normalizedEmail;
 
+        // Resolve (never create) the payer Person by email so person-specific pricing applies
+        // to the draft. Creation is deferred to completion — abandoned drafts must not mint
+        // Person rows.
+        if (!session.PersonID && normalizedEmail) {
+            const resolvedPersonID = await this.resolveOrEnsurePerson({ Email: normalizedEmail }, contextUser, false);
+            if (resolvedPersonID) {
+                session.PersonID = resolvedPersonID;
+            }
+        }
+
         if (session.PersonID) {
             order.BillToPersonID = session.PersonID;
             order.ShipToPersonID = session.PersonID;
@@ -586,17 +699,7 @@ export class CheckoutSessionService {
         for (const inputLine of lines) {
             // Validate quantity: must be positive integer >= 1
             if (!Number.isInteger(inputLine.Quantity) || inputLine.Quantity < 1) {
-                return {
-                    Success: false,
-                    ErrorMessage: `Invalid quantity: quantity must be a positive integer (received ${inputLine.Quantity})`,
-                    SessionID: sessionID,
-                    Subtotal: 0,
-                    Tax: 0,
-                    Adjustments: 0,
-                    TotalGross: 0,
-                    RequiresPayment: false,
-                    Lines: []
-                };
+                return failed(`Invalid quantity: quantity must be a positive integer (received ${inputLine.Quantity})`);
             }
 
             let targetExtensionEntity: string | null = null;
@@ -635,21 +738,15 @@ export class CheckoutSessionService {
                 }
             }
 
-            if (maxQuantityPerLine && inputLine.Quantity > maxQuantityPerLine) {
-                return {
-                    Success: false,
-                    ErrorMessage: `Quantity ${inputLine.Quantity} exceeds maximum allowed quantity of ${maxQuantityPerLine} for this item`,
-                    SessionID: sessionID,
-                    Subtotal: 0,
-                    Tax: 0,
-                    Adjustments: 0,
-                    TotalGross: 0,
-                    RequiresPayment: false,
-                    Lines: []
-                };
+            const effectiveMax = maxQuantityPerLine ?? DEFAULT_MAX_QUANTITY_PER_LINE;
+            if (inputLine.Quantity > effectiveMax) {
+                return failed(`Quantity ${inputLine.Quantity} exceeds maximum allowed quantity of ${effectiveMax} for this item`);
             }
 
             const unitPayloads = this.extractUnitPayloads(inputLine);
+            if (unitPayloads.length > effectiveMax) {
+                return failed(`Unit payload count ${unitPayloads.length} exceeds maximum allowed quantity of ${effectiveMax} for this item`);
+            }
 
             if ((unitMode === 'perUnit' || unitPayloads.length > 1) && unitPayloads.length > 0) {
                 for (const unitData of unitPayloads) {
@@ -658,7 +755,7 @@ export class CheckoutSessionService {
                     line.Quantity = 1;
                     line.LineNumber = sequence++;
 
-                    await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser);
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false);
                 }
             } else {
                 const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
@@ -667,7 +764,7 @@ export class CheckoutSessionService {
                 line.LineNumber = sequence++;
 
                 if (unitPayloads.length > 0) {
-                    await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser);
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser, false);
                 }
             }
         }
@@ -712,6 +809,21 @@ export class CheckoutSessionService {
             Description: l.Description ?? undefined
         }));
 
+        // A previously opened payment intent was priced against the OLD snapshot. If the total
+        // changed, detach it so the completion gate can't accept a stale (higher OR lower)
+        // authorized amount — the caller must reopen the intent against the new total.
+        let previousTotal: number | undefined;
+        if (session.MetadataJSON) {
+            try {
+                previousTotal = (JSON.parse(session.MetadataJSON) as { TotalGross?: number }).TotalGross;
+            } catch {
+                previousTotal = undefined;
+            }
+        }
+        if (session.PaymentIntentID && previousTotal !== order.TotalGross) {
+            session.PaymentIntentID = null;
+        }
+
         // Store checkout state in session metadata JSON — no orphan OrderHeader rows
         session.MetadataJSON = JSON.stringify({
             Lines: lines,
@@ -719,7 +831,10 @@ export class CheckoutSessionService {
             TotalGross: order.TotalGross,
             UpdatedAt: new Date().toISOString()
         });
-        await session.Save();
+        const sessionSaved = await session.Save();
+        if (!sessionSaved) {
+            return failed(`Failed to persist checkout state: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+        }
 
         return {
             Success: true,
@@ -736,25 +851,180 @@ export class CheckoutSessionService {
     }
 
     /**
+     * Opens (or idempotently re-opens) a payment intent for a session's CURRENT server-priced
+     * total. This is the only way a checkout session acquires a `PaymentIntentID`.
+     *
+     * Everything money-shaped is resolved server-side, per the checkout pricing-input rule:
+     * the amount comes from the session's own priced snapshot (never the client), and the
+     * payment provider comes from the widget's admin-authored Configuration
+     * (`paymentProviderId`) — the client supplies only its session id + key. The gateway
+     * client secret is returned for Stripe.js confirmation and never persisted.
+     */
+    public static async OpenPaymentIntentForSession(
+        sessionID: string,
+        clientSessionKey: string,
+        contextUser?: UserInfo
+    ): Promise<OpenSessionPaymentIntentResult> {
+        const failed = (message: string): OpenSessionPaymentIntentResult => ({
+            Success: false,
+            ErrorMessage: message,
+            SessionID: sessionID ?? ''
+        });
+
+        if (!sessionID) {
+            return failed('Session ID is required.');
+        }
+        if (!contextUser) {
+            return failed('A context user is required to open a payment intent.');
+        }
+
+        const md = new Metadata();
+        const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
+        const loaded = await session.Load(sessionID);
+        if (!loaded || session.Status !== 'Open') {
+            return failed('Checkout session is not valid or has expired.');
+        }
+        if (!this.verifyClientSessionKey(session, clientSessionKey)) {
+            return failed('Checkout session key does not match.');
+        }
+        if (!(await this.enforceSessionExpiry(session))) {
+            return failed('Checkout session has expired.');
+        }
+
+        // The amount is the session's own server-priced snapshot — never a caller input.
+        let snapshotTotal = 0;
+        if (session.MetadataJSON) {
+            try {
+                const parsed = JSON.parse(session.MetadataJSON) as { TotalGross?: number };
+                snapshotTotal = typeof parsed.TotalGross === 'number' ? parsed.TotalGross : 0;
+            } catch {
+                snapshotTotal = 0;
+            }
+        }
+        if (!(snapshotTotal > 0)) {
+            return failed('This checkout has no balance due — complete it directly without a payment intent.');
+        }
+
+        const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
+        const widgetLoaded = await widget.Load(session.CheckoutWidgetID);
+        if (!widgetLoaded) {
+            return failed('The checkout widget for this session could not be loaded.');
+        }
+
+        let paymentProviderId: string | undefined;
+        let currencyCode: string | undefined;
+        if (widget.Configuration) {
+            try {
+                const configObj = JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration;
+                paymentProviderId = typeof configObj.paymentProviderId === 'string' ? configObj.paymentProviderId : undefined;
+                currencyCode = typeof configObj.currency === 'string' ? configObj.currency : undefined;
+            } catch {
+                // Malformed configuration already fails InitializeSession; treat as unset here.
+            }
+        }
+        if (!paymentProviderId) {
+            return failed(`Checkout widget '${widget.Name}' has no paymentProviderId configured — a paid checkout requires one.`);
+        }
+
+        const mdProvider = Metadata.Provider;
+        if (!mdProvider) {
+            return failed('No metadata provider is available to open a payment intent.');
+        }
+
+        const openResult = await OpenPaymentIntent({
+            PaymentProviderID: paymentProviderId,
+            Amount: snapshotTotal,
+            CurrencyCode: currencyCode,
+            BillToPersonID: session.PersonID ?? undefined,
+            // Stable per-session idempotency key: reopening for the same session+amount
+            // returns the SAME gateway intent instead of minting a fresh one per retry.
+            IdempotencyKey: `checkout-${sessionID}-${Math.round(snapshotTotal * 100)}`,
+            Metadata: { CheckoutSessionID: sessionID }
+        }, mdProvider, contextUser);
+
+        if (!openResult.Success || !openResult.PaymentIntentID) {
+            return failed(openResult.Reason ?? 'The payment provider refused to open an intent.');
+        }
+
+        session.PaymentIntentID = openResult.PaymentIntentID;
+        const saved = await session.Save();
+        if (!saved) {
+            return failed(`Failed to attach the payment intent to the session: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+        }
+
+        return {
+            Success: true,
+            SessionID: sessionID,
+            PaymentIntentID: openResult.PaymentIntentID,
+            ClientSecret: openResult.ClientSecret,
+            Status: openResult.Status,
+            Amount: snapshotTotal
+        };
+    }
+
+    /**
      * Completes an existing CheckoutSession, constructing the final Order,
      * executing lifecycle confirmation (with accounting GL bookings and deferred revenue),
      * and generating a claim token if unauthenticated.
      */
     public static async CompleteCheckout(
         sessionID: string,
+        clientSessionKey: string,
         contextUser?: UserInfo
     ): Promise<CompleteCheckoutResult> {
         const md = new Metadata();
         const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
         const loaded = await session.Load(sessionID);
-        if (!loaded || session.Status !== 'Open') {
+        if (!loaded) {
+            return {
+                Success: false,
+                ErrorMessage: 'Checkout session not found',
+                SessionID: sessionID,
+                Status: 'Unknown'
+            };
+        }
+        if (!this.verifyClientSessionKey(session, clientSessionKey)) {
+            return {
+                Success: false,
+                ErrorMessage: 'Checkout session key does not match',
+                SessionID: sessionID,
+                Status: session.Status
+            };
+        }
+
+        // Replay safety: a session that already completed returns its existing order rather
+        // than an error — a network retry after a successful booking must never double-book
+        // and must never strand the buyer without their order id.
+        if (session.Status === 'Confirmed' && session.DraftOrderID) {
+            const existingOrder = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
+            const orderLoaded = await existingOrder.Load(session.DraftOrderID);
+            return {
+                Success: true,
+                SessionID: sessionID,
+                Status: 'Confirmed',
+                OrderID: session.DraftOrderID,
+                OrderNumber: orderLoaded ? (existingOrder.OrderNumber || session.DraftOrderID) : session.DraftOrderID,
+                TotalGross: orderLoaded ? (existingOrder.TotalGross ?? undefined) : undefined
+            };
+        }
+
+        if (session.Status !== 'Open') {
             return {
                 Success: false,
                 ErrorMessage: 'Session is not in an Open status',
                 SessionID: sessionID,
-                Status: session?.Status ?? 'Unknown'
+                Status: session.Status
             };
         }
+        if (!(await this.enforceSessionExpiry(session))) {
+            return {
+                Success: false,
+                ErrorMessage: 'Checkout session has expired',
+                SessionID: sessionID,
+                Status: 'Expired'
+            };
+        }
+
         // Atomically latch status to Processing to prevent concurrent duplicate checkout processing
         const latched = await this.latchSessionProcessingAtomic(sessionID, md, contextUser);
         if (!latched) {
@@ -766,6 +1036,9 @@ export class CheckoutSessionService {
             };
         }
         session.Status = 'Processing';
+
+        // Set the moment order.Confirm() commits; controls the catch's no-revert posture.
+        let confirmedOrderID: string | null = null;
 
         try {
             const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
@@ -781,6 +1054,39 @@ export class CheckoutSessionService {
                 } catch {
                     // Ignore metadata parse error
                 }
+            }
+
+            // Resolve — creating if necessary — the payer Person. OrderHeaderEntity.Validate()
+            // refuses to confirm an order without a customer, so a missing payer must fail
+            // HERE with a clear message, not deep inside Confirm(). Contact fields come from
+            // the first unit payload (name etc.); the email is the session's captured email.
+            if (!session.PersonID) {
+                const firstPayload = linesInput.length > 0 ? this.extractUnitPayloads(linesInput[0])[0] ?? {} : {};
+                const payerFields: Record<string, unknown> = { ...firstPayload, Email: session.Email ?? '' };
+                // A simple-product guest checkout collects only an email — derive a name from
+                // the local part so the payer Person can be created. The GuestOrder identity
+                // claim later re-parents the order to the buyer's real account identity.
+                const hasName = payerFields['FirstName'] || payerFields['firstName'] || payerFields['LastName'] || payerFields['lastName'] || payerFields['Name'] || payerFields['name'] || payerFields['AttendeeName'];
+                if (!hasName && session.Email) {
+                    const localPart = session.Email.split('@')[0]?.trim();
+                    if (localPart) {
+                        payerFields['Name'] = localPart;
+                    }
+                }
+                const payerPersonID = await this.resolveOrEnsurePerson(payerFields, contextUser, true);
+                if (payerPersonID) {
+                    session.PersonID = payerPersonID;
+                }
+            }
+            if (!session.PersonID) {
+                await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
+                session.Status = 'Open';
+                return {
+                    Success: false,
+                    ErrorMessage: 'A buyer email (and name for a new customer) is required to complete checkout',
+                    SessionID: sessionID,
+                    Status: 'Open'
+                };
             }
 
             // Atomically create the OrderHeaderEntity
@@ -838,18 +1144,29 @@ export class CheckoutSessionService {
                     }
                 }
 
-                if (maxQuantityPerLine && inputLine.Quantity > maxQuantityPerLine) {
+                const effectiveMax = maxQuantityPerLine ?? DEFAULT_MAX_QUANTITY_PER_LINE;
+                if (inputLine.Quantity > effectiveMax) {
                     await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
                     session.Status = 'Open';
                     return {
                         Success: false,
-                        ErrorMessage: `Quantity ${inputLine.Quantity} exceeds maximum allowed quantity of ${maxQuantityPerLine} for this item`,
+                        ErrorMessage: `Quantity ${inputLine.Quantity} exceeds maximum allowed quantity of ${effectiveMax} for this item`,
                         SessionID: sessionID,
                         Status: 'Open'
                     };
                 }
 
                 const unitPayloads = this.extractUnitPayloads(inputLine);
+                if (unitPayloads.length > effectiveMax) {
+                    await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
+                    session.Status = 'Open';
+                    return {
+                        Success: false,
+                        ErrorMessage: `Unit payload count ${unitPayloads.length} exceeds maximum allowed quantity of ${effectiveMax} for this item`,
+                        SessionID: sessionID,
+                        Status: 'Open'
+                    };
+                }
 
                 if ((unitMode === 'perUnit' || unitPayloads.length > 1) && unitPayloads.length > 0) {
                     for (const unitData of unitPayloads) {
@@ -898,15 +1215,19 @@ export class CheckoutSessionService {
             }
             order.TotalGross = Math.round(sumGross * 100) / 100;
 
-            // Money-path safety: Refuse to confirm paid order without captured/authorized payment
+            // Money-path safety: a paid order confirms only against a payment intent whose
+            // STATE and AMOUNT check out server-side. Mere existence of an intent id is not
+            // payment — an opened-but-unpaid intent must never book an order. Intent status is
+            // driven by the signature-verified payment webhook (PaymentWebhookHandler), never
+            // by anything the client asserts.
             if (order.TotalGross > 0) {
-                const hasPayment = Boolean(session.PaymentIntentID);
-                if (!hasPayment) {
+                const paymentFailure = await this.verifySessionPayment(session, order.TotalGross, md, contextUser);
+                if (paymentFailure) {
                     await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
                     session.Status = 'Open';
                     return {
                         Success: false,
-                        ErrorMessage: 'Cannot confirm paid order (TotalGross > 0) without a valid payment method or capture',
+                        ErrorMessage: paymentFailure,
                         SessionID: sessionID,
                         Status: 'Open'
                     };
@@ -915,38 +1236,40 @@ export class CheckoutSessionService {
 
             // Confirm order via BaseEntity lifecycle (executes GL booking, entitlement issuance, status latching)
             await order.Confirm();
+            confirmedOrderID = order.ID;
 
+            // The order is now COMMITTED — from this point nothing may revert the session to
+            // Open, or a retry would book a second order for the same purchase. Session
+            // stamping failures are logged and repaired atomically, never surfaced as a
+            // checkout failure.
             session.Status = 'Confirmed';
             session.DraftOrderID = order.ID;
-            await session.Save();
+            const stamped = await session.Save();
+            if (!stamped) {
+                LogError(`[CheckoutSessionService] Session ${sessionID} completed order ${order.ID} but the entity save failed (${session.LatestResult?.CompleteMessage ?? 'unknown error'}) — falling back to atomic stamp`);
+                await CheckoutSessionService.stampSessionConfirmedAtomic(sessionID, order.ID, md, contextUser);
+            }
 
-            // Mint IdentityClaim token if person is not tied to a registered user
+            // Mint the GuestOrder identity claim for the buyer's email so a later account
+            // (MJ core's IdentityClaimEngineServer) can attach the order + its entitlement
+            // grants on redemption or claim-on-login. Best-effort: a claim failure must never
+            // fail a booked order — but it is logged, never swallowed silently.
             let claimToken: string | undefined;
-            try {
-                const classRegistry = (MJGlobal.Instance as unknown as { ClassRegistry?: Record<string, unknown> }).ClassRegistry;
-                const claimEngine = (classRegistry?.['IdentityClaimEngineServer'] || (globalThis as unknown as Record<string, unknown>)['IdentityClaimEngineServer']) as {
-                    Instance?: {
-                        CreateClaim: (params: {
-                            ClaimTypeName: string;
-                            RecordID?: string;
-                            EntityID?: string;
-                            NormalizedEmail: string;
-                            SendEmail?: boolean;
-                        }) => Promise<{ ClaimID?: string } | undefined>;
-                    };
-                } | undefined;
-                if (claimEngine?.Instance) {
-                    const claimResult = await claimEngine.Instance.CreateClaim({
+            if (session.Email) {
+                try {
+                    const claim = await IdentityClaimEngineServer.Instance.CreateClaim({
                         ClaimTypeName: 'GuestOrder',
                         RecordID: order.ID,
-                        EntityID: ORDER_HEADER_ENTITY,
-                        NormalizedEmail: session.Email || '',
+                        EntityID: md.EntityByName(ORDER_HEADER_ENTITY)?.ID ?? null,
+                        NormalizedEmail: session.Email,
+                        Payload: { OrderID: order.ID, OrderNumber: order.OrderNumber || order.ID },
                         SendEmail: true
-                    });
-                    claimToken = claimResult?.ClaimID;
+                    }, contextUser);
+                    claimToken = claim?.ID;
+                } catch (claimErr) {
+                    const claimMsg = claimErr instanceof Error ? claimErr.message : String(claimErr);
+                    LogError(`[CheckoutSessionService] GuestOrder claim minting failed for order ${order.ID} (${session.Email}): ${claimMsg}`);
                 }
-            } catch {
-                // Identity claim minting error should not fail order completion
             }
 
             return {
@@ -959,9 +1282,21 @@ export class CheckoutSessionService {
                 ClaimToken: claimToken
             };
         } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (confirmedOrderID) {
+                // Post-commit failure: the order EXISTS. Do not revert the latch (a retry would
+                // double-book); stamp the session Confirmed atomically and report success.
+                LogError(`[CheckoutSessionService] CompleteCheckout post-confirm failure for session ${sessionID} (order ${confirmedOrderID}): ${msg}`);
+                await CheckoutSessionService.stampSessionConfirmedAtomic(sessionID, confirmedOrderID, md, contextUser);
+                return {
+                    Success: true,
+                    OrderID: confirmedOrderID,
+                    SessionID: sessionID,
+                    Status: 'Confirmed'
+                };
+            }
             await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
             session.Status = 'Open';
-            const msg = err instanceof Error ? err.message : String(err);
             LogError(`[CheckoutSessionService] CompleteCheckout failed for session ${sessionID}: ${msg}`);
             return {
                 Success: false,
@@ -969,6 +1304,70 @@ export class CheckoutSessionService {
                 SessionID: sessionID,
                 Status: 'Open'
             };
+        }
+    }
+
+    /**
+     * Verifies the paid-order gate for a session against a server-computed total. Returns a
+     * refusal message, or null when payment checks out. The intent must exist, belong to this
+     * session, be in a settled state, and cover the freshly re-priced total.
+     */
+    private static async verifySessionPayment(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        totalGross: number,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<string | null> {
+        if (!session.PaymentIntentID) {
+            return 'Cannot confirm paid order (TotalGross > 0) without a payment intent for this session';
+        }
+        const intent = await md.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, contextUser);
+        const intentLoaded = await intent.Load(session.PaymentIntentID);
+        if (!intentLoaded) {
+            return 'The payment intent attached to this session could not be found';
+        }
+        if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
+            // Intent state is advanced by the signature-verified payment webhook. An intent
+            // still in Processing/RequiresPayment means payment has not settled yet — the
+            // client should retry completion after payment confirmation lands.
+            return `Payment has not settled (intent status: ${intent.Status}). Complete payment and try again.`;
+        }
+        // Half-cent tolerance absorbs decimal rounding between the priced total and the
+        // cents-rounded intent amount.
+        if ((intent.Amount ?? 0) + 0.005 < totalGross) {
+            return `The settled payment amount (${intent.Amount}) does not cover the order total (${totalGross})`;
+        }
+        return null;
+    }
+
+    /**
+     * Atomically stamps a Processing session as Confirmed with its completed order id — the
+     * repair path when the entity-level save cannot run after the order has committed.
+     */
+    private static async stampSessionConfirmedAtomic(sessionID: string, orderID: string, md: Metadata, contextUser?: UserInfo): Promise<boolean> {
+        try {
+            const provider = (Metadata.Provider || (Metadata as unknown as { Provider: unknown }).Provider) as { PlatformKey?: string; ExecuteSQL?: <T>(sql: string, params: unknown[], options?: unknown, user?: unknown) => Promise<T[]> } | undefined;
+            if (!provider || typeof provider.ExecuteSQL !== 'function') {
+                return false;
+            }
+
+            const entityInfo = md.Entities?.find(e => e.Name === CHECKOUT_SESSION_ENTITY);
+            const schemaName = entityInfo?.SchemaName ?? '__mj_BizAppsOrders';
+            const tableName = entityInfo?.BaseTable ?? 'CheckoutSession';
+
+            const isPg = provider.PlatformKey === 'postgresql';
+            const table = isPg ? `${schemaName}.${tableName}` : `[${schemaName}].[${tableName}]`;
+
+            const sql = isPg
+                ? `UPDATE ${table} SET "Status" = 'Confirmed', "DraftOrderID" = $2 WHERE "ID" = $1 AND "Status" = 'Processing' RETURNING "ID";`
+                : `DECLARE @stamped TABLE (ID UNIQUEIDENTIFIER); UPDATE ${table} SET [Status] = 'Confirmed', [DraftOrderID] = @p1 OUTPUT INSERTED.ID INTO @stamped WHERE [ID] = @p0 AND [Status] = 'Processing'; SELECT ID FROM @stamped;`;
+
+            const rows = await provider.ExecuteSQL<{ ID: string }>(sql, [sessionID, orderID], { isMutation: true }, contextUser);
+            return Array.isArray(rows) && rows.length === 1;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            LogError(`[CheckoutSessionService] stampSessionConfirmedAtomic failed for session ${sessionID}: ${msg}`);
+            return false;
         }
     }
 

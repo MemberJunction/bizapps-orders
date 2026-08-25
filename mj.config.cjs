@@ -205,6 +205,23 @@ module.exports = {
       RootPath: '/webhooks/payments',
       Settings: {},
     },
+    {
+      /**
+       * The anonymous checkout edge (CheckoutServerExtension): the public transport in front
+       * of CheckoutSessionService, mounted pre-auth like the webhook. Access control is the
+       * distribution slug + per-session client key, layered with rate limiting, a per-widget
+       * origin allowlist (`Configuration.allowedOrigins`), and optional Cloudflare Turnstile
+       * (`Configuration.requireTurnstile` + the secret named by TurnstileSecretEnvVar).
+       * Settings:
+       *   ServiceUserEmail      — named checkout principal for writes (falls back to system user)
+       *   TurnstileSecretEnvVar — env var holding the Turnstile secret (e.g. 'CHECKOUT_TURNSTILE_SECRET')
+       *   RateLimitWindowMs / RateLimitMax — fixed-window limits per client IP (defaults 60000 / 30)
+       */
+      Enabled: true,
+      DriverClass: 'OrdersCheckoutEdge',
+      RootPath: '/checkout',
+      Settings: {},
+    },
   ],
 
   /**

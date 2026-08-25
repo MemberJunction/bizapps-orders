@@ -48,11 +48,15 @@ import {
     LoadStripeACHPaymentProvider,
     LoadStripePaymentProvider,
     LoadSubscriptionBehavior,
+    LoadEntitlementGrantClaimDriver,
+    LoadGuestOrderClaimDriver,
 } from '@mj-biz-apps/orders-core-entities-server';
 
 // The unauthenticated webhook route. Registered as a server EXTENSION rather than mounted here,
 // because it must be installed before MJServer's auth middleware — see the file for why.
 import { LoadPaymentWebhookExtension } from './PaymentWebhookExtension.js';
+// The anonymous checkout edge — same pre-auth extension mechanism as the webhook.
+import { LoadCheckoutServerExtension } from './CheckoutServerExtension.js';
 
 // Import generated GraphQL resolvers
 import './generated/generated.js';
@@ -63,6 +67,7 @@ import { CLASS_REGISTRATIONS } from './generated/class-registrations-manifest.js
 // Re-export the manifest for consumers
 export { CLASS_REGISTRATIONS } from './generated/class-registrations-manifest.js';
 export { PaymentWebhookExtension, LoadPaymentWebhookExtension } from './PaymentWebhookExtension.js';
+export { CheckoutServerExtension, LoadCheckoutServerExtension } from './CheckoutServerExtension.js';
 
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -129,8 +134,15 @@ export function LoadBizAppsOrdersServer(): void {
     // fallback rather than letting "nobody registered a channel" read as "the channel refused to send".
     LoadEmailDeliveryChannel();        // 'Email' — over MJ's communication framework
 
+    // Identity-claim drivers (guest checkout → account linking). Without these anchors the
+    // @RegisterClass decorators are tree-shaken and MJ core's IdentityClaimEngine finds no
+    // driver for the DriverClass named in the claim-type metadata — silently.
+    LoadGuestOrderClaimDriver();       // 'GuestOrderClaimDriver' — re-parents the order + activates grants on redemption
+    LoadEntitlementGrantClaimDriver(); // 'EntitlementGrantClaimDriver' — activates a single grant on redemption
+
     // Server extensions. Same tree-shaking hazard again: without the anchor the class is absent from
     // the ClassFactory and MJServer's extension loader silently finds nothing for the DriverClass named
     // in mj.config.cjs — so the webhook route is never mounted and no bank debit ever captures.
     LoadPaymentWebhookExtension();     // POST /webhooks/payments/:providerId, mounted before auth
+    LoadCheckoutServerExtension();     // POST /checkout/{initialize,draft,payment-intent,complete}, mounted before auth
 }
