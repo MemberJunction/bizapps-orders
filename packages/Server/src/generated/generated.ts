@@ -5682,10 +5682,6 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @MaxLength(40)
     JournalEntry?: string;
         
-    @Field({nullable: true}) 
-    @MaxLength(36)
-    RootReversesPaymentHeaderID?: string;
-        
 }
 
 //****************************************************************************
@@ -9352,10 +9348,6 @@ export class mjBizAppsOrdersProduct_ {
     @MaxLength(200)
     SubscriptionType?: string;
         
-    @Field({nullable: true}) 
-    @MaxLength(36)
-    RootSuccessorProductID?: string;
-        
 }
 
 //****************************************************************************
@@ -12648,14 +12640,6 @@ export class mjBizAppsOrdersSubscription_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     MigratesToSubscription?: string;
-        
-    @Field({nullable: true}) 
-    @MaxLength(36)
-    RootMigratesFromSubscriptionID?: string;
-        
-    @Field({nullable: true}) 
-    @MaxLength(36)
-    RootMigratesToSubscriptionID?: string;
         
 }
 
