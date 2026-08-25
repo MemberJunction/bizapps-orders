@@ -13,12 +13,17 @@
 -- is NOT in this file — CodeGen left BaseViewGenerated=0 alone. JOINs onto
 -- __mj_BizAppsCommon.Person / Organization in orders views are real FKs and
 -- are kept. ProductType view/SPs were missing from the combined emit and are
--- appended from SQL Scripts/generated.
+-- appended from SQL Scripts/generated. That emit also omitted the
+-- Product Types.PricingDriverClass EntityField (ID b682302d-…, sequence 18).
+-- Without it, mj sync push of product-types builds a ResultTable that does
+-- not include PricingDriverClass while spCreateProductType SELECTs it from
+-- vwProductTypes (p.*), and INSERT INTO @ResultTable EXEC fails with 213.
 --
 -- spUpdateExistingEntityFieldsFromSchema / spDeleteUnneededEntityFields /
 -- spSetDefaultColumnWidthWhereNeeded were stripped: they collide on
 -- UQ_EntityField_EntityID_Sequence with the explicit IF NOT EXISTS field
--- inserts in this same file.
+-- inserts in this same file. Open App metadata heal after mj migrate covers
+-- field sync for columns that already have EntityField rows.
 -- =============================================================================
 
 
@@ -80,6 +85,72 @@
 
 /* SQL text to update existing entities from schema */
 EXEC [${mjSchema}].[spUpdateExistingEntitiesFromSchema] @ExcludedSchemaNames='sys,staging,dbo,__mj,__mj_UDT,__mj_BizAppsCommon,__mj_BizAppsAccounting,__mj_BizAppsTasks,__mj_BizAppsIssues,__mj_BizAppsForms,__mj_BizAppsCommittees,__mj_BizAppsSecureMessaging,__mj_BizAppsATS,__mj_BizAppsCaliber,__mj_BizAppsMarketing,__mj_BizAppsSonar';
+GO
+
+-- Product Types.PricingDriverClass: table column 18, missing from EntityField.
+-- ID matches V202608221235's category UPDATE that assumed this row existed.
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'b682302d-16ad-4f8a-be50-2064265ff7c0' OR (EntityID = '9D578BD2-B7BB-40BD-88B7-6494C9B8DC00' AND Name = 'PricingDriverClass')) BEGIN
+         INSERT INTO [${mjSchema}].[EntityField]
+         (
+            [ID],
+            [EntityID],
+            [Sequence],
+            [Name],
+            [DisplayName],
+            [Description],
+            [Type],
+            [Length],
+            [Precision],
+            [Scale],
+            [AllowsNull],
+            [DefaultValue],
+            [AutoIncrement],
+            [AllowUpdateAPI],
+            [IsVirtual],
+            [IsComputed],
+            [RelatedEntityID],
+            [RelatedEntityFieldName],
+            [IsNameField],
+            [IncludeInUserSearchAPI],
+            [IncludeRelatedEntityNameFieldInBaseView],
+            [DefaultInView],
+            [IsPrimaryKey],
+            [IsUnique],
+            [RelatedEntityDisplayType],
+            [__mj_CreatedAt],
+            [__mj_UpdatedAt]
+         )
+         VALUES
+         (
+            'b682302d-16ad-4f8a-be50-2064265ff7c0',
+            '9D578BD2-B7BB-40BD-88B7-6494C9B8DC00', -- Entity: MJ_BizApps_Orders: Product Types
+            18,
+            'PricingDriverClass',
+            'Pricing Driver Class',
+            'ClassFactory key of a BasePriceResolver subclass for every product of this type, or NULL. The natural home for behaviour-wide pricing such as usage metering.',
+            'nvarchar',
+            510,
+            0,
+            0,
+            1,
+            NULL,
+            0,
+            1,
+            0,
+            0,
+            NULL,
+            NULL,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            'Search',
+            GETUTCDATE(),
+            GETUTCDATE()
+         )
+      END;
 GO
 
 /* SQL text to insert 8 new entity field(s) */
@@ -7447,8 +7518,9 @@ GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteSubscription] TO [cdp_Develo
 
 GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteSubscription] TO [cdp_Developer], [cdp_Integration];
 
-/* SQL text to delete unneeded entity fields (4 scoped entities) */
-EXEC [${mjSchema}].[spDeleteUnneededEntityFields] @ExcludedSchemaNames='sys,staging,dbo,__mj,__mj_UDT,__mj_BizAppsCommon,__mj_BizAppsAccounting,__mj_BizAppsTasks,__mj_BizAppsIssues,__mj_BizAppsForms,__mj_BizAppsCommittees,__mj_BizAppsSecureMessaging,__mj_BizAppsATS,__mj_BizAppsCaliber,__mj_BizAppsMarketing,__mj_BizAppsSonar', @EntityIDs='B35DD5C3-9A6B-42D1-9049-297EE45ED2D5,B0FA90A6-6975-4C5E-ABC7-3AEA97700CC3,90A1060F-35D6-44A7-9076-A9053BBF60E6,646F03F8-C718-4DFF-B83D-F90A079C370D';
+-- skipped spDeleteUnneededEntityFields: header of this file — these collide on
+-- UQ_EntityField_EntityID_Sequence with the explicit IF NOT EXISTS field
+-- inserts above. Open App metadata heal after mj migrate covers field sync.
 
 /* SQL text to insert 5 new entity field(s) */
 
@@ -7772,8 +7844,9 @@ GO
       END;
 GO
 
-/* SQL text to update existing entity fields from schema (4 scoped entities) */
-EXEC [${mjSchema}].[spUpdateExistingEntityFieldsFromSchema] @ExcludedSchemaNames='sys,staging,dbo,__mj,__mj_UDT,__mj_BizAppsCommon,__mj_BizAppsAccounting,__mj_BizAppsTasks,__mj_BizAppsIssues,__mj_BizAppsForms,__mj_BizAppsCommittees,__mj_BizAppsSecureMessaging,__mj_BizAppsATS,__mj_BizAppsCaliber,__mj_BizAppsMarketing,__mj_BizAppsSonar', @EntityIDs='B35DD5C3-9A6B-42D1-9049-297EE45ED2D5,B0FA90A6-6975-4C5E-ABC7-3AEA97700CC3,90A1060F-35D6-44A7-9076-A9053BBF60E6,646F03F8-C718-4DFF-B83D-F90A079C370D';
+-- skipped spUpdateExistingEntityFieldsFromSchema: header of this file — these
+-- collide on UQ_EntityField_EntityID_Sequence with the explicit IF NOT EXISTS
+-- field inserts above. Open App metadata heal after mj migrate covers field sync.
 
 -- skipped spSetDefaultColumnWidthWhereNeeded: collides with explicit EntityField inserts in this file
 GO
