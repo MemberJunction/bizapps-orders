@@ -1744,7 +1744,7 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Description: Unit price (>= 0). Multiplied by Quantity to get the line amount booked to revenue.`),
     ProductPriceID: z.string().nullable().describe(`
         * * Field Name: ProductPriceID
-        * * Display Name: Product Price Rule
+        * * Display Name: Product Price
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Prices (vwProductPrices.ID)
         * * Description: Which price RULE produced UnitPrice. UnitPrice still stamps; this records why, so a disputed invoice can be traced back to the rule that priced it. NULL when the caller supplied the price directly, which remains valid.`),
@@ -1876,44 +1876,64 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Default Value: getutcdate()`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
-        * * Display Name: Order Header Name
+        * * Display Name: Order Header Label
         * * SQL Data Type: nvarchar(40)`),
     Product: z.string().describe(`
         * * Field Name: Product
-        * * Display Name: Product Name
+        * * Display Name: Product Label
         * * SQL Data Type: nvarchar(200)`),
     Company: z.string().describe(`
         * * Field Name: Company
-        * * Display Name: Company Name
+        * * Display Name: Company Label
         * * SQL Data Type: nvarchar(50)`),
     ShipToOrganization: z.string().nullable().describe(`
         * * Field Name: ShipToOrganization
-        * * Display Name: Ship To Organization Name
+        * * Display Name: Ship To Organization Label
         * * SQL Data Type: nvarchar(255)`),
     ShipToPerson: z.string().nullable().describe(`
         * * Field Name: ShipToPerson
-        * * Display Name: Ship To Person Name
+        * * Display Name: Ship To Person Label
         * * SQL Data Type: nvarchar(100)`),
     SourceBundleProduct: z.string().nullable().describe(`
         * * Field Name: SourceBundleProduct
-        * * Display Name: Source Bundle Product Name
+        * * Display Name: Source Bundle Product Label
         * * SQL Data Type: nvarchar(200)`),
     Subscription: z.string().nullable().describe(`
         * * Field Name: Subscription
-        * * Display Name: Subscription Name
+        * * Display Name: Subscription Label
         * * SQL Data Type: nvarchar(40)`),
     JournalEntry: z.string().nullable().describe(`
         * * Field Name: JournalEntry
-        * * Display Name: Journal Entry Name
+        * * Display Name: Journal Entry Label
         * * SQL Data Type: nvarchar(40)`),
     __mj_Latitude: z.number().nullable().describe(`
         * * Field Name: __mj_Latitude
-        * * Display Name: Mj Latitude
+        * * Display Name: Latitude
         * * SQL Data Type: decimal(10, 6)`),
     __mj_Longitude: z.number().nullable().describe(`
         * * Field Name: __mj_Longitude
-        * * Display Name: Mj Longitude
+        * * Display Name: Longitude
         * * SQL Data Type: decimal(10, 6)`),
+    RootParentOrderLineID: z.string().nullable().describe(`
+        * * Field Name: RootParentOrderLineID
+        * * Display Name: Root Parent Order Line
+        * * SQL Data Type: uniqueidentifier`),
+    ParentOrderLineIDDepth: z.number().nullable().describe(`
+        * * Field Name: ParentOrderLineIDDepth
+        * * Display Name: Parent Order Line Depth
+        * * SQL Data Type: int`),
+    ParentOrderLineIDPath: z.string().nullable().describe(`
+        * * Field Name: ParentOrderLineIDPath
+        * * Display Name: Parent Order Line Path
+        * * SQL Data Type: nvarchar(MAX)`),
+    ParentOrderLineIDIsLeaf: z.boolean().nullable().describe(`
+        * * Field Name: ParentOrderLineIDIsLeaf
+        * * Display Name: Is Leaf Node
+        * * SQL Data Type: bit`),
+    ParentOrderLineIDChildCount: z.number().nullable().describe(`
+        * * Field Name: ParentOrderLineIDChildCount
+        * * Display Name: Child Count
+        * * SQL Data Type: int`),
 });
 
 export type mjBizAppsOrdersOrderLineEntityType = z.infer<typeof mjBizAppsOrdersOrderLineSchema>;
@@ -2965,12 +2985,12 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Description: The company that owns this category tree (D7). No shared/global categories. FK to __mj.Company.`),
     Code: z.string().nullable().describe(`
         * * Field Name: Code
-        * * Display Name: Category Code
+        * * Display Name: Code
         * * SQL Data Type: nvarchar(40)
         * * Description: Stable machine code for the category. Unique when present.`),
     Name: z.string().describe(`
         * * Field Name: Name
-        * * Display Name: Category Name
+        * * Display Name: Name
         * * SQL Data Type: nvarchar(200)
         * * Description: Display name of the category.`),
     ParentProductCategoryID: z.string().nullable().describe(`
@@ -2991,7 +3011,7 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Description: Whether this category is active and selectable.`),
     DefaultIsTaxable: z.boolean().nullable().describe(`
         * * Field Name: DefaultIsTaxable
-        * * Display Name: Default Taxable
+        * * Display Name: Default Is Taxable
         * * SQL Data Type: bit
         * * Description: Default taxability for products in this category (D73). NULL means the walk continues to this category's PARENT, then upward to the root, and only then to the product type. Taxability resolves product -> category -> ancestors -> type, most specific wins - the same walk GL accounts use.`),
     DefaultTaxCategory: z.string().nullable().describe(`
@@ -3001,7 +3021,7 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Description: Default taxability key for products in this category, matched against accounting's TaxRate.TaxCategory. NULL means the walk continues up the category tree and then to the product type.`),
     DefaultEntitlementGrantTiming: z.union([z.literal('OnActivation'), z.literal('OnConfirm'), z.literal('OnPaidInFull')]).nullable().describe(`
         * * Field Name: DefaultEntitlementGrantTiming
-        * * Display Name: Entitlement Grant Timing
+        * * Display Name: Default Entitlement Grant Timing
         * * SQL Data Type: nvarchar(20)
     * * Value List Type: List
     * * Possible Values 
@@ -3010,7 +3030,7 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
     *   * OnPaidInFull`),
     DefaultEntitlementQuantityMode: z.union([z.literal('Flat'), z.literal('PerUnit')]).nullable().describe(`
         * * Field Name: DefaultEntitlementQuantityMode
-        * * Display Name: Entitlement Quantity Mode
+        * * Display Name: Default Entitlement Quantity Mode
         * * SQL Data Type: nvarchar(20)
     * * Value List Type: List
     * * Possible Values 
@@ -3018,7 +3038,7 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
     *   * PerUnit`),
     DefaultEntitlementValidityMode: z.union([z.literal('EventWindow'), z.literal('FixedDuration'), z.literal('Perpetual'), z.literal('SubscriptionTerm')]).nullable().describe(`
         * * Field Name: DefaultEntitlementValidityMode
-        * * Display Name: Entitlement Validity Mode
+        * * Display Name: Default Entitlement Validity Mode
         * * SQL Data Type: nvarchar(20)
     * * Value List Type: List
     * * Possible Values 
@@ -3049,6 +3069,26 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Field Name: ParentProductCategory
         * * Display Name: Parent Category Name
         * * SQL Data Type: nvarchar(200)`),
+    RootParentProductCategoryID: z.string().nullable().describe(`
+        * * Field Name: RootParentProductCategoryID
+        * * Display Name: Root Parent Category
+        * * SQL Data Type: uniqueidentifier`),
+    ParentProductCategoryIDDepth: z.number().nullable().describe(`
+        * * Field Name: ParentProductCategoryIDDepth
+        * * Display Name: Depth
+        * * SQL Data Type: int`),
+    ParentProductCategoryIDPath: z.string().nullable().describe(`
+        * * Field Name: ParentProductCategoryIDPath
+        * * Display Name: Path
+        * * SQL Data Type: nvarchar(MAX)`),
+    ParentProductCategoryIDIsLeaf: z.boolean().nullable().describe(`
+        * * Field Name: ParentProductCategoryIDIsLeaf
+        * * Display Name: Is Leaf
+        * * SQL Data Type: bit`),
+    ParentProductCategoryIDChildCount: z.number().nullable().describe(`
+        * * Field Name: ParentProductCategoryIDChildCount
+        * * Display Name: Child Count
+        * * SQL Data Type: int`),
 });
 
 export type mjBizAppsOrdersProductCategoryEntityType = z.infer<typeof mjBizAppsOrdersProductCategorySchema>;
@@ -10151,7 +10191,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: ProductPriceID
-    * * Display Name: Product Price Rule
+    * * Display Name: Product Price
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Prices (vwProductPrices.ID)
     * * Description: Which price RULE produced UnitPrice. UnitPrice still stamps; this records why, so a disputed invoice can be traced back to the rule that priced it. NULL when the caller supplied the price directly, which remains valid.
@@ -10469,7 +10509,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: OrderHeader
-    * * Display Name: Order Header Name
+    * * Display Name: Order Header Label
     * * SQL Data Type: nvarchar(40)
     */
     get OrderHeader(): string {
@@ -10478,7 +10518,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: Product
-    * * Display Name: Product Name
+    * * Display Name: Product Label
     * * SQL Data Type: nvarchar(200)
     */
     get Product(): string {
@@ -10487,7 +10527,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: Company
-    * * Display Name: Company Name
+    * * Display Name: Company Label
     * * SQL Data Type: nvarchar(50)
     */
     get Company(): string {
@@ -10496,7 +10536,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: ShipToOrganization
-    * * Display Name: Ship To Organization Name
+    * * Display Name: Ship To Organization Label
     * * SQL Data Type: nvarchar(255)
     */
     get ShipToOrganization(): string | null {
@@ -10505,7 +10545,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: ShipToPerson
-    * * Display Name: Ship To Person Name
+    * * Display Name: Ship To Person Label
     * * SQL Data Type: nvarchar(100)
     */
     get ShipToPerson(): string | null {
@@ -10514,7 +10554,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: SourceBundleProduct
-    * * Display Name: Source Bundle Product Name
+    * * Display Name: Source Bundle Product Label
     * * SQL Data Type: nvarchar(200)
     */
     get SourceBundleProduct(): string | null {
@@ -10523,7 +10563,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: Subscription
-    * * Display Name: Subscription Name
+    * * Display Name: Subscription Label
     * * SQL Data Type: nvarchar(40)
     */
     get Subscription(): string | null {
@@ -10532,7 +10572,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: JournalEntry
-    * * Display Name: Journal Entry Name
+    * * Display Name: Journal Entry Label
     * * SQL Data Type: nvarchar(40)
     */
     get JournalEntry(): string | null {
@@ -10541,7 +10581,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: __mj_Latitude
-    * * Display Name: Mj Latitude
+    * * Display Name: Latitude
     * * SQL Data Type: decimal(10, 6)
     */
     get __mj_Latitude(): number | null {
@@ -10550,11 +10590,56 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
 
     /**
     * * Field Name: __mj_Longitude
-    * * Display Name: Mj Longitude
+    * * Display Name: Longitude
     * * SQL Data Type: decimal(10, 6)
     */
     get __mj_Longitude(): number | null {
         return this.Get('__mj_Longitude');
+    }
+
+    /**
+    * * Field Name: RootParentOrderLineID
+    * * Display Name: Root Parent Order Line
+    * * SQL Data Type: uniqueidentifier
+    */
+    get RootParentOrderLineID(): string | null {
+        return this.Get('RootParentOrderLineID');
+    }
+
+    /**
+    * * Field Name: ParentOrderLineIDDepth
+    * * Display Name: Parent Order Line Depth
+    * * SQL Data Type: int
+    */
+    get ParentOrderLineIDDepth(): number | null {
+        return this.Get('ParentOrderLineIDDepth');
+    }
+
+    /**
+    * * Field Name: ParentOrderLineIDPath
+    * * Display Name: Parent Order Line Path
+    * * SQL Data Type: nvarchar(MAX)
+    */
+    get ParentOrderLineIDPath(): string | null {
+        return this.Get('ParentOrderLineIDPath');
+    }
+
+    /**
+    * * Field Name: ParentOrderLineIDIsLeaf
+    * * Display Name: Is Leaf Node
+    * * SQL Data Type: bit
+    */
+    get ParentOrderLineIDIsLeaf(): boolean | null {
+        return this.Get('ParentOrderLineIDIsLeaf');
+    }
+
+    /**
+    * * Field Name: ParentOrderLineIDChildCount
+    * * Display Name: Child Count
+    * * SQL Data Type: int
+    */
+    get ParentOrderLineIDChildCount(): number | null {
+        return this.Get('ParentOrderLineIDChildCount');
     }
 }
 
@@ -13741,7 +13826,7 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
 
     /**
     * * Field Name: Code
-    * * Display Name: Category Code
+    * * Display Name: Code
     * * SQL Data Type: nvarchar(40)
     * * Description: Stable machine code for the category. Unique when present.
     */
@@ -13754,7 +13839,7 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
 
     /**
     * * Field Name: Name
-    * * Display Name: Category Name
+    * * Display Name: Name
     * * SQL Data Type: nvarchar(200)
     * * Description: Display name of the category.
     */
@@ -13807,7 +13892,7 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
 
     /**
     * * Field Name: DefaultIsTaxable
-    * * Display Name: Default Taxable
+    * * Display Name: Default Is Taxable
     * * SQL Data Type: bit
     * * Description: Default taxability for products in this category (D73). NULL means the walk continues to this category's PARENT, then upward to the root, and only then to the product type. Taxability resolves product -> category -> ancestors -> type, most specific wins - the same walk GL accounts use.
     */
@@ -13833,7 +13918,7 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
 
     /**
     * * Field Name: DefaultEntitlementGrantTiming
-    * * Display Name: Entitlement Grant Timing
+    * * Display Name: Default Entitlement Grant Timing
     * * SQL Data Type: nvarchar(20)
     * * Value List Type: List
     * * Possible Values 
@@ -13850,7 +13935,7 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
 
     /**
     * * Field Name: DefaultEntitlementQuantityMode
-    * * Display Name: Entitlement Quantity Mode
+    * * Display Name: Default Entitlement Quantity Mode
     * * SQL Data Type: nvarchar(20)
     * * Value List Type: List
     * * Possible Values 
@@ -13866,7 +13951,7 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
 
     /**
     * * Field Name: DefaultEntitlementValidityMode
-    * * Display Name: Entitlement Validity Mode
+    * * Display Name: Default Entitlement Validity Mode
     * * SQL Data Type: nvarchar(20)
     * * Value List Type: List
     * * Possible Values 
@@ -13931,6 +14016,51 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
     */
     get ParentProductCategory(): string | null {
         return this.Get('ParentProductCategory');
+    }
+
+    /**
+    * * Field Name: RootParentProductCategoryID
+    * * Display Name: Root Parent Category
+    * * SQL Data Type: uniqueidentifier
+    */
+    get RootParentProductCategoryID(): string | null {
+        return this.Get('RootParentProductCategoryID');
+    }
+
+    /**
+    * * Field Name: ParentProductCategoryIDDepth
+    * * Display Name: Depth
+    * * SQL Data Type: int
+    */
+    get ParentProductCategoryIDDepth(): number | null {
+        return this.Get('ParentProductCategoryIDDepth');
+    }
+
+    /**
+    * * Field Name: ParentProductCategoryIDPath
+    * * Display Name: Path
+    * * SQL Data Type: nvarchar(MAX)
+    */
+    get ParentProductCategoryIDPath(): string | null {
+        return this.Get('ParentProductCategoryIDPath');
+    }
+
+    /**
+    * * Field Name: ParentProductCategoryIDIsLeaf
+    * * Display Name: Is Leaf
+    * * SQL Data Type: bit
+    */
+    get ParentProductCategoryIDIsLeaf(): boolean | null {
+        return this.Get('ParentProductCategoryIDIsLeaf');
+    }
+
+    /**
+    * * Field Name: ParentProductCategoryIDChildCount
+    * * Display Name: Child Count
+    * * SQL Data Type: int
+    */
+    get ParentProductCategoryIDChildCount(): number | null {
+        return this.Get('ParentProductCategoryIDChildCount');
     }
 }
 

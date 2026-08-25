@@ -4760,6 +4760,22 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field(() => Float, {nullable: true}) 
     _mj__Longitude?: number;
         
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    RootParentOrderLineID?: string;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentOrderLineIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    ParentOrderLineIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    ParentOrderLineIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentOrderLineIDChildCount?: number;
+        
 }
 
 //****************************************************************************
@@ -8149,6 +8165,22 @@ export class mjBizAppsOrdersProductCategory_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     ParentProductCategory?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    RootParentProductCategoryID?: string;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentProductCategoryIDDepth?: number;
+        
+    @Field({nullable: true}) 
+    ParentProductCategoryIDPath?: string;
+        
+    @Field(() => Boolean, {nullable: true}) 
+    ParentProductCategoryIDIsLeaf?: boolean;
+        
+    @Field(() => Int, {nullable: true}) 
+    ParentProductCategoryIDChildCount?: number;
         
 }
 
