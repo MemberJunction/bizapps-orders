@@ -10,12 +10,14 @@
 
 import { RegisterClass } from '@memberjunction/global';
 import { Metadata, UserInfo, IRunViewProvider } from '@memberjunction/core';
+// Local fallback contracts — see identityClaimContracts.ts. Restore this import to
+// '@memberjunction/core-entities' once MJ publishes these exports.
 import {
     BaseIdentityClaimDriver,
     type ClaimContext,
     type ClaimRedeemContext,
     type ClaimResult,
-} from '@memberjunction/core-entities';
+} from './identityClaimContracts.js';
 import { mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
 import { resolvePersonID } from './claimDriverHelpers.js';
 
