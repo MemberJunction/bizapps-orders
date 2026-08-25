@@ -20,8 +20,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write # push the changeset-release/next branch
-  pull-requests: write # open and update the Version Packages PR
+  contents: read # writes go through the App token, not GITHUB_TOKEN
 
 concurrency:
   group: version-${{ github.ref }}
@@ -32,8 +31,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Mint a short-lived installation token. App-created PRs DO trigger other
+      # workflows, so build.yml runs on the Version Packages PR and verifies
+      # --frozen-lockfile before merge rather than after.
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - uses: actions/checkout@v4
         with:
+          token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
           fetch-tags: true # the bump-level check compares migrations/ against the last v* tag
 
@@ -69,8 +78,4 @@ jobs:
           version: pnpm run version:ci
           title: 'chore(release): version packages'
           commit: 'chore(release): version packages'
-          # NOTE: with the default GITHUB_TOKEN, PRs this action opens do NOT trigger other
-          # workflows (GitHub's anti-recursion rule), so build.yml will not run on the
-          # Version Packages PR and `--frozen-lockfile` goes unverified until merge. Swap in
-          # a GitHub App token to fix that — App-created PRs do trigger workflows.
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ steps.app-token.outputs.token }}
