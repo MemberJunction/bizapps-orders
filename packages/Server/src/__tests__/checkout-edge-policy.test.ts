@@ -4,6 +4,7 @@ import {
     isSameOrigin,
     isValidCheckoutSlug,
     originAllowed,
+    resolveClientIp,
 } from '../checkout-edge-policy.js';
 
 describe('isValidCheckoutSlug', () => {
@@ -63,5 +64,28 @@ describe('originAllowed', () => {
         const policy = { allowedOrigins: ['https://events.example.com/'] };
         expect(originAllowed('https://events.example.com', policy, 'api.example.com')).toBe(true);
         expect(originAllowed('https://other.example.com', policy, 'api.example.com')).toBe(false);
+    });
+});
+
+describe('resolveClientIp', () => {
+    const req = (xff?: string | string[], socket = '10.0.0.9') => ({
+        headers: { 'x-forwarded-for': xff },
+        socket: { remoteAddress: socket },
+    });
+
+    it('ignores X-Forwarded-For when no proxy hops are declared (default)', () => {
+        expect(resolveClientIp(req('1.2.3.4, 10.0.0.1'))).toBe('10.0.0.9');
+        expect(resolveClientIp(req('1.2.3.4'))).toBe('10.0.0.9');
+    });
+
+    it('takes the Nth-from-right hop when TrustedProxyHops is set', () => {
+        // client, proxy1, proxy2 — with 1 trusted proxy the last hop is what that proxy saw
+        expect(resolveClientIp(req('9.9.9.9, 203.0.113.10'), 1)).toBe('203.0.113.10');
+        expect(resolveClientIp(req('9.9.9.9, 198.51.100.2, 203.0.113.10'), 2)).toBe('198.51.100.2');
+    });
+
+    it('falls back to the socket when XFF is missing or too short for the declared hop count', () => {
+        expect(resolveClientIp(req(undefined), 1)).toBe('10.0.0.9');
+        expect(resolveClientIp(req('only-one'), 2)).toBe('10.0.0.9');
     });
 });

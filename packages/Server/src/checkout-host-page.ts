@@ -18,11 +18,37 @@ export interface CheckoutHostPageOptions {
     apiRoot: string;
     /** Browser tab title before initialize returns the widget name. */
     pageTitle?: string;
+    /** Per-response CSP nonce for the inline style and boot script. */
+    cspNonce?: string;
 }
 
 export interface CheckoutHostErrorOptions {
     message: string;
     pageTitle?: string;
+    cspNonce?: string;
+}
+
+/** Headers for the public checkout host / error pages (CSP is nonce-based). */
+export function checkoutHostSecurityHeaders(nonce: string): Record<string, string> {
+    const n = nonce.replace(/[^A-Za-z0-9+/=_-]/g, '');
+    const csp = [
+        "default-src 'none'",
+        "base-uri 'none'",
+        "form-action 'none'",
+        "frame-ancestors 'none'",
+        `script-src 'nonce-${n}' https://js.stripe.com`,
+        `style-src 'nonce-${n}'`,
+        "img-src 'self' data: https://*.stripe.com",
+        'frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://*.stripe.com https://*.hcaptcha.com https://newassets.hcaptcha.com',
+        "connect-src 'self' https://api.stripe.com https://m.stripe.network",
+    ].join('; ');
+    return {
+        'Content-Security-Policy': csp,
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'no-store',
+    };
 }
 
 /** Escape a string for safe insertion into HTML text content. */
@@ -42,6 +68,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
     const title = escapeHtml(options.pageTitle ?? 'Checkout');
     const slug = escapeAttr(options.slug);
     const apiRoot = escapeAttr(options.apiRoot);
+    const nonceAttr = options.cspNonce ? ` nonce="${escapeAttr(options.cspNonce)}"` : '';
     return `<!doctype html>
 <html lang="en">
 <head>
@@ -49,13 +76,13 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="robots" content="noindex" />
   <title>${title}</title>
-  <style>${PAGE_CSS}</style>
+  <style${nonceAttr}>${PAGE_CSS}</style>
 </head>
 <body>
   <main class="mj-co" id="mj-co" data-slug="${slug}" data-api-root="${apiRoot}">
     <p class="mj-co__status" role="status">Loading checkout…</p>
   </main>
-  <script>${BOOT_SCRIPT}</script>
+  <script${nonceAttr}>${BOOT_SCRIPT}</script>
 </body>
 </html>`;
 }
@@ -63,6 +90,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
 export function renderCheckoutHostErrorPage(options: CheckoutHostErrorOptions): string {
     const title = escapeHtml(options.pageTitle ?? 'Checkout unavailable');
     const message = escapeHtml(options.message);
+    const nonceAttr = options.cspNonce ? ` nonce="${escapeAttr(options.cspNonce)}"` : '';
     return `<!doctype html>
 <html lang="en">
 <head>
@@ -70,7 +98,7 @@ export function renderCheckoutHostErrorPage(options: CheckoutHostErrorOptions): 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="robots" content="noindex" />
   <title>${title}</title>
-  <style>${PAGE_CSS}</style>
+  <style${nonceAttr}>${PAGE_CSS}</style>
 </head>
 <body>
   <main class="mj-co">
@@ -157,7 +185,21 @@ const BOOT_SCRIPT = `
       var existing = sessionStorage.getItem(storageKey);
       if (existing) return existing;
     } catch (e) {}
-    var key = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : ('ck_' + Math.random().toString(36).slice(2));
+    var key;
+    if (window.crypto && crypto.randomUUID) {
+      key = crypto.randomUUID();
+    } else if (window.crypto && crypto.getRandomValues) {
+      var b = new Uint8Array(16);
+      crypto.getRandomValues(b);
+      b[6] = (b[6] & 0x0f) | 0x40;
+      b[8] = (b[8] & 0x3f) | 0x80;
+      var hex = [];
+      for (var i = 0; i < 16; i++) hex.push(('0' + b[i].toString(16)).slice(-2));
+      key = hex.slice(0, 4).join('') + '-' + hex.slice(4, 6).join('') + '-' + hex.slice(6, 8).join('') + '-' + hex.slice(8, 10).join('') + '-' + hex.slice(10, 16).join('');
+    } else {
+      showError('Checkout requires a secure random source. Open this page over HTTPS.');
+      return '';
+    }
     try { sessionStorage.setItem(storageKey, key); } catch (e) {}
     return key;
   }
@@ -206,6 +248,7 @@ const BOOT_SCRIPT = `
   }
 
   var sessionKey = clientKey();
+  if (!sessionKey) return;
   var sessionId = '';
   var config = {};
   var stripe = null;

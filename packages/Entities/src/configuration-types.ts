@@ -82,6 +82,11 @@ export interface CheckoutWidgetConfiguration {
     title?: string;
     description?: string;
     productId?: string;
+    /**
+     * Explicit catalog this widget may sell. When set, the anonymous draft edge
+     * rejects any ProductID not in this list (plus `productId` if present).
+     */
+    allowedProductIds?: string[];
     /** Alternative product resolution by SKU when productId is not set. */
     productSku?: string;
     productName?: string;

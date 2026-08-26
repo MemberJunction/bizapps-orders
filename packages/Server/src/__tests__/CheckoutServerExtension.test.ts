@@ -31,6 +31,7 @@ vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
         UpdateDraft: vi.fn(),
         OpenPaymentIntentForSession: vi.fn(),
         CompleteCheckout: vi.fn(),
+        ReapExpiredOpenSessions: vi.fn().mockResolvedValue(0),
     },
     EscapeText: (value: string) => value.replace(/'/g, "''"),
 }));
@@ -196,6 +197,10 @@ describe('CheckoutServerExtension', () => {
         expect(res.statusCode).toBe(200);
         expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
         expect(res.headers['cache-control']).toBe('no-store');
+        expect(res.headers['x-frame-options']).toBe('DENY');
+        expect(res.headers['referrer-policy']).toBe('no-referrer');
+        expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+        expect(res.headers['content-security-policy']).toContain("default-src 'none'");
         expect(res.body).toContain('data-slug="summit-2027"');
         expect(res.body).toContain('data-api-root="/checkout"');
         const filter = mockRunView.mock.calls[0][0].ExtraFilter as string;
@@ -222,5 +227,31 @@ describe('CheckoutServerExtension', () => {
             res as unknown as Response
         );
         expect(mockRunView.mock.calls[0][0].ExtraFilter).toContain("Slug = 'summit_2027'");
+    });
+
+    it('does not key rate limits on a spoofed leftmost X-Forwarded-For (default TrustedProxyHops=0)', async () => {
+        const { app, routes } = mockApp();
+        const ext = new CheckoutServerExtension();
+        await ext.Initialize(app, {
+            Enabled: true,
+            DriverClass: 'OrdersCheckoutEdge',
+            RootPath: '/checkout',
+            Settings: { RateLimitMax: 2, RateLimitMaxGlobal: 2, RateLimitWindowMs: 60_000 },
+        });
+        const hit = async (xff: string) => {
+            const res = mockRes();
+            await routes.get['/checkout/:slug'](
+                {
+                    params: { slug: 'summit-2027' },
+                    headers: { 'x-forwarded-for': xff },
+                    socket: { remoteAddress: '10.0.0.9' },
+                } as unknown as Request,
+                res as unknown as Response
+            );
+            return res.statusCode;
+        };
+        expect(await hit('1.1.1.1')).toBe(200);
+        expect(await hit('2.2.2.2')).toBe(200);
+        expect(await hit('3.3.3.3')).toBe(429);
     });
 });

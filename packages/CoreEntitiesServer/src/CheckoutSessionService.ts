@@ -262,16 +262,119 @@ export class CheckoutSessionService {
      * payment provider ref) must never ride along to the browser. `stripePublishableKey`
      * is publishable by definition and survives.
      */
+    /**
+     * Keys that may cross to an unauthenticated browser. Anything else in the
+     * admin-authored Configuration JSON stays on the server (allowlist, not denylist).
+     */
+    private static readonly PUBLIC_CONFIGURATION_KEYS: ReadonlySet<string> = new Set([
+        'title',
+        'description',
+        'productId',
+        'productSku',
+        'productName',
+        'unitPrice',
+        'currency',
+        'unitMode',
+        'allowQuantity',
+        'maxQuantity',
+        'stripePublishableKey',
+        'successMessage',
+        'redirectUrl',
+        'extensionEntityName',
+        'extensionFields',
+        'allowedOrigins',
+        'requireTurnstile',
+        'customUI',
+        'isEvent',
+        'theme',
+        'allowCoupons',
+    ]);
+
     private static sanitizeConfigurationForClient(configObj: CheckoutWidgetConfiguration): CheckoutWidgetConfiguration {
-        const sensitivePattern = /secret|password|credential|privatekey|apikey|webhooksecret/i;
         const sanitized: CheckoutWidgetConfiguration = {};
         for (const [key, value] of Object.entries(configObj)) {
-            if (key.toLowerCase() !== 'stripepublishablekey' && sensitivePattern.test(key)) {
-                continue;
+            if (CheckoutSessionService.PUBLIC_CONFIGURATION_KEYS.has(key)) {
+                sanitized[key] = value;
             }
-            sanitized[key] = value;
         }
         return sanitized;
+    }
+
+    private static idsEqual(a: string | null | undefined, b: string | null | undefined): boolean {
+        if (!a || !b) {
+            return false;
+        }
+        return a.replace(/[{}]/g, '').toLowerCase() === b.replace(/[{}]/g, '').toLowerCase();
+    }
+
+    /**
+     * Catalog this anonymous session is allowed to sell. Explicit `productId` /
+     * `allowedProductIds` / SKU-resolved id win; otherwise the draft path still
+     * requires the product to share the widget's CompanyID.
+     */
+    private static async resolveAllowedProductIds(
+        configObj: CheckoutWidgetConfiguration,
+        contextUser?: UserInfo
+    ): Promise<Set<string>> {
+        const allowed = new Set<string>();
+        if (typeof configObj.productId === 'string' && configObj.productId.trim()) {
+            allowed.add(configObj.productId.trim());
+        }
+        if (Array.isArray(configObj.allowedProductIds)) {
+            for (const id of configObj.allowedProductIds) {
+                if (typeof id === 'string' && id.trim()) {
+                    allowed.add(id.trim());
+                }
+            }
+        }
+        if (allowed.size === 0 && typeof configObj.productSku === 'string' && configObj.productSku.trim()) {
+            const rv = new RunView();
+            const escapedSku = EscapeText(configObj.productSku.trim());
+            const prodRes = await rv.RunView<{ ID: string }>({
+                EntityName: PRODUCT_ENTITY,
+                ExtraFilter: `SKU = '${escapedSku}'`,
+                ResultType: 'simple'
+            }, contextUser);
+            if (prodRes?.Success && prodRes.Results?.length) {
+                allowed.add(prodRes.Results[0].ID);
+            }
+        }
+        return allowed;
+    }
+
+    /** Marks expired-but-still-Open sessions Expired. Bounded; best-effort. */
+    public static async ReapExpiredOpenSessions(contextUser?: UserInfo, limit = 50): Promise<number> {
+        const rv = new RunView();
+        const nowUtc = new Date().toISOString();
+        const res = await rv.RunView<{ ID: string }>({
+            EntityName: CHECKOUT_SESSION_ENTITY,
+            Fields: ['ID'],
+            ExtraFilter: `Status = 'Open' AND ExpiresAt <= '${nowUtc}'`,
+            ResultType: 'simple',
+        }, contextUser);
+        if (!res?.Success || !res.Results?.length) {
+            return 0;
+        }
+        const md = new Metadata();
+        let n = 0;
+        for (const row of res.Results.slice(0, limit)) {
+            try {
+                const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
+                if (!(await session.Load(row.ID))) {
+                    continue;
+                }
+                if (session.Status !== 'Open') {
+                    continue;
+                }
+                session.Status = 'Expired';
+                if (await session.Save()) {
+                    n++;
+                }
+            } catch (err) {
+                LogError(`[CheckoutSessionService] ReapExpiredOpenSessions failed for ${row.ID}: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        return n;
     }
 
     /**
@@ -674,6 +777,19 @@ export class CheckoutSessionService {
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
         await widget.Load(session.CheckoutWidgetID);
 
+        let widgetConfig: CheckoutWidgetConfiguration = {};
+        if (widget.Configuration) {
+            try {
+                const parsed = JSON.parse(widget.Configuration);
+                if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    widgetConfig = parsed as CheckoutWidgetConfiguration;
+                }
+            } catch {
+                return failed('Invalid widget configuration');
+            }
+        }
+        const allowedProductIds = await this.resolveAllowedProductIds(widgetConfig, contextUser);
+
         // Build in-memory Order graph for accurate pricing calculation without DB pollution
         const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
         order.NewRecord();
@@ -712,36 +828,45 @@ export class CheckoutSessionService {
             let maxQuantityPerLine: number | null = null;
             let unitMode: 'perUnit' | 'perLine' = 'perLine';
 
-            if (inputLine.ProductID) {
-                try {
-                    const product = await md.GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, contextUser);
-                    const prodLoaded = await product.Load(inputLine.ProductID);
-                    if (prodLoaded) {
-                        maxQuantityPerLine = product.MaxQuantityPerLine ?? null;
-                        if (product.ProductTypeID) {
-                            const pType = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, contextUser);
-                            const pTypeLoaded = await pType.Load(product.ProductTypeID);
-                            if (pTypeLoaded) {
-                                targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
-                                if (pType.Configuration) {
-                                    try {
-                                        const pTypeConfig = JSON.parse(pType.Configuration) as ProductTypeConfiguration;
-                                        if (pTypeConfig.unitMode) {
-                                            unitMode = pTypeConfig.unitMode;
-                                        }
-                                        if (pTypeConfig.maxQuantity && !maxQuantityPerLine) {
-                                            maxQuantityPerLine = pTypeConfig.maxQuantity;
-                                        }
-                                    } catch {
-                                        // Ignore malformed JSON in Configuration
-                                    }
+            if (!inputLine.ProductID) {
+                return failed('ProductID is required on every checkout line');
+            }
+            if (allowedProductIds.size > 0 && ![...allowedProductIds].some((id) => this.idsEqual(id, inputLine.ProductID))) {
+                return failed('This checkout does not sell that product');
+            }
+            try {
+                const product = await md.GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, contextUser);
+                const prodLoaded = await product.Load(inputLine.ProductID);
+                if (!prodLoaded) {
+                    return failed('The requested product is not available');
+                }
+                if (widget.CompanyID && product.CompanyID && !this.idsEqual(widget.CompanyID, String(product.CompanyID))) {
+                    return failed('This checkout does not sell that product');
+                }
+                maxQuantityPerLine = product.MaxQuantityPerLine ?? null;
+                if (product.ProductTypeID) {
+                    const pType = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, contextUser);
+                    const pTypeLoaded = await pType.Load(product.ProductTypeID);
+                    if (pTypeLoaded) {
+                        targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
+                        if (pType.Configuration) {
+                            try {
+                                const pTypeConfig = JSON.parse(pType.Configuration) as ProductTypeConfiguration;
+                                if (pTypeConfig.unitMode) {
+                                    unitMode = pTypeConfig.unitMode;
                                 }
+                                if (pTypeConfig.maxQuantity && !maxQuantityPerLine) {
+                                    maxQuantityPerLine = pTypeConfig.maxQuantity;
+                                }
+                            } catch {
+                                // Ignore malformed JSON in Configuration
                             }
                         }
                     }
-                } catch {
-                    // Fallback to direct input line extension if product load is mocked or unavailable
                 }
+            } catch (err) {
+                LogError(`[CheckoutSessionService] Product load failed for ${inputLine.ProductID}: ${err instanceof Error ? err.message : String(err)}`);
+                return failed('The requested product is not available');
             }
 
             const effectiveMax = maxQuantityPerLine ?? DEFAULT_MAX_QUANTITY_PER_LINE;

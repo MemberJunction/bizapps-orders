@@ -53,6 +53,36 @@ export interface CheckoutOriginPolicy {
  * absent or empty, any origin is allowed (the distribution slug remains the
  * access control).
  */
+/**
+ * Client IP for rate limiting and Turnstile.
+ *
+ * `TrustedProxyHops` is the number of reverse proxies that append to
+ * `X-Forwarded-For`. 0 (the default) ignores XFF entirely and uses the socket
+ * address — the leftmost XFF hop is client-supplied and must never key a
+ * security decision. When hops is N, the Nth-from-the-right entry is used
+ * (the address the outermost trusted proxy observed).
+ */
+export function resolveClientIp(
+    req: { headers: { [key: string]: unknown }; socket?: { remoteAddress?: string } },
+    trustedProxyHops = 0
+): string {
+    const socket = req.socket?.remoteAddress ?? 'unknown';
+    if (!Number.isInteger(trustedProxyHops) || trustedProxyHops < 1) {
+        return socket;
+    }
+    const fwd = req.headers['x-forwarded-for'];
+    const raw = Array.isArray(fwd) ? fwd.join(',') : typeof fwd === 'string' ? fwd : undefined;
+    if (!raw) {
+        return socket;
+    }
+    const hops = raw.split(',').map((h) => h.trim()).filter((h) => h.length > 0);
+    const idx = hops.length - trustedProxyHops;
+    if (idx < 0 || idx >= hops.length) {
+        return socket;
+    }
+    return hops[idx];
+}
+
 export function originAllowed(
     origin: string,
     policy: CheckoutOriginPolicy,

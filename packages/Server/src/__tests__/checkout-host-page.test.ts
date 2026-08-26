@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    checkoutHostSecurityHeaders,
     escapeAttr,
     escapeHtml,
     renderCheckoutHostErrorPage,
@@ -34,6 +35,8 @@ describe('renderCheckoutHostPage', () => {
         expect(html).toContain("post('/payment-intent'");
         expect(html).toContain("post('/complete'");
         expect(html).toContain('if (stripe) { resolve(stripe); return; }');
+        expect(html).toContain('crypto.getRandomValues');
+        expect(html).not.toContain('Math.random');
         expect(html).not.toContain('amount:');
         expect(html).not.toContain('UnitPrice');
         expect(html).not.toContain('paymentProviderId');
@@ -54,5 +57,24 @@ describe('renderCheckoutHostErrorPage', () => {
         expect(html).toContain('Not &lt;found&gt; &amp; gone');
         expect(html).not.toContain('<script>');
         expect(html).toContain('role="alert"');
+    });
+
+    it('stamps a CSP nonce onto style and script when provided', () => {
+        const html = renderCheckoutHostPage({ slug: 's', apiRoot: '/checkout', cspNonce: 'nOnce+/1' });
+        expect(html).toContain('nonce="nOnce+/1"');
+        expect(html).toMatch(/<style nonce="nOnce\+\/1">/);
+        expect(html).toMatch(/<script nonce="nOnce\+\/1">/);
+    });
+});
+
+describe('checkoutHostSecurityHeaders', () => {
+    it('denies framing and scopes scripts to the nonce plus Stripe', () => {
+        const h = checkoutHostSecurityHeaders('abc123');
+        expect(h['X-Frame-Options']).toBe('DENY');
+        expect(h['Referrer-Policy']).toBe('no-referrer');
+        expect(h['Content-Security-Policy']).toContain("frame-ancestors 'none'");
+        expect(h['Content-Security-Policy']).toContain("'nonce-abc123'");
+        expect(h['Content-Security-Policy']).toContain('https://js.stripe.com');
+        expect(h['Content-Security-Policy']).toContain("default-src 'none'");
     });
 });

@@ -61,6 +61,7 @@ const mocks = vi.hoisted(() => {
         ID = 'prod-1';
         Name = 'Conference VIP Pass';
         ProductTypeID = 'ptype-event';
+        CompanyID = 'comp-10';
         MaxQuantityPerLine: number | null = null;
         Load = mockProductLoad;
     }
@@ -404,22 +405,42 @@ describe('CheckoutSessionService', () => {
             ]);
         });
 
-        it('strips secret-shaped keys from the Configuration returned to the anonymous caller', async () => {
+        it('allowlists public Configuration keys and drops secret-shaped and unknown keys', async () => {
             mocks.mockWidgetInstance.Configuration = JSON.stringify({
                 productId: 'prod-1',
                 stripePublishableKey: 'pk_test_ok',
                 paymentWebhookSecret: 'whsec_leak_me',
-                internalApiKey: 'sk_leak_me'
+                internalApiKey: 'sk_leak_me',
+                accessToken: 'tok_leak',
+                token: 'also_leak',
+                paymentProviderId: 'pp-should-stay-server-side',
+                signingKey: 'nope',
             });
             const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
             expect(res.Success).toBe(true);
             expect(res.Configuration?.stripePublishableKey).toBe('pk_test_ok');
+            expect(res.Configuration?.productId).toBe('prod-1');
             expect(res.Configuration?.paymentWebhookSecret).toBeUndefined();
             expect(res.Configuration?.internalApiKey).toBeUndefined();
+            expect(res.Configuration?.accessToken).toBeUndefined();
+            expect(res.Configuration?.token).toBeUndefined();
+            expect(res.Configuration?.paymentProviderId).toBeUndefined();
+            expect(res.Configuration?.signingKey).toBeUndefined();
         });
     });
 
     describe('UpdateDraft', () => {
+        it('rejects a ProductID that is not on the widget catalog', async () => {
+            const res = await CheckoutSessionService.UpdateDraft(
+                'sess-123',
+                KEY,
+                'a@b.com',
+                [{ ProductID: 'prod-other-campaign', Quantity: 1 }]
+            );
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/does not sell that product/i);
+        });
+
         it('rejects a mismatched client session key', async () => {
             const res = await CheckoutSessionService.UpdateDraft('sess-123', 'wrong-key', 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }]);
             expect(res.Success).toBe(false);

@@ -37,6 +37,9 @@ class will be used instead, and the first symptom is a financial one.
   (or `package.json` `memberjunction.serverExtensions`) from hosts that list this package in
   `dynamicPackages.server[]`. Host `mj.config.cjs` `serverExtensions[]` overlays by DriverClass.
 - `GET /checkout/:slug` — public HTML host for a distribution; POSTs stay on the same edge.
+  Pre-auth. Host `serverExtensions[]` can set `Enabled: false` to suppress. Settings:
+  `TrustedProxyHops` (default 0 — ignore `X-Forwarded-For`; set to the number of reverse
+  proxies that append to it), `RateLimitMax` / `RateLimitMaxGlobal`.
 
 ## Verifying registration
 
