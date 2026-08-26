@@ -93,6 +93,38 @@ export interface CheckoutWidgetConfiguration {
     stripePublishableKey?: string;
     successMessage?: string;
     redirectUrl?: string;
+    /**
+     * Email the buyer a receipt after a completed checkout. Defaults ON when the session captured
+     * an email; set false to suppress (e.g. a deployment without a configured email provider).
+     */
+    receiptEmail?: boolean;
+    /**
+     * MJ template rendered for the receipt. Defaults to the standard invoice template
+     * ('Orders: Standard Invoice') when unset.
+     */
+    receiptTemplateName?: string;
+    /**
+     * Anonymous magic-link invite settings for this widget's DISTRIBUTIONS (admin-authored, never
+     * client-supplied). When applicationName + roleName are set, creating a
+     * CheckoutWidgetDistribution mints a multi-use anonymous magic-link invite scoped to that
+     * application + role and links it via MagicLinkInviteID; revoking the distribution revokes the
+     * invite. Omit the block entirely for slug-only distributions (no invite is minted).
+     */
+    magicLink?: {
+        /** `MJ: Applications.Name` the anonymous session is scoped to. */
+        applicationName?: string;
+        /** `MJ: Roles.Name` granted to the anonymous session — a RESTRICTED role, by design. */
+        roleName?: string;
+        /** Invite lifetime in days (default 365). */
+        expiresInDays?: number;
+        /** Redemption ceiling (default 100000 — it is a public embed). */
+        maxUses?: number;
+        /**
+         * Role names whose members may create invite-minting distributions, in addition to Owner
+         * users. Mirrors MJ's canIssueInvites gate, which a direct row insert would bypass.
+         */
+        issuerRoleNames?: string[];
+    };
     extensionEntityName?: string;
     /**
      * Metadata-driven form field specs — auto-discovered from the product type's extension

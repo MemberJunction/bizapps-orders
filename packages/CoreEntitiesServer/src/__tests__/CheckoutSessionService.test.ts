@@ -846,4 +846,107 @@ describe('CheckoutSessionService', () => {
             expect(res1.Success || res2.Success).toBe(true);
         });
     });
+
+    describe('promotion codes (checkout coupons)', () => {
+        it('passes normalized codes into the pricing walk, stores them in MetadataJSON, and surfaces UnusableCodes', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: unknown[] }) =>
+                Promise.resolve({ UnusableCodes: [{ Code: 'DEAD', Reason: 'no such code' }] }));
+
+            const res = await CheckoutSessionService.UpdateDraft(
+                'sess-123', KEY, 'buyer@example.com',
+                [{ ProductID: 'prod-1', Quantity: 1 }],
+                undefined,
+                ['  SUMMER20 ', 'summer20', 'DEAD', '']
+            );
+
+            expect(res.Success).toBe(true);
+            // Trimmed, deduped case-insensitively, empties dropped
+            const priceCtx = mocks.mockPricingPrice.mock.calls[0][0] as { PromotionCodes: string[]; ManualDiscounts: unknown[] };
+            expect(priceCtx.PromotionCodes).toEqual(['SUMMER20', 'DEAD']);
+            // ManualDiscounts NEVER flow from the public path — no SalesAuthority, no discount
+            expect(priceCtx.ManualDiscounts).toEqual([]);
+            // The customer is told their dead code did nothing
+            expect(res.UnusableCodes).toEqual([{ Code: 'DEAD', Reason: 'no such code' }]);
+            // And the codes round-trip through the session snapshot for completion
+            const stored = JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}') as { PromotionCodes?: string[] };
+            expect(stored.PromotionCodes).toEqual(['SUMMER20', 'DEAD']);
+        });
+
+        it('refuses more codes than the anonymous-caller ceiling allows', async () => {
+            const tooMany = Array.from({ length: 11 }, (_, i) => `CODE${i}`);
+            const res = await CheckoutSessionService.UpdateDraft(
+                'sess-123', KEY, 'buyer@example.com',
+                [{ ProductID: 'prod-1', Quantity: 1 }],
+                undefined,
+                tooMany
+            );
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('promotion codes');
+            expect(mocks.mockPricingPrice).not.toHaveBeenCalled();
+        });
+
+        it('re-prices completion WITH the codes the draft stored — never fresh client input', async () => {
+            mocks.mockSessionInstance.Email = 'buyer@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }],
+                PromotionCodes: ['SUMMER20']
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+            expect(res.Success).toBe(true);
+            const priceCtx = mocks.mockPricingPrice.mock.calls[0][0] as { PromotionCodes: string[]; ManualDiscounts: unknown[] };
+            expect(priceCtx.PromotionCodes).toEqual(['SUMMER20']);
+            expect(priceCtx.ManualDiscounts).toEqual([]);
+        });
+
+        it('fails the draft when pricing throws while codes are in play (no silent undiscounted quote)', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce(() => Promise.reject(new Error('promo engine down')));
+            const res = await CheckoutSessionService.UpdateDraft(
+                'sess-123', KEY, 'buyer@example.com',
+                [{ ProductID: 'prod-1', Quantity: 1 }],
+                undefined,
+                ['SUMMER20']
+            );
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('promotion');
+        });
+    });
+
+    describe('CompleteCheckoutForSettledIntent (webhook-driven completion)', () => {
+        const INTENT_UUID = '3F2504E0-4F89-41D3-9A0C-0305E82C3301';
+
+        it('completes the Open session that owns a settled intent through the standard path', async () => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckoutForSettledIntent(INTENT_UUID);
+            expect(res).not.toBeNull();
+            expect(res?.Success).toBe(true);
+            expect(res?.Status).toBe('Confirmed');
+            expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalledTimes(1);
+        });
+
+        it('stands down (null) when only an in-flight Processing session owns the intent', async () => {
+            mocks.mockSessionInstance.Status = 'Processing';
+            const res = await CheckoutSessionService.CompleteCheckoutForSettledIntent(INTENT_UUID);
+            expect(res).toBeNull();
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+        });
+
+        it('stands down (null) when no live session owns the intent', async () => {
+            mocks.mockSessionInstance.Status = 'Confirmed';
+            const res = await CheckoutSessionService.CompleteCheckoutForSettledIntent(INTENT_UUID);
+            expect(res).toBeNull();
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+        });
+
+        it('refuses a non-UUID intent id before touching anything', async () => {
+            await expect(
+                CheckoutSessionService.CompleteCheckoutForSettledIntent("x' OR 1=1 --")
+            ).rejects.toThrow(/UUID/);
+        });
+    });
 });

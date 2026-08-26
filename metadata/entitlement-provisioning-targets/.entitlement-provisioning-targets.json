@@ -1,0 +1,22 @@
+[
+  {
+    "_comments": [
+      "NoOp is the only target the orders engine ships. It exercises the full provisioning",
+      "pipeline (status transitions, event log, reconcile sweep) without touching any outside",
+      "system — point a ProductEntitlement at it to test the plumbing, or leave",
+      "ProvisioningTargetID NULL for entitlements that need no downstream push at all.",
+      "Concrete targets (LXP enrollment, license servers) are seeded by the DEPLOYMENT that",
+      "ships their driver, alongside that driver's @RegisterClass — never here (plan §4.3)."
+    ],
+    "fields": {
+      "Code": "NoOp",
+      "Name": "No-Op (pipeline test)",
+      "Description": "Succeeds without doing anything. Exists so the provisioning pipeline can be exercised end to end before any real downstream target is configured.",
+      "DriverClass": "Orders.NoOpProvisioning",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "D81086D4-540D-422F-A86F-03016128AA9E"
+    }
+  }
+]

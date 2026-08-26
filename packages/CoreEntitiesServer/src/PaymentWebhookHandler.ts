@@ -46,6 +46,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { DecideWebhookAction, type WebhookAction } from './PaymentProviderBehavior.js';
 import { SettlePaymentForEvent } from './PaymentSettlement.js';
+import { CheckoutSessionService } from './CheckoutSessionService.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import type { WebhookEvent } from './BasePaymentProvider.js';
 
@@ -149,6 +150,31 @@ export async function HandlePaymentWebhook(
             await SettlePaymentForEvent(event, existing!.ID, provider, user);
         }
         await applyEvent(event, existing!.ID, provider, user);
+
+        // WEBHOOK-DRIVEN COMPLETION (WS-1). A buyer who paid and closed the tab never calls
+        // `CompleteCheckout` — the money is captured and the order never books. Once the intent
+        // is settled, finish any Open checkout session that owns it, through the SAME completion
+        // path the client would have driven (payment gate, latch, replay guard included).
+        //
+        // Errors here NEVER change the webhook response: the event is applied and stamped, so a
+        // 500 would make the gateway retry into `AlreadyApplied` → Ignore — the retry could not
+        // re-run this block anyway. A failed completion is logged; the buyer's own retry (or
+        // support, via the session id) picks it up, and the payment state is already correct.
+        if (event.Status === 'Succeeded') {
+            try {
+                const completion = await CheckoutSessionService.CompleteCheckoutForSettledIntent(existing!.ID, user);
+                if (completion) {
+                    if (completion.Success) {
+                        LogStatus(`Webhook ${event.EventID}: settled intent ${existing!.ID} completed checkout session ${completion.SessionID} → order ${completion.OrderID ?? '?'}.`);
+                    } else {
+                        LogError(`Webhook ${event.EventID}: settled intent ${existing!.ID} maps to session ${completion.SessionID}, but completion refused: ${completion.ErrorMessage ?? 'no reason given'}`);
+                    }
+                }
+            } catch (err) {
+                LogError(`Webhook ${event.EventID}: completion attempt for settled intent ${existing!.ID} threw: ${(err as Error).message}`);
+            }
+        }
+
         return { Status: 200, Body: { received: true, outcome: 'Apply' } };
     } catch (err) {
         // OURS, not theirs. The event was valid and we failed to record it, so ask again — a 200 here

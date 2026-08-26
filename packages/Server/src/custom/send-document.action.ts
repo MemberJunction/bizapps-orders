@@ -46,7 +46,7 @@ import {
     type DeliveryChannelCode,
     type DeliveryContact,
 } from '@mj-biz-apps/orders-core-entities-server';
-import { RenderInvoiceDocuments, type RenderedInvoice } from '../services/invoice-renderer.js';
+import { RenderInvoiceDocuments, type RenderedInvoice } from '@mj-biz-apps/orders-core-entities-server';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

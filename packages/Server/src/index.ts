@@ -17,6 +17,10 @@ import '@mj-biz-apps/orders-actions';
 import { LoadGenerateInvoiceAction } from './custom/generate-invoice.action.js';
 import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action.js';
 import { LoadSendDocumentAction } from './custom/send-document.action.js';
+import { LoadReconcileEntitlementProvisioningAction } from './custom/reconcile-entitlement-provisioning.action.js';
+// Lives HERE (not CoreEntitiesServer, home of the other entity servers) because invite minting
+// needs Node's crypto and CoreEntitiesServer has no Node globals by design — see the file header.
+import { LoadCheckoutWidgetDistributionEntityServer } from './custom/CheckoutWidgetDistributionEntityServer.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -50,6 +54,9 @@ import {
     LoadSubscriptionBehavior,
     LoadEntitlementGrantClaimDriver,
     LoadGuestOrderClaimDriver,
+    LoadPersonAccountLinkClaimDriver,
+    LoadEntitlementGrantEntityServer,
+    LoadEntitlementProvisioningDrivers,
 } from '@mj-biz-apps/orders-core-entities-server';
 
 // The unauthenticated webhook route. Registered as a server EXTENSION rather than mounted here,
@@ -128,6 +135,14 @@ export function LoadBizAppsOrdersServer(): void {
     LoadGenerateInvoiceAction();       // 'Orders.GenerateInvoice' — an order, rendered (D-INV)
     LoadSendDocumentAction();          // 'Orders.SendDocument' — an order, rendered AND sent (§4.4)
     LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
+    LoadReconcileEntitlementProvisioningAction(); // 'Orders.ReconcileEntitlementProvisioning' — the WS-2 sweep
+
+    // Entitlement provisioning (WS-2). The entity server keeps a grant's downstream obligation in
+    // step with its Status; the driver anchor keeps the NoOp driver (and the resolve-and-refuse
+    // guard's registration base) alive. Real drivers register from the deployment that owns the
+    // downstream system, alongside its own Load* anchor.
+    LoadEntitlementGrantEntityServer();
+    LoadEntitlementProvisioningDrivers();
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class
@@ -139,6 +154,11 @@ export function LoadBizAppsOrdersServer(): void {
     // driver for the DriverClass named in the claim-type metadata — silently.
     LoadGuestOrderClaimDriver();       // 'GuestOrderClaimDriver' — re-parents the order + activates grants on redemption
     LoadEntitlementGrantClaimDriver(); // 'EntitlementGrantClaimDriver' — activates a single grant on redemption
+    LoadPersonAccountLinkClaimDriver(); // 'PersonAccountLinkClaimDriver' — stamps Person.LinkedUserID on redemption
+
+    // The distribution lifecycle: slug normalization, anonymous-invite minting on create (when the
+    // widget's Configuration asks for it), and revoke-the-invite-with-the-distribution.
+    LoadCheckoutWidgetDistributionEntityServer();
 
     // Server extensions. Same tree-shaking hazard again: without the anchor the class is absent from
     // the ClassFactory and MJServer's extension loader silently finds nothing for the DriverClass named

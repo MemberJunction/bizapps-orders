@@ -37,12 +37,13 @@ import {
     DEFAULT_INVOICE_TEMPLATE,
     RenderInvoiceDocuments,
     type RenderedInvoice,
-} from '../services/invoice-renderer.js';
+} from '@mj-biz-apps/orders-core-entities-server';
 
 // Re-exported for the callers that imported it from here before the render orchestration moved into
-// the shared service. The constant itself now lives with the code that uses it.
-export { DEFAULT_INVOICE_TEMPLATE } from '../services/invoice-renderer.js';
-export type { RenderedInvoice } from '../services/invoice-renderer.js';
+// the shared service. The renderer itself now lives in orders-core-entities-server so the checkout
+// receipt path (CompleteCheckout) can call it without inverting the package graph.
+export { DEFAULT_INVOICE_TEMPLATE } from '@mj-biz-apps/orders-core-entities-server';
+export type { RenderedInvoice } from '@mj-biz-apps/orders-core-entities-server';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
