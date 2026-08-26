@@ -22,7 +22,7 @@ SELECT
             'OrderNumber', h.OrderNumber,
             'OrderDate', h.OrderDate,
             'Status', h.Status,
-            'PaymentStatus', h.PaymentStatus,
+            'IsOverdue', h.IsOverdue,
             'TotalGross', COALESCE(h.TotalGross, 0),
             'AmountPaid', COALESCE(h.AmountPaid, 0),
             'Balance', COALESCE(h.Balance, 0)
@@ -100,8 +100,8 @@ FROM (SELECT 1 AS OneRow) AS seed
 LEFT JOIN LATERAL (
     SELECT
         COUNT(*)::int AS OrderCount,
-        SUM(CASE WHEN h.PaymentStatus IN ('Unpaid', 'PartiallyPaid', 'Overdue') THEN 1 ELSE 0 END)::int AS OpenCount,
-        SUM(CASE WHEN h.PaymentStatus = 'Overdue' THEN 1 ELSE 0 END)::int AS OverdueCount,
+        SUM(CASE WHEN COALESCE(h.IsOverdue, false) OR COALESCE(h.Balance, 0) > 0 THEN 1 ELSE 0 END)::int AS OpenCount,
+        SUM(CASE WHEN COALESCE(h.IsOverdue, false) THEN 1 ELSE 0 END)::int AS OverdueCount,
         SUM(COALESCE(h.TotalGross, 0))::numeric AS LifetimeValue,
         MIN(h.OrderDate) AS FirstOrderDate
     FROM __mj_bizappsorders.vwOrderHeaders h
