@@ -3,7 +3,7 @@ import type { IRunViewProvider } from '@memberjunction/core';
 import { ResolveSingularActiveEmployerOrganization } from '../PartyAffiliationBehavior';
 
 describe('ResolveSingularActiveEmployerOrganization', () => {
-    function createMockProvider(results: Array<{ ToOrganizationID: string }> = []) {
+    function createMockProvider(results: Array<{ ToOrganizationID: string; StartDate?: string | null; EndDate?: string | null }> = []) {
         return {
             RunView: vi.fn().mockResolvedValue({
                 Success: true,
@@ -22,14 +22,14 @@ describe('ResolveSingularActiveEmployerOrganization', () => {
         expect(mockProvider.RunView).toHaveBeenCalledTimes(1);
     });
 
-    it('returns null if person has multiple active employers', async () => {
+    it('picks the longest-lasting employer when several are active', async () => {
         const mockProvider = createMockProvider([
-            { ToOrganizationID: 'org-1' },
-            { ToOrganizationID: 'org-2' },
+            { ToOrganizationID: 'org-short', StartDate: '2026-01-01', EndDate: null },
+            { ToOrganizationID: 'org-long', StartDate: '2018-01-01', EndDate: null },
         ]);
         const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, 'person-xyz-789');
 
-        expect(orgId).toBeNull();
+        expect(orgId).toBe('org-long');
     });
 
     it('returns null if person has zero active employers', async () => {

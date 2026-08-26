@@ -34,7 +34,7 @@ import { RegisterClass } from '@memberjunction/global';
 import type { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentDetailEntity } from './generated/entity_subclasses';
 import { CanOfferConfirm, CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
-import { ResolveSingularActiveEmployerOrganization } from './PartyAffiliationBehavior';
+import { ResolveActiveEmployerOrganization } from './PartyAffiliationBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
@@ -511,19 +511,40 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
 
     /**
-     * Auto-populates the organization (ShipToOrganizationID or BillToOrganizationID)
-     * if the designated person has a singular active employer relationship, and the target
-     * organization is currently unset on this new unsaved order.
+     * Person-level party defaults after a bill-to / ship-to person is set.
      *
-     * When populating ShipTo on a new order, if BillTo is also completely empty, BillTo will
-     * sync from ShipTo.
+     * 1. Copy person bill-to ↔ ship-to when the other side's person is null.
+     * 2. For each side that has a person and no org, stamp the longest-lasting
+     *    active Employee relationship's organization.
+     *
+     * Does not overwrite an org the user already chose. Skips booked/voided orders.
+     */
+    public async ApplyPersonPartyDefaults(changed: 'BillTo' | 'ShipTo' | 'Both' = 'Both'): Promise<void> {
+        if (this.Status === 'Voided' || this.IsBookedOrder) return;
+
+        if (changed === 'BillTo' || changed === 'Both') {
+            if (this.BillToPersonID && !this.ShipToPersonID) {
+                this.ShipToPersonID = this.BillToPersonID;
+            }
+        }
+        if (changed === 'ShipTo' || changed === 'Both') {
+            if (this.ShipToPersonID && !this.BillToPersonID) {
+                this.BillToPersonID = this.ShipToPersonID;
+            }
+        }
+
+        await this.AutoPopulateEmployerOrganization('BillTo');
+        await this.AutoPopulateEmployerOrganization('ShipTo');
+    }
+
+    /**
+     * Stamp BillToOrganizationID or ShipToOrganizationID from the person's longest
+     * active Employee relationship when that side's org is still empty.
      */
     public async AutoPopulateEmployerOrganization(
         partyRole: 'ShipTo' | 'BillTo' = 'ShipTo',
         personID?: string | null,
     ): Promise<string | null> {
-        if (this.IsSaved) return null; // only on new/unsaved records
-
         const targetPersonID = personID ?? (partyRole === 'ShipTo' ? this.ShipToPersonID : this.BillToPersonID);
         if (!targetPersonID) return null;
 
@@ -534,25 +555,14 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         if (!provider) return null;
 
         const asOf = this.OrderDate ?? new Date();
-        const orgId = await ResolveSingularActiveEmployerOrganization(provider, targetPersonID, asOf, this.ContextCurrentUser);
+        const orgId = await ResolveActiveEmployerOrganization(provider, targetPersonID, asOf, this.ContextCurrentUser);
+        if (!orgId) return null;
 
-        if (orgId) {
-            if (partyRole === 'ShipTo') {
-                if (!this.ShipToOrganizationID) {
-                    this.ShipToOrganizationID = orgId;
-                }
-                if (!this.BillToPersonID && !this.BillToOrganizationID) {
-                    this.BillToPersonID = targetPersonID;
-                    this.BillToOrganizationID = orgId;
-                }
-            } else {
-                if (!this.BillToOrganizationID) {
-                    this.BillToOrganizationID = orgId;
-                }
-            }
-            return orgId;
+        if (partyRole === 'ShipTo') {
+            if (!this.ShipToOrganizationID) this.ShipToOrganizationID = orgId;
+        } else if (!this.BillToOrganizationID) {
+            this.BillToOrganizationID = orgId;
         }
-
-        return null;
+        return orgId;
     }
 }

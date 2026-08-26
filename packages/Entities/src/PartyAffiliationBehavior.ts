@@ -5,12 +5,26 @@
  */
 import { RunView, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 
+export type ActiveEmployerRow = {
+    ToOrganizationID: string;
+    StartDate?: Date | string | null;
+    EndDate?: Date | string | null;
+};
+
+function durationMs(row: ActiveEmployerRow, asOf: Date): number {
+    const start = row.StartDate ? new Date(row.StartDate).getTime() : 0;
+    const endRaw = row.EndDate ? new Date(row.EndDate).getTime() : asOf.getTime();
+    const end = Number.isFinite(endRaw) ? endRaw : asOf.getTime();
+    const begin = Number.isFinite(start) ? start : 0;
+    return Math.max(0, end - begin);
+}
+
 /**
- * Resolves the active singular employer organization for a person as of a given date.
- * If the person has exactly one active employer relationship, returns that organization ID.
- * If the person has zero or multiple active employer relationships, returns null (not singular/ambiguous).
+ * Active Employee relationship to an organization as of `asOf`.
+ * Zero matches → null. One match → that org. Several → the longest-lasting
+ * (earliest StartDate / longest span; a null StartDate counts as longest).
  */
-export async function ResolveSingularActiveEmployerOrganization(
+export async function ResolveActiveEmployerOrganization(
     provider: IRunViewProvider,
     personID: string,
     asOf: Date = new Date(),
@@ -22,28 +36,38 @@ export async function ResolveSingularActiveEmployerOrganization(
     const date = asOf.toISOString().slice(0, 10);
 
     try {
-        const res = await rv.RunView<{ ToOrganizationID: string }>(
+        const res = await rv.RunView<ActiveEmployerRow>(
             {
                 EntityName: 'MJ_BizApps_Common: Relationships',
                 ExtraFilter:
-                    `FromPersonID='${personID}' AND ToOrganizationID IS NOT NULL ` +
+                    `FromPersonID='${personID.replace(/'/g, "''")}' AND ToOrganizationID IS NOT NULL ` +
                     `AND Status='Active' ` +
                     `AND (StartDate IS NULL OR StartDate <= '${date}') ` +
                     `AND (EndDate IS NULL OR EndDate >= '${date}') ` +
                     `AND RelationshipType IN ('Employer', 'Employee', 'Employment')`,
-                Fields: ['ToOrganizationID'],
+                Fields: ['ToOrganizationID', 'StartDate', 'EndDate'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
             user,
         );
 
-        if (res?.Success && res.Results?.length === 1) {
-            return res.Results[0].ToOrganizationID ?? null;
-        }
+        const rows = (res?.Success ? res.Results : null) ?? [];
+        if (rows.length === 0) return null;
+        if (rows.length === 1) return rows[0].ToOrganizationID ?? null;
+        const best = [...rows].sort((a, b) => durationMs(b, asOf) - durationMs(a, asOf))[0];
+        return best?.ToOrganizationID ?? null;
     } catch {
         return null;
     }
+}
 
-    return null;
+/** @deprecated Use {@link ResolveActiveEmployerOrganization} — multiple employers now pick the longest-lasting. */
+export async function ResolveSingularActiveEmployerOrganization(
+    provider: IRunViewProvider,
+    personID: string,
+    asOf: Date = new Date(),
+    user?: UserInfo,
+): Promise<string | null> {
+    return ResolveActiveEmployerOrganization(provider, personID, asOf, user);
 }

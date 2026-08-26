@@ -11,8 +11,8 @@ import {
     type IntegrationCheckContext,
     type NamedCheck,
 } from '@memberjunction/testing-integration';
-import { PRODUCT_CATEGORY_ENTITY, PRODUCT_ENTITY } from '../entity-names.js';
-import { FindRows } from '../world/entity-io.js';
+import { ORDER_HEADER_ENTITY, PRICE_LIST_ENTITY, PRODUCT_CATEGORY_ENTITY, PRODUCT_ENTITY } from '../entity-names.js';
+import { FindId, FindRows } from '../world/entity-io.js';
 import { LoadWorld } from '../world/load-world.js';
 import { SetWorld, World, type WorldState } from '../world/world.js';
 
@@ -60,6 +60,13 @@ const checks: NamedCheck[] = [
             Assert(!!world.Dimensions.DEPT, 'Department dimension missing');
             Assert(!!world.DimensionValues['DEPT:EDIT'], 'Editorial department missing');
             Assert(!!world.DimensionValues['LOC:HQ'], 'HQ location missing');
+
+            const draft = await FindId(ctx, ORDER_HEADER_ENTITY, `Notes = 'ORD-WORLD draft handbook'`);
+            const confirmed = await FindId(ctx, ORDER_HEADER_ENTITY, `Notes = 'ORD-WORLD confirmed handbook'`);
+            Assert(!!draft, 'ORD-WORLD draft handbook missing');
+            Assert(!!confirmed, 'ORD-WORLD confirmed handbook missing');
+            const priceList = await FindId(ctx, PRICE_LIST_ENTITY, `Code = 'BCP-STD'`);
+            Assert(!!priceList, 'BCP-STD price list missing');
 
             // Capture so later bundles in the same process can Fx() without reloading.
             World();
