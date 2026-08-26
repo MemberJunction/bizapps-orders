@@ -8,6 +8,10 @@
  * the distribution slug plus the session id + client session key (re-verified inside the
  * service on every mutating call) are the credentials.
  *
+ * `GET {RootPath}/:slug` is the first-party public page (vanilla HTML, no Explorer shell).
+ * MJ auto-loads this extension from `@mj-biz-apps/orders-server`'s `MJ_SERVER_EXTENSIONS`
+ * when the package is listed in the host `dynamicPackages.server[]`.
+ *
  * ═══ THE GATE SEQUENCE, in order, all fail-closed ═══
  *
  * 1. BODY CAP — `express.json()` scoped to these routes with a small limit. Checkout inputs
@@ -54,6 +58,8 @@ import {
 } from '@memberjunction/server-extensions-core';
 import { CheckoutSessionService, EscapeText, type CheckoutLineInput } from '@mj-biz-apps/orders-core-entities-server';
 import type { CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
+import { isValidCheckoutSlug, originAllowed as originIsAllowed } from './checkout-edge-policy.js';
+import { renderCheckoutHostErrorPage, renderCheckoutHostPage } from './checkout-host-page.js';
 
 /** Checkout request bodies are small; anything larger is abuse, not commerce. */
 const MAX_BODY = '256kb';
@@ -91,10 +97,12 @@ export class CheckoutServerExtension extends BaseServerExtension {
     private settings: CheckoutEdgeSettings = {};
     private rateWindows = new Map<string, { windowStart: number; count: number }>();
     private warnedSystemUserFallback = false;
+    private rootPath = '/checkout';
 
     public async Initialize(app: Application, config: ServerExtensionConfig): Promise<ExtensionInitResult> {
         this.settings = (config.Settings ?? {}) as CheckoutEdgeSettings;
-        const root = config.RootPath.replace(/\/+$/, '');
+        const root = config.RootPath.replace(/\/+$/, '') || '/checkout';
+        this.rootPath = root;
         const json = BodyParser.json({ limit: MAX_BODY });
 
         const routes: Array<[string, (req: Request, res: Response) => Promise<void>]> = [
@@ -114,11 +122,14 @@ export class CheckoutServerExtension extends BaseServerExtension {
             });
         }
 
-        LogStatus(`[Orders] Checkout edge registered at POST ${root}/{initialize,draft,payment-intent,complete}`);
+        const hostPath = `${root}/:slug`;
+        app.get(hostPath, (req: Request, res: Response) => this.handleGetHost(req, res));
+
+        LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete}`);
         return {
             Success: true,
-            Message: 'Orders anonymous checkout edge mounted (rate-limited, origin-gated, optional Turnstile).',
-            RegisteredRoutes: routes.map(([path]) => `POST ${path}`),
+            Message: 'Orders anonymous checkout edge mounted (public GET host, rate-limited POSTs, origin-gated, optional Turnstile).',
+            RegisteredRoutes: [...routes.map(([path]) => `POST ${path}`), `GET ${hostPath}`],
         };
     }
 
@@ -185,7 +196,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
         try {
             const policy = (await this.resolveEdgePolicy(req)) ?? {};
             const origin = req.headers.origin;
-            if (origin && this.originAllowed(origin, policy)) {
+            if (origin && this.originAllowed(origin, policy, req)) {
                 this.setCorsHeaders(res, origin);
                 res.status(204).end();
             } else {
@@ -210,7 +221,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const rv = new RunView();
 
         let widgetId: string | null = null;
-        const slug = typeof req.body?.slug === 'string' ? req.body.slug.trim() : '';
+        const slug = this.requestSlug(req);
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
 
         if (slug) {
@@ -264,7 +275,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
             // the session credentials remain the gate.
             return true;
         }
-        if (!this.originAllowed(origin, policy)) {
+        if (!this.originAllowed(origin, policy, req)) {
             res.status(403).json({ Success: false, ErrorMessage: 'This origin is not allowed to use this checkout.' });
             return false;
         }
@@ -272,18 +283,14 @@ export class CheckoutServerExtension extends BaseServerExtension {
         return true;
     }
 
-    private originAllowed(origin: string, policy: WidgetEdgePolicy): boolean {
-        if (!policy.allowedOrigins || policy.allowedOrigins.length === 0) {
-            return true;
-        }
-        const normalized = origin.replace(/\/+$/, '').toLowerCase();
-        return policy.allowedOrigins.some((allowed) => allowed.replace(/\/+$/, '').toLowerCase() === normalized);
+    private originAllowed(origin: string, policy: WidgetEdgePolicy, req: Request): boolean {
+        return originIsAllowed(origin, policy, typeof req.headers.host === 'string' ? req.headers.host : undefined);
     }
 
     private setCorsHeaders(res: Response, origin: string): void {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Vary', 'Origin');
-        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         res.setHeader('Access-Control-Max-Age', '600');
     }
@@ -323,6 +330,75 @@ export class CheckoutServerExtension extends BaseServerExtension {
             LogError(`[OrdersCheckoutEdge] Turnstile verification call failed: ${msg}`);
             return [503, 'Human verification is temporarily unavailable — please try again.'];
         }
+    }
+
+    // ─── Public host page ─────────────────────────────────────────────────────
+
+    /**
+     * `GET /checkout/:slug` — first-party HTML that talks to the POST edge.
+     * Unknown/reserved slugs 404; missing service principal is a 503. The page
+     * itself is cache-free; initialize still enforces Active widget + distribution.
+     */
+    private async handleGetHost(req: Request, res: Response): Promise<void> {
+        try {
+            const slug = typeof req.params?.slug === 'string' ? req.params.slug.trim() : '';
+            if (!isValidCheckoutSlug(slug)) {
+                this.sendHostError(res, 404, 'This checkout link is not valid.');
+                return;
+            }
+            if (this.rateLimitExceeded(`${this.clientIp(req)}|get|${slug}`)) {
+                this.sendHostError(res, 429, 'Too many requests — slow down and try again shortly.');
+                return;
+            }
+            const user = this.resolveActingUser();
+            if (!user) {
+                this.sendHostError(res, 503, 'Checkout is not ready — please try again shortly.');
+                return;
+            }
+            const exists = await this.activeDistributionExists(slug, user);
+            if (!exists) {
+                this.sendHostError(res, 404, 'This checkout is not available.');
+                return;
+            }
+            res
+                .status(200)
+                .setHeader('Content-Type', 'text/html; charset=utf-8')
+                .setHeader('Cache-Control', 'no-store')
+                .setHeader('X-Content-Type-Options', 'nosniff')
+                .send(renderCheckoutHostPage({ slug, apiRoot: this.rootPath }));
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            LogError(`[OrdersCheckoutEdge] Unhandled error on GET host: ${msg}`);
+            if (!res.headersSent) {
+                this.sendHostError(res, 500, 'Checkout is temporarily unavailable.');
+            }
+        }
+    }
+
+    private sendHostError(res: Response, status: number, message: string): void {
+        res
+            .status(status)
+            .setHeader('Content-Type', 'text/html; charset=utf-8')
+            .setHeader('Cache-Control', 'no-store')
+            .send(renderCheckoutHostErrorPage({ message }));
+    }
+
+    private requestSlug(req: Request): string {
+        if (typeof req.params?.slug === 'string' && req.params.slug.trim()) {
+            return req.params.slug.trim();
+        }
+        return typeof req.body?.slug === 'string' ? req.body.slug.trim() : '';
+    }
+
+    private async activeDistributionExists(slug: string, user: UserInfo): Promise<boolean> {
+        const rv = new RunView();
+        const distRes = await rv.RunView<{ ID: string }>({
+            EntityName: CHECKOUT_DISTRIBUTION_ENTITY,
+            Fields: ['ID'],
+            ExtraFilter: `Slug = '${EscapeText(slug)}' AND Status = 'Active'`,
+            ResultType: 'simple',
+        }, user);
+        return !!(distRes?.Success && distRes.Results?.length);
     }
 
     // ─── Route handlers (thin shells over the service) ───────────────────────

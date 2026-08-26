@@ -281,6 +281,12 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                         Results: []
                     });
                 }
+                if (params.EntityName.includes('Products') && !params.EntityName.includes('Product Types')) {
+                    return Promise.resolve({
+                        Success: true,
+                        Results: [{ ID: 'prod-1' }]
+                    });
+                }
                 return Promise.resolve({ Success: true, Results: [] });
             });
         }
@@ -372,6 +378,30 @@ describe('CheckoutSessionService', () => {
             expect(names).toContain('dietaryPreferences');
             expect(names).toContain('comments');
             expect(names).toContain('customCount');
+        });
+
+        it('writes a SKU-resolved productId onto Configuration so the public host can draft a line', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                productSku: 'CONF-2027',
+                title: 'Summit',
+            });
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            expect(res.Success).toBe(true);
+            expect(res.Configuration?.productId).toBe('prod-1');
+            expect(res.Configuration?.productSku).toBe('CONF-2027');
+        });
+
+        it('still writes SKU-resolved productId when extensionFields are already authored', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                productSku: 'CONF-2027',
+                extensionFields: [{ name: 'seat', label: 'Seat', type: 'text' }],
+            });
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            expect(res.Success).toBe(true);
+            expect(res.Configuration?.productId).toBe('prod-1');
+            expect(res.Configuration?.extensionFields).toEqual([
+                { name: 'seat', label: 'Seat', type: 'text' },
+            ]);
         });
 
         it('strips secret-shaped keys from the Configuration returned to the anonymous caller', async () => {

@@ -33,6 +33,10 @@ class will be used instead, and the first symptom is a financial one.
 
 - `config.ts` — server configuration
 - `src/generated/` — CodeGen's GraphQL resolvers. Do not edit; see the Entities package README.
+- `MJ_SERVER_EXTENSIONS` — webhook + checkout edge declarations. MJ bootstrap collects this
+  (or `package.json` `memberjunction.serverExtensions`) from hosts that list this package in
+  `dynamicPackages.server[]`. Host `mj.config.cjs` `serverExtensions[]` overlays by DriverClass.
+- `GET /checkout/:slug` — public HTML host for a distribution; POSTs stay on the same edge.
 
 ## Verifying registration
 

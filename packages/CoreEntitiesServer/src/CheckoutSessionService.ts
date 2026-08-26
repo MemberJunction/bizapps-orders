@@ -321,11 +321,7 @@ export class CheckoutSessionService {
         md: Metadata,
         contextUser?: UserInfo
     ): Promise<void> {
-        if (Array.isArray(configObj.extensionFields) && configObj.extensionFields.length > 0) {
-            return;
-        }
-
-        let productId = typeof configObj.productId === 'string' ? configObj.productId : undefined;
+        let productId = typeof configObj.productId === 'string' ? configObj.productId.trim() || undefined : undefined;
         const productSku = typeof configObj.productSku === 'string' ? configObj.productSku : undefined;
 
         if (!productId && productSku) {
@@ -339,6 +335,16 @@ export class CheckoutSessionService {
             if (prodRes?.Success && prodRes.Results && prodRes.Results.length > 0) {
                 productId = prodRes.Results[0].ID;
             }
+        }
+
+        // Always write the resolved id back so a SKU-only widget still gives the
+        // public host page a ProductID it can draft a line with.
+        if (productId && !String(configObj.productId ?? '').trim()) {
+            configObj.productId = productId;
+        }
+
+        if (Array.isArray(configObj.extensionFields) && configObj.extensionFields.length > 0) {
+            return;
         }
 
         if (!productId) return;
