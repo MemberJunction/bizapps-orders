@@ -7,7 +7,7 @@ export const loadModule = () => {
 }
 
      
- import { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/orders-entities';
+ import { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Charge Types
@@ -161,6 +161,10 @@ export const mjBizAppsOrdersCheckoutSessionSchema = z.object({
         * * Field Name: CheckoutWidget
         * * Display Name: Checkout Widget
         * * SQL Data Type: nvarchar(100)`),
+    Distribution: z.string().nullable().describe(`
+        * * Field Name: Distribution
+        * * Display Name: Distribution
+        * * SQL Data Type: nvarchar(255)`),
     Person: z.string().nullable().describe(`
         * * Field Name: Person
         * * Display Name: Person
@@ -173,10 +177,6 @@ export const mjBizAppsOrdersCheckoutSessionSchema = z.object({
         * * Field Name: PaymentIntent
         * * Display Name: Payment Intent
         * * SQL Data Type: nvarchar(100)`),
-    Distribution: z.string().nullable().describe(`
-        * * Field Name: Distribution
-        * * Display Name: Distribution
-        * * SQL Data Type: nvarchar(255)`),
 });
 
 export type mjBizAppsOrdersCheckoutSessionEntityType = z.infer<typeof mjBizAppsOrdersCheckoutSessionSchema>;
@@ -940,6 +940,14 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: EntitlementValidityMode
         * * Display Name: Entitlement Validity Mode
         * * SQL Data Type: nvarchar(20)`),
+    PricingDriverClass: z.string().nullable().describe(`
+        * * Field Name: PricingDriverClass
+        * * Display Name: Pricing Driver Class
+        * * SQL Data Type: nvarchar(255)`),
+    MaxQuantityPerLine: z.number().nullable().describe(`
+        * * Field Name: MaxQuantityPerLine
+        * * Display Name: Max Quantity Per Line
+        * * SQL Data Type: decimal(18, 4)`),
     VenueAddress: z.string().nullable().describe(`
         * * Field Name: VenueAddress
         * * Display Name: Venue Address Details
@@ -952,14 +960,6 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: __mj_Longitude
         * * Display Name: Mj Longitude
         * * SQL Data Type: decimal(10, 6)`),
-    PricingDriverClass: z.string().nullable().describe(`
-        * * Field Name: PricingDriverClass
-        * * Display Name: Pricing Driver Class
-        * * SQL Data Type: nvarchar(255)`),
-    MaxQuantityPerLine: z.number().nullable().describe(`
-        * * Field Name: MaxQuantityPerLine
-        * * Display Name: Max Quantity Per Line
-        * * SQL Data Type: decimal(18, 4)`),
 });
 
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
@@ -1411,17 +1411,6 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Due Date
         * * SQL Data Type: date
         * * Description: Payment due date, derived at Confirm/Post from PaymentTermsType.NetDays (posting date + net days) when not manually supplied. Editable override.`),
-    PaymentStatus: z.union([z.literal('Overdue'), z.literal('Paid'), z.literal('PartiallyPaid'), z.literal('Unpaid'), z.literal('WrittenOff')]).describe(`
-        * * Field Name: PaymentStatus
-        * * Display Name: Payment Status
-        * * SQL Data Type: nvarchar(20)
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Overdue
-    *   * Paid
-    *   * PartiallyPaid
-    *   * Unpaid
-    *   * WrittenOff`),
     ExternalDocumentNumber: z.string().nullable().describe(`
         * * Field Name: ExternalDocumentNumber
         * * Display Name: External Document Number
@@ -1497,6 +1486,29 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    Origin: z.string().describe(`
+        * * Field Name: Origin
+        * * Display Name: Origin
+        * * SQL Data Type: nvarchar(50)
+        * * Default Value: Direct`),
+    SourceCheckoutWidgetID: z.string().nullable().describe(`
+        * * Field Name: SourceCheckoutWidgetID
+        * * Display Name: Source Checkout Widget ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widgets (vwCheckoutWidgets.ID)`),
+    FulfillmentStatus: z.union([z.literal('Fulfilled'), z.literal('NotApplicable'), z.literal('PartiallyFulfilled'), z.literal('Pending'), z.literal('Returned')]).describe(`
+        * * Field Name: FulfillmentStatus
+        * * Display Name: Fulfillment Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Fulfilled
+    *   * NotApplicable
+    *   * PartiallyFulfilled
+    *   * Pending
+    *   * Returned
+        * * Description: Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company
@@ -1549,6 +1561,10 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Field Name: ReversesOrderHeader
         * * Display Name: Reversed Order Name
         * * SQL Data Type: nvarchar(40)`),
+    SourceCheckoutWidget: z.string().nullable().describe(`
+        * * Field Name: SourceCheckoutWidget
+        * * Display Name: Source Checkout Widget
+        * * SQL Data Type: nvarchar(100)`),
     __mj_Latitude: z.number().nullable().describe(`
         * * Field Name: __mj_Latitude
         * * Display Name: Mj Latitude
@@ -1561,33 +1577,17 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Field Name: IsOverdue
         * * Display Name: Is Overdue
         * * SQL Data Type: int`),
-    FulfillmentStatus: z.union([z.literal('Fulfilled'), z.literal('NotApplicable'), z.literal('PartiallyFulfilled'), z.literal('Pending'), z.literal('Returned')]).describe(`
-        * * Field Name: FulfillmentStatus
-        * * Display Name: Fulfillment Status
-        * * SQL Data Type: nvarchar(20)
-        * * Default Value: Pending
+    PaymentStatus: z.union([z.literal('Overdue'), z.literal('Paid'), z.literal('PartiallyPaid'), z.literal('Unpaid'), z.literal('WrittenOff')]).describe(`
+        * * Field Name: PaymentStatus
+        * * Display Name: Payment Status
+        * * SQL Data Type: nvarchar(13)
     * * Value List Type: List
     * * Possible Values 
-    *   * Fulfilled
-    *   * NotApplicable
-    *   * PartiallyFulfilled
-    *   * Pending
-    *   * Returned
-        * * Description: Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.`),
-    Origin: z.string().describe(`
-        * * Field Name: Origin
-        * * Display Name: Origin
-        * * SQL Data Type: nvarchar(50)
-        * * Default Value: Direct`),
-    SourceCheckoutWidgetID: z.string().nullable().describe(`
-        * * Field Name: SourceCheckoutWidgetID
-        * * Display Name: Source Checkout Widget ID
-        * * SQL Data Type: uniqueidentifier
-        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widgets (vwCheckoutWidgets.ID)`),
-    SourceCheckoutWidget: z.string().nullable().describe(`
-        * * Field Name: SourceCheckoutWidget
-        * * Display Name: Source Checkout Widget
-        * * SQL Data Type: nvarchar(100)`),
+    *   * Overdue
+    *   * Paid
+    *   * PartiallyPaid
+    *   * Unpaid
+    *   * WrittenOff`),
 });
 
 export type mjBizAppsOrdersOrderHeaderEntityType = z.infer<typeof mjBizAppsOrdersOrderHeaderSchema>;
@@ -3456,6 +3456,11 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    PricingDriverClass: z.string().nullable().describe(`
+        * * Field Name: PricingDriverClass
+        * * Display Name: Pricing Driver Class
+        * * SQL Data Type: nvarchar(255)
+        * * Description: ClassFactory key of a BasePriceResolver subclass for every product of this type, or NULL. The natural home for behaviour-wide pricing such as usage metering.`),
     Configuration: z.string().nullable().describe(`
         * * Field Name: Configuration
         * * Display Name: Configuration
@@ -3469,11 +3474,6 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * Field Name: DefaultSubscriptionType
         * * Display Name: Default Subscription Type
         * * SQL Data Type: nvarchar(200)`),
-    PricingDriverClass: z.string().nullable().describe(`
-        * * Field Name: PricingDriverClass
-        * * Display Name: Pricing Driver Class
-        * * SQL Data Type: nvarchar(255)
-        * * Description: ClassFactory key of a BasePriceResolver subclass for every product of this type, or NULL. The natural home for behaviour-wide pricing such as usage metering.`),
 });
 
 export type mjBizAppsOrdersProductTypeEntityType = z.infer<typeof mjBizAppsOrdersProductTypeSchema>;
@@ -5278,6 +5278,15 @@ export class mjBizAppsOrdersCheckoutSessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: Distribution
+    * * Display Name: Distribution
+    * * SQL Data Type: nvarchar(255)
+    */
+    get Distribution(): string | null {
+        return this.Get('Distribution');
+    }
+
+    /**
     * * Field Name: Person
     * * Display Name: Person
     * * SQL Data Type: nvarchar(201)
@@ -5302,15 +5311,6 @@ export class mjBizAppsOrdersCheckoutSessionEntity extends BaseEntity<mjBizAppsOr
     */
     get PaymentIntent(): string | null {
         return this.Get('PaymentIntent');
-    }
-
-    /**
-    * * Field Name: Distribution
-    * * Display Name: Distribution
-    * * SQL Data Type: nvarchar(255)
-    */
-    get Distribution(): string | null {
-        return this.Get('Distribution');
     }
 }
 
@@ -7700,6 +7700,32 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     }
 
     /**
+    * * Field Name: PricingDriverClass
+    * * Display Name: Pricing Driver Class
+    * * SQL Data Type: nvarchar(255)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get PricingDriverClass(): string | null {
+        return this.Get('PricingDriverClass');
+    }
+    set PricingDriverClass(value: string | null) {
+        this.Set('PricingDriverClass', value);
+    }
+
+    /**
+    * * Field Name: MaxQuantityPerLine
+    * * Display Name: Max Quantity Per Line
+    * * SQL Data Type: decimal(18, 4)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get MaxQuantityPerLine(): number | null {
+        return this.Get('MaxQuantityPerLine');
+    }
+    set MaxQuantityPerLine(value: number | null) {
+        this.Set('MaxQuantityPerLine', value);
+    }
+
+    /**
     * * Field Name: VenueAddress
     * * Display Name: Venue Address Details
     * * SQL Data Type: nvarchar(255)
@@ -7724,32 +7750,6 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     */
     get __mj_Longitude(): number | null {
         return this.Get('__mj_Longitude');
-    }
-
-    /**
-    * * Field Name: PricingDriverClass
-    * * Display Name: Pricing Driver Class
-    * * SQL Data Type: nvarchar(255)
-    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
-    */
-    get PricingDriverClass(): string | null {
-        return this.Get('PricingDriverClass');
-    }
-    set PricingDriverClass(value: string | null) {
-        this.Set('PricingDriverClass', value);
-    }
-
-    /**
-    * * Field Name: MaxQuantityPerLine
-    * * Display Name: Max Quantity Per Line
-    * * SQL Data Type: decimal(18, 4)
-    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
-    */
-    get MaxQuantityPerLine(): number | null {
-        return this.Get('MaxQuantityPerLine');
-    }
-    set MaxQuantityPerLine(value: number | null) {
-        this.Set('MaxQuantityPerLine', value);
     }
 }
 
@@ -9174,22 +9174,6 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
-    * * Field Name: PaymentStatus
-    * * Display Name: Payment Status
-    * * SQL Data Type: nvarchar(20)
-    * * Value List Type: List
-    * * Possible Values 
-    *   * Overdue
-    *   * Paid
-    *   * PartiallyPaid
-    *   * Unpaid
-    *   * WrittenOff
-    */
-    get PaymentStatus(): 'Overdue' | 'Paid' | 'PartiallyPaid' | 'Unpaid' | 'WrittenOff' {
-        return this.Get('PaymentStatus');
-    }
-
-    /**
     * * Field Name: ExternalDocumentNumber
     * * Display Name: External Document Number
     * * SQL Data Type: nvarchar(80)
@@ -9379,6 +9363,53 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: Origin
+    * * Display Name: Origin
+    * * SQL Data Type: nvarchar(50)
+    * * Default Value: Direct
+    */
+    get Origin(): string {
+        return this.Get('Origin');
+    }
+    set Origin(value: string) {
+        this.Set('Origin', value);
+    }
+
+    /**
+    * * Field Name: SourceCheckoutWidgetID
+    * * Display Name: Source Checkout Widget ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widgets (vwCheckoutWidgets.ID)
+    */
+    get SourceCheckoutWidgetID(): string | null {
+        return this.Get('SourceCheckoutWidgetID');
+    }
+    set SourceCheckoutWidgetID(value: string | null) {
+        this.Set('SourceCheckoutWidgetID', value);
+    }
+
+    /**
+    * * Field Name: FulfillmentStatus
+    * * Display Name: Fulfillment Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Pending
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Fulfilled
+    *   * NotApplicable
+    *   * PartiallyFulfilled
+    *   * Pending
+    *   * Returned
+    * * Description: Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.
+    */
+    get FulfillmentStatus(): 'Fulfilled' | 'NotApplicable' | 'PartiallyFulfilled' | 'Pending' | 'Returned' {
+        return this.Get('FulfillmentStatus');
+    }
+    set FulfillmentStatus(value: 'Fulfilled' | 'NotApplicable' | 'PartiallyFulfilled' | 'Pending' | 'Returned') {
+        this.Set('FulfillmentStatus', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company
     * * SQL Data Type: nvarchar(50)
@@ -9496,6 +9527,15 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: SourceCheckoutWidget
+    * * Display Name: Source Checkout Widget
+    * * SQL Data Type: nvarchar(100)
+    */
+    get SourceCheckoutWidget(): string | null {
+        return this.Get('SourceCheckoutWidget');
+    }
+
+    /**
     * * Field Name: __mj_Latitude
     * * Display Name: Mj Latitude
     * * SQL Data Type: decimal(10, 6)
@@ -9523,59 +9563,19 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
-    * * Field Name: FulfillmentStatus
-    * * Display Name: Fulfillment Status
-    * * SQL Data Type: nvarchar(20)
-    * * Default Value: Pending
+    * * Field Name: PaymentStatus
+    * * Display Name: Payment Status
+    * * SQL Data Type: nvarchar(13)
     * * Value List Type: List
     * * Possible Values 
-    *   * Fulfilled
-    *   * NotApplicable
-    *   * PartiallyFulfilled
-    *   * Pending
-    *   * Returned
-    * * Description: Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.
+    *   * Overdue
+    *   * Paid
+    *   * PartiallyPaid
+    *   * Unpaid
+    *   * WrittenOff
     */
-    get FulfillmentStatus(): 'Fulfilled' | 'NotApplicable' | 'PartiallyFulfilled' | 'Pending' | 'Returned' {
-        return this.Get('FulfillmentStatus');
-    }
-    set FulfillmentStatus(value: 'Fulfilled' | 'NotApplicable' | 'PartiallyFulfilled' | 'Pending' | 'Returned') {
-        this.Set('FulfillmentStatus', value);
-    }
-
-    /**
-    * * Field Name: Origin
-    * * Display Name: Origin
-    * * SQL Data Type: nvarchar(50)
-    * * Default Value: Direct
-    */
-    get Origin(): string {
-        return this.Get('Origin');
-    }
-    set Origin(value: string) {
-        this.Set('Origin', value);
-    }
-
-    /**
-    * * Field Name: SourceCheckoutWidgetID
-    * * Display Name: Source Checkout Widget ID
-    * * SQL Data Type: uniqueidentifier
-    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Checkout Widgets (vwCheckoutWidgets.ID)
-    */
-    get SourceCheckoutWidgetID(): string | null {
-        return this.Get('SourceCheckoutWidgetID');
-    }
-    set SourceCheckoutWidgetID(value: string | null) {
-        this.Set('SourceCheckoutWidgetID', value);
-    }
-
-    /**
-    * * Field Name: SourceCheckoutWidget
-    * * Display Name: Source Checkout Widget
-    * * SQL Data Type: nvarchar(100)
-    */
-    get SourceCheckoutWidget(): string | null {
-        return this.Get('SourceCheckoutWidget');
+    get PaymentStatus(): 'Overdue' | 'Paid' | 'PartiallyPaid' | 'Unpaid' | 'WrittenOff' {
+        return this.Get('PaymentStatus');
     }
 }
 
@@ -15106,6 +15106,19 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: PricingDriverClass
+    * * Display Name: Pricing Driver Class
+    * * SQL Data Type: nvarchar(255)
+    * * Description: ClassFactory key of a BasePriceResolver subclass for every product of this type, or NULL. The natural home for behaviour-wide pricing such as usage metering.
+    */
+    get PricingDriverClass(): string | null {
+        return this.Get('PricingDriverClass');
+    }
+    set PricingDriverClass(value: string | null) {
+        this.Set('PricingDriverClass', value);
+    }
+
+    /**
     * * Field Name: Configuration
     * * Display Name: Configuration
     * * SQL Data Type: nvarchar(MAX)
@@ -15134,19 +15147,6 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     */
     get DefaultSubscriptionType(): string | null {
         return this.Get('DefaultSubscriptionType');
-    }
-
-    /**
-    * * Field Name: PricingDriverClass
-    * * Display Name: Pricing Driver Class
-    * * SQL Data Type: nvarchar(255)
-    * * Description: ClassFactory key of a BasePriceResolver subclass for every product of this type, or NULL. The natural home for behaviour-wide pricing such as usage metering.
-    */
-    get PricingDriverClass(): string | null {
-        return this.Get('PricingDriverClass');
-    }
-    set PricingDriverClass(value: string | null) {
-        this.Set('PricingDriverClass', value);
     }
 }
 
