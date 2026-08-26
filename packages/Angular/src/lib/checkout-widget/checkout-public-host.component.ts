@@ -37,7 +37,7 @@ interface StripeInstance {
     confirmCardPayment(
         clientSecret: string,
         opts: { payment_method: { card: StripeCard; billing_details?: { email?: string } } }
-    ): Promise<{ error?: { message?: string } }>;
+    ): Promise<{ error?: { message?: string }; paymentIntent?: { status?: string } }>;
 }
 
 declare global {
@@ -186,6 +186,10 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             });
             if (result.error) {
                 throw new Error(result.error.message || 'Payment failed.');
+            }
+            const stripeStatus = (result.paymentIntent?.status || '').toLowerCase();
+            if (stripeStatus && stripeStatus !== 'succeeded' && stripeStatus !== 'processing') {
+                throw new Error(`Payment was not confirmed (Stripe status: ${result.paymentIntent?.status}).`);
             }
             await this.finish();
         } catch (err) {

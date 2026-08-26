@@ -26,6 +26,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { EscapeText } from './sql-guards.js';
 import { OpenPaymentIntent } from './PaymentIntentService.js';
+import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
@@ -1516,9 +1517,13 @@ export class CheckoutSessionService {
             return 'The payment intent attached to this session could not be found';
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
-            // Intent state is advanced by the signature-verified payment webhook. An intent
-            // still in Processing/RequiresPayment means payment has not settled yet — the
-            // client should retry completion after payment confirmation lands.
+            // The browser has already confirmCardPayment'd (4242 succeeds at Stripe immediately).
+            // The signature-verified webhook is what normally stamps Succeeded, but it often
+            // has not landed yet — especially on localhost, which Stripe cannot POST to.
+            // Retrieve from the gateway with OUR key (never a client claim) and adopt that status.
+            await this.refreshIntentFromGateway(intent, contextUser);
+        }
+        if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
             return `Payment has not settled (intent status: ${intent.Status}). Complete payment and try again.`;
         }
         // Half-cent tolerance absorbs decimal rounding between the priced total and the
@@ -1527,6 +1532,44 @@ export class CheckoutSessionService {
             return `The settled payment amount (${intent.Amount}) does not cover the order total (${totalGross})`;
         }
         return null;
+    }
+
+    /**
+     * Pull the gateway's current intent status onto our row. Fail-soft: a retrieve
+     * error leaves the local status unchanged and the paid gate still refuses.
+     */
+    private static async refreshIntentFromGateway(
+        intent: mjBizAppsOrdersPaymentIntentEntity,
+        contextUser?: UserInfo
+    ): Promise<void> {
+        if (!intent.PaymentProviderID || !intent.ProviderIntentID || !contextUser) {
+            return;
+        }
+        const mdProvider = Metadata.Provider as IMetadataProvider | undefined;
+        if (!mdProvider) {
+            return;
+        }
+        try {
+            const driver = await ResolvePaymentProvider(intent.PaymentProviderID, mdProvider, contextUser);
+            const retrieved = await driver.RetrieveIntent({ ProviderIntentID: intent.ProviderIntentID });
+            if (!retrieved.Success || !retrieved.Status) {
+                return;
+            }
+            if (retrieved.Status === intent.Status && retrieved.Amount == null) {
+                return;
+            }
+            intent.Status = retrieved.Status;
+            if (typeof retrieved.Amount === 'number' && retrieved.Amount > 0) {
+                intent.Amount = retrieved.Amount;
+            }
+            if (!(await intent.Save())) {
+                LogError(`[CheckoutSessionService] Could not stamp retrieved intent status ${retrieved.Status} on ${intent.ID}`);
+            }
+        } catch (err) {
+            LogError(
+                `[CheckoutSessionService] Gateway retrieve for intent ${intent.ID} failed: ${err instanceof Error ? err.message : String(err)}`
+            );
+        }
     }
 
     /**

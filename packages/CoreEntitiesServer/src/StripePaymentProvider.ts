@@ -36,6 +36,8 @@ import {
     type CreateIntentResult,
     type RefundRequest,
     type RefundResult,
+    type RetrieveIntentRequest,
+    type RetrieveIntentResult,
     type WebhookEvent,
 } from './BasePaymentProvider.js';
 import {
@@ -148,6 +150,31 @@ export class StripePaymentProvider extends BasePaymentProvider {
             ProviderIntentID: String(result.Body.id),
             Status: MapStripeIntentStatus(result.Body.status as string),
             ClientSecret: result.Body.client_secret as string | undefined,
+        };
+    }
+
+    public override async RetrieveIntent(request: RetrieveIntentRequest): Promise<RetrieveIntentResult> {
+        if (!request.ProviderIntentID) {
+            return { Success: false, Reason: 'A Stripe retrieve needs a provider intent id.' };
+        }
+        if (this.useStub) {
+            // The stub never sees a browser confirmCardPayment; it stays RequiresPayment
+            // until Capture, matching the card rail's opening state.
+            return { Success: true, Status: this.StubIntentStatus };
+        }
+        const result = await this.call(
+            'GET',
+            `/payment_intents/${encodeURIComponent(request.ProviderIntentID)}`,
+        );
+        if (!result.Ok) {
+            return { Success: false, Reason: result.Reason };
+        }
+        const currency = ((result.Body.currency as string) ?? 'usd').toUpperCase();
+        const minor = Number(result.Body.amount_received ?? result.Body.amount ?? 0);
+        return {
+            Success: true,
+            Status: MapStripeIntentStatus(result.Body.status as string),
+            Amount: Number.isFinite(minor) && minor > 0 ? FromMinorUnits(minor, currency) : undefined,
         };
     }
 

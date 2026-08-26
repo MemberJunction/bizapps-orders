@@ -44,6 +44,7 @@ describe('BasePaymentProvider — the default is refusal', () => {
         base.Config = config({ TypeCode: 'Nonexistent' });
         expect((await base.CreateIntent({ Amount: 1, CurrencyCode: 'USD' })).Success).toBe(false);
         expect((await base.Capture({ ProviderIntentID: 'x', CurrencyCode: 'USD' })).Success).toBe(false);
+        expect((await base.RetrieveIntent({ ProviderIntentID: 'x' })).Success).toBe(false);
         expect((await base.Refund({ CurrencyCode: 'USD', Amount: 1 })).Success).toBe(false);
     });
 
@@ -97,6 +98,31 @@ describe('StripePaymentProvider — the stub', () => {
         // 2.9% + 30c, Stripe's standard US card rate.
         expect(result.FeeAmount).toBe(3.2);
         expect(result.Status).toBe('Succeeded');
+    });
+
+    it('retrieve on the stub stays RequiresPayment — the stub never sees a browser confirm', async () => {
+        const result = await stripe().RetrieveIntent({ ProviderIntentID: 'pi_stub_x' });
+        expect(result.Success).toBe(true);
+        expect(result.Status).toBe('RequiresPayment');
+    });
+
+    it('retrieve on a live account reads Stripe status (not a client claim)', async () => {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async () =>
+            new Response(JSON.stringify({ id: 'pi_live', status: 'succeeded', amount_received: 27500, currency: 'usd' }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            })) as typeof fetch;
+        try {
+            const result = await driver.RetrieveIntent({ ProviderIntentID: 'pi_live' });
+            expect(result.Success).toBe(true);
+            expect(result.Status).toBe('Succeeded');
+            expect(result.Amount).toBe(275);
+        } finally {
+            globalThis.fetch = orig;
+        }
     });
 
     it('reports a zero fee on a zero capture rather than a negative one', async () => {
