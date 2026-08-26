@@ -18,7 +18,7 @@ This is a review-and-sequence doc, not a schema change. The master plans remain 
 
 **Accounting is a working subledger with a mock ERP.** JE workspace (create), batch workspace (preview / build / approve / dispatch), slide-in detail, intercompany *lookup*. It is not a GL, and reports are still stubs.
 
-**What we just shipped is a *view*, not a close of the UX thesis.** Confirm is still “change Status on Details and Save.” Bill-to is still two uncorrelated lookups. Event attendees only live on a generated child form. Fast Entry still exists in the tree and is the only UI that stamps a check number.
+**What shipped after this note:** Confirm is a toolbar verb (`RunConfirm` / `ConfirmEligibility`), not a Status dropdown. Check/ACH reference lives on the header Payment tab (`InitialPaymentReference`). Fast Entry / editor **pages are gone** from Angular (mockups remain). Bill-to / ship-to persons copy each other when the other side is empty and stamp the longest-lasting active Employee org. Event/membership facts render on the line card.
 
 ### Rulings 2026-08-14
 

@@ -87,7 +87,7 @@
                 @if (ExpandedParty === 'ship') {
                     <div class="mjo-oh-bubble__edit">
                         <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToOrganizationID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)" (ValueChange)="OnPartyPersonChange('ShipTo')"></mj-form-field>
                         <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="RequestedDeliveryDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                         <div class="mjo-oh-addr">
                             <div class="mjo-oh-addr__bar">
@@ -137,7 +137,7 @@
                 @if (ExpandedParty === 'bill') {
                     <div class="mjo-oh-bubble__edit">
                         <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToOrganizationID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)" (ValueChange)="OnPartyPersonChange('BillTo')"></mj-form-field>
                         <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentTermsTypeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                         <div class="mjo-oh-addr">
                             <div class="mjo-oh-addr__bar">

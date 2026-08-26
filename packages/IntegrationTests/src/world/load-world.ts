@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { Metadata } from '@memberjunction/core';
 import type { IntegrationCheckContext } from '@memberjunction/testing-integration';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
+import { OrderHeaderEntity, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { Assert } from '@memberjunction/testing-integration';
 import { ReadCsv } from './csv.js';
 import { FindId, FindRows, Quote, Upsert } from './entity-io.js';
@@ -17,6 +18,10 @@ import {
     ADDRESS_ENTITY,
     COMPANY_ENTITY,
     COMPANY_PROFILE_ENTITY,
+    ORDER_HEADER_ENTITY,
+    ORDER_LINE_ENTITY,
+    PRICE_LIST_ASSIGNMENT_ENTITY,
+    PRICE_LIST_ENTITY,
     COMPANY_TAX_NEXUS_ENTITY,
     EVENT_PRODUCT_ENTITY,
     GL_ACCOUNT_ENTITY,
@@ -111,6 +116,7 @@ export async function LoadWorld(ctx: IntegrationCheckContext): Promise<WorldStat
     await loadPrices(ctx, world);
     await loadBundles(ctx, world);
     await loadEntitlements(ctx, world);
+    await loadOperationalSituations(ctx, world);
 
     await AccountingEngineBase.Instance.Config(true, ctx.User, ctx.Provider);
     return world;
@@ -649,4 +655,84 @@ async function loadEntitlements(ctx: IntegrationCheckContext, world: WorldState)
         );
         if (row.Mnemonic) world.Entitlements[row.Mnemonic] = id;
     }
+}
+
+/**
+ * Situations a demo / Explorer session should actually see: a price list, a Draft,
+ * and a Confirmed physical order sitting in the fulfillment queue. Idempotent via Notes.
+ */
+async function loadOperationalSituations(ctx: IntegrationCheckContext, world: WorldState): Promise<void> {
+    const riv = world.Organizations.RIV;
+    const nora = world.People['nora.calhoun@riverside.org'];
+    const handbook = world.Products['STYLE-HB'];
+    const bcp = world.Companies.BCP?.ID;
+    if (!riv || !nora || !handbook || !bcp) return;
+
+    const listID = await Upsert(ctx, PRICE_LIST_ENTITY, `Code = 'BCP-STD'`, {
+        Code: 'BCP-STD',
+        Name: 'BCP Standard',
+        Status: 'Active',
+        Description: WORLD_TAG,
+    });
+    await Upsert(
+        ctx,
+        PRICE_LIST_ASSIGNMENT_ENTITY,
+        `PriceListID = '${listID}' AND OrganizationID = '${riv}'`,
+        {
+            PriceListID: listID,
+            OrganizationID: riv,
+            Priority: 0,
+            Status: 'Active',
+        },
+    );
+
+    await ensureWorldOrder(ctx, {
+        notes: `${WORLD_TAG} draft handbook`,
+        confirm: false,
+        companyID: bcp,
+        personID: nora,
+        orgID: riv,
+        productID: handbook,
+    });
+    await ensureWorldOrder(ctx, {
+        notes: `${WORLD_TAG} confirmed handbook`,
+        confirm: true,
+        companyID: bcp,
+        personID: nora,
+        orgID: riv,
+        productID: handbook,
+    });
+}
+
+async function ensureWorldOrder(
+    ctx: IntegrationCheckContext,
+    spec: {
+        notes: string;
+        confirm: boolean;
+        companyID: string;
+        personID: string;
+        orgID: string;
+        productID: string;
+    },
+): Promise<void> {
+    const existing = await FindId(ctx, ORDER_HEADER_ENTITY, `Notes = '${Quote(spec.notes)}'`);
+    if (existing) return;
+
+    const order = await ctx.Provider.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
+    order.NewRecord();
+    order.OrderType = 'Sale';
+    order.Status = 'Draft';
+    order.CompanyID = spec.companyID;
+    order.BillToPersonID = spec.personID;
+    order.BillToOrganizationID = spec.orgID;
+    order.ShipToPersonID = spec.personID;
+    order.ShipToOrganizationID = spec.orgID;
+    order.Notes = spec.notes;
+    const line = await ctx.Provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ctx.User);
+    line.NewRecord();
+    line.ProductID = spec.productID;
+    line.Quantity = 1;
+    order.Lines.Add(line);
+    if (spec.confirm) order.Status = 'Confirmed';
+    Assert(await order.Save(), `${spec.notes} save failed: ${order.LatestResult?.CompleteMessage ?? 'unknown'}`);
 }

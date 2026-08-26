@@ -24,8 +24,8 @@ FROM (SELECT 1 AS OneRow) AS seed
 OUTER APPLY (
     SELECT
         COUNT(*) AS OrderCount,
-        SUM(CASE WHEN h.PaymentStatus IN (N'Unpaid', N'PartiallyPaid', N'Overdue') THEN 1 ELSE 0 END) AS OpenCount,
-        SUM(CASE WHEN h.PaymentStatus = N'Overdue' THEN 1 ELSE 0 END) AS OverdueCount,
+        SUM(CASE WHEN ISNULL(h.IsOverdue, 0) = 1 OR ISNULL(h.Balance, 0) > 0 THEN 1 ELSE 0 END) AS OpenCount,
+        SUM(CASE WHEN ISNULL(h.IsOverdue, 0) = 1 THEN 1 ELSE 0 END) AS OverdueCount,
         SUM(ISNULL(h.TotalGross, 0)) AS LifetimeValue,
         MIN(h.OrderDate) AS FirstOrderDate
     FROM [__mj_BizAppsOrders].vwOrderHeaders h
@@ -53,7 +53,7 @@ OUTER APPLY (
             h.OrderNumber,
             h.OrderDate,
             h.Status,
-            h.PaymentStatus,
+            h.IsOverdue,
             ISNULL(h.TotalGross, 0) AS TotalGross,
             ISNULL(h.AmountPaid, 0) AS AmountPaid,
             ISNULL(h.Balance, 0) AS Balance
