@@ -33,6 +33,7 @@ describe('renderCheckoutHostPage', () => {
         expect(html).toContain("post('/draft'");
         expect(html).toContain("post('/payment-intent'");
         expect(html).toContain("post('/complete'");
+        expect(html).toContain('if (stripe) { resolve(stripe); return; }');
         expect(html).not.toContain('amount:');
         expect(html).not.toContain('UnitPrice');
         expect(html).not.toContain('paymentProviderId');

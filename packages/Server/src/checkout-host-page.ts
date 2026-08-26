@@ -181,12 +181,19 @@ const BOOT_SCRIPT = `
   }
   function loadStripe(pk) {
     return new Promise(function (resolve, reject) {
-      if (window.Stripe) { resolve(window.Stripe(pk)); return; }
+      // Reuse the same Stripe instance that created the Card Element. A second
+      // Stripe(pk) object cannot confirm that element (Stripe.js throws).
+      if (stripe) { resolve(stripe); return; }
+      function inst() {
+        stripe = window.Stripe(pk);
+        resolve(stripe);
+      }
+      if (window.Stripe) { inst(); return; }
       var s = document.createElement('script');
       s.src = 'https://js.stripe.com/v3/';
       s.onload = function () {
         if (!window.Stripe) { reject(new Error('Stripe.js did not load')); return; }
-        resolve(window.Stripe(pk));
+        inst();
       };
       s.onerror = function () { reject(new Error('Could not load Stripe.js')); };
       document.head.appendChild(s);
