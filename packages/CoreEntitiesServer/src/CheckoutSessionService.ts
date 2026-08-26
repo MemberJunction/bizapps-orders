@@ -421,6 +421,50 @@ export class CheckoutSessionService {
     /**
      * Discovers extension field definitions from metadata for the target product's extension entity.
      */
+    /**
+     * ProductType.Configuration is the reusable presentation layer (customUI CSS/JS/theme,
+     * unitMode, quantity). Widget Configuration overlays it; widget wins on conflict.
+     */
+    private static mergeProductTypePresentation(
+        configObj: CheckoutWidgetConfiguration,
+        productType: mjBizAppsOrdersProductTypeEntity
+    ): void {
+        if (!productType.Configuration) {
+            return;
+        }
+        let pTypeConfig: ProductTypeConfiguration;
+        try {
+            const parsed = JSON.parse(productType.Configuration);
+            if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                return;
+            }
+            pTypeConfig = parsed as ProductTypeConfiguration;
+        } catch {
+            return;
+        }
+        if (!configObj.unitMode && pTypeConfig.unitMode) {
+            configObj.unitMode = pTypeConfig.unitMode;
+        }
+        if (configObj.allowQuantity === undefined && pTypeConfig.allowQuantity !== undefined) {
+            configObj.allowQuantity = pTypeConfig.allowQuantity;
+        }
+        if (!configObj.maxQuantity && pTypeConfig.maxQuantity) {
+            configObj.maxQuantity = pTypeConfig.maxQuantity;
+        }
+        const typeUI = pTypeConfig.customUI;
+        if (!typeUI) {
+            return;
+        }
+        const widgetUI = configObj.customUI ?? {};
+        configObj.customUI = {
+            ...typeUI,
+            ...widgetUI,
+            theme: { ...(typeUI.theme ?? {}), ...(widgetUI.theme ?? {}) },
+            css: widgetUI.css || typeUI.css,
+            js: widgetUI.js || typeUI.js,
+        };
+    }
+
     private static async discoverExtensionFields(
         configObj: CheckoutWidgetConfiguration,
         md: Metadata,
@@ -448,19 +492,27 @@ export class CheckoutSessionService {
             configObj.productId = productId;
         }
 
-        if (Array.isArray(configObj.extensionFields) && configObj.extensionFields.length > 0) {
-            return;
-        }
-
         if (!productId) return;
 
         const product = await md.GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, contextUser);
         const prodLoaded = await product.Load(productId);
-        if (!prodLoaded || !product.ProductTypeID) return;
+        if (!prodLoaded) return;
+        if (!configObj.productName && product.Name) {
+            configObj.productName = product.Name;
+        }
+
+        if (!product.ProductTypeID) return;
 
         const productType = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, contextUser);
         const typeLoaded = await productType.Load(product.ProductTypeID);
-        if (!typeLoaded || !productType.OrderLineExtensionEntity) return;
+        if (!typeLoaded) return;
+
+        this.mergeProductTypePresentation(configObj, productType);
+
+        if (Array.isArray(configObj.extensionFields) && configObj.extensionFields.length > 0) {
+            return;
+        }
+        if (!productType.OrderLineExtensionEntity) return;
 
         const extEntityName = productType.OrderLineExtensionEntity;
         configObj.extensionEntityName = extEntityName;

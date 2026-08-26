@@ -373,6 +373,20 @@ describe('CheckoutSessionService', () => {
             expect(res.Configuration?.customUI).toBeDefined();
         });
 
+        it('merges ProductType customUI and unitMode under widget overlay, and fills productName', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                productId: 'prod-1',
+                title: 'Summit',
+                customUI: { css: '.widget-wins { color: blue; }' },
+            });
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            expect(res.Success).toBe(true);
+            expect(res.Configuration?.productName).toBe('Conference VIP Pass');
+            expect(res.Configuration?.unitMode).toBe('perUnit');
+            expect(res.Configuration?.customUI?.css).toBe('.widget-wins { color: blue; }');
+            expect(res.Configuration?.customUI?.js).toBe('console.log("Event Type Hook");');
+        });
+
         it('auto-discovers extension fields from ProductType metadata when not explicitly specified', async () => {
             const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
             expect(res.Success).toBe(true);

@@ -16,6 +16,20 @@ describe('escapeHtml / escapeAttr', () => {
 });
 
 describe('renderCheckoutHostPage', () => {
+    it('hosts the Angular Element when elementSrc is provided', () => {
+        const html = renderCheckoutHostPage({
+            slug: 'summit-2027',
+            apiRoot: '/checkout',
+            elementSrc: '/checkout/element/main.js',
+            cspNonce: 'nOnce+/1',
+        });
+        expect(html).toContain('<mj-orders-checkout slug="summit-2027" api-root="/checkout">');
+        expect(html).toContain('src="/checkout/element/main.js"');
+        expect(html).toContain('type="module"');
+        expect(html).toContain('nonce="nOnce+/1"');
+        expect(html).not.toContain("post('/initialize'");
+    });
+
     it('bakes slug and api root into data-* attributes, never into the script block', () => {
         const evil = 'summit"</script><script>alert(1)</script>';
         const html = renderCheckoutHostPage({ slug: evil, apiRoot: '/checkout' });
@@ -74,6 +88,7 @@ describe('checkoutHostSecurityHeaders', () => {
         expect(h['Referrer-Policy']).toBe('no-referrer');
         expect(h['Content-Security-Policy']).toContain("frame-ancestors 'none'");
         expect(h['Content-Security-Policy']).toContain("'nonce-abc123'");
+        expect(h['Content-Security-Policy']).toContain("'self'");
         expect(h['Content-Security-Policy']).toContain('https://js.stripe.com');
         expect(h['Content-Security-Policy']).toContain("default-src 'none'");
     });
