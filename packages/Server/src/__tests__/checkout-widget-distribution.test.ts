@@ -75,6 +75,12 @@ vi.mock('@mj-biz-apps/orders-entities', () => ({
     mjBizAppsOrdersCheckoutWidgetEntity: mocks.MockWidget,
 }));
 
+// The entity server imports only EscapeText from the CES barrel; mock it so the test does not
+// drag the entire package (whose other modules re-import the mocked orders-entities above).
+vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
+    EscapeText: (value: string) => String(value).replace(/'/g, "''"),
+}));
+
 vi.mock('@memberjunction/core', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@memberjunction/core')>();
     return {

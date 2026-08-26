@@ -33,7 +33,11 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { BaseEntity, EntitySaveOptions, IMetadataProvider, IRunViewProvider, LogError, LogStatus, RunView, UserInfo } from '@memberjunction/core';
 import { MJMagicLinkInviteEntity } from '@memberjunction/core-entities';
-import { EscapeSQLString, RegisterClass } from '@memberjunction/global';
+import { RegisterClass } from '@memberjunction/global';
+// EscapeText, not @memberjunction/global's EscapeSQLString: the latter is a LINKED-MJ-ONLY API —
+// the published 6.1.0-edge.3 global does not export it, so importing it breaks under registry
+// packages (CI). Same escaping, shipped with this repo.
+import { EscapeText } from '@mj-biz-apps/orders-core-entities-server';
 import {
     mjBizAppsOrdersCheckoutWidgetDistributionEntity,
     mjBizAppsOrdersCheckoutWidgetEntity,
@@ -238,7 +242,7 @@ export class CheckoutWidgetDistributionEntityServer extends mjBizAppsOrdersCheck
         const res = await rv.RunView<{ ID: string }>(
             {
                 EntityName: entityName,
-                ExtraFilter: `Name = '${EscapeSQLString(name)}'`,
+                ExtraFilter: `Name = '${EscapeText(name)}'`,
                 Fields: ['ID'],
                 ResultType: 'simple',
             },

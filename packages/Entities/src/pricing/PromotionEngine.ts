@@ -30,7 +30,7 @@ import {
     mjBizAppsOrdersOrderAdjustmentEntity,
     mjBizAppsOrdersOrderLineEntity,
 } from '../generated/entity_subclasses';
-import { EscapeSQLString, MJGlobal } from '@memberjunction/global';
+import { MJGlobal } from '@memberjunction/global';
 import { AllocateProRata, Money } from './PricingBehavior.js';
 import {
     ApplyPromotions,
@@ -48,6 +48,17 @@ const ORDER_ADJUSTMENT_ENTITY = 'MJ_BizApps_Orders: Order Adjustments';
 const ORDER_ADJUSTMENT_ALLOCATION_ENTITY = 'MJ_BizApps_Orders: Order Adjustment Allocations';
 const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
+
+/**
+ * The one sanctioned SQL-literal escape in this package (CLAUDE.md "SQL Safety" — never ad-hoc at
+ * a call site). Mirrors `EscapeText` in orders-core-entities-server's sql-guards, which this
+ * package cannot import (the dependency runs the other way), and cannot be
+ * `@memberjunction/global`'s `EscapeSQLString` either — the published 6.1.0-edge.3 global does not
+ * export it (linked-MJ-only API); switch to it once the pin carries it.
+ */
+function escapeSqlLiteral(value: string): string {
+    return String(value).replace(/'/g, "''");
+}
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
@@ -160,9 +171,10 @@ async function loadCandidates(
     const wanted = new Set<string>();
 
     if (codes.length) {
-        // EscapeSQLString, not hand-rolled regex (CLAUDE.md "SQL Safety"): with checkout coupons,
-        // these codes now arrive from ANONYMOUS callers, so this filter is an injection surface.
-        const quoted = codes.map((c) => `'${EscapeSQLString(c)}'`).join(',');
+        // With checkout coupons these codes arrive from ANONYMOUS callers, so this filter is an
+        // injection surface — escape through the named guard below (CLAUDE.md "SQL Safety"), never
+        // ad-hoc at the call site.
+        const quoted = codes.map((c) => `'${escapeSqlLiteral(c)}'`).join(',');
         const res = await rv.RunView<{
             ID: string;
             PromotionID: string;

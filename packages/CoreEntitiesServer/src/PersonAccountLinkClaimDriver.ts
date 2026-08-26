@@ -27,7 +27,9 @@ import {
     type ClaimRedeemContext,
     type ClaimResult,
 } from '@memberjunction/core-entities';
-import { EscapeSQLString } from '@memberjunction/global';
+// EscapeText, not @memberjunction/global's EscapeSQLString — the published 6.1.0-edge.3 global
+// does not export the latter (linked-MJ-only API), and this repo's own guard does the same job.
+import { EscapeText } from './sql-guards.js';
 
 const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 
@@ -131,7 +133,7 @@ export class PersonAccountLinkClaimDriver extends BaseIdentityClaimDriver {
         const byLink = await rv.RunView<{ ID: string }>(
             {
                 EntityName: PERSON_ENTITY,
-                ExtraFilter: `LinkedUserID = '${EscapeSQLString(user.ID)}'`,
+                ExtraFilter: `LinkedUserID = '${EscapeText(user.ID)}'`,
                 Fields: ['ID'],
                 ResultType: 'simple',
             },
@@ -144,7 +146,7 @@ export class PersonAccountLinkClaimDriver extends BaseIdentityClaimDriver {
         const byEmail = await rv.RunView<{ ID: string }>(
             {
                 EntityName: PERSON_ENTITY,
-                ExtraFilter: `Email = '${EscapeSQLString(email)}' AND LinkedUserID IS NULL`,
+                ExtraFilter: `Email = '${EscapeText(email)}' AND LinkedUserID IS NULL`,
                 Fields: ['ID'],
                 ResultType: 'simple',
             },
