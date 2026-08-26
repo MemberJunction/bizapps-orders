@@ -426,41 +426,31 @@ export class RegistrationPageComponent {
 }
 ```
 
-### 2. Host Application Route Integration
+### 2. Public checkout URL (MJAPI, not Explorer)
 
-In MemberJunction host applications (such as MemberJunction Explorer or custom Angular portals), route to a wrapper component passing the distribution slug parameter:
+Anonymous buyers do not have an Explorer session. The public URL is served by MJAPI on the existing `OrdersCheckoutEdge`:
 
-```typescript
-// app.routes.ts
-export const routes: Routes = [
-  {
-    path: 'checkout/:slug',
-    loadComponent: () => import('./checkout-route.component').then(m => m.CheckoutRouteComponent)
-  }
-];
+```
+GET {MJAPI}/checkout/:slug
 ```
 
-Inside `CheckoutRouteComponent`:
-```typescript
-@Component({
-  standalone: true,
-  imports: [MJCheckoutWidgetComponent],
-  template: `<mj-checkout-widget [distributionSlug]="slug()"></mj-checkout-widget>`
-})
-export class CheckoutRouteComponent {
-  private route = inject(ActivatedRoute);
-  public slug = toSignal(this.route.paramMap.pipe(map(params => params.get('slug') ?? '')));
-}
-```
+Example: `http://localhost:4103/checkout/summit-2027`
+
+That route returns a vanilla HTML page that talks only to the POST edge below (`initialize` → `draft` → `payment-intent` if required → `complete`). It is not an Explorer route and not a custom-element bundle.
+
+The Angular `<mj-checkout-widget>` remains the embeddable control for sites that already host Angular. A wrapper route inside Explorer would require login and is the wrong guest surface.
+
+When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@mj-biz-apps/orders-server`), MJ auto-loads `OrdersCheckoutEdge` from the package's `MJ_SERVER_EXTENSIONS` export — the host `mj.config.cjs` does not need to copy the extension block. Host `serverExtensions[]` is still the override layer (`Enabled`, `RootPath`, `Settings` such as `ServiceUserEmail`).
 
 ### 3. Headless & Custom Frontend Integration — the anonymous checkout edge
 
-The app ships its own public REST edge: **`CheckoutServerExtension`** (`@mj-biz-apps/orders-server`, DriverClass `OrdersCheckoutEdge`), mounted pre-auth via `serverExtensions[]` in `mj.config.cjs` — the same mechanism as the payment webhook. Default root path `/checkout`:
+The app ships its own public REST edge: **`CheckoutServerExtension`** (`@mj-biz-apps/orders-server`, DriverClass `OrdersCheckoutEdge`), mounted pre-auth via Open App `MJ_SERVER_EXTENSIONS` (host `serverExtensions[]` overlays). Default root path `/checkout`:
 
-1. `POST /checkout/initialize` — body `{ slug, clientSessionKey, turnstileToken? }`
-2. `POST /checkout/draft` — body `{ sessionId, clientSessionKey, email, lines }`
-3. `POST /checkout/payment-intent` — body `{ sessionId, clientSessionKey }` → returns the gateway `ClientSecret` for Stripe.js confirmation
-4. `POST /checkout/complete` — body `{ sessionId, clientSessionKey, turnstileToken? }`
+1. `GET /checkout/:slug` — first-party HTML host page for the distribution (404 if the slug is reserved or not an Active distribution)
+2. `POST /checkout/initialize` — body `{ slug, clientSessionKey, turnstileToken? }`
+3. `POST /checkout/draft` — body `{ sessionId, clientSessionKey, email, lines }`
+4. `POST /checkout/payment-intent` — body `{ sessionId, clientSessionKey }` → returns the gateway `ClientSecret` for Stripe.js confirmation
+5. `POST /checkout/complete` — body `{ sessionId, clientSessionKey, turnstileToken? }`
 
 The edge enforces, in order and fail-closed: a body-size cap, per-IP(+slug) fixed-window rate limiting, the widget's `Configuration.allowedOrigins` allowlist (with CORS grants only for allowed origins), and — when the widget sets `requireTurnstile` — Cloudflare Turnstile verification against the secret named by the extension's `Settings.TurnstileSecretEnvVar`. Writes run as the principal named by `Settings.ServiceUserEmail`, falling back to MJ's system user. **No request body carries an amount, a price, a product resolution, or a payment provider** — those all resolve server-side.
 

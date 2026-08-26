@@ -68,6 +68,7 @@ import { CLASS_REGISTRATIONS } from './generated/class-registrations-manifest.js
 export { CLASS_REGISTRATIONS } from './generated/class-registrations-manifest.js';
 export { PaymentWebhookExtension, LoadPaymentWebhookExtension } from './PaymentWebhookExtension.js';
 export { CheckoutServerExtension, LoadCheckoutServerExtension } from './CheckoutServerExtension.js';
+export { MJ_SERVER_EXTENSIONS } from './server-extensions-manifest.js';
 
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
@@ -144,5 +145,5 @@ export function LoadBizAppsOrdersServer(): void {
     // the ClassFactory and MJServer's extension loader silently finds nothing for the DriverClass named
     // in mj.config.cjs — so the webhook route is never mounted and no bank debit ever captures.
     LoadPaymentWebhookExtension();     // POST /webhooks/payments/:providerId, mounted before auth
-    LoadCheckoutServerExtension();     // POST /checkout/{initialize,draft,payment-intent,complete}, mounted before auth
+    LoadCheckoutServerExtension();     // GET /checkout/:slug + POST /checkout/{initialize,draft,payment-intent,complete}, mounted before auth
 }

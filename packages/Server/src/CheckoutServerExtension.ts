@@ -8,6 +8,10 @@
  * the distribution slug plus the session id + client session key (re-verified inside the
  * service on every mutating call) are the credentials.
  *
+ * `GET {RootPath}/:slug` is the first-party public page (vanilla HTML, no Explorer shell).
+ * MJ auto-loads this extension from `@mj-biz-apps/orders-server`'s `MJ_SERVER_EXTENSIONS`
+ * when the package is listed in the host `dynamicPackages.server[]`.
+ *
  * ═══ THE GATE SEQUENCE, in order, all fail-closed ═══
  *
  * 1. BODY CAP — `express.json()` scoped to these routes with a small limit. Checkout inputs
@@ -54,6 +58,9 @@ import {
 } from '@memberjunction/server-extensions-core';
 import { CheckoutSessionService, EscapeText, type CheckoutLineInput } from '@mj-biz-apps/orders-core-entities-server';
 import type { CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
+import { randomBytes } from 'node:crypto';
+import { isValidCheckoutSlug, originAllowed as originIsAllowed, resolveClientIp } from './checkout-edge-policy.js';
+import { checkoutHostSecurityHeaders, renderCheckoutHostErrorPage, renderCheckoutHostPage } from './checkout-host-page.js';
 
 /** Checkout request bodies are small; anything larger is abuse, not commerce. */
 const MAX_BODY = '256kb';
@@ -61,6 +68,9 @@ const MAX_BODY = '256kb';
 /** Fixed-window rate limit defaults (overridable via extension Settings). */
 const DEFAULT_RATE_WINDOW_MS = 60_000;
 const DEFAULT_RATE_MAX_PER_WINDOW = 30;
+/** Aggregate cap per IP across all slugs — sits on top of the per-slug window. */
+const DEFAULT_RATE_MAX_GLOBAL = 90;
+const REAP_INTERVAL_MS = 60_000;
 /** Bounded size of the rate-limit map — oldest windows evict first. */
 const RATE_CACHE_MAX = 50_000;
 
@@ -79,6 +89,17 @@ interface CheckoutEdgeSettings {
     RateLimitWindowMs?: number;
     /** Max requests per window per client key (default 30). */
     RateLimitMax?: number;
+    /**
+     * Aggregate max per IP per window across all slugs (default 90).
+     * Independent of the per-slug cap.
+     */
+    RateLimitMaxGlobal?: number;
+    /**
+     * Number of reverse proxies that append to X-Forwarded-For. 0 (default)
+     * ignores XFF and uses the socket address — the leftmost XFF hop is
+     * client-supplied and must not key rate limits or Turnstile.
+     */
+    TrustedProxyHops?: number;
 }
 
 interface WidgetEdgePolicy {
@@ -91,10 +112,13 @@ export class CheckoutServerExtension extends BaseServerExtension {
     private settings: CheckoutEdgeSettings = {};
     private rateWindows = new Map<string, { windowStart: number; count: number }>();
     private warnedSystemUserFallback = false;
+    private rootPath = '/checkout';
+    private lastReapAt = 0;
 
     public async Initialize(app: Application, config: ServerExtensionConfig): Promise<ExtensionInitResult> {
         this.settings = (config.Settings ?? {}) as CheckoutEdgeSettings;
-        const root = config.RootPath.replace(/\/+$/, '');
+        const root = config.RootPath.replace(/\/+$/, '') || '/checkout';
+        this.rootPath = root;
         const json = BodyParser.json({ limit: MAX_BODY });
 
         const routes: Array<[string, (req: Request, res: Response) => Promise<void>]> = [
@@ -114,11 +138,14 @@ export class CheckoutServerExtension extends BaseServerExtension {
             });
         }
 
-        LogStatus(`[Orders] Checkout edge registered at POST ${root}/{initialize,draft,payment-intent,complete}`);
+        const hostPath = `${root}/:slug`;
+        app.get(hostPath, (req: Request, res: Response) => this.handleGetHost(req, res));
+
+        LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete}`);
         return {
             Success: true,
-            Message: 'Orders anonymous checkout edge mounted (rate-limited, origin-gated, optional Turnstile).',
-            RegisteredRoutes: routes.map(([path]) => `POST ${path}`),
+            Message: 'Orders anonymous checkout edge mounted (public GET host, rate-limited POSTs, origin-gated, optional Turnstile).',
+            RegisteredRoutes: [...routes.map(([path]) => `POST ${path}`), `GET ${hostPath}`],
         };
     }
 
@@ -144,7 +171,8 @@ export class CheckoutServerExtension extends BaseServerExtension {
         try {
             const ip = this.clientIp(req);
             const slug = typeof req.body?.slug === 'string' ? req.body.slug : '';
-            if (this.rateLimitExceeded(`${ip}|${slug}`)) {
+            const globalMax = this.settings.RateLimitMaxGlobal ?? DEFAULT_RATE_MAX_GLOBAL;
+            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(`${ip}|${slug}`)) {
                 res.status(429).json({ Success: false, ErrorMessage: 'Too many requests — slow down and try again shortly.' });
                 return;
             }
@@ -185,7 +213,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
         try {
             const policy = (await this.resolveEdgePolicy(req)) ?? {};
             const origin = req.headers.origin;
-            if (origin && this.originAllowed(origin, policy)) {
+            if (origin && this.originAllowed(origin, policy, req)) {
                 this.setCorsHeaders(res, origin);
                 res.status(204).end();
             } else {
@@ -210,7 +238,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const rv = new RunView();
 
         let widgetId: string | null = null;
-        const slug = typeof req.body?.slug === 'string' ? req.body.slug.trim() : '';
+        const slug = this.requestSlug(req);
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
 
         if (slug) {
@@ -264,7 +292,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
             // the session credentials remain the gate.
             return true;
         }
-        if (!this.originAllowed(origin, policy)) {
+        if (!this.originAllowed(origin, policy, req)) {
             res.status(403).json({ Success: false, ErrorMessage: 'This origin is not allowed to use this checkout.' });
             return false;
         }
@@ -272,18 +300,14 @@ export class CheckoutServerExtension extends BaseServerExtension {
         return true;
     }
 
-    private originAllowed(origin: string, policy: WidgetEdgePolicy): boolean {
-        if (!policy.allowedOrigins || policy.allowedOrigins.length === 0) {
-            return true;
-        }
-        const normalized = origin.replace(/\/+$/, '').toLowerCase();
-        return policy.allowedOrigins.some((allowed) => allowed.replace(/\/+$/, '').toLowerCase() === normalized);
+    private originAllowed(origin: string, policy: WidgetEdgePolicy, req: Request): boolean {
+        return originIsAllowed(origin, policy, typeof req.headers.host === 'string' ? req.headers.host : undefined);
     }
 
     private setCorsHeaders(res: Response, origin: string): void {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Vary', 'Origin');
-        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
         res.setHeader('Access-Control-Max-Age', '600');
     }
@@ -325,6 +349,96 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
     }
 
+    // ─── Public host page ─────────────────────────────────────────────────────
+
+    /**
+     * `GET /checkout/:slug` — first-party HTML that talks to the POST edge.
+     * Unknown/reserved slugs 404; missing service principal is a 503. The page
+     * itself is cache-free; initialize still enforces Active widget + distribution.
+     */
+    private async handleGetHost(req: Request, res: Response): Promise<void> {
+        try {
+            const slug = typeof req.params?.slug === 'string' ? req.params.slug.trim() : '';
+            if (!isValidCheckoutSlug(slug)) {
+                this.sendHostError(res, 404, 'This checkout link is not valid.');
+                return;
+            }
+            const ip = this.clientIp(req);
+            const globalMax = this.settings.RateLimitMaxGlobal ?? DEFAULT_RATE_MAX_GLOBAL;
+            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(`${ip}|get|${slug}`)) {
+                this.sendHostError(res, 429, 'Too many requests — slow down and try again shortly.');
+                return;
+            }
+            const user = this.resolveActingUser();
+            if (!user) {
+                this.sendHostError(res, 503, 'Checkout is not ready — please try again shortly.');
+                return;
+            }
+            const exists = await this.activeDistributionExists(slug, user);
+            if (!exists) {
+                this.sendHostError(res, 404, 'This checkout is not available.');
+                return;
+            }
+            this.maybeReapExpiredSessions(user);
+            const nonce = randomBytes(16).toString('base64url');
+            this.applyHostSecurityHeaders(res, nonce);
+            res
+                .status(200)
+                .setHeader('Content-Type', 'text/html; charset=utf-8')
+                .send(renderCheckoutHostPage({ slug, apiRoot: this.rootPath, cspNonce: nonce }));
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            LogError(`[OrdersCheckoutEdge] Unhandled error on GET host: ${msg}`);
+            if (!res.headersSent) {
+                this.sendHostError(res, 500, 'Checkout is temporarily unavailable.');
+            }
+        }
+    }
+
+    private sendHostError(res: Response, status: number, message: string): void {
+        const nonce = randomBytes(16).toString('base64url');
+        this.applyHostSecurityHeaders(res, nonce);
+        res
+            .status(status)
+            .setHeader('Content-Type', 'text/html; charset=utf-8')
+            .send(renderCheckoutHostErrorPage({ message, cspNonce: nonce }));
+    }
+
+    private applyHostSecurityHeaders(res: Response, nonce: string): void {
+        for (const [name, value] of Object.entries(checkoutHostSecurityHeaders(nonce))) {
+            res.setHeader(name, value);
+        }
+    }
+
+    private maybeReapExpiredSessions(user: UserInfo): void {
+        const now = Date.now();
+        if (now - this.lastReapAt < REAP_INTERVAL_MS) {
+            return;
+        }
+        this.lastReapAt = now;
+        void CheckoutSessionService.ReapExpiredOpenSessions(user).catch((err: unknown) => {
+            LogError(`[OrdersCheckoutEdge] Session reap failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
+    }
+
+    private requestSlug(req: Request): string {
+        if (typeof req.params?.slug === 'string' && req.params.slug.trim()) {
+            return req.params.slug.trim();
+        }
+        return typeof req.body?.slug === 'string' ? req.body.slug.trim() : '';
+    }
+
+    private async activeDistributionExists(slug: string, user: UserInfo): Promise<boolean> {
+        const rv = new RunView();
+        const distRes = await rv.RunView<{ ID: string }>({
+            EntityName: CHECKOUT_DISTRIBUTION_ENTITY,
+            Fields: ['ID'],
+            ExtraFilter: `Slug = '${EscapeText(slug)}' AND Status = 'Active'`,
+            ResultType: 'simple',
+        }, user);
+        return !!(distRes?.Success && distRes.Results?.length);
+    }
+
     // ─── Route handlers (thin shells over the service) ───────────────────────
 
     private async handleInitialize(req: Request, res: Response): Promise<void> {
@@ -335,6 +449,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
         const slug = typeof req.body?.slug === 'string' ? req.body.slug : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        this.maybeReapExpiredSessions(user);
         const result = await CheckoutSessionService.InitializeSession(slug, clientSessionKey, user);
         res.status(result.Success ? 200 : 400).json(result);
     }
@@ -380,9 +495,8 @@ export class CheckoutServerExtension extends BaseServerExtension {
     // ─── Infrastructure ──────────────────────────────────────────────────────
 
     /** Fixed-window limiter over a bounded, insertion-ordered map. */
-    private rateLimitExceeded(clientKey: string): boolean {
+    private rateLimitExceeded(clientKey: string, maxPerWindow = this.settings.RateLimitMax ?? DEFAULT_RATE_MAX_PER_WINDOW): boolean {
         const windowMs = this.settings.RateLimitWindowMs ?? DEFAULT_RATE_WINDOW_MS;
-        const maxPerWindow = this.settings.RateLimitMax ?? DEFAULT_RATE_MAX_PER_WINDOW;
         const now = Date.now();
         const entry = this.rateWindows.get(clientKey);
         if (!entry || now - entry.windowStart >= windowMs) {
@@ -400,17 +514,11 @@ export class CheckoutServerExtension extends BaseServerExtension {
     }
 
     /**
-     * The client IP for rate limiting and Turnstile. Trusts the leftmost X-Forwarded-For hop
-     * when present (the edge sits behind the host's proxy in production); otherwise the
-     * socket address.
+     * The client IP for rate limiting and Turnstile. Ignores X-Forwarded-For unless
+     * `Settings.TrustedProxyHops` is a positive integer (Nth-from-right hop).
      */
     private clientIp(req: Request): string {
-        const fwd = req.headers['x-forwarded-for'];
-        const first = Array.isArray(fwd) ? fwd[0] : fwd;
-        if (first) {
-            return first.split(',')[0].trim();
-        }
-        return req.socket?.remoteAddress ?? 'unknown';
+        return resolveClientIp(req, this.settings.TrustedProxyHops ?? 0);
     }
 
     /**

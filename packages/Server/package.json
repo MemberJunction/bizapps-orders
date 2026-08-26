@@ -13,7 +13,24 @@
   ],
   "scripts": {
     "build": "tsc && tsc-alias -f",
-    "test": "echo \"No tests configured yet\""
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "memberjunction": {
+    "serverExtensions": [
+      {
+        "Enabled": true,
+        "DriverClass": "OrdersPaymentWebhook",
+        "RootPath": "/webhooks/payments",
+        "Settings": {}
+      },
+      {
+        "Enabled": true,
+        "DriverClass": "OrdersCheckoutEdge",
+        "RootPath": "/checkout",
+        "Settings": {}
+      }
+    ]
   },
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",
