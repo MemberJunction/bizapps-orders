@@ -30,7 +30,7 @@ import {
     mjBizAppsOrdersOrderAdjustmentEntity,
     mjBizAppsOrdersOrderLineEntity,
 } from '../generated/entity_subclasses';
-import { MJGlobal } from '@memberjunction/global';
+import { EscapeSQLString, MJGlobal } from '@memberjunction/global';
 import { AllocateProRata, Money } from './PricingBehavior.js';
 import {
     ApplyPromotions,
@@ -160,7 +160,9 @@ async function loadCandidates(
     const wanted = new Set<string>();
 
     if (codes.length) {
-        const quoted = codes.map((c) => `'${c.replace(/'/g, "''")}'`).join(',');
+        // EscapeSQLString, not hand-rolled regex (CLAUDE.md "SQL Safety"): with checkout coupons,
+        // these codes now arrive from ANONYMOUS callers, so this filter is an injection surface.
+        const quoted = codes.map((c) => `'${EscapeSQLString(c)}'`).join(',');
         const res = await rv.RunView<{
             ID: string;
             PromotionID: string;

@@ -24,8 +24,10 @@ import {
     type CheckoutWidgetConfiguration,
     type ProductTypeConfiguration
 } from '@mj-biz-apps/orders-entities';
-import { EscapeText } from './sql-guards.js';
+import { EscapeText, RequireUUID } from './sql-guards.js';
 import { OpenPaymentIntent } from './PaymentIntentService.js';
+import { RenderInvoiceDocuments } from './invoice-renderer.js';
+import { ResolveDeliveryChannel } from './DeliveryResolver.js';
 
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
@@ -44,6 +46,9 @@ const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 const DEFAULT_MAX_QUANTITY_PER_LINE = 100;
 /** Ceiling on the number of input lines a single checkout may carry. */
 const MAX_LINES_PER_CHECKOUT = 50;
+/** Anonymous-input ceilings for coupon codes, same posture as the line caps above. */
+const MAX_PROMOTION_CODES = 10;
+const MAX_PROMOTION_CODE_LENGTH = 60;
 
 /** PaymentIntent statuses that satisfy the paid-order gate at completion. */
 const SETTLED_INTENT_STATUSES: ReadonlyArray<string> = ['Succeeded'];
@@ -118,6 +123,11 @@ export interface UpdateDraftResult {
     TotalGross: number;
     RequiresPayment: boolean;
     Lines: CheckoutLineSummary[];
+    /**
+     * Promotion codes that resolved to nothing usable, and why. Silence is the wrong answer: a
+     * customer who typed a code needs to be told it did nothing (OrderPricingResult's own rule).
+     */
+    UnusableCodes?: Array<{ Code: string; Reason: string }>;
 }
 
 export interface CompleteCheckoutResult {
@@ -363,6 +373,9 @@ export class CheckoutSessionService {
             type: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select';
             required: boolean;
             placeholder?: string;
+            options?: Array<{ label: string; value: string }>;
+            hidden?: boolean;
+            defaultValue?: unknown;
         }> = [];
 
         // Check if extension links to a Person
@@ -395,16 +408,35 @@ export class CheckoutSessionService {
             const sqlType = (f.Type || '').toLowerCase();
             const valList = (f.ValueListType || '').toLowerCase();
 
+            // Value-list fields become selects, WITH their options — a <select> with zero
+            // <option>s is unusable, which is what shipped before this populated them.
+            //   List           → select over the EntityFieldValue rows. An EMPTY list means the
+            //                    metadata is broken (MJ's own ValueIsPermittedByValueList note),
+            //                    so fall back to free text rather than an un-fillable control.
+            //   ListOrUserEntry→ free text: that mode EXISTS to permit values outside the list,
+            //                    and a plain select would over-constrain it. The known values
+            //                    still ship as options so the widget can offer suggestions.
+            let fieldOptions: Array<{ label: string; value: string }> | undefined;
             if (valList === 'list' || valList === 'listoruserentry') {
-                fieldType = 'select';
-            } else if (sqlType === 'bit') {
-                fieldType = 'boolean';
-            } else if (['date', 'datetime', 'datetime2', 'datetimeoffset', 'smalldatetime'].includes(sqlType)) {
-                fieldType = 'date';
-            } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(sqlType)) {
-                fieldType = 'number';
-            } else if (['ntext', 'text', 'nvarchar(max)', 'varchar(max)'].includes(sqlType) || (f.Length && f.Length > 255)) {
-                fieldType = 'textarea';
+                const values = (f.EntityFieldValues ?? [])
+                    .slice()
+                    .sort((a, b) => (a.Sequence ?? 0) - (b.Sequence ?? 0))
+                    .map((v) => ({ label: v.Value, value: v.Value }));
+                if (values.length > 0) {
+                    fieldOptions = values;
+                    fieldType = valList === 'list' ? 'select' : 'text';
+                }
+            }
+            if (fieldType !== 'select') {
+                if (sqlType === 'bit') {
+                    fieldType = 'boolean';
+                } else if (['date', 'datetime', 'datetime2', 'datetimeoffset', 'smalldatetime'].includes(sqlType)) {
+                    fieldType = 'date';
+                } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(sqlType)) {
+                    fieldType = 'number';
+                } else if (['ntext', 'text', 'nvarchar(max)', 'varchar(max)'].includes(sqlType) || (f.Length && f.Length > 255)) {
+                    fieldType = 'textarea';
+                }
             }
 
             const camelName = f.Name.charAt(0).toLowerCase() + f.Name.slice(1);
@@ -415,8 +447,34 @@ export class CheckoutSessionService {
                 label,
                 type: fieldType,
                 required: !f.AllowsNull,
-                placeholder: f.Description || label
+                placeholder: f.Description || label,
+                ...(fieldOptions ? { options: fieldOptions } : {})
             });
+        }
+
+        // fieldOverrides: admin-authored per-field shaping from the widget's Configuration,
+        // applied server-side so every consumer (widget, custom element, future surfaces) sees
+        // the same effective form. Keys match case-insensitively on the field's camelCase name.
+        const overrides = configObj.fieldOverrides;
+        if (overrides && typeof overrides === 'object') {
+            const byLower = new Map(Object.entries(overrides).map(([k, v]) => [k.toLowerCase(), v]));
+            for (let i = discoveredFields.length - 1; i >= 0; i--) {
+                const field = discoveredFields[i];
+                const o = byLower.get(field.name.toLowerCase());
+                if (!o) continue;
+                if (o.hidden === true) {
+                    discoveredFields.splice(i, 1);
+                    continue;
+                }
+                if (typeof o.label === 'string') field.label = o.label;
+                if (typeof o.placeholder === 'string') field.placeholder = o.placeholder;
+                if (typeof o.required === 'boolean') field.required = o.required;
+                if (o.defaultValue !== undefined) field.defaultValue = o.defaultValue;
+                if (Array.isArray(o.options) && o.options.length > 0) {
+                    field.options = o.options.map((opt) => ({ label: String(opt.label), value: String(opt.value) }));
+                    field.type = 'select';
+                }
+            }
         }
 
         configObj.extensionFields = discoveredFields;
@@ -631,7 +689,8 @@ export class CheckoutSessionService {
         clientSessionKey: string,
         email: string,
         lines: CheckoutLineInput[],
-        contextUser?: UserInfo
+        contextUser?: UserInfo,
+        promotionCodes?: string[]
     ): Promise<UpdateDraftResult> {
         const failed = (message: string): UpdateDraftResult => ({
             Success: false,
@@ -650,6 +709,15 @@ export class CheckoutSessionService {
         }
         if (!Array.isArray(lines) || lines.length > MAX_LINES_PER_CHECKOUT) {
             return failed(`A checkout may carry at most ${MAX_LINES_PER_CHECKOUT} lines.`);
+        }
+
+        // Coupon codes are the ONLY money-adjacent input a checkout client may supply, and only
+        // as opaque strings the pricing walk validates server-side. ManualDiscounts stay [] on
+        // this path always — an anonymous session has no SalesAuthority, and absence is not
+        // permission (AuthorizeManualDiscount's rule).
+        const codes = this.normalizePromotionCodes(promotionCodes);
+        if (codes === null) {
+            return failed(`At most ${MAX_PROMOTION_CODES} promotion codes of up to ${MAX_PROMOTION_CODE_LENGTH} characters may be applied.`);
         }
 
         const md = new Metadata();
@@ -770,13 +838,14 @@ export class CheckoutSessionService {
         }
 
         // Price the draft order in memory
+        let unusableCodes: Array<{ Code: string; Reason: string }> = [];
         try {
             const pricingService = new OrderPricingService({
                 Provider: (order.ProviderToUse ?? md) as unknown as IMetadataProvider,
                 User: contextUser ?? (order.ContextCurrentUser as UserInfo),
             });
 
-            await pricingService.Price({
+            const priced = await pricingService.Price({
                 OrderHeaderID: order.ID || null,
                 CompanyID: widget.CompanyID,
                 BillToPersonID: order.BillToPersonID ?? null,
@@ -784,10 +853,11 @@ export class CheckoutSessionService {
                 OrderDate: order.OrderDate ?? new Date(),
                 ShipToAddressID: order.ShipToAddressID ?? null,
                 Lines: [...order.Lines.Items],
-                PromotionCodes: [],
+                PromotionCodes: codes,
                 ManualDiscounts: [],
                 Charges: [],
             });
+            unusableCodes = priced?.UnusableCodes ?? [];
 
             let sumGross = 0;
             for (const line of order.Lines.Items) {
@@ -796,6 +866,15 @@ export class CheckoutSessionService {
             }
             order.TotalGross = Math.round(sumGross * 100) / 100;
         } catch (pricingErr) {
+            // With coupon codes in play, a pricing failure MUST fail the draft: reporting the
+            // undiscounted total as authoritative after the customer typed a code is exactly the
+            // quote/charge divergence the checkout exists to prevent. Without codes, the
+            // historical lenient posture stands (the completion re-price is the real gate).
+            if (codes.length > 0) {
+                const msg = pricingErr instanceof Error ? pricingErr.message : String(pricingErr);
+                LogError(`[CheckoutSessionService] Pricing walk failed on draft with promotion codes for session ${sessionID}: ${msg}`);
+                return failed('The promotion could not be applied. Remove the code or try again.');
+            }
             console.warn('[CheckoutSessionService] Pricing walk error on draft:', pricingErr);
         }
 
@@ -824,11 +903,15 @@ export class CheckoutSessionService {
             session.PaymentIntentID = null;
         }
 
-        // Store checkout state in session metadata JSON — no orphan OrderHeader rows
+        // Store checkout state in session metadata JSON — no orphan OrderHeader rows. The
+        // PromotionCodes MUST round-trip here: completion re-prices from this snapshot, and codes
+        // that do not ride along would silently vanish from the final total (and then fail the
+        // intent-amount gate on every discounted checkout).
         session.MetadataJSON = JSON.stringify({
             Lines: lines,
             PricedLines: lineSummaries,
             TotalGross: order.TotalGross,
+            PromotionCodes: codes,
             UpdatedAt: new Date().toISOString()
         });
         const sessionSaved = await session.Save();
@@ -846,8 +929,32 @@ export class CheckoutSessionService {
             Adjustments: 0,
             TotalGross: order.TotalGross ?? 0,
             RequiresPayment: (order.TotalGross ?? 0) > 0,
-            Lines: lineSummaries
+            Lines: lineSummaries,
+            UnusableCodes: unusableCodes
         };
+    }
+
+    /**
+     * Normalizes client-supplied promotion codes: trim, drop empties, dedupe (case-insensitive —
+     * the promotion engine matches case-insensitively). Returns null when the input exceeds the
+     * anonymous-caller ceilings.
+     */
+    private static normalizePromotionCodes(promotionCodes: string[] | undefined): string[] | null {
+        if (!promotionCodes || !Array.isArray(promotionCodes)) return [];
+        const seen = new Set<string>();
+        const codes: string[] = [];
+        for (const raw of promotionCodes) {
+            if (typeof raw !== 'string') continue;
+            const code = raw.trim();
+            if (!code) continue;
+            if (code.length > MAX_PROMOTION_CODE_LENGTH) return null;
+            const dedupeKey = code.toLowerCase();
+            if (seen.has(dedupeKey)) continue;
+            seen.add(dedupeKey);
+            codes.push(code);
+            if (codes.length > MAX_PROMOTION_CODES) return null;
+        }
+        return codes;
     }
 
     /**
@@ -1045,11 +1152,17 @@ export class CheckoutSessionService {
             await widget.Load(session.CheckoutWidgetID);
 
             let linesInput: CheckoutLineInput[] = [];
+            let sessionPromotionCodes: string[] = [];
             if (session.MetadataJSON) {
                 try {
-                    const parsed = JSON.parse(session.MetadataJSON) as { Lines?: CheckoutLineInput[] };
+                    const parsed = JSON.parse(session.MetadataJSON) as { Lines?: CheckoutLineInput[]; PromotionCodes?: string[] };
                     if (parsed.Lines && Array.isArray(parsed.Lines)) {
                         linesInput = parsed.Lines;
+                    }
+                    // Codes were validated + bounded when the draft stored them; completion
+                    // re-prices WITH them so the confirmed total matches the quoted (and paid) one.
+                    if (parsed.PromotionCodes && Array.isArray(parsed.PromotionCodes)) {
+                        sessionPromotionCodes = parsed.PromotionCodes.filter((c): c is string => typeof c === 'string');
                     }
                 } catch {
                     // Ignore metadata parse error
@@ -1203,7 +1316,9 @@ export class CheckoutSessionService {
                 OrderDate: order.OrderDate ?? new Date(),
                 ShipToAddressID: order.ShipToAddressID ?? null,
                 Lines: [...order.Lines.Items],
-                PromotionCodes: [],
+                // The codes the DRAFT applied — never fresh client input at completion time.
+                // ManualDiscounts stay []: an anonymous session has no SalesAuthority.
+                PromotionCodes: sessionPromotionCodes,
                 ManualDiscounts: [],
                 Charges: [],
             });
@@ -1272,6 +1387,15 @@ export class CheckoutSessionService {
                 }
             }
 
+            // RECEIPT — post-confirm, fire-and-forget, best-effort (WS-1). The booked order is the
+            // deliverable; a receipt that cannot render or send is logged, never a checkout
+            // failure. The replay guard above means this block runs once per session, so there is
+            // no double-send path from retries.
+            this.sendCheckoutReceipt(session, order, widget, contextUser).catch((receiptErr) => {
+                const receiptMsg = receiptErr instanceof Error ? receiptErr.message : String(receiptErr);
+                LogError(`[CheckoutSessionService] Receipt send failed for order ${order.ID} (session ${sessionID}): ${receiptMsg}`);
+            });
+
             return {
                 Success: true,
                 OrderID: order.ID,
@@ -1304,6 +1428,119 @@ export class CheckoutSessionService {
                 SessionID: sessionID,
                 Status: 'Open'
             };
+        }
+    }
+
+    /**
+     * Webhook-driven completion (WS-1): finish the checkout whose payment just settled, without
+     * the buyer's browser. `CompleteCheckout` is client-driven — if the buyer pays and closes the
+     * tab before calling complete, the money is captured and the order never books. The payment
+     * webhook calls THIS after it lands a settled intent status; it reverse-looks-up the session
+     * that owns the intent and drives the exact same completion path.
+     *
+     * NO SECURITY BYPASS: the session row stores its own ClientSessionKey, so this path presents
+     * the stored key to `CompleteCheckout` and rides every existing gate — expiry, the Processing
+     * latch, the replay guard, the payment-state + amount verification (which is what makes this
+     * safe to trigger from a webhook: the intent really is settled, or completion refuses).
+     *
+     * Returns null when no Open session owns the intent — a staff/API payment, an already-
+     * Confirmed session, or a completion already in flight (Processing). All quiet no-ops.
+     */
+    public static async CompleteCheckoutForSettledIntent(
+        paymentIntentID: string,
+        contextUser?: UserInfo
+    ): Promise<CompleteCheckoutResult | null> {
+        const intentID = RequireUUID(paymentIntentID, 'paymentIntentID');
+        const rv = new RunView();
+        const sessions = await rv.RunView<{ ID: string; ClientSessionKey: string | null; Status: string; __mj_UpdatedAt: Date | string }>({
+            EntityName: CHECKOUT_SESSION_ENTITY,
+            // PaymentIntentID is NOT unique across time (UpdateDraft detaches a stale intent by
+            // nulling the column), so filter to live sessions and handle >1 defensively.
+            ExtraFilter: `PaymentIntentID = '${intentID}' AND Status IN ('Open','Processing')`,
+            Fields: ['ID', 'ClientSessionKey', 'Status', '__mj_UpdatedAt'],
+            ResultType: 'simple',
+        }, contextUser);
+
+        const rows = sessions?.Results ?? [];
+        const open = rows.filter((r) => r.Status === 'Open');
+        if (!open.length) {
+            if (rows.length) {
+                // Processing = a client-driven completion is racing us; the latch makes exactly
+                // one of the two book, so standing down here is the correct move, not a failure.
+                LogError(`[CheckoutSessionService] Settled intent ${paymentIntentID} maps only to in-flight session(s) (${rows.map((r) => r.ID).join(', ')}) — leaving completion to the path that holds the latch.`);
+            }
+            return null;
+        }
+        if (open.length > 1) {
+            LogError(`[CheckoutSessionService] Settled intent ${paymentIntentID} maps to ${open.length} Open sessions — completing the most recently updated and leaving the rest.`);
+            open.sort((a, b) => new Date(b.__mj_UpdatedAt).getTime() - new Date(a.__mj_UpdatedAt).getTime());
+        }
+
+        const target = open[0];
+        if (!target.ClientSessionKey) {
+            LogError(`[CheckoutSessionService] Session ${target.ID} owns settled intent ${paymentIntentID} but carries no ClientSessionKey — cannot complete it server-side.`);
+            return null;
+        }
+        return this.CompleteCheckout(target.ID, target.ClientSessionKey, contextUser);
+    }
+
+    /**
+     * Emails the buyer their receipt for a just-completed checkout. Best-effort by contract: the
+     * caller fire-and-forgets this, and every failure path logs rather than throws back into the
+     * (already successful) completion.
+     *
+     * The widget's Configuration steers it: `receiptEmail: false` suppresses entirely;
+     * `receiptTemplateName` picks the MJ template (default: the standard invoice template). The
+     * document is rendered through the same `RenderInvoiceDocuments` sequence the document
+     * actions use, and sent through the 'Email' delivery channel — one message per document for a
+     * multi-company order, same as `Orders.SendDocument`.
+     */
+    private static async sendCheckoutReceipt(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        order: OrderHeaderEntity,
+        widget: mjBizAppsOrdersCheckoutWidgetEntity,
+        contextUser?: UserInfo
+    ): Promise<void> {
+        const email = (session.Email ?? '').trim();
+        if (!email) return;
+
+        let config: CheckoutWidgetConfiguration = {};
+        if (widget.Configuration) {
+            try {
+                config = JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration;
+            } catch {
+                // A malformed widget Configuration already warned elsewhere; receipt uses defaults.
+            }
+        }
+        if (config.receiptEmail === false) return;
+
+        const provider = (order.ProviderToUse ?? Metadata.Provider) as unknown as IMetadataProvider;
+        const user = contextUser ?? (order.ContextCurrentUser as UserInfo);
+
+        const rendered = await RenderInvoiceDocuments(order.ID, provider, user, {
+            TemplateName: typeof config.receiptTemplateName === 'string' ? config.receiptTemplateName : null,
+            Format: 'HTML',
+        });
+        if (!rendered.Success) {
+            LogError(`[CheckoutSessionService] Receipt render refused for order ${order.ID}: ${rendered.Code ?? ''} ${rendered.Message ?? ''}`);
+            return;
+        }
+
+        const channel = ResolveDeliveryChannel('Email');
+        for (const doc of rendered.Documents) {
+            const result = await channel.Deliver(
+                {
+                    Kind: 'Receipt',
+                    DocumentNumber: doc.DocumentNumber,
+                    Subject: `Your receipt — order ${order.OrderNumber || order.ID}`,
+                    BodyHtml: doc.HTML ?? '',
+                },
+                { To: [{ Address: email, FullName: null, Purpose: 'Billing' }] },
+                { Provider: provider, User: user },
+            );
+            if (!result.Success) {
+                LogError(`[CheckoutSessionService] Receipt delivery failed for order ${order.ID} → ${email}: ${result.Reason ?? 'no reason given'}`);
+            }
         }
     }
 

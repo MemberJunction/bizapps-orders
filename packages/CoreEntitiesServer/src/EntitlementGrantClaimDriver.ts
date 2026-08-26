@@ -9,7 +9,7 @@
  */
 
 import { RegisterClass } from '@memberjunction/global';
-import { LogError, Metadata, UserInfo, IRunViewProvider } from '@memberjunction/core';
+import { LogError, Metadata, UserInfo, IRunViewProvider, IMetadataProvider } from '@memberjunction/core';
 import {
     BaseIdentityClaimDriver,
     type ClaimContext,
@@ -18,6 +18,8 @@ import {
 } from '@memberjunction/core-entities';
 import { mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
 import { resolvePersonID } from './claimDriverHelpers.js';
+import { ReadGrantProvisioning, WriteGrantProvisioning } from './entitlementProvisioningAdapter.js';
+import { PushProvisioningForGrant } from './EntitlementProvisioningService.js';
 
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
 
@@ -75,12 +77,22 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
         }
 
         const personID = await resolvePersonID(User, Claim.ProviderToUse);
-        if (personID && (!grant.BeneficiaryPersonID || grant.BeneficiaryPersonID !== personID)) {
+        const beneficiaryChanged =
+            !!personID && (!grant.BeneficiaryPersonID || grant.BeneficiaryPersonID !== personID);
+        if (beneficiaryChanged && personID) {
             grant.BeneficiaryPersonID = personID;
         }
 
         grant.Status = 'Active';
         grant.ProvisionedAt = new Date();
+
+        // A claim redemption is the moment the grant's REAL beneficiary becomes known. If the
+        // downstream target was already told about a placeholder beneficiary, the obligation is
+        // re-opened so the push re-provisions with the right person (drivers are idempotent by
+        // ExternalRef — see EntitlementProvisioningDriver.ts).
+        if (beneficiaryChanged && ReadGrantProvisioning(grant).ProvisioningStatus === 'Provisioned') {
+            WriteGrantProvisioning(grant, { ProvisioningStatus: 'Pending', ProvisionAttempts: 0, LastProvisionError: null });
+        }
 
         const saved = await grant.Save();
         if (!saved) {
@@ -89,6 +101,17 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
                 ErrorMessage: `Failed to activate EntitlementGrant: ${grant.LatestResult?.Message ?? 'Unknown save error'}`
             };
         }
+
+        // Fire-and-forget: push any outstanding obligation now that the beneficiary is settled.
+        // A failure is logged inside the service and left for the reconcile sweep. The grant's own
+        // provider is the metadata provider here — same house idiom as OrderEntityServer.
+        const pushProvider = grant.ProviderToUse as unknown as IMetadataProvider;
+        void PushProvisioningForGrant(grant.ID, pushProvider, User).catch((err) => {
+            LogError(
+                `[EntitlementGrantClaimDriver] Provisioning push after claim ${Claim.ID} failed for grant ${grant.ID}: ` +
+                    `${err instanceof Error ? err.message : String(err)} — the reconcile sweep will retry.`,
+            );
+        });
 
         return {
             Success: true,

@@ -45,6 +45,7 @@ import {
     type QuantityMode,
     type ValidityMode,
 } from './EntitlementBehavior.js';
+import { WriteGrantProvisioning } from './entitlementProvisioningAdapter.js';
 
 const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
@@ -127,6 +128,8 @@ export async function CreateEntitlementGrants(
         AccessLeadHours: number | null;
         AccessLagHours: number | null;
         IsActive: boolean;
+        /** Post-CodeGen column (V202608261200) — see entitlementProvisioningAdapter.ts. */
+        ProvisioningTargetID: string | null;
     }>(
         {
             EntityName: PRODUCT_ENTITLEMENT_ENTITY,
@@ -250,6 +253,15 @@ export async function CreateEntitlementGrants(
             grant.ValidityModeApplied = validity.ModeApplied;
             const status = InitialGrantStatus(resolved.GrantTiming, order);
             grant.Status = status;
+
+            // BORN PENDING when the template names a downstream target (WS-2). Stamped here,
+            // inside the booking transaction, so the commit atomically records the OBLIGATION to
+            // provision — a crash between commit and the post-commit push leaves a Pending row the
+            // reconcile sweep will find, never a granted-but-never-pushed orphan. The push itself
+            // is post-commit work (EntitlementProvisioningService), never done here.
+            if (template.ProvisioningTargetID) {
+                WriteGrantProvisioning(grant, { ProvisioningStatus: 'Pending' });
+            }
 
             if (!(await grant.Save(options))) {
                 throw new Error(

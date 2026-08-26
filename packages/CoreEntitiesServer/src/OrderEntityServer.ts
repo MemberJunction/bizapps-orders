@@ -62,6 +62,7 @@ import { OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+import { PushProvisioningForOrder } from './EntitlementProvisioningService.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
@@ -541,6 +542,25 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
 
             await dbProvider.CommitTransaction();
+
+            // ENTITLEMENT PROVISIONING PUSH — POST-COMMIT, FIRE-AND-FORGET (WS-2).
+            //
+            // The grants above were born ProvisioningStatus='Pending' inside the transaction, so
+            // the commit has already recorded the obligation durably. The push to the downstream
+            // system deliberately happens OUT here: a slow or dead LXP must neither hold the
+            // booking's locks nor fail a sale that has already committed. A failure is logged and
+            // left for the reconcile sweep ('Orders.ReconcileEntitlementProvisioning'), which
+            // re-drives anything Pending/RevokePending — at-least-once by design.
+            if (booking) {
+                const pushProvider = this.ProviderToUse as unknown as IMetadataProvider;
+                const pushUser = this.ContextCurrentUser as UserInfo;
+                void PushProvisioningForOrder(this.ID, pushProvider, pushUser).catch((err) => {
+                    LogError(
+                        `Post-commit entitlement provisioning push failed for order ${this.ID}: ` +
+                            `${err instanceof Error ? err.message : String(err)} — the reconcile sweep will retry.`,
+                    );
+                });
+            }
             return true;
         } catch (err) {
             LogError(`OrderEntityServer.Save failed for order ${this.OrderNumber ?? this.ID}: ${err}`);

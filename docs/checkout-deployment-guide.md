@@ -95,7 +95,9 @@ server-resolved knobs (typed in `packages/Entities/src/configuration-types.ts`,
 | `allowedOrigins` | for embeds | Origins allowed to drive this widget through the edge; requests from others get 403 and no CORS grant. Unset = any origin (the slug is the access control) |
 | `requireTurnstile` | public internet | Demands a Turnstile token on initialize/complete |
 | `stripePublishableKey` | paid checkout | Shipped to the browser (publishable by definition) for Stripe.js |
-| `unitMode`, `maxQuantity`, `extensionFields`, `customUI`, `successMessage`, `redirectUrl` | optional | UX shaping |
+| `unitMode`, `maxQuantity`, `extensionFields`, `customUI`, `successMessage`, `redirectUrl` | optional | UX shaping. `successMessage`/`redirectUrl` render once the host sets the widget's `[completed]` input |
+| `receiptEmail`, `receiptTemplateName` | optional | Buyer receipt after completion (default ON when an email was captured; template defaults to `'Orders: Standard Invoice'`). Needs the host's email provider configured — failures are logged, never checkout failures |
+| `magicLink` (`applicationName`, `roleName`, `expiresInDays`, `maxUses`, `issuerRoleNames`) | optional | When set, creating a **distribution** mints a multi-use anonymous magic-link invite scoped to that app + restricted role, revoked with the distribution. Omit for slug-only distributions |
 
 Plus a `CheckoutWidgetDistribution` row: unique `Slug`, Status `Active`. Revocation = flip Status
 to `Revoked` (the edge and `InitializeSession` refuse inactive distributions).
@@ -112,15 +114,22 @@ choreography against the REST edge:
 ```
 1. On load:            POST {edge}/checkout/initialize   { slug, clientSessionKey }
                        → feed result.Configuration into [config]; keep SessionID + the key
-2. On any line change: POST {edge}/checkout/draft        { sessionId, clientSessionKey, email, lines }
-                       → show TotalGross / RequiresPayment
+2. On any line change: POST {edge}/checkout/draft        { sessionId, clientSessionKey, email, lines,
+                                                           promotionCodes? }
+                       → show TotalGross / RequiresPayment; surface result.UnusableCodes to the
+                         buyer (a typed code that did nothing must say why). Codes are opaque
+                         strings (≤10, ≤60 chars each) — the server validates and re-applies them
+                         at completion from its own snapshot.
 3. Paid orders:        POST {edge}/checkout/payment-intent { sessionId, clientSessionKey }
                        → stripe.confirmPayment / confirmCardPayment with result.ClientSecret
                          (Stripe.js, using Configuration.stripePublishableKey)
 4. On submit:          POST {edge}/checkout/complete     { sessionId, clientSessionKey, turnstileToken? }
-                       → success view / redirect. A "Payment has not settled" refusal means the
-                         webhook hasn't advanced the intent yet — retry with backoff (or rely on
-                         webhook-driven completion where enabled), don't error the buyer.
+                       → set [completed]="true" on the widget: it renders
+                         Configuration.successMessage and honors Configuration.redirectUrl.
+                         A "Payment has not settled" refusal means the webhook hasn't advanced
+                         the intent yet — retry with backoff, don't error the buyer: the webhook
+                         itself now completes the session once the intent settles
+                         (CompleteCheckoutForSettledIntent), so an abandoned tab still books.
 ```
 
 Rules for the glue:
@@ -162,6 +171,29 @@ artifact** — pin it to the `@mj-biz-apps/orders-ng` version you deploy.
   ships its driver.
 - Claim-on-login is automatic (MJ core wires it at token validation); no host work beyond having
   the email provider configured so claim emails actually send.
+
+## 7.5 Entitlement provisioning (WS-2 — when products push access downstream)
+
+When a sold entitlement must reach an outside system (an LXP enrollment, a license server), the
+host wires the provisioning framework:
+
+1. **Ship the driver with the deployment.** Subclass `BaseEntitlementProvisioningDriver`
+   (`@mj-biz-apps/orders-core-entities-server`), register it with
+   `@RegisterClass(BaseEntitlementProvisioningDriver, '<YourKey>')`, and call its `Load*` anchor
+   from the host bootstrap. Drivers must be idempotent (delivery is at-least-once; recognize your
+   own work via `ExternalRef`). The orders engine ships only `Orders.NoOpProvisioning`.
+2. **Seed an `EntitlementProvisioningTarget` row** (metadata, like
+   `metadata/entitlement-provisioning-targets/` in the orders repo) whose `DriverClass` is your
+   registration key; put endpoints/tenant ids in `Configuration` — **secrets stay in env vars the
+   driver resolves itself**.
+3. **Point `ProductEntitlement.ProvisioningTargetID`** at the target for each entitlement that
+   needs the push. NULL means self-contained (nothing pushed).
+4. **Enable the reconcile sweep** after one clean manual run of the
+   `Reconcile Entitlement Provisioning` action: flip the `Orders: Reconcile Entitlement
+   Provisioning` scheduled job (ships `Disabled`) to `Active`. It re-drives anything the
+   post-commit push missed, with backoff and a bounded attempt ceiling; grants past the ceiling
+   report as `Exhausted` and need a human.
+5. **Watch `EntitlementProvisioningEvent`** — one append-only row per attempt is the audit trail.
 
 ## 8. Go-live checklist
 

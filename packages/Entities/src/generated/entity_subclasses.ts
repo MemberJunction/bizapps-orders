@@ -7,7 +7,12 @@ export const loadModule = () => {
 }
 
      
- import { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/orders-entities';
+ // HAND-CORRECTED CodeGen defect: the generator emitted a SELF-referential specifier
+ // ('@mj-biz-apps/orders-entities') for a CROSS-APP entity that lives in common-entities.
+ // The self-import cannot resolve (this package carries no self-link) and broke the whole
+ // build:packages chain. Fix the CodeGen import-mapping for cross-app FK entities upstream;
+ // until then, re-apply this correction if CodeGen regenerates this file.
+ import { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Charge Types

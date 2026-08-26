@@ -1,0 +1,12 @@
+{
+  "entity": "MJ_BizApps_Orders: Entitlement Provisioning Targets",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".entitlement-provisioning-targets.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true
+  }
+}

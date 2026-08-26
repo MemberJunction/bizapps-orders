@@ -8,6 +8,9 @@ import { BaseIdentityClaimDriver, type ClaimRedeemContext, type ClaimContext, ty
 
 const mockGrantSave = vi.fn().mockResolvedValue(true);
 const mockGrantLoad = vi.fn().mockResolvedValue(true);
+const mockPushProvisioningForGrant = vi.fn().mockResolvedValue({
+    Considered: 0, Provisioned: 0, Revoked: 0, Failed: 0, Skipped: 0, Exhausted: 0,
+});
 
 class MockEntitlementGrant {
     ID = 'grant-100';
@@ -16,12 +19,24 @@ class MockEntitlementGrant {
     Status: 'Active' | 'Expired' | 'Revoked' | 'Suspended' = 'Active';
     ProvisionedAt: Date | null = null;
     LatestResult = { Success: true, Message: '' };
+    ProviderToUse = {};
+
+    /** Backing store for the pre-CodeGen provisioning columns (see entitlementProvisioningAdapter). */
+    dynamicFields: Record<string, unknown> = {};
+    Get = vi.fn((name: string) => this.dynamicFields[name]);
+    Set = vi.fn((name: string, value: unknown) => {
+        this.dynamicFields[name] = value;
+    });
 
     Load = mockGrantLoad;
     Save = mockGrantSave;
 }
 
 const mockGrantInstance = new MockEntitlementGrant();
+
+vi.mock('../EntitlementProvisioningService.js', () => ({
+    PushProvisioningForGrant: (...args: unknown[]) => mockPushProvisioningForGrant(...args),
+}));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@memberjunction/core')>();
@@ -58,8 +73,12 @@ describe('EntitlementGrantClaimDriver', () => {
         mockGrantInstance.BeneficiaryPersonID = null;
         mockGrantInstance.Status = 'Active';
         mockGrantInstance.ProvisionedAt = null;
+        mockGrantInstance.dynamicFields = {};
         mockGrantSave.mockResolvedValue(true);
         mockGrantLoad.mockResolvedValue(true);
+        mockPushProvisioningForGrant.mockResolvedValue({
+            Considered: 0, Provisioned: 0, Revoked: 0, Failed: 0, Skipped: 0, Exhausted: 0,
+        });
         driver = new EntitlementGrantClaimDriver();
     });
 
@@ -85,6 +104,31 @@ describe('EntitlementGrantClaimDriver', () => {
             expect(mockGrantInstance.Status).toBe('Active');
             expect(mockGrantInstance.ProvisionedAt).toBeInstanceOf(Date);
             expect(mockGrantSave).toHaveBeenCalled();
+            // The claim settles the real beneficiary, so any outstanding downstream obligation is
+            // pushed immediately rather than waiting for the sweep.
+            expect(mockPushProvisioningForGrant).toHaveBeenCalledWith(
+                'grant-100', expect.anything(), mockUser,
+            );
+        });
+
+        it('re-opens a Provisioned grant as Pending when the beneficiary changes', async () => {
+            mockGrantInstance.dynamicFields['ProvisioningStatus'] = 'Provisioned';
+            mockGrantInstance.BeneficiaryPersonID = 'someone-else';
+
+            const context: ClaimRedeemContext = {
+                Claim: {
+                    ID: 'claim-1',
+                    RecordID: 'grant-100',
+                    NormalizedEmail: 'redeemer@example.com',
+                    Status: 'Pending'
+                } as unknown as MJIdentityClaimEntity,
+                User: mockUser
+            };
+
+            const result = await driver.OnClaim(context);
+            expect(result.Success).toBe(true);
+            expect(mockGrantInstance.dynamicFields['ProvisioningStatus']).toBe('Pending');
+            expect(mockGrantInstance.dynamicFields['ProvisionAttempts']).toBe(0);
         });
 
         it('returns failure if claim has no GrantID in RecordID or Payload', async () => {

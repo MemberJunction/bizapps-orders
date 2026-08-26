@@ -881,5 +881,164 @@
       "lastModified": "2026-08-24T20:19:36.090Z",
       "checksum": "38b3f32a595c1819104de04a92d4f3f15c2110eae96c5b17609d28ed83d9626b"
     }
+  },
+  {
+    "_comments": [
+      "Orders: Reconcile Entitlement Provisioning (WS-2).",
+      "",
+      "The post-commit provisioning push after a booking is fire-and-forget by design - a dead",
+      "downstream system must not fail a committed sale - so this sweep is what comes back for",
+      "whatever the push missed: crashes between commit and push, downstream outages, targets that",
+      "were Disabled at the time. Retries carry exponential backoff and a hard per-grant attempt",
+      "ceiling; grants past the ceiling are reported as Exhausted, never silently dropped.",
+      "",
+      "Scheduled via MJ Scheduled Jobs (ActionScheduledJobDriver) - see metadata/scheduled-jobs/,",
+      "which ships Disabled and is enabled per deployment after a clean manual run. Namespaced",
+      "DriverClass for the same reason as the siblings: the ClassFactory resolves by string."
+    ],
+    "fields": {
+      "Name": "Reconcile Entitlement Provisioning",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Sweep entitlement grants whose downstream provisioning is still outstanding (Pending, retryable Failed, or RevokePending) and drive them through their targets' drivers, with exponential backoff and a bounded per-grant attempt ceiling. Writes provisioning status onto the grants and an event row per attempt.",
+      "Type": "Custom",
+      "DriverClass": "Orders.ReconcileEntitlementProvisioning",
+      "IconClass": "fa-solid fa-rotate",
+      "UserPrompt": "Re-drive any entitlement grants whose downstream provisioning has not completed, and report the sweep's counts.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "749990CB-02E1-4767-B3AA-CA56B56ED9C7"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxGrants",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Batch ceiling per sweep (default 200). A backlog drains across scheduled ticks rather than in one giant run."
+          },
+          "primaryKey": {
+            "ID": "C6029BBB-339E-4353-9AA6-360A1AA02F25"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxAttempts",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Per-grant retry ceiling (default 8). Grants past it are reported as Exhausted and left for a human."
+          },
+          "primaryKey": {
+            "ID": "404EE93E-20E6-44E7-9C6B-30001442D9D4"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MinRetryMinutes",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Base of the exponential backoff between retries, in minutes (default 5)."
+          },
+          "primaryKey": {
+            "ID": "8210ADF2-CA01-443E-9D67-A8A7ECF6F92F"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Considered",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many outstanding grants the sweep looked at this run."
+          },
+          "primaryKey": {
+            "ID": "136A1AA8-2B60-455E-AFAA-69B31AE64AB1"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Provisioned",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Grants successfully provisioned downstream this run."
+          },
+          "primaryKey": {
+            "ID": "587936B8-BC13-45A3-8976-7207179958C9"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Revoked",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Grants whose downstream revoke completed this run."
+          },
+          "primaryKey": {
+            "ID": "236BB13F-28EE-42FA-BE3D-9A6E5653F2A0"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Failed",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Attempts that failed this run (grant stays retryable unless past the ceiling)."
+          },
+          "primaryKey": {
+            "ID": "24B3B2C2-2ED6-4620-9D14-6DAAE4BB84C9"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Skipped",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Grants held back this run - waiting out backoff, or their target is Disabled."
+          },
+          "primaryKey": {
+            "ID": "5A587487-9D45-46DE-A192-740077C2C45F"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Exhausted",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Grants past the retry ceiling - needs a human; never silently dropped."
+          },
+          "primaryKey": {
+            "ID": "43766688-D181-4782-92F6-6C0575608072"
+          }
+        }
+      ]
+    }
   }
 ]

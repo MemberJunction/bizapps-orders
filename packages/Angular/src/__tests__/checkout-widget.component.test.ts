@@ -246,4 +246,61 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(comp1.widgetInstanceId).not.toBe(comp2.widgetInstanceId);
         });
     });
+
+    describe('quantity ceiling', () => {
+        it('clamps to config.maxQuantity when configured, and to the server-matching 100 default when not', () => {
+            component.config = { unitPrice: 10, maxQuantity: 5 } as CheckoutWidgetConfig;
+            component.onQuantityChange(9);
+            expect(component.quantity()).toBe(5);
+
+            // Fallback matches the server's DEFAULT_MAX_QUANTITY_PER_LINE (100), not the old 50
+            component.config = { unitPrice: 10 } as CheckoutWidgetConfig;
+            component.onQuantityChange(75);
+            expect(component.quantity()).toBe(75);
+            component.onQuantityChange(150);
+            expect(component.quantity()).toBe(100);
+        });
+    });
+
+    describe('completion (successMessage / redirectUrl consumption)', () => {
+        it('exposes the configured successMessage once the host reports completion', () => {
+            component.config = { unitPrice: 10, successMessage: 'See you at the summit!' } as CheckoutWidgetConfig;
+            expect(component.completed).toBe(false);
+            component.completed = true;
+            expect(component.completed).toBe(true);
+            expect(component.successText()).toBe('See you at the summit!');
+        });
+
+        it('falls back to a default success message when none is configured', () => {
+            component.config = { unitPrice: 10 } as CheckoutWidgetConfig;
+            component.completed = true;
+            expect(component.successText()).toContain('confirmed');
+        });
+
+        it('schedules a redirect to config.redirectUrl on completion, delayed when a message shows', () => {
+            const setTimeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation((() => 0) as unknown as typeof window.setTimeout);
+            component.config = {
+                unitPrice: 10,
+                successMessage: 'Thanks!',
+                redirectUrl: 'https://example.com/welcome'
+            } as CheckoutWidgetConfig;
+
+            component.completed = true;
+            expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+            expect(setTimeoutSpy.mock.calls[0][1]).toBe(1500);
+
+            // Flipping true again does not re-schedule
+            component.completed = true;
+            expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+            setTimeoutSpy.mockRestore();
+        });
+
+        it('does not redirect when no redirectUrl is configured', () => {
+            const setTimeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation((() => 0) as unknown as typeof window.setTimeout);
+            component.config = { unitPrice: 10, successMessage: 'Thanks!' } as CheckoutWidgetConfig;
+            component.completed = true;
+            expect(setTimeoutSpy).not.toHaveBeenCalled();
+            setTimeoutSpy.mockRestore();
+        });
+    });
 });

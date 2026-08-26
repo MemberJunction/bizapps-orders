@@ -382,6 +382,11 @@ export type {
     LadderRow,
 } from './InvoiceBehavior.js';
 
+// The render orchestration both document actions and the checkout receipt share (moved down from
+// packages/Server so CompleteCheckout can call it without inverting the package graph).
+export { DEFAULT_INVOICE_TEMPLATE, RenderInvoiceDocuments } from './invoice-renderer.js';
+export type { RenderedInvoice, RenderInvoiceOptions, RenderInvoiceResult, RenderFailureCode } from './invoice-renderer.js';
+
 export { BuildInvoiceDocuments } from './InvoiceBuilder.js';
 export type { InvoiceBuildResult } from './InvoiceBuilder.js';
 
@@ -419,7 +424,32 @@ export { AddDays, BestCustomerTerms, CustomerTermsApply, ResolveDueDate } from '
 export type { CustomerTermsFacts, TermsFacts, TermsResolution, TermsResolutionInput, TermsSource } from './PaymentTermsBehavior.js';
 
 export { EntitlementGrantClaimDriver, LoadEntitlementGrantClaimDriver } from './EntitlementGrantClaimDriver.js';
+
+// Entitlement provisioning (WS-2): the driver seam, the push/sweep service, and the entity server
+// that keeps a grant's downstream obligation in step with its status.
+export {
+    BaseEntitlementProvisioningDriver,
+    NoOpEntitlementProvisioningDriver,
+    ProvisioningDriverNotConfiguredError,
+    ResolveProvisioningDriver,
+    LoadEntitlementProvisioningDrivers,
+} from './EntitlementProvisioningDriver.js';
+export type { ProvisioningRequest, ProvisioningResult } from './EntitlementProvisioningDriver.js';
+export {
+    MAX_PROVISION_ATTEMPTS,
+    PushProvisioningForOrder,
+    PushProvisioningForGrant,
+    ReconcileEntitlementProvisioning,
+} from './EntitlementProvisioningService.js';
+export type { ProvisioningSweepSummary, ReconcileOptions } from './EntitlementProvisioningService.js';
+export { EntitlementGrantEntityServer, LoadEntitlementGrantEntityServer } from './EntitlementGrantEntityServer.js';
+export {
+    ENTITLEMENT_PROVISIONING_EVENT_ENTITY,
+    ENTITLEMENT_PROVISIONING_TARGET_ENTITY,
+} from './entitlementProvisioningAdapter.js';
+export type { ProvisioningStatus } from './entitlementProvisioningAdapter.js';
 export { GuestOrderClaimDriver, LoadGuestOrderClaimDriver } from './GuestOrderClaimDriver.js';
+export { PersonAccountLinkClaimDriver, LoadPersonAccountLinkClaimDriver } from './PersonAccountLinkClaimDriver.js';
 export { resolvePersonID } from './claimDriverHelpers.js';
 export { CheckoutSessionService } from './CheckoutSessionService.js';
 export type {

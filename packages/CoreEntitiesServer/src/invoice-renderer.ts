@@ -18,12 +18,20 @@
  * resolve the same template twice, and a month-end run producing four hundred invoices should not
  * resolve it four hundred times.
  *
+ * WHY IT LIVES IN THIS PACKAGE (moved from packages/Server 2026-08-26). `CompleteCheckout` sends
+ * the buyer a receipt through this same sequence, and CheckoutSessionService lives here — a call
+ * up into `@mj-biz-apps/orders-server` would invert the package graph. Everything the renderer
+ * composes (`BuildInvoiceDocuments`, `DecorateInvoice`, the delivery channels) was already in this
+ * package; the only server-tier import is `TemplateEngineServer`, declared as a peer.
+ *
  * CONNECTS TO:
- *   READER:  @mj-biz-apps/orders-core-entities-server → BuildInvoiceDocuments, DecorateInvoice
- *   ACTIONS: ../custom/generate-invoice.action.ts · ../custom/send-document.action.ts
+ *   READER:  ./InvoiceBuilder.ts → BuildInvoiceDocuments · ./InvoiceDisplay.ts → DecorateInvoice
+ *   ACTIONS: packages/Server/src/custom/{generate-invoice,send-document}.action.ts
+ *   RECEIPT: ./CheckoutSessionService.ts (post-confirm, best-effort)
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import { BuildInvoiceDocuments, DecorateInvoice, type DisplayInvoice } from '@mj-biz-apps/orders-core-entities-server';
+import { BuildInvoiceDocuments } from './InvoiceBuilder.js';
+import { DecorateInvoice, type DisplayInvoice } from './InvoiceDisplay.js';
 import { TemplateEngineServer } from '@memberjunction/templates';
 
 /** The template rendered when a caller does not name one. */

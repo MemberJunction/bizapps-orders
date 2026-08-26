@@ -150,6 +150,24 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     @Input() public isPaymentReady: boolean = false;
     @Input() public stripePaymentMethodId: string | null = null;
 
+    /**
+     * The host flips this true once POST /checkout/complete succeeds. The widget then swaps to
+     * the success view (Configuration.successMessage) and honors Configuration.redirectUrl —
+     * the widget stays presentational; the host still owns the network choreography.
+     */
+    private _completed = signal<boolean>(false);
+    @Input()
+    public set completed(val: boolean) {
+        const was = this._completed();
+        this._completed.set(!!val);
+        if (!was && val) {
+            this.onCompleted();
+        }
+    }
+    public get completed(): boolean {
+        return this._completed();
+    }
+
     @Output() public submitted = new EventEmitter<CheckoutSubmissionEvent>();
     @Output() public cancelled = new EventEmitter<void>();
 
@@ -331,8 +349,29 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         return undefined;
     }
 
+    /**
+     * The UI-side quantity ceiling. The fallback matches the server's
+     * DEFAULT_MAX_QUANTITY_PER_LINE (100) — the server remains the authority; a mismatched UI
+     * clamp (this was 50) just refuses quantities the server would have accepted.
+     */
+    public effectiveMaxQuantity = computed<number>(() => this._config()?.maxQuantity ?? 100);
+
+    /** The success text shown once the host reports completion. */
+    public successText = computed<string>(() =>
+        this._config()?.successMessage || 'Thank you — your order is confirmed. A receipt is on its way to your email.');
+
+    private onCompleted(): void {
+        const url = this.config?.redirectUrl;
+        if (url && typeof url === 'string' && typeof window !== 'undefined') {
+            // With a success message, let the buyer read it before leaving; without one,
+            // redirect immediately — a blank success screen helps nobody.
+            const delayMs = this.config?.successMessage ? 1500 : 0;
+            window.setTimeout(() => window.location.assign(url), delayMs);
+        }
+    }
+
     public onQuantityChange(newQty: number): void {
-        const clamped = Math.max(1, Math.min(newQty, this.config?.maxQuantity ?? 50));
+        const clamped = Math.max(1, Math.min(newQty, this.effectiveMaxQuantity()));
         this.quantity.set(clamped);
         this.syncUnits();
         this.executeLifecycleHook('onQuantityChange', { quantity: clamped });

@@ -506,8 +506,10 @@ Initializes a new checkout session (or reuses the caller's open, unexpired one).
 }
 ```
 
-### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines)`
+### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines, promotionCodes?)`
 Recalculates draft pricing in memory and persists the priced snapshot to the session. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
+
+**Promotion codes** are the only money-adjacent input a client may supply, and only as opaque strings the pricing walk validates server-side (at most 10 codes of ≤60 chars; trimmed, case-insensitively deduped). Codes that resolve to nothing usable come back in `UnusableCodes` with a reason — a customer who typed a code is always told what it did. The applied codes **round-trip through the session snapshot**, so `CompleteCheckout` re-prices with exactly the codes the draft quoted (never fresh client input), and the payment-intent amount gate holds for discounted checkouts. `ManualDiscounts` never flow from this path: an anonymous session has no `SalesAuthority`, and absence is not permission.
 
 **Request Parameters:**
 ```json
@@ -515,6 +517,7 @@ Recalculates draft pricing in memory and persists the priced snapshot to the ses
   "sessionId": "d1c080b0-379e-4b7f-a2e6-64156641e7d2",
   "clientSessionKey": "client-uuid-12345",
   "email": "janet@example.com",
+  "promotionCodes": ["SUMMER20"],
   "lines": [
     {
       "ProductID": "79b4a2c1-...",
@@ -567,3 +570,52 @@ Executes payer-Person resolution (find-or-create by the session's captured email
 ```
 
 > `ClaimToken` is the `IdentityClaim` **row id** — the cryptographic verification token itself is only ever delivered in the claim email.
+
+After a successful completion the buyer is emailed a **receipt** — rendered through the same
+`RenderInvoiceDocuments` sequence the document actions use (template:
+`Configuration.receiptTemplateName`, default `'Orders: Standard Invoice'`) and sent through the
+`'Email'` delivery channel, one message per document for a multi-company order. Best-effort by
+contract: a receipt that cannot render or send is logged, never a checkout failure. Suppress with
+`Configuration.receiptEmail: false`.
+
+### 5. `CompleteCheckoutForSettledIntent(paymentIntentID)` — webhook-driven completion
+
+`CompleteCheckout` is client-driven, so a buyer who paid and closed the tab used to leave a
+captured payment with no booked order. The payment webhook now closes that gap: after
+`PaymentWebhookHandler.applyEvent` lands a `Succeeded` intent status, it calls this method, which
+reverse-looks-up the **Open** session owning the intent (`PaymentIntentID` + live-status filter —
+the column is not unique across time) and drives **the exact same completion path** the client
+would have: the session row stores its own `ClientSessionKey`, so every gate still runs — expiry,
+the Processing latch (a racing client-driven completion means exactly one books), the replay
+guard, and the payment-state + amount verification. A completion failure never changes the
+webhook's response: the event is applied and stamped, so a 500 would only make the gateway retry
+into `AlreadyApplied`.
+
+### 6. Distribution lifecycle & anonymous magic-link invites
+
+`CheckoutWidgetDistributionEntityServer` (packages/Server — it needs Node crypto) owns the
+distribution row's lifecycle:
+
+- **Slug normalization**: lowercased, trimmed, URL-safe charset enforced at write time.
+- **Invite minting on create**: when the widget's `Configuration.magicLink` block names an
+  `applicationName` + `roleName`, creating a distribution mints a **multi-use anonymous
+  magic-link invite** (`IdentityMode='anonymous'`, `Kind='anonymous-embed'`, `Email` null, hash
+  of an `mj_ml_…` token — byte-compatible with MJ's `hashToken`, pinned by a golden-vector test)
+  and links it via `MagicLinkInviteID` before the row first saves. The mint applies its own
+  authorization gate (Owner, or a role in `magicLink.issuerRoleNames`) because a direct row
+  insert bypasses MJ's `canIssueInvites`. The raw token surfaces exactly once, in the generated
+  `EmbedSnippet` — it is a deliberately public credential, the same trust level as the slug.
+- **Revocation pairing**: `Status → 'Revoked'` stamps `RevokedAt` **and revokes the linked
+  invite** (previously the raw magic link kept redeeming after a distribution was revoked).
+  Reactivating clears the stamps but never resurrects the invite — re-create the distribution
+  for a fresh one.
+
+### 7. `PersonAccountLink` claim driver
+
+`PersonAccountLinkClaimDriver` (claim type seeded in `metadata/identity-claim-types/`) makes the
+guest's Person row and their real account one identity on redemption: it stamps
+`Person.LinkedUserID` with the authenticated user's id — RecordID/payload first, then a
+deterministic fallback (a Person already linked to the user, else a **single unlinked** email
+match; an ambiguous email match is refused, and a Person linked to a *different* account is never
+re-pointed). Revoking or expiring the claim withdraws the invitation to link, never an
+established link.

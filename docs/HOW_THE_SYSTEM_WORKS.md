@@ -188,6 +188,35 @@ Locked history is never edited.
 
 ---
 
+## 9.5 Entitlement provisioning (downstream targets)
+
+Some entitlements are not self-contained: an LXP enrollment, a license key, a community role must
+be **pushed** to the system that actually delivers them. The framework (V202608261200):
+
+- **`EntitlementProvisioningTarget`** names a downstream system and its `DriverClass` — a
+  `BaseEntitlementProvisioningDriver` subclass resolved through the ClassFactory
+  (`ResolveProvisioningDriver` refuses the base-class fallback, same guard as delivery channels).
+  The engine ships only `Orders.NoOpProvisioning`; **real drivers ship with the deployment that
+  owns the downstream system**, never here. Targets seed via `metadata/entitlement-provisioning-targets/`.
+- **`ProductEntitlement.ProvisioningTargetID`** (nullable) opts a template in. A grant born from
+  such a template is stamped **`ProvisioningStatus = 'Pending'` inside the booking transaction** —
+  the commit atomically records the obligation — and the push itself runs **post-commit,
+  fire-and-forget** from `OrderEntityServer.Save` (a dead LXP must neither hold booking locks nor
+  fail a committed sale).
+- **`EntitlementProvisioningService`** discharges obligations: the post-commit push, a per-grant
+  push after claim redemption settles the real beneficiary, and the
+  **`Orders.ReconcileEntitlementProvisioning`** action (scheduled via `metadata/scheduled-jobs/`,
+  ships Disabled) — exponential backoff, a hard attempt ceiling, `Exhausted` reported never
+  swallowed. Every attempt appends an **`EntitlementProvisioningEvent`** row.
+- **`EntitlementGrantEntityServer`** keeps the obligation in step with the grant's Status: a
+  Provisioned grant leaving for Revoked/Expired becomes `RevokePending` (downstream must be told);
+  a never-provisioned one goes straight to `Revoked`. Drivers must be **idempotent** — delivery is
+  at-least-once, recognized via `ProvisioningExternalRef`.
+- `ProvisioningStatus` is distinct from `Status`: one is the grant's legal validity, the other is
+  where the downstream system stands.
+
+---
+
 ## 10. UI
 
 Explorer mounts four `Application` nav items from `metadata/applications/.orders-application.json`. Each names a `DriverClass` that must stay imported from `public-api.ts` or the tab is blank.

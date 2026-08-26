@@ -349,7 +349,12 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
         const email = typeof req.body?.email === 'string' ? req.body.email : '';
         const lines = Array.isArray(req.body?.lines) ? (req.body.lines as CheckoutLineInput[]) : [];
-        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user);
+        // Opaque strings only — the pricing walk validates them server-side and reports
+        // UnusableCodes; the service bounds count and length before any query sees them.
+        const promotionCodes = Array.isArray(req.body?.promotionCodes)
+            ? (req.body.promotionCodes as unknown[]).filter((c): c is string => typeof c === 'string')
+            : undefined;
+        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user, promotionCodes);
         res.status(result.Success ? 200 : 400).json(result);
     }
 

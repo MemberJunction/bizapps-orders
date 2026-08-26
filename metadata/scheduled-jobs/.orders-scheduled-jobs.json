@@ -1,0 +1,30 @@
+[
+  {
+    "_comments": [
+      "The WS-2 reconcile sweep, on MJ's own scheduler (ActionScheduledJobDriver runs the",
+      "'Reconcile Entitlement Provisioning' action; the JobTypeID lookup resolves against the",
+      "job types MJ core seeds). SHIPS DISABLED: a deployment flips Status to Active after one",
+      "clean manual run of the action - silent first-run surprises are how sweeps earn distrust.",
+      "Hourly at :07, seconds-leading six-field cron, deliberately off the :00 herd."
+    ],
+    "fields": {
+      "Name": "Orders: Reconcile Entitlement Provisioning",
+      "Description": "Re-drives entitlement grants whose downstream provisioning is outstanding (Pending, retryable Failed, RevokePending) with exponential backoff and a bounded attempt ceiling. See the 'Reconcile Entitlement Provisioning' action and docs/HOW_THE_SYSTEM_WORKS.md.",
+      "JobTypeID": "@lookup:MJ: Scheduled Job Types.DriverClass=ActionScheduledJobDriver",
+      "Status": "Disabled",
+      "CronExpression": "0 7 * * * *",
+      "Timezone": "UTC",
+      "Configuration": {
+        "ActionID": "@lookup:MJ: Actions.Name=Reconcile Entitlement Provisioning",
+        "Params": {
+          "MaxGrants": 200,
+          "MaxAttempts": 8,
+          "MinRetryMinutes": 5
+        }
+      }
+    },
+    "primaryKey": {
+      "ID": "DE313AB0-F282-4CAE-B381-F3686DD7F5DC"
+    }
+  }
+]
