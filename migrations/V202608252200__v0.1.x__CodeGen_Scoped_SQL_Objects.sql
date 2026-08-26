@@ -8,7 +8,7 @@
 -- =============================================================================
 
 /* SQL text to update existing entities from schema */
-EXEC [${mjSchema}].[spUpdateExistingEntitiesFromSchema] @ExcludedSchemaNames='${mjSchema}_BizAppsAccounting,${mjSchema}_BizAppsCommon,${mjSchema}_BizAppsIssues,${mjSchema}_BizAppsTasks,${mjSchema},sys';
+EXEC [${mjSchema}].[spUpdateExistingEntitiesFromSchema] @ExcludedSchemaNames='sys,staging', @IncludedSchemaNames='${flyway:defaultSchema}';
 
 /* SQL text to insert 5 new entity field(s) */
 
@@ -328,13 +328,13 @@ EXEC [${mjSchema}].[spUpdateExistingEntitiesFromSchema] @ExcludedSchemaNames='${
       END;
 
 /* SQL text to update existing entity fields from schema */
-EXEC [${mjSchema}].[spUpdateExistingEntityFieldsFromSchema] @ExcludedSchemaNames='${mjSchema}_BizAppsAccounting,${mjSchema}_BizAppsCommon,${mjSchema}_BizAppsIssues,${mjSchema}_BizAppsTasks,${mjSchema},sys';
+EXEC [${mjSchema}].[spUpdateExistingEntityFieldsFromSchema] @ExcludedSchemaNames='sys,staging', @IncludedSchemaNames='${flyway:defaultSchema}';
 
 /* SQL text to set default column width where needed */
-EXEC [${mjSchema}].[spSetDefaultColumnWidthWhereNeeded] @ExcludedSchemaNames='${mjSchema}_BizAppsAccounting,${mjSchema}_BizAppsCommon,${mjSchema}_BizAppsIssues,${mjSchema}_BizAppsTasks,${mjSchema},sys';
+EXEC [${mjSchema}].[spSetDefaultColumnWidthWhereNeeded] @ExcludedSchemaNames='sys,staging', @IncludedSchemaNames='${flyway:defaultSchema}';
 
 /* SQL text to sync schema info from database schemas */
-EXEC [${mjSchema}].[spUpdateSchemaInfoFromDatabase] @ExcludedSchemaNames='${mjSchema}_BizAppsAccounting,${mjSchema}_BizAppsCommon,${mjSchema}_BizAppsIssues,${mjSchema}_BizAppsTasks,${mjSchema},sys';
+EXEC [${mjSchema}].[spUpdateSchemaInfoFromDatabase] @ExcludedSchemaNames='sys,staging', @IncludedSchemaNames='${flyway:defaultSchema}';
 
 /* Index for Foreign Keys for CheckoutSession */
 -----------------------------------------------------------------
@@ -6948,13 +6948,13 @@ GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteSubscription] TO [cdp_Develo
 GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteSubscription] TO [cdp_Developer], [cdp_Integration];
 
 /* SQL text to delete unneeded entity fields (16 scoped entities) */
-EXEC [${mjSchema}].[spDeleteUnneededEntityFields] @ExcludedSchemaNames='${mjSchema}_BizAppsAccounting,${mjSchema}_BizAppsCommon,${mjSchema}_BizAppsIssues,${mjSchema}_BizAppsTasks,${mjSchema},sys', @EntityIDs='8B748643-85FF-4B07-B3B6-B12EC7A399E6,C2F418C4-8239-4486-B036-0BC4EAE4D24E,83A06268-2C96-400F-9CC8-21EEEF6654D1,8936D4D1-EB07-4EE8-A7AC-24131A1C48A8,FC529BC8-FF09-44A9-B454-26EAFDAC791B,4B5B0D73-496E-4CFA-92B9-3299A1E29E17,C96F379A-3E15-4DE5-BA94-4ECC90960C6D,EC59C50D-92BD-4247-80B1-51139BE93D35,66D82C24-9C9F-4CD6-B019-53C20274AB00,EB009F74-F4C5-4596-86C3-5893B9453200,7D7C4D5F-E410-4803-9762-A060C536C098,572AC8CE-8446-418B-979A-A7EE4E1F5AFD,CE97BF15-F7C6-4C50-A744-A89C714A4DDD,9E638C8F-6447-45D9-9137-B24E1047BCE5,22E31028-E862-424B-8C10-C167B2C9E304,E9B55146-3351-440C-AD47-FD4DE05BDA05';
+EXEC [${mjSchema}].[spDeleteUnneededEntityFields] @ExcludedSchemaNames='sys,staging', @EntityIDs='8B748643-85FF-4B07-B3B6-B12EC7A399E6,C2F418C4-8239-4486-B036-0BC4EAE4D24E,83A06268-2C96-400F-9CC8-21EEEF6654D1,8936D4D1-EB07-4EE8-A7AC-24131A1C48A8,FC529BC8-FF09-44A9-B454-26EAFDAC791B,4B5B0D73-496E-4CFA-92B9-3299A1E29E17,C96F379A-3E15-4DE5-BA94-4ECC90960C6D,EC59C50D-92BD-4247-80B1-51139BE93D35,66D82C24-9C9F-4CD6-B019-53C20274AB00,EB009F74-F4C5-4596-86C3-5893B9453200,7D7C4D5F-E410-4803-9762-A060C536C098,572AC8CE-8446-418B-979A-A7EE4E1F5AFD,CE97BF15-F7C6-4C50-A744-A89C714A4DDD,9E638C8F-6447-45D9-9137-B24E1047BCE5,22E31028-E862-424B-8C10-C167B2C9E304,E9B55146-3351-440C-AD47-FD4DE05BDA05', @IncludedSchemaNames='${flyway:defaultSchema}';
 
 /* SQL text to update existing entity fields from schema (16 scoped entities) */
-EXEC [${mjSchema}].[spUpdateExistingEntityFieldsFromSchema] @ExcludedSchemaNames='${mjSchema}_BizAppsAccounting,${mjSchema}_BizAppsCommon,${mjSchema}_BizAppsIssues,${mjSchema}_BizAppsTasks,${mjSchema},sys', @EntityIDs='8B748643-85FF-4B07-B3B6-B12EC7A399E6,C2F418C4-8239-4486-B036-0BC4EAE4D24E,83A06268-2C96-400F-9CC8-21EEEF6654D1,8936D4D1-EB07-4EE8-A7AC-24131A1C48A8,FC529BC8-FF09-44A9-B454-26EAFDAC791B,4B5B0D73-496E-4CFA-92B9-3299A1E29E17,C96F379A-3E15-4DE5-BA94-4ECC90960C6D,EC59C50D-92BD-4247-80B1-51139BE93D35,66D82C24-9C9F-4CD6-B019-53C20274AB00,EB009F74-F4C5-4596-86C3-5893B9453200,7D7C4D5F-E410-4803-9762-A060C536C098,572AC8CE-8446-418B-979A-A7EE4E1F5AFD,CE97BF15-F7C6-4C50-A744-A89C714A4DDD,9E638C8F-6447-45D9-9137-B24E1047BCE5,22E31028-E862-424B-8C10-C167B2C9E304,E9B55146-3351-440C-AD47-FD4DE05BDA05';
+EXEC [${mjSchema}].[spUpdateExistingEntityFieldsFromSchema] @ExcludedSchemaNames='sys,staging', @EntityIDs='8B748643-85FF-4B07-B3B6-B12EC7A399E6,C2F418C4-8239-4486-B036-0BC4EAE4D24E,83A06268-2C96-400F-9CC8-21EEEF6654D1,8936D4D1-EB07-4EE8-A7AC-24131A1C48A8,FC529BC8-FF09-44A9-B454-26EAFDAC791B,4B5B0D73-496E-4CFA-92B9-3299A1E29E17,C96F379A-3E15-4DE5-BA94-4ECC90960C6D,EC59C50D-92BD-4247-80B1-51139BE93D35,66D82C24-9C9F-4CD6-B019-53C20274AB00,EB009F74-F4C5-4596-86C3-5893B9453200,7D7C4D5F-E410-4803-9762-A060C536C098,572AC8CE-8446-418B-979A-A7EE4E1F5AFD,CE97BF15-F7C6-4C50-A744-A89C714A4DDD,9E638C8F-6447-45D9-9137-B24E1047BCE5,22E31028-E862-424B-8C10-C167B2C9E304,E9B55146-3351-440C-AD47-FD4DE05BDA05', @IncludedSchemaNames='${flyway:defaultSchema}';
 
 /* SQL text to set default column width where needed */
-EXEC [${mjSchema}].[spSetDefaultColumnWidthWhereNeeded] @ExcludedSchemaNames='${mjSchema}_BizAppsAccounting,${mjSchema}_BizAppsCommon,${mjSchema}_BizAppsIssues,${mjSchema}_BizAppsTasks,${mjSchema},sys';
+EXEC [${mjSchema}].[spSetDefaultColumnWidthWhereNeeded] @ExcludedSchemaNames='sys,staging', @IncludedSchemaNames='${flyway:defaultSchema}';
 
 /* Set field properties for entity */
 
