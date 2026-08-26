@@ -7,17 +7,17 @@
  * The pricing walk — resolve each line's price, then promotions, then charges, then tax — lived as
  * private methods on `OrderEntityServer`, reading its fields directly. That had two consequences:
  *
- *   · The UI could not ask "what would this order cost?" without saving. `Orders.PreviewPrice`
- *     answers for ONE LINE, by calling `ResolvePrice` directly, and its own comment admits the
- *     result is advisory: promotions stack against ORDER totals, charges apportion ACROSS lines, and
- *     tax computes on the discounted amount. A per-line answer cannot see any of that.
+ *   · The UI could not ask "what would this order cost?" without saving. An earlier
+ *     `Orders.PreviewPrice` called `ResolvePrice` directly for one SKU; that second entry point
+ *     could disagree with booking (PC14). Every caller now goes through this service — save,
+ *     `Orders.PriceOrder`, and `Orders.PreviewPrice` (a one-line order, same walk).
  *   · An earlier attempt at a full answer ran an entire REAL booking inside a transaction that
  *     always rolled back, purely to read the totals off the entities before they vanished. It fired
  *     on every keystroke and was removed for the cost.
  *
- * Extracting the walk gives one implementation with two callers: `OrderEntityServer.Save()` prices
- * before it persists, and `Orders.PriceOrder` prices and persists nothing. Neither reimplements the
- * other, which is the property that keeps the screen's number and the ledger's number the same.
+ * Extracting the walk gives one implementation. Callers price and either persist (save) or do not
+ * (`PriceOrder` / `PreviewPrice`). Nobody reimplements the walk, which is the property that keeps
+ * the screen's number and the ledger's number the same.
  *
  * WHAT IT IS NOT
  *
@@ -97,6 +97,13 @@ export interface OrderPricingContext {
     PromotionCodes: string[];
     ManualDiscounts: ManualDiscountRequest[];
     Charges: RequestedCharge[];
+    /**
+     * Force this list, ignoring customer assignment — PreviewPrice "what if" and tests.
+     * `undefined` means resolve from the bill-to; explicit `null` means base price only.
+     */
+    PriceListID?: string | null;
+    /** PreviewPrice fee-type filter; omitted means the resolver default (Standard). */
+    FeeType?: string;
 }
 
 /**
@@ -465,6 +472,8 @@ export class OrderPricingService {
                 AsOf: this.ctx.OrderDate ? new Date(this.ctx.OrderDate) : new Date(),
                 OrganizationID: this.ctx.BillToOrganizationID ?? null,
                 PersonID: this.ctx.BillToPersonID ?? null,
+                ...(this.ctx.PriceListID !== undefined ? { PriceListID: this.ctx.PriceListID } : {}),
+                ...(this.ctx.FeeType ? { FeeType: this.ctx.FeeType } : {}),
             },
             provider,
             user,

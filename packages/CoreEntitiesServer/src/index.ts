@@ -108,6 +108,7 @@ export {
     PriceResolutionError,
     ResolvePrice,
     ResolvePriceListForCustomer,
+    ResolvePriceListsForCustomer,
 } from '@mj-biz-apps/orders-entities';
 export type { PriceResolutionContext, ResolvedPrice, PriceComponentDraft } from '@mj-biz-apps/orders-entities';
 export {

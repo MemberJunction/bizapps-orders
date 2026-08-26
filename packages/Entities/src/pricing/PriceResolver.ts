@@ -23,7 +23,8 @@
  * CONNECTS TO:
  *   PURE:   ./PricingBehavior.ts (applicability, tie detection, the arithmetic)
  *   CALLER: OrderEntityServer (stamps UnitPrice before lines are written)
- *   OP:     ./PreviewPriceOperation.ts — the dry run, which MUST run this same path
+ *   SERVICE: OrderPricingService.applyResolvedPrice — the only production caller.
+ *            PreviewPrice / PriceOrder / Save all go through that service.
  *   DOC:    plans/archive/pricing-charges-and-promotions.md
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
@@ -158,11 +159,11 @@ export class DefaultPriceResolver extends BasePriceResolver {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<ResolvedPrice | null> {
-        const priceListID = ctx.PriceListID !== undefined
-            ? ctx.PriceListID
-            : await ResolvePriceListForCustomer(ctx, provider, user);
+        const priceListIDs = ctx.PriceListID !== undefined
+            ? (ctx.PriceListID ? [ctx.PriceListID] : [])
+            : await ResolvePriceListsForCustomer(ctx, provider, user);
 
-        const rows = await this.loadRules(ctx, priceListID, provider, user);
+        const rows = await this.loadRules(ctx, priceListIDs, provider, user);
         if (!rows.length) return null;
 
         const tiers = await this.loadTiers(rows.map((r) => r.ID), provider, user);
@@ -252,13 +253,13 @@ export class DefaultPriceResolver extends BasePriceResolver {
      */
     private async loadRules(
         ctx: PriceResolutionContext,
-        priceListID: string | null,
+        priceListIDs: string[],
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<ProductPriceRow[]> {
         const rv = new RunView(provider as unknown as IRunViewProvider);
-        const listClause = priceListID
-            ? `(PriceListID = '${priceListID}' OR PriceListID IS NULL)`
+        const listClause = priceListIDs.length
+            ? `(PriceListID IN (${priceListIDs.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')}) OR PriceListID IS NULL)`
             : `PriceListID IS NULL`;
         const feeClause = `FeeType = '${(ctx.FeeType ?? 'Standard').replace(/'/g, "''")}'`;
 
@@ -279,7 +280,7 @@ export class DefaultPriceResolver extends BasePriceResolver {
         // A LIST rule beats a BASE rule of equal priority — otherwise assigning a customer to a list
         // would leave them on base pricing half the time, decided by row order. Nudging the list
         // rule's effective priority keeps that intent in the data rather than in a sort comparator.
-        if (priceListID) {
+        if (priceListIDs.length) {
             for (const r of rows) {
                 if (r.PriceListID) r.Priority = r.Priority + 1;
             }
@@ -321,19 +322,21 @@ export class DefaultPriceResolver extends BasePriceResolver {
 }
 
 /**
- * Which price list applies to this customer, as of this moment?
+ * Every in-force price list assigned to this customer, highest priority first.
  *
- * The person's own assignment and their organization's may both apply; `Priority` breaks the tie,
- * and a person's assignment wins an equal priority because it is the more specific statement about
- * who is buying. Returns null when nobody has assigned one — which is not an error: the product's
- * base price is exactly what an unassigned customer should get.
+ * Picking a SINGLE list (and ignoring the others) made member-list prices lose to catalog
+ * `BCP-STD` when both assignments were Priority 0 — RunView order decided who paid list vs base
+ * (IT PC3/PC14/VL11). Load every assigned list; list rules still beat base of equal priority.
+ *
+ * Person assignments sort ahead of org-only at the same Priority. Expired lists are dropped.
+ * Empty means unassigned: the product's base price is correct.
  */
-export async function ResolvePriceListForCustomer(
+export async function ResolvePriceListsForCustomer(
     ctx: PriceResolutionContext,
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<string | null> {
-    if (!ctx.OrganizationID && !ctx.PersonID) return null;
+): Promise<string[]> {
+    if (!ctx.OrganizationID && !ctx.PersonID) return [];
 
     const clauses: string[] = [];
     if (ctx.OrganizationID) clauses.push(`OrganizationID = '${ctx.OrganizationID}'`);
@@ -355,7 +358,7 @@ export async function ResolvePriceListForCustomer(
         },
         user,
     );
-    if (!res?.Success) return null;
+    if (!res?.Success) return [];
 
     const now = ctx.AsOf.getTime();
     const live = (res.Results ?? []).filter((a) => {
@@ -365,7 +368,7 @@ export async function ResolvePriceListForCustomer(
         if (to !== null && now > to) return false;
         return true;
     });
-    if (!live.length) return null;
+    if (!live.length) return [];
 
     live.sort((a, b) => {
         if (b.Priority !== a.Priority) return b.Priority - a.Priority;
@@ -373,7 +376,6 @@ export async function ResolvePriceListForCustomer(
         return (b.PersonID ? 1 : 0) - (a.PersonID ? 1 : 0);
     });
 
-    // The list itself must still be in force — an expired list should not price anything.
     const listRes = await rv.RunView<{ ID: string; EffectiveFrom: Date | null; EffectiveTo: Date | null; Status: string }>(
         {
             EntityName: PRICE_LIST_ENTITY,
@@ -384,16 +386,31 @@ export async function ResolvePriceListForCustomer(
         user,
     );
     const usable = new Map((listRes?.Results ?? []).map((l) => [uuidKey(l.ID), l]));
+    const ids: string[] = [];
+    const seen = new Set<string>();
     for (const a of live) {
-        const list = usable.get(uuidKey(a.PriceListID));
+        const key = uuidKey(a.PriceListID);
+        if (seen.has(key)) continue;
+        const list = usable.get(key);
         if (!list || list.Status !== 'Active') continue;
         const from = list.EffectiveFrom ? new Date(list.EffectiveFrom).getTime() : null;
         const to = list.EffectiveTo ? new Date(list.EffectiveTo).getTime() : null;
         if (from !== null && now < from) continue;
         if (to !== null && now > to) continue;
-        return a.PriceListID;
+        seen.add(key);
+        ids.push(a.PriceListID);
     }
-    return null;
+    return ids;
+}
+
+/** Highest-priority in-force list, or null when the customer is unassigned. */
+export async function ResolvePriceListForCustomer(
+    ctx: PriceResolutionContext,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<string | null> {
+    const ids = await ResolvePriceListsForCustomer(ctx, provider, user);
+    return ids[0] ?? null;
 }
 
 /**
