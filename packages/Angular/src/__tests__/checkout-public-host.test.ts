@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildCheckoutDraftLine } from '../lib/checkout-widget/checkout-draft-line';
+import {
+    buildCheckoutDraftLine,
+    formatStripeError,
+    intentAlreadyCollected,
+    stripeConfirmAlreadyCollected,
+} from '../lib/checkout-widget/checkout-draft-line';
 import type { CheckoutSubmissionEvent } from '../lib/checkout-widget/checkout-widget.component';
 
 describe('buildCheckoutDraftLine', () => {
@@ -44,5 +49,15 @@ describe('buildCheckoutDraftLine', () => {
         };
         const line = buildCheckoutDraftLine('prod-simple', event);
         expect(line.ExtensionData).toBeUndefined();
+    });
+});
+
+describe('stripe confirm retry helpers', () => {
+    it('treats Succeeded as already collected', () => {
+        expect(intentAlreadyCollected('Succeeded')).toBe(true);
+        expect(intentAlreadyCollected('RequiresPayment')).toBe(false);
+        expect(stripeConfirmAlreadyCollected({ code: 'payment_intent_unexpected_state', message: 'A processing error occurred.' })).toBe(true);
+        expect(stripeConfirmAlreadyCollected({ code: 'card_declined', message: 'Your card was declined.' })).toBe(false);
+        expect(formatStripeError({ message: 'A processing error occurred.', code: 'payment_intent_unexpected_state' })).toContain('payment_intent_unexpected_state');
     });
 });

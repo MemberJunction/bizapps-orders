@@ -22,7 +22,12 @@ import {
     type CheckoutSubmissionEvent,
     type CheckoutWidgetConfig,
 } from './checkout-widget.component';
-import { buildCheckoutDraftLine } from './checkout-draft-line';
+import {
+    buildCheckoutDraftLine,
+    formatStripeError,
+    intentAlreadyCollected,
+    stripeConfirmAlreadyCollected,
+} from './checkout-draft-line';
 
 export { buildCheckoutDraftLine } from './checkout-draft-line';
 
@@ -172,7 +177,14 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 sessionId: this.sessionId,
                 clientSessionKey: this.sessionKey,
             });
-            if (!intent?.Success || !intent.ClientSecret) {
+            if (!intent?.Success) {
+                throw new Error(this.str(intent?.ErrorMessage, 'Could not start payment.'));
+            }
+            if (intentAlreadyCollected(intent.Status)) {
+                await this.finish();
+                return;
+            }
+            if (!intent.ClientSecret) {
                 throw new Error(this.str(intent?.ErrorMessage, 'Could not start payment.'));
             }
             if (!this.stripe || !this.card) {
@@ -185,11 +197,15 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 },
             });
             if (result.error) {
-                throw new Error(result.error.message || 'Payment failed.');
-            }
-            const stripeStatus = (result.paymentIntent?.status || '').toLowerCase();
-            if (stripeStatus && stripeStatus !== 'succeeded' && stripeStatus !== 'processing') {
-                throw new Error(`Payment was not confirmed (Stripe status: ${result.paymentIntent?.status}).`);
+                console.warn('[mj-orders-checkout] Stripe confirmCardPayment', result.error);
+                if (!stripeConfirmAlreadyCollected(result.error)) {
+                    throw new Error(formatStripeError(result.error));
+                }
+            } else {
+                const stripeStatus = (result.paymentIntent?.status || '').toLowerCase();
+                if (stripeStatus && stripeStatus !== 'succeeded' && stripeStatus !== 'processing') {
+                    throw new Error(`Payment was not confirmed (Stripe status: ${result.paymentIntent?.status}).`);
+                }
             }
             await this.finish();
         } catch (err) {
