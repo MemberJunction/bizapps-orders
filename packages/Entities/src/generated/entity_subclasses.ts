@@ -7,7 +7,7 @@ export const loadModule = () => {
 }
 
      
-import { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
+ import { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/orders-entities';
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Charge Types
