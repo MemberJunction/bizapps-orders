@@ -14,9 +14,13 @@
 # backtrack this is meant to prevent. A PR check is visible where the decision is made, and
 # can be made blocking via required status checks.
 #
-# KNOWN GAP until the GitHub App token lands: PRs opened by GITHUB_TOKEN do not trigger
-# workflows, so the `next` half of this will not fire yet. The `main` half does, so the
-# release stays protected in the meantime — it just costs the longer recovery.
+# Both halves of this now hold: PRs are opened by a GitHub App (see version.yml), and
+# App-created PRs trigger workflows, so the `next` half fires on the Version Packages PR
+# like any other check. Before the App token, runs on `changeset-release/next` were created
+# in `action_required` and never executed until a maintainer clicked "Approve and run" —
+# which mattered more than it sounds: a REQUIRED check whose run never starts can never be
+# satisfied, so marking this required left the version PR permanently unmergeable
+# (accounting #97 read mergeStateStatus=BLOCKED with "no checks reported").
 #
 # Bypass: label the PR `bump-level-exempt`.
 name: Release readiness
