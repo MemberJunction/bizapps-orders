@@ -8,6 +8,7 @@
  */
 import {
     AfterViewChecked,
+    ChangeDetectorRef,
     Component,
     ElementRef,
     Input,
@@ -54,6 +55,7 @@ declare global {
 })
 export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, OnDestroy {
     private readonly hostEl = inject(ElementRef, { optional: true });
+    private readonly cdr = inject(ChangeDetectorRef);
 
     @Input() public slug = '';
     @Input() public apiRoot = '/checkout';
@@ -113,6 +115,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.config = cfg;
         } catch {
             this.loadError = 'Checkout is temporarily unavailable. Please try again.';
+        } finally {
+            this.cdr.detectChanges();
         }
     }
 
@@ -188,6 +192,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.errorMessage = err instanceof Error ? err.message : 'Checkout failed.';
         } finally {
             this.processing = false;
+            this.cdr.detectChanges();
         }
     }
 
@@ -206,6 +211,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         if (this.config?.redirectUrl) {
             window.location.href = this.config.redirectUrl;
         }
+        this.cdr.detectChanges();
     }
 
     private async mountStripe(mount: HTMLElement): Promise<void> {

@@ -23,7 +23,9 @@ describe('renderCheckoutHostPage', () => {
             elementSrc: '/checkout/element/main.js',
             cspNonce: 'nOnce+/1',
         });
-        expect(html).toContain('<mj-orders-checkout slug="summit-2027" api-root="/checkout">');
+        expect(html).toContain('slug="summit-2027"');
+        expect(html).toContain('api-root="/checkout"');
+        expect(html).toContain('csp-nonce="nOnce+/1"');
         expect(html).toContain('src="/checkout/element/main.js"');
         expect(html).toContain('type="module"');
         expect(html).toContain('nonce="nOnce+/1"');

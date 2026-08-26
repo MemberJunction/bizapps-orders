@@ -89,7 +89,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
 </head>
 <body>
   <main class="mj-co">
-    <mj-orders-checkout slug="${slug}" api-root="${apiRoot}"></mj-orders-checkout>
+    <mj-orders-checkout slug="${slug}" api-root="${apiRoot}" csp-nonce="${options.cspNonce ? escapeAttr(options.cspNonce) : ''}"></mj-orders-checkout>
   </main>
 </body>
 </html>`;

@@ -284,16 +284,23 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         }
 
         const styleId = `mj-checkout-custom-css-${this.widgetInstanceId}`;
+        const nonce = this.readCspNonce();
         if (!this._customStyleEl) {
             if (this.renderer && this.el) {
                 this._customStyleEl = this.renderer.createElement('style');
                 this.renderer.setAttribute(this._customStyleEl, 'type', 'text/css');
                 this.renderer.setAttribute(this._customStyleEl, 'id', styleId);
+                if (nonce) {
+                    this.renderer.setAttribute(this._customStyleEl, 'nonce', nonce);
+                }
                 this.renderer.appendChild(this.el.nativeElement, this._customStyleEl);
             } else {
                 this._customStyleEl = document.createElement('style');
                 this._customStyleEl.type = 'text/css';
                 this._customStyleEl.id = styleId;
+                if (nonce) {
+                    this._customStyleEl.setAttribute('nonce', nonce);
+                }
                 document.head.appendChild(this._customStyleEl);
             }
         }
@@ -301,6 +308,19 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         if (this._customStyleEl) {
             this._customStyleEl.textContent = cssContent;
         }
+    }
+
+    private readCspNonce(): string {
+        if (typeof document === 'undefined') {
+            return '';
+        }
+        const host = this.el?.nativeElement?.closest?.('mj-orders-checkout') as HTMLElement | null;
+        const fromHost = host?.getAttribute('csp-nonce');
+        if (fromHost) {
+            return fromHost;
+        }
+        const tagged = document.querySelector<HTMLElement>('script[nonce], style[nonce]');
+        return tagged?.nonce || tagged?.getAttribute('nonce') || '';
     }
 
     private mountCustomJS(scriptContent: string): void {
