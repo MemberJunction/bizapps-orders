@@ -309,8 +309,9 @@ export class CheckoutSessionService {
 
     /**
      * Catalog this anonymous session is allowed to sell. Explicit `productId` /
-     * `allowedProductIds` / SKU-resolved id win; otherwise the draft path still
-     * requires the product to share the widget's CompanyID.
+     * `allowedProductIds` / SKU-resolved id. An empty result is a misconfigured
+     * anonymous widget unless `allowAnyProduct` is set (open catalog still
+     * requires a company match).
      */
     private static async resolveAllowedProductIds(
         configObj: CheckoutWidgetConfiguration,
@@ -350,6 +351,7 @@ export class CheckoutSessionService {
             EntityName: CHECKOUT_SESSION_ENTITY,
             Fields: ['ID'],
             ExtraFilter: `Status = 'Open' AND ExpiresAt <= '${nowUtc}'`,
+            MaxRows: limit,
             ResultType: 'simple',
         }, contextUser);
         if (!res?.Success || !res.Results?.length) {
@@ -789,6 +791,10 @@ export class CheckoutSessionService {
             }
         }
         const allowedProductIds = await this.resolveAllowedProductIds(widgetConfig, contextUser);
+        const allowAnyProduct = widgetConfig.allowAnyProduct === true;
+        if (!allowAnyProduct && allowedProductIds.size === 0) {
+            return failed('This checkout is not configured with a product');
+        }
 
         // Build in-memory Order graph for accurate pricing calculation without DB pollution
         const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
@@ -831,7 +837,7 @@ export class CheckoutSessionService {
             if (!inputLine.ProductID) {
                 return failed('ProductID is required on every checkout line');
             }
-            if (allowedProductIds.size > 0 && ![...allowedProductIds].some((id) => this.idsEqual(id, inputLine.ProductID))) {
+            if (!allowAnyProduct && ![...allowedProductIds].some((id) => this.idsEqual(id, inputLine.ProductID))) {
                 return failed('This checkout does not sell that product');
             }
             try {
@@ -840,7 +846,7 @@ export class CheckoutSessionService {
                 if (!prodLoaded) {
                     return failed('The requested product is not available');
                 }
-                if (widget.CompanyID && product.CompanyID && !this.idsEqual(widget.CompanyID, String(product.CompanyID))) {
+                if (widget.CompanyID && !this.idsEqual(widget.CompanyID, String(product.CompanyID ?? ''))) {
                     return failed('This checkout does not sell that product');
                 }
                 maxQuantityPerLine = product.MaxQuantityPerLine ?? null;

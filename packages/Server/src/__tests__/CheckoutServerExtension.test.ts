@@ -36,6 +36,7 @@ vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
     EscapeText: (value: string) => value.replace(/'/g, "''"),
 }));
 
+import { CheckoutSessionService } from '@mj-biz-apps/orders-core-entities-server';
 import { CheckoutServerExtension } from '../CheckoutServerExtension.js';
 
 type RouteMap = {
@@ -206,6 +207,30 @@ describe('CheckoutServerExtension', () => {
         const filter = mockRunView.mock.calls[0][0].ExtraFilter as string;
         expect(filter).toContain("Slug = 'summit-2027'");
         expect(filter).toContain("Status = 'Active'");
+        expect(CheckoutSessionService.ReapExpiredOpenSessions).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not re-reap within the interval, then reaps again after it elapses', async () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(new Date('2026-08-26T12:00:00Z'));
+            const { app, routes } = mockApp();
+            await new CheckoutServerExtension().Initialize(app, {
+                Enabled: true,
+                DriverClass: 'OrdersCheckoutEdge',
+                RootPath: '/checkout',
+                Settings: {},
+            });
+            const req = { params: { slug: 'summit-2027' }, headers: {}, socket: { remoteAddress: '127.0.0.1' } } as unknown as Request;
+            await routes.get['/checkout/:slug'](req, mockRes() as unknown as Response);
+            await routes.get['/checkout/:slug'](req, mockRes() as unknown as Response);
+            expect(CheckoutSessionService.ReapExpiredOpenSessions).toHaveBeenCalledTimes(1);
+            vi.setSystemTime(new Date('2026-08-26T12:01:01Z'));
+            await routes.get['/checkout/:slug'](req, mockRes() as unknown as Response);
+            expect(CheckoutSessionService.ReapExpiredOpenSessions).toHaveBeenCalledTimes(2);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('escapes a hostile slug in the GET ExtraFilter', async () => {

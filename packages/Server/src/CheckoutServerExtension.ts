@@ -416,12 +416,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
             return;
         }
         this.lastReapAt = now;
-        const reap = (CheckoutSessionService as unknown as { ReapExpiredOpenSessions?: (u: UserInfo) => Promise<number> })
-            .ReapExpiredOpenSessions;
-        if (typeof reap !== 'function') {
-            return;
-        }
-        void reap.call(CheckoutSessionService, user).catch((err: unknown) => {
+        void CheckoutSessionService.ReapExpiredOpenSessions(user).catch((err: unknown) => {
             LogError(`[OrdersCheckoutEdge] Session reap failed: ${err instanceof Error ? err.message : String(err)}`);
         });
     }

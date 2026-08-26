@@ -214,7 +214,9 @@ const mocks = vi.hoisted(() => {
         mockProductInstance: new MockProduct(),
         mockProductTypeInstance: new MockProductType(),
         mockPersonInstance: new MockPerson(),
-        mockPaymentIntentInstance: new MockPaymentIntent()
+        mockPaymentIntentInstance: new MockPaymentIntent(),
+        lastRunViewParams: undefined as { EntityName?: string; MaxRows?: number; Fields?: string[]; ExtraFilter?: string } | undefined,
+        sessionRunViewResults: undefined as Array<{ ID: string }> | undefined,
     };
 });
 
@@ -263,7 +265,8 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
             });
         },
         RunView: class {
-            RunView = vi.fn().mockImplementation((params: { EntityName: string }) => {
+            RunView = vi.fn().mockImplementation((params: { EntityName: string; MaxRows?: number; Fields?: string[]; ExtraFilter?: string }) => {
+                mocks.lastRunViewParams = params;
                 if (params.EntityName.includes('Checkout Widget Distributions')) {
                     return Promise.resolve({
                         Success: true,
@@ -273,7 +276,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 if (params.EntityName.includes('Checkout Sessions')) {
                     return Promise.resolve({
                         Success: true,
-                        Results: [mocks.mockSessionInstance]
+                        Results: mocks.sessionRunViewResults ?? [mocks.mockSessionInstance]
                     });
                 }
                 if (params.EntityName.includes('People') || params.EntityName.includes('Persons')) {
@@ -334,6 +337,11 @@ describe('CheckoutSessionService', () => {
         mocks.mockOrderInstance.ShipToPersonID = null;
         mocks.mockOrderInstance.Lines.Items = [];
         mocks.mockWidgetInstance.Configuration = mocks.DEFAULT_WIDGET_CONFIG;
+        mocks.mockWidgetInstance.CompanyID = 'comp-10';
+        mocks.mockProductInstance.CompanyID = 'comp-10';
+        mocks.mockProductInstance.ID = 'prod-1';
+        mocks.lastRunViewParams = undefined;
+        mocks.sessionRunViewResults = undefined;
         mocks.mockPaymentIntentInstance.Status = 'Succeeded';
         mocks.mockPaymentIntentInstance.Amount = 100;
         mocks.mockWidgetLoad.mockResolvedValue(true);
@@ -415,6 +423,7 @@ describe('CheckoutSessionService', () => {
                 token: 'also_leak',
                 paymentProviderId: 'pp-should-stay-server-side',
                 signingKey: 'nope',
+                allowAnyProduct: true,
             });
             const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
             expect(res.Success).toBe(true);
@@ -426,6 +435,7 @@ describe('CheckoutSessionService', () => {
             expect(res.Configuration?.token).toBeUndefined();
             expect(res.Configuration?.paymentProviderId).toBeUndefined();
             expect(res.Configuration?.signingKey).toBeUndefined();
+            expect(res.Configuration?.allowAnyProduct).toBeUndefined();
         });
     });
 
@@ -439,6 +449,54 @@ describe('CheckoutSessionService', () => {
             );
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toMatch(/does not sell that product/i);
+        });
+
+        it('rejects a draft when the widget catalog is empty (fail closed, not open catalog)', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ title: 'No product configured' });
+            const res = await CheckoutSessionService.UpdateDraft(
+                'sess-123',
+                KEY,
+                'a@b.com',
+                [{ ProductID: 'prod-1', Quantity: 1 }]
+            );
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/not configured with a product/i);
+        });
+
+        it('rejects a product whose CompanyID is null even when the ProductID is in the catalog', async () => {
+            mocks.mockProductInstance.CompanyID = null as unknown as string;
+            const res = await CheckoutSessionService.UpdateDraft(
+                'sess-123',
+                KEY,
+                'a@b.com',
+                [{ ProductID: 'prod-1', Quantity: 1 }]
+            );
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/does not sell that product/i);
+        });
+
+        it('allowAnyProduct still requires the product to share the widget CompanyID', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ allowAnyProduct: true });
+            mocks.mockProductInstance.CompanyID = 'other-company';
+            const res = await CheckoutSessionService.UpdateDraft(
+                'sess-123',
+                KEY,
+                'a@b.com',
+                [{ ProductID: 'prod-foreign', Quantity: 1 }]
+            );
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/does not sell that product/i);
+        });
+
+        it('allowAnyProduct accepts a same-company ProductID that is not in productId/allowedProductIds', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ allowAnyProduct: true });
+            const res = await CheckoutSessionService.UpdateDraft(
+                'sess-123',
+                KEY,
+                'a@b.com',
+                [{ ProductID: 'prod-same-company-other-sku', Quantity: 1 }]
+            );
+            expect(res.Success).toBe(true);
         });
 
         it('rejects a mismatched client session key', async () => {
@@ -895,6 +953,32 @@ describe('CheckoutSessionService', () => {
             // latch or — if it observed the winner's Confirmed state — replays the same order.)
             expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalledTimes(1);
             expect(res1.Success || res2.Success).toBe(true);
+        });
+    });
+
+    describe('ReapExpiredOpenSessions', () => {
+        it('passes MaxRows so the bound is in the query, not after an unbounded fetch', async () => {
+            mocks.mockSessionLoad.mockImplementation(async () => {
+                mocks.mockSessionInstance.Status = 'Open';
+                return true;
+            });
+            mocks.sessionRunViewResults = Array.from({ length: 3 }, (_, i) => ({ ID: `expired-${i}` }));
+            const n = await CheckoutSessionService.ReapExpiredOpenSessions(testUser, 50);
+            expect(mocks.lastRunViewParams?.MaxRows).toBe(50);
+            expect(mocks.lastRunViewParams?.Fields).toEqual(['ID']);
+            expect(mocks.lastRunViewParams?.ExtraFilter).toMatch(/Status = 'Open'/);
+            expect(n).toBe(3);
+        });
+
+        it('honours a smaller limit both as MaxRows and as the process cap', async () => {
+            mocks.mockSessionLoad.mockImplementation(async () => {
+                mocks.mockSessionInstance.Status = 'Open';
+                return true;
+            });
+            mocks.sessionRunViewResults = Array.from({ length: 10 }, (_, i) => ({ ID: `expired-${i}` }));
+            const n = await CheckoutSessionService.ReapExpiredOpenSessions(testUser, 2);
+            expect(mocks.lastRunViewParams?.MaxRows).toBe(2);
+            expect(n).toBe(2);
         });
     });
 });

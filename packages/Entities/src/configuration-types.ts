@@ -83,10 +83,18 @@ export interface CheckoutWidgetConfiguration {
     description?: string;
     productId?: string;
     /**
-     * Explicit catalog this widget may sell. When set, the anonymous draft edge
-     * rejects any ProductID not in this list (plus `productId` if present).
+     * Explicit catalog this widget may sell. The anonymous draft edge rejects any
+     * ProductID not in this list (plus `productId` / SKU-resolved id). An empty
+     * catalog is a misconfiguration and the draft is refused, unless
+     * `allowAnyProduct` is explicitly true.
      */
     allowedProductIds?: string[];
+    /**
+     * When true, this widget sells any product that shares its CompanyID — an
+     * explicit open catalog, not the default. Absence of `productId` /
+     * `allowedProductIds` is NOT an open catalog. Server-side only.
+     */
+    allowAnyProduct?: boolean;
     /** Alternative product resolution by SKU when productId is not set. */
     productSku?: string;
     productName?: string;
