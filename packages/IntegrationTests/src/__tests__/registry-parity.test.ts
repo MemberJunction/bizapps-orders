@@ -58,6 +58,7 @@ import '../checks/arithmetic-edges.checks.js';
 import '../checks/concurrency.checks.js';
 import '../checks/volume.checks.js';
 import '../checks/entitlements.checks.js';
+import '../checks/entitlement-read.checks.js';
 import '../checks/payment-providers.checks.js';
 import '../checks/ach-settlement.checks.js';
 import '../checks/embedded-payment-detail.checks.js';
@@ -104,6 +105,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     concurrency: 6,
     volume: 13,
     entitlements: 15,
+    'entitlement-read': 7,
     'payment-providers': 12,
     'ach-settlement': 17,
     'embedded-payment-detail': 14,

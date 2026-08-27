@@ -116,10 +116,12 @@ included, so rollback-based isolation is impossible for that check.
 | `subscription-renewal` | SR1–SR11 |
 | `payments-rollups` | PR1–PR9 |
 | `volume` | VL1–VL13 |
+| `entitlement-read` | ER1–ER7 (CheckEntitlement / ListEntitlements, in-process Execute) |
 | `wire-crud` | W1–W3 (client only) |
 | `wire-volume` | WV1–WV7 (client only, committed) |
+| `wire-entitlements` | WE1–WE5 (client only, Check/List over GraphQL; WE1 confirms) |
 
-`wire-crud` and `wire-volume` are **not** in `src/index.ts` or `EXPECTED_BUNDLES`. They register from `src/client-index.ts` and `test-harnesses/integration-client.mjs` so a GraphQL process never loads `*EntityServer`.
+`wire-crud`, `wire-volume`, and `wire-entitlements` are **not** in `src/index.ts` or `EXPECTED_BUNDLES`. They register from `src/client-index.ts` and `test-harnesses/integration-client.mjs` so a GraphQL process never loads `*EntityServer`. `wire-entitlements` confirms one STYLE-HB order (`Notes` `ER-WIRE:<runId>`) so Check/List have a real grant on the wire.
 
 The complete server-bundle list, with what each bundle is for, is the header comment of `src/index.ts` — it is next
 to the exports that register them, so it cannot drift as far as a table over here can.
