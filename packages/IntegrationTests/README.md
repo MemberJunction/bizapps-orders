@@ -20,9 +20,12 @@ The client path does **not** import `@mj-biz-apps/orders-server`. Those `*Entity
 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs
 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs wire-volume
 WIRE_VOL_COUNT=40 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs wire-volume
+GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs operating-history
 ```
 
 `wire-volume` **commits**. Each header `Notes` is `WIRE-VOL:<runId>` so you can inspect and later purge. Default count is 200 (`WIRE_VOL_COUNT`). ORD-WORLD must already be loaded (catalog-world / ORD-00). See `docs/reviewing-the-data.md`. Purge with `node test-harnesses/purge-wire-volume.mjs`.
+
+`operating-history` **commits** a dated, idempotent spine (`Notes` = `ORD-HIST:v1`, ~June 2025–November 2026, BCP + HH). It is the cash-forecast source world: paid volume, planted open/partial/overdue AR, annuals that renew inside the Friday 2026-11-20 horizon, and one cancelled annual. Re-running skips descriptions that already exist. FP&A's GraphQL suite materializes this world.
 
 ## Running
 

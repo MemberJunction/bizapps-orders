@@ -3,6 +3,7 @@
  *
  *   GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs
  *   WIRE_VOL_COUNT=40 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs wire-volume
+ *   GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs operating-history
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
