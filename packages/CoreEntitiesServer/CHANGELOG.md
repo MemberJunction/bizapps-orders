@@ -1,5 +1,95 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.2.0
+
+### Minor Changes
+
+- c724132: Add CheckoutWidget, CheckoutWidgetDistribution, and CheckoutSession entities, embedded checkout widget component, and session management with atomic Compare-and-Swap state transitions and identity claiming.
+- 44944fd: Add the entitlement read contract: `Orders.CheckEntitlement` and `Orders.ListEntitlements` evaluate in-force access (status + window + subscription access-through) instead of polling `EntitlementGrant.Status`. Cancel now revokes standing grants when access-through has already passed.
+
+### Patch Changes
+
+- e21ad46: Host the Angular checkout widget as an Angular Element on `GET /checkout/:slug`, retrieve Stripe intent status on complete (localhost has no webhook), skip a second confirmCardPayment when the intent already succeeded, and book `Orders.CapturePayment` after confirm so AmountPaid / PaymentHeader land without waiting for Stripe to POST. Stripe Capture treats an already-captured automatic-capture intent as success.
+- 07e0b10: Checkout hardening wave: fix the blocking defects and ship the anonymous edge.
+
+  Defect fixes in CheckoutSessionService:
+
+  - The payer Person is now resolved (find-or-create by the session's captured email) at
+    completion and stamped onto the session and the order's BillTo/ShipTo — previously every
+    widget order failed OrderHeaderEntity.Validate() with no customer.
+  - A session acquires a payment intent through the new OpenPaymentIntentForSession (amount
+    from the session's server-priced snapshot, provider from the widget's Configuration
+    paymentProviderId); the completion gate now verifies the intent's STATE (Succeeded, as
+    advanced by the signature-verified webhook) and that its amount covers the re-priced
+    total — mere existence of an intent id no longer books an order.
+  - The GuestOrder claim mint uses the real IdentityClaimEngineServer import (the previous
+    MJGlobal.ClassRegistry duck-type was dead code) and passes the entity GUID.
+  - EntitlementGrantClaimDriver.OnRevoke stamps RevokedAt + RevocationReason (the generated
+    validation rule rejected Revoked-without-RevokedAt, so revocations silently no-oped) and
+    failures are logged instead of swallowed; OnExpire logs failed saves.
+
+  Session hardening:
+
+  - ClientSessionKey is re-verified (constant-time) on every mutating call; ExpiresAt is
+    enforced past initialization (expired sessions transition to Expired); completion is
+    replay-safe (a Confirmed session returns its existing order) and never reverts to Open
+    once the order has committed; server-side quantity/line caps apply when unconfigured;
+    hand-rolled SQL escaping replaced with the sql-guards helpers; secret-shaped keys are
+    stripped from the Configuration returned to anonymous callers; Person rows are no longer
+    minted on the draft path; the platform-specific GETUTCDATE() filter is now portable.
+
+  The anonymous checkout edge (new):
+
+  - CheckoutServerExtension (DriverClass 'OrdersCheckoutEdge') mounts pre-auth REST routes
+    POST /checkout/{initialize,draft,payment-intent,complete} via the serverExtensions
+    mechanism, with fail-closed gates: body cap, per-IP(+slug) rate limiting, per-widget
+    origin allowlist (Configuration.allowedOrigins) with scoped CORS grants, and optional
+    Cloudflare Turnstile (Configuration.requireTurnstile + Settings.TurnstileSecretEnvVar).
+    Writes run as the configured ServiceUserEmail principal (system-user fallback). The
+    claim-driver Load anchors are now called from LoadBizAppsOrdersServer so the drivers
+    survive tree-shaking.
+
+- 844f85d: Public checkout URL is `GET /checkout/:slug` on the existing `OrdersCheckoutEdge` (vanilla HTML talking to the POST edge). The server package publishes `MJ_SERVER_EXTENSIONS` (and `package.json` `memberjunction.serverExtensions`) so a host that lists `@mj-biz-apps/orders-server` in `dynamicPackages.server[]` auto-loads the webhook and checkout edge. Initialize writes a SKU-resolved `productId` onto Configuration so that page can draft a line.
+- c490929: Checkout follow-up from the #115/#116 security review: fail-closed open catalog without widget CompanyID; do not serve the element source map on the public payment route unless opted in; book CapturePayment from payment_intent.succeeded (including AlreadyApplied retries); require a CSP nonce on the host page renderer.
+- d8d94c7: Declare `@mj-biz-apps/tasks-entities` as a type-only optional peer (devDependency + optional peerDependency). The import is `import type`, so hosts without bizapps-tasks must not be forced to install it.
+- ce76550: Type the checkout-capture terminal Task through `@mj-biz-apps/tasks-entities` (typed `TypeID`/`Name`/`Status` setters and TaskType.ID getter) instead of untyped `.Set()` / `.Get()`.
+- cf88598: Resolve the GENERAL TaskType by Code before raising a checkout-capture terminal Task, so TypeID is set and the row can save.
+- f426462: Classify checkout CapturePayment webhook failures: terminal refusals (and events older than 12h) return 200 plus a `[CHECKOUT-CAPTURE-TERMINAL]` marker so Stripe does not retry for three days; transient failures still 500. Stripe `created` is carried as `WebhookEvent.OccurredAt`.
+- 8ad33a8: Route `Orders.PreviewPrice` through `OrderPricingService` (the same walk save and `Orders.PriceOrder` use) instead of calling `ResolvePrice` directly. Price resolution now loads rules from every in-force list assigned to the customer, so a member list cannot lose to catalog `BCP-STD` when both assignments are Priority 0.
+- 6367347: Restore local definitions of the identity-claim driver contracts so the repo builds against
+  published MemberJunction again.
+
+  `orders-core-entities-server` imported `BaseIdentityClaimDriver`, `ClaimContext`,
+  `ClaimRedeemContext` and `ClaimResult` from `@memberjunction/core-entities`, and
+  `EscapeSQLString` from `@memberjunction/global`. None of those five symbols exist in any
+  published MJ package — verified against `6.1.0-edge.3`, the newest published edge and the version
+  the lockfile pins, whose tarballs contain no occurrence of any of them (`@memberjunction/global`
+  ships `Escape` and `EscapeHTML`). The imports resolved only for developers dev-linked to an MJ
+  working tree, so CI failed with ten TS2305 errors, the package did not compile, and three test
+  suites could not load at all — `EntitlementGrantClaimDriver`, `GuestOrderClaimDriver`, and
+  `registry-parity`, the last of which imports the package by name and takes its 76 checks down with
+  it. `Class extends value undefined` was the `@RegisterClass`/`extends` on an undefined import.
+
+  The contracts now live in `identityClaimContracts.ts` and `EscapeSQLString` in `sql-guards.ts`,
+  both marked as fallbacks with the deletion steps in their headers. Keeping the contracts in one
+  module rather than inline per driver means the eventual swap back is a specifier change at four
+  import sites, and any drift between this shape and the published one surfaces as a compile error
+  at exactly those sites.
+
+  `CLAUDE.md`'s SQL-safety rule mandated the `@memberjunction/global` import that caused half of
+  this, so it now points at `sql-guards.ts` and says why.
+
+  No behaviour change: 1235 unit tests pass, up from 989 running with 3 suites dead.
+
+- Updated dependencies [e21ad46]
+- Updated dependencies [07e0b10]
+- Updated dependencies [c490929]
+- Updated dependencies [2daf9b9]
+- Updated dependencies [94af4e5]
+- Updated dependencies [d0e5450]
+- Updated dependencies [8ad33a8]
+  - @mj-biz-apps/orders-entities@5.2.0
+
 ## 5.1.0
 
 ### Minor Changes
