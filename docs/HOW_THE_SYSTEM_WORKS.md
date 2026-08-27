@@ -186,7 +186,7 @@ Locked history is never edited.
 
 - Return / cancellation / credit memo = a **new** Order Header (`ReversesOrderHeaderID`) with negative-quantity lines.
 - Refund = a new Payment Header (`ReversesPaymentID`).
-- Entitlement grants created at booking are revoked on return (`EntitlementEngine`).
+- Entitlement grants created at booking are revoked on return (`EntitlementEngine`). Downstream apps **ask** `Orders.CheckEntitlement` (by `ProductEntitlement.Code`); they do not poll `EntitlementGrant.Status`. Status is a recorded decision, not current truth — the evaluator also honours the window and, after cancel, `subscription.EndDate` (grace). `Orders.ListEntitlements` is the person's library, same evaluator. v1 is person grants only. Contract: [`plans/entitlement-read-contract.md`](../plans/entitlement-read-contract.md).
 
 ---
 

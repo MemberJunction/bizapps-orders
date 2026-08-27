@@ -70,8 +70,10 @@ over a set of rows, talks to a third party, or must be atomic with a write.
 | `Orders.FulfillOrderLines` | `orders:write` | Sync | Flip lines AND close the order, one act. |
 | `Orders.GetFulfillmentQueue` | `orders:read` | Sync | The shipping backlog is computed, not stored. |
 | `Orders.GetOverdueWorklist` | `orders:read` | Sync | So is overdue. |
-| `Orders.CancelSubscription` | `subscriptions:write` | Sync | Policy in, reversal out. |
+| `Orders.CancelSubscription` | `subscriptions:write` | Sync | Policy in, reversal out. Revokes standing grants when access-through has already passed. |
 | `Orders.SpawnRenewals` | `subscriptions:write` | LongRunning | Places renewal orders at lead time. |
+| `Orders.CheckEntitlement` | `orders:entitlement-check` | Sync | Does this person currently have this capability? Asked by Code, evaluated, fail closed. |
+| `Orders.ListEntitlements` | `orders:entitlement-read` | Sync | The person's library, one row per Code, same evaluator. Not a second source of truth. |
 
 Scopes are per functional area rather than one blanket scope, so a reporting integration can read
 without being able to confirm.

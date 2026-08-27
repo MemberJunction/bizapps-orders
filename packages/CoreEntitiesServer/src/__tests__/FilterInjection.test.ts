@@ -89,7 +89,9 @@ describe('sql guards', () => {
 });
 
 /** Operation source files — the ones whose input crosses a trust boundary. */
-const operationFiles = readdirSync(SRC).filter((f) => f.endsWith('Operation.ts'));
+const operationFiles = readdirSync(SRC).filter(
+    (f) => f.endsWith('Operation.ts') || f === 'EntitlementRead.ts',
+);
 
 describe('operation boundaries', () => {
     it('finds the operation files at all', () => {

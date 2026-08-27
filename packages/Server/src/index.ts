@@ -50,6 +50,8 @@ import {
     LoadSubscriptionBehavior,
     LoadEntitlementGrantClaimDriver,
     LoadGuestOrderClaimDriver,
+    LoadCheckEntitlementOperation,
+    LoadListEntitlementsOperation,
 } from '@mj-biz-apps/orders-core-entities-server';
 
 // The unauthenticated webhook route. Registered as a server EXTENSION rather than mounted here,
@@ -113,6 +115,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSubscriptionBehavior();        // the base subscription rules engine (D45)
     LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation
     LoadSpawnRenewalsOperation();      // the 'Orders.SpawnRenewals' remote operation (D55)
+    LoadCheckEntitlementOperation();   // 'Orders.CheckEntitlement' — LXP ask/answer (read contract)
+    LoadListEntitlementsOperation();   // 'Orders.ListEntitlements' — the person's library, same evaluator
 
     // Payment drivers (D19/D37). Each is keyed by its PaymentProviderType.Code, and WITHOUT these
     // anchors the @RegisterClass decorators are tree-shaken away — the ClassFactory then falls back to

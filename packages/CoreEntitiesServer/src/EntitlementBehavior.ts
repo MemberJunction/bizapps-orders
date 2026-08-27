@@ -291,3 +291,200 @@ export function ReduceGrantForReturn(
     // still paid for is worse than leaving one they did not.
     return { Quantity: Math.ceil(Math.round(remaining * 1e6) / 1e6), Revoke: false };
 }
+
+// ─── Read contract (the one place “is this in force?” is answered) ─────────────
+//
+// EntitlementGrant.Status records what was DECIDED, never what is currently true:
+// cancelling a subscription does not touch its grants, and nothing sweeps Status to
+// Expired when ValidTo elapses. Downstream apps must not poll the flag. They ask,
+// and this function answers. See plans/entitlement-read-contract.md.
+
+/** Why a check granted or refused. Collapsing these to a boolean loses the support conversation. */
+export type EntitlementDecision =
+    | 'Granted'
+    | 'NoGrant'
+    | 'NotYetValid'
+    | 'Expired'
+    | 'Revoked'
+    | 'Suspended'
+    | 'SubscriptionInactive';
+
+/** The facts a grant row carries that the evaluator needs — no database. */
+export interface GrantAccessFacts {
+    Status: string;
+    ValidFrom: Date | null;
+    ValidTo: Date | null;
+    /** True when `EntitlementGrant.SubscriptionID` is set. Missing subscription row → fail closed. */
+    LinkedToSubscription?: boolean;
+    /** True when `EntitlementGrant.SubscriptionTermID` is set. Missing term row → fail closed. */
+    LinkedToTerm?: boolean;
+}
+
+/** Subscription facts that can cut access short or extend it through grace. */
+export interface SubscriptionAccessFacts {
+    Status: string;
+    /**
+     * When the subscription is `Canceled`, this is access-through (`EndDate` stamped from
+     * `CancellationDecision.AccessThroughDate`). Ignored while the sub is Active/Trialing.
+     */
+    EndDate: Date | null;
+}
+
+export interface TermAccessFacts {
+    Status: string;
+    StartDate: Date;
+    EndDate: Date;
+}
+
+export interface GrantAccessEvaluation {
+    HasAccess: boolean;
+    Decision: EntitlementDecision;
+    ValidFrom: Date | null;
+    ValidTo: Date | null;
+}
+
+/** Subscription statuses that still confer access. Anything else is inactive. */
+const ACCESSING_SUB_STATUS = new Set(['Active', 'Trialing']);
+
+/**
+ * Is this grant in force at `asOf`?
+ *
+ * ONE function, because a second “is this in force” will drift from the first — that failure
+ * has already bitten this codebase twice. Bounds are inclusive: access holds at the exact
+ * `ValidFrom` / `ValidTo` / cancel `EndDate` instant.
+ *
+ * Cancelled subscriptions are the interesting case. The grant's `ValidTo` is the original term
+ * end, which is a LIE after an immediate cancel: access-through is `subscription.EndDate`
+ * (grace included). Grace can also EXTEND past `ValidTo`. Either way, `EndDate` is the bound
+ * once the sub is `Canceled`. Paused/Migrated refuse immediately — they have no grace story.
+ */
+export function EvaluateGrantAccess(
+    grant: GrantAccessFacts,
+    asOf: Date,
+    subscription?: SubscriptionAccessFacts | null,
+    term?: TermAccessFacts | null,
+): GrantAccessEvaluation {
+    const denied = (Decision: EntitlementDecision): GrantAccessEvaluation => ({
+        HasAccess: false,
+        Decision,
+        ValidFrom: grant.ValidFrom,
+        ValidTo: grant.ValidTo,
+    });
+    const granted = (): GrantAccessEvaluation => ({
+        HasAccess: true,
+        Decision: 'Granted',
+        ValidFrom: grant.ValidFrom,
+        ValidTo: grant.ValidTo,
+    });
+
+    if (grant.Status === 'Revoked') return denied('Revoked');
+    if (grant.Status === 'Suspended') return denied('Suspended');
+    if (grant.Status === 'Expired') return denied('Expired');
+    if (grant.Status !== 'Active') return denied('NoGrant');
+
+    if (grant.ValidFrom && asOf.getTime() < grant.ValidFrom.getTime()) {
+        return denied('NotYetValid');
+    }
+
+    // Linked rows we could not load: fail closed rather than grant on a guess.
+    if (grant.LinkedToSubscription && !subscription) return denied('SubscriptionInactive');
+    if (grant.LinkedToTerm && !term) return denied('SubscriptionInactive');
+
+    if (subscription && !ACCESSING_SUB_STATUS.has(subscription.Status)) {
+        if (subscription.Status === 'Canceled') {
+            if (!subscription.EndDate || asOf.getTime() > subscription.EndDate.getTime()) {
+                return {
+                    HasAccess: false,
+                    Decision: 'SubscriptionInactive',
+                    ValidFrom: grant.ValidFrom,
+                    ValidTo: subscription.EndDate,
+                };
+            }
+            // Inside access-through: EndDate is the operative bound — it can cut the original
+            // ValidTo short or extend it (grace). Report that, so CacheUntil and "access
+            // through {ValidTo}" both tell the truth.
+            return {
+                HasAccess: true,
+                Decision: 'Granted',
+                ValidFrom: grant.ValidFrom,
+                ValidTo: subscription.EndDate,
+            };
+        }
+        return denied('SubscriptionInactive');
+    }
+
+    if (grant.ValidTo && asOf.getTime() > grant.ValidTo.getTime()) {
+        return denied('Expired');
+    }
+
+    if (term) {
+        if (asOf.getTime() < term.StartDate.getTime()) return denied('NotYetValid');
+        if (asOf.getTime() > term.EndDate.getTime()) return denied('SubscriptionInactive');
+    }
+
+    return granted();
+}
+
+/** Lower rank wins among denials — “not yet” is a more useful screen than “an old grant was revoked”. */
+const DENIAL_RANK: Record<EntitlementDecision, number> = {
+    Granted: 0,
+    NotYetValid: 1,
+    Suspended: 2,
+    SubscriptionInactive: 3,
+    Expired: 4,
+    Revoked: 5,
+    NoGrant: 6,
+};
+
+export interface RankableAccess {
+    HasAccess: boolean;
+    Decision: EntitlementDecision;
+    ValidTo: Date | null;
+}
+
+/**
+ * One answer from many grants for the same Code. A Granted perpetual beats a Granted with an
+ * end; among denials the most useful reason wins, not the most recent row.
+ */
+export function PickWinningAccess<T extends RankableAccess>(results: T[]): T | null {
+    if (!results.length) return null;
+    const granted = results.filter((r) => r.HasAccess);
+    if (granted.length) {
+        return granted.reduce((best, r) => {
+            if (best.ValidTo == null) return best;
+            if (r.ValidTo == null) return r;
+            return r.ValidTo.getTime() > best.ValidTo.getTime() ? r : best;
+        });
+    }
+    return results.reduce((best, r) =>
+        DENIAL_RANK[r.Decision] < DENIAL_RANK[best.Decision] ? r : best,
+    );
+}
+
+/** Default CacheUntil cap for a check answer. Short so a revoke is felt quickly. */
+export const ENTITLEMENT_CHECK_TTL_MS = 60_000;
+
+/**
+ * When the caller may reuse this answer. Never past `ValidTo` on a grant that is in force —
+ * caching a Granted past its own end is how paid content stays open after the window closed.
+ */
+export function CacheUntilFor(
+    evaluatedAt: Date,
+    validTo: Date | null | undefined,
+    hasAccess: boolean,
+): Date {
+    const cap = new Date(evaluatedAt.getTime() + ENTITLEMENT_CHECK_TTL_MS);
+    if (hasAccess && validTo != null && validTo.getTime() < cap.getTime()) {
+        return new Date(validTo.getTime());
+    }
+    return cap;
+}
+
+/**
+ * After `Orders.CancelSubscription`, stored grant Status is a lie unless we revoke when
+ * access has already ended. Grace (`AccessThroughDate` in the future) leaves the rows
+ * standing — the evaluator honours `subscription.EndDate`.
+ */
+export function ShouldRevokeGrantsOnCancel(accessThroughDate: Date, now: Date): boolean {
+    return now.getTime() > accessThroughDate.getTime();
+}

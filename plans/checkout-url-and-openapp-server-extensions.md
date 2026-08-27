@@ -34,7 +34,7 @@ Then merge with the host `serverExtensions[]`. Host `DriverClass` wins (RootPath
 - [x] ~~Custom-element / IIFE checkout widget bundle~~
 - [x] ~~Turnstile widget on the vanilla page~~ (initialize still fail-closes if the widget requires it)
 - [x] ~~`mj app install` writing `serverExtensions` into the host config~~ — auto-load replaces copy-paste
-- [x] ~~Entitlements, LXP API, identity-claim E2E~~
+- [x] ~~Entitlements, LXP API, identity-claim E2E~~ — parked here; read contract shipped separately on `an-dev-13` ([`entitlement-read-contract.md`](entitlement-read-contract.md))
 
 ---
 
