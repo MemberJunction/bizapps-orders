@@ -249,9 +249,6 @@ importers:
       '@mj-biz-apps/orders-entities':
         specifier: 5.1.0
         version: link:../Entities
-      '@mj-biz-apps/tasks-entities':
-        specifier: ^1.2.3
-        version: 1.2.3(@memberjunction/core@6.1.0-edge.3)(@memberjunction/global@6.1.0-edge.3)
     devDependencies:
       '@mj-biz-apps/accounting-core-entities-server':
         specifier: '>=0.1.0'
@@ -259,6 +256,9 @@ importers:
       '@mj-biz-apps/accounting-engine-base':
         specifier: '>=0.1.0'
         version: 0.1.0(@memberjunction/core@6.1.0-edge.3)(@memberjunction/global@6.1.0-edge.3)(@mj-biz-apps/common-entities@5.35.0(@memberjunction/core@6.1.0-edge.3)(@memberjunction/global@6.1.0-edge.3))
+      '@mj-biz-apps/tasks-entities':
+        specifier: 1.2.3
+        version: 1.2.3(@memberjunction/core@6.1.0-edge.3)(@memberjunction/global@6.1.0-edge.3)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

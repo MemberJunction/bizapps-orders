@@ -21,13 +21,13 @@
   "devDependencies": {
     "@mj-biz-apps/accounting-core-entities-server": ">=0.1.0",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
+    "@mj-biz-apps/tasks-entities": "1.2.3",
     "typescript": "^5.9.3",
     "vite": "^7.1.5",
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "5.1.0",
-    "@mj-biz-apps/tasks-entities": "^1.2.3"
+    "@mj-biz-apps/orders-entities": "5.1.0"
   },
   "peerDependencies": {
     "@memberjunction/communication-engine": "^6.1.0-edge.1",
@@ -38,7 +38,13 @@
     "@memberjunction/global": "^6.1.0-edge.1",
     "@memberjunction/sqlserver-dataprovider": "^6.1.0-edge.1",
     "@mj-biz-apps/accounting-core-entities-server": ">=0.1.0",
-    "@mj-biz-apps/accounting-engine-base": ">=0.1.0"
+    "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
+    "@mj-biz-apps/tasks-entities": "^1.2.3"
+  },
+  "peerDependenciesMeta": {
+    "@mj-biz-apps/tasks-entities": {
+      "optional": true
+    }
   },
   "repository": {
     "type": "git",
