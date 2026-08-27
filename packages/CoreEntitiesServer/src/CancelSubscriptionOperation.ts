@@ -446,18 +446,15 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         event.EventType = 'Canceled';
         event.OccurredAt = new Date();
         event.RelatedOrderHeaderID = reversalOrderID ?? null;
-        event.Set(
-            'EventData',
-            JSON.stringify({
-                EffectiveDate: decision.EffectiveDate,
-                AccessThroughDate: decision.AccessThroughDate,
-                RefundAmount: decision.RefundAmount,
-                ReversalFraction: decision.ReversalFraction,
-                TermStatus: decision.TermStatus,
-                Explanation: decision.Explanation,
-                Reason: reason ?? null,
-            }),
-        );
+        event.EventData = JSON.stringify({
+            EffectiveDate: decision.EffectiveDate,
+            AccessThroughDate: decision.AccessThroughDate,
+            RefundAmount: decision.RefundAmount,
+            ReversalFraction: decision.ReversalFraction,
+            TermStatus: decision.TermStatus,
+            Explanation: decision.Explanation,
+            Reason: reason ?? null,
+        });
         if (!(await event.Save())) {
             throw new Error(
                 `Failed to log the cancellation event: ${event.LatestResult?.CompleteMessage ?? 'unknown error'}`,
