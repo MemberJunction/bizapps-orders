@@ -432,6 +432,7 @@ export {
     isTerminalCapturePrecheck,
     webhookEventExceedsRetryWindow,
 } from './checkoutCaptureRetry.js';
+export { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
 export type {
     AttendeeInput,
     CheckoutAttendeeInput,

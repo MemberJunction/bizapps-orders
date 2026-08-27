@@ -28,8 +28,8 @@ import { EscapeText } from './sql-guards.js';
 import { OpenPaymentIntent } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
+import { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
 import {
-    CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
     isCaptureRefusalRetryable,
     isTerminalCapturePrecheck,
 } from './checkoutCaptureRetry.js';
@@ -1738,51 +1738,9 @@ export class CheckoutSessionService {
         const Retryable = retryable ?? !isTerminalCapturePrecheck(message);
         LogError(`[CheckoutSessionService] CapturePayment failed for order ${orderID}: ${message}`);
         if (!Retryable) {
-            void this.raiseTerminalCaptureAlert(orderID, sessionID, message, contextUser);
+            void raiseCheckoutCaptureTerminalAlert(orderID, sessionID, message, contextUser);
         }
         return { Attempted: true, Booked: false, ErrorMessage: message, Retryable };
-    }
-
-    /**
-     * Terminal refusals stop Stripe retries. Without a durable signal, money is taken
-     * and the books stay silent. Marker is the alert floor; a Tasks row is best-effort.
-     */
-    private static async raiseTerminalCaptureAlert(
-        orderID: string,
-        sessionID: string | undefined,
-        reason: string,
-        contextUser?: UserInfo,
-    ): Promise<void> {
-        LogError(
-            `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Settled payment was not booked onto confirmed checkout order ${orderID}` +
-                `${sessionID ? ` session=${sessionID}` : ''}: ${reason}`,
-        );
-        if (!contextUser) {
-            return;
-        }
-        try {
-            const md = new Metadata();
-            if (!md.EntityByName('MJ_BizApps_Tasks: Tasks')) {
-                return;
-            }
-            const task = await md.GetEntityObject('MJ_BizApps_Tasks: Tasks', contextUser);
-            task.NewRecord();
-            task.Set('Name', `Checkout capture not booked: ${orderID}`);
-            task.Set(
-                'Description',
-                `A Stripe payment settled and the checkout order is Confirmed, but Orders.CapturePayment was refused and will not succeed on retry.\n\nOrder: ${orderID}\nSession: ${sessionID ?? '(unknown)'}\nReason: ${reason}`,
-            );
-            task.Set('Status', 'Open');
-            if (!(await task.Save())) {
-                LogError(
-                    `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Could not raise a Task: ${task.LatestResult?.CompleteMessage ?? 'unknown error'}`,
-                );
-            }
-        } catch (err) {
-            LogError(
-                `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Could not raise a Task: ${err instanceof Error ? err.message : String(err)}`,
-            );
-        }
     }
 
     /**
