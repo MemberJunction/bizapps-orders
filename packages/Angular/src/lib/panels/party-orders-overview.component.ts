@@ -20,7 +20,7 @@ interface OrderRow {
     OrderDate: Date | string | null;
     Status: string;
     FulfillmentStatus?: string;
-    PaymentStatus?: string;
+    IsOverdue?: boolean | number;
     TotalGross: number;
     AmountPaid: number;
     Balance: number;
@@ -1052,6 +1052,7 @@ export class PartyOrdersOverviewComponent implements OnInit {
     }
 
     public GetPaymentStatus(ord: OrderRow): string {
+        if (ord.IsOverdue === true || ord.IsOverdue === 1) return 'Overdue';
         const bal = ord.Balance != null ? Number(ord.Balance) : (Number(ord.TotalGross ?? 0) - Number(ord.AmountPaid ?? 0));
         const paid = Number(ord.AmountPaid ?? 0);
         const gross = Number(ord.TotalGross ?? 0);

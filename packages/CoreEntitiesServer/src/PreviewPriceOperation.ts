@@ -1,38 +1,35 @@
 /**
  * Orders.PreviewPrice — what would this customer pay for this product, and why? (plan D69)
  *
- * THE ONE RULE THAT MATTERS: this runs the REAL pipeline. It calls `ResolvePrice`, the same function
- * the order path calls, with the same context shape. A preview computed by a parallel simplified
- * implementation is worse than no preview, because people trust it and it diverges silently — the
- * quote says one number and the invoice says another, and nobody can say which is wrong.
+ * THE ONE RULE THAT MATTERS: this is a one-line `OrderPricingService` call. Save, `Orders.PriceOrder`,
+ * and this operation share that walk. Calling `ResolvePrice` here used to be a second entry point;
+ * it could return base list while booking used the member list (IT PC14).
  *
- * Nothing is written. That is the only difference from pricing a line.
+ * Nothing is written. Lines are materialised with `NewRecord()` and never `Save()`'d — same as
+ * `Orders.PriceOrder`.
  *
- * WHAT IT IS FOR
- *   - a sales rep checking what an account is entitled to before quoting
- *   - a product screen showing "your price" against list
- *   - proving a new price rule does what its author meant before it goes live
+ * The output is still one SKU's unit price and decomposition. Promotions / charges / tax that the
+ * walk also runs on a one-line order are not the contract of this operation (they need a full
+ * header; use `Orders.PriceOrder`). UnitPrice / ExtendedAmount come from the walk's line stamp.
  *
- * Refusals come back INSIDE the output as `Success: false` with the reason — the same contract
- * `Orders.RefundPayment` and `Orders.ApplyAccountCredit` use. Only genuine faults throw. An
- * ambiguous rule set is a refusal, not a fault: it is a configuration problem the caller can fix,
- * and the message names the rules that collided.
- *
- * CONNECTS TO:
- *   ENGINE: ./PriceResolver.ts (ResolvePrice — the same call the order path makes)
- *   DOC:    plans/archive/pricing-charges-and-promotions.md §9
+ * Refusals come back INSIDE the output as `Success: false`. Ambiguous rules and unpriced products
+ * are refusals, not faults.
  */
 import {
     BaseRemotableOperation,
     IMetadataProvider,
     IRunViewProvider,
     LogError,
+    Metadata,
     RunView,
     UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { OrderPricingService, PriceResolutionError, ResolvePriceListForCustomer } from '@mj-biz-apps/orders-entities';
 import { RequireOptionalUUID, RequireUUID } from './sql-guards.js';
-import { PriceResolutionError, ResolvePrice, ResolvePriceListForCustomer } from '@mj-biz-apps/orders-entities';
+
+const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
 export interface PreviewPriceInput {
     ProductID: string;
@@ -106,7 +103,13 @@ export class PreviewPriceOperation extends BaseRemotableOperation<PreviewPriceIn
             return { Success: false, Message: `AsOf is not a valid date (received ${String(input.AsOf)}).` };
         }
 
-        const ctx = {
+        const md = new Metadata();
+        const line = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+        line.NewRecord();
+        line.ProductID = input.ProductID;
+        line.Quantity = quantity;
+
+        const listCtx = {
             ProductID: input.ProductID,
             ProductCategoryID: product.ProductCategoryID,
             CompanyID: product.CompanyID,
@@ -119,7 +122,22 @@ export class PreviewPriceOperation extends BaseRemotableOperation<PreviewPriceIn
         };
 
         try {
-            const resolved = await ResolvePrice(ctx, provider, user);
+            const result = await new OrderPricingService({ Provider: provider, User: user }).Price({
+                OrderHeaderID: null,
+                CompanyID: product.CompanyID,
+                BillToPersonID: input.PersonID ?? null,
+                BillToOrganizationID: input.OrganizationID ?? null,
+                OrderDate: asOf,
+                ShipToAddressID: null,
+                Lines: [line],
+                PromotionCodes: [],
+                ManualDiscounts: [],
+                Charges: [],
+                ...(input.PriceListID !== undefined ? { PriceListID: input.PriceListID } : {}),
+                ...(input.FeeType ? { FeeType: input.FeeType } : {}),
+            });
+
+            const resolved = result.PriceComponents.get(line);
             if (!resolved) {
                 return {
                     Success: false,
@@ -132,7 +150,7 @@ export class PreviewPriceOperation extends BaseRemotableOperation<PreviewPriceIn
 
             // Report the list actually in force, even when the winning rule was a base rule: "you are
             // on WHOLESALE but this SKU has no wholesale rate" is the answer people are looking for.
-            const listID = resolved.PriceListID ?? (await ResolvePriceListForCustomer(ctx, provider, user));
+            const listID = resolved.PriceListID ?? (await ResolvePriceListForCustomer(listCtx, provider, user));
             const listName = listID ? await this.loadPriceListName(provider, user, listID) : null;
 
             return {
@@ -155,12 +173,11 @@ export class PreviewPriceOperation extends BaseRemotableOperation<PreviewPriceIn
                 })),
             };
         } catch (err) {
-            // A configuration problem the caller can act on — an ambiguous rule set, an unimplemented
-            // pricing model — is a REFUSAL with its reason, not a fault. Reporting it as a thrown
-            // error would make the preview look broken when it is in fact working correctly and
-            // telling you something true.
-            if (err instanceof PriceResolutionError) {
-                return { Success: false, Message: err.message, Quantity: quantity };
+            // Configuration problems (ambiguous rules, unpriced SKU) are REFUSALS with a reason, not
+            // faults. The walk throws those; mapping them here keeps the PreviewPrice contract.
+            const message = err instanceof Error ? err.message : String(err);
+            if (err instanceof PriceResolutionError || /cannot be priced|ambiguous/i.test(message)) {
+                return { Success: false, Message: message, Quantity: quantity };
             }
             LogError(err as Error);
             throw err;

@@ -285,6 +285,10 @@ export class mjBizAppsOrdersCheckoutSession_ {
     CheckoutWidget: string;
         
     @Field({nullable: true}) 
+    @MaxLength(255)
+    Distribution?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
         
@@ -295,10 +299,6 @@ export class mjBizAppsOrdersCheckoutSession_ {
     @Field({nullable: true}) 
     @MaxLength(100)
     PaymentIntent?: string;
-        
-    @Field({nullable: true}) 
-    @MaxLength(255)
-    Distribution?: string;
         
 }
 
@@ -2384,6 +2384,13 @@ export class mjBizAppsOrdersEventProduct_ {
         
     @Field({nullable: true}) 
     @MaxLength(255)
+    PricingDriverClass?: string;
+        
+    @Field(() => Float, {nullable: true}) 
+    MaxQuantityPerLine?: number;
+        
+    @Field({nullable: true}) 
+    @MaxLength(255)
     VenueAddress?: string;
         
     @Field(() => Float, {nullable: true}) 
@@ -2391,13 +2398,6 @@ export class mjBizAppsOrdersEventProduct_ {
         
     @Field(() => Float, {nullable: true}) 
     _mj__Longitude?: number;
-        
-    @Field({nullable: true}) 
-    @MaxLength(255)
-    PricingDriverClass?: string;
-        
-    @Field(() => Float, {nullable: true}) 
-    MaxQuantityPerLine?: number;
         
 }
 
@@ -3785,10 +3785,6 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field({nullable: true, description: `Payment due date, derived at Confirm/Post from PaymentTermsType.NetDays (posting date + net days) when not manually supplied. Editable override.`}) 
     DueDate?: Date;
         
-    @Field() 
-    @MaxLength(20)
-    PaymentStatus: string;
-        
     @Field({nullable: true, description: `External document/invoice number for downstream systems (e.g. bill.com sync, UPD-1). Free-form; may equal OrderNumber. Not unique pending the dual-numbering decision.`}) 
     @MaxLength(80)
     ExternalDocumentNumber?: string;
@@ -3842,6 +3838,18 @@ export class mjBizAppsOrdersOrderHeader_ {
         
     @Field() 
     @MaxLength(50)
+    Origin: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    SourceCheckoutWidgetID?: string;
+        
+    @Field({description: `Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.`}) 
+    @MaxLength(20)
+    FulfillmentStatus: string;
+        
+    @Field() 
+    @MaxLength(50)
     Company: string;
         
     @Field({nullable: true}) 
@@ -3892,6 +3900,10 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(40)
     ReversesOrderHeader?: string;
         
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    SourceCheckoutWidget?: string;
+        
     @Field(() => Float, {nullable: true}) 
     _mj__Latitude?: number;
         
@@ -3901,21 +3913,9 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field(() => Int) 
     IsOverdue: number;
         
-    @Field({description: `Operational fulfillment progress rolled up across order lines: Pending, PartiallyFulfilled, Fulfilled, NotApplicable (no physical goods), or Returned.`}) 
-    @MaxLength(20)
-    FulfillmentStatus: string;
-        
     @Field() 
-    @MaxLength(50)
-    Origin: string;
-        
-    @Field({nullable: true}) 
-    @MaxLength(36)
-    SourceCheckoutWidgetID?: string;
-        
-    @Field({nullable: true}) 
-    @MaxLength(100)
-    SourceCheckoutWidget?: string;
+    @MaxLength(13)
+    PaymentStatus: string;
         
 }
 
@@ -4018,13 +4018,13 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     ConfirmedAt: Date | null;
 
     @Field({ nullable: true })
-    FulfillmentStatus?: string;
-
-    @Field({ nullable: true })
     Origin?: string;
 
     @Field({ nullable: true })
     SourceCheckoutWidgetID: string | null;
+
+    @Field({ nullable: true })
+    FulfillmentStatus?: string;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -4130,13 +4130,13 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
     ConfirmedAt?: Date | null;
 
     @Field({ nullable: true })
-    FulfillmentStatus?: string;
-
-    @Field({ nullable: true })
     Origin?: string;
 
     @Field({ nullable: true })
     SourceCheckoutWidgetID?: string | null;
+
+    @Field({ nullable: true })
+    FulfillmentStatus?: string;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -5681,10 +5681,6 @@ export class mjBizAppsOrdersPaymentHeader_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     JournalEntry?: string;
-        
-    @Field({nullable: true}) 
-    @MaxLength(36)
-    RootReversesPaymentHeaderID?: string;
         
 }
 
@@ -9012,6 +9008,10 @@ export class mjBizAppsOrdersProductType_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: `ClassFactory key of a BasePriceResolver subclass for every product of this type, or NULL. The natural home for behaviour-wide pricing such as usage metering.`}) 
+    @MaxLength(255)
+    PricingDriverClass?: string;
+        
     @Field({nullable: true, description: `Extensible JSON configuration for this product type including customUI (js, css, theme, componentOverrideKey), unitMode, allowQuantity, and fieldOverrides.`}) 
     Configuration?: string;
         
@@ -9022,10 +9022,6 @@ export class mjBizAppsOrdersProductType_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     DefaultSubscriptionType?: string;
-        
-    @Field({nullable: true, description: `ClassFactory key of a BasePriceResolver subclass for every product of this type, or NULL. The natural home for behaviour-wide pricing such as usage metering.`}) 
-    @MaxLength(255)
-    PricingDriverClass?: string;
         
 }
 
@@ -9080,10 +9076,10 @@ export class CreatemjBizAppsOrdersProductTypeInput {
     DefaultEntitlementValidityMode?: string;
 
     @Field({ nullable: true })
-    Configuration: string | null;
+    PricingDriverClass: string | null;
 
     @Field({ nullable: true })
-    PricingDriverClass: string | null;
+    Configuration: string | null;
 
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
@@ -9141,10 +9137,10 @@ export class UpdatemjBizAppsOrdersProductTypeInput {
     DefaultEntitlementValidityMode?: string;
 
     @Field({ nullable: true })
-    Configuration?: string | null;
+    PricingDriverClass?: string | null;
 
     @Field({ nullable: true })
-    PricingDriverClass?: string | null;
+    Configuration?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -9351,10 +9347,6 @@ export class mjBizAppsOrdersProduct_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     SubscriptionType?: string;
-        
-    @Field({nullable: true}) 
-    @MaxLength(36)
-    RootSuccessorProductID?: string;
         
 }
 
@@ -12648,14 +12640,6 @@ export class mjBizAppsOrdersSubscription_ {
     @Field({nullable: true}) 
     @MaxLength(40)
     MigratesToSubscription?: string;
-        
-    @Field({nullable: true}) 
-    @MaxLength(36)
-    RootMigratesFromSubscriptionID?: string;
-        
-    @Field({nullable: true}) 
-    @MaxLength(36)
-    RootMigratesToSubscriptionID?: string;
         
 }
 

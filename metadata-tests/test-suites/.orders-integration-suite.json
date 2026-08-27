@@ -496,6 +496,17 @@
           "primaryKey": {
             "ID": "539C0E01-8810-4DF5-BF71-2BA9F3BBF23E"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-33 - Entitlement Read",
+            "Sequence": 33,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "D9F5A3B2-7E8C-4D2A-AF64-9B1F2C3D4E55"
+          }
         }
       ]
     },

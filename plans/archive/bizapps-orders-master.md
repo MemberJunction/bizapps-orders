@@ -52,6 +52,10 @@
   terms, and where revenue-recognition entries anchor (revises §4.5 / D20)
 - [`integration-testing-plan.md`](./integration-testing-plan.md) — the headless end-to-end suite
   built on MJ's testing framework: clean DB through catalog → orders → payments → subs → cancellation
+- [`../entitlement-read-contract.md`](../entitlement-read-contract.md) — **2026-08-26 supplement,
+  built 2026-08-27.** LXP ask/answer read contract (`Orders.CheckEntitlement` /
+  `Orders.ListEntitlements`). Supersedes D27's poll as the source of truth for “does this
+  person have this capability?” Write path unchanged.
 
 ---
 
@@ -201,7 +205,7 @@ The current decision set. Each is the standing ruling — superseded ancestors l
 | D24 | **Currency/FX deferred from the baseline** — no currency columns on Order/OrderLine; single-currency reality today. The design stands for later: rates from accounting, per-transaction snapshot on lines, realized-FX on cross-currency payments (computed upstream — accounting never generates FX entries). | 07-02 amendment; Robert 2026-07-10: "day one? No." |
 | D25 | **No periods, no closed-period guard — backdating allowed, unguarded (final).** The order carries `OrderDate`; the JE bears its date; accountants batch entries into the right periods; any future timing rule detects by DATE, never a period FK. | Marcelo 2026-07-14 (final, after a same-day manual-close detour was withdrawn); mirrors accounting D2. |
 | D26 | **Sales rules are metadata-driven** (`SalesRule` rule types + JSON predicates; `SalesAuthority` per-rep limits), evaluated at Order Confirm; violations raise an **"Approval Request" Task in BizApps Tasks** routed to the approver role (approve → proceed; reject → back to Draft with notes). The same tasks substrate carries every human gate (credit-limit override, discount exception, refund authorization, cancellation sign-off). Schema built; evaluation engine + routing not yet (§18). | BO-D17/D18/D27; tasks-app prerequisites verified satisfied 2026-07-15. |
-| D27 | **Entitlements split into definition + grant.** `ProductEntitlement` is the template; `EntitlementGrant` is the instance created at booking/activation, carrying a **beneficiary** (defaults to the buyer; a line may designate another — attendee, gift-card recipient, honoree). Downstream apps **poll** grants (MJ Scheduled Job + Record-Set-Processing; Amith recommends the poll) — no bespoke webhook/notification system. Provisioning/enforcement engine is later. | BO-D34/D39; LXP D14 (2026-07-14). |
+| D27 | **Entitlements split into definition + grant.** `ProductEntitlement` is the template; `EntitlementGrant` is the instance created at booking/activation, carrying a **beneficiary** (defaults to the buyer; a line may designate another — attendee, gift-card recipient, honoree). **Write side stands.** **Read side (2026-08-26):** the LXP source of truth is **ask/answer** (`Orders.CheckEntitlement`), not a poll of grant rows — `Status` is not currently trustworthy (subscription cancel does not touch grants; elapsed `ValidTo` is never swept). No webhook/notification system; the consumer calls Orders. See [`../entitlement-read-contract.md`](../entitlement-read-contract.md). | BO-D34/D39; LXP D14 (2026-07-14); read contract reopened 2026-08-26. |
 | D28 | **RETIRED (Amith 2026-07-31).** This decided that order visibility ran through a bespoke `UserCompanyRole` grants table in accounting, read by a hand-written orders-side RLS filter. That is an antipattern: **MemberJunction already has row-level security**, and every orders entity is a normal MJ entity subject to it. A parallel grants table would be a second answer to "may this user see this row", maintained by us and free to diverge from the one the platform enforces everywhere else — one security model plus a way around it. Company scoping is now an RLS filter configured as deployment metadata, keyed on `Order.CompanyID` (D6, unchanged). Orders seeds no roles: seeding one presumes a permission model this app does not own. `UserCompanyRole` was never built, and will not be. See §14. | Superseded by Amith 2026-07-31; originally Robert's written answers 2026-07-20 (MOD-9a). |
 | D29 | **Naming convention: transactions get number + memo; master data gets names.** No `Order.Name` column — `Order.Description` is the searchable memo, drives workspace-tab captions, and joins name/ID search. Products/categories are already named. | Marcelo 2026-07-17 (ratified the accounting norm). |
 | D30 | **Order numbering:** global `ORD-{seq}` via the `OrderSequence` table (as-built; payments likewise `PaymentSequence`). `ExternalDocumentNumber` exists as its own column (bill.com won't sync without it; may equal OrderNumber). Single vs BC-style dual sequence (draft → posted) is an open Jeremy decision (§20). | UPD-1 (Jeremy 2026-07-10). |
@@ -795,14 +799,18 @@ types); the evaluation engine + routing + rule-editor UI are the pending build �
 
 Per D27: `ProductEntitlement` (definition on the product) → `EntitlementGrant` (instance at booking,
 with beneficiary defaulting to the buyer; per-line designation for attendees/recipients/honorees).
-Grants are the machine-readable spine downstream apps read to provision access.
+**Write path is built** (engine + EN1–EN15). Grants remain the recorded instances.
 
-- **Read/notify path for consumers (the LXP):** a poll — MJ Scheduled Job + Record-Set-Processing
-  over grants. No webhook system gets invented.
-- The grant SHAPE freeze for the LXP awaits Ethan's answers to Robert's four questions (grant
-  granularity · lifecycle coupling · read contract · team beneficiary semantics — Robert owns
-  asking).
-- Provisioning/enforcement engine: later, deliberately.
+**Read path — shipped 2026-08-27:** the LXP does **not** poll raw grant rows as the source
+of truth. It **asks** Orders (`Orders.CheckEntitlement`) and Orders **evaluates** in-force access
+in one place. A bulk list is an optimisation, not a second truth. Full contract:
+[`../entitlement-read-contract.md`](../entitlement-read-contract.md).
+
+- No webhook system. The consumer calls; Orders does not push.
+- Team/org inheritance (`BeneficiaryOrganizationID`) is still Robert's fourth question — v1 may
+  be person grants only if the LXP sells only to individuals at launch; that must be an explicit
+  decision.
+- Provisioning/enforcement engine beyond the check: later.
 
 ---
 
@@ -882,13 +890,15 @@ Sidecar instance, with BCSaaS refactored to wrap Orders as a fast-follow.
   **Contingency:** if the date slips, Teams-first launches with zero checkout dependency and LH4I
   self-serve switches on when Orders lands — never any new CDP wiring.
 - **The minimal-BAO scope** (Ethan's list): products/tiers · coupons · entitlement-via-ProductType ·
-  payment · DueDate/overdue · the grant read/notify path (+ tax only if the finance call says so).
+  payment · DueDate/overdue · the grant **read contract** (+ tax only if the finance call says so).
+  Read contract is now ask/answer, not poll — [`../entitlement-read-contract.md`](../entitlement-read-contract.md).
 - **The date owed (their A7):** Robert + Marcelo state it after the validation-first sequencing
   (§18) reaches its LH4I gate: a full dry run — buy a tier with a coupon through Stripe checkout
-  (test mode) → order books → grants emitted → LXP-style poll reads them → sub + forward-dated
+  (test mode) → order books → grants emitted → LXP asks `Orders.CheckEntitlement` → sub + forward-dated
   rev-rec staged → payment captured → A/R correct — with committed harnesses green and a recorded
   demo. That gate passing IS "BAO ready for LH4I."
-- Overdue/grace behavior per D32; entitlement notification per D27; renewals are NOT a launch need
+- Overdue/grace behavior per D32; entitlement **check** per the read contract (D27 write + 2026-08-26
+  ask/answer); renewals are NOT a launch need
   (annual terms).
 
 ---
@@ -930,7 +940,8 @@ claim until its gate's tests are green.
    (Pairs with accounting's batch rework: single-company batches + `PostingDate`.)
 4. **LH4I feature slices (the V2 surface):** the 3 tiers + track bundles seeded/validated · Stripe
    real checkout subset (F.4/F.10) · coupon launch path (D22, after the schema-freeze
-   investigations) · entitlement read/notify poll (D27) · overdue/grace config (D32) · subscription
+   investigations) · entitlement **read contract** (`Orders.CheckEntitlement`, not a poll — see
+   [`../entitlement-read-contract.md`](../entitlement-read-contract.md)) · overdue/grace config (D32) · subscription
    booking for tiers + staged rev-rec · tax IF the finance call says launch-with-tax.
 5. **Full GUI validation pass** — once, after the structural waves; then feature-enabling UI only
    (forms design pass → order-editor pilot → convert-on-touch).

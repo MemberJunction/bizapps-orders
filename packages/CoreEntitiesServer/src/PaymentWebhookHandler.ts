@@ -48,6 +48,11 @@ import { DecideWebhookAction, type WebhookAction } from './PaymentProviderBehavi
 import { SettlePaymentForEvent } from './PaymentSettlement.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import type { WebhookEvent } from './BasePaymentProvider.js';
+import { CheckoutSessionService } from './CheckoutSessionService.js';
+import {
+    CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
+    webhookEventExceedsRetryWindow,
+} from './checkoutCaptureRetry.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 
@@ -128,9 +133,16 @@ export async function HandlePaymentWebhook(
     });
 
     if (decision.Action !== 'Apply') {
-        // All three non-Apply outcomes are 200. `AlreadyApplied` and `Ignore` are settled states, and a
-        // gateway that does not get a 2xx will keep asking — forever, in the duplicate case.
+        // Ignore / Reject stay 200 or 400 as before. AlreadyApplied is a settled *intent*
+        // stamp, not a settled checkout capture: if CapturePayment failed after confirm,
+        // Stripe's retry lands here and we still try to book (idempotent).
         LogStatus(`Webhook ${event.EventID}: ${decision.Action} — ${decision.Reason}`);
+        if (decision.Action === 'AlreadyApplied' && existing) {
+            const booked = await bookCheckoutCaptureFromWebhook(event, existing.ID, user);
+            if (!booked) {
+                return { Status: 500, Body: { received: false } };
+            }
+        }
         return { Status: 200, Body: { received: true, outcome: decision.Action } };
     }
 
@@ -144,17 +156,69 @@ export async function HandlePaymentWebhook(
         //
         // Only for drivers that have SAID they settle late. A card driver never reaches this line, so
         // the guarantee in `applyEvent`'s note — that a webhook cannot reach the ledger — still holds
-        // everywhere it held before.
+        // everywhere it held before. Checkout CapturePayment is a separate, explicit call below.
         if (driver.SettlesAsynchronously) {
             await SettlePaymentForEvent(event, existing!.ID, provider, user);
         }
         await applyEvent(event, existing!.ID, provider, user);
+        const booked = await bookCheckoutCaptureFromWebhook(event, existing!.ID, user);
+        if (!booked) {
+            return { Status: 500, Body: { received: false } };
+        }
         return { Status: 200, Body: { received: true, outcome: 'Apply' } };
     } catch (err) {
         // OURS, not theirs. The event was valid and we failed to record it, so ask again — a 200 here
         // would lose a real payment notification silently.
         LogError(`Failed to apply webhook ${event.EventID}: ${(err as Error).message}`);
         return { Status: 500, Body: { received: false } };
+    }
+}
+
+/**
+ * After the intent row reflects Succeeded, book CapturePayment for a Confirmed
+ * checkout session if the complete path failed to. No-op for back-office intents.
+ * Returns false when a checkout capture was attempted, did not book, and is
+ * Retryable inside the event-age window — caller 500s so Stripe retries.
+ * Terminal refusals (and events older than the window) return true after a
+ * CHECKOUT-CAPTURE-TERMINAL log so Stripe stops and a human can see it.
+ */
+async function bookCheckoutCaptureFromWebhook(
+    event: WebhookEvent,
+    paymentIntentID: string,
+    user: UserInfo,
+): Promise<boolean> {
+    if (event.Status !== 'Succeeded') {
+        return true;
+    }
+    try {
+        const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded(paymentIntentID, user);
+        if (!(book.Attempted && !book.Booked)) {
+            return true;
+        }
+        const retryable = book.Retryable !== false;
+        if (retryable && !event.OccurredAt) {
+            LogError(
+                `[CHECKOUT-CAPTURE-RETRY] Webhook event ${event.EventID} has no OccurredAt; retry window cannot be applied — treating as Retryable`,
+            );
+        }
+        const pastWindow = webhookEventExceedsRetryWindow(event);
+        if (retryable && !pastWindow) {
+            LogError(
+                `Checkout CapturePayment did not book for intent ${paymentIntentID} (retryable): ${book.ErrorMessage ?? 'unknown error'}`,
+            );
+            return false;
+        }
+        LogError(
+            `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Settled checkout payment will not be retried via webhook` +
+                ` intent=${paymentIntentID} event=${event.EventID}` +
+                ` retryable=${retryable} pastWindow=${pastWindow}: ${book.ErrorMessage ?? 'unknown error'}`,
+        );
+        return true;
+    } catch (err) {
+        LogError(
+            `Checkout CapturePayment threw for intent ${paymentIntentID}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return false;
     }
 }
 

@@ -15,7 +15,7 @@ dotenv.config({ path: path.resolve(here, '../../MJ/.env'), quiet: true });
 process.env.MJ_INTEGRATION_TEST = '1';
 process.env.RUN_MUTATION_TESTS = process.env.RUN_MUTATION_TESTS ?? '1';
 
-const ALL_BUNDLES = ['wire-crud', 'wire-volume'];
+const ALL_BUNDLES = ['wire-crud', 'wire-volume', 'wire-entitlements'];
 const args = process.argv.slice(2);
 const only = args.filter((a) => !a.startsWith('-'));
 

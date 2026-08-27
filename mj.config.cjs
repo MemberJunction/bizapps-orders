@@ -40,7 +40,7 @@ module.exports = {
    * consumers. This repo is the app under DEVELOPMENT: it generates the
    * __mj_BizAppsOrders schema locally and pulls its dependencies (common,
    * accounting, tasks) from their installed npm packages / soft UUID refs.
-   * Those dependency schemas are kept out of CodeGen via excludeSchemas below.
+   * Those dependency schemas stay out of CodeGen via includeSchemas below.
    */
   entityPackageName: '@mj-biz-apps/orders-entities',
 
@@ -175,11 +175,25 @@ module.exports = {
     ],
   },
 
-  // Exclude core (__mj) AND every dependency schema. Orders DOES take hard
-  // cross-schema foreign keys into common and accounting — those are real
-  // constraints, not soft UUID refs — but their ENTITIES ship from their own
-  // installed packages and must not be regenerated here.
-  excludeSchemas: ['sys', 'staging', 'dbo', '__mj', '__mj_BizAppsCommon', '__mj_BizAppsAccounting', '__mj_BizAppsTasks', '__mj_BizAppsIssues', '__mj_BizAppsCommittees', '__mj_BizAppsSecureMessaging'],
+  // Allow-list: CodeGen this app's schema only (MJ >= 5.50 includeSchemas).
+  // Unnamed schemas — core, siblings, never-seen client schemas — are excluded.
+  // Cross-schema FKs into common/accounting remain; we just do not generate
+  // those entities here.
+  includeSchemas: ['__mj_BizAppsOrders'],
+  excludeSchemas: [],
+  /**
+   * Schema → npm for peer entity classes this emit does NOT generate
+   * (embeds + related-record collections). Distinct from:
+   *   includeSchemas     — what this run generates
+   *   entityPackageName  — the npm package this run writes (string form)
+   * Core (__mj) always comes from @memberjunction/core-entities; do not list it.
+   * Do not map a foreign schema to this emit's own package.
+   */
+  entityImportPackages: {
+    '__mj_BizAppsCommon': '@mj-biz-apps/common-entities',
+    '__mj_BizAppsAccounting': '@mj-biz-apps/accounting-entities',
+    '__mj_BizAppsTasks': '@mj-biz-apps/tasks-entities',
+  },
 
   /**
    * Server extensions — routes this app adds to MJServer.
@@ -202,6 +216,23 @@ module.exports = {
       Enabled: true,
       DriverClass: 'OrdersPaymentWebhook',
       RootPath: '/webhooks/payments',
+      Settings: {},
+    },
+    {
+      /**
+       * The anonymous checkout edge (CheckoutServerExtension): the public transport in front
+       * of CheckoutSessionService, mounted pre-auth like the webhook. Access control is the
+       * distribution slug + per-session client key, layered with rate limiting, a per-widget
+       * origin allowlist (`Configuration.allowedOrigins`), and optional Cloudflare Turnstile
+       * (`Configuration.requireTurnstile` + the secret named by TurnstileSecretEnvVar).
+       * Settings:
+       *   ServiceUserEmail      — named checkout principal for writes (falls back to system user)
+       *   TurnstileSecretEnvVar — env var holding the Turnstile secret (e.g. 'CHECKOUT_TURNSTILE_SECRET')
+       *   RateLimitWindowMs / RateLimitMax — fixed-window limits per client IP (defaults 60000 / 30)
+       */
+      Enabled: true,
+      DriverClass: 'OrdersCheckoutEdge',
+      RootPath: '/checkout',
       Settings: {},
     },
   ],

@@ -17,6 +17,7 @@ export class mjBizAppsOrdersOrderCompanyPolicyFormComponent extends BaseFormComp
         this.initSections([
             { sectionKey: 'pricingPolicies', sectionName: 'Pricing Policies', isExpanded: true },
             { sectionKey: 'defaultSettings', sectionName: 'Default Settings', isExpanded: true },
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }

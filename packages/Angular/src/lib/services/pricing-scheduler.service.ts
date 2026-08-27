@@ -102,10 +102,9 @@ export interface MJOPricingState {
  * And the confirm was gated on the result, so a failure in a run nobody would ever
  * read blocked the run that mattered.
  *
- * It now calls **`Orders.PreviewPrice`**, once per line. That operation calls
- * `ResolvePrice` — the same function the pricing walk inside `Save()` calls — and
- * writes nothing. So this is not a second implementation of pricing that could
- * drift; it is the same implementation, invoked without the write.
+ * It now calls **`Orders.PriceOrder`**, which runs `OrderPricingService` — the same
+ * walk `Save()` uses — and writes nothing. `Orders.PreviewPrice` is a one-line
+ * wrapper around that same service, not a second resolver.
  *
  * WHY DEBOUNCE AND SEQUENCE-GUARD (unchanged, and still necessary). Pricing is a
  * server round trip fired as the user types. Two things go wrong without care, and

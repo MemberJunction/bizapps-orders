@@ -356,6 +356,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // has now found three times.
         if (!this.passesStatusTransition()) return false;
 
+        await this.ApplyPersonPartyDefaults();
+
         const booking = this.willBookOnThisSave();
 
         // ORDINARY PATH — no booking, and no line work to do.

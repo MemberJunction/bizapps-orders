@@ -12,15 +12,18 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
 │                             CheckoutSessionService                                       │
 │                                                                                          │
-│  1. InitializeSession(slug)                                                              │
+│  1. InitializeSession(slug, clientKey)                                                   │
 │     ├── Resolve Distribution & Widget Config                                            │
 │     ├── Auto-Discover ProductType.OrderLineExtensionEntity via Metadata                 │
 │     └── Merge customUI (Theming + Custom CSS + Lifecycle JS Hooks)                       │
 │                                                                                          │
-│  2. UpdateDraft(sessionId, lines)                                                        │
+│  2. UpdateDraft(sessionId, clientKey, email, lines)                                      │
 │     └── In-Memory Pricing Engine (OrderPricingService) — No DB clutter                  │
 │                                                                                          │
-│  3. CompleteCheckout(sessionId)                                                          │
+│  2b. OpenPaymentIntentForSession(sessionId, clientKey)   [paid orders]                   │
+│     └── Server-priced amount + widget-configured provider → ClientSecret                 │
+│                                                                                          │
+│  3. CompleteCheckout(sessionId, clientKey)                                               │
 │     ├── Resolve / Create Person Records                                                  │
 │     ├── Multi-Unit Line Splitting (unitMode: 'perUnit' vs 'perLine')                      │
 │     ├── Atomic Companion Persistence (OrderLine.Extension BaseEntity)                    │
@@ -115,8 +118,11 @@ In **MemberJunction Explorer** (or via code/migrations):
 2. Enter:
    - **Slug**: `summit-2027`
    - **Status**: `Active`
-   - **AllowAnonymous**: `true`
 3. Save the record.
+
+Anonymous access is inherent to the checkout edge (there is no per-distribution toggle);
+the widget's `Configuration` carries the security knobs — `allowedOrigins` (embed origin
+allowlist) and `requireTurnstile` (Cloudflare Turnstile on initialize/complete).
 
 Your checkout widget distribution is now active for `summit-2027` and ready to be loaded via the `<mj-checkout-widget [distributionSlug]="'summit-2027'">` Angular component or host application routes.
 
@@ -348,7 +354,7 @@ if (!confirmed) {
 ```
 
 > [!IMPORTANT]
-> **Payment Verification Status**: Free/zero-dollar checkouts ($0) book and confirm immediately upon submission. For orders with `TotalGross > 0`, `CompleteCheckout` verifies `PaymentIntentID` on the session before confirming. Host applications integrate gateway payment intents via `PaymentIntentService` and `CapturePaymentOperation`.
+> **Payment Verification Status**: Free/zero-dollar checkouts ($0) book and confirm immediately upon submission. For orders with `TotalGross > 0`, `CompleteCheckout` verifies the session's payment intent **state and amount** server-side — the intent must exist, be `Succeeded` (as advanced by the signature-verified payment webhook), and cover the freshly re-priced total. A session acquires its intent only through `CheckoutSessionService.OpenPaymentIntentForSession`, which prices from the session's own server-computed snapshot and resolves the provider from the widget's `Configuration.paymentProviderId` — the client never supplies an amount or a provider. `UpdateDraft` detaches the intent whenever the priced total changes, forcing a reopen at the new amount.
 
 #### What Happens During `order.Confirm()`:
 1. Validates payment capture / authorization.
@@ -420,48 +426,42 @@ export class RegistrationPageComponent {
 }
 ```
 
-### 2. Host Application Route Integration
+### 2. Public checkout URL (MJAPI, not Explorer)
 
-In MemberJunction host applications (such as MemberJunction Explorer or custom Angular portals), route to a wrapper component passing the distribution slug parameter:
+Anonymous buyers do not have an Explorer session. The public URL is served by MJAPI on the existing `OrdersCheckoutEdge` and hosts the reusable Angular `<mj-checkout-widget>` (packaged as the `<mj-orders-checkout>` custom element). Extension fields are introspected from the product type's `OrderLineExtensionEntity` — events are one product type, not a hard-coded form.
 
-```typescript
-// app.routes.ts
-export const routes: Routes = [
-  {
-    path: 'checkout/:slug',
-    loadComponent: () => import('./checkout-route.component').then(m => m.CheckoutRouteComponent)
-  }
-];
+```
+GET {MJAPI}/checkout/:slug
 ```
 
-Inside `CheckoutRouteComponent`:
-```typescript
-@Component({
-  standalone: true,
-  imports: [MJCheckoutWidgetComponent],
-  template: `<mj-checkout-widget [distributionSlug]="slug()"></mj-checkout-widget>`
-})
-export class CheckoutRouteComponent {
-  private route = inject(ActivatedRoute);
-  public slug = toSignal(this.route.paramMap.pipe(map(params => params.get('slug') ?? '')));
-}
-```
+Example: `http://localhost:4103/checkout/summit-2027`
 
-### 3. Headless & Custom Frontend Integration
+That route returns a vanilla HTML page that talks only to the POST edge below (`initialize` → `draft` → `payment-intent` if required → `complete`). It is not an Explorer route and not a custom-element bundle.
 
-For React, Vue, mobile apps, or static landing pages, your frontend interacts with the backend service via REST or GraphQL:
-1. `POST /api/checkout/initialize` ➔ calls `CheckoutSessionService.InitializeSession(slug, clientKey)`
-2. `POST /api/checkout/draft` ➔ calls `CheckoutSessionService.UpdateDraft(sessionID, email, lines)`
-3. `POST /api/checkout/complete` ➔ calls `CheckoutSessionService.CompleteCheckout(sessionID)`
+The Angular `<mj-checkout-widget>` remains the embeddable control for sites that already host Angular. A wrapper route inside Explorer would require login and is the wrong guest surface.
+
+When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@mj-biz-apps/orders-server`), MJ auto-loads `OrdersCheckoutEdge` from the package's `MJ_SERVER_EXTENSIONS` export — the host `mj.config.cjs` does not need to copy the extension block. Host `serverExtensions[]` is still the override layer (`Enabled`, `RootPath`, `Settings` such as `ServiceUserEmail`).
+
+### 3. Headless & Custom Frontend Integration — the anonymous checkout edge
+
+The app ships its own public REST edge: **`CheckoutServerExtension`** (`@mj-biz-apps/orders-server`, DriverClass `OrdersCheckoutEdge`), mounted pre-auth via Open App `MJ_SERVER_EXTENSIONS` (host `serverExtensions[]` overlays). Default root path `/checkout`:
+
+1. `GET /checkout/:slug` — first-party HTML host page for the distribution (404 if the slug is reserved or not an Active distribution)
+2. `POST /checkout/initialize` — body `{ slug, clientSessionKey, turnstileToken? }`
+3. `POST /checkout/draft` — body `{ sessionId, clientSessionKey, email, lines }`
+4. `POST /checkout/payment-intent` — body `{ sessionId, clientSessionKey }` → returns the gateway `ClientSecret` for Stripe.js confirmation
+5. `POST /checkout/complete` — body `{ sessionId, clientSessionKey, turnstileToken? }`
+
+The edge enforces, in order and fail-closed: a body-size cap, per-IP(+slug) fixed-window rate limiting, the widget's `Configuration.allowedOrigins` allowlist (with CORS grants only for allowed origins), and — when the widget sets `requireTurnstile` — Cloudflare Turnstile verification against the secret named by the extension's `Settings.TurnstileSecretEnvVar`. Writes run as the principal named by `Settings.ServiceUserEmail`, falling back to MJ's system user. **No request body carries an amount, a price, a product resolution, or a payment provider** — those all resolve server-side.
 
 ---
 
 ## Server API & Service Reference
 
-The server orchestration is implemented by `CheckoutSessionService` in `@mj-biz-apps/orders-core-entities-server` (which host applications can expose via their preferred REST, GraphQL, or Remotable Operations endpoints):
+The server orchestration is implemented by `CheckoutSessionService` in `@mj-biz-apps/orders-core-entities-server` (exposed publicly by `CheckoutServerExtension` above; hosts may additionally wrap it in their own GraphQL or Remotable Operations). Every mutating call requires **both** the session id and the client session key, and enforces the session TTL.
 
 ### 1. `InitializeSession(distributionSlug, clientSessionKey)`
-Initializes a new checkout session.
+Initializes a new checkout session (or reuses the caller's open, unexpired one). Secret-shaped keys are stripped from the returned `Configuration` before it ships to the anonymous caller.
 
 **Request Parameters:**
 ```json
@@ -496,54 +496,50 @@ Initializes a new checkout session.
 }
 ```
 
-### 2. `UpdateDraft(sessionID, email, lines)`
-Recalculates draft pricing in memory.
+### 2. `UpdateDraft(sessionID, clientSessionKey, email, lines)`
+Recalculates draft pricing in memory and persists the priced snapshot to the session. Resolves (but never creates) the payer Person by email so person-specific pricing applies to drafts; detaches a previously opened payment intent when the total changes. Quantities are capped per line (`Product.MaxQuantityPerLine`, `ProductType.Configuration.maxQuantity`, or the server default of 100), and a checkout carries at most 50 lines.
 
 **Request Parameters:**
 ```json
 {
   "sessionId": "d1c080b0-379e-4b7f-a2e6-64156641e7d2",
+  "clientSessionKey": "client-uuid-12345",
   "email": "janet@example.com",
   "lines": [
     {
-      "productId": "79b4a2c1-...",
-      "quantity": 2
+      "ProductID": "79b4a2c1-...",
+      "Quantity": 2,
+      "Attendees": [
+        { "FirstName": "Janet", "LastName": "Doer", "Email": "janet@example.com", "DietaryPreferences": "Gluten Free" },
+        { "FirstName": "Sam", "LastName": "Chen", "Email": "sam@example.com", "DietaryPreferences": "Vegetarian" }
+      ]
     }
   ]
 }
 ```
 
-### 3. `CompleteCheckout(sessionID)`
-Executes payment verification, line creation, companion extension hydration, lifecycle booking, and claim generation.
+### 3. `OpenPaymentIntentForSession(sessionID, clientSessionKey)`
+Opens (or idempotently re-opens) a payment intent for the session's **current server-priced total**. The amount comes from the session's own priced snapshot; the provider from the widget's `Configuration.paymentProviderId`. Returns the gateway `ClientSecret` (never persisted) for Stripe.js confirmation and stamps `session.PaymentIntentID`.
+
+**Response:**
+```json
+{
+  "Success": true,
+  "SessionID": "d1c080b0-379e-4b7f-a2e6-64156641e7d2",
+  "PaymentIntentID": "0b8a41d2-...",
+  "ClientSecret": "pi_..._secret_...",
+  "Amount": 550.00
+}
+```
+
+### 4. `CompleteCheckout(sessionID, clientSessionKey)`
+Executes payer-Person resolution (find-or-create by the session's captured email), payment verification (intent `Succeeded` + amount covers the re-priced total), line creation from the session's own snapshot (never fresh client input), companion extension hydration, atomic lifecycle booking, and GuestOrder claim generation. **Replay-safe**: calling it again on a `Confirmed` session returns the existing order rather than booking twice, and a failure after the order has committed never reverts the session to `Open`.
 
 **Request Parameters:**
 ```json
 {
   "sessionId": "d1c080b0-379e-4b7f-a2e6-64156641e7d2",
-  "email": "janet@example.com",
-  "paymentMethodId": "pm_card_visa",
-  "lines": [
-    {
-      "productId": "79b4a2c1-...",
-      "quantity": 2,
-      "attendees": [
-        {
-          "firstName": "Janet",
-          "lastName": "Doer",
-          "email": "janet@example.com",
-          "dietaryPreferences": "Gluten Free",
-          "allergies": "Peanuts"
-        },
-        {
-          "firstName": "Sam",
-          "lastName": "Altman",
-          "email": "sam@openai.com",
-          "dietaryPreferences": "Vegetarian",
-          "allergies": "None"
-        }
-      ]
-    }
-  ]
+  "clientSessionKey": "client-uuid-12345"
 }
 ```
 
@@ -554,7 +550,10 @@ Executes payment verification, line creation, companion extension hydration, lif
   "OrderID": "28471f24-2a35-4a50-8f60-6b224f747ffb",
   "OrderNumber": "ORD-1000028",
   "TotalGross": 550.00,
+  "SessionID": "d1c080b0-379e-4b7f-a2e6-64156641e7d2",
   "Status": "Confirmed",
-  "IdentityClaimID": "6df81e42-901a-4c28-bb84-90a1f2b842cd"
+  "ClaimToken": "6df81e42-901a-4c28-bb84-90a1f2b842cd"
 }
 ```
+
+> `ClaimToken` is the `IdentityClaim` **row id** — the cryptographic verification token itself is only ever delivered in the claim email.

@@ -4,8 +4,11 @@
 > binding UI-architecture rules; this plan is the design that satisfies them. Decisions here are
 > numbered **U1…** so they can be cited the way D-numbers are.
 >
-> Status: DESIGN. Mockups live in `/mockups` (interactive HTML, opens from `file://`). Nothing is
-> built in Angular until the mockups are signed off.
+> Status: HISTORICAL DESIGN (2026-07). The live system is one Order Header form with Confirm as a
+> toolbar verb, check/ACH reference on the Payment tab, and Fast Entry / full editor **removed from
+> the rail** (08-14 ruling: one form, do not rebuild U3). See `docs/HOW_THE_SYSTEM_WORKS.md` for
+> what actually shipped. Mockups in `/mockups` remain the visual thesis; U4 pre-flight overlay and
+> U18 Origin are still open.
 
 ---
 

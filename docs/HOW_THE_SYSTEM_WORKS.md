@@ -95,7 +95,9 @@ The order state is decoupled into three independent dimensions:
    - `'Confirmed'` is the irreversible booking gate (books JEs).
 2. **Operational Fulfillment (`FulfillmentStatus`)**: `'Pending' | 'PartiallyFulfilled' | 'Fulfilled' | 'NotApplicable' | 'Returned'`.
    - Trigger-maintained and rolled up across lines via `spRecalcOrderHeaderTotals`.
-3. **Financial / Payment Progress**: Real-time numeric balance facts (`TotalGross`, `AmountPaid`, `Balance`, `DueDate`). No separate stored column.
+3. **Financial / Payment Progress**: Real-time numeric balance facts (`TotalGross`, `AmountPaid`, `Balance`, `DueDate`) plus layered `IsOverdue`. There is **no** stored `PaymentStatus` column (`V202608241300` dropped it). Widgets that still select `h.PaymentStatus` fail; derive Open/Overdue from `Balance` / `IsOverdue`.
+
+Bill-to / ship-to: setting a **person** copies to the other side if that person is empty, then fills that side's organization from the longest-lasting active Employee relationship in Common. An org the user already chose is not overwritten.
 
 **Party Auto-Population**: On a new unsaved order (`!order.IsSaved`), setting `ShipToPersonID` or `BillToPersonID` queries `__mj_BizAppsCommon.Relationship` for active employer affiliations. If exactly one active employer organization exists, `ShipToOrganizationID` (or `BillToOrganizationID`) is auto-populated. Setting `ShipTo` cascades to `BillTo` if `BillTo` is completely empty.
 
@@ -184,7 +186,7 @@ Locked history is never edited.
 
 - Return / cancellation / credit memo = a **new** Order Header (`ReversesOrderHeaderID`) with negative-quantity lines.
 - Refund = a new Payment Header (`ReversesPaymentID`).
-- Entitlement grants created at booking are revoked on return (`EntitlementEngine`).
+- Entitlement grants created at booking are revoked on return (`EntitlementEngine`). Downstream apps **ask** `Orders.CheckEntitlement` (by `ProductEntitlement.Code`); they do not poll `EntitlementGrant.Status`. Status is a recorded decision, not current truth — the evaluator also honours the window and, after cancel, `subscription.EndDate` (grace). `Orders.ListEntitlements` is the person's library, same evaluator. v1 is person grants only. Contract: [`plans/entitlement-read-contract.md`](../plans/entitlement-read-contract.md).
 
 ---
 

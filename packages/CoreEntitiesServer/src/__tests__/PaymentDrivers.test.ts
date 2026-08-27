@@ -14,7 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { BasePaymentProvider, type PaymentProviderConfig } from '../BasePaymentProvider.js';
-import { StripePaymentProvider, ToFormBody } from '../StripePaymentProvider.js';
+import { StripePaymentProvider, ToFormBody, stripeCaptureAlreadyCollected } from '../StripePaymentProvider.js';
 import { ManualPaymentProvider } from '../ManualPaymentProvider.js';
 import { StoredValuePaymentProvider } from '../StoredValuePaymentProvider.js';
 
@@ -44,6 +44,7 @@ describe('BasePaymentProvider — the default is refusal', () => {
         base.Config = config({ TypeCode: 'Nonexistent' });
         expect((await base.CreateIntent({ Amount: 1, CurrencyCode: 'USD' })).Success).toBe(false);
         expect((await base.Capture({ ProviderIntentID: 'x', CurrencyCode: 'USD' })).Success).toBe(false);
+        expect((await base.RetrieveIntent({ ProviderIntentID: 'x' })).Success).toBe(false);
         expect((await base.Refund({ CurrencyCode: 'USD', Amount: 1 })).Success).toBe(false);
     });
 
@@ -99,6 +100,89 @@ describe('StripePaymentProvider — the stub', () => {
         expect(result.Status).toBe('Succeeded');
     });
 
+    it('retrieve on the stub stays RequiresPayment — the stub never sees a browser confirm', async () => {
+        const result = await stripe().RetrieveIntent({ ProviderIntentID: 'pi_stub_x' });
+        expect(result.Success).toBe(true);
+        expect(result.Status).toBe('RequiresPayment');
+    });
+
+    it('treats an already-captured live intent as a successful capture', async () => {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            const method = (init?.method ?? 'GET').toUpperCase();
+            if (method === 'POST' && url.includes('/capture')) {
+                return new Response(
+                    JSON.stringify({
+                        error: {
+                            code: 'payment_intent_unexpected_state',
+                            message: 'This PaymentIntent could not be captured because it has already been captured.',
+                        },
+                    }),
+                    { status: 400, headers: { 'Content-Type': 'application/json' } },
+                );
+            }
+            if (url.includes('/payment_intents/')) {
+                return new Response(
+                    JSON.stringify({
+                        id: 'pi_live',
+                        status: 'succeeded',
+                        amount_received: 27500,
+                        currency: 'usd',
+                        latest_charge: 'ch_live',
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } },
+                );
+            }
+            if (url.includes('/charges/')) {
+                return new Response(
+                    JSON.stringify({ id: 'ch_live', balance_transaction: { fee: 110 } }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } },
+                );
+            }
+            return new Response('{}', { status: 404 });
+        }) as typeof fetch;
+        try {
+            const result = await driver.Capture({ ProviderIntentID: 'pi_live', Amount: 275, CurrencyCode: 'USD' });
+            expect(result.Success).toBe(true);
+            expect(result.Amount).toBe(275);
+            expect(result.ProviderChargeID).toBe('ch_live');
+            expect(result.FeeAmount).toBe(1.1);
+        } finally {
+            globalThis.fetch = orig;
+        }
+    });
+
+    it('stripeCaptureAlreadyCollected recognises Stripe automatic-capture refusals', () => {
+        expect(
+            stripeCaptureAlreadyCollected('This PaymentIntent could not be captured because it has already been captured.', {
+                error: { code: 'payment_intent_unexpected_state' },
+            }),
+        ).toBe(true);
+        expect(stripeCaptureAlreadyCollected('card declined', { error: { code: 'card_declined' } })).toBe(false);
+    });
+
+    it('retrieve on a live account reads Stripe status (not a client claim)', async () => {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async () =>
+            new Response(JSON.stringify({ id: 'pi_live', status: 'succeeded', amount_received: 27500, currency: 'usd' }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            })) as typeof fetch;
+        try {
+            const result = await driver.RetrieveIntent({ ProviderIntentID: 'pi_live' });
+            expect(result.Success).toBe(true);
+            expect(result.Status).toBe('Succeeded');
+            expect(result.Amount).toBe(275);
+        } finally {
+            globalThis.fetch = orig;
+        }
+    });
+
     it('reports a zero fee on a zero capture rather than a negative one', async () => {
         const result = await stripe().Capture({ ProviderIntentID: 'pi_stub_x', Amount: 0, CurrencyCode: 'USD' });
         expect(result.FeeAmount).toBe(0);
@@ -147,6 +231,19 @@ describe('StripePaymentProvider — reading webhooks', () => {
         // 1234 cents is 12.34, and this is where a hundredfold error would enter.
         expect(event!.Amount).toBe(12.34);
         expect(event!.Status).toBe('Succeeded');
+        expect(event!.OccurredAt).toBeUndefined();
+    });
+
+    it('stamps OccurredAt from Stripe created (unix seconds)', () => {
+        const event = stripe().ParseWebhookEvent(
+            JSON.stringify({
+                id: 'evt_created',
+                type: 'payment_intent.succeeded',
+                created: 1700000000,
+                data: { object: { id: 'pi_1', status: 'succeeded', amount_received: 100, currency: 'usd' } },
+            }),
+        );
+        expect(event!.OccurredAt).toEqual(new Date(1700000000 * 1000));
     });
 
     it('respects a ZERO-DECIMAL currency when reading an amount', () => {

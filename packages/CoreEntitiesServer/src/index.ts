@@ -108,6 +108,7 @@ export {
     PriceResolutionError,
     ResolvePrice,
     ResolvePriceListForCustomer,
+    ResolvePriceListsForCustomer,
 } from '@mj-biz-apps/orders-entities';
 export type { PriceResolutionContext, ResolvedPrice, PriceComponentDraft } from '@mj-biz-apps/orders-entities';
 export {
@@ -132,6 +133,11 @@ export {
     ResolveValidityWindow,
     InitialGrantStatus,
     ReduceGrantForReturn,
+    EvaluateGrantAccess,
+    PickWinningAccess,
+    CacheUntilFor,
+    ShouldRevokeGrantsOnCancel,
+    ENTITLEMENT_CHECK_TTL_MS,
 } from './EntitlementBehavior.js';
 export type {
     GrantTiming,
@@ -144,9 +150,29 @@ export type {
     ResolvedEntitlementPolicy,
     ValidityContext,
     ResolvedValidity,
+    EntitlementDecision,
+    GrantAccessFacts,
+    SubscriptionAccessFacts,
+    TermAccessFacts,
+    GrantAccessEvaluation,
+    RankableAccess,
 } from './EntitlementBehavior.js';
-export { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+export {
+    CreateEntitlementGrants,
+    RevokeGrantsForReturn,
+    RevokeGrantsForCanceledSubscription,
+} from './EntitlementEngine.js';
 export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
+export { CheckEntitlementOperation, LoadCheckEntitlementOperation } from './CheckEntitlementOperation.js';
+export { ListEntitlementsOperation, LoadListEntitlementsOperation } from './ListEntitlementsOperation.js';
+export { CheckPersonEntitlement, ListPersonEntitlements, ASOF_FUTURE_TOLERANCE_MS } from './EntitlementRead.js';
+export type {
+    CheckEntitlementInput,
+    CheckEntitlementOutput,
+    ListEntitlementsInput,
+    ListEntitlementsOutput,
+    ListedEntitlement,
+} from './EntitlementRead.js';
 
 export {
     FormatGiftCardCode,
@@ -220,6 +246,8 @@ export type {
     CreateIntentResult,
     CaptureRequest,
     CaptureResult,
+    RetrieveIntentRequest,
+    RetrieveIntentResult,
     RefundRequest,
     RefundResult,
     WebhookEvent,
@@ -422,6 +450,14 @@ export { EntitlementGrantClaimDriver, LoadEntitlementGrantClaimDriver } from './
 export { GuestOrderClaimDriver, LoadGuestOrderClaimDriver } from './GuestOrderClaimDriver.js';
 export { resolvePersonID } from './claimDriverHelpers.js';
 export { CheckoutSessionService } from './CheckoutSessionService.js';
+export {
+    CHECKOUT_CAPTURE_RETRY_WINDOW_MS,
+    CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
+    isCaptureRefusalRetryable,
+    isTerminalCapturePrecheck,
+    webhookEventExceedsRetryWindow,
+} from './checkoutCaptureRetry.js';
+export { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
 export type {
     AttendeeInput,
     CheckoutAttendeeInput,
@@ -431,4 +467,11 @@ export type {
     InitSessionResult,
     UpdateDraftResult,
     CompleteCheckoutResult,
+    OpenSessionPaymentIntentResult,
+    BookCheckoutPaymentResult,
 } from './CheckoutSessionService.js';
+
+// SQL boundary guards — the sanctioned escaping/validation helpers for remote-caller input
+// (see the repo CLAUDE.md "SQL Safety" rule). Exported so the Server package's edge can use
+// the same audited helpers rather than hand-rolling its own.
+export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUID, RequireUUID, RequireUUIDs } from './sql-guards.js';

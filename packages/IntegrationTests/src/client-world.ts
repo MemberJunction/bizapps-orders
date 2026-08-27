@@ -225,6 +225,7 @@ const WORLD_PEOPLE = [
     'claire.bennett@westfieldmed.org',
     'lydia.grant@harboryc.org',
     'jordan.blake@example.com',
+    'samira.qureshi@example.com',
 ];
 
 async function loadPeople(ctx: IntegrationCheckContext): Promise<Record<string, string>> {

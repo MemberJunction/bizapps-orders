@@ -101,6 +101,18 @@ export interface CaptureRequest {
     CurrencyCode: string;
 }
 
+export interface RetrieveIntentRequest {
+    ProviderIntentID: string;
+}
+
+export interface RetrieveIntentResult {
+    Success: boolean;
+    Reason?: string;
+    Status?: IntentStatus;
+    /** Major units as the gateway currently reports them. */
+    Amount?: number;
+}
+
 export interface CaptureResult {
     Success: boolean;
     Reason?: string;
@@ -149,6 +161,12 @@ export interface WebhookEvent {
     Status?: IntentStatus;
     /** Present on a failure event, in the gateway's words. */
     FailureReason?: string;
+    /**
+     * When the gateway says the event happened. Stripe `created` (unix seconds).
+     * Used to bound checkout-capture webhook 500s; absent means the bound cannot
+     * be applied and retries follow Retryable only.
+     */
+    OccurredAt?: Date;
 }
 
 /**
@@ -214,6 +232,17 @@ export class BasePaymentProvider {
 
     public async Capture(_request: CaptureRequest): Promise<CaptureResult> {
         return { Success: false, Reason: this.notImplemented('capturing a payment') };
+    }
+
+    /**
+     * Ask the gateway what it currently believes about an intent we already opened.
+     *
+     * Used by checkout completion when the browser has confirmed the card (Stripe.js)
+     * but the signature-verified webhook has not yet landed — localhost never receives
+     * Stripe's POST. This is a SERVER retrieve with our key, not a client claim.
+     */
+    public async RetrieveIntent(_request: RetrieveIntentRequest): Promise<RetrieveIntentResult> {
+        return { Success: false, Reason: this.notImplemented('retrieving a payment intent') };
     }
 
     public async Refund(_request: RefundRequest): Promise<RefundResult> {

@@ -40,11 +40,13 @@ import {
     ResolveEntitlementPolicy,
     ResolveGrantQuantity,
     ResolveValidityWindow,
+    ShouldRevokeGrantsOnCancel,
     type GrantTiming,
     type PolicyCategoryLevel,
     type QuantityMode,
     type ValidityMode,
 } from './EntitlementBehavior.js';
+import { RequireUUID } from './sql-guards.js';
 
 const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
@@ -474,4 +476,59 @@ export async function RevokeGrantsForReturn(
     }
 
     return { Revoked: revoked, Reduced: reduced };
+}
+
+/**
+ * After a subscription cancel, make stored grant Status less of a lie — still not the read path.
+ *
+ * Access-through in the future (grace) leaves the rows `Active`; `EvaluateGrantAccess` honours
+ * `subscription.EndDate`. Access-through already passed (immediate cancel, no remaining grace)
+ * REVOKES, with a reason, so a poll of Status at least stops saying Active.
+ */
+export async function RevokeGrantsForCanceledSubscription(
+    subscriptionID: string,
+    accessThroughDate: Date,
+    reason: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+    options?: EntitySaveOptions,
+    now: Date = new Date(),
+): Promise<{ Revoked: number; LeftStanding: number }> {
+    const id = RequireUUID(subscriptionID, 'SubscriptionID');
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const grants = await rv.RunView<{ ID: string; Status: string }>(
+        {
+            EntityName: ENTITLEMENT_GRANT_ENTITY,
+            ExtraFilter: `SubscriptionID = '${id}' AND Status IN ('Active','Suspended')`,
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    const rows = grants?.Results ?? [];
+    if (!rows.length) return { Revoked: 0, LeftStanding: 0 };
+
+    if (!ShouldRevokeGrantsOnCancel(accessThroughDate, now)) {
+        return { Revoked: 0, LeftStanding: rows.length };
+    }
+
+    let revoked = 0;
+    for (const row of rows) {
+        const grant = await provider.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(
+            ENTITLEMENT_GRANT_ENTITY,
+            CompositeKey.FromID(row.ID),
+            user,
+        );
+        grant.Status = 'Revoked';
+        grant.RevokedAt = now;
+        grant.RevocationReason = reason;
+        if (!(await grant.Save(options))) {
+            throw new Error(
+                `Failed to revoke entitlement grant ${row.ID} after subscription cancel: ` +
+                    `${grant.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+        revoked++;
+    }
+    return { Revoked: revoked, LeftStanding: 0 };
 }

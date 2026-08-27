@@ -57,7 +57,32 @@ says so. It is not a development loop.
 created by CodeGen, which runs *after* migrations. A migration that reads `__mj.Entity` must skip
 cleanly when the row is absent rather than throw, or it will fail on precisely the clean installs it
 was supposed to support. If the change is really about metadata — field categories, display names,
-form layout — its home is `metadata/` and `mj sync push`, not a migration at all.
+form layout — its home is `metadata/` and `mj sync push` **while you are developing**.
+
+## Metadata reaches a host only as a migration
+
+`mj sync push` seeds *your* database. It does not ship. MJ documents `mj-app.json`'s
+`metadata.directory` as a dev-time pointer — "kept purely as documentation of where the metadata
+lives" (`packages/OpenApp/Engine/src/manifest/manifest-schema.ts`) — and `mj app install` applies
+migrations and nothing else: no CodeGen step, no metadata step. So a row that exists only because
+someone ran a push is a row no customer has.
+
+**At release the build engineer regenerates a `*__Metadata_Sync.sql` migration** carrying those rows,
+and it installs with every other migration. That is the only path metadata takes to a host, and it is
+the same one `bizapps-common` and `bizapps-tasks` already use.
+
+Two properties of that step, both of which fail silently:
+
+- **Generate it from a FRESH database, never a dev one.** A dev-database push emits `spUpdate*`
+  statements, which the generator refuses and which would overwrite host state if they got through.
+- **No gate catches a pending metadata change with no migration behind it.** CI does not look, and
+  the app installs cleanly either way. A `metadata/` edit a host needs is therefore not finished when
+  it merges — only when a release carries it.
+
+The practical consequence for anything an external caller depends on (a Remote Operation, an
+Application row, a seeded lookup): it does not exist for that caller until a release ships the
+metadata migration. If a consumer needs it sooner, a one-off `mj sync push` against the target
+environment bridges the gap — deliberately, not as a substitute for the migration.
 
 ## The test to apply in review
 

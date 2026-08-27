@@ -9,7 +9,7 @@
  */
 
 import { RegisterClass } from '@memberjunction/global';
-import { Metadata, UserInfo, IRunViewProvider } from '@memberjunction/core';
+import { LogError, Metadata, UserInfo, IRunViewProvider } from '@memberjunction/core';
 // Local fallback contracts — see identityClaimContracts.ts. Restore this import to
 // '@memberjunction/core-entities' once MJ publishes these exports.
 import {
@@ -105,6 +105,11 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
 
     /**
      * Hook called when an entitlement claim is revoked.
+     *
+     * `CK_EntitlementGrant_Revocation` (and the generated `ValidateRevokedAtBasedOnStatus`
+     * rule) require `RevokedAt` whenever Status is 'Revoked' — a revocation without the
+     * timestamp fails validation and the grant silently stays Active. Stamp both, and
+     * surface a failed save instead of swallowing it.
      */
     public async OnRevoke(context: ClaimContext): Promise<void> {
         const { Claim, User } = context;
@@ -119,15 +124,22 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
             const loaded = await grant.Load(Claim.RecordID);
             if (loaded && grant.Status === 'Active') {
                 grant.Status = 'Revoked';
-                await grant.Save();
+                grant.RevokedAt = new Date();
+                grant.RevocationReason = 'Identity claim revoked';
+                const saved = await grant.Save();
+                if (!saved) {
+                    LogError(`[EntitlementGrantClaimDriver] OnRevoke failed to save grant ${grant.ID}: ${grant.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+                }
             }
-        } catch {
-            // Ignore revoke errors on teardown
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            LogError(`[EntitlementGrantClaimDriver] OnRevoke error for claim ${Claim.ID}: ${msg}`);
         }
     }
 
     /**
-     * Hook called when an entitlement claim expires.
+     * Hook called when an entitlement claim expires. (`RevokedAt` must NOT be set here — the
+     * validation rule requires it to be null for any non-Revoked status.)
      */
     public async OnExpire(context: ClaimContext): Promise<void> {
         const { Claim, User } = context;
@@ -142,10 +154,14 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
             const loaded = await grant.Load(Claim.RecordID);
             if (loaded && grant.Status === 'Active') {
                 grant.Status = 'Expired';
-                await grant.Save();
+                const saved = await grant.Save();
+                if (!saved) {
+                    LogError(`[EntitlementGrantClaimDriver] OnExpire failed to save grant ${grant.ID}: ${grant.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+                }
             }
-        } catch {
-            // Ignore expire errors
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            LogError(`[EntitlementGrantClaimDriver] OnExpire error for claim ${Claim.ID}: ${msg}`);
         }
     }
 }

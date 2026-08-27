@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-33 - Entitlement Read",
+    "Description": "The LXP ask/answer against a real provider. EN1-EN15 prove grants are written; ER1-ER7 prove Orders.CheckEntitlement and ListEntitlements evaluate them in-process (ClassFactory Execute). Sister GraphQL coverage is the wire-entitlements client bundle.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "After confirm, Check by PersonID and Email is Granted; unknown person and unknown email share the NoGrant shape; org-only grants are invisible to a person Check; elapsed ValidTo is Expired even though stored Status is still Active; an elapsed subscription term is Expired at Check, not a poll of Active; ListEntitlements is the library and IncludeInactive=false drops expired codes; a missing Code is an envelope failure."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "entitlement-read"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "C8E4F2A1-6D7B-4C19-9E53-8A0F1B2C3D44"
+  },
+  "sync": {
+    "lastModified": "2026-08-27T15:10:00.000Z",
+    "checksum": "62e749fab0d6106d0769ed5075c08fbec93cdf295d55c3116cdadb0015a6f56b"
+  }
+}

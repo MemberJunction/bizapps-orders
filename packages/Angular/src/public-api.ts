@@ -65,6 +65,10 @@ export {
     type CheckoutAttendee,
     type CheckoutSubmissionEvent,
 } from './lib/checkout-widget/checkout-widget.component';
+export {
+    CheckoutPublicHostComponent,
+} from './lib/checkout-widget/checkout-public-host.component';
+export { buildCheckoutDraftLine } from './lib/checkout-widget/checkout-draft-line';
 
 /** Explorer sections — the four top-level tabs of the Orders application. */
 export {

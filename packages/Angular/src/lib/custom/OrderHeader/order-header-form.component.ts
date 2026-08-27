@@ -405,6 +405,12 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return !this.record.ShipToOrganizationID && !this.record.ShipToPersonID && !this.record.ShipToAddressID;
     }
 
+    public async OnPartyPersonChange(side: 'BillTo' | 'ShipTo'): Promise<void> {
+        if (!this.record || !this.EditMode) return;
+        await this.record.ApplyPersonPartyDefaults(side);
+        this.cdr.detectChanges();
+    }
+
     public get hasBillTo(): boolean {
         return !!(this.record?.BillToOrganizationID || this.record?.BillToPersonID);
     }

@@ -17,7 +17,9 @@
  *      negative quantity and points at the original line, and confirm it — booking mirrors the JEs
  *   4. stamp the term (Canceled/Completed, CanceledAt, CancellationEffectiveDate)
  *   5. stamp the subscription (Canceled, EndDate = access-through, so grace is visible)
- *   6. log a `SubscriptionEvent` — the lifecycle record that made the table worth having
+ *   6. revoke standing grants when access-through has already passed; leave them when
+ *      grace remains — the read evaluator honours `subscription.EndDate` either way
+ *   7. log a `SubscriptionEvent` — the lifecycle record that made the table worth having
  *
  * ATOMICITY: everything above shares one transaction opened here. The reversal order's own
  * `OrderEntityServer.Save` nests inside it as savepoints (the same composition booking already
@@ -53,6 +55,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import type { OrderEntityServer } from './OrderEntityServer.js';
 import { RequireUUID } from './sql-guards.js';
+import { RevokeGrantsForCanceledSubscription } from './EntitlementEngine.js';
 import {
     SubscriptionBehavior,
     type CancellationDecision,
@@ -189,6 +192,7 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
 
             await this.stampTerm(provider, user, term.ID, decision);
             await this.stampSubscription(provider, user, subscription.ID, decision);
+            await this.syncGrantsOnCancel(provider, user, subscription.ID, decision, input.Reason);
             await this.logEvent(provider, user, subscription.ID, decision, input.Reason, reversal?.ID);
 
             await dbProvider.CommitTransaction();
@@ -442,23 +446,41 @@ export class CancelSubscriptionOperation extends BaseRemotableOperation<
         event.EventType = 'Canceled';
         event.OccurredAt = new Date();
         event.RelatedOrderHeaderID = reversalOrderID ?? null;
-        event.Set(
-            'EventData',
-            JSON.stringify({
-                EffectiveDate: decision.EffectiveDate,
-                AccessThroughDate: decision.AccessThroughDate,
-                RefundAmount: decision.RefundAmount,
-                ReversalFraction: decision.ReversalFraction,
-                TermStatus: decision.TermStatus,
-                Explanation: decision.Explanation,
-                Reason: reason ?? null,
-            }),
-        );
+        event.EventData = JSON.stringify({
+            EffectiveDate: decision.EffectiveDate,
+            AccessThroughDate: decision.AccessThroughDate,
+            RefundAmount: decision.RefundAmount,
+            ReversalFraction: decision.ReversalFraction,
+            TermStatus: decision.TermStatus,
+            Explanation: decision.Explanation,
+            Reason: reason ?? null,
+        });
         if (!(await event.Save())) {
             throw new Error(
                 `Failed to log the cancellation event: ${event.LatestResult?.CompleteMessage ?? 'unknown error'}`,
             );
         }
+    }
+
+    /**
+     * Stored grant Status is a lie after cancel unless we revoke when access has already
+     * ended. Grace (AccessThroughDate still in the future) leaves the rows standing — the
+     * evaluator honours subscription.EndDate rather than the original ValidTo.
+     */
+    private async syncGrantsOnCancel(
+        provider: IMetadataProvider,
+        user: UserInfo,
+        subscriptionID: string,
+        decision: CancellationDecision,
+        reason?: string,
+    ): Promise<void> {
+        await RevokeGrantsForCanceledSubscription(
+            subscriptionID,
+            decision.AccessThroughDate,
+            reason ? `Subscription canceled: ${reason}` : 'Subscription canceled',
+            provider,
+            user,
+        );
     }
 
     /** The base behaviour, or the type's registered subclass when it names one (D45). */

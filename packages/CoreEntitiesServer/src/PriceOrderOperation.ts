@@ -1,15 +1,12 @@
 /**
  * @fileoverview `Orders.PriceOrder` — what a whole order comes to, persisting nothing.
  *
- * THE ONE RULE THAT MATTERS, same as `Orders.PreviewPrice`: this runs the REAL pipeline. It calls
- * `OrderPricingService`, which is precisely what `OrderEntityServer.Save()` calls before it books.
- * There is no second implementation to drift, which is the only way the number on the screen and
- * the number in the ledger stay the same.
+ * THE ONE RULE THAT MATTERS: this runs `OrderPricingService`, which is precisely what
+ * `OrderEntityServer.Save()` and `Orders.PreviewPrice` call. There is no second implementation to
+ * drift, which is the only way the number on the screen and the number in the ledger stay the same.
  *
- * WHY IT EXISTS ALONGSIDE `PreviewPrice`. That operation answers for ONE product and says so in its
- * own description — its answer is advisory, because promotions stack against ORDER totals, charges
- * apportion ACROSS lines, and tax computes on the discounted amount rather than list price. A
- * per-line preview cannot see any of that. This one can.
+ * WHY IT EXISTS ALONGSIDE `PreviewPrice`. That operation is a one-line call to the same service and
+ * reports one SKU's unit price. This one prices the whole header — promotions, charges, tax.
  *
  * WHAT IT REPLACED. An earlier `Orders.PreviewOrder` ran the REAL save inside a transaction that
  * always rolled back, then read the computed values off the entities before they vanished. The
