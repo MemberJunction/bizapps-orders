@@ -9,7 +9,9 @@
  */
 
 import { BaseEntity, EntityFieldInfo, IMetadataProvider, LogError, Metadata, RunView, UserInfo } from '@memberjunction/core';
-import { IdentityClaimEngineServer } from '@memberjunction/core-entities-server';
+// Local fallback engine — see identityClaimContracts.ts. Restore this import to
+// '@memberjunction/core-entities-server' once MJ publishes the engine.
+import { IdentityClaimEngineServer } from './identityClaimContracts.js';
 import {
     OrderHeaderEntity,
     OrderLineEntity,

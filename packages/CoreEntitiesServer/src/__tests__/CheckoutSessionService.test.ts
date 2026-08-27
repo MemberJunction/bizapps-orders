@@ -235,7 +235,10 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-vi.mock('@memberjunction/core-entities-server', () => ({
+// The engine import moved to the local fallback module (see identityClaimContracts.ts);
+// partial-mock it so the real contracts stay live and only the engine is overridden.
+vi.mock('../identityClaimContracts.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../identityClaimContracts.js')>()),
     IdentityClaimEngineServer: {
         Instance: {
             CreateClaim: (params: unknown, user?: unknown) => mocks.mockClaimCreate(params, user)
