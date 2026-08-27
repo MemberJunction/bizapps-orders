@@ -1,0 +1,69 @@
+<div class="mjo-gl-links">
+    <div class="mjo-gl-links__head">
+        <span class="mjo-gl-links__title">
+            <i class="fa-solid fa-link"></i>
+            GL Accounts
+        </span>
+        <button
+            type="button"
+            class="mjo-gl-links__refresh"
+            title="Re-read this product's GL account links"
+            (click)="Refresh()">
+            <i class="fa-solid fa-rotate"></i>
+        </button>
+    </div>
+
+    @if (Loading) {
+        <p class="mjo-gl-links__note">Loading…</p>
+    } @else if (LoadError) {
+        <!--
+            An error is shown INSTEAD of the empty state, never alongside it. "No accounts assigned" and
+            "the accounts could not be read" look identical to a reader and mean opposite things — one
+            is a setup task, the other is a broken screen.
+        -->
+        <p class="mjo-gl-links__error">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            The GL account links could not be read: {{ LoadError }}
+        </p>
+    } @else if (!Rows.length) {
+        <p class="mjo-gl-links__note">
+            No GL accounts are linked directly to this product. It may still book through its category
+            or the company default — open Accounting → Account Links to see the full chain.
+        </p>
+    } @else {
+        <div class="mjo-gl-links__scroll">
+            <table class="mjo-gl-links__table">
+                <thead>
+                    <tr>
+                        <th>Role</th>
+                        <th>Account</th>
+                        <th>Status</th>
+                        <th>From</th>
+                        <th>To</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (row of Rows; track row.ID) {
+                        <tr [class.mjo-gl-links__row--inactive]="!row.Active">
+                            <td>{{ row.RoleName }}</td>
+                            <td>
+                                <button type="button" class="mjo-gl-links__link" (click)="OpenLink(row)">
+                                    {{ row.AccountCode }}<span class="mjo-gl-links__name"> {{ row.AccountName }}</span>
+                                </button>
+                            </td>
+                            <td>
+                                <span
+                                    class="mjo-gl-links__chip"
+                                    [class.mjo-gl-links__chip--on]="row.Active">
+                                    {{ row.Active ? 'Active' : row.Status }}
+                                </span>
+                            </td>
+                            <td>{{ row.StartedAt ? (row.StartedAt | date: 'yyyy-MM-dd') : '—' }}</td>
+                            <td>{{ row.EndedAt ? (row.EndedAt | date: 'yyyy-MM-dd') : '—' }}</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

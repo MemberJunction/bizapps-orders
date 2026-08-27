@@ -1,0 +1,209 @@
+import { ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
+import { CompositeKey, Metadata, RunView } from '@memberjunction/core';
+import type { FormContext, FormNavigationEvent } from '@memberjunction/ng-base-forms';
+import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
+import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
+
+/** Accounting's polymorphic link entity. A SOFT reference — no FK crosses the schema boundary. */
+const LINK_ENTITY = 'MJ_BizApps_Accounting: GL Account Links';
+
+/** This app's Products entity, which is what a link's `(EntityID, RecordID)` pair points AT here. */
+const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
+
+/** One link, flattened for display. Nothing here is computed — every field is read off the row. */
+export interface ProductGLLinkRow {
+    ID: string;
+    RoleName: string;
+    AccountCode: string;
+    AccountName: string;
+    Status: string;
+    StartedAt: string | null;
+    EndedAt: string | null;
+    /** True when this is the link that would actually be used today for its role. */
+    Active: boolean;
+}
+
+/**
+ * The GL accounts a product books to — read from the product's own form (bizapps-orders#113).
+ *
+ * ── WHY THIS LIVES IN ORDERS AND NOT IN ACCOUNTING ──
+ *
+ * `GLAccountLink` is accounting's entity, so the instinct is to put its UI there. Accounting's own
+ * links screen explains why that cannot work for products, in its `LinkRow` comment:
+ *
+ *   > These links are POLYMORPHIC — `(EntityID, RecordID)` can point at anything, including orders'
+ *   > Products and Product Categories. Accounting must not depend on orders, so those stay unnamed
+ *   > here BY DESIGN.
+ *
+ * So on accounting's screen a product-linked row shows a bare UUID and says so honestly. Andrew's
+ * report (#113) is that same boundary seen from the other side: he could not find a product's accounts,
+ * and creating a link by hand meant copying the Product's ID into a text box.
+ *
+ * Rendering it HERE inverts the dependency the right way round. Orders already depends on accounting
+ * — `AccountingBridge` calls the engine on both booking paths — and orders is the app that knows what
+ * a Product is. The polymorphic pair stops being something a human types: `EntityID` is this app's
+ * Products entity and `RecordID` is the record already on screen.
+ *
+ * ── WHY THE ENGINE AND NOT A QUERY ──
+ *
+ * `AccountingEngineBase` caches roles, accounts and links client-side and is the same primitive the
+ * booking pipeline resolves through (`ResolveLinkedAccount`). Reading from it means this panel cannot
+ * disagree with what an order will actually book — a re-implemented query could, and the first time it
+ * did, the screen would be lying about money.
+ *
+ * ── WHAT IS DELIBERATELY NOT HERE ──
+ *
+ * No fallback chain. A product with no direct link still books, through category and company defaults,
+ * and `GlResolutionPreviewComponent` in accounting-ng already renders that chain. Showing a resolved
+ * account here without saying it came from a category would read as "this product is linked" when it is
+ * not, which is the same confusion #112 caused one screen over.
+ */
+@Component({
+    standalone: false,
+    selector: 'bizapps-product-gl-links',
+    templateUrl: './product-gl-links.component.html',
+    styleUrls: ['./product-gl-links.component.css'],
+})
+export class BizAppsProductGLLinksComponent implements OnInit {
+    @Input() public Product!: mjBizAppsOrdersProductEntity;
+    @Input() public EditMode = false;
+    @Input() public FormContext?: FormContext;
+
+    @Output() public Navigate = new EventEmitter<FormNavigationEvent>();
+
+    public Rows: ProductGLLinkRow[] = [];
+    public Loading = true;
+    /** Set when the links cannot be read at all. Shown instead of an empty list, which would lie. */
+    public LoadError: string | null = null;
+
+    constructor(private readonly cdr: ChangeDetectorRef) {}
+
+    public async ngOnInit(): Promise<void> {
+        await this.Refresh();
+    }
+
+    public async Refresh(): Promise<void> {
+        this.Loading = true;
+        this.LoadError = null;
+        this.cdr.detectChanges();
+        try {
+            this.Rows = await this.load();
+        } catch (err) {
+            this.Rows = [];
+            this.LoadError = err instanceof Error ? err.message : String(err);
+        } finally {
+            this.Loading = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /** Opens accounting's Account Links screen, which is where a link is created or retired. */
+    public OpenLink(row: ProductGLLinkRow): void {
+        this.Navigate.emit({
+            Kind: 'record',
+            EntityName: LINK_ENTITY,
+            PrimaryKey: CompositeKey.FromID(row.ID),
+        });
+    }
+
+    private async load(): Promise<ProductGLLinkRow[]> {
+        const productID = this.Product?.ID;
+        if (!productID) {
+            return [];
+        }
+
+        const md = new Metadata();
+
+        /**
+         * ORDERS MAY BE INSTALLED WITHOUT ACCOUNTING, and that is a supported state rather than an
+         * error. Asking `RunView` for an unregistered entity does not return `Success: false` — it logs
+         * `Entity ... not found in metadata`, and a console error is treated as a broken screen by the
+         * Playwright keystone. So the entity is checked in metadata FIRST and its absence simply means
+         * no panel, the same guard sales' product picker uses for this app.
+         */
+        const linkEntity = md.Entities.find((e) => e.Name === LINK_ENTITY);
+        if (!linkEntity) {
+            return [];
+        }
+
+        const productEntity = md.Entities.find((e) => e.Name === PRODUCT_ENTITY);
+        if (!productEntity) {
+            throw new Error(`${PRODUCT_ENTITY} is not registered in metadata, so its links cannot be identified.`);
+        }
+
+        // `new Metadata().CurrentUser` is how this repo reaches the user client-side; `ProviderToUse`
+        // is a component-level property and does not exist on Metadata.
+        await AccountingEngineBase.Instance.Config(false, md.CurrentUser);
+        const engine = AccountingEngineBase.Instance;
+
+        /**
+         * READ THROUGH THE ENGINE, fall back to a view only if the cache has nothing. The engine is the
+         * booking pipeline's own source; the view is here so a stale or unconfigured cache shows the
+         * truth rather than an empty list that reads as "no accounts assigned".
+         */
+        const cached = engine.GLAccountLinks.filter(
+            (l) =>
+                String(l.EntityID).toLowerCase() === String(productEntity.ID).toLowerCase()
+                && String(l.RecordID).toLowerCase() === String(productID).toLowerCase(),
+        );
+
+        const rows = cached.length ? cached : await this.readDirect(productEntity.ID, productID);
+
+        return rows
+            .map((l) => {
+                const account = engine.GLAccountByID(String(l.GLAccountID));
+                const role = engine.GLAccountRoles.find(
+                    (r) => String(r.ID).toLowerCase() === String(l.GLAccountRoleID).toLowerCase(),
+                );
+                return {
+                    ID: String(l.ID),
+                    RoleName: role?.Name ?? '(unknown role)',
+                    AccountCode: account?.Code ?? '(unknown)',
+                    AccountName: account?.Name ?? '',
+                    Status: String(l.Status ?? ''),
+                    StartedAt: (l.StartedAt as unknown as string) ?? null,
+                    EndedAt: (l.EndedAt as unknown as string) ?? null,
+                    Active: this.isActiveNow(String(l.Status ?? ''), l.StartedAt as unknown as string | null, l.EndedAt as unknown as string | null),
+                };
+            })
+            .sort((a, b) => a.RoleName.localeCompare(b.RoleName) || a.AccountCode.localeCompare(b.AccountCode));
+    }
+
+    /** The view read, used only when the engine cache holds nothing for this product. */
+    private async readDirect(entityID: string, recordID: string): Promise<Array<Record<string, unknown>>> {
+        const rv = new RunView();
+        const res = await rv.RunView<Record<string, unknown>>({
+            EntityName: LINK_ENTITY,
+            ExtraFilter:
+                `EntityID = '${entityID.replace(/'/g, "''")}' `
+                + `AND RecordID = '${recordID.replace(/'/g, "''")}'`,
+            ResultType: 'simple',
+            Fields: ['ID', 'GLAccountID', 'GLAccountRoleID', 'Status', 'StartedAt', 'EndedAt'],
+        });
+        if (!res?.Success) {
+            throw new Error(res?.ErrorMessage ?? 'the GL account links could not be read');
+        }
+        return res.Results ?? [];
+    }
+
+    /**
+     * Whether a link applies TODAY — status Active and inside its window.
+     *
+     * The window is open-ended on both sides: a null `StartedAt` means "always has", a null `EndedAt`
+     * means "still does". Treating null as a boundary would silently hide every link that never
+     * needed a date, which is most of them.
+     */
+    private isActiveNow(status: string, startedAt: string | null, endedAt: string | null): boolean {
+        if (status !== 'Active') {
+            return false;
+        }
+        const now = Date.now();
+        if (startedAt && new Date(startedAt).getTime() > now) {
+            return false;
+        }
+        if (endedAt && new Date(endedAt).getTime() < now) {
+            return false;
+        }
+        return true;
+    }
+}

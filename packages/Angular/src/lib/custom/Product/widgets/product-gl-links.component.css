@@ -1,0 +1,140 @@
+/*
+ * Deliberately minimal, and deliberately not a new visual language. This sits inside the Accounting
+ * panel beside `mj-form-field` rows, so it borrows the host's type and colour rather than introducing
+ * its own — a table that looks like a different product is the tell of a bolted-on feature.
+ */
+
+.mjo-gl-links {
+    margin-top: 12px;
+}
+
+.mjo-gl-links__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.mjo-gl-links__title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    opacity: 0.75;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mjo-gl-links__refresh {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px;
+    opacity: 0.6;
+    color: inherit;
+}
+
+.mjo-gl-links__refresh:hover {
+    opacity: 1;
+}
+
+.mjo-gl-links__refresh:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+    border-radius: 3px;
+}
+
+.mjo-gl-links__note {
+    font-size: 13px;
+    opacity: 0.7;
+    margin: 4px 0;
+    max-width: 70ch;
+}
+
+.mjo-gl-links__error {
+    font-size: 13px;
+    margin: 4px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    color: #b3452c;
+}
+
+/* Wide content scrolls inside its own container so the form never scrolls sideways. */
+.mjo-gl-links__scroll {
+    overflow-x: auto;
+}
+
+.mjo-gl-links__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    min-width: 460px;
+}
+
+.mjo-gl-links__table th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    opacity: 0.6;
+    padding: 4px 10px 4px 0;
+    border-bottom: 1px solid currentColor;
+    border-bottom-color: color-mix(in srgb, currentColor 20%, transparent);
+    white-space: nowrap;
+}
+
+.mjo-gl-links__table td {
+    padding: 6px 10px 6px 0;
+    border-bottom: 1px solid currentColor;
+    border-bottom-color: color-mix(in srgb, currentColor 10%, transparent);
+    vertical-align: top;
+}
+
+/* A retired or not-yet-started link stays visible but reads as history, not as current mapping. */
+.mjo-gl-links__row--inactive {
+    opacity: 0.55;
+}
+
+.mjo-gl-links__link {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.mjo-gl-links__link:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+.mjo-gl-links__name {
+    opacity: 0.7;
+}
+
+.mjo-gl-links__chip {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 1px 7px;
+    border-radius: 2px;
+    border: 1px solid currentColor;
+    border-color: color-mix(in srgb, currentColor 30%, transparent);
+    white-space: nowrap;
+}
+
+.mjo-gl-links__chip--on {
+    color: #1f6f5c;
+    border-color: color-mix(in srgb, #1f6f5c 45%, transparent);
+}
