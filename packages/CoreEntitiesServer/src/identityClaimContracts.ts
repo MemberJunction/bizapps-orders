@@ -99,3 +99,34 @@ export abstract class BaseIdentityClaimDriver {
     /** Called when the claim lapses unredeemed. */
     public abstract OnExpire(context: ClaimContext): Promise<void>;
 }
+
+/**
+ * LOCAL FALLBACK for MJ's identity-claim ENGINE, same footing as the contracts above:
+ * `IdentityClaimEngineServer` exists only in an MJ working tree, not in any published
+ * `@memberjunction/core-entities-server`. The one caller (`CheckoutSessionService`)
+ * mints a GuestOrder claim BEST-EFFORT inside a try/catch that logs and proceeds —
+ * so until MJ publishes the engine, minting throws here, the caller logs it, and the
+ * order books exactly as before. No silent success, no invented claim.
+ *
+ * HOW TO REMOVE: when an MJ release exports IdentityClaimEngineServer, delete this
+ * class and point CheckoutSessionService back at '@memberjunction/core-entities-server'.
+ */
+export class IdentityClaimEngineServer {
+    private static _instance: IdentityClaimEngineServer | null = null;
+    public static get Instance(): IdentityClaimEngineServer {
+        return (this._instance ??= new IdentityClaimEngineServer());
+    }
+    public async CreateClaim(_params: {
+        ClaimTypeName: string;
+        RecordID: string;
+        EntityID: string | null;
+        NormalizedEmail: string;
+        Payload: Record<string, unknown>;
+        SendEmail?: boolean;
+    }, _contextUser: UserInfo): Promise<{ ID: string } | null> {
+        throw new Error(
+            'IdentityClaimEngineServer is not available: no published @memberjunction/core-entities-server ' +
+            'exports it yet. GuestOrder claim minting is dormant until MJ ships the identity-claim engine.'
+        );
+    }
+}
