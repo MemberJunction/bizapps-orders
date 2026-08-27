@@ -27,6 +27,7 @@ import {
 import { EscapeText } from './sql-guards.js';
 import { OpenPaymentIntent } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
+import { CapturePaymentOperation } from './CapturePaymentOperation.js';
 
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
@@ -1188,6 +1189,12 @@ export class CheckoutSessionService {
         if (session.Status === 'Confirmed' && session.DraftOrderID) {
             const existingOrder = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
             const orderLoaded = await existingOrder.Load(session.DraftOrderID);
+            // A first complete can confirm the order and then fail to book the payment
+            // (localhost has no Stripe webhook). Replay still returns the same order, and
+            // CapturePayment is idempotent on the session key so a retry books once.
+            if (orderLoaded) {
+                await this.applySettledPaymentToOrder(session, existingOrder, contextUser);
+            }
             return {
                 Success: true,
                 SessionID: sessionID,
@@ -1440,6 +1447,10 @@ export class CheckoutSessionService {
                 await CheckoutSessionService.stampSessionConfirmedAtomic(sessionID, order.ID, md, contextUser);
             }
 
+            // Book the PaymentHeader + allocation now that the order exists. retrieve-on-complete
+            // only stamps PaymentIntent.Status = Succeeded; AmountPaid stays 0 until CapturePayment.
+            await this.applySettledPaymentToOrder(session, order, contextUser);
+
             // Mint the GuestOrder identity claim for the buyer's email so a later account
             // (MJ core's IdentityClaimEngineServer) can attach the order + its entitlement
             // grants on redemption or claim-on-login. Best-effort: a claim failure must never
@@ -1532,6 +1543,120 @@ export class CheckoutSessionService {
             return `The settled payment amount (${intent.Amount}) does not cover the order total (${totalGross})`;
         }
         return null;
+    }
+
+    /**
+     * After the order is committed, book `Orders.CapturePayment` against the session's
+     * settled PaymentIntent and stamp PaymentIntent.OrderHeaderID.
+     *
+     * Fail-soft and post-commit: a capture problem must not un-confirm the order (a retry
+     * would double-book). CapturePayment's IdempotencyKey makes a later retry safe.
+     */
+    private static async applySettledPaymentToOrder(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        order: OrderHeaderEntity,
+        contextUser?: UserInfo
+    ): Promise<void> {
+        if (!session.PaymentIntentID) {
+            return;
+        }
+        const due = Number(order.TotalGross ?? 0);
+        if (!(due > 0)) {
+            return;
+        }
+        if (Number(order.AmountPaid ?? 0) + 0.005 >= due) {
+            return;
+        }
+        if (!contextUser) {
+            LogError(`[CheckoutSessionService] Cannot book payment for order ${order.ID}: no context user`);
+            return;
+        }
+        if (!order.BillToPersonID && !order.BillToOrganizationID) {
+            LogError(`[CheckoutSessionService] Cannot book payment for order ${order.ID}: no bill-to party`);
+            return;
+        }
+
+        const md = new Metadata();
+        const intent = await md.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, contextUser);
+        if (!(await intent.Load(session.PaymentIntentID))) {
+            LogError(`[CheckoutSessionService] Cannot book payment for order ${order.ID}: intent ${session.PaymentIntentID} was not found`);
+            return;
+        }
+        if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
+            await this.refreshIntentFromGateway(intent, contextUser);
+        }
+        if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
+            LogError(`[CheckoutSessionService] Cannot book payment for order ${order.ID}: intent status is ${intent.Status}`);
+            return;
+        }
+
+        if (!intent.OrderHeaderID) {
+            intent.OrderHeaderID = order.ID;
+        }
+        if (!intent.BillToPersonID && order.BillToPersonID) {
+            intent.BillToPersonID = order.BillToPersonID;
+        }
+        if (!intent.BillToOrganizationID && order.BillToOrganizationID) {
+            intent.BillToOrganizationID = order.BillToOrganizationID;
+        }
+        if (!(await intent.Save())) {
+            LogError(`[CheckoutSessionService] Could not stamp OrderHeaderID on intent ${intent.ID} for order ${order.ID}: ${intent.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+        }
+
+        let tenderCode = 'CreditCard';
+        try {
+            const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
+            if (await widget.Load(session.CheckoutWidgetID) && widget.Configuration) {
+                const configObj = JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration;
+                if (typeof configObj.tenderCode === 'string' && configObj.tenderCode.trim()) {
+                    tenderCode = configObj.tenderCode.trim();
+                }
+            }
+        } catch {
+            // Keep the CreditCard default; CapturePayment will refuse an unknown code.
+        }
+
+        const mdProvider = Metadata.Provider as IMetadataProvider | undefined;
+        if (!mdProvider) {
+            LogError(`[CheckoutSessionService] Cannot book payment for order ${order.ID}: no metadata provider`);
+            return;
+        }
+
+        try {
+            const op = new CapturePaymentOperation();
+            const result = await op.ExecuteServer(
+                {
+                    PaymentIntentID: intent.ID,
+                    Amount: due,
+                    ReceivingCompanyID: order.CompanyID,
+                    BillToPersonID: order.BillToPersonID ?? null,
+                    BillToOrganizationID: order.BillToOrganizationID ?? null,
+                    TenderCode: tenderCode,
+                    Allocations: [{ OrderHeaderID: order.ID, Amount: due }],
+                    PaymentDetail: intent.PaymentProviderID
+                        ? { PaymentProviderID: intent.PaymentProviderID }
+                        : null,
+                    IdempotencyKey: `checkout-complete:${session.ID}`,
+                },
+                {
+                    provider: mdProvider,
+                    user: contextUser,
+                    emitProgress: () => undefined,
+                }
+            );
+            const output = result.Output;
+            if (!result.Success || !output?.Success) {
+                const detail = result.ErrorMessage
+                    ?? output?.Message
+                    ?? output?.Blockers?.map((b) => b.Message).join('; ')
+                    ?? 'unknown error';
+                LogError(`[CheckoutSessionService] CapturePayment failed for order ${order.ID}: ${detail}`);
+            }
+        } catch (err) {
+            LogError(
+                `[CheckoutSessionService] CapturePayment threw for order ${order.ID}: ${err instanceof Error ? err.message : String(err)}`
+            );
+        }
     }
 
     /**

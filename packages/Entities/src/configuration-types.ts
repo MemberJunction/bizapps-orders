@@ -126,6 +126,11 @@ export interface CheckoutWidgetConfiguration {
      */
     paymentProviderId?: string;
     /**
+     * `PaymentType.Code` used when CompleteCheckout books `Orders.CapturePayment`
+     * (e.g. `CreditCard`, `ACH`). Server-side only. Defaults to `CreditCard`.
+     */
+    tenderCode?: string;
+    /**
      * Origins (scheme + host [+ port]) allowed to embed and drive this widget through the
      * anonymous checkout edge. When set, requests whose Origin header does not match are
      * refused and receive no CORS grant. When absent, the edge allows any origin (the
