@@ -34,10 +34,12 @@ describe('renderCheckoutHostPage', () => {
 
     it('bakes slug and api root into data-* attributes, never into the script block', () => {
         const evil = 'summit"</script><script>alert(1)</script>';
-        const html = renderCheckoutHostPage({ slug: evil, apiRoot: '/checkout' });
+        const html = renderCheckoutHostPage({ slug: evil, apiRoot: '/checkout', cspNonce: 'nOnce+/1' });
         expect(html).toContain('data-slug="summit&quot;&lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;"');
         expect(html).toContain('data-api-root="/checkout"');
-        const script = html.slice(html.indexOf('<script>') + 8, html.indexOf('</script>'));
+        const scriptOpen = html.indexOf('<script');
+        const scriptTagEnd = html.indexOf('>', scriptOpen);
+        const script = html.slice(scriptTagEnd + 1, html.indexOf('</script>'));
         expect(script).not.toContain(evil);
         expect(script).not.toContain('summit"');
         expect(script).toContain("host.getAttribute('data-slug')");
@@ -45,7 +47,7 @@ describe('renderCheckoutHostPage', () => {
     });
 
     it('drives only the existing POST verbs (no amount/price/provider in the request shape)', () => {
-        const html = renderCheckoutHostPage({ slug: 'summit-2027', apiRoot: '/checkout' });
+        const html = renderCheckoutHostPage({ slug: 'summit-2027', apiRoot: '/checkout', cspNonce: 'nOnce+/1' });
         expect(html).toContain("post('/initialize'");
         expect(html).toContain("post('/draft'");
         expect(html).toContain("post('/payment-intent'");
@@ -59,7 +61,7 @@ describe('renderCheckoutHostPage', () => {
     });
 
     it('is a complete HTML document with noindex and utf-8', () => {
-        const html = renderCheckoutHostPage({ slug: 'summit-2027', apiRoot: '/checkout', pageTitle: 'Buy <tickets>' });
+        const html = renderCheckoutHostPage({ slug: 'summit-2027', apiRoot: '/checkout', pageTitle: 'Buy <tickets>', cspNonce: 'nOnce+/1' });
         expect(html.startsWith('<!doctype html>')).toBe(true);
         expect(html).toContain('<title>Buy &lt;tickets&gt;</title>');
         expect(html).toContain('name="robots" content="noindex"');
@@ -69,7 +71,7 @@ describe('renderCheckoutHostPage', () => {
 
 describe('renderCheckoutHostErrorPage', () => {
     it('escapes the operator-facing message and has no boot script', () => {
-        const html = renderCheckoutHostErrorPage({ message: 'Not <found> & gone' });
+        const html = renderCheckoutHostErrorPage({ message: 'Not <found> & gone', cspNonce: 'nOnce+/1' });
         expect(html).toContain('Not &lt;found&gt; &amp; gone');
         expect(html).not.toContain('<script>');
         expect(html).toContain('role="alert"');

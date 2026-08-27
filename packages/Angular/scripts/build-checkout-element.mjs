@@ -59,7 +59,10 @@ await esbuild.build({
     outfile: path.join(outdir, 'main.js'),
     platform: 'browser',
     target: 'es2022',
-    sourcemap: true,
+    // Default off: the public GET /checkout/element/main.js.map would otherwise
+    // publish original TypeScript on an unauthenticated payment route. Set
+    // CHECKOUT_ELEMENT_SOURCEMAP=1 for local debugging.
+    sourcemap: process.env.CHECKOUT_ELEMENT_SOURCEMAP === '1',
     legalComments: 'none',
     plugins: [angularLinkerPlugin()],
     logOverride: { 'empty-import-meta': 'silent' },

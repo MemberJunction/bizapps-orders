@@ -435,6 +435,7 @@ export type {
     UpdateDraftResult,
     CompleteCheckoutResult,
     OpenSessionPaymentIntentResult,
+    BookCheckoutPaymentResult,
 } from './CheckoutSessionService.js';
 
 // SQL boundary guards — the sanctioned escaping/validation helpers for remote-caller input
