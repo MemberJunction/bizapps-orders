@@ -1,7 +1,7 @@
 import { ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { CompositeKey, Metadata, RunView } from '@memberjunction/core';
 import type { FormContext, FormNavigationEvent } from '@memberjunction/ng-base-forms';
-import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
+import { AccountingEngineBase, pickActiveLinkIndex, type LinkCandidate } from '@mj-biz-apps/accounting-engine-base';
 import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
 
 /** Accounting's polymorphic link entity. A SOFT reference — no FK crosses the schema boundary. */
@@ -9,6 +9,23 @@ const LINK_ENTITY = 'MJ_BizApps_Accounting: GL Account Links';
 
 /** This app's Products entity, which is what a link's `(EntityID, RecordID)` pair points AT here. */
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
+
+/**
+ * The only fields the in-force resolver reads.
+ *
+ * Structural on purpose: the links arrive either as accounting's generated entity objects (from the
+ * engine cache) or as plain view rows (from the fallback read), and those are different types that
+ * happen to carry the same five fields. Naming the fields rather than either concrete type is what
+ * lets one resolver serve both without a cast at each call site.
+ */
+export interface GLLinkLike {
+    ID: unknown;
+    GLAccountID: unknown;
+    GLAccountRoleID: unknown;
+    Status: unknown;
+    StartedAt: unknown;
+    EndedAt: unknown;
+}
 
 /** One link, flattened for display. Nothing here is computed — every field is read off the row. */
 export interface ProductGLLinkRow {
@@ -97,6 +114,21 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         }
     }
 
+    /**
+     * What the status chip says.
+     *
+     * The three states are NOT the two the `Status` column has. A link can be stored `Active` and still
+     * not be the one that books — superseded by a later link on the same role — and rendering the raw
+     * column would put the word "Active" on both rows. Saying SUPERSEDED is the whole reason this panel
+     * resolves through accounting's picker rather than reading a flag.
+     */
+    public StatusLabel(row: ProductGLLinkRow): string {
+        if (row.Active) {
+            return 'In force';
+        }
+        return row.Status === 'Active' ? 'Superseded' : row.Status;
+    }
+
     /** Opens accounting's Account Links screen, which is where a link is created or retired. */
     public OpenLink(row: ProductGLLinkRow): void {
         this.Navigate.emit({
@@ -149,6 +181,8 @@ export class BizAppsProductGLLinksComponent implements OnInit {
 
         const rows = cached.length ? cached : await this.readDirect(productEntity.ID, productID);
 
+        const inForce = this.inForceIDs(rows);
+
         return rows
             .map((l) => {
                 const account = engine.GLAccountByID(String(l.GLAccountID));
@@ -163,14 +197,14 @@ export class BizAppsProductGLLinksComponent implements OnInit {
                     Status: String(l.Status ?? ''),
                     StartedAt: (l.StartedAt as unknown as string) ?? null,
                     EndedAt: (l.EndedAt as unknown as string) ?? null,
-                    Active: this.isActiveNow(String(l.Status ?? ''), l.StartedAt as unknown as string | null, l.EndedAt as unknown as string | null),
+                    Active: inForce.has(String(l.ID).toLowerCase()),
                 };
             })
             .sort((a, b) => a.RoleName.localeCompare(b.RoleName) || a.AccountCode.localeCompare(b.AccountCode));
     }
 
     /** The view read, used only when the engine cache holds nothing for this product. */
-    private async readDirect(entityID: string, recordID: string): Promise<Array<Record<string, unknown>>> {
+    private async readDirect(entityID: string, recordID: string): Promise<GLLinkLike[]> {
         const rv = new RunView();
         const res = await rv.RunView<Record<string, unknown>>({
             EntityName: LINK_ENTITY,
@@ -183,27 +217,65 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         if (!res?.Success) {
             throw new Error(res?.ErrorMessage ?? 'the GL account links could not be read');
         }
-        return res.Results ?? [];
+        // The one honest cast in this file: a view row arrives untyped, and this is the boundary where
+        // it becomes the shape the panel reads. Every field is then narrowed with String()/?? below.
+        return (res.Results ?? []) as unknown as GLLinkLike[];
     }
 
     /**
-     * Whether a link applies TODAY — status Active and inside its window.
+     * The ids of the links actually IN FORCE today — one per role at most, decided by accounting.
      *
-     * The window is open-ended on both sides: a null `StartedAt` means "always has", a null `EndedAt`
-     * means "still does". Treating null as a boundary would silently hide every link that never
-     * needed a date, which is most of them.
+     * ── WHY THIS IS NOT A WINDOW TEST ──
+     *
+     * The obvious implementation, and the one this replaced, asks of each link "is it Active and does
+     * today fall inside its window?" and marks every link that passes. That is wrong whenever a role
+     * has more than one qualifying link — a mapping being superseded while the old row is still open,
+     * which is exactly what an accountant does when they re-point a product mid-year. Both rows pass
+     * the window test, so the panel would show TWO active accounts for one role while an order books
+     * through exactly one of them. A screen that disagrees with the booking about where money lands is
+     * worse than no screen.
+     *
+     * `pickActiveLinkIndex` is accounting's own picker — the pure function behind
+     * `ResolveLinkedAccount`, exported by that package for precisely this kind of reuse. It applies the
+     * window AND the tie-break this panel has no business restating: latest `StartedAt` wins, and a
+     * null `StartedAt` loses to any dated one. Calling it means "active" here can only ever mean what
+     * the booking pipeline means.
+     *
+     * Grouped by ROLE because that is the unit the picker resolves: a product legitimately has a
+     * revenue link and a deferred-revenue link at once, and they do not compete.
      */
-    private isActiveNow(status: string, startedAt: string | null, endedAt: string | null): boolean {
-        if (status !== 'Active') {
-            return false;
+    private inForceIDs(rows: ReadonlyArray<GLLinkLike>): Set<string> {
+        const byRole = new Map<string, GLLinkLike[]>();
+        for (const link of rows) {
+            const role = String(link.GLAccountRoleID ?? '').toLowerCase();
+            const group = byRole.get(role);
+            if (group) {
+                group.push(link);
+            } else {
+                byRole.set(role, [link]);
+            }
         }
-        const now = Date.now();
-        if (startedAt && new Date(startedAt).getTime() > now) {
-            return false;
+
+        // One instant for every role, so a slow load cannot resolve two roles against two "nows".
+        const asOf = new Date();
+        const winners = new Set<string>();
+        for (const group of byRole.values()) {
+            const index = pickActiveLinkIndex(
+                // The cast is the boundary between a database string and accounting's closed vocabulary
+                // (`Active | Disabled | Pending`). It is safe in the only direction that matters: a value
+                // outside that set simply is not `'Active'`, so the picker skips it rather than
+                // mis-classifying it as in force.
+                group.map((l): LinkCandidate => ({
+                    Status: String(l.Status ?? '') as LinkCandidate['Status'],
+                    StartedAt: (l.StartedAt as Date | null) ?? null,
+                    EndedAt: (l.EndedAt as Date | null) ?? null,
+                })),
+                asOf,
+            );
+            if (index >= 0) {
+                winners.add(String(group[index].ID).toLowerCase());
+            }
         }
-        if (endedAt && new Date(endedAt).getTime() < now) {
-            return false;
-        }
-        return true;
+        return winners;
     }
 }

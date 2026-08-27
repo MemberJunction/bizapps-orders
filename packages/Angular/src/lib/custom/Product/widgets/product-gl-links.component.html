@@ -55,7 +55,7 @@
                                 <span
                                     class="mjo-gl-links__chip"
                                     [class.mjo-gl-links__chip--on]="row.Active">
-                                    {{ row.Active ? 'Active' : row.Status }}
+                                    {{ StatusLabel(row) }}
                                 </span>
                             </td>
                             <td>{{ row.StartedAt ? (row.StartedAt | date: 'yyyy-MM-dd') : '—' }}</td>
