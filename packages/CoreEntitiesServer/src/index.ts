@@ -165,7 +165,7 @@ export {
 export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
 export { CheckEntitlementOperation, LoadCheckEntitlementOperation } from './CheckEntitlementOperation.js';
 export { ListEntitlementsOperation, LoadListEntitlementsOperation } from './ListEntitlementsOperation.js';
-export { CheckPersonEntitlement, ListPersonEntitlements } from './EntitlementRead.js';
+export { CheckPersonEntitlement, ListPersonEntitlements, ASOF_FUTURE_TOLERANCE_MS } from './EntitlementRead.js';
 export type {
     CheckEntitlementInput,
     CheckEntitlementOutput,

@@ -25,7 +25,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
     };
 });
 
-import { CheckPersonEntitlement, ListPersonEntitlements } from '../EntitlementRead.js';
+import { ASOF_FUTURE_TOLERANCE_MS, CheckPersonEntitlement, ListPersonEntitlements } from '../EntitlementRead.js';
 import { ENTITLEMENT_CHECK_TTL_MS } from '../EntitlementBehavior.js';
 
 const PERSON = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
@@ -77,7 +77,7 @@ describe('CheckPersonEntitlement — caller bugs throw', () => {
         ).rejects.toBeInstanceOf(InvalidOperationInputError);
     });
 
-    it('refuses a future AsOf', async () => {
+    it('refuses a future AsOf well beyond clock skew', async () => {
         await expect(
             CheckPersonEntitlement(
                 { PersonID: PERSON, Code: 'LEARNING_HUB_PREMIUM', AsOf: '2030-01-01T00:00:00.000Z' },
@@ -85,6 +85,25 @@ describe('CheckPersonEntitlement — caller bugs throw', () => {
                 user,
             ),
         ).rejects.toThrow(/future/i);
+        await expect(
+            CheckPersonEntitlement(
+                {
+                    PersonID: PERSON,
+                    Code: 'LEARNING_HUB_PREMIUM',
+                    AsOf: new Date(Date.now() + ASOF_FUTURE_TOLERANCE_MS + 5_000).toISOString(),
+                },
+                provider,
+                user,
+            ),
+        ).rejects.toThrow(/future/i);
+    });
+
+    it('accepts AsOf a few seconds ahead of the server (NTP skew)', async () => {
+        byEntity({ 'MJ_BizApps_Orders: Product Entitlements': [] });
+        const skew = new Date(Date.now() + 5_000).toISOString();
+        await expect(
+            CheckPersonEntitlement({ PersonID: PERSON, Code: 'LEARNING_HUB_PREMIUM', AsOf: skew }, provider, user),
+        ).resolves.toMatchObject({ Decision: 'NoGrant' });
     });
 });
 

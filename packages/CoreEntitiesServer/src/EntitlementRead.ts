@@ -47,8 +47,8 @@ export interface CheckEntitlementInput {
     Code: string;
     /**
      * Diagnostics only — historical audit. The trust path omits this (evaluates at now).
-     * Future values are rejected. CacheUntil is always issued from wall-clock now,
-     * never from this date.
+     * Values more than a minute in the future are rejected (NTP skew is allowed).
+     * CacheUntil is always issued from wall-clock now, never from this date.
      */
     AsOf?: string | Date | null;
     /** Optional company narrowing via the template's product. */
@@ -142,6 +142,9 @@ function toISO(d: Date | null | undefined): string | undefined {
     return d ? d.toISOString() : undefined;
 }
 
+/** NTP skew between LXP and Orders. CacheUntil does not use AsOf, so this cannot mint a long cache. */
+export const ASOF_FUTURE_TOLERANCE_MS = 60_000;
+
 function parseAsOf(value: Date | string | null | undefined, now: Date = new Date()): Date {
     if (value == null || value === '') return now;
     let d: Date;
@@ -158,9 +161,8 @@ function parseAsOf(value: Date | string | null | undefined, now: Date = new Date
         throw new InvalidOperationInputError('AsOf must be an ISO datetime.');
     }
     // Historical audit ("did they have access on the 3rd?") is the point of AsOf.
-    // A future date is the dangerous direction: it would mint a CacheUntil years out
-    // if we ever derived the cache clock from it, and it is never a trust-path input.
-    if (d.getTime() > now.getTime()) {
+    // Hours/years ahead is refused. Sub-minute skew is NTP, not a diagnostic of 2030.
+    if (d.getTime() > now.getTime() + ASOF_FUTURE_TOLERANCE_MS) {
         throw new InvalidOperationInputError('AsOf cannot be in the future.');
     }
     return d;
@@ -551,6 +553,7 @@ export async function ListPersonEntitlements(
             byCode.set(row.Code, list);
         }
 
+        const issuedAt = new Date();
         const items: ListedEntitlement[] = [...byCode.entries()]
             .map(([code, group]) => {
                 const picked = PickWinningAccess(group)!;
@@ -562,7 +565,7 @@ export async function ListPersonEntitlements(
                     ValidTo: toISO(picked.ValidTo),
                     Quantity: picked.Quantity ?? undefined,
                     GrantID: picked.GrantID,
-                    CacheUntil: CacheUntilFor(new Date(), picked.ValidTo, picked.HasAccess).toISOString(),
+                    CacheUntil: CacheUntilFor(issuedAt, picked.ValidTo, picked.HasAccess).toISOString(),
                 };
             })
             .filter((item) => includeInactive || item.HasAccess)
