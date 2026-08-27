@@ -33,6 +33,7 @@
  *   events               EV1–EV10  event products and one-time deferred revenue
  *   volume               VL1–VL13  populations, repeated purchases, and a SECOND MJ session
  *   entitlements         EN1–EN15  what a purchase confers, and for how long (D27/D76)
+ *   entitlement-read     ER1–ER7   Orders.CheckEntitlement / ListEntitlements in-process Execute
  *   payment-providers    PV1–PV12  the gateway seam against a real database (D19/D37)
  *   ach-settlement       AS1–AS17  money that arrives days late, and can leave again (D77/D78/D80)
  *   embedded-payment-detail PD1–PD14  PaymentDetail as an owner-held 1:1 embed (D38/D39)
@@ -98,6 +99,7 @@ export * from './checks/arithmetic-edges.checks.js';
 export * from './checks/concurrency.checks.js';
 export * from './checks/volume.checks.js';
 export * from './checks/entitlements.checks.js';
+export * from './checks/entitlement-read.checks.js';
 export * from './checks/payment-providers.checks.js';
 export * from './checks/ach-settlement.checks.js';
 export * from './checks/embedded-payment-detail.checks.js';
