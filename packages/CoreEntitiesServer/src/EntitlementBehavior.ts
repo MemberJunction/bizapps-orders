@@ -393,11 +393,22 @@ export function EvaluateGrantAccess(
     if (subscription && !ACCESSING_SUB_STATUS.has(subscription.Status)) {
         if (subscription.Status === 'Canceled') {
             if (!subscription.EndDate || asOf.getTime() > subscription.EndDate.getTime()) {
-                return denied('SubscriptionInactive');
+                return {
+                    HasAccess: false,
+                    Decision: 'SubscriptionInactive',
+                    ValidFrom: grant.ValidFrom,
+                    ValidTo: subscription.EndDate,
+                };
             }
-            // Inside access-through: skip the original ValidTo and the term window. Grace is
-            // allowed to outlive the paid term, and an immediate cancel is allowed to cut it short.
-            return granted();
+            // Inside access-through: EndDate is the operative bound — it can cut the original
+            // ValidTo short or extend it (grace). Report that, so CacheUntil and "access
+            // through {ValidTo}" both tell the truth.
+            return {
+                HasAccess: true,
+                Decision: 'Granted',
+                ValidFrom: grant.ValidFrom,
+                ValidTo: subscription.EndDate,
+            };
         }
         return denied('SubscriptionInactive');
     }

@@ -2,8 +2,9 @@
  * Input for `Orders.CheckEntitlement`.
  *
  * Asked by capability Code, not SKU. PersonID is authoritative; email is a convenience
- * resolution (normalised, ambiguous-if-duplicate). AsOf is diagnostics only — the trust
- * path omits it and evaluates at now.
+ * resolution (normalised, ambiguous-if-duplicate). AsOf is diagnostics only (historical
+ * audit). The trust path omits it. Future values are rejected. CacheUntil is always
+ * issued from wall-clock now, never from AsOf.
  *
  * NO import statements — definitions are emitted verbatim.
  */
@@ -14,7 +15,7 @@ export interface CheckEntitlementInput {
     Email?: string;
     /** `ProductEntitlement.Code` — unique per product, not globally. Convention: APP_AREA_TIER. */
     Code: string;
-    /** Diagnostics only. Omit on the trust path. */
+    /** Diagnostics only (historical audit). Omit on the trust path. Future values are rejected. */
     AsOf?: string;
     /** Optional narrowing via the template product's company. */
     CompanyID?: string;

@@ -412,24 +412,29 @@ describe('EvaluateGrantAccess — cancelled subscription + grace', () => {
     });
 
     it('grace (EndDate still ahead) remains Granted even though the term is Canceled', () => {
+        const accessThrough = new Date('2026-07-15T00:00:00Z');
         const r = EvaluateGrantAccess(
             grant({ LinkedToSubscription: true, LinkedToTerm: true }),
             asOf,
-            { Status: 'Canceled', EndDate: new Date('2026-07-15T00:00:00Z') },
+            { Status: 'Canceled', EndDate: accessThrough },
             term,
         );
         expect(r.HasAccess).toBe(true);
         expect(r.Decision).toBe('Granted');
+        // Reported ValidTo is access-through, not the original term end (12/31).
+        expect(r.ValidTo).toEqual(accessThrough);
     });
 
     it('grace can EXTEND past the original ValidTo', () => {
-        // End-of-term cancel + grace days: ValidTo is 12/31, access-through is 1/7.
+        // End-of-term cancel + grace days: grant ValidTo is 12/31, access-through is 1/7.
+        const accessThrough = new Date('2027-01-07T00:00:00Z');
         const r = EvaluateGrantAccess(
             grant({ LinkedToSubscription: true }),
             new Date('2027-01-03T12:00:00Z'),
-            { Status: 'Canceled', EndDate: new Date('2027-01-07T00:00:00Z') },
+            { Status: 'Canceled', EndDate: accessThrough },
         );
         expect(r.HasAccess).toBe(true);
+        expect(r.ValidTo).toEqual(accessThrough);
     });
 
     it('holds at the exact access-through instant', () => {

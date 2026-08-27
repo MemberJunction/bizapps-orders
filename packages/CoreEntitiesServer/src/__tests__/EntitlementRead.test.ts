@@ -26,6 +26,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
 });
 
 import { CheckPersonEntitlement, ListPersonEntitlements } from '../EntitlementRead.js';
+import { ENTITLEMENT_CHECK_TTL_MS } from '../EntitlementBehavior.js';
 
 const PERSON = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const TEMPLATE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -74,6 +75,16 @@ describe('CheckPersonEntitlement — caller bugs throw', () => {
         await expect(
             CheckPersonEntitlement({ PersonID: "' OR 1=1 --", Code: 'LEARNING_HUB_PREMIUM' }, provider, user),
         ).rejects.toBeInstanceOf(InvalidOperationInputError);
+    });
+
+    it('refuses a future AsOf', async () => {
+        await expect(
+            CheckPersonEntitlement(
+                { PersonID: PERSON, Code: 'LEARNING_HUB_PREMIUM', AsOf: '2030-01-01T00:00:00.000Z' },
+                provider,
+                user,
+            ),
+        ).rejects.toThrow(/future/i);
     });
 });
 
@@ -158,6 +169,12 @@ describe('CheckPersonEntitlement — evaluation through the loader', () => {
         expect(r.Decision).toBe('Granted');
         expect(r.GrantID).toBe(GRANT);
         expect(r.Quantity).toBe(1);
+        // CacheUntil is issued from wall-clock now, not from AsOf (2026-07-01).
+        const cacheMs = Date.parse(r.CacheUntil);
+        const nowMs = Date.now();
+        expect(cacheMs).toBeGreaterThan(nowMs - 5_000);
+        expect(cacheMs).toBeLessThanOrEqual(nowMs + ENTITLEMENT_CHECK_TTL_MS + 5_000);
+        expect(r.CacheUntil).not.toBe('2026-07-01T12:01:00.000Z');
     });
 
     it('a cancelled subscription inside grace is still Granted', async () => {
@@ -188,6 +205,7 @@ describe('CheckPersonEntitlement — evaluation through the loader', () => {
         );
         expect(r.HasAccess).toBe(true);
         expect(r.Decision).toBe('Granted');
+        expect(r.ValidTo).toBe('2026-07-15T00:00:00.000Z');
     });
 
     it('a cancelled subscription past access-through is SubscriptionInactive', async () => {
@@ -216,7 +234,12 @@ describe('CheckPersonEntitlement — evaluation through the loader', () => {
             provider,
             user,
         );
-        expect(r).toMatchObject({ HasAccess: false, Decision: 'SubscriptionInactive', GrantID: GRANT });
+        expect(r).toMatchObject({
+            HasAccess: false,
+            Decision: 'SubscriptionInactive',
+            GrantID: GRANT,
+            ValidTo: '2026-06-01T00:00:00.000Z',
+        });
     });
 
     it('lookup faults fail closed rather than throwing', async () => {

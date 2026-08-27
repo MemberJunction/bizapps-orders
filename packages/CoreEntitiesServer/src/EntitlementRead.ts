@@ -45,7 +45,11 @@ export interface CheckEntitlementInput {
     Email?: string | null;
     /** Capability key (`ProductEntitlement.Code`), unique per product not globally. */
     Code: string;
-    /** Diagnostics only. The trust path omits this and evaluates at now. */
+    /**
+     * Diagnostics only — historical audit. The trust path omits this (evaluates at now).
+     * Future values are rejected. CacheUntil is always issued from wall-clock now,
+     * never from this date.
+     */
     AsOf?: string | Date | null;
     /** Optional company narrowing via the template's product. */
     CompanyID?: string | null;
@@ -138,21 +142,26 @@ function toISO(d: Date | null | undefined): string | undefined {
     return d ? d.toISOString() : undefined;
 }
 
-function parseAsOf(value: Date | string | null | undefined): Date {
-    if (value == null || value === '') return new Date();
+function parseAsOf(value: Date | string | null | undefined, now: Date = new Date()): Date {
+    if (value == null || value === '') return now;
+    let d: Date;
     if (value instanceof Date) {
-        if (Number.isNaN(value.getTime())) {
+        d = value;
+    } else {
+        const text = String(value);
+        if (/['";]/.test(text)) {
             throw new InvalidOperationInputError('AsOf must be an ISO datetime.');
         }
-        return value;
+        d = new Date(text);
     }
-    const text = String(value);
-    if (/['";]/.test(text)) {
-        throw new InvalidOperationInputError('AsOf must be an ISO datetime.');
-    }
-    const d = new Date(text);
     if (Number.isNaN(d.getTime())) {
         throw new InvalidOperationInputError('AsOf must be an ISO datetime.');
+    }
+    // Historical audit ("did they have access on the 3rd?") is the point of AsOf.
+    // A future date is the dangerous direction: it would mint a CacheUntil years out
+    // if we ever derived the cache clock from it, and it is never a trust-path input.
+    if (d.getTime() > now.getTime()) {
+        throw new InvalidOperationInputError('AsOf cannot be in the future.');
     }
     return d;
 }
@@ -171,20 +180,21 @@ function normalizeEmail(value: unknown): string | null {
     return email;
 }
 
-function closedCheck(evaluatedAt: Date): CheckEntitlementOutput {
+function closedCheck(evaluatedAt: Date, issuedAt: Date = new Date()): CheckEntitlementOutput {
     return {
         HasAccess: false,
         Decision: 'NoGrant',
         EvaluatedAt: evaluatedAt.toISOString(),
-        CacheUntil: CacheUntilFor(evaluatedAt, null, false).toISOString(),
+        CacheUntil: CacheUntilFor(issuedAt, null, false).toISOString(),
     };
 }
 
 function toCheckOutput(
     evaluatedAt: Date,
     picked: EvaluatedNamedGrant | null,
+    issuedAt: Date = new Date(),
 ): CheckEntitlementOutput {
-    if (!picked) return closedCheck(evaluatedAt);
+    if (!picked) return closedCheck(evaluatedAt, issuedAt);
     return {
         HasAccess: picked.HasAccess,
         Decision: picked.Decision,
@@ -193,7 +203,7 @@ function toCheckOutput(
         Quantity: picked.Quantity ?? undefined,
         GrantID: picked.GrantID,
         EvaluatedAt: evaluatedAt.toISOString(),
-        CacheUntil: CacheUntilFor(evaluatedAt, picked.ValidTo, picked.HasAccess).toISOString(),
+        CacheUntil: CacheUntilFor(issuedAt, picked.ValidTo, picked.HasAccess).toISOString(),
     };
 }
 
@@ -552,7 +562,7 @@ export async function ListPersonEntitlements(
                     ValidTo: toISO(picked.ValidTo),
                     Quantity: picked.Quantity ?? undefined,
                     GrantID: picked.GrantID,
-                    CacheUntil: CacheUntilFor(evaluatedAt, picked.ValidTo, picked.HasAccess).toISOString(),
+                    CacheUntil: CacheUntilFor(new Date(), picked.ValidTo, picked.HasAccess).toISOString(),
                 };
             })
             .filter((item) => includeInactive || item.HasAccess)

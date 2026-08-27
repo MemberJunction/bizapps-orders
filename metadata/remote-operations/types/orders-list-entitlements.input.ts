@@ -9,6 +9,7 @@
 export interface ListEntitlementsInput {
     PersonID?: string;
     Email?: string;
+    /** Diagnostics only (historical audit). Future values are rejected. CacheUntil is from wall-clock now. */
     AsOf?: string;
     CompanyID?: string;
     /** When false, only in-force capabilities. Default true. */

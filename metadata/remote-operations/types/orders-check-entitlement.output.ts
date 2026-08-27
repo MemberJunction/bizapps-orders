@@ -20,12 +20,13 @@ export interface CheckEntitlementOutput {
     HasAccess: boolean;
     Decision: EntitlementDecision;
     ValidFrom?: string;
+    /** When access actually ends — grant window, or subscription access-through after cancel. */
     ValidTo?: string;
     /** ResourceQuantity — seats. Null for Feature/AccessLevel. */
     Quantity?: number;
     /** Audit handle of the winning grant. */
     GrantID?: string;
     EvaluatedAt: string;
-    /** min(ValidTo, now + 60s). Cache keyed on this, fail closed when stale. */
+    /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. Fail closed when stale. */
     CacheUntil: string;
 }

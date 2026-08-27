@@ -112,7 +112,7 @@ out: {
   GrantID?:            uuid,             // audit handle
   ViaOrganizationID?:  uuid,             // if granted through a team/site licence
   EvaluatedAt:         datetimeoffset,
-  CacheUntil:          datetimeoffset    // min(ValidTo, policy TTL)
+  CacheUntil:          datetimeoffset    // min(effective ValidTo, wall-clock now + 60s); never from AsOf
 }
 ```
 
@@ -141,7 +141,7 @@ A “does X have Y” endpoint answers questions about people. Answering them is
 2. **Rate limit and log.** Repeated checks are a customer-list oracle. Every decision should be recorded — that log is the audit trail when someone disputes access.
 3. **Don't leak existence.** Unknown person and known-person-without-access should be indistinguishable in response shape and, ideally, timing.
 4. **Fail closed**, and make the failure mode explicit in the contract rather than incidental to a caught exception.
-5. **Evaluate server-side only.** No client-supplied `AsOf` on the trust path beyond diagnostics — the same rule that keeps prices out of checkout request bodies.
+5. **Evaluate server-side only.** No client-supplied `AsOf` on the trust path beyond diagnostics — the same rule that keeps prices out of checkout request bodies. A future `AsOf` is rejected. `CacheUntil` is always issued from wall-clock now, never from `AsOf`, so a diagnostic query cannot mint a long-lived cache instruction. After cancel, reported `ValidTo` is the subscription access-through date, not the original grant window.
 
 ---
 
@@ -168,7 +168,17 @@ v1 shipped on `an-dev-13` (branch from `origin/next` @ #116; rebase after #117 m
 | 4 | Does LXP have its own user id? | Ask Ethan before adding ExternalUserID |
 | 5 | Team / org inheritance | Person grants only unless LXP sells site licences at launch |
 | 6 | Entitlement code registry | Convention `APP_AREA_TIER` now; lookup table if codes proliferate |
-| 7 | Client `AsOf` | Diagnostics only, not the trust path |
+| 7 | Client `AsOf` | Diagnostics only; future values rejected; CacheUntil always from wall-clock now |
+
+---
+
+## 8. How these operations reach a host
+
+The metadata JSON in this repo (`metadata/remote-operations/`) is the source of the Remote Operation rows. `mj-app.json`'s `metadata.directory` is a **dev-time pointer**, not something `mj app install` applies. There is no `*Metadata_Sync*.sql` in `migrations/`, and no migration inserts a `RemoteOperation` row.
+
+That is **repo-wide**, not introduced here: every Orders remote operation (`PreviewPrice`, `CapturePayment`, `CancelSubscription`, …) ships the same way. `V202608091500__Retire_draft_operations.sql` exists because *deleting* a pushed row is an act that `mj sync push` will not perform on its own; the INSERT side was never written as a migration.
+
+A host that installed Orders therefore does **not** automatically have `Orders.CheckEntitlement`. Until the project settles a metadata-to-deployment path, the operations exist in an environment only after someone runs `mj sync push` against it. That is a conversation to have before the LXP goes live, not a defect of this PR — but it is the thing that will make the LXP's first call fail if nobody has pushed.
 
 ---
 

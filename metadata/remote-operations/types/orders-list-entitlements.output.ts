@@ -20,9 +20,11 @@ export interface ListedEntitlement {
     HasAccess: boolean;
     Decision: EntitlementDecision;
     ValidFrom?: string;
+    /** When access actually ends — grant window, or subscription access-through after cancel. */
     ValidTo?: string;
     Quantity?: number;
     GrantID?: string;
+    /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. */
     CacheUntil: string;
 }
 
