@@ -28,6 +28,11 @@ import { EscapeText } from './sql-guards.js';
 import { OpenPaymentIntent } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
+import { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
+import {
+    isCaptureRefusalRetryable,
+    isTerminalCapturePrecheck,
+} from './checkoutCaptureRetry.js';
 
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
@@ -120,6 +125,21 @@ export interface UpdateDraftResult {
     TotalGross: number;
     RequiresPayment: boolean;
     Lines: CheckoutLineSummary[];
+}
+
+/** Outcome of booking CapturePayment after a checkout order is already confirmed. */
+export interface BookCheckoutPaymentResult {
+    /** True when CapturePayment was invoked (or would have been, but a pre-check failed). */
+    Attempted: boolean;
+    /** True when the order is paid (already, or as a result of this call). */
+    Booked: boolean;
+    ErrorMessage?: string;
+    /**
+     * When Attempted && !Booked: a later attempt might succeed. Unclassified defaults
+     * true. The webhook 500s only when this is true (and the event is still inside
+     * the retry window).
+     */
+    Retryable?: boolean;
 }
 
 export interface CompleteCheckoutResult {
@@ -849,6 +869,12 @@ export class CheckoutSessionService {
         if (!allowAnyProduct && allowedProductIds.size === 0) {
             return failed('This checkout is not configured with a product');
         }
+        // Open catalog is company-scoped. A widget with no CompanyID must not accept an
+        // arbitrary ProductID from an anonymous caller (the remaining company check used
+        // to skip when CompanyID was unset).
+        if (allowAnyProduct && !widget.CompanyID) {
+            return failed('This checkout is not configured for open-catalog sale');
+        }
 
         // Build in-memory Order graph for accurate pricing calculation without DB pollution
         const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
@@ -900,7 +926,7 @@ export class CheckoutSessionService {
                 if (!prodLoaded) {
                     return failed('The requested product is not available');
                 }
-                if (widget.CompanyID && !this.idsEqual(widget.CompanyID, String(product.CompanyID ?? ''))) {
+                if (!this.idsEqual(widget.CompanyID, String(product.CompanyID ?? ''))) {
                     return failed('This checkout does not sell that product');
                 }
                 maxQuantityPerLine = product.MaxQuantityPerLine ?? null;
@@ -1189,9 +1215,10 @@ export class CheckoutSessionService {
         if (session.Status === 'Confirmed' && session.DraftOrderID) {
             const existingOrder = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
             const orderLoaded = await existingOrder.Load(session.DraftOrderID);
-            // A first complete can confirm the order and then fail to book the payment
-            // (localhost has no Stripe webhook). Replay still returns the same order, and
-            // CapturePayment is idempotent on the session key so a retry books once.
+            // A first complete can confirm the order and then fail to book the payment.
+            // Replay is one retry: CapturePayment is idempotent on `checkout-complete:${session.ID}`.
+            // `payment_intent.succeeded` is the other — BookSettledCheckoutPaymentIfNeeded, including
+            // on AlreadyApplied webhook deliveries so a 500 after applyEvent still converges.
             if (orderLoaded) {
                 await this.applySettledPaymentToOrder(session, existingOrder, contextUser);
             }
@@ -1546,48 +1573,90 @@ export class CheckoutSessionService {
     }
 
     /**
+     * Gateway-side retry for a checkout whose order confirmed but CapturePayment did not book.
+     *
+     * `applyEvent` only stamps PaymentIntent status — it does not write a PaymentHeader (D19).
+     * Card checkout books via CapturePayment after Confirm. If that fails, two things retry
+     * the same idempotent CapturePayment (`checkout-complete:${session.ID}`):
+     *   1. POST /checkout/complete against a Confirmed session (client replay)
+     *   2. This method, from `payment_intent.succeeded` — including AlreadyApplied deliveries,
+     *      so a 500 after the intent row is stamped still converges on the next Stripe retry.
+     *
+     * No-ops when the intent is not a confirmed checkout session (back-office captures).
+     */
+    public static async BookSettledCheckoutPaymentIfNeeded(
+        paymentIntentID: string,
+        contextUser: UserInfo
+    ): Promise<BookCheckoutPaymentResult> {
+        if (!paymentIntentID) {
+            return { Attempted: false, Booked: false };
+        }
+        const rv = new RunView();
+        const found = await rv.RunView<{ ID: string }>(
+            {
+                EntityName: CHECKOUT_SESSION_ENTITY,
+                ExtraFilter: `PaymentIntentID = '${EscapeText(paymentIntentID)}' AND Status = 'Confirmed'`,
+                MaxRows: 1,
+                ResultType: 'simple',
+            },
+            contextUser
+        );
+        const sessionID = found?.Results?.[0]?.ID;
+        if (!sessionID) {
+            return { Attempted: false, Booked: false };
+        }
+        const md = new Metadata();
+        const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
+        if (!(await session.Load(sessionID)) || !session.DraftOrderID) {
+            return { Attempted: false, Booked: false };
+        }
+        const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
+        if (!(await order.Load(session.DraftOrderID))) {
+            return { Attempted: false, Booked: false };
+        }
+        return this.applySettledPaymentToOrder(session, order, contextUser);
+    }
+
+    /**
      * After the order is committed, book `Orders.CapturePayment` against the session's
      * settled PaymentIntent and stamp PaymentIntent.OrderHeaderID.
      *
-     * Fail-soft and post-commit: a capture problem must not un-confirm the order (a retry
-     * would double-book). CapturePayment's IdempotencyKey makes a later retry safe.
+     * Fail-soft and post-commit: a capture problem must not un-confirm the order.
+     * Retries are CompleteCheckout replay and `BookSettledCheckoutPaymentIfNeeded`
+     * from the payment_intent.succeeded webhook (including AlreadyApplied).
      */
     private static async applySettledPaymentToOrder(
         session: mjBizAppsOrdersCheckoutSessionEntity,
         order: OrderHeaderEntity,
         contextUser?: UserInfo
-    ): Promise<void> {
+    ): Promise<BookCheckoutPaymentResult> {
         if (!session.PaymentIntentID) {
-            return;
+            return { Attempted: false, Booked: false };
         }
         const due = Number(order.TotalGross ?? 0);
         if (!(due > 0)) {
-            return;
+            return { Attempted: false, Booked: false };
         }
         if (Number(order.AmountPaid ?? 0) + 0.005 >= due) {
-            return;
+            return { Attempted: false, Booked: true };
         }
         if (!contextUser) {
-            LogError(`[CheckoutSessionService] Cannot book payment for order ${order.ID}: no context user`);
-            return;
+            return this.captureFailed(order.ID, 'no context user', undefined, undefined, session.ID);
         }
         if (!order.BillToPersonID && !order.BillToOrganizationID) {
-            LogError(`[CheckoutSessionService] Cannot book payment for order ${order.ID}: no bill-to party`);
-            return;
+            return this.captureFailed(order.ID, 'no bill-to party', undefined, contextUser, session.ID);
         }
 
         const md = new Metadata();
         const intent = await md.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, contextUser);
         if (!(await intent.Load(session.PaymentIntentID))) {
-            LogError(`[CheckoutSessionService] Cannot book payment for order ${order.ID}: intent ${session.PaymentIntentID} was not found`);
-            return;
+            return this.captureFailed(order.ID, 'payment intent not found', undefined, contextUser, session.ID);
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
             await this.refreshIntentFromGateway(intent, contextUser);
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
-            LogError(`[CheckoutSessionService] Cannot book payment for order ${order.ID}: intent status is ${intent.Status}`);
-            return;
+            return this.captureFailed(order.ID, `intent status is ${intent.Status}`, undefined, contextUser, session.ID);
         }
 
         if (!intent.OrderHeaderID) {
@@ -1618,8 +1687,7 @@ export class CheckoutSessionService {
 
         const mdProvider = Metadata.Provider as IMetadataProvider | undefined;
         if (!mdProvider) {
-            LogError(`[CheckoutSessionService] Cannot book payment for order ${order.ID}: no metadata provider`);
-            return;
+            return this.captureFailed(order.ID, 'no metadata provider', undefined, contextUser, session.ID);
         }
 
         try {
@@ -1650,13 +1718,29 @@ export class CheckoutSessionService {
                     ?? output?.Message
                     ?? output?.Blockers?.map((b) => b.Message).join('; ')
                     ?? 'unknown error';
-                LogError(`[CheckoutSessionService] CapturePayment failed for order ${order.ID}: ${detail}`);
+                const codes = (output?.Blockers ?? []).map((b) => b.Code).filter((c): c is string => Boolean(c));
+                return this.captureFailed(order.ID, detail, isCaptureRefusalRetryable(codes), contextUser, session.ID);
             }
+            return { Attempted: true, Booked: true };
         } catch (err) {
-            LogError(
-                `[CheckoutSessionService] CapturePayment threw for order ${order.ID}: ${err instanceof Error ? err.message : String(err)}`
-            );
+            const msg = err instanceof Error ? err.message : String(err);
+            return this.captureFailed(order.ID, msg, true, contextUser, session.ID);
         }
+    }
+
+    private static captureFailed(
+        orderID: string,
+        message: string,
+        retryable?: boolean,
+        contextUser?: UserInfo,
+        sessionID?: string,
+    ): BookCheckoutPaymentResult {
+        const Retryable = retryable ?? !isTerminalCapturePrecheck(message);
+        LogError(`[CheckoutSessionService] CapturePayment failed for order ${orderID}: ${message}`);
+        if (!Retryable) {
+            void raiseCheckoutCaptureTerminalAlert(orderID, sessionID, message, contextUser);
+        }
+        return { Attempted: true, Booked: false, ErrorMessage: message, Retryable };
     }
 
     /**

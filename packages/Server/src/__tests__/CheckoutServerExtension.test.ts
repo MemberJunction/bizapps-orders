@@ -37,7 +37,7 @@ vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
 }));
 
 import { CheckoutSessionService } from '@mj-biz-apps/orders-core-entities-server';
-import { CheckoutServerExtension } from '../CheckoutServerExtension.js';
+import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap } from '../CheckoutServerExtension.js';
 
 type RouteMap = {
     get: Record<string, (req: Request, res: Response) => void>;
@@ -93,6 +93,20 @@ function mockRes() {
     return res;
 }
 
+describe('shouldServeCheckoutElementSourceMap', () => {
+    it('defaults off — the public payment route must not publish TypeScript', () => {
+        expect(shouldServeCheckoutElementSourceMap({}, {})).toBe(false);
+        expect(shouldServeCheckoutElementSourceMap({}, { NODE_ENV: 'development' })).toBe(false);
+        expect(shouldServeCheckoutElementSourceMap({}, { NODE_ENV: 'production' })).toBe(false);
+    });
+
+    it('opts in via Settings or CHECKOUT_ELEMENT_SOURCEMAP=1', () => {
+        expect(shouldServeCheckoutElementSourceMap({ ServeElementSourceMap: true }, {})).toBe(true);
+        expect(shouldServeCheckoutElementSourceMap({}, { CHECKOUT_ELEMENT_SOURCEMAP: '1' })).toBe(true);
+        expect(shouldServeCheckoutElementSourceMap({ ServeElementSourceMap: false }, { CHECKOUT_ELEMENT_SOURCEMAP: '1' })).toBe(false);
+    });
+});
+
 describe('CheckoutServerExtension', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -117,7 +131,8 @@ describe('CheckoutServerExtension', () => {
             '/checkout/initialize',
             '/checkout/payment-intent',
         ]);
-        expect(Object.keys(routes.get)).toEqual(['/checkout/:slug']);
+        expect(Object.keys(routes.get).sort()).toEqual(['/checkout/:slug', '/checkout/element/main.js'].sort());
+        expect(routes.get['/checkout/element/main.js.map']).toBeUndefined();
         expect(result.RegisteredRoutes).toEqual([
             'POST /checkout/initialize',
             'POST /checkout/draft',
@@ -202,8 +217,9 @@ describe('CheckoutServerExtension', () => {
         expect(res.headers['referrer-policy']).toBe('no-referrer');
         expect(res.headers['content-security-policy']).toContain("frame-ancestors 'none'");
         expect(res.headers['content-security-policy']).toContain("default-src 'none'");
-        expect(res.body).toContain('data-slug="summit-2027"');
-        expect(res.body).toContain('data-api-root="/checkout"');
+        expect(res.body).toContain('slug="summit-2027"');
+        expect(res.body).toContain('api-root="/checkout"');
+        expect(res.body).toContain('src="/checkout/element/main.js"');
         const filter = mockRunView.mock.calls[0][0].ExtraFilter as string;
         expect(filter).toContain("Slug = 'summit-2027'");
         expect(filter).toContain("Status = 'Active'");

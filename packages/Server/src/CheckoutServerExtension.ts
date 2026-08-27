@@ -133,6 +133,26 @@ interface CheckoutEdgeSettings {
      * client-supplied and must not key rate limits or Turnstile.
      */
     TrustedProxyHops?: number;
+    /**
+     * When true, GET `{root}/element/main.js.map` is registered. Default off —
+     * the map is original TypeScript on an unauthenticated payment route.
+     * Also honoured via env `CHECKOUT_ELEMENT_SOURCEMAP=1` when the setting is unset.
+     */
+    ServeElementSourceMap?: boolean;
+}
+
+/** Source maps on the public checkout element are opt-in (dev). Default: do not serve. */
+export function shouldServeCheckoutElementSourceMap(
+    settings: Pick<CheckoutEdgeSettings, 'ServeElementSourceMap'>,
+    env: NodeJS.ProcessEnv = process.env,
+): boolean {
+    if (settings.ServeElementSourceMap === true) {
+        return true;
+    }
+    if (settings.ServeElementSourceMap === false) {
+        return false;
+    }
+    return env.CHECKOUT_ELEMENT_SOURCEMAP === '1';
 }
 
 interface WidgetEdgePolicy {
@@ -159,9 +179,11 @@ export class CheckoutServerExtension extends BaseServerExtension {
             app.get(`${root}/element/main.js`, (_req, res) => {
                 res.type('application/javascript').sendFile(path.join(elementDir, 'main.js'));
             });
-            app.get(`${root}/element/main.js.map`, (_req, res) => {
-                res.type('application/json').sendFile(path.join(elementDir, 'main.js.map'));
-            });
+            if (shouldServeCheckoutElementSourceMap(this.settings)) {
+                app.get(`${root}/element/main.js.map`, (_req, res) => {
+                    res.type('application/json').sendFile(path.join(elementDir, 'main.js.map'));
+                });
+            }
             LogStatus(`[Orders] Checkout Angular Element served from ${elementDir} at GET ${root}/element/main.js`);
         }
 

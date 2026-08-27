@@ -543,6 +543,19 @@ describe('CheckoutSessionService', () => {
             expect(res.Success).toBe(true);
         });
 
+        it('allowAnyProduct with no widget CompanyID refuses an arbitrary ProductID', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ allowAnyProduct: true });
+            mocks.mockWidgetInstance.CompanyID = '' as unknown as string;
+            const res = await CheckoutSessionService.UpdateDraft(
+                'sess-123',
+                KEY,
+                'a@b.com',
+                [{ ProductID: 'prod-arbitrary', Quantity: 1 }]
+            );
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toMatch(/not configured for open-catalog sale/i);
+        });
+
         it('rejects a mismatched client session key', async () => {
             const res = await CheckoutSessionService.UpdateDraft('sess-123', 'wrong-key', 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }]);
             expect(res.Success).toBe(false);
@@ -877,6 +890,30 @@ describe('CheckoutSessionService', () => {
             expect(res.OrderID).toBe('order-999');
             expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
             expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+        });
+
+        it('BookSettledCheckoutPaymentIfNeeded books CapturePayment for a Confirmed unpaid session', async () => {
+            mocks.mockSessionInstance.Status = 'Confirmed';
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.sessionRunViewResults = [{ ID: 'sess-123' }];
+            mocks.mockOrderInstance.TotalGross = 100;
+            mocks.mockOrderInstance.AmountPaid = 0;
+            mocks.mockOrderInstance.BillToPersonID = 'person-new-1';
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book.Attempted).toBe(true);
+            expect(book.Booked).toBe(true);
+            expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+        });
+
+        it('BookSettledCheckoutPaymentIfNeeded is a no-op when no Confirmed checkout session owns the intent', async () => {
+            mocks.sessionRunViewResults = [];
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-unrelated', testUser);
+            expect(book.Attempted).toBe(false);
+            expect(book.Booked).toBe(false);
+            expect(mocks.mockCaptureExecute).not.toHaveBeenCalled();
         });
 
         it('skips CapturePayment for a $0 order even when a context user is present', async () => {

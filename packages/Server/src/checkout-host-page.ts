@@ -18,8 +18,8 @@ export interface CheckoutHostPageOptions {
     apiRoot: string;
     /** Browser tab title before initialize returns the widget name. */
     pageTitle?: string;
-    /** Per-response CSP nonce for the inline style and boot script. */
-    cspNonce?: string;
+    /** Per-response CSP nonce. Required so a caller cannot emit a nonce-less page. */
+    cspNonce: string;
     /**
      * Relative URL of the `<mj-orders-checkout>` Angular Element bundle.
      * When set, the page hosts the reusable Angular widget (customUI, introspected
@@ -31,7 +31,8 @@ export interface CheckoutHostPageOptions {
 export interface CheckoutHostErrorOptions {
     message: string;
     pageTitle?: string;
-    cspNonce?: string;
+    /** Per-response CSP nonce. Required so a caller cannot emit a nonce-less page. */
+    cspNonce: string;
 }
 
 /** Headers for the public checkout host / error pages (CSP is nonce-based). */
@@ -74,7 +75,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
     const title = escapeHtml(options.pageTitle ?? 'Checkout');
     const slug = escapeAttr(options.slug);
     const apiRoot = escapeAttr(options.apiRoot);
-    const nonceAttr = options.cspNonce ? ` nonce="${escapeAttr(options.cspNonce)}"` : '';
+    const nonceAttr = ` nonce="${escapeAttr(options.cspNonce)}"`;
     const elementSrc = options.elementSrc ? escapeAttr(options.elementSrc) : '';
     if (elementSrc) {
         return `<!doctype html>
@@ -89,7 +90,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
 </head>
 <body>
   <main class="mj-co">
-    <mj-orders-checkout slug="${slug}" api-root="${apiRoot}" csp-nonce="${options.cspNonce ? escapeAttr(options.cspNonce) : ''}"></mj-orders-checkout>
+    <mj-orders-checkout slug="${slug}" api-root="${apiRoot}" csp-nonce="${escapeAttr(options.cspNonce)}"></mj-orders-checkout>
   </main>
 </body>
 </html>`;
@@ -115,7 +116,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
 export function renderCheckoutHostErrorPage(options: CheckoutHostErrorOptions): string {
     const title = escapeHtml(options.pageTitle ?? 'Checkout unavailable');
     const message = escapeHtml(options.message);
-    const nonceAttr = options.cspNonce ? ` nonce="${escapeAttr(options.cspNonce)}"` : '';
+    const nonceAttr = ` nonce="${escapeAttr(options.cspNonce)}"`;
     return `<!doctype html>
 <html lang="en">
 <head>

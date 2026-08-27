@@ -231,6 +231,19 @@ describe('StripePaymentProvider — reading webhooks', () => {
         // 1234 cents is 12.34, and this is where a hundredfold error would enter.
         expect(event!.Amount).toBe(12.34);
         expect(event!.Status).toBe('Succeeded');
+        expect(event!.OccurredAt).toBeUndefined();
+    });
+
+    it('stamps OccurredAt from Stripe created (unix seconds)', () => {
+        const event = stripe().ParseWebhookEvent(
+            JSON.stringify({
+                id: 'evt_created',
+                type: 'payment_intent.succeeded',
+                created: 1700000000,
+                data: { object: { id: 'pi_1', status: 'succeeded', amount_received: 100, currency: 'usd' } },
+            }),
+        );
+        expect(event!.OccurredAt).toEqual(new Date(1700000000 * 1000));
     });
 
     it('respects a ZERO-DECIMAL currency when reading an amount', () => {
