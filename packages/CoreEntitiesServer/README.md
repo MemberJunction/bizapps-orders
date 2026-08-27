@@ -98,8 +98,10 @@ Multi-step work with guards, exposed through `BaseRemotableOperation`. Logical r
 | `Orders.PreviewPrice` | Dry-run pricing. **Runs the real pipeline** — a preview that diverges from what is charged is worse than none |
 | `Orders.ApplyAccountCredit` | Spends an order's negative balance on another order. Zero-amount payment, two offsetting lines |
 | `Orders.RefundPayment` | Mirrors a capture (D53), proportionally across the orders it settled |
-| `Orders.CancelSubscription` | Cancels with the term's own rules |
+| `Orders.CancelSubscription` | Cancels with the term's own rules. Revokes standing grants when access-through has already passed |
 | `Orders.SpawnRenewals` | Spawns renewal orders as Drafts |
+| `Orders.CheckEntitlement` | Does this person currently have this capability? Evaluated, not a poll of `Status`. Fail closed |
+| `Orders.ListEntitlements` | The person's library, one row per Code, same evaluator |
 
 ## Accounting boundary
 

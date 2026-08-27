@@ -14,11 +14,17 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+    CacheUntilFor,
+    ENTITLEMENT_CHECK_TTL_MS,
+    EvaluateGrantAccess,
     InitialGrantStatus,
+    PickWinningAccess,
     ReduceGrantForReturn,
     ResolveEntitlementPolicy,
     ResolveGrantQuantity,
     ResolveValidityWindow,
+    ShouldRevokeGrantsOnCancel,
+    type GrantAccessFacts,
     type PolicyCategoryLevel,
     type PolicyTypeDefaults,
 } from '../EntitlementBehavior.js';
@@ -332,5 +338,226 @@ describe('ReduceGrantForReturn', () => {
     it('reads both quantities by magnitude, since reversals are stored negative', () => {
         expect(ReduceGrantForReturn(5, 5, -2)).toEqual({ Quantity: 3, Revoke: false });
         expect(ReduceGrantForReturn(5, -5, -5).Revoke).toBe(true);
+    });
+});
+
+const asOf = new Date('2026-07-01T12:00:00Z');
+const grant = (over: Partial<GrantAccessFacts> = {}): GrantAccessFacts => ({
+    Status: 'Active',
+    ValidFrom: new Date('2026-01-01T00:00:00Z'),
+    ValidTo: new Date('2026-12-31T00:00:00Z'),
+    ...over,
+});
+
+describe('EvaluateGrantAccess — Status is not the answer', () => {
+    it('Active + inside the window is Granted', () => {
+        const r = EvaluateGrantAccess(grant(), asOf);
+        expect(r.HasAccess).toBe(true);
+        expect(r.Decision).toBe('Granted');
+    });
+
+    it('holds at the exact ValidFrom and ValidTo instants (inclusive)', () => {
+        expect(EvaluateGrantAccess(grant(), new Date('2026-01-01T00:00:00Z')).HasAccess).toBe(true);
+        expect(EvaluateGrantAccess(grant(), new Date('2026-12-31T00:00:00Z')).HasAccess).toBe(true);
+    });
+
+    it('before ValidFrom is NotYetValid, even though Status is Active', () => {
+        const r = EvaluateGrantAccess(grant(), new Date('2025-12-31T23:59:59Z'));
+        expect(r).toMatchObject({ HasAccess: false, Decision: 'NotYetValid' });
+    });
+
+    it('after ValidTo is Expired, even though Status is still Active (no sweeper)', () => {
+        // This is the whole reason the check cannot be a poll of Status.
+        const r = EvaluateGrantAccess(grant(), new Date('2027-01-01T00:00:01Z'));
+        expect(r).toMatchObject({ HasAccess: false, Decision: 'Expired' });
+    });
+
+    it('Revoked wins even inside the window', () => {
+        expect(EvaluateGrantAccess(grant({ Status: 'Revoked' }), asOf).Decision).toBe('Revoked');
+    });
+
+    it('Suspended wins even inside the window (OnPaidInFull, unpaid)', () => {
+        expect(EvaluateGrantAccess(grant({ Status: 'Suspended' }), asOf).Decision).toBe('Suspended');
+    });
+
+    it('stored Status=Expired is Expired even if ValidTo is still in the future', () => {
+        expect(EvaluateGrantAccess(grant({ Status: 'Expired' }), asOf).Decision).toBe('Expired');
+    });
+
+    it('an unknown Status fails closed', () => {
+        expect(EvaluateGrantAccess(grant({ Status: 'Pending' }), asOf).Decision).toBe('NoGrant');
+    });
+
+    it('a perpetual grant (null ValidTo) stays Granted', () => {
+        expect(EvaluateGrantAccess(grant({ ValidTo: null }), asOf).HasAccess).toBe(true);
+    });
+});
+
+describe('EvaluateGrantAccess — cancelled subscription + grace', () => {
+    const term = {
+        Status: 'Canceled',
+        StartDate: new Date('2026-01-01T00:00:00Z'),
+        EndDate: new Date('2026-12-31T00:00:00Z'),
+    };
+
+    it('immediate cancel with access-through already passed is SubscriptionInactive, not Expired', () => {
+        // ValidTo is still 12/31; Status is still Active. The lie the poll would believe.
+        const r = EvaluateGrantAccess(
+            grant({ LinkedToSubscription: true, LinkedToTerm: true }),
+            asOf,
+            { Status: 'Canceled', EndDate: new Date('2026-06-30T00:00:00Z') },
+            term,
+        );
+        expect(r).toMatchObject({ HasAccess: false, Decision: 'SubscriptionInactive' });
+    });
+
+    it('grace (EndDate still ahead) remains Granted even though the term is Canceled', () => {
+        const r = EvaluateGrantAccess(
+            grant({ LinkedToSubscription: true, LinkedToTerm: true }),
+            asOf,
+            { Status: 'Canceled', EndDate: new Date('2026-07-15T00:00:00Z') },
+            term,
+        );
+        expect(r.HasAccess).toBe(true);
+        expect(r.Decision).toBe('Granted');
+    });
+
+    it('grace can EXTEND past the original ValidTo', () => {
+        // End-of-term cancel + grace days: ValidTo is 12/31, access-through is 1/7.
+        const r = EvaluateGrantAccess(
+            grant({ LinkedToSubscription: true }),
+            new Date('2027-01-03T12:00:00Z'),
+            { Status: 'Canceled', EndDate: new Date('2027-01-07T00:00:00Z') },
+        );
+        expect(r.HasAccess).toBe(true);
+    });
+
+    it('holds at the exact access-through instant', () => {
+        const end = new Date('2026-07-15T00:00:00Z');
+        expect(
+            EvaluateGrantAccess(grant({ LinkedToSubscription: true }), end, {
+                Status: 'Canceled',
+                EndDate: end,
+            }).HasAccess,
+        ).toBe(true);
+    });
+
+    it('Canceled with no EndDate fails closed', () => {
+        const r = EvaluateGrantAccess(grant({ LinkedToSubscription: true }), asOf, {
+            Status: 'Canceled',
+            EndDate: null,
+        });
+        expect(r.Decision).toBe('SubscriptionInactive');
+    });
+
+    it('Paused refuses immediately, even with a future EndDate', () => {
+        const r = EvaluateGrantAccess(grant({ LinkedToSubscription: true }), asOf, {
+            Status: 'Paused',
+            EndDate: new Date('2026-12-31T00:00:00Z'),
+        });
+        expect(r).toMatchObject({ HasAccess: false, Decision: 'SubscriptionInactive' });
+    });
+
+    it('Migrated refuses', () => {
+        expect(
+            EvaluateGrantAccess(grant({ LinkedToSubscription: true }), asOf, {
+                Status: 'Migrated',
+                EndDate: new Date('2026-12-31T00:00:00Z'),
+            }).Decision,
+        ).toBe('SubscriptionInactive');
+    });
+
+    it('Trialing is still accessing, same as Active', () => {
+        expect(
+            EvaluateGrantAccess(grant({ LinkedToSubscription: true }), asOf, {
+                Status: 'Trialing',
+                EndDate: null,
+            }).HasAccess,
+        ).toBe(true);
+    });
+
+    it('a grant pointing at a subscription we could not load fails closed', () => {
+        const r = EvaluateGrantAccess(grant({ LinkedToSubscription: true }), asOf, null);
+        expect(r.Decision).toBe('SubscriptionInactive');
+    });
+
+    it('a grant pointing at a term we could not load fails closed', () => {
+        const r = EvaluateGrantAccess(grant({ LinkedToTerm: true }), asOf, undefined, null);
+        expect(r.Decision).toBe('SubscriptionInactive');
+    });
+});
+
+describe('PickWinningAccess', () => {
+    const row = (over: { HasAccess: boolean; Decision: 'Granted' | 'NoGrant' | 'NotYetValid' | 'Expired' | 'Revoked' | 'Suspended' | 'SubscriptionInactive'; ValidTo: Date | null }) => over;
+
+    it('returns null for an empty list', () => {
+        expect(PickWinningAccess([])).toBeNull();
+    });
+
+    it('a Granted perpetual beats a Granted with an end', () => {
+        const picked = PickWinningAccess([
+            row({ HasAccess: true, Decision: 'Granted', ValidTo: new Date('2026-12-31T00:00:00Z') }),
+            row({ HasAccess: true, Decision: 'Granted', ValidTo: null }),
+        ]);
+        expect(picked!.ValidTo).toBeNull();
+    });
+
+    it('among Granted with ends, the later ValidTo wins', () => {
+        const later = new Date('2027-12-31T00:00:00Z');
+        const picked = PickWinningAccess([
+            row({ HasAccess: true, Decision: 'Granted', ValidTo: new Date('2026-12-31T00:00:00Z') }),
+            row({ HasAccess: true, Decision: 'Granted', ValidTo: later }),
+        ]);
+        expect(picked!.ValidTo).toBe(later);
+    });
+
+    it('Granted beats any denial', () => {
+        const picked = PickWinningAccess([
+            row({ HasAccess: false, Decision: 'Expired', ValidTo: new Date('2025-01-01T00:00:00Z') }),
+            row({ HasAccess: true, Decision: 'Granted', ValidTo: new Date('2026-12-31T00:00:00Z') }),
+        ]);
+        expect(picked!.HasAccess).toBe(true);
+    });
+
+    it('among denials, NotYetValid is more useful than Revoked', () => {
+        const picked = PickWinningAccess([
+            row({ HasAccess: false, Decision: 'Revoked', ValidTo: null }),
+            row({ HasAccess: false, Decision: 'NotYetValid', ValidTo: new Date('2027-01-01T00:00:00Z') }),
+        ]);
+        expect(picked!.Decision).toBe('NotYetValid');
+    });
+});
+
+describe('CacheUntilFor', () => {
+    const now = new Date('2026-07-01T12:00:00Z');
+
+    it('caps a perpetual grant at the policy TTL', () => {
+        expect(CacheUntilFor(now, null, true).getTime()).toBe(now.getTime() + ENTITLEMENT_CHECK_TTL_MS);
+    });
+
+    it('never caches a Granted past its own ValidTo', () => {
+        const end = new Date('2026-07-01T12:00:30Z'); // 30s, inside the 60s TTL
+        expect(CacheUntilFor(now, end, true).getTime()).toBe(end.getTime());
+    });
+
+    it('does not use ValidTo to shorten a denial — denials cache for the TTL', () => {
+        const end = new Date('2026-07-01T12:00:30Z');
+        expect(CacheUntilFor(now, end, false).getTime()).toBe(now.getTime() + ENTITLEMENT_CHECK_TTL_MS);
+    });
+});
+
+describe('ShouldRevokeGrantsOnCancel', () => {
+    const now = new Date('2026-07-01T12:00:00Z');
+
+    it('revokes when access-through has already passed', () => {
+        expect(ShouldRevokeGrantsOnCancel(new Date('2026-06-30T00:00:00Z'), now)).toBe(true);
+    });
+
+    it('leaves grants standing when grace remains', () => {
+        expect(ShouldRevokeGrantsOnCancel(new Date('2026-07-15T00:00:00Z'), now)).toBe(false);
+    });
+
+    it('leaves grants standing at the exact access-through instant', () => {
+        expect(ShouldRevokeGrantsOnCancel(now, now)).toBe(false);
     });
 });

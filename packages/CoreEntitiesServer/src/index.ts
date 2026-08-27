@@ -133,6 +133,11 @@ export {
     ResolveValidityWindow,
     InitialGrantStatus,
     ReduceGrantForReturn,
+    EvaluateGrantAccess,
+    PickWinningAccess,
+    CacheUntilFor,
+    ShouldRevokeGrantsOnCancel,
+    ENTITLEMENT_CHECK_TTL_MS,
 } from './EntitlementBehavior.js';
 export type {
     GrantTiming,
@@ -145,9 +150,29 @@ export type {
     ResolvedEntitlementPolicy,
     ValidityContext,
     ResolvedValidity,
+    EntitlementDecision,
+    GrantAccessFacts,
+    SubscriptionAccessFacts,
+    TermAccessFacts,
+    GrantAccessEvaluation,
+    RankableAccess,
 } from './EntitlementBehavior.js';
-export { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+export {
+    CreateEntitlementGrants,
+    RevokeGrantsForReturn,
+    RevokeGrantsForCanceledSubscription,
+} from './EntitlementEngine.js';
 export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
+export { CheckEntitlementOperation, LoadCheckEntitlementOperation } from './CheckEntitlementOperation.js';
+export { ListEntitlementsOperation, LoadListEntitlementsOperation } from './ListEntitlementsOperation.js';
+export { CheckPersonEntitlement, ListPersonEntitlements } from './EntitlementRead.js';
+export type {
+    CheckEntitlementInput,
+    CheckEntitlementOutput,
+    ListEntitlementsInput,
+    ListEntitlementsOutput,
+    ListedEntitlement,
+} from './EntitlementRead.js';
 
 export {
     FormatGiftCardCode,

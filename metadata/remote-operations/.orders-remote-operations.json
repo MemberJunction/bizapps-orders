@@ -306,5 +306,67 @@
       "lastModified": "2026-08-24T20:19:35.633Z",
       "checksum": "905217d1e15926c972d7e4c7df20931eb888fa9143e1553558f9aa0272679e4c"
     }
+  },
+  {
+    "_comments": [
+      "Orders.CheckEntitlement — the LXP ask/answer.",
+      "",
+      "Asked by ProductEntitlement.Code so a bundle, an upgrade and a grandfathered tier can",
+      "all confer the same capability without the LXP learning the catalogue. Access is",
+      "evaluated in EntitlementBehavior.EvaluateGrantAccess; Status on the grant row is not",
+      "trustworthy (cancel does not always touch grants; elapsed ValidTo is never swept)."
+    ],
+    "fields": {
+      "Name": "Check Entitlement",
+      "OperationKey": "Orders.CheckEntitlement",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Entitlements",
+      "Description": "Does this person currently have this entitlement? Asked by Code (the capability), not SKU. PersonID is authoritative; email is a convenience and is refused when it matches more than one person. Access is evaluated (status + window + subscription access-through), never read off EntitlementGrant.Status. Unknown person and known person without access return the same shape. Fail closed. v1 evaluates person grants only.",
+      "InputTypeName": "CheckEntitlementInput",
+      "InputTypeDefinition": "@file:types/orders-check-entitlement.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "CheckEntitlementOutput",
+      "OutputTypeDefinition": "@file:types/orders-check-entitlement.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:entitlement-check",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C420"
+    },
+    "sync": {
+      "lastModified": "2026-08-27T04:30:00.000Z",
+      "checksum": "2ed92a76748bea1b9018e28b71f16938e011664a34dd76d57e1b7971856c56ee"
+    }
+  },
+  {
+    "fields": {
+      "Name": "List Entitlements",
+      "OperationKey": "Orders.ListEntitlements",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Entitlements",
+      "Description": "The person's entitlement library, one row per Code, each evaluated the same way as CheckEntitlement. An optimisation for UI, not a second source of truth for access. Heavier scope than the point check so a library key cannot become an authorization oracle.",
+      "InputTypeName": "ListEntitlementsInput",
+      "InputTypeDefinition": "@file:types/orders-list-entitlements.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "ListEntitlementsOutput",
+      "OutputTypeDefinition": "@file:types/orders-list-entitlements.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:entitlement-read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C421"
+    },
+    "sync": {
+      "lastModified": "2026-08-27T04:30:00.000Z",
+      "checksum": "73e8c7b4771f611cf702e2ded209a4432f6320377b97e4763aab7d0833d0987f"
+    }
   }
 ]
