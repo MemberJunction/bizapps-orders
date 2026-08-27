@@ -302,6 +302,10 @@ export class StripePaymentProvider extends BasePaymentProvider {
 
         const currency = ((object.currency as string) ?? 'usd').toUpperCase();
         const event: WebhookEvent = { EventID: String(payload.id), Kind: kind, CurrencyCode: currency };
+        const created = Number(payload.created);
+        if (Number.isFinite(created) && created > 0) {
+            event.OccurredAt = new Date(created * 1000);
+        }
 
         if (kind.startsWith('payment_intent.')) {
             event.ProviderIntentID = object.id as string | undefined;

@@ -425,6 +425,13 @@ export { EntitlementGrantClaimDriver, LoadEntitlementGrantClaimDriver } from './
 export { GuestOrderClaimDriver, LoadGuestOrderClaimDriver } from './GuestOrderClaimDriver.js';
 export { resolvePersonID } from './claimDriverHelpers.js';
 export { CheckoutSessionService } from './CheckoutSessionService.js';
+export {
+    CHECKOUT_CAPTURE_RETRY_WINDOW_MS,
+    CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
+    isCaptureRefusalRetryable,
+    isTerminalCapturePrecheck,
+    webhookEventExceedsRetryWindow,
+} from './checkoutCaptureRetry.js';
 export type {
     AttendeeInput,
     CheckoutAttendeeInput,

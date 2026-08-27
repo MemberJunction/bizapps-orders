@@ -49,6 +49,10 @@ import { SettlePaymentForEvent } from './PaymentSettlement.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import type { WebhookEvent } from './BasePaymentProvider.js';
 import { CheckoutSessionService } from './CheckoutSessionService.js';
+import {
+    CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
+    webhookEventExceedsRetryWindow,
+} from './checkoutCaptureRetry.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 
@@ -173,8 +177,10 @@ export async function HandlePaymentWebhook(
 /**
  * After the intent row reflects Succeeded, book CapturePayment for a Confirmed
  * checkout session if the complete path failed to. No-op for back-office intents.
- * Returns false when a checkout capture was attempted and did not book — caller 500s
- * so Stripe retries; AlreadyApplied then re-enters this function.
+ * Returns false when a checkout capture was attempted, did not book, and is
+ * Retryable inside the event-age window — caller 500s so Stripe retries.
+ * Terminal refusals (and events older than the window) return true after a
+ * CHECKOUT-CAPTURE-TERMINAL log so Stripe stops and a human can see it.
  */
 async function bookCheckoutCaptureFromWebhook(
     event: WebhookEvent,
@@ -186,12 +192,27 @@ async function bookCheckoutCaptureFromWebhook(
     }
     try {
         const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded(paymentIntentID, user);
-        if (book.Attempted && !book.Booked) {
+        if (!(book.Attempted && !book.Booked)) {
+            return true;
+        }
+        const retryable = book.Retryable !== false;
+        if (retryable && !event.OccurredAt) {
             LogError(
-                `Checkout CapturePayment did not book for intent ${paymentIntentID}: ${book.ErrorMessage ?? 'unknown error'}`,
+                `[CHECKOUT-CAPTURE-RETRY] Webhook event ${event.EventID} has no OccurredAt; retry window cannot be applied — treating as Retryable`,
+            );
+        }
+        const pastWindow = webhookEventExceedsRetryWindow(event);
+        if (retryable && !pastWindow) {
+            LogError(
+                `Checkout CapturePayment did not book for intent ${paymentIntentID} (retryable): ${book.ErrorMessage ?? 'unknown error'}`,
             );
             return false;
         }
+        LogError(
+            `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Settled checkout payment will not be retried via webhook` +
+                ` intent=${paymentIntentID} event=${event.EventID}` +
+                ` retryable=${retryable} pastWindow=${pastWindow}: ${book.ErrorMessage ?? 'unknown error'}`,
+        );
         return true;
     } catch (err) {
         LogError(
