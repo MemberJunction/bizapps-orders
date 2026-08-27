@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orders — Header + Overview showcase</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --mj-bg-app: #f1f5f9;
+            --mj-bg-surface: #ffffff;
+            --mj-bg-surface-card: #ffffff;
+            --mj-bg-surface-elevated: #f8fafc;
+            --mj-bg-surface-sunken: #f1f5f9;
+            --mj-bg-hover: rgba(15, 23, 42, 0.04);
+            --mj-border-default: #e2e8f0;
+            --mj-border-subtle: #edf2f7;
+            --mj-border-strong: #0284c7;
+            --mj-text-primary: #0f172a;
+            --mj-text-secondary: #475569;
+            --mj-text-muted: #94a3b8;
+            --mj-text-inverse: #ffffff;
+            --mj-brand-primary: #0284c7;
+            --mj-brand-primary-bg: rgba(2, 132, 199, 0.10);
+            --mj-status-success: #059669;
+            --mj-status-success-bg: #ecfdf5;
+            --mj-status-success-text: #047857;
+            --mj-status-warning: #d97706;
+            --mj-status-warning-bg: #fffbeb;
+            --mj-status-warning-text: #b45309;
+            --mj-status-error: #dc2626;
+            --mj-status-error-bg: #fef2f2;
+            --mj-status-error-text: #b91c1c;
+            --mj-status-info: #0284c7;
+            --mj-status-info-bg: #f0f9ff;
+            --mj-status-info-text: #0369a1;
+            --mj-radius-sm: 6px;
+            --mj-radius-md: 10px;
+            --mj-radius-lg: 14px;
+            --mj-shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06);
+            --mj-shadow-md: 0 4px 14px rgba(15, 23, 42, 0.08);
+            --mj-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            --mj-mono: 'JetBrains Mono', ui-monospace, monospace;
+        }
+
+        [data-theme="dark"] {
+            --mj-bg-app: #0b1320;
+            --mj-bg-surface: #0f172a;
+            --mj-bg-surface-card: #141f33;
+            --mj-bg-surface-elevated: #1e293b;
+            --mj-bg-surface-sunken: #090e17;
+            --mj-bg-hover: rgba(255, 255, 255, 0.05);
+            --mj-border-default: #23354e;
+            --mj-border-subtle: #1a283c;
+            --mj-border-strong: #38bdf8;
+            --mj-text-primary: #f8fafc;
+            --mj-text-secondary: #94a3b8;
+            --mj-text-muted: #64748b;
+            --mj-text-inverse: #0f172a;
+            --mj-brand-primary: #38bdf8;
+            --mj-brand-primary-bg: rgba(56, 189, 248, 0.12);
+            --mj-status-success: #10b981;
+            --mj-status-success-bg: rgba(16, 185, 129, 0.14);
+            --mj-status-success-text: #6ee7b7;
+            --mj-status-warning: #f59e0b;
+            --mj-status-warning-bg: rgba(245, 158, 11, 0.14);
+            --mj-status-warning-text: #fbbf24;
+            --mj-status-error: #ef4444;
+            --mj-status-error-bg: rgba(239, 68, 68, 0.14);
+            --mj-status-error-text: #fca5a5;
+            --mj-status-info: #0ea5e9;
+            --mj-status-info-bg: rgba(14, 165, 233, 0.14);
+            --mj-status-info-text: #7dd3fc;
+            --mj-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+            --mj-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { background: var(--mj-bg-app); color: var(--mj-text-primary); font-family: var(--mj-font); line-height: 1.45; -webkit-font-smoothing: antialiased; }
+        button { font-family: inherit; }
+
+        .bar {
+            position: sticky; top: 0; z-index: 40;
+            display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+            padding: 12px 20px; background: var(--mj-bg-surface);
+            border-bottom: 1px solid var(--mj-border-default); box-shadow: var(--mj-shadow-sm);
+        }
+        .brand { display: flex; align-items: center; gap: 12px; min-width: 220px; }
+        .mark {
+            width: 32px; height: 32px; border-radius: 8px; color: #fff; font-weight: 800;
+            display: grid; place-items: center;
+            background: linear-gradient(135deg, #0284c7, #4f46e5);
+        }
+        .brand h1 { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+        .brand p { font-size: 11.5px; color: var(--mj-text-muted); }
+        .pickers { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+        .group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .group-label {
+            font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+            color: var(--mj-text-muted); width: 86px; flex: none;
+        }
+        .chip-row { display: flex; flex-wrap: wrap; gap: 4px; }
+        .ent-chip {
+            border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-sunken);
+            color: var(--mj-text-secondary); font-size: 11.5px; font-weight: 600;
+            padding: 4px 9px; border-radius: 999px; cursor: pointer;
+        }
+        .ent-chip:hover { color: var(--mj-text-primary); border-color: var(--mj-brand-primary); }
+        .ent-chip.is-on { background: var(--mj-brand-primary); color: var(--mj-text-inverse); border-color: transparent; }
+        .theme-btn {
+            border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-card);
+            color: var(--mj-text-primary); font-size: 12px; font-weight: 600;
+            padding: 7px 12px; border-radius: var(--mj-radius-sm); cursor: pointer; white-space: nowrap;
+        }
+
+        .note {
+            max-width: 1440px; margin: 14px auto 0; padding: 10px 16px;
+            display: flex; gap: 12px; align-items: flex-start;
+            background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+            border-radius: var(--mj-radius-md); color: var(--mj-text-secondary); font-size: 12.5px;
+        }
+        .note strong { color: var(--mj-text-primary); }
+        .tag {
+            flex: none; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+            padding: 3px 7px; border-radius: 4px; background: var(--mj-brand-primary-bg); color: var(--mj-brand-primary);
+        }
+
+        .wrap { max-width: 1440px; margin: 14px auto 48px; padding: 0 16px; }
+        .shell { display: flex; flex-direction: column; gap: 12px; }
+
+        /* Always-on banner — evolved mjo-doc-hero / mjo-oh-hero */
+        .hero {
+            background: var(--mj-bg-surface-card);
+            border: 1px solid var(--mj-border-default);
+            border-radius: var(--mj-radius-lg);
+            box-shadow: var(--mj-shadow-sm);
+            overflow: hidden;
+            position: relative;
+        }
+        .hero::before {
+            content: ''; position: absolute; inset: 0 auto 0 0; width: 4px;
+            background: var(--mj-brand-primary);
+        }
+        .hero-pad { padding: 16px 20px 16px 24px; }
+        .hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+        .who { display: flex; align-items: center; gap: 14px; min-width: 0; }
+        .avatar {
+            width: 52px; height: 52px; border-radius: var(--mj-radius-md); flex: none;
+            display: grid; place-items: center; font-size: 20px;
+            background: color-mix(in srgb, var(--mj-brand-primary) 16%, var(--mj-bg-surface));
+            color: var(--mj-brand-primary);
+        }
+        .avatar.is-warn {
+            background: color-mix(in srgb, var(--mj-status-warning) 20%, var(--mj-bg-surface));
+            color: var(--mj-status-warning-text);
+        }
+        .title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
+        .title { font-size: 20px; font-weight: 750; letter-spacing: -0.02em; }
+        .sub { margin-top: 3px; font-size: 13px; color: var(--mj-text-secondary); }
+        .meta { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 12px; font-size: 12.5px; color: var(--mj-text-secondary); }
+        .meta strong { color: var(--mj-text-primary); font-weight: 600; }
+        .aside { display: flex; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+        .money { display: flex; gap: 18px; }
+        .kicker { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--mj-text-muted); }
+        .amt { font-size: 20px; font-weight: 750; letter-spacing: -0.02em; }
+        .btn {
+            border: 0; background: var(--mj-brand-primary); color: var(--mj-text-inverse);
+            font-size: 12.5px; font-weight: 600; padding: 8px 14px; border-radius: var(--mj-radius-sm); cursor: default;
+            display: inline-flex; align-items: center; gap: 6px;
+        }
+        .btn-ghost {
+            border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface);
+            color: var(--mj-text-secondary); font-size: 12px; font-weight: 600;
+            padding: 6px 10px; border-radius: var(--mj-radius-sm); cursor: pointer;
+        }
+        .btn-ghost:hover { color: var(--mj-text-primary); }
+
+        .pill {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 650;
+            background: var(--mj-bg-surface-sunken); color: var(--mj-text-secondary);
+        }
+        .pill.ok { background: var(--mj-status-success-bg); color: var(--mj-status-success-text); }
+        .pill.warn { background: var(--mj-status-warning-bg); color: var(--mj-status-warning-text); }
+        .pill.err { background: var(--mj-status-error-bg); color: var(--mj-status-error-text); }
+        .pill.info { background: var(--mj-status-info-bg); color: var(--mj-status-info-text); }
+        .pill.mono { font-family: var(--mj-mono); font-size: 10.5px; }
+
+        .stats {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(8.4rem, 1fr));
+            gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--mj-border-default);
+        }
+        .stat { min-width: 0; }
+        .stat-l { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--mj-text-muted); }
+        .stat-v { display: block; margin-top: 2px; font-size: 15px; font-weight: 700; color: var(--mj-text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .stat-s { display: block; font-size: 11px; color: var(--mj-text-muted); margin-top: 1px; }
+
+        .hero.is-collapsed .stats,
+        .hero.is-collapsed .hero-extra { display: none; }
+        .hero.is-collapsed .title { font-size: 16px; }
+        .hero.is-collapsed .avatar { width: 36px; height: 36px; font-size: 14px; }
+        .hero.is-collapsed .amt { font-size: 16px; }
+
+        .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+        .bubble {
+            border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-sunken);
+            border-radius: var(--mj-radius-md); padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start;
+        }
+        .bubble i { color: var(--mj-brand-primary); margin-top: 2px; }
+        .bubble .role { font-size: 10.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--mj-text-muted); }
+        .bubble .name { font-size: 13.5px; font-weight: 650; }
+        .bubble .det { font-size: 12px; color: var(--mj-text-secondary); }
+
+        /* Body: rail + overview */
+        .body { display: grid; grid-template-columns: 212px 1fr; gap: 12px; align-items: start; }
+        .rail {
+            background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+            border-radius: var(--mj-radius-lg); padding: 12px 10px; box-shadow: var(--mj-shadow-sm);
+            position: sticky; top: 92px;
+        }
+        .rail-h {
+            padding: 2px 8px 10px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em;
+            text-transform: uppercase; color: var(--mj-text-muted); display: flex; justify-content: space-between;
+        }
+        .rail-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 10px; border-radius: 8px; color: var(--mj-text-secondary);
+            font-size: 12.5px; font-weight: 500; cursor: default;
+        }
+        .rail-item span { display: flex; align-items: center; gap: 8px; }
+        .rail-item i { width: 14px; text-align: center; font-size: 12px; }
+        .rail-item.is-on {
+            background: var(--mj-brand-primary-bg); color: var(--mj-brand-primary); font-weight: 650;
+            box-shadow: inset 3px 0 0 var(--mj-brand-primary);
+        }
+        .rail-n {
+            font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 10px;
+            background: var(--mj-bg-surface-sunken); color: var(--mj-text-muted);
+        }
+        .rail-item.is-on .rail-n { background: var(--mj-brand-primary); color: var(--mj-text-inverse); }
+        .rail-div { height: 1px; background: var(--mj-border-default); margin: 8px 6px; }
+        .rail-note { padding: 8px 8px 2px; font-size: 11px; color: var(--mj-text-muted); line-height: 1.4; }
+
+        .main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+        .pane-title { font-size: 13px; font-weight: 700; color: var(--mj-text-secondary); }
+
+        .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .card {
+            background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+            border-radius: var(--mj-radius-lg); box-shadow: var(--mj-shadow-sm); min-width: 0;
+            display: flex; flex-direction: column;
+        }
+        .card.span-2 { grid-column: 1 / -1; }
+        .card-h {
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 12px 14px 8px;
+        }
+        .card-h h3 { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .card-h h3 i { color: var(--mj-brand-primary); font-size: 12px; }
+        .card-sub { font-size: 11.5px; color: var(--mj-text-muted); font-weight: 500; }
+        .card-b { padding: 4px 14px 14px; flex: 1; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+        th { text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mj-text-muted); padding: 6px 8px; border-bottom: 1px solid var(--mj-border-default); }
+        td { padding: 8px; border-bottom: 1px solid var(--mj-border-subtle); color: var(--mj-text-secondary); }
+        tr:last-child td { border-bottom: 0; }
+        td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+        td.strong { color: var(--mj-text-primary); font-weight: 600; }
+
+        .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--mj-border-subtle); }
+        .row:last-child { border-bottom: 0; }
+        .row h4 { font-size: 13px; font-weight: 650; }
+        .row p { font-size: 12px; color: var(--mj-text-secondary); }
+        .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+        .fact-l { font-size: 10.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--mj-text-muted); }
+        .fact-v { font-size: 13.5px; font-weight: 650; }
+
+        .bars { display: flex; align-items: flex-end; gap: 8px; height: 88px; padding: 4px 0 0; }
+        .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; justify-content: flex-end; }
+        .bar-fill { width: 100%; border-radius: 4px 4px 1px 1px; background: color-mix(in srgb, var(--mj-brand-primary) 55%, var(--mj-bg-surface-sunken)); min-height: 4px; }
+        .bar-fill.peak { background: var(--mj-brand-primary); }
+        .bar-col span { font-size: 10px; color: var(--mj-text-muted); }
+
+        .tl { display: flex; flex-direction: column; gap: 10px; }
+        .tl-i { display: flex; gap: 10px; align-items: flex-start; }
+        .tl-ic {
+            width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: 11px;
+            background: var(--mj-brand-primary-bg); color: var(--mj-brand-primary);
+        }
+        .tl-ic.ok { background: var(--mj-status-success-bg); color: var(--mj-status-success-text); }
+        .tl-ic.warn { background: var(--mj-status-warning-bg); color: var(--mj-status-warning-text); }
+        .tl h5 { font-size: 12.5px; font-weight: 650; }
+        .tl p { font-size: 12px; color: var(--mj-text-secondary); }
+        .tl time { font-size: 11px; color: var(--mj-text-muted); }
+
+        .foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--mj-border-default); }
+        .foot .stat-v { font-size: 14px; }
+
+        .empty { padding: 18px 8px; text-align: center; color: var(--mj-text-muted); font-size: 12.5px; }
+        .empty i { display: block; margin-bottom: 6px; font-size: 16px; }
+
+        @media (max-width: 980px) {
+            .body { grid-template-columns: 1fr; }
+            .rail { position: static; }
+            .cards, .parties, .facts { grid-template-columns: 1fr; }
+            .card.span-2 { grid-column: auto; }
+        }
+    </style>
+</head>
+<body>
+    <header class="bar">
+        <div class="brand">
+            <div class="mark">O</div>
+            <div>
+                <h1>Orders — headers &amp; Overview</h1>
+                <p>Static mockup · not wired · review before build</p>
+            </div>
+        </div>
+        <div class="pickers" id="pickers"></div>
+        <button class="theme-btn" type="button" id="themeBtn"><i class="fa-solid fa-moon"></i> Dark</button>
+    </header>
+
+    <div class="note">
+        <span class="tag">Always on</span>
+        <div>
+            Top banner stays while you move the rail. <strong>Overview is the first clickable section</strong> on every Tier&nbsp;1 entity.
+            Click an entity chip to swap the record. The Order banner has a collapse control so a long order can keep just customer + date + money.
+            Leftover related on the custom Order form is shown as <em>blocked</em>, not a More dump — confirm that when we build.
+        </div>
+    </div>
+
+    <div class="wrap">
+        <div class="shell">
+            <section class="hero" id="hero"></section>
+            <div class="body">
+                <aside class="rail" id="rail"></aside>
+                <section class="main">
+                    <div class="pane-title">Overview</div>
+                    <div class="cards" id="cards"></div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+<script>
+const GROUPS = [
+    { id: 'catalogue', label: 'Catalogue' },
+    { id: 'commercial', label: 'Price & promo' },
+    { id: 'documents', label: 'Documents' },
+    { id: 'paycfg', label: 'Pay config' },
+];
+
+const ENTITIES = {
+    productType: {
+        group: 'catalogue', chip: 'Product Type',
+        entity: 'MJ_BizApps_Orders: Product Types',
+        icon: 'fa-layer-group',
+        title: 'Membership',
+        sub: 'Default shape for every membership SKU',
+        chips: [
+            { t: 'MEM', k: 'mono' },
+            { t: 'Active', k: 'ok' },
+            { t: 'No fulfillment', k: '' },
+        ],
+        stats: [
+            { l: 'Products', v: '24', s: '18 active' },
+            { l: 'Default rev-rec', v: 'Deferred' },
+            { l: 'Default tax', v: 'Taxable' },
+            { l: 'Default sub type', v: 'Annual' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Products', i: 'fa-box', n: 24 },
+            { l: 'Entitlement defaults', i: 'fa-key' },
+        ],
+        cards: [
+            { title: 'Defaults stamped on new products', icon: 'fa-stamp', body: facts([
+                ['Revenue recognition', 'Deferred — straight-line'],
+                ['Taxable', 'Yes · Memberships'],
+                ['Subscription type', 'Annual Membership'],
+                ['Grant timing', 'On confirm'],
+                ['Quantity mode', 'Per unit'],
+                ['Validity mode', 'Term window'],
+            ])},
+            { title: 'Product mix', icon: 'fa-boxes-stacked', body: table(
+                ['Product', 'SKU', 'Status', 'Price'],
+                [
+                    ['Annual Membership — Individual', 'MEM-IND', pill('Active','ok'), '$1,250'],
+                    ['Annual Membership — Household', 'MEM-HH', pill('Active','ok'), '$1,850'],
+                    ['Young Professional', 'MEM-YP', pill('Active','ok'), '$475'],
+                    ['Lifetime', 'MEM-LIFE', pill('Draft',''), '—'],
+                ]
+            )},
+            { title: 'Extension entities', icon: 'fa-puzzle-piece', body: facts([
+                ['Product extension', '— none —'],
+                ['Order line extension', '— none —'],
+                ['Requires fulfillment', 'No'],
+                ['Is active', 'Yes'],
+            ])},
+            { title: 'Why this type exists', icon: 'fa-circle-info', body: `<p style="font-size:13px;color:var(--mj-text-secondary);line-height:1.55">A Product Type is not a folder. It is the policy a new Product inherits — rev-rec, tax, subscription shape, entitlement timing. Change it here and new SKUs follow; existing products keep what they captured.</p>` },
+        ],
+    },
+
+    productCategory: {
+        group: 'catalogue', chip: 'Product Category',
+        entity: 'MJ_BizApps_Orders: Product Categories',
+        icon: 'fa-folder-tree',
+        title: 'Memberships',
+        sub: 'Mid-Atlantic Chapter · under Catalog',
+        chips: [
+            { t: 'MEM', k: 'mono' },
+            { t: 'Active', k: 'ok' },
+            { t: 'Company scoped', k: 'info' },
+        ],
+        stats: [
+            { l: 'Products', v: '12' },
+            { l: 'Child categories', v: '3' },
+            { l: 'Default tax', v: 'Taxable' },
+            { l: 'Promos targeting', v: '2' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Products', i: 'fa-box', n: 12 },
+            { l: 'Child categories', i: 'fa-folder', n: 3 },
+            { l: 'Promotions', i: 'fa-ticket', n: 2 },
+        ],
+        cards: [
+            { title: 'Tree position', icon: 'fa-sitemap', body: facts([
+                ['Company', 'Mid-Atlantic Chapter'],
+                ['Parent', 'Catalog'],
+                ['Children', 'Individual · Household · Young Pro'],
+                ['Default taxable', 'Yes'],
+                ['Default tax category', 'Memberships'],
+                ['Default grant timing', 'On confirm'],
+            ])},
+            { title: 'Products in this category', icon: 'fa-box', body: table(
+                ['Product', 'Type', 'Status'],
+                [
+                    ['Annual Membership — Individual', 'Membership', pill('Active','ok')],
+                    ['Annual Membership — Household', 'Membership', pill('Active','ok')],
+                    ['Young Professional', 'Membership', pill('Active','ok')],
+                    ['Student', 'Membership', pill('Active','ok')],
+                ]
+            )},
+            { title: 'Promotions that target this branch', icon: 'fa-ticket', body: list([
+                ['Member Welcome 15%', 'Category target · include descendants · Active'],
+                ['Q3 Upgrade $100', 'This category only · Ends Sep 30'],
+            ], 'ok')},
+            { title: 'Inherited defaults', icon: 'fa-down-long', body: `<p style="font-size:13px;color:var(--mj-text-secondary);line-height:1.55">Tax and entitlement defaults on the category are suggestions for new products. A Product can override. Promotions that <em>include descendants</em> also fire on the three child categories.</p>` },
+        ],
+    },
+
+    product: {
+        group: 'catalogue', chip: 'Product',
+        entity: 'MJ_BizApps_Orders: Products',
+        icon: 'fa-box',
+        title: 'Annual Membership — Individual',
+        sub: 'Sold by Mid-Atlantic Chapter',
+        chips: [
+            { t: 'MEM-IND', k: 'mono' },
+            { t: 'Membership', k: '' },
+            { t: 'Active', k: 'ok' },
+        ],
+        stats: [
+            { l: 'List price', v: '$1,250', s: '2026 Standard' },
+            { l: 'Rev-rec', v: 'Deferred' },
+            { l: 'Tax', v: 'Taxable' },
+            { l: 'Price rules', v: '3' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Pricing', i: 'fa-tags', n: 3 },
+            { l: 'Promotions', i: 'fa-ticket', n: 2 },
+            { l: 'Entitlements', i: 'fa-key', n: 2 },
+            { l: 'Subscriptions', i: 'fa-arrows-rotate' },
+            { l: 'Accounting', i: 'fa-scale-balanced' },
+        ],
+        cards: [
+            { title: 'What this sells', icon: 'fa-id-card', body: facts([
+                ['Type', 'Membership'],
+                ['Category', 'Memberships / Individual'],
+                ['Company', 'Mid-Atlantic Chapter'],
+                ['Available', 'Jan 1, 2026 → open'],
+                ['Successor', '—'],
+                ['Standalone price', '$1,250'],
+            ])},
+            { title: 'Live prices', icon: 'fa-tags', body: table(
+                ['List', 'Model', 'Amount', 'Window'],
+                [
+                    ['2026 Standard', 'Flat', '$1,250', 'Jan–Dec'],
+                    ['Early bird', 'Flat', '$1,075', 'Nov–Jan'],
+                    ['Staff', 'Flat', '$0', 'Open'],
+                ]
+            )},
+            { title: 'Entitlements granted on confirm', icon: 'fa-key', body: list([
+                ['Digital access', 'MEM-DIGITAL · 1 seat · term window'],
+                ['Journal subscription', 'JRN-PRINT · 6 issues · term window'],
+            ], 'ok')},
+            { title: 'Recent sales', icon: 'fa-chart-column', body: bars([40, 55, 48, 72, 64, 88], ['Mar','Apr','May','Jun','Jul','Aug']) + foot([
+                ['This year', '186'],
+                ['Open orders', '4'],
+                ['Active subs', '1,042'],
+            ])},
+        ],
+    },
+
+    productEvent: {
+        group: 'catalogue', chip: 'Product · Event',
+        entity: 'MJ_BizApps_Orders: Products',
+        icon: 'fa-calendar-check',
+        title: 'Annual Conference 2026',
+        sub: 'Event satellite · Baltimore Convention Center',
+        chips: [
+            { t: 'EVT-AC26', k: 'mono' },
+            { t: 'Event', k: 'info' },
+            { t: 'Active', k: 'ok' },
+        ],
+        stats: [
+            { l: 'List price', v: '$895' },
+            { l: 'Capacity', v: '1,200', s: '842 reserved' },
+            { l: 'Starts', v: 'Oct 14' },
+            { l: 'Rev-rec', v: 'On event date' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Event', i: 'fa-calendar-check' },
+            { l: 'Pricing', i: 'fa-tags', n: 4 },
+            { l: 'Attendees', i: 'fa-users', n: 842 },
+        ],
+        cards: [
+            { title: 'Event satellite', icon: 'fa-location-dot', body: facts([
+                ['Starts', 'Tue Oct 14, 2026 · 8:00'],
+                ['Ends', 'Thu Oct 16, 2026 · 15:00'],
+                ['Venue', 'Baltimore Convention Center'],
+                ['Capacity', '1,200'],
+                ['Requires attendee', 'Yes'],
+                ['Reserved', '842 · 70%'],
+            ])},
+            { title: 'Ticket prices', icon: 'fa-tags', body: table(
+                ['List', 'Window', 'Amount'],
+                [
+                    ['Super early', 'Closed', '$695'],
+                    ['Early bird', 'Through Aug 31', '$795'],
+                    ['Standard', 'Sep 1–Oct 7', '$895'],
+                    ['Onsite', 'Oct 8–16', '$995'],
+                ]
+            )},
+            { title: 'Recognition', icon: 'fa-scale-balanced', body: `<p style="font-size:13px;color:var(--mj-text-secondary);line-height:1.55">Event products recognize on the event start, not over a service window. Capacity and attendee rows live on the <span class="pill mono">EventProduct</span> satellite — they are not columns on Product.</p>` },
+            { title: 'Fulfillment', icon: 'fa-ticket', body: list([
+                ['Attendee name + email required on the order line', 'EventOrderLine'],
+                ['Check-in writes CheckInAt; does not change money', 'Door'],
+            ], 'info')},
+        ],
+    },
+
+    subscriptionType: {
+        group: 'catalogue', chip: 'Subscription Type',
+        entity: 'MJ_BizApps_Orders: Subscription Types',
+        icon: 'fa-arrows-rotate',
+        title: 'Annual Membership',
+        sub: 'Policy template every live membership sub copies',
+        chips: [
+            { t: 'ANN', k: 'mono' },
+            { t: 'Active', k: 'ok' },
+            { t: 'Org or person', k: '' },
+        ],
+        stats: [
+            { l: 'Billing', v: 'Annual' },
+            { l: 'Default term', v: '12 mo' },
+            { l: 'Auto-renew', v: 'On' },
+            { l: 'Live subs', v: '1,186' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Products using this', i: 'fa-box', n: 6 },
+            { l: 'Live subscriptions', i: 'fa-arrows-rotate', n: 1186 },
+        ],
+        cards: [
+            { title: 'Lifecycle policy', icon: 'fa-route', body: facts([
+                ['Start mode', 'Order date'],
+                ['Trial', '0 days'],
+                ['Grace', '30 days'],
+                ['Cancellation', 'End of term'],
+                ['Refund on cancel', 'None'],
+                ['Reactivation', 'Within 90 days'],
+            ])},
+            { title: 'Money cadences', icon: 'fa-clock', body: facts([
+                ['Billing cadence', 'Annual'],
+                ['Recognition cadence', 'Monthly'],
+                ['Partial period', 'Prorate'],
+                ['Renewal lead', '45 days'],
+                ['Concurrency', 'One active'],
+                ['Benefit model', 'Access'],
+            ])},
+            { title: 'Products that use this type', icon: 'fa-box', body: list([
+                ['Annual Membership — Individual', 'MEM-IND'],
+                ['Annual Membership — Household', 'MEM-HH'],
+                ['Young Professional', 'MEM-YP'],
+            ])},
+            { title: 'Live book', icon: 'fa-chart-pie', body: foot([
+                ['Active', '1,042'],
+                ['In grace', '27'],
+                ['Pending renew', '118'],
+            ]) + `<p style="margin-top:10px;font-size:12.5px;color:var(--mj-text-secondary)">Changing a type does not rewrite live subscriptions. Terms already billed keep the captured policy.</p>` },
+        ],
+    },
+
+    revRecType: {
+        group: 'catalogue', chip: 'Rev-Rec Type',
+        entity: 'MJ_BizApps_Orders: Revenue Recognition Types',
+        icon: 'fa-scale-balanced',
+        title: 'Deferred — straight-line',
+        sub: 'Service window required · monthly release',
+        chips: [
+            { t: 'DEFER-SL', k: 'mono' },
+            { t: 'Deferred', k: 'info' },
+            { t: 'Active', k: 'ok' },
+        ],
+        stats: [
+            { l: 'Service period', v: 'Required' },
+            { l: 'Products', v: '18' },
+            { l: 'Open deferred', v: '$428k' },
+            { l: 'Driver', v: 'StraightLine' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Products', i: 'fa-box', n: 18 },
+            { l: 'Open waterfalls', i: 'fa-chart-line' },
+        ],
+        cards: [
+            { title: 'How money is earned', icon: 'fa-book', body: `<p style="font-size:13px;color:var(--mj-text-secondary);line-height:1.55">On confirm the line books a receivable and a deferred-revenue liability. Each month of the service window releases a slice to revenue. Immediate types skip the liability and book revenue on the order date.</p>` + facts([
+                ['Is deferred', 'Yes'],
+                ['Requires service period', 'Yes'],
+                ['Driver class', 'StraightLineRecognizer'],
+            ])},
+            { title: 'Products on this treatment', icon: 'fa-box', body: table(
+                ['Product', 'Window', 'Open deferral'],
+                [
+                    ['Annual Membership — Individual', '12 mo', '$186,400'],
+                    ['Annual Membership — Household', '12 mo', '$94,200'],
+                    ['Journal print add-on', '12 mo', '$12,880'],
+                ]
+            )},
+            { title: 'This month’s release', icon: 'fa-chart-line', span: 2, body: bars([62, 64, 61, 70, 68, 72], ['Mar','Apr','May','Jun','Jul','Aug']) + foot([
+                ['Released Aug', '$71,240'],
+                ['Still deferred', '$428,110'],
+                ['Terms in flight', '1,108'],
+            ])},
+        ],
+    },
+
+    priceList: {
+        group: 'commercial', chip: 'Price List',
+        entity: 'MJ_BizApps_Orders: Price Lists',
+        icon: 'fa-tags',
+        title: '2026 Standard',
+        sub: 'Validity Jan 1 – Dec 31, 2026',
+        chips: [
+            { t: 'STD-2026', k: 'mono' },
+            { t: 'Active', k: 'ok' },
+        ],
+        stats: [
+            { l: 'Prices', v: '86' },
+            { l: 'Assignments', v: '4' },
+            { l: 'From', v: 'Jan 1' },
+            { l: 'To', v: 'Dec 31' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Prices', i: 'fa-dollar-sign', n: 86 },
+            { l: 'Assignments', i: 'fa-user-tag', n: 4 },
+            { l: 'Simulator', i: 'fa-flask' },
+        ],
+        cards: [
+            { title: 'Who sees this list', icon: 'fa-user-tag', body: table(
+                ['Party', 'Priority', 'Status'],
+                [
+                    ['Default (no party)', '0', pill('Active','ok')],
+                    ['Acme Manufacturing', '20', pill('Active','ok')],
+                    ['Staff house account', '50', pill('Active','ok')],
+                    ['Q1 partner trial', '10', pill('Ended','')],
+                ]
+            )},
+            { title: 'Sample prices', icon: 'fa-list', body: table(
+                ['Product', 'Model', 'Amount'],
+                [
+                    ['Annual Membership — Individual', 'Flat', '$1,250'],
+                    ['Annual Conference 2026', 'Flat', '$895'],
+                    ['Exhibit booth — 10×10', 'Flat', '$3,400'],
+                    ['Journal print', 'Flat', '$89'],
+                ]
+            )},
+            { title: 'Resolution reminder', icon: 'fa-route', span: 2, body: `<p style="font-size:13px;color:var(--mj-text-secondary);line-height:1.55">A Product has no price column. The walk is assignment (who) → list → <span class="pill mono">ProductPrice</span> (currency, qty, window) → optional <span class="pill mono">PriceTier</span>. The simulator pane already exists on this form — Overview just surfaces the walk so you do not have to open it to know who is on this list.</p>` },
+        ],
+    },
+
+    promotion: {
+        group: 'commercial', chip: 'Promotion',
+        entity: 'MJ_BizApps_Orders: Promotions',
+        icon: 'fa-ticket',
+        title: 'Member Welcome 15%',
+        sub: 'Percent off · applies at line · no stacking',
+        chips: [
+            { t: 'WELCOME15', k: 'mono' },
+            { t: '15%', k: 'info' },
+            { t: 'No stack', k: '' },
+            { t: 'Active', k: 'ok' },
+        ],
+        stats: [
+            { l: 'Discount', v: '15%' },
+            { l: 'Schedule', v: 'Jan 1 – Dec 31' },
+            { l: 'Max / customer', v: '1' },
+            { l: 'Redeemed', v: '214 / 2,000' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Targets', i: 'fa-bullseye', n: 1 },
+            { l: 'Codes', i: 'fa-barcode', n: 3 },
+            { l: 'Redemptions', i: 'fa-receipt', n: 214 },
+        ],
+        cards: [
+            { title: 'Qualifiers', icon: 'fa-filter', body: facts([
+                ['Type', 'Percent off'],
+                ['Applies at', 'Line'],
+                ['Minimum order', 'None'],
+                ['Minimum qty', '1'],
+                ['Stacking', 'Refused'],
+                ['Stack sequence', '10'],
+            ])},
+            { title: 'Targets', icon: 'fa-bullseye', body: list([
+                ['Category · Memberships', 'Include descendants'],
+            ], 'info')},
+            { title: 'Codes', icon: 'fa-barcode', body: table(
+                ['Code', 'Assigned', 'Uses'],
+                [
+                    ['WELCOME15', 'Open', '198'],
+                    ['WELCOME15-PARTNER', 'Chapter partners', '16'],
+                    ['WELCOME15-STAFF', 'Staff', '0'],
+                ]
+            )},
+            { title: 'Redemptions this year', icon: 'fa-chart-column', body: bars([18, 24, 30, 28, 42, 36], ['Mar','Apr','May','Jun','Jul','Aug']) },
+        ],
+    },
+
+    chargeType: {
+        group: 'commercial', chip: 'Charge Type',
+        entity: 'MJ_BizApps_Orders: Charge Types',
+        icon: 'fa-plus-minus',
+        title: 'Shipping',
+        sub: 'Freight · basis = order goods',
+        chips: [
+            { t: 'SHIP', k: 'mono' },
+            { t: 'Freight', k: '' },
+            { t: 'Override ok', k: 'info' },
+            { t: 'Active', k: 'ok' },
+        ],
+        stats: [
+            { l: 'Category', v: 'Freight' },
+            { l: 'Basis', v: 'Goods' },
+            { l: 'Allows override', v: 'Yes' },
+            { l: 'Used on', v: '38 orders' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Recent charges', i: 'fa-receipt', n: 38 },
+        ],
+        cards: [
+            { title: 'How it calculates', icon: 'fa-calculator', body: facts([
+                ['Category', 'Freight'],
+                ['Basis', 'Order goods total'],
+                ['Allows override', 'Yes — reason required'],
+                ['Sequence', '30'],
+            ])},
+            { title: 'Recent use', icon: 'fa-receipt', body: table(
+                ['Order', 'Amount', 'Overridden'],
+                [
+                    ['ORD-10482', '$42.00', 'No'],
+                    ['ORD-10471', '$0.00', pill('Waived','warn')],
+                    ['ORD-10466', '$28.50', 'No'],
+                ]
+            )},
+        ],
+    },
+
+    salesAuthority: {
+        group: 'commercial', chip: 'Sales Authority',
+        entity: 'MJ_BizApps_Orders: Sales Authorities',
+        icon: 'fa-user-shield',
+        title: 'Jordan Hale',
+        sub: 'May discount memberships and events',
+        chips: [
+            { t: 'Active', k: 'ok' },
+            { t: 'Max 15%', k: 'warn' },
+        ],
+        stats: [
+            { l: 'Max discount', v: '15%' },
+            { l: 'Max order', v: '$25,000' },
+            { l: 'Auths YTD', v: '19' },
+            { l: 'Terms allowed', v: 'Net 30, Net 60' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Recent authorizations', i: 'fa-stamp', n: 19 },
+        ],
+        cards: [
+            { title: 'Limits', icon: 'fa-gauge', body: facts([
+                ['Max discount %', '15'],
+                ['Max order value', '$25,000'],
+                ['Allowed terms', 'Net 30 · Net 60'],
+                ['Allowed categories', 'Memberships · Events'],
+            ])},
+            { title: 'Recent authorizations', icon: 'fa-stamp', body: table(
+                ['Order', 'Discount', 'When'],
+                [
+                    ['ORD-10455', '12% on booth', 'Aug 9'],
+                    ['ORD-10412', '10% membership', 'Jul 28'],
+                    ['ORD-10388', '15% conference', 'Jul 14'],
+                ]
+            )},
+        ],
+    },
+
+    order: {
+        group: 'documents', chip: 'Order',
+        entity: 'MJ_BizApps_Orders: Order Headers',
+        icon: 'fa-file-invoice-dollar',
+        title: 'ORD-10482',
+        sub: 'Acme Manufacturing · Aug 12, 2026',
+        chips: [
+            { t: 'Confirmed', k: 'ok' },
+            { t: 'Paid', k: 'ok' },
+            { t: 'Standard', k: '' },
+        ],
+        money: [
+            { l: 'Total', v: '$4,820' },
+            { l: 'Paid', v: '$4,820' },
+            { l: 'Balance', v: '$0' },
+        ],
+        collapsible: true,
+        extra: `
+            <div class="parties hero-extra">
+                <div class="bubble">
+                    <i class="fa-solid fa-truck-fast"></i>
+                    <div>
+                        <div class="role">Ship to</div>
+                        <div class="name">Acme Manufacturing</div>
+                        <div class="det">440 Industrial Pkwy, Baltimore MD</div>
+                    </div>
+                </div>
+                <div class="bubble">
+                    <i class="fa-solid fa-file-invoice-dollar"></i>
+                    <div>
+                        <div class="role">Bill to</div>
+                        <div class="name">Acme Manufacturing — AP</div>
+                        <div class="det">Net 30 · due Sep 11</div>
+                    </div>
+                </div>
+            </div>`,
+        stats: [
+            { l: 'Type', v: 'Standard' },
+            { l: 'Company', v: 'Mid-Atlantic' },
+            { l: 'Order date', v: 'Aug 12' },
+            { l: 'Lines', v: '3' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Lines', i: 'fa-list-ol', n: 3 },
+            { l: 'Payment', i: 'fa-credit-card' },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Charges', i: 'fa-plus-minus', n: 1 },
+            { l: 'Accounting', i: 'fa-scale-balanced' },
+            { l: 'Subscriptions', i: 'fa-arrows-rotate', n: 2 },
+        ],
+        railNote: 'Custom accordion. Leftover related is blocked — no More dump. Header collapses to customer + date + money.',
+        cards: [
+            { title: 'Line rollup', icon: 'fa-list-ol', body: table(
+                ['#', 'Product', 'Qty', 'Gross'],
+                [
+                    ['1', 'Annual Membership — Individual', '2', '$2,500'],
+                    ['2', 'Annual Conference 2026', '2', '$1,790'],
+                    ['3', 'Shipping', '1', '$42'],
+                ]
+            ) + foot([
+                ['Goods', '$4,290'],
+                ['Charges', '$42'],
+                ['Tax', '$488'],
+            ])},
+            { title: 'Payments applied', icon: 'fa-credit-card', body: list([
+                ['PMT-22091 · ACH · $4,820', 'Applied Aug 12 · booked'],
+            ], 'ok')},
+            { title: 'Subscriptions this order created', icon: 'fa-arrows-rotate', body: list([
+                ['SUB-88102 · Individual · Acme / Jordan Hale', 'Term 1 of 1 · auto-renew'],
+                ['SUB-88103 · Individual · Acme / Priya Shah', 'Term 1 of 1 · auto-renew'],
+            ], 'ok')},
+            { title: 'Activity', icon: 'fa-bolt', body: timeline([
+                ['ok', 'fa-check', 'Confirmed and receivable booked', 'Jordan Hale', 'Aug 12 · 10:14'],
+                ['ok', 'fa-building-columns', 'ACH PMT-22091 applied', 'System', 'Aug 12 · 10:16'],
+                ['info', 'fa-arrows-rotate', 'Two memberships provisioned', 'System', 'Aug 12 · 10:16'],
+            ])},
+        ],
+    },
+
+    payment: {
+        group: 'documents', chip: 'Payment',
+        entity: 'MJ_BizApps_Orders: Payment Headers',
+        icon: 'fa-building-columns',
+        title: 'PMT-22091',
+        sub: 'Received by Mid-Atlantic Chapter · Aug 12, 2026',
+        chips: [
+            { t: 'Booked', k: 'ok' },
+            { t: 'ACH', k: '' },
+        ],
+        stats: [
+            { l: 'Gross', v: '$4,820' },
+            { l: 'Fee', v: '$0' },
+            { l: 'Net', v: '$4,820' },
+            { l: 'Payer', v: 'Acme Manufacturing' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Applications', i: 'fa-diagram-next', n: 1 },
+            { l: 'Instrument', i: 'fa-passport' },
+            { l: 'Journal', i: 'fa-book' },
+        ],
+        cards: [
+            { title: 'Applied to', icon: 'fa-diagram-next', body: table(
+                ['Order', 'Line', 'Amount'],
+                [['ORD-10482', 'Header', '$4,820']],
+            )},
+            { title: 'Instrument', icon: 'fa-passport', body: facts([
+                ['Type', 'ACH'],
+                ['Bank', 'First National · ****4412'],
+                ['Holder', 'Acme Manufacturing'],
+                ['Reference', 'ACH-882910'],
+            ])},
+            { title: 'Journal', icon: 'fa-book', body: table(
+                ['Account', 'Debit', 'Credit'],
+                [
+                    ['1010 Cash', '$4,820', ''],
+                    ['1210 AR — Acme', '', '$4,820'],
+                ]
+            )},
+            { title: 'Why header ≠ application', icon: 'fa-circle-info', body: `<p style="font-size:13px;color:var(--mj-text-secondary);line-height:1.55">The header is the receipt. <span class="pill mono">PaymentLine</span> rows are how it was applied. One cheque, three invoices = one header, three lines. A refund is a new header that reverses this one — not a negative amount.</p>` },
+        ],
+    },
+
+    subscription: {
+        group: 'documents', chip: 'Subscription',
+        entity: 'MJ_BizApps_Orders: Subscriptions',
+        icon: 'fa-arrows-rotate',
+        title: 'SUB-88102',
+        sub: 'Annual Membership — Individual',
+        chips: [
+            { t: 'Active', k: 'ok' },
+            { t: 'Auto-renews', k: 'info' },
+        ],
+        meta: [
+            ['Coverage', 'Aug 12, 2026 – Aug 11, 2027'],
+            ['Company', 'Mid-Atlantic Chapter'],
+        ],
+        stats: [
+            { l: 'Holder', v: 'Acme Manufacturing' },
+            { l: 'Beneficiary', v: 'Jordan Hale' },
+            { l: 'Next term', v: 'Aug 12, 2027' },
+            { l: 'Deferred left', v: '$1,042' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Terms', i: 'fa-clock-rotate-left', n: 1 },
+            { l: 'Deferred revenue', i: 'fa-chart-line' },
+            { l: 'Entitlement grants', i: 'fa-key', n: 2 },
+            { l: 'Events', i: 'fa-bolt', n: 3 },
+        ],
+        cards: [
+            { title: 'Current term', icon: 'fa-clock-rotate-left', body: facts([
+                ['Term', '#1'],
+                ['Window', 'Aug 12, 2026 – Aug 11, 2027'],
+                ['Amount', '$1,250'],
+                ['Prorated', 'No'],
+                ['Rev-rec', 'Deferred — straight-line'],
+                ['Status', 'Active'],
+            ])},
+            { title: 'Remaining deferred', icon: 'fa-chart-line', body: bars([100, 92, 83, 75, 67, 58], ['Mar','Apr','May','Jun','Jul','Aug']) + foot([
+                ['Recognized', '$208'],
+                ['Remaining', '$1,042'],
+                ['Months left', '10'],
+            ])},
+            { title: 'Grants', icon: 'fa-key', body: list([
+                ['Digital access · Jordan Hale', 'Valid through Aug 11, 2027'],
+                ['Journal print · 6 issues', 'Valid through Aug 11, 2027'],
+            ], 'ok')},
+            { title: 'Events', icon: 'fa-bolt', body: timeline([
+                ['ok', 'fa-play', 'Started from ORD-10482 line 1', 'System', 'Aug 12'],
+                ['ok', 'fa-key', 'Two entitlements provisioned', 'System', 'Aug 12'],
+                ['info', 'fa-rotate', 'Auto-renew armed · lead 45 days', 'Type default', 'Aug 12'],
+            ])},
+        ],
+    },
+
+    subscriptionTerm: {
+        group: 'documents', chip: 'Term',
+        entity: 'MJ_BizApps_Orders: Subscription Terms',
+        icon: 'fa-clock-rotate-left',
+        title: 'SUB-88102 · Term 1',
+        sub: 'The billable slice — not the subscription itself',
+        chips: [
+            { t: 'Active', k: 'ok' },
+        ],
+        meta: [
+            ['Coverage', 'Aug 12, 2026 – Aug 11, 2027'],
+            ['Subscription', 'SUB-88102'],
+        ],
+        stats: [
+            { l: 'Amount', v: '$1,250' },
+            { l: 'Cycle', v: '#1' },
+            { l: 'Prorated', v: 'No' },
+            { l: 'Rev-rec', v: 'Deferred' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Deferred revenue', i: 'fa-chart-line' },
+            { l: 'Grants this term', i: 'fa-key', n: 2 },
+            { l: 'Originating line', i: 'fa-list-ol' },
+        ],
+        cards: [
+            { title: 'This slice', icon: 'fa-scissors', body: facts([
+                ['Start', 'Aug 12, 2026'],
+                ['End', 'Aug 11, 2027'],
+                ['Amount', '$1,250'],
+                ['Order line', 'ORD-10482 · line 1'],
+                ['Canceled', '—'],
+            ])},
+            { title: 'Recognition so far', icon: 'fa-chart-line', body: foot([
+                ['Booked deferred', '$1,250'],
+                ['Released', '$208'],
+                ['Remaining', '$1,042'],
+            ])},
+            { title: 'Grants tied to this term', icon: 'fa-key', span: 2, body: table(
+                ['Grant', 'Beneficiary', 'Valid to', 'Status'],
+                [
+                    ['Digital access', 'Jordan Hale', 'Aug 11, 2027', pill('Active','ok')],
+                    ['Journal print', 'Jordan Hale', 'Aug 11, 2027', pill('Active','ok')],
+                ]
+            )},
+        ],
+    },
+
+    storedValue: {
+        group: 'documents', chip: 'Stored value',
+        entity: 'MJ_BizApps_Orders: Stored Value Accounts',
+        icon: 'fa-gift',
+        title: 'GC-8821',
+        sub: 'Issued by Mid-Atlantic Chapter from ORD-10110',
+        chips: [
+            { t: 'Active', k: 'ok' },
+            { t: 'Gift card', k: '' },
+        ],
+        stats: [
+            { l: 'Remaining', v: '$250' },
+            { l: 'Initial', v: '$500' },
+            { l: 'Expires', v: 'Aug 12, 2028' },
+            { l: 'Holder', v: 'Priya Shah' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Transactions', i: 'fa-right-left', n: 3 },
+        ],
+        cards: [
+            { title: 'Ledger', icon: 'fa-right-left', body: table(
+                ['When', 'Type', 'Amount', 'Balance'],
+                [
+                    ['Mar 2', 'Issue', '+$500', '$500'],
+                    ['May 18', 'Redeem on ORD-10340', '−$175', '$325'],
+                    ['Aug 1', 'Redeem on ORD-10420', '−$75', '$250'],
+                ]
+            )},
+            { title: 'Origin', icon: 'fa-receipt', body: facts([
+                ['Issued from', 'ORD-10110 · line 2'],
+                ['Issuing company', 'Mid-Atlantic Chapter'],
+                ['Beneficiary', 'Priya Shah'],
+                ['Expires', 'Aug 12, 2028'],
+            ])},
+        ],
+    },
+
+    paymentProvider: {
+        group: 'paycfg', chip: 'Provider',
+        entity: 'MJ_BizApps_Orders: Payment Providers',
+        icon: 'fa-plug',
+        title: 'Stripe — Mid-Atlantic',
+        sub: 'Live mode · tokenization + refunds + webhooks',
+        chips: [
+            { t: 'Stripe', k: '' },
+            { t: 'Live', k: 'ok' },
+            { t: 'Active', k: 'ok' },
+        ],
+        stats: [
+            { l: 'Type', v: 'Stripe' },
+            { l: 'Mode', v: 'Live' },
+            { l: 'Charges MTD', v: '148' },
+            { l: 'Open intents', v: '6' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Recent payments', i: 'fa-building-columns', n: 148 },
+            { l: 'Intents', i: 'fa-hourglass-half', n: 6 },
+        ],
+        cards: [
+            { title: 'Capabilities from the type', icon: 'fa-shield-halved', body: facts([
+                ['Tokenization', 'Yes'],
+                ['Refunds', 'Yes'],
+                ['Webhooks', 'Yes'],
+                ['Driver', 'StripePaymentProvider'],
+            ])},
+            { title: 'Recent charges', icon: 'fa-building-columns', body: table(
+                ['Payment', 'Amount', 'Status'],
+                [
+                    ['PMT-22091', '$4,820', pill('Booked','ok')],
+                    ['PMT-22088', '$895', pill('Booked','ok')],
+                    ['PMT-22080', '$1,250', pill('Booked','ok')],
+                ]
+            )},
+            { title: 'Open intents', icon: 'fa-hourglass-half', span: 2, body: `<p style="font-size:13px;color:var(--mj-text-secondary);line-height:1.55">An abandoned intent leaves no payment behind. Six checkout sessions are still <span class="pill">requires_payment_method</span> — they age out without writing a header.</p>` },
+        ],
+    },
+
+    paymentType: {
+        group: 'paycfg', chip: 'Payment Type',
+        entity: 'MJ_BizApps_Orders: Payment Types',
+        icon: 'fa-money-check-dollar',
+        title: 'ACH',
+        sub: 'Requires instrument + reference · not a reversal',
+        chips: [
+            { t: 'ACH', k: 'mono' },
+            { t: 'Active', k: 'ok' },
+        ],
+        stats: [
+            { l: 'Requires provider', v: 'No' },
+            { l: 'Requires instrument', v: 'Yes' },
+            { l: 'Requires reference', v: 'Yes' },
+            { l: 'Used MTD', v: '41' },
+        ],
+        rail: [
+            { l: 'Overview', i: 'fa-chart-pie', on: true },
+            { l: 'Details', i: 'fa-align-left' },
+            { l: 'Recent payments', i: 'fa-building-columns', n: 41 },
+        ],
+        cards: [
+            { title: 'What this type demands', icon: 'fa-list-check', body: facts([
+                ['Is reversal', 'No'],
+                ['Requires provider', 'No'],
+                ['Requires instrument', 'Yes — bank + last 4'],
+                ['Requires reference', 'Yes — trace / check #'],
+                ['Fee booked inline', 'No'],
+                ['Detail extension', '—'],
+            ])},
+            { title: 'Volume', icon: 'fa-chart-column', body: bars([22, 28, 24, 31, 36, 41], ['Mar','Apr','May','Jun','Jul','Aug']) + foot([
+                ['MTD count', '41'],
+                ['MTD net', '$86,420'],
+                ['Failed', '1'],
+            ])},
+        ],
+    },
+};
+
+function pill(t, k) {
+    return `<span class="pill ${k || ''}">${t}</span>`;
+}
+function facts(rows) {
+    return `<div class="facts">${rows.map(([l,v]) => `<div><div class="fact-l">${l}</div><div class="fact-v">${v}</div></div>`).join('')}</div>`;
+}
+function table(headers, rows) {
+    const th = headers.map((h, i) => `<th${i === headers.length - 1 ? ' class="num"' : ''}>${h}</th>`).join('');
+    const tr = rows.map(r => `<tr>${r.map((c, i) => `<td${i === r.length - 1 ? ' class="num"' : ''}${i === 0 ? ' class="strong"' : ''}>${c}</td>`).join('')}</tr>`).join('');
+    return `<table><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table>`;
+}
+function list(items, tone) {
+    return items.map(([h, p]) => `<div class="row"><div><h4>${h}</h4><p>${p}</p></div>${tone ? pill(tone === 'ok' ? 'On' : 'Info', tone) : ''}</div>`).join('');
+}
+function bars(vals, labels) {
+    const max = Math.max(...vals);
+    return `<div class="bars">${vals.map((v, i) => `<div class="bar-col"><div class="bar-fill${v === max ? ' peak' : ''}" style="height:${Math.round(v / max * 100)}%"></div><span>${labels[i]}</span></div>`).join('')}</div>`;
+}
+function foot(items) {
+    return `<div class="foot">${items.map(([l,v]) => `<div class="stat"><span class="stat-l">${l}</span><span class="stat-v">${v}</span></div>`).join('')}</div>`;
+}
+function timeline(items) {
+    return `<div class="tl">${items.map(([tone, icon, t, p, time]) => `
+        <div class="tl-i">
+            <div class="tl-ic ${tone}"><i class="fa-solid ${icon}"></i></div>
+            <div><h5>${t}</h5><p>${p}</p><time>${time}</time></div>
+        </div>`).join('')}</div>`;
+}
+
+let current = 'product';
+let collapsed = false;
+
+function renderPickers() {
+    const el = document.getElementById('pickers');
+    el.innerHTML = GROUPS.map(g => {
+        const chips = Object.entries(ENTITIES)
+            .filter(([, e]) => e.group === g.id)
+            .map(([id, e]) => `<button type="button" class="ent-chip${id === current ? ' is-on' : ''}" data-id="${id}">${e.chip}</button>`)
+            .join('');
+        return `<div class="group"><div class="group-label">${g.label}</div><div class="chip-row">${chips}</div></div>`;
+    }).join('');
+    el.querySelectorAll('.ent-chip').forEach(btn => {
+        btn.addEventListener('click', () => {
+            current = btn.dataset.id;
+            collapsed = false;
+            render();
+        });
+    });
+}
+
+function renderHero(e) {
+    const chips = e.chips.map(c => `<span class="pill ${c.k}">${c.t}</span>`).join('');
+    const meta = (e.meta || []).map(([l,v]) => `<span>${l}: <strong>${v}</strong></span>`).join('');
+    const money = e.money
+        ? `<div class="money">${e.money.map(m => `<div><span class="kicker">${m.l}</span><span class="amt">${m.v}</span></div>`).join('')}</div>`
+        : '';
+    const collapse = e.collapsible
+        ? `<button type="button" class="btn-ghost" id="collapseBtn"><i class="fa-solid ${collapsed ? 'fa-chevron-down' : 'fa-chevron-up'}"></i> ${collapsed ? 'Expand header' : 'Collapse header'}</button>`
+        : '';
+    const stats = `<div class="stats">${e.stats.map(s => `<div class="stat"><span class="stat-l">${s.l}</span><span class="stat-v">${s.v}</span>${s.s ? `<span class="stat-s">${s.s}</span>` : ''}</div>`).join('')}</div>`;
+    document.getElementById('hero').className = 'hero' + (collapsed ? ' is-collapsed' : '');
+    document.getElementById('hero').innerHTML = `
+        <div class="hero-pad">
+            <div class="hero-top">
+                <div class="who">
+                    <div class="avatar"><i class="fa-solid ${e.icon}"></i></div>
+                    <div>
+                        <div class="title-row">
+                            <h2 class="title">${e.title}</h2>
+                            ${chips}
+                        </div>
+                        <div class="sub">${e.sub}</div>
+                        ${meta ? `<div class="meta">${meta}</div>` : ''}
+                    </div>
+                </div>
+                <div class="aside">${money}${collapse}</div>
+            </div>
+            ${e.extra || ''}
+            ${stats}
+        </div>`;
+    const btn = document.getElementById('collapseBtn');
+    if (btn) btn.addEventListener('click', () => { collapsed = !collapsed; render(); });
+}
+
+function renderRail(e) {
+    const items = e.rail.map(r => `
+        <div class="rail-item${r.on ? ' is-on' : ''}">
+            <span><i class="fa-solid ${r.i}"></i>${r.l}</span>
+            ${r.n != null ? `<span class="rail-n">${r.n}</span>` : ''}
+        </div>`).join('');
+    document.getElementById('rail').innerHTML = `
+        <div class="rail-h"><span>Sections</span><span class="pill" style="text-transform:none;letter-spacing:0">Orders</span></div>
+        ${items}
+        <div class="rail-div"></div>
+        <div class="rail-note">${e.railNote || 'Generated leftover related stays out of this rail. Overview is first.'}</div>`;
+}
+
+function renderCards(e) {
+    document.getElementById('cards').innerHTML = e.cards.map(c => `
+        <article class="card${c.span === 2 ? ' span-2' : ''}">
+            <div class="card-h">
+                <h3><i class="fa-solid ${c.icon}"></i>${c.title}</h3>
+            </div>
+            <div class="card-b">${c.body}</div>
+        </article>`).join('');
+}
+
+function render() {
+    const e = ENTITIES[current];
+    renderPickers();
+    renderHero(e);
+    renderRail(e);
+    renderCards(e);
+}
+
+document.getElementById('themeBtn').addEventListener('click', () => {
+    const root = document.documentElement;
+    const dark = root.getAttribute('data-theme') === 'dark';
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+    document.getElementById('themeBtn').innerHTML = dark
+        ? '<i class="fa-solid fa-moon"></i> Dark'
+        : '<i class="fa-solid fa-sun"></i> Light';
+});
+
+render();
+</script>
+</body>
+</html>

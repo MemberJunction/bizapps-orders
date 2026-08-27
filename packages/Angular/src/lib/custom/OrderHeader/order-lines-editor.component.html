@@ -1,0 +1,156 @@
+<div class="mjo-ol">
+    @for (line of Lines; track line.ID) {
+        <div class="mjo-ol-card">
+            <div class="mjo-ol-card__top">
+                <div class="mjo-ol-card__id">
+                    <button type="button" class="mjo-ol-card__name" (click)="OpenProduct(line, $event)">
+                        {{ ProductFor(line)?.Name ?? 'Product' }}
+                    </button>
+                    <div class="mjo-ol-card__meta">
+                        {{ ProductFor(line)?.SKU }}
+                        @if (ProductFor(line)?.TypeName) {
+                            · {{ ProductFor(line)?.TypeName }}
+                        }
+                    </div>
+                </div>
+
+                <div class="mjo-ol-qty" [class.is-locked]="!EditMode || QuantityCappedToOne(line)">
+                    @if (EditMode && !QuantityCappedToOne(line)) {
+                        <button type="button" (click)="Bump(line, -1)" aria-label="Decrease quantity">−</button>
+                        <input
+                            [value]="line.Quantity"
+                            (change)="SetQuantity(line, $event)"
+                            aria-label="Quantity">
+                        <button type="button" (click)="Bump(line, 1)" [disabled]="QuantityAtMax(line)" aria-label="Increase quantity">+</button>
+                    } @else {
+                        <span class="mjo-ol-qty__value">{{ line.Quantity }}</span>
+                    }
+                </div>
+
+                <div class="mjo-ol-card__price">
+                    <div class="mjo-ol-card__amt">{{ PricedLine(line)?.UnitPrice | mjoMoney }}</div>
+                    <mjo-price-source-badge
+                        [Source]="PricedLine(line)?.PriceSource ?? null"
+                        [Settled]="!Pricing.Loading"
+                        [Overridden]="!!PricedLine(line)?.WasStated" />
+                    @if (PricedLine(line)?.Error; as why) {
+                        <div class="mjo-ol-card__err">{{ why }}</div>
+                    }
+                </div>
+
+                <div class="mjo-ol-card__tot">{{ PricedLine(line)?.NetAmount | mjoMoney }}</div>
+
+                @if (EditMode) {
+                    <button
+                        type="button"
+                        class="mjo-ol-iconbtn"
+                        (click)="Remove(line)"
+                        [attr.aria-label]="'Remove ' + (ProductFor(line)?.Name ?? 'line')">
+                        <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                    </button>
+                }
+            </div>
+
+            <div class="mjo-ol-card__conseq">
+                @if (ProductFor(line); as product) {
+                    @if (product.TypeName === 'Goods') {
+                        <mjo-consequence-chip Kind="fulfillment">Ships — holds the order at Posted</mjo-consequence-chip>
+                    }
+                    @if (!product.Taxable) {
+                        <mjo-consequence-chip Kind="untaxable">Untaxable</mjo-consequence-chip>
+                    }
+                    @if (product.CompanyName) {
+                        <mjo-consequence-chip Kind="company">Revenue to {{ product.CompanyName }}</mjo-consequence-chip>
+                    }
+                }
+            </div>
+
+            @if (ExtensionFor(line); as ext) {
+                <div class="mjo-ol-ext" [class.is-open]="IsExtensionOpen(line)">
+                    <button
+                        type="button"
+                        class="mjo-ol-ext__toggle"
+                        (click)="ToggleExtension(line)"
+                        [attr.aria-expanded]="IsExtensionOpen(line)"
+                        [attr.aria-controls]="'mjo-ol-ext-' + line.ID">
+                        <i class="fa-solid fa-chevron-right mjo-ol-ext__chev" aria-hidden="true"></i>
+                        <span class="mjo-ol-ext__label">{{ ExtensionLabel(line) }}</span>
+                        @if (!IsExtensionOpen(line)) {
+                            <span class="mjo-ol-ext__hint">{{ ExtensionHint(line) }}</span>
+                        }
+                    </button>
+                    <div
+                        class="mjo-ol-ext__body"
+                        [id]="'mjo-ol-ext-' + line.ID"
+                        [attr.inert]="IsExtensionOpen(line) ? null : ''"
+                        [attr.aria-hidden]="!IsExtensionOpen(line)">
+                        <div class="mjo-ol-ext__clip">
+                            <mj-entity-form-host
+                                [Record]="ext"
+                                [EditMode]="EditMode"
+                                [Config]="ExtensionFormConfigFor(line)"
+                                (FormCreated)="OnExtensionFormCreated($event)"
+                                (Navigate)="OnExtensionNavigate($event)">
+                            </mj-entity-form-host>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    } @empty {
+        <div class="mjo-ol-empty">
+            <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            <div class="mjo-ol-empty__title">Nothing on this order yet</div>
+            <div>Search the catalog to add the first line.</div>
+        </div>
+    }
+
+    @if (EditMode) {
+    <div class="mj-typeahead mjo-ol-picker">
+        <div class="mjo-search">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+            <input
+                [(ngModel)]="ProductQuery"
+                (focus)="OpenPicker()"
+                (blur)="ClosePickerSoon()"
+                (keydown)="OnPickerKey($event)"
+                placeholder="Add product — type a name or SKU…"
+                autocomplete="off"
+                role="combobox"
+                aria-label="Add a product"
+                [attr.aria-expanded]="PickerOpen">
+        </div>
+
+        @if (PickerOpen) {
+            <div class="mj-typeahead-list is-open" role="listbox">
+                @for (product of PickerResults; track product.ID; let i = $index) {
+                    <button
+                        type="button"
+                        class="mj-typeahead-item mjo-ol-pick"
+                        [class.is-cursor]="i === PickerCursor"
+                        role="option"
+                        [attr.aria-selected]="i === PickerCursor"
+                        (mousedown)="AddProduct(product)">
+                        <span class="mjo-ol-pick__body">
+                            <span class="name">{{ product.Name }}</span>
+                            <span class="sub">{{ product.SKU }} · {{ product.TypeName }} · {{ product.CompanyName }}</span>
+                        </span>
+                        <span class="end">
+                            <span class="mjo-ol-pick__price">{{ product.ListPrice | mjoMoney }}</span>
+                            <span class="sub">{{ product.Taxable ? 'taxable' : 'untaxable' }}</span>
+                        </span>
+                    </button>
+                } @empty {
+                    <div class="mj-typeahead-item">
+                        <span class="muted small">
+                            @if (CatalogError) { {{ CatalogError }} }
+                            @else if (Catalog.length === 0) { Loading catalog… }
+                            @else { No product matches that. }
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+    }
+</div>

@@ -1,0 +1,153 @@
+[
+  {
+    "fields": {
+      "Code": "AnnualRolling",
+      "Name": "Annual — Rolling",
+      "Description": "Standard annual subscription starting the day it is purchased. Bills annually, recognizes monthly. A repeat purchase extends the existing term rather than creating a second concurrent subscription. Individual membership — the holder is the member.",
+      "SubscriberScope": "Either",
+      "StartMode": "Immediate",
+      "DefaultTermMonths": 12,
+      "BillingCadence": "Annual",
+      "RecognitionCadence": "Monthly",
+      "ConcurrencyMode": "ExtendExisting",
+      "ReactivationMode": "ReactivateWithinWindow",
+      "ReactivationWindowDays": 90,
+      "AutoRenewDefault": 1,
+      "RenewalLeadDays": 90,
+      "CancellationMode": "EndOfTerm",
+      "CancellationRefundMode": "NoRefund",
+      "GracePeriodDays": 30,
+      "Sequence": 10,
+      "BenefitModel": "Holder"
+    },
+    "primaryKey": {
+      "ID": "C5E1A870-9B24-4D63-8E17-5A6B7C8D9E01"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:34.956Z",
+      "checksum": "d423a4fc24edc6f8ebe96a15640023ad56029f01849461e1870c0e6af7e6b90a"
+    }
+  },
+  {
+    "fields": {
+      "Code": "CalendarYear",
+      "Name": "Calendar Year (Jan 1 anchor)",
+      "Description": "Membership year runs 1/1-12/31 for everyone. A mid-year join is PRORATED to the next anchor, so all members renew together. Bills annually, recognizes monthly. Cancels IMMEDIATELY and refunds the unused portion — `EndOfTerm` would be contradictory here, since coverage running to the term end leaves nothing unused to prorate. Institutional membership — the org joins and its people are members by virtue of that.",
+      "SubscriberScope": "Organization",
+      "StartMode": "CalendarAnchored",
+      "AnchorMonth": 1,
+      "AnchorDay": 1,
+      "PartialPeriodMode": "Prorate",
+      "DefaultTermMonths": 12,
+      "BillingCadence": "Annual",
+      "RecognitionCadence": "Monthly",
+      "ConcurrencyMode": "ExtendExisting",
+      "ReactivationMode": "ReactivateWithinWindow",
+      "ReactivationWindowDays": 90,
+      "AutoRenewDefault": 1,
+      "RenewalLeadDays": 90,
+      "CancellationMode": "Immediate",
+      "CancellationRefundMode": "ProrateUnused",
+      "GracePeriodDays": 30,
+      "Sequence": 20,
+      "BenefitModel": "Organization"
+    },
+    "primaryKey": {
+      "ID": "C5E1A870-9B24-4D63-8E17-5A6B7C8D9E02"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:34.980Z",
+      "checksum": "0fb81e1d52f8665ec82c9d2aa537f9257b496720a612dacdcfd1889e3ca4f024"
+    }
+  },
+  {
+    "fields": {
+      "Code": "FiscalYearJul",
+      "Name": "Fiscal Year (Jul 1 anchor, charge full)",
+      "Description": "Fiscal-year membership anchored 7/1. A mid-year join is charged the FULL year rather than prorated (the alternative policy to CalendarYear). Recognizes quarterly. Held by the organization itself.",
+      "SubscriberScope": "Organization",
+      "StartMode": "CalendarAnchored",
+      "AnchorMonth": 7,
+      "AnchorDay": 1,
+      "PartialPeriodMode": "ChargeFull",
+      "DefaultTermMonths": 12,
+      "BillingCadence": "Annual",
+      "RecognitionCadence": "Quarterly",
+      "ConcurrencyMode": "RejectDuplicate",
+      "ReactivationMode": "ReactivateExisting",
+      "AutoRenewDefault": 1,
+      "RenewalLeadDays": 120,
+      "CancellationMode": "EndOfTerm",
+      "CancellationRefundMode": "NoRefund",
+      "GracePeriodDays": 60,
+      "Sequence": 30,
+      "BenefitModel": "Holder"
+    },
+    "primaryKey": {
+      "ID": "C5E1A870-9B24-4D63-8E17-5A6B7C8D9E03"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.001Z",
+      "checksum": "9228aa62cd24610ca59d7a9c191d18d90c177dc639f929680ac1f6629dc9f073"
+    }
+  },
+  {
+    "fields": {
+      "Code": "MonthlyRolling",
+      "Name": "Monthly — Rolling",
+      "Description": "Month-to-month subscription. Bills and recognizes monthly, cancellable at the end of the current billing period, no grace. Individual monthly membership.",
+      "SubscriberScope": "Either",
+      "StartMode": "Immediate",
+      "DefaultTermMonths": 1,
+      "BillingCadence": "Monthly",
+      "RecognitionCadence": "MatchBilling",
+      "ConcurrencyMode": "ExtendExisting",
+      "ReactivationMode": "AlwaysCreateNew",
+      "AutoRenewDefault": 1,
+      "RenewalLeadDays": 15,
+      "CancellationMode": "EndOfBillingPeriod",
+      "CancellationRefundMode": "FullRefundWithinWindow",
+      "GracePeriodDays": 0,
+      "Sequence": 40,
+      "CancellationWindowDays": 14,
+      "BenefitModel": "Holder"
+    },
+    "primaryKey": {
+      "ID": "C5E1A870-9B24-4D63-8E17-5A6B7C8D9E04"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.020Z",
+      "checksum": "eba7aa938a948dae67c5fbfd677711c4419577661fba778bdbfe9d421df830c9"
+    }
+  },
+  {
+    "fields": {
+      "Code": "CorporateSeat",
+      "Name": "Corporate Seat (named individual)",
+      "Description": "A seat: the organization holds and pays, a NAMED person receives the benefit. Ten seats bought for ten staff are ten subscriptions, because the dedupe key is the (organization, person) pair — not the organization alone.",
+      "SubscriberScope": "Organization",
+      "BenefitModel": "Individual",
+      "StartMode": "Immediate",
+      "DefaultTermMonths": 12,
+      "BillingCadence": "Annual",
+      "RecognitionCadence": "Monthly",
+      "ConcurrencyMode": "RejectDuplicate",
+      "ReactivationMode": "ReactivateExisting",
+      "AutoRenewDefault": true,
+      "RenewalLeadDays": 60,
+      "TrialDays": 0,
+      "CancellationMode": "EndOfTerm",
+      "CancellationRefundMode": "NoRefund",
+      "GracePeriodDays": 30,
+      "Sequence": 5,
+      "IsActive": true
+    },
+    "primaryKey": {
+      "ID": "08482AC7-2012-4F00-9F17-2339B14AABE2"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.035Z",
+      "checksum": "00207e0f3a89bd623785bc0b8a51362c8353f6e91faa0039de34e069a084295b"
+    }
+  }
+]

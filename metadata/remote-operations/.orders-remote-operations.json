@@ -1,0 +1,372 @@
+[
+  {
+    "fields": {
+      "Name": "Preview Price",
+      "OperationKey": "Orders.PreviewPrice",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Pricing",
+      "Description": "Resolve one product's price through the real pricing pipeline and explain how — which list, which rule, which volume band, which resolver. Read-only. Powers the order line's price badge and the pricing admin screen's resolution-walk visualiser.",
+      "InputTypeName": "PreviewPriceInput",
+      "InputTypeDefinition": "@file:types/orders-preview-price.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "PreviewPriceOutput",
+      "OutputTypeDefinition": "@file:types/orders-preview-price.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C405"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.491Z",
+      "checksum": "12fa9a78b62d464b24b53a67f92f4ec4f9555da81fafc9627f6bc111d2b7dbbe"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Refund Payment",
+      "OperationKey": "Orders.RefundPayment",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Issue a refund against a captured payment. A refund is a NEW payment, never an edit: the reversal carries its own instrument snapshot and negative allocation lines that un-apply proportionally to how the original was applied. The processing fee is not reversed — the processor kept it. Guards: must be captured, never more than remains, never twice.",
+      "InputTypeName": "RefundPaymentInput",
+      "InputTypeDefinition": "@file:types/orders-refund-payment.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "RefundPaymentOutput",
+      "OutputTypeDefinition": "@file:types/orders-refund-payment.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "payments:refund",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C406"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.530Z",
+      "checksum": "95f32d390aa3998efb850d7c12c2f16aefeff2ed2afba479c4512a1bcea5053b"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Apply Account Credit",
+      "OperationKey": "Orders.ApplyAccountCredit",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Spend a customer's credit on another order. Writes a zero-amount payment with two offsetting lines — no new cash entered the business, so this only re-attributes money already received. A credit IS a negative order balance; there is no separate instrument to fall out of sync with it. Cross-company applications raise the intercompany legs through the ordinary allocation path, which is required rather than convenient.",
+      "InputTypeName": "ApplyAccountCreditInput",
+      "InputTypeDefinition": "@file:types/orders-apply-account-credit.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "ApplyAccountCreditOutput",
+      "OutputTypeDefinition": "@file:types/orders-apply-account-credit.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "payments:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C407"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.452Z",
+      "checksum": "53c64f6a831f10bdcce6a5e872105754ca4d99e80941713e8754883344fc2698"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Cancel Subscription",
+      "OperationKey": "Orders.CancelSubscription",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
+      "Description": "Cancel a subscription: policy in, reversal out. The subscription type's cancellation mode, refund mode and grace period decide when coverage ends, when access ends and what is refunded; the operation emits the reversal order, stamps the term and logs the lifecycle event in one transaction. Grace extends ACCESS, never revenue — storing one in place of the other silently revokes access early.",
+      "InputTypeName": "CancelSubscriptionInput",
+      "InputTypeDefinition": "@file:types/orders-cancel-subscription.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "CancelSubscriptionOutput",
+      "OutputTypeDefinition": "@file:types/orders-cancel-subscription.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "subscriptions:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C408"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.433Z",
+      "checksum": "73cd5bf00bf1ecc1ed7d98baa0676481e7cdf3091bc5055d8fb25eb0c86b57d4"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Spawn Renewals",
+      "OperationKey": "Orders.SpawnRenewals",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
+      "Description": "Place renewal orders for subscriptions whose latest term expires inside their own lead window and whose holder consented via auto-renew. Two independent idempotency guards, because an unattended job that double-spawns double-bills: the selection only finds subscriptions whose LATEST term is expiring, plus an explicit check for an order already renewing that subscription. Renewals bypass the concurrency rule — a renewal is not a second subscription.",
+      "InputTypeName": "SpawnRenewalsInput",
+      "InputTypeDefinition": "@file:types/orders-spawn-renewals.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "SpawnRenewalsOutput",
+      "OutputTypeDefinition": "@file:types/orders-spawn-renewals.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "LongRunning",
+      "RequiredScope": "subscriptions:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C409"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.471Z",
+      "checksum": "45fc4776d3216bded23d5cfd07b54f8ecaeca2fe0dc2774075e7d33a71c4f142"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Get Overdue Worklist",
+      "OperationKey": "Orders.GetOverdueWorklist",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
+      "Description": "Assemble the collections worklist. Overdue is a computed surface — balance above zero and past due — never a stored flag, because it changes with the clock rather than with a write; so this cannot be a client-side filter over a column. Each row carries what is needed to decide the next action without a second round trip, including the credit the customer already holds, since spending that comes before chasing cash.",
+      "InputTypeName": "OrdersGetOverdueWorklistInput",
+      "InputTypeDefinition": "@file:types/orders-get-overdue-worklist.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersGetOverdueWorklistOutput",
+      "OutputTypeDefinition": "@file:types/orders-get-overdue-worklist.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C410"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.511Z",
+      "checksum": "d02d2661a5679f461e87bfa2c5039edc220115a5dfdff928e86cb210160d13da"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Get Fulfillment Queue",
+      "OperationKey": "Orders.GetFulfillmentQueue",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Fulfillment",
+      "Description": "Every order line still awaiting shipment, oldest confirmed first. Computed at read time like the overdue worklist, because it changes as lines are flipped rather than as anything is written - a stored flag would need a job to keep it honest, and the day that job failed the warehouse would quietly stop seeing work. Lines whose product type requires no fulfilment never appear, and neither do reversals (goods coming back are tracked on the line they reverse) or a bundle rollup parent (its children carry the goods).",
+      "InputTypeName": "OrdersGetFulfillmentQueueInput",
+      "InputTypeDefinition": "@file:types/orders-get-fulfillment-queue.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersGetFulfillmentQueueOutput",
+      "OutputTypeDefinition": "@file:types/orders-get-fulfillment-queue.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "3B2150C9-3D51-42F6-BF69-EAD0FD8D5A8D"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.604Z",
+      "checksum": "f571bc4effb5f39805ea6a321ae1d4f34c697088075035efc5465a4dd05db6ba"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Fulfill Order Lines",
+      "OperationKey": "Orders.FulfillOrderLines",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Fulfillment",
+      "Description": "Mark lines Fulfilled and advance each order whose last fulfillable line is now done - ONE decision, so one operation. As two calls there is a window where every line is shipped and the order still reads Posted, which a warehouse experiences as the system losing its work. An order advances when nothing is AWAITING fulfilment rather than when every line is Fulfilled: on a mixed order the subscription line never flips, so the stricter test would hold it open forever. No journal entry fires (D15).",
+      "InputTypeName": "OrdersFulfillOrderLinesInput",
+      "InputTypeDefinition": "@file:types/orders-fulfill-order-lines.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersFulfillOrderLinesOutput",
+      "OutputTypeDefinition": "@file:types/orders-fulfill-order-lines.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "5CD713D6-C443-4340-ABBB-3348EFD2B2E5"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.549Z",
+      "checksum": "1f7f09b2d642a275b496dc92dbfe4eb5f722de4b39f29e8fd4efa791ba073e1b"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Capture Payment",
+      "OperationKey": "Orders.CapturePayment",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Take a payment and allocate it, in ONE transaction. Writing the header with its allocation lines is no longer the reason - PaymentHeader.Lines is a related-record collection, so a browser payment.Save() does that on its own. What remains is everything a save cannot decide, and all of it must happen in the same act as the write: SETTLING with the payment provider before the money is recorded as taken, recognising a re-submitted capture as the SAME payment rather than a second one, and turning an over-payment into spendable account credit (D68) rather than refusing it. A two-step capture-then-settle flow was rejected because between the steps there would be a captured payment the provider knows nothing about: cash recorded against nothing. The fee is computed server-side and returned, never accepted as input, because a client-supplied fee is a client-supplied general-ledger amount. Preview runs the real capture inside a transaction that always rolls back rather than modelling the arithmetic separately.",
+      "InputTypeName": "OrdersCapturePaymentInput",
+      "InputTypeDefinition": "@file:types/orders-capture-payment.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersCapturePaymentOutput",
+      "OutputTypeDefinition": "@file:types/orders-capture-payment.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "87E03341-1F8F-4F1E-A72D-25311266693A"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.568Z",
+      "checksum": "fb8cc68b41d7f383ce0f2d1108b0b23050aff62d790a057aee48e668999b20ac"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Advance Order State",
+      "OperationKey": "Orders.AdvanceOrderState",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Lifecycle",
+      "Description": "Move an already-booked order up the status ladder to Posted or Fulfilled - for back-office entry of something that has ALREADY happened: a counter sale, a shipment that went out before anyone opened the system, a migration. It refuses an order that is not yet Confirmed, because advancing one would produce an order that reads Fulfilled with no ledger behind it - the failure nothing downstream can detect, since the order reconciles perfectly against itself and the revenue simply never existed (D17). Composing and booking an order is not this operation's job: that is order.Save() through the entity graph, which runs the real booking walk on the server subclass. What a save cannot do is decide over a SET of lines - fulfillable lines are marked before the header advances, and the caller says whether an order may move with some still Pending. Advancing books nothing: Posted to Fulfilled fires no journal entry (D15).",
+      "InputTypeName": "OrdersAdvanceOrderStateInput",
+      "InputTypeDefinition": "@file:types/orders-advance-order-state.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersAdvanceOrderStateOutput",
+      "OutputTypeDefinition": "@file:types/orders-advance-order-state.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "16B67291-0B48-4D65-8BE5-46DEEEA8E2FC"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.587Z",
+      "checksum": "9abaf43a5224f4729afc67faab4c403143944da8d08a9e38462a53acbb9d9dc5"
+    }
+  },
+  {
+    "_comments": [
+      "Orders.PriceOrder — the WHOLE order, priced, persisting nothing.",
+      "",
+      "PreviewPrice answers for one product and says in its own description that the result is",
+      "advisory: promotions stack against ORDER totals, charges apportion ACROSS lines, and tax",
+      "computes on the discounted amount. A per-line answer cannot see any of that.",
+      "",
+      "Both this and the booking path call OrderPricingService, so the number the screen shows and",
+      "the number the ledger books come from one implementation rather than two that agree until",
+      "they do not."
+    ],
+    "fields": {
+      "Name": "Price Order",
+      "OperationKey": "Orders.PriceOrder",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Pricing",
+      "Description": "Price a whole order through the real pipeline and persist nothing — line prices, promotions, charges and tax, with the totals and the reasons any promotion code did not apply. Read-only. Powers live pricing in the order editor without saving a draft.",
+      "InputTypeName": "PriceOrderInput",
+      "InputTypeDefinition": "@file:types/orders-price-order.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "PriceOrderOutput",
+      "OutputTypeDefinition": "@file:types/orders-price-order.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "0D548A40-71A1-408E-9364-C3A0D6F1479F"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.633Z",
+      "checksum": "905217d1e15926c972d7e4c7df20931eb888fa9143e1553558f9aa0272679e4c"
+    }
+  },
+  {
+    "_comments": [
+      "Orders.CheckEntitlement — the LXP ask/answer.",
+      "",
+      "Asked by ProductEntitlement.Code so a bundle, an upgrade and a grandfathered tier can",
+      "all confer the same capability without the LXP learning the catalogue. Access is",
+      "evaluated in EntitlementBehavior.EvaluateGrantAccess; Status on the grant row is not",
+      "trustworthy (cancel does not always touch grants; elapsed ValidTo is never swept)."
+    ],
+    "fields": {
+      "Name": "Check Entitlement",
+      "OperationKey": "Orders.CheckEntitlement",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Entitlements",
+      "Description": "Does this person currently have this entitlement? Asked by Code (the capability), not SKU. PersonID is authoritative; email is a convenience and is refused when it matches more than one person. Access is evaluated (status + window + subscription access-through), never read off EntitlementGrant.Status. Unknown person and known person without access return the same shape. Fail closed. v1 evaluates person grants only.",
+      "InputTypeName": "CheckEntitlementInput",
+      "InputTypeDefinition": "@file:types/orders-check-entitlement.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "CheckEntitlementOutput",
+      "OutputTypeDefinition": "@file:types/orders-check-entitlement.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:entitlement-check",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C420"
+    },
+    "sync": {
+      "lastModified": "2026-08-27T13:20:00.000Z",
+      "checksum": "163183f152df80fbe630f888ce73da83a4b52311221c21a01638de0fcb56a40b"
+    }
+  },
+  {
+    "fields": {
+      "Name": "List Entitlements",
+      "OperationKey": "Orders.ListEntitlements",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Entitlements",
+      "Description": "The person's entitlement library, one row per Code, each evaluated the same way as CheckEntitlement. An optimisation for UI, not a second source of truth for access. Heavier scope than the point check so a library key cannot become an authorization oracle.",
+      "InputTypeName": "ListEntitlementsInput",
+      "InputTypeDefinition": "@file:types/orders-list-entitlements.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "ListEntitlementsOutput",
+      "OutputTypeDefinition": "@file:types/orders-list-entitlements.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:entitlement-read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C421"
+    },
+    "sync": {
+      "lastModified": "2026-08-27T13:20:00.000Z",
+      "checksum": "0c84e4a04eabbefaa3dc17b56f468a906d82337f0ef164b0f5d5291fc0298357"
+    }
+  }
+]

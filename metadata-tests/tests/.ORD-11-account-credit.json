@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-11 - Account Credit",
+    "Description": "The allocation INVARIANT and the customer credit it makes possible (AC1-AC11, D68). A payment's Amount must equal the sum of its allocations, checked at the capture transition rather than on every save so a Pending payment stays correctable. That one rule deletes 'unapplied cash' as a concept: every dollar lands on an order, and allocating MORE than an order is worth drives its balance negative, which IS the customer's credit. Two behaviours these checks pin down were previously WRONG with nothing detecting it. Over-application was refused outright, so a customer who over-paid could not be recorded at all while the money sat in the bank; payment-ledger PL8 asserted that refusal as correct and has been inverted. And nothing ever compared allocations to the payment, so 5000 could be spread across five orders from a 1000 payment - each application passed its own order-level check, and every one of them booked cash into the ledger. Spending a credit writes a zero-amount transfer payment whose two offsetting lines move A/R between orders without touching cash; across companies it raises intercompany legs, because a single A/R-to-A/R entry spanning two companies could not be booked at all (D6).",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A capture whose lines fall short is refused naming the shortfall; allocating 1600 of a 1000 payment is refused; a Pending payment may sit half-allocated and only capture enforces the rule; over-paying 1000 on a 900 order leaves Balance -100 and debits Cash the full 1000; spending 100 of that credit nets cash to zero and moves A/R between the orders; a cross-company credit gives Co A's receivable back, clears Co B's, and raises Due To / Due From for 100 with every entry balancing on its own; a captured payment's allocations cannot be edited or deleted even by raw SQL; and a refund reconciles as Amount +150 against lines totalling -150, so the invariant is signed rather than absolute."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "account-credit"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "8B5BC468-BF74-48CD-AB2F-E8A072EC9010"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.424Z",
+    "checksum": "e495ebde202ae20c509930f435d13a6b0147963b73501868d63e823d3dc82ae2"
+  }
+}

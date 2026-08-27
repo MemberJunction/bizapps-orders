@@ -1,0 +1,32 @@
+<div class="mjo-promotions-widget-wrap">
+    <div class="mjo-promo-banner">
+        <div class="mjo-promo-info">
+            <i class="fa-solid fa-ticket"></i>
+            <div>
+                <strong>Promotion &amp; Discount Campaign Rules:</strong> Active promotional discounts and campaign codes apply to catalog items according to sequence priority and stacking rules.
+            </div>
+        </div>
+    </div>
+
+    <div class="mjo-promo-panel">
+        <div class="mjo-panel-head">
+            <div class="mjo-panel-title">
+                <i class="fa-solid fa-gift"></i>
+                <span>Active Promotions &amp; Discount Rules</span>
+            </div>
+        </div>
+
+        @if (PromotionsViewParams) {
+            <div class="mjo-grid-container">
+                <mj-explorer-entity-data-grid
+                    [Params]="PromotionsViewParams"
+                    [Height]="400"
+                    [AllowLoad]="true"
+                    [ShowToolbar]="true"
+                    [ShowNewButton]="true"
+                    (Navigate)="Navigate.emit($event)">
+                </mj-explorer-entity-data-grid>
+            </div>
+        }
+    </div>
+</div>

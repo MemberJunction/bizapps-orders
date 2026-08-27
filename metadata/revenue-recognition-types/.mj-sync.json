@@ -1,0 +1,12 @@
+{
+  "entity": "MJ_BizApps_Orders: Revenue Recognition Types",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".revenue-recognition-types.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true
+  }
+}

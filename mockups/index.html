@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BizApps Orders — UX mockups</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="./assets/tokens.css">
+<link rel="stylesheet" href="./assets/app.css">
+<style>
+  .ix-hero { max-width: 900px; }
+  .ix-hero h2 { font-size: 24px; letter-spacing: -0.02em; margin-bottom: var(--mj-space-3); }
+  .ix-hero p { font-size: 14.5px; line-height: 1.65; color: var(--mj-text-secondary); margin: 0 0 var(--mj-space-3); }
+  .ix-hero strong { color: var(--mj-text-primary); }
+
+  .ix-job { margin-top: var(--mj-space-8); }
+  .ix-job-head { display: flex; align-items: baseline; gap: var(--mj-space-3); margin-bottom: var(--mj-space-1); }
+  .ix-job-head h3 { font-size: 15px; }
+  .ix-job-head .n {
+    font-size: 10px; font-weight: var(--mj-font-bold); letter-spacing: .08em;
+    text-transform: uppercase; color: var(--mj-text-muted);
+  }
+  .ix-job > .why { font-size: 12.5px; color: var(--mj-text-muted); margin-bottom: var(--mj-space-3); max-width: 780px; }
+
+  .ix-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: var(--mj-space-3); }
+  .ix-card {
+    display: block; padding: var(--mj-space-4); border-radius: var(--mj-radius-md);
+    border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface);
+    color: inherit; transition: border-color .12s ease, transform .12s ease;
+  }
+  .ix-card:hover {
+    text-decoration: none; border-color: var(--mj-brand-primary); transform: translateY(-1px);
+    box-shadow: var(--mj-shadow-sm);
+  }
+  .ix-card.is-hero { border-color: color-mix(in srgb, var(--mj-brand-primary) 45%, transparent); }
+  .ix-card .t { display: flex; align-items: center; gap: var(--mj-space-2); font-size: 14px;
+    font-weight: var(--mj-font-semibold); }
+  .ix-card .t i { color: var(--mj-brand-primary); font-size: 13px; }
+  .ix-card .d { font-size: 12.5px; color: var(--mj-text-secondary); margin-top: 6px; line-height: 1.55; }
+  .ix-card .f { display: flex; flex-wrap: wrap; gap: 5px; margin-top: var(--mj-space-3); }
+
+  .ix-two { display: grid; grid-template-columns: 1.35fr 1fr; gap: var(--mj-space-6); align-items: start; }
+  @media (max-width: 1000px) { .ix-two { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta">
+    <span class="mj-chip mj-chip--brand">19 screens</span>
+    <span class="mj-chip mj-chip--outline">interactive</span>
+  </div>
+
+  <div slot="actions">
+    <a class="mj-btn mj-btn--outline" href="./PROVENANCE.md">Provenance</a>
+    <a class="mj-btn mj-btn--primary" href="./orders/fast-entry.html">
+      <i class="fa-solid fa-bolt"></i> Start with fast entry</a>
+  </div>
+
+  <div slot="body">
+
+    <div class="ix-two">
+      <div class="ix-hero">
+        <h2>The order should tell you what it will do before you commit it.</h2>
+        <p>
+          Order entry is not a CRUD problem, and every ERP order screen that treats it as one is bad. Behind a
+          simple-looking line there is price resolution walking a hierarchy, promotions stacking, charges layering,
+          tax computing on a base those charges changed, a subscription deciding whether to extend or create, and a
+          GL account resolving per line per company — <strong>every one of them a computation the user cannot
+          see</strong>.
+        </p>
+        <p>
+          A CRUD design hides all of it until Confirm, which is why those designs always end up with a loud red
+          failure banner and a &ldquo;go fix it somewhere else and retry&rdquo; link. That banner is the design
+          admitting the user finds out last.
+        </p>
+        <p>
+          So: <strong>continuous preview, not deferred validation</strong>. Live decomposition as you type. Confirm
+          as a review of what will happen, not a leap. Five numbers on a line and the other thirteen fields behind
+          progressive disclosure keyed to what the product already knows.
+        </p>
+        <p class="small" style="color:var(--mj-text-muted)">
+          Built for two internal audiences — the <strong>order taker</strong> (speed, keyboard, one screen) and the
+          <strong>accounting team</strong> (traceability, every number's provenance). No e-commerce. The LXP drives
+          the engine through the API and gets its own UX; our obligation here is that its orders are as legible as
+          staff-entered ones, and identifiable as its own.
+        </p>
+      </div>
+
+      <div>
+        <div class="mj-card mj-card-pad">
+          <div class="sec-label">How to read these</div>
+          <div class="small stack-2">
+            <div class="row-t"><i class="fa-solid fa-lightbulb" style="color:var(--mj-color-violet-500);margin-top:3px"></i>
+              <div>Purple notes explain design intent, and <b>stubbed call</b> notes name the server operation that
+                would run. Toggle them with the bulb in the top bar.</div></div>
+            <div class="row-t"><i class="fa-solid fa-circle-question" style="color:var(--mj-text-muted);margin-top:3px"></i>
+              <div>Any <b>?</b> next to a number opens the rule that produced it. That affordance is the design, not
+                decoration — a bare number is never acceptable.</div></div>
+            <div class="row-t"><i class="fa-solid fa-moon" style="margin-top:3px"></i>
+              <div>Light and dark are both first-class, from MJ's real tokens. No screen declares a colour.</div></div>
+            <div class="row-t"><i class="fa-solid fa-keyboard" style="margin-top:3px"></i>
+              <div>Fast entry is keyboard-completable. Press <kbd>/</kbd> there to jump to the product field.</div></div>
+          </div>
+
+          <div class="sec-label" style="margin-top:var(--mj-space-4)">The numbers are real</div>
+          <div class="small" style="color:var(--mj-text-secondary)">
+            Every figure comes from the eight scenarios the integration seeder commits — real engine output, not
+            invented. Totals tie out:
+            <span class="mono tiny" style="display:block;margin-top:6px">
+              TotalGross = Σ LineTotalNet + Σ ChargeAmount + Σ LineTax</span>
+            So if a built screen ever shows a different total than its mockup, one of them is wrong and it is worth
+            finding out which.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ JOBS ══════════ -->
+    <div id="ix-jobs"></div>
+
+    <!-- ══════════ WHAT THIS DECIDES ══════════ -->
+    <div class="ix-job">
+      <div class="ix-job-head"><span class="n">Decisions worth arguing with</span></div>
+      <div class="grid-2" style="margin-top:var(--mj-space-3)">
+        <div class="mj-card mj-card-pad">
+          <div class="stack-3 small">
+            <div><b>Screens are organized by job, not entity.</b> The nav says &ldquo;take an order&rdquo;, not
+              &ldquo;OrderHeader&rdquo;. Fifty-one tables would otherwise be fifty-one destinations and the user
+              would assemble the workflow in their head.</div>
+            <div><b>Two lanes into an order.</b> Fast entry for the 80% case; the full editor for depth. Escalation
+              is one click and loses nothing. One screen that serves both is too heavy for the common order and too
+              shallow for the hard one.</div>
+            <div><b>Drafts are persisted.</b> Draft is a real status with a real row. An order taker who loses a
+              half-entered order to a refresh stops trusting the tool.</div>
+            <div><b>Confirm is a pre-flight.</b> It names the entries that will book, the subscription that will
+              extend, the grants that will issue, the approval that will be raised — and blockers appear before the
+              button, in the words of the rule that failed.</div>
+          </div>
+        </div>
+        <div class="mj-card mj-card-pad">
+          <div class="stack-3 small">
+            <div><b>Progressive disclosure follows inheritance, not an &ldquo;advanced&rdquo; toggle.</b> An event's
+              service period is a stated fact with its source, not a prompt. The axis that matters is &ldquo;did
+              something upstream already decide this?&rdquo;</div>
+            <div><b>The bill is a first-class surface.</b> The confirmed order <i>is</i> the receivable, so the
+              document is the order rendered — one number on the phone, in the ledger, and in the aging report.</div>
+            <div><b>Panels are the unit of reuse.</b> Money strip, stepper, charge ladder, entry preview,
+              recognition waterfall: each is one component that mounts into the generated entity form via its slot
+              <i>and</i> composes into the editor. Written once.</div>
+            <div><b>Colour that encodes nothing gets one hue.</b> Where it does encode something — aging severity —
+              the palette was validated by script, not by eye. The first attempt had two buckets measuring ΔE 2.8
+              apart: indistinguishable, and invisible to review.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════ GAPS ══════════ -->
+    <div class="ix-job">
+      <div class="ix-job-head"><h3>What these mockups assume does not exist yet</h3></div>
+      <div class="why">
+        Named honestly, because each is a prerequisite rather than a UI detail. All are stubbed and annotated where
+        they would be called.
+      </div>
+      <div class="mj-table-wrap">
+        <table class="mj-table mj-table--compact">
+          <thead><tr><th style="width:230px">Needed</th><th>Why the UI cannot work without it</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">Orders.SaveOrder<br>Orders.ConfirmOrder</td>
+              <td>Lines, charges and promotion codes are transient arrays on the <b>server</b> entity; a browser save
+                marshals scalars only. So a browser cannot create an order with lines at all today, and doing it as
+                N sequential saves would violate the one-transaction rule outright.</td></tr>
+            <tr><td class="mono">Orders.PreviewOrder<br>Orders.PreviewConfirm</td>
+              <td>The whole thesis rests on these. The price-preview operation already proves the pattern — it runs
+                the real pipeline rather than a parallel copy — but covers one line's price, not the full
+                decomposition or the pre-flight.</td></tr>
+            <tr><td class="mono">OrderHeader.OriginChannel</td>
+              <td>LXP visibility. The external document number is a document number, not provenance, and inferring
+                LXP from a null sales rep is guesswork. Renewal-spawned and migrated orders want the same field, so
+                it is not an LXP special case.</td></tr>
+            <tr><td class="mono">Orders.GetOverdueWorklist</td>
+              <td>Overdue is a computed surface, not a stored flag, so the worklist has to be assembled server-side
+                rather than filtered client-side.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mock-note">
+        Full reasoning, the decision set (U1–U20) and the build sequencing are in
+        <span class="mono">plans/archive/orders-ux.md</span>. This folder is its visual half.
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="./assets/data.js"></script>
+<script src="./assets/shell.js"></script>
+<script>
+const JOBS = [
+  {
+    n: 'Take an order', title: 'Enter it, and know what it will do',
+    why: `The two lanes plus the pre-flight. These three screens carry the whole argument — if they are wrong,
+          nothing downstream matters.`,
+    screens: [
+      { href: 'orders/fast-entry.html', icon: 'fa-bolt', hero: true, t: 'Fast entry',
+        d: `One centered column, four steps, keyboard-first. The decomposition rail recomputes as you type and every
+            row expands to its rule. Add a product and watch the tax base move.`,
+        f: ['live preview', 'type-ahead', 'consequence chips', 'tender intent'] },
+      { href: 'orders/editor.html', icon: 'fa-pen-ruler', hero: true, t: 'Full editor',
+        d: `The hard order: five tabs over persistent identity, stage and money. Five numbers on a line, the other
+            thirteen fields in a drawer. Click any line.`,
+        f: ['5 tabs', 'line drawer', 'charge ladder', 'entry preview', 'multi-company'] },
+      { href: 'orders/editor.html#preflight', icon: 'fa-clipboard-check', hero: true, t: 'Confirm pre-flight',
+        d: `Entries, subscriptions, grants, fulfillment, approvals — before the button. Includes the blocked
+            variant, which is the case that justifies the whole screen.`,
+        f: ['both variants', 'real blockers'] },
+    ],
+  },
+  {
+    n: 'Work the orders', title: 'Find them, bill them, unwind them',
+    why: `Origin is a real column rather than something to infer, and the bill is a designed surface rather than a
+          report afterthought.`,
+    screens: [
+      { href: 'orders/list.html', icon: 'fa-table-list', t: 'All orders',
+        d: `Preset chips as the fast path, a popover for the long tail — one filter system, never two. Row click
+            opens a preview with the verbs for that state.`,
+        f: ['live filtering', 'origin column', 'row preview'] },
+      { href: 'orders/document.html', icon: 'fa-file-lines', t: 'The bill',
+        d: `Print-quality. Three states — unpaid, paid, credit memo — of the same document, because the confirmed
+            order is the receivable. Try ⌘P.`,
+        f: ['real print styles', '3 states'] },
+      { href: 'orders/return.html', icon: 'fa-rotate-left', t: 'Create a return',
+        d: `Quantity capped by what is still returnable, price inherited from the origin line, and the mirrored
+            entry shown before it books.`,
+        f: ['returnable cap', 'mirror not negate'] },
+      { href: 'orders/fulfillment.html', icon: 'fa-dolly', t: 'Fulfillment queue',
+        d: `Logistics, deliberately disconnected from revenue — marking something shipped writes no entry at all.`,
+        f: ['bulk select', 'held-only-by-goods'] },
+      { href: 'orders/dashboard.html', icon: 'fa-gauge-high', t: 'Orders dashboard',
+        d: `Work queues above the trend, because what earns space is what a person can act on. Cheap counts only.`,
+        f: ['queues first', 'named alerts'] },
+    ],
+  },
+  {
+    n: 'Get paid', title: 'Take the cash and say what it settles',
+    why: `The allocation grid is the hardest interaction in the app: a payment must equal what it settles, and
+          over-paying is legal.`,
+    screens: [
+      { href: 'payments/entry.html', icon: 'fa-hand-holding-dollar', hero: true, t: 'Take a payment',
+        d: `The unallocated readout is the centre of the screen and capture waits for zero. Over-apply a row and it
+            explains the credit it creates rather than refusing.`,
+        f: ['auto-apply', 'unallocated = 0', 'credit on overpay', 'intercompany'] },
+      { href: 'payments/list.html', icon: 'fa-table-list', t: 'All payments',
+        d: `Every row reconciles. There is no unapplied-cash column because there is no unapplied cash.`,
+        f: ['allocation detail', 'instrument snapshot'] },
+      { href: 'payments/refund.html', icon: 'fa-arrow-rotate-left', t: 'Refund',
+        d: `A new payment, never an edit. Un-applies proportionally across the same orders the original settled;
+            the processor fee is not reversed.`,
+        f: ['proportional', 'guards shown'] },
+      { href: 'payments/credit.html', icon: 'fa-piggy-bank', t: 'Account credits',
+        d: `A negative order balance is the credit. Spending one writes a zero-amount payment with two offsetting
+            lines — including the intercompany case, where it is required rather than convenient.`,
+        f: ['zero-amount payment', 'cross-company'] },
+      { href: 'payments/dashboard.html', icon: 'fa-gauge-high', t: 'Payments dashboard',
+        d: `What came in and whether it ties — the accounting team's first two questions, in that order.`,
+        f: ['tender mix', 'fee cost'] },
+    ],
+  },
+  {
+    n: 'Collect and retain', title: 'Know where every relationship stands',
+    why: `The accounting team's daily work is A/R, aging and renewals. That is operational work with worklists and
+          actions, not a reporting surface.`,
+    screens: [
+      { href: 'receivables/aging.html', icon: 'fa-user-tag', t: 'Customer A/R',
+        d: `One customer's whole money picture: aging, open items, credits they hold, payment history,
+            subscriptions. Balances derive from the order rows, so nothing can drift.`,
+        f: ['validated aging ramp', 'credit-first prompt'] },
+      { href: 'receivables/overdue.html', icon: 'fa-hourglass-half', t: 'Overdue worklist',
+        d: `Ordered by what to do next, not by what is biggest. Every row carries its contact history and a
+            suggested next action. Dunning notifies a person; nothing auto-cancels.`,
+        f: ['next action', 'grace ≠ revenue'] },
+      { href: 'receivables/statement.html', icon: 'fa-file-invoice-dollar', t: 'Customer statement',
+        d: `Where a customer stands across every purchase in a period — not one invoice, but opening balance,
+            what moved, and what is owed. Derived from orders and payments between two dates, so it can never
+            disagree with the ledger it summarises. Open-item and full-activity conventions, aged buckets
+            computed from due dates, and a remittance slip because a cheque with no reference is the commonest
+            cause of unapplied cash.`,
+        f: ['ties to the ledger', 'aging from dates, not columns', 'print/PDF ready'] },
+      { href: 'receivables/subscriptions.html', icon: 'fa-rotate', t: 'Subscriptions & renewals',
+        d: `Terms as a timeline because coverage is appended, never mutated. Recognition waterfall, holder versus
+            beneficiary, and a cancellation preview that computes the proration from a date and a policy.`,
+        f: ['term timeline', 'renewal spawn preview', 'cancel preview'] },
+    ],
+  },
+  {
+    n: 'Run the catalog', title: 'Where all that behavior comes from',
+    why: `The catalog is the behavior root — type decides recognition, taxability, fulfillment and recurrence, so
+          the order screens inherit correct behavior instead of being told it line by line.`,
+    screens: [
+      { href: 'catalog/products.html', icon: 'fa-boxes-stacked', t: 'Products & categories',
+        d: `Per-company categories with identical names collapsed in the display. The detail panel is mostly stated
+            facts with their source rather than editable fields.`,
+        f: ['type matrix', 'collapse toggle', 'extensions'] },
+      { href: 'catalog/pricing.html', icon: 'fa-tags', t: 'Pricing',
+        d: `One row is one rule; ties are refused at write time. Includes a resolution-walk visualizer that runs the
+            real pipeline — change the quantity and watch the band move.`,
+        f: ['why-this-price', 'bands', 'recurrence'] },
+      { href: 'catalog/promotions.html', icon: 'fa-percent', t: 'Promotions',
+        d: `Offers and the codes that redeem them, sequential versus additive stacking worked through arithmetically,
+            and why over-cap discounts escalate rather than being refused.`,
+        f: ['stacking maths', 'offered-not-applied', 'authority'] },
+      { href: 'catalog/charges-tax.html', icon: 'fa-receipt', t: 'Charges & tax',
+        d: `Shipping, handling and tax as one mechanism. Basis and sequence are what make layered tax ordinary rows —
+            plus a per-line &ldquo;why did this tax?&rdquo; walk with all four zero reasons.`,
+        f: ['no compounding', 'inheritance chain', 'nexus vs exemption'] },
+    ],
+  },
+];
+
+function render() {
+  document.getElementById('ix-jobs').innerHTML = JOBS.map(j => `
+    <div class="ix-job">
+      <div class="ix-job-head">
+        <span class="n">${j.n}</span>
+        <h3>${j.title}</h3>
+      </div>
+      <div class="why">${j.why}</div>
+      <div class="ix-grid">
+        ${j.screens.map(s => `
+          <a class="ix-card ${s.hero ? 'is-hero' : ''}" href="${s.href}">
+            <div class="t"><i class="fa-solid ${s.icon}"></i> ${s.t}
+              ${s.hero ? '<span class="mj-chip mj-chip--brand" style="margin-left:auto">core</span>' : ''}</div>
+            <div class="d">${s.d}</div>
+            <div class="f">${s.f.map(x => `<span class="mj-chip mj-chip--outline">${x}</span>`).join('')}</div>
+          </a>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+MJ.mount({
+  depth: 0,
+  nav: null,
+  title: 'BizApps Orders — UX mockups',
+  icon: 'fa-solid fa-cart-shopping',
+  subtitle: 'Order entry and payments for internal staff — 19 interactive screens',
+  ready: render,
+});
+</script>
+</body>
+</html>

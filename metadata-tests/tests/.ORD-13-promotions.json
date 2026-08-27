@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-13 - Promotions",
+    "Description": "Offers, codes, stacking, allocation and authorized manual discounts (PR1-PR15, D70). The checks exist where money leaks. The SAME two ten-percent promotions produce nineteen percent sequentially and twenty additively - ten pounds per thousand-pound order, forever, decided by one company-level setting - so both are asserted against the ledger. An ORDER-level promotion must be allocated down to the lines because tax and GL are per line and on a multi-company order the split decides whose revenue is reduced; left on the header it would leave both companies' books wrong while the order total still looked right. Manual discounts are gated by SalesAuthority, a table that existed for exactly this and had never been used: no authority means no discount, because absence is not permission, and the authority that permitted it is stamped so lowering a rep's cap later cannot rewrite what was legitimate at the time. Redemption limits are counted from what actually happened rather than a stored counter that would drift.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A code takes 100 off a 1000 line; an unknown code is REPORTED with 'no such code' rather than silently ignored; sequential stacking gives 190 and additive gives 200 on identical inputs; with stacking off only the better 20% offer applies; a product-targeted promotion discounts that product and leaves the other at zero; a spent redemption limit blocks the second use; a 100 order-level discount allocates 75/25 across a 300/100 order and sums to exactly 100 with one allocation row per line; a minimum order amount blocks 100 and passes 1000; a paused promotion takes nothing and reports 'not currently running'; a manual discount without a SalesAuthority is refused; one within the cap applies and stamps the authority; one without a reason is refused; the discount reaches the JOURNAL ENTRY with AR debited 800 rather than the 1000 gross; and a 50 coupon on a 30 line takes 30, flooring at zero rather than going negative."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "promotions"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "019152F4-6DE3-42B0-8327-E5CF96BB3B4D"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.451Z",
+    "checksum": "1c2468dbf9466188d393b262633dc4c140ad3fab10d591a6e7306c7e66835a6a"
+  }
+}

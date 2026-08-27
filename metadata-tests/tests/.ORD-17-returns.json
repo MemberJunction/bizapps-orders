@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-17 - Returns",
+    "Description": "Money going BACK, which is the direction almost nothing was designed for (RT1-RT12). Every other bundle sells something; the reverse path shares the same confirm code, and that sharing is what makes it worth testing separately - the forward path's assumptions are invisible until a negative number runs through them. Three matter enough to pin: a reversal is the MIRROR of an entry (sides swapped, amounts positive) and never a negation, because accounting rejects negative amounts outright so a naive -amount does not fail a balance check, it fails to post at all; a reversal unwinds a purchase so it must not re-trigger what a purchase triggers, since materializing a subscription on a reversal creates a second subscription every time one is cancelled; and tax and discounts reverse WITH the line, because a return that keeps the tax overcharges the customer while one that reverses list price refunds money never paid. The recurring shape is that a wrong reversal still balances, so these checks assert what the entry is made OF.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A negative quantity with no origin line is refused with a message naming ReversesOrderLineID; the same line with an origin books, proving the guard is about provenance rather than sign; the reversal debits exactly what the sale credited on the same set of accounts with every amount positive; a partial return unwinds proportionally and leaves the rest sold; a full return returns the full tax and nets the pair to zero gross; a partial return returns only the proportional tax; a discounted line returns what was paid rather than list; a reversal materializes no subscription; the return's entry balances on its own; returning more than was bought is refused with the remaining quantity stated; two partial returns may not exceed the original between them; and a reversal pointing at a line for a different product is refused."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "returns"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "438E69BB-C500-49CB-9B3F-C9DE45A7EEAF"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.511Z",
+    "checksum": "3477a226b7c2cbb729e5b5a07d64e0ab535159ef790bae62c3a7a6acb06227f8"
+  }
+}

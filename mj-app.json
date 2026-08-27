@@ -1,0 +1,89 @@
+{
+  "$schema": "https://schema.memberjunction.org/mj-app/v1.json",
+  "manifestVersion": 1,
+  "name": "mj-bizapps-orders",
+  "displayName": "BizApps Orders",
+  "description": "Unified order management for MemberJunction — products, orders, payments, subscriptions. The Order is the transactional substrate and the A/R primitive; payments and subscriptions are aspects of the same business event. Emits balanced journal entries into BizApps Accounting.",
+  "version": "5.2.0",
+  "license": "BUSL-1.1",
+  "icon": "fa-solid fa-cart-shopping",
+  "publisher": {
+    "name": "MemberJunction",
+    "url": "https://memberjunction.com"
+  },
+  "repository": "https://github.com/MemberJunction/bizapps-orders",
+  "mjVersionRange": ">=6.1.0-edge.4 <7.0.0",
+  "dependencies": {
+    "mj-bizapps-common": {
+      "version": ">=5.36.0 <6.0.0",
+      "repository": "https://github.com/MemberJunction/bizapps-common"
+    },
+    "mj-bizapps-accounting": {
+      "version": ">=0.4.0 <1.0.0",
+      "repository": "https://github.com/MemberJunction/bizapps-accounting"
+    },
+    "mj-bizapps-tasks": {
+      "version": ">=1.4.0 <2.0.0",
+      "repository": "https://github.com/MemberJunction/bizapps-tasks"
+    }
+  },
+  "schema": {
+    "name": "__mj_BizAppsOrders",
+    "createIfNotExists": true
+  },
+  "migrations": {
+    "directory": "migrations",
+    "engine": "skyway"
+  },
+  "metadata": {
+    "directory": "metadata"
+  },
+  "packages": {
+    "server": [
+      {
+        "name": "@mj-biz-apps/orders-server",
+        "role": "bootstrap",
+        "startupExport": "LoadBizAppsOrdersServer"
+      },
+      {
+        "name": "@mj-biz-apps/orders-core-entities-server",
+        "role": "library"
+      }
+    ],
+    "client": [
+      {
+        "name": "@mj-biz-apps/orders-ng",
+        "role": "bootstrap",
+        "startupExport": "LoadBizAppsOrdersClient"
+      }
+    ],
+    "shared": [
+      {
+        "name": "@mj-biz-apps/orders-entities",
+        "role": "library"
+      },
+      {
+        "name": "@mj-biz-apps/orders-actions",
+        "role": "library"
+      }
+    ]
+  },
+  "code": {
+    "visibility": "public",
+    "sourceDirectory": "packages"
+  },
+  "categories": [
+    "Business",
+    "Commerce",
+    "Finance"
+  ],
+  "tags": [
+    "orders",
+    "products",
+    "payments",
+    "subscriptions",
+    "accounts-receivable",
+    "revenue-recognition",
+    "billing"
+  ]
+}

@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>All orders — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  .lst-sum {
+    display: flex; gap: var(--mj-space-6); flex-wrap: wrap;
+    padding: var(--mj-space-3) var(--mj-space-4); margin-bottom: var(--mj-space-4);
+    background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-md);
+  }
+  .lst-sum > div { min-width: 0; }
+  .lst-sum .l { font-size: 10px; font-weight: var(--mj-font-bold); letter-spacing: .06em;
+    text-transform: uppercase; color: var(--mj-text-muted); }
+  .lst-sum .v { font-size: 16px; font-weight: var(--mj-font-bold); font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta"><span class="mj-chip mj-chip--outline" id="lst-count">—</span></div>
+
+  <div slot="actions">
+    <button class="mj-btn mj-btn--outline" data-open="#filters">
+      <i class="fa-solid fa-filter"></i> Filters <span class="mj-chip mj-chip--brand" id="lst-fcount">1</span>
+    </button>
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-arrow-rotate-right"></i></button>
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-download"></i> Export</button>
+    <a class="mj-btn mj-btn--primary" href="fast-entry.html"><i class="fa-solid fa-plus"></i> New order</a>
+  </div>
+
+  <div slot="toolbar">
+    <div class="mjo-search">
+      <i class="fa-solid fa-magnifying-glass"></i>
+      <input id="lst-q" placeholder="Order №, customer, memo, or their PO…" autocomplete="off">
+    </div>
+    <div class="row wrap" data-chips data-on-select="lstPreset" style="gap:6px">
+      <button class="mj-filter-chip is-active" data-value="all">All open <span class="count" id="c-all">—</span></button>
+      <button class="mj-filter-chip" data-value="overdue"><i class="fa-solid fa-hourglass-half"></i> Overdue <span class="count" id="c-overdue">—</span></button>
+      <button class="mj-filter-chip" data-value="unpaid">Unpaid <span class="count" id="c-unpaid">—</span></button>
+      <button class="mj-filter-chip" data-value="notposted">Confirmed, not posted <span class="count" id="c-notposted">—</span></button>
+      <button class="mj-filter-chip" data-value="draft">Drafts <span class="count" id="c-draft">—</span></button>
+      <button class="mj-filter-chip" data-value="lxp"><i class="fa-solid fa-graduation-cap"></i> From LXP <span class="count" id="c-lxp">—</span></button>
+      <button class="mj-filter-chip" data-value="mine">Mine <span class="count" id="c-mine">—</span></button>
+    </div>
+  </div>
+
+  <div slot="body">
+    <div class="mock-note">
+      One filter system, not two: the preset chips are the fast path and the popover is the long tail — the same
+      state, never a second parallel set of controls. Presets are chosen because they are what someone actually
+      arrives wanting, including <b>From LXP</b>, which is why origin is a real column rather than something to infer.
+    </div>
+
+    <div class="lst-sum" id="lst-sum"></div>
+
+    <div class="mj-table-wrap">
+      <table class="mj-table">
+        <thead>
+          <tr>
+            <th style="width:104px"><span class="sortable">Order <i class="fa-solid fa-sort"></i></span></th>
+            <th style="width:96px"><span class="sortable">Date <i class="fa-solid fa-sort-down"></i></span></th>
+            <th>Customer</th>
+            <th style="width:96px">Origin</th>
+            <th style="width:56px">Co.</th>
+            <th style="width:96px">Status</th>
+            <th style="width:92px">Payment</th>
+            <th class="num" style="width:112px"><span class="sortable">Total <i class="fa-solid fa-sort"></i></span></th>
+            <th class="num" style="width:112px"><span class="sortable">Balance <i class="fa-solid fa-sort"></i></span></th>
+            <th style="width:104px">Due</th>
+          </tr>
+        </thead>
+        <tbody id="lst-rows" data-on-row="lstOpen" data-single-select></tbody>
+      </table>
+      <div id="lst-empty"></div>
+    </div>
+
+    <div class="small muted" style="margin-top:var(--mj-space-3)">
+      Sortable and filterable columns are marked. Filtering happens in the query, not the browser —
+      index-limited on purpose, so a column that cannot be filtered cheaply does not advertise that it can.
+    </div>
+  </div>
+
+  <div slot="overlays">
+    <!-- row preview -->
+    <aside class="mj-slide-in" id="preview">
+      <div class="mj-slide-in-head">
+        <div><h2 id="pv-num">—</h2><div class="small muted" id="pv-sub"></div></div>
+        <span class="right">
+          <a class="mj-iconbtn" id="pv-pop" href="editor.html" title="Open in the editor"><i class="fa-solid fa-arrow-up-right-from-square"></i></a>
+          <button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button>
+        </span>
+      </div>
+      <div class="mj-slide-in-body" id="pv-body"></div>
+      <div class="mj-slide-in-foot" id="pv-foot"></div>
+    </aside>
+
+    <!-- filter popover as a modal for the mockup -->
+    <div class="mj-modal" id="filters">
+      <div class="mj-modal-head">
+        <i class="fa-solid fa-filter"></i><h2>Filters</h2>
+        <span class="right">
+          <button class="mj-btn mj-btn--flat mj-btn--sm">Clear all</button>
+          <button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-modal-body">
+        <div class="grid-2">
+          <div class="mj-field"><label>Company scope</label>
+            <select class="mj-select"><option>All 3 companies</option><option>Sidecar Learning</option>
+              <option>Sidecar Events</option><option>BC Media</option></select></div>
+          <div class="mj-field"><label>Order type</label>
+            <select class="mj-select"><option>Any</option><option>Sale</option><option>Return</option>
+              <option>Cancellation</option><option>Amendment</option><option>Account credit</option></select></div>
+          <div class="mj-field"><label>Origin</label>
+            <select class="mj-select"><option>Any</option><option>Staff entry</option><option>LXP checkout</option>
+              <option>Renewal spawn</option><option>Migration</option></select></div>
+          <div class="mj-field"><label>Sales rep</label>
+            <select class="mj-select"><option>Anyone</option><option>Alicia Fontaine</option><option>Devon Price</option></select></div>
+          <div class="mj-field"><label>Order date from</label><input class="mj-input" type="date" value="2026-01-01"></div>
+          <div class="mj-field"><label>Order date to</label><input class="mj-input" type="date" value="2026-07-29"></div>
+          <div class="mj-field"><label>Balance at least</label><input class="mj-input is-num" placeholder="0.00"></div>
+          <div class="mj-field"><label>Product</label><input class="mj-input" placeholder="Any product…"></div>
+        </div>
+        <div class="mock-note">Order type includes <b>Account credit</b> — a customer credit is an order with a
+          negative balance, not a separate instrument, so it filters here like anything else.</div>
+      </div>
+      <div class="mj-modal-foot"><span class="right">
+        <button class="mj-btn mj-btn--flat" data-close>Cancel</button>
+        <button class="mj-btn mj-btn--primary" data-close>Apply</button></span></div>
+    </div>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+const H = MJ.H;
+let PRESET = 'all', Q = '';
+
+const PRESETS = {
+  all:       o => o.status !== 'Voided',
+  overdue:   o => o.paymentStatus === 'Overdue',
+  unpaid:    o => o.balance > 0 && o.status !== 'Voided' && o.status !== 'Draft',
+  notposted: o => o.status === 'Confirmed',
+  draft:     o => o.status === 'Draft' || o.status === 'Quoted',
+  lxp:       o => o.origin === 'LXP',
+  mine:      o => o.rep === 'Alicia Fontaine',
+};
+
+function matches(o) {
+  if (!PRESETS[PRESET](o)) return false;
+  if (!Q) return true;
+  const hay = [o.number, o.description, H.billToPlain(o), o.externalDocNumber, o.originRef]
+    .filter(Boolean).join(' ').toLowerCase();
+  return hay.includes(Q.toLowerCase());
+}
+
+function render() {
+  Object.keys(PRESETS).forEach(k => {
+    const el = document.getElementById('c-' + k);
+    if (el) el.textContent = DB.orders.filter(PRESETS[k]).length;
+  });
+
+  const rows = DB.orders.filter(matches)
+    .slice().sort((a, b) => b.orderDate.localeCompare(a.orderDate));
+
+  document.getElementById('lst-count').textContent =
+    `${rows.length} of ${DB.orders.length} orders`;
+
+  const gross = rows.reduce((s, o) => s + o.gross, 0);
+  const bal = rows.reduce((s, o) => s + o.balance, 0);
+  const credits = rows.filter(o => o.balance < 0).reduce((s, o) => s + o.balance, 0);
+  document.getElementById('lst-sum').innerHTML = `
+    <div><div class="l">Orders</div><div class="v">${rows.length}</div></div>
+    <div><div class="l">Total value</div><div class="v">${F.money(gross)}</div></div>
+    <div><div class="l">Open balance</div><div class="v">${F.money(bal - credits)}</div></div>
+    <div><div class="l">Credits held</div><div class="v ${credits ? 'mj-money--credit' : 'mj-money--muted'}">${credits ? F.money(-credits) : '—'}</div></div>
+    <div style="margin-left:auto;align-self:center" class="small muted">
+      Cheap counts over the filtered set — no on-demand aggregate work.</div>`;
+
+  document.getElementById('lst-rows').innerHTML = rows.map(o => {
+    const overdueDays = o.paymentStatus === 'Overdue' && o.dueDate ? F.days(o.dueDate) : 0;
+    return `<tr class="is-clickable" data-row="${o.number}">
+      <td><span class="primary mono">${o.number}</span>
+        ${o.reversesOrder ? `<div class="secondary">reverses ${o.reversesOrder}</div>` : ''}</td>
+      <td>${F.dateShort(o.orderDate)}<div class="secondary">${o.orderDate.slice(0, 4)}</div></td>
+      <td><div>${H.billTo(o)}</div><div class="secondary">${o.description || ''}</div></td>
+      <td>${H.origin(o.origin, o.originRef)}
+        ${o.originRef ? `<div class="secondary mono tiny">${o.originRef}</div>` : ''}</td>
+      <td>${H.company(o.companyID)}</td>
+      <td>${H.orderStatus(o.status)}</td>
+      <td>${H.payStatus(o.paymentStatus)}
+        ${overdueDays > 0 ? `<div class="secondary">${overdueDays}d late</div>` : ''}</td>
+      <td class="num ${o.gross < 0 ? 'mj-money--neg' : ''}">${F.money(o.gross)}</td>
+      <td class="num ${o.balance < 0 ? 'mj-money--credit strong' : o.balance > 0 ? '' : 'mj-money--muted'}">
+        ${o.balance === 0 ? '—' : F.money(o.balance)}
+        ${o.balance < 0 ? '<div class="secondary">credit</div>' : ''}</td>
+      <td>${o.dueDate ? F.dateShort(o.dueDate) : '<span class="muted">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('lst-empty').innerHTML = rows.length ? '' : `
+    <div class="mj-empty"><i class="fa-solid fa-magnifying-glass"></i>
+      <div class="t">Nothing matches</div>
+      <div class="small">Try a different preset or clear the search.</div></div>`;
+}
+
+function lstPreset(v) { PRESET = v; render(); }
+
+function lstOpen(number) {
+  const o = DB.orderByNumber(number);
+  document.getElementById('pv-num').innerHTML = `<span class="mono">${o.number}</span>`;
+  document.getElementById('pv-sub').innerHTML =
+    `${H.billToPlain(o)} · ${F.date(o.orderDate)} · ${DB.companies[o.companyID].short}`;
+  document.getElementById('pv-pop').href = o.status === 'Draft' ? 'editor.html' : 'document.html';
+
+  const lines = o.lines.length ? `
+    <table class="mj-table mj-table--compact">
+      <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Net</th><th class="num">Total</th></tr></thead>
+      <tbody>${o.lines.map(l => `<tr>
+        <td>${DB.products[l.productID].name} ${H.company(l.companyID)}</td>
+        <td class="num">${F.qty(l.qty)}</td>
+        <td class="num">${F.money(l.net)}</td>
+        <td class="num strong">${F.money(l.gross)}</td></tr>`).join('')}</tbody>
+    </table>` : `<div class="small muted">Line detail is not loaded in this preview.</div>`;
+
+  const notes = [];
+  if (o.scenarioNote) notes.push(o.scenarioNote);
+  if (o.originDetail) notes.push(o.originDetail);
+  if (o.reversalReason) notes.push('Reversal reason: ' + o.reversalReason);
+
+  document.getElementById('pv-body').innerHTML = `
+    <div class="row wrap" style="gap:6px;margin-bottom:var(--mj-space-3)">
+      ${H.orderStatus(o.status)} ${H.payStatus(o.paymentStatus)} ${H.origin(o.origin, o.originRef)}
+      ${o.type !== 'Sale' ? `<span class="mj-chip mj-chip--warning">${o.type}</span>` : ''}
+    </div>
+
+    <div class="mj-money-strip" style="grid-template-columns:1fr 1fr 1fr">
+      <div><span class="l">Total</span><span class="v">${F.money(o.gross)}</span></div>
+      <div><span class="l">Paid</span><span class="v mj-money--muted">${o.paid ? F.money(o.paid) : '—'}</span></div>
+      <div><span class="l">Balance</span><span class="v ${o.balance < 0 ? 'mj-money--credit' : ''}">${F.money(o.balance)}</span></div>
+    </div>
+
+    ${o.balance < 0 ? `<div class="mj-banner mj-banner--success" style="margin-top:var(--mj-space-3)">
+      <i class="fa-solid fa-piggy-bank"></i>
+      <div class="body"><strong>${F.money(-o.balance)} credit available.</strong> The negative balance
+      <b>is</b> the credit — spendable on another order, no separate record to disagree with it.
+      <div style="margin-top:4px"><a href="../payments/credit.html">Apply this credit ↗</a></div></div></div>` : ''}
+
+    <div class="sec-label" style="margin-top:var(--mj-space-4)">Lines</div>
+    ${lines}
+
+    ${o.promotions && o.promotions.length ? `
+      <div class="sec-label" style="margin-top:var(--mj-space-4)">Promotions</div>
+      ${o.promotions.map(p => `<div class="row small" style="padding:3px 0">
+        <span class="mono">${p.code}</span>
+        <span class="spacer ${p.status === 'applied' ? 'mj-money--credit' : 'muted'}">
+          ${p.status === 'applied' ? '−' + F.money(p.applied) : 'offered, not applied'}</span></div>`).join('')}` : ''}
+
+    ${o.je && o.je.length ? `
+      <div class="sec-label" style="margin-top:var(--mj-space-4)">Booked to</div>
+      ${o.je.map(j => `<div class="row small" style="padding:3px 0">
+        <span>${DB.companies[j.company].short} · <span class="mono">${j.entry || 'pending'}</span></span>
+        <span class="spacer"><a href="#">Open in Accounting ↗</a></span></div>`).join('')}` : ''}
+
+    ${notes.length ? `<div class="mock-note">${notes.join('<br>')}</div>` : ''}`;
+
+  const acts = [];
+  if (o.status === 'Draft' || o.status === 'Quoted') {
+    acts.push(`<a class="mj-btn mj-btn--primary mj-btn--sm" href="editor.html"><i class="fa-solid fa-pen"></i> Edit</a>`);
+    acts.push(`<button class="mj-btn mj-btn--danger mj-btn--sm">Void</button>`);
+  } else {
+    if (o.balance > 0) acts.push(`<a class="mj-btn mj-btn--primary mj-btn--sm" href="../payments/entry.html"><i class="fa-solid fa-hand-holding-dollar"></i> Take payment</a>`);
+    acts.push(`<a class="mj-btn mj-btn--outline mj-btn--sm" href="return.html"><i class="fa-solid fa-rotate-left"></i> Create reversal</a>`);
+    acts.push(`<a class="mj-btn mj-btn--outline mj-btn--sm" href="document.html"><i class="fa-regular fa-file-lines"></i> Bill</a>`);
+  }
+  document.getElementById('pv-foot').innerHTML = acts.join('') +
+    `<span class="small muted spacer">Verbs for the state it is actually in.</span>`;
+
+  MJ.open('#preview');
+}
+
+MJ.mount({
+  nav: 'orders', rail: 'list',
+  title: 'All orders',
+  icon: 'fa-solid fa-table-list',
+  subtitle: 'Every order across the three companies you can see',
+  ready() {
+    render();
+    document.getElementById('lst-q').addEventListener('input', e => { Q = e.target.value; render(); });
+  },
+});
+</script>
+</body>
+</html>

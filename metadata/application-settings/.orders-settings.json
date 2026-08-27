@@ -1,0 +1,32 @@
+[
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "AutoPopulateOrganizationFromPerson",
+      "Value": "true",
+      "Comments": "When an order names a ship-to/customer PERSON but no organization, stamp the organization that person was affiliated with as of the order date (D64). Zero affiliations leaves it blank, which is a personal order; exactly one is used; more than one takes the most recent by StartDate. Set to false to store only what the caller supplies."
+    },
+    "primaryKey": {
+      "ID": "CEE3370E-81C7-4E2F-9F4E-AC224BC847B6"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.304Z",
+      "checksum": "d10aefb98e370fe271109508fb5b840b5f8058a29ca57a8a704718bf3a3ed5f0"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrganizationAffiliationRelationshipTypes",
+      "Value": "Employee",
+      "Comments": "Comma-separated bizapps-common RelationshipType NAMES that count as an organizational affiliation for the setting above. Employee only by default: the seeded types also include Vendor, Customer and Friend, and being a vendor to an organization must not make it your bill-to. RelationshipType is a lookup table, so a deployment can add its own type and list it here without a schema change. An empty value disables the inference."
+    },
+    "primaryKey": {
+      "ID": "0E34B2FF-B467-40A1-8390-5818FEE2B5B3"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.316Z",
+      "checksum": "04d6ea30a0a2aae4816a7a7331db37a5d0ec670bd6c2fd08eb92cc1c8277c392"
+    }
+  }
+]

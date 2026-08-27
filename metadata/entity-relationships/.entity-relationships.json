@@ -1,0 +1,135 @@
+[
+  {
+    "_comments": [
+      "Declares Order Headers -> Order Lines as a related-record collection (MJ 6.1).",
+      "",
+      "CodeGen reads RelatedRecordCollection and emits a typed `Lines` accessor onto the GENERATED",
+      "entity class, so both tiers get it: the browser can add lines to an order and save the whole",
+      "graph in one call, and OrderEntityServer inherits the same collection to run booking against.",
+      "That replaces the hand-rolled `_lines` array, the Orders.SaveOrder remote operation and the",
+      "client-draft hydration that existed only to carry lines over the wire.",
+      "",
+      "RelatedEntity and RelatedEntityJoinField are deliberately NOT set here — they are already",
+      "columns on this same row (Order Lines / OrderHeaderID). Duplicating them would create two",
+      "sources of truth with the JSON copy winning silently.",
+      "",
+      "Keyed by entity NAMES rather than the row's ID: EntityRelationship IDs are minted by CodeGen,",
+      "so a hardcoded UUID would stop matching the first time this database is rebuilt from zero —",
+      "which is routine here, since schema changes edit the baseline migration in place."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:lines-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Lines"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.570Z",
+      "checksum": "488e55e9386d181b7f748126e844f123395804b65294e08b3c69030096abf400"
+    }
+  },
+  {
+    "_comments": [
+      "Declares Payment Headers -> Payment Lines as a related-record collection (MJ 6.1).",
+      "",
+      "Same treatment as Order Headers -> Order Lines, and for the same reason: PaymentHeaderEntityServer",
+      "held a `_lines` array plus a getter/setter pair that existed only on the server, so a payment and",
+      "its allocations could not be composed in the browser.",
+      "",
+      "RelatedEntity and RelatedEntityJoinField (Payment Lines / PaymentHeaderID) are already columns on",
+      "this row and are deliberately not duplicated here.",
+      "",
+      "NO Sequence policy, unlike Order Lines. PaymentLine has no line-number column — an allocation is",
+      "identified by which order line it pays, not by position — so there is nothing to renumber, and",
+      "declaring a sequence against a field that does not exist would fail at save time.",
+      "",
+      "OrderBy AllocatedAt: allocations are read in the order they were made, which is what a remittance",
+      "shows."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:payment-lines-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Payment Headers&RelatedEntity=MJ_BizApps_Orders: Payment Lines"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.609Z",
+      "checksum": "bfcabc5922ad680a98754275c3f6b331bc0e8fd247872f2354de8301cc43e45b"
+    }
+  },
+  {
+    "_comments": [
+      "Declares Order Headers -> Order Charges as a related-record collection (MJ 6.1).",
+      "",
+      "WHY THIS EXISTS. These were TRANSIENT arrays on OrderEntityServer (`_charges`,",
+      "`_manualDiscounts`) that only the server could populate, so the browser had no way to send",
+      "them. While `OrderDraft` existed the hydrator carried them; when the draft was deleted they",
+      "became unreachable from a browser, and a promotion code typed on screen showed a discount in",
+      "the preview that the booking never applied. Screen and ledger disagreed, silently.",
+      "",
+      "Both are real child rows with an OrderHeaderID, so the entity graph is their natural home:",
+      "the client stages what it is asking for and the engine COMPLETES each row — resolving the",
+      "charge type, computing the basis, apportioning across lines, stamping tax jurisdiction.",
+      "",
+      "OnRemove 'delete' because a charge or adjustment removed from an order is not an orphan to",
+      "keep; it never had meaning apart from the order."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:charges-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Charges"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.550Z",
+      "checksum": "dbb08f4944581b35e35ce3456506bdda2020917d7b64dcc81e953adc6f923926"
+    }
+  },
+  {
+    "_comments": [
+      "Declares Order Headers -> Order Adjustments as a related-record collection (MJ 6.1).",
+      "",
+      "WHY THIS EXISTS. These were TRANSIENT arrays on OrderEntityServer (`_charges`,",
+      "`_manualDiscounts`) that only the server could populate, so the browser had no way to send",
+      "them. While `OrderDraft` existed the hydrator carried them; when the draft was deleted they",
+      "became unreachable from a browser, and a promotion code typed on screen showed a discount in",
+      "the preview that the booking never applied. Screen and ledger disagreed, silently.",
+      "",
+      "Both are real child rows with an OrderHeaderID, so the entity graph is their natural home:",
+      "the client stages what it is asking for and the engine COMPLETES each row — resolving the",
+      "charge type, computing the basis, apportioning across lines, stamping tax jurisdiction.",
+      "",
+      "OnRemove 'delete' because a charge or adjustment removed from an order is not an orphan to",
+      "keep; it never had meaning apart from the order."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:adjustments-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Order Headers&RelatedEntity=MJ_BizApps_Orders: Order Adjustments"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.590Z",
+      "checksum": "59ee22ef08f01d52c6e3631d5007658abc56699ce43678d9318114372f7a0f26"
+    }
+  },
+  {
+    "_comments": [
+      "Declares Products -> Product Prices as a related-record collection (MJ 6.1).",
+      "",
+      "Product price rules (volume brackets, channel overrides) form a coherent child collection of",
+      "the product entity graph. Managing them via RelatedRecordCollection allows transactional graph saves",
+      "and direct in-memory manipulation on product.Prices."
+    ],
+    "fields": {
+      "RelatedRecordCollection": "@file:product-prices-collection.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Relationships.Entity=MJ_BizApps_Orders: Products&RelatedEntity=MJ_BizApps_Orders: Product Prices&RelatedEntityJoinField=ProductID"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.626Z",
+      "checksum": "4efa7a1101423c98ac5ca100fd10f44b127e74952955971d46dc7c7ad653b26f"
+    }
+  }
+]

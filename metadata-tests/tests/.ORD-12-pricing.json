@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-12 - Pricing",
+    "Description": "Price resolution, the resolver walk and the dry run (PC1-PC16, D69). Until this landed OrderLine.UnitPrice was typed by hand on every line: the pricing tables existed and nothing read them. These checks cover the engine that changed that and, more importantly, the places it must REFUSE rather than produce a number. Two applicable rules of equal priority are refused BOTH at order time and when the second rule is written, because resolving them would pick whichever the database happened to return first - arbitrary, stable in a test, and liable to flip in production, with every wrong answer still looking exactly like a price. Non-overlapping quantity bands may share a priority, since ambiguity is relative to a quantity and a moment rather than a property of a row. Volume and Tiered are asserted against the ledger to prove the number reaching the journal entry is the one the arithmetic produced, and that the two models genuinely differ on identical bands. A stated UnitPrice always wins over the engine. A line nobody can price is refused rather than booked at zero.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "An unpriced line resolves from the product base and 4 x 25 reaches the line total; a stated 99 survives untouched and records no rule provenance; an assigned wholesale list beats base at 18; a SKU the list does not cover falls back to base rather than failing; equal-priority rules refuse the confirm and NAME the collision; higher priority wins; quantity bands select the rule at 10 and 7; a December rule applies in December and not in July; identical bands give 800 under Volume and 900 under Tiered; an unpriceable line refuses and leaves no order behind; a colliding rule is refused when written while disjoint bands at the same priority are allowed; the dry run returns 19 and 114 and the order charges the same; ambiguity comes back from the preview as Success:false; and the line records which rule priced it plus a component carrying the extended amount."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "pricing"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "DDE902D6-EB62-4AFC-96E8-7015067D747A"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.437Z",
+    "checksum": "7d94a0e1a7da77ba7e9f39845a5b8effb1b6ea581b9f5b6a3bce8885e284cf30"
+  }
+}

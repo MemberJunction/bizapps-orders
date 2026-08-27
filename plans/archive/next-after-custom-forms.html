@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Next work — after custom forms</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b1220; --surface: #152033; --card: #1b2940; --sunken: #101a2c;
+    --text: #e8eef8; --muted: #8b9bb3; --sec: #b4c0d4; --link: #7eb8e6;
+    --border: #2c3e5a; --subtle: #22324c; --brand: #4f9ad4;
+    --ok: #86efac; --ok-bg: color-mix(in srgb, #22c55e 16%, var(--surface));
+    --later: #93c5fd; --later-bg: color-mix(in srgb, #3b82f6 14%, var(--surface));
+    --warn: #fde68a; --warn-bg: color-mix(in srgb, #fbbf24 14%, var(--surface));
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: Inter, system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .lede { color: var(--sec); font-size: 14px; line-height: 1.55; margin: 0 0 18px; }
+  h2 { font-size: 15px; margin: 28px 0 10px; }
+  h3 { font-size: 13px; margin: 18px 0 8px; color: var(--sec); }
+  p, li { font-size: 13.5px; line-height: 1.55; color: var(--sec); }
+  ul { padding-left: 1.2em; }
+  .rulings {
+    border: 1px solid color-mix(in srgb, var(--brand) 40%, var(--border));
+    background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+    border-radius: 12px; padding: 12px 14px; margin: 0 0 22px;
+  }
+  .rulings h2 { margin: 0 0 8px; }
+  .rulings li { color: var(--text); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0 16px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--subtle); }
+  th { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  td { color: var(--text); }
+  td.why { color: var(--sec); font-size: 12.5px; }
+  .sz { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+  .tag {
+    display: inline-block; font-size: 11px; font-weight: 650;
+    padding: 1px 8px; border-radius: 999px;
+  }
+  .tag-ok { color: var(--ok); background: var(--ok-bg); }
+  .tag-later { color: var(--later); background: var(--later-bg); }
+  .tag-wait { color: var(--warn); background: var(--warn-bg); }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 4px 0 0;
+    overflow: hidden; margin-bottom: 14px;
+  }
+  code { font-size: 12px; }
+  .morning { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Next work — after the custom forms</h1>
+  <p class="lede">Review copy of <code>plans/next-after-custom-forms.md</code>. Written 2026-08-14. Rulings from this morning are in the blue box.</p>
+
+  <div class="rulings">
+    <h2>Rulings 2026-08-14</h2>
+    <ul>
+      <li><strong>Rolled-up journal UX — approved.</strong> No more rollup work this cycle.</li>
+      <li><strong>Do not put booked order JEs in the Accounting workspace.</strong> Workspace stays create-only. Deferred.</li>
+      <li><strong>No Fast Entry.</strong> One form. Delete Fast Entry / editor / workspace after the check-number field lives on the header form.</li>
+    </ul>
+  </div>
+
+  <h2>Where we are</h2>
+  <p>One Order Header form, lines on the unsaved header, confirm-after-draft books, accounting tab is rolled-up <em>or</em> per-line. System Metadata is off the four custom forms. Fast Entry is off the rail but still in the tree.</p>
+  <p>Engine stack (booking, pricing, payments, IC legs, subs, returns) was already ahead of the UI. Confirm is still “change Status on Details and Save.” Bill-to is still two uncorrelated lookups. Event attendees only live on a generated child form.</p>
+
+  <h2>1. Close the holes the new form opened</h2>
+  <div class="card">
+  <table>
+    <thead><tr><th>#</th><th>Item</th><th>Why</th><th>Size</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Check / ACH reference on Payment tab</td><td class="why">Live form has type + amount only. Check confirm will fail again.</td><td class="sz">S</td></tr>
+      <tr><td>2</td><td>Confirm as a verb, not a Status dropdown</td><td class="why">Status-as-select is how people confirm and how they pick illegal states. PaymentStatus is a rollup — do not edit it.</td><td class="sz">S–M</td></tr>
+      <tr><td>3</td><td>Pull <code>next</code> on MJ / accounting / orders and confirm the link path</td><td class="why">Form imports NetLines and ShowNewButton.</td><td class="sz">S</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>2. Finish the form the mock already signed</h2>
+  <p>Spec: <code>mockups/orders/order-line-extensions.html</code> — open in the other tab. <span class="tag tag-wait">waiting on mock approval</span></p>
+  <div class="card">
+  <table>
+    <thead><tr><th>#</th><th>Item</th><th>Why</th><th>Size</th></tr></thead>
+    <tbody>
+      <tr><td>4</td><td>Org-first party picker</td><td class="why">Org → people of that org → “Not on this list — search everyone.”</td><td class="sz">M</td></tr>
+      <tr><td>5</td><td>Weave EventOrderLine onto the line card</td><td class="why">Attendee name/email before confirm. Qty&gt;1 deferred, as the mock says.</td><td class="sz">M</td></tr>
+      <tr><td>6</td><td>Stated facts on the line</td><td class="why">Event dates from EventProduct; membership term decided at confirm. Show, don’t prompt.</td><td class="sz">S</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Then <strong>delete Fast Entry / editor / workspace</strong> (agreed). After the check-number field is on the header form.</p>
+
+  <h2>3. Accounting — later, not this cycle</h2>
+  <div class="card">
+  <table>
+    <thead><tr><th>#</th><th>Item</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>7</td><td>Drill a rolled-up row into source JEs</td><td><span class="tag tag-ok">Deferred — rollup approved</span></td></tr>
+      <tr><td>8</td><td>Load a booked JE in the Accounting workspace</td><td><span class="tag tag-ok">Deferred — workspace stays create-only</span></td></tr>
+      <tr><td>9</td><td>Status + batch on the rollup card</td><td><span class="tag tag-ok">Deferred — rollup approved</span></td></tr>
+      <tr><td>10</td><td>Batch PostingDate picker</td><td><span class="tag tag-later">Later — not form work</span></td></tr>
+      <tr><td>11</td><td>Batch this order’s JEs</td><td><span class="tag tag-later">Later — not form work</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>4. Hygiene</h2>
+  <p>Refresh stale plans, wire <code>pnpm test</code> on Angular packages, accounting CI vitest, IsOverdue as EntityField, review-seed variety, confirm journal-entry-types metadata actually seeded.</p>
+
+  <h2>5. Decide before building</h2>
+  <p>Event capacity / holds · subscription seat quantity · sales-rule approvals · IC settlement · manual JE approval · real ERP dispatch · statements / order splitting · reports gallery.</p>
+
+  <h2>Do not</h2>
+  <ul>
+    <li>Rebuild Fast Entry as a second lane.</li>
+    <li>Add more netting. Rolled-up journal is approved.</li>
+    <li>Teach the Accounting workspace to open a booked order JE.</li>
+    <li>Publish accounting-engine-base 0.1.0 from main until a real release.</li>
+    <li>Treat <code>OrderLine.JournalEntryID IS NOT NULL</code> as “booked.”</li>
+  </ul>
+
+  <h2>Suggested first morning</h2>
+  <div class="morning">
+    <ol>
+      <li>Pull <code>next</code> on all three repos. Rebuild EngineBase, ng-base-forms, orders-ng.</li>
+      <li>Payment-tab check reference.</li>
+      <li>Confirm button / hide Status + PaymentStatus as edits.</li>
+      <li>Picker + attendee weave, once the mock is approved.</li>
+      <li>Delete Fast Entry / editor / workspace.</li>
+    </ol>
+  </div>
+</div>
+</body>
+</html>

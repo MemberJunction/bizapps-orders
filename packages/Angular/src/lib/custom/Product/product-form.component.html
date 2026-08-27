@@ -1,0 +1,406 @@
+@if (record) {
+<mj-record-form-container [Record]="record" [FormComponent]="this"
+    (Navigate)="OnFormNavigate($event)"
+    (DeleteRequested)="OnDeleteRequested()"
+    (FavoriteToggled)="OnFavoriteToggled()"
+    (HistoryRequested)="OnHistoryRequested()"
+    (ListManagementRequested)="OnListManagementRequested()">
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="before-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+    <!-- ================================================================
+         HERO IDENTITY HEADER CARD & SUMMARY METRIC STRIP
+         ================================================================ -->
+    <div class="mjo-record-header-card">
+        <div class="mjo-record-header-top">
+            <div class="mjo-record-identity">
+                <div class="mjo-record-avatar">
+                    <i [class]="ProductAvatarIcon"></i>
+                </div>
+                <div class="mjo-record-title-area">
+                    <h1 class="mjo-record-title">
+                        {{ record.Name || 'New Product Catalog Entry' }}
+                    </h1>
+                    <div class="mjo-record-badges">
+                        <span class="mjo-entity-chip"><i class="fa-solid fa-database"></i> MJ_BizApps_Orders: Products</span>
+                        <span class="mjo-sku-badge">{{ record.SKU || 'SKU TBD' }}</span>
+                        <span class="mjo-type-chip">
+                            <i class="fa-solid fa-tag"></i> {{ ProductTypeName }}
+                        </span>
+                        @if (HasEventExtension) {
+                            <span class="mjo-type-chip">
+                                <i class="fa-solid fa-calendar-check"></i> Specialized Profile: Event &amp; Conference
+                            </span>
+                        }
+                        <span [class]="StatusBadgeClass">{{ record.Status || 'Draft' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Summary Metric Strip -->
+        <div class="mjo-record-summary-bar">
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Base List Price</span>
+                <span class="mjo-stat-val">{{ FormattedBasePrice }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Product Type</span>
+                <span class="mjo-stat-val">{{ ProductTypeName }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Revenue Recognition</span>
+                <span class="mjo-stat-val">{{ RevenueRecognitionName }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">{{ HasEventExtension ? 'Event Schedule' : 'Tax Status' }}</span>
+                <span class="mjo-stat-val">{{ HasEventExtension ? EventScheduleSummary : (record.IsTaxable ? 'Taxable' : 'Tax Exempt') }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Price List Assignments</span>
+                <span class="mjo-stat-val">{{ GetSectionRowCount('productPrices') || 0 }} Rules</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         TWO-COLUMN RESPONSIVE WORKSPACE: LEFT NAV + ACTIVE PANE
+         ================================================================ -->
+    <div class="mjo-workspace-layout">
+
+        <!-- RESPONSIVE LEFT NAVIGATION RAIL -->
+        <aside class="mjo-product-left-nav" role="navigation" aria-label="Product sections">
+            <div class="mjo-nav-group-title">Catalog Profile</div>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'overview'" (click)="SelectPane('overview')">
+                <span class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span>Overview &amp; Profile</span>
+                </span>
+            </button>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'pricing'" (click)="SelectPane('pricing')">
+                <span class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-calculator"></i>
+                    <span>Pricing &amp; Tiers</span>
+                </span>
+                <span class="mjo-nav-badge">{{ GetSectionRowCount('productPrices') || 0 }}</span>
+            </button>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'promos'" (click)="SelectPane('promos')">
+                <span class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-ticket"></i>
+                    <span>Promotions &amp; Discounts</span>
+                </span>
+            </button>
+
+            <div class="mjo-nav-group-title">Finance &amp; Operations</div>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'accounting'" (click)="SelectPane('accounting')">
+                <span class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-scale-balanced"></i>
+                    <span>Tax &amp; Accounting GL</span>
+                </span>
+            </button>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'fulfillment'" (click)="SelectPane('fulfillment')">
+                <span class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-truck-fast"></i>
+                    <span>Delivery &amp; Fulfillment</span>
+                </span>
+            </button>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'subscriptions'" (click)="SelectPane('subscriptions')">
+                <span class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span>Subscription</span>
+                </span>
+            </button>
+
+            @if (record.ProductType === 'Bundle' || record.ProductType === 'Kit') {
+                <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'bundles'" (click)="SelectPane('bundles')">
+                    <span class="mjo-nav-btn-left">
+                        <i class="fa-solid fa-boxes-stacked"></i>
+                        <span>Bundle Kit Items</span>
+                    </span>
+                    <span class="mjo-nav-badge">{{ GetSectionRowCount('productBundleItems') || 0 }}</span>
+                </button>
+            }
+
+            @if (!EditMode) {
+                <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'systemMetadata'" (click)="SelectPane('systemMetadata')">
+                    <span class="mjo-nav-btn-left">
+                        <i class="fa-solid fa-database"></i>
+                        <span>System Metadata</span>
+                    </span>
+                </button>
+            }
+        </aside>
+
+        <!-- ACTIVE CONTENT WORKSPACE -->
+        <section class="mjo-workspace-content">
+
+            <!-- ============================================================
+                 PANE 1: OVERVIEW & SPECIALIZED PROFILE
+                 ============================================================ -->
+            @if (ActivePane === 'overview') {
+                <div class="mjo-pane-wrap">
+                    @if (HasEventExtension) {
+                        <div class="mjo-profile-banner">
+                            <i class="fa-solid fa-calendar-check" style="font-size: 20px; color: #0284c7;"></i>
+                            <div>
+                                <strong>Specialized Event Profile Active:</strong> Venue, scheduling, and attendee requirements are linked directly to this product record.
+                            </div>
+                        </div>
+                    }
+
+                    <div class="mjo-widget-card">
+                        <div class="mjo-widget-head">
+                            <i class="fa-solid fa-cube"></i>
+                            <span>Core Product Specifications</span>
+                        </div>
+                        <div class="mjo-fields-grid">
+                            <mj-form-field 
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                FieldName="Name"
+                                Type="textbox"
+                                [EditMode]="EditMode"
+                                [FormContext]="formContext"
+                                (Navigate)="OnFormNavigate($event)"
+                            ></mj-form-field>
+                            <mj-form-field 
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                FieldName="SKU"
+                                Type="textbox"
+                                [EditMode]="EditMode"
+                                [FormContext]="formContext"
+                                (Navigate)="OnFormNavigate($event)"
+                            ></mj-form-field>
+                            <mj-form-field 
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                FieldName="MaxQuantityPerLine"
+                                Type="numerictextbox"
+                                [EditMode]="EditMode"
+                                [FormContext]="formContext"
+                                (Navigate)="OnFormNavigate($event)"
+                            ></mj-form-field>
+                            <mj-form-field 
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                FieldName="ProductCategoryID"
+                                Type="textbox"
+                                [EditMode]="EditMode"
+                                [FormContext]="formContext"
+                                LinkType="Record"
+                                (Navigate)="OnFormNavigate($event)"
+                            ></mj-form-field>
+                            <mj-form-field 
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                FieldName="ProductTypeID"
+                                Type="textbox"
+                                [EditMode]="EditMode"
+                                [FormContext]="formContext"
+                                LinkType="Record"
+                                (Navigate)="OnFormNavigate($event)"
+                            ></mj-form-field>
+                            <mj-form-field 
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                FieldName="Status"
+                                Type="select"
+                                [EditMode]="EditMode"
+                                [FormContext]="formContext"
+                                (Navigate)="OnFormNavigate($event)"
+                            ></mj-form-field>
+                            <mj-form-field 
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                FieldName="CompanyID"
+                                Type="textbox"
+                                [EditMode]="EditMode"
+                                [FormContext]="formContext"
+                                LinkType="Record"
+                                (Navigate)="OnFormNavigate($event)"
+                            ></mj-form-field>
+                        </div>
+                        <div style="margin-top: 12px;">
+                            <mj-form-field 
+                                [Record]="record"
+                                [ShowLabel]="true"
+                                FieldName="Description"
+                                Type="textarea"
+                                [EditMode]="EditMode"
+                                [FormContext]="formContext"
+                                (Navigate)="OnFormNavigate($event)"
+                            ></mj-form-field>
+                        </div>
+                    </div>
+
+                    <!-- Specialized Profile Form Fields (EventProduct) -->
+                    @if (HasEventExtension && EventProductChild) {
+                        <div class="mjo-widget-card" style="margin-top: 16px;">
+                            <div class="mjo-widget-head">
+                                <i class="fa-solid fa-map-location-dot"></i>
+                                <span>Event &amp; Venue Schedule Details</span>
+                            </div>
+                            <div class="mjo-fields-grid">
+                                <mj-form-field 
+                                    [Record]="EventProductChild"
+                                    [ShowLabel]="true"
+                                    FieldName="EventStartsAt"
+                                    Type="datepicker"
+                                    [EditMode]="EditMode"
+                                    [FormContext]="formContext"
+                                    (Navigate)="OnFormNavigate($event)"
+                                ></mj-form-field>
+                                <mj-form-field 
+                                    [Record]="EventProductChild"
+                                    [ShowLabel]="true"
+                                    FieldName="EventEndsAt"
+                                    Type="datepicker"
+                                    [EditMode]="EditMode"
+                                    [FormContext]="formContext"
+                                    (Navigate)="OnFormNavigate($event)"
+                                ></mj-form-field>
+                                <mj-form-field 
+                                    [Record]="EventProductChild"
+                                    [ShowLabel]="true"
+                                    FieldName="VenueName"
+                                    Type="textbox"
+                                    [EditMode]="EditMode"
+                                    [FormContext]="formContext"
+                                    (Navigate)="OnFormNavigate($event)"
+                                ></mj-form-field>
+                                <mj-form-field 
+                                    [Record]="EventProductChild"
+                                    [ShowLabel]="true"
+                                    FieldName="Capacity"
+                                    Type="number"
+                                    [EditMode]="EditMode"
+                                    [FormContext]="formContext"
+                                    (Navigate)="OnFormNavigate($event)"
+                                ></mj-form-field>
+                                <mj-form-field 
+                                    [Record]="EventProductChild"
+                                    [ShowLabel]="true"
+                                    FieldName="RequiresAttendeeInfo"
+                                    Type="checkbox"
+                                    [EditMode]="EditMode"
+                                    [FormContext]="formContext"
+                                    (Navigate)="OnFormNavigate($event)"
+                                ></mj-form-field>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- ============================================================
+                 PANE 2: PRICING & VOLUME TIERS (DROPPABLE WIDGET)
+                 ============================================================ -->
+            @if (ActivePane === 'pricing') {
+                <bizapps-product-pricing-widget
+                    [Product]="record"
+                    [EditMode]="EditMode"
+                    [FormContext]="formContext"
+                    (Navigate)="OnFormNavigate($event)">
+                </bizapps-product-pricing-widget>
+            }
+
+            <!-- ============================================================
+                 PANE 3: PROMOTIONS & CAMPAIGNS (DROPPABLE WIDGET)
+                 ============================================================ -->
+            @if (ActivePane === 'promos') {
+                <bizapps-product-promotions-widget
+                    [Product]="record"
+                    [EditMode]="EditMode"
+                    [FormContext]="formContext"
+                    (Navigate)="OnFormNavigate($event)">
+                </bizapps-product-promotions-widget>
+            }
+
+            <!-- ============================================================
+                 PANE 4: TAX & ACCOUNTING GL (DROPPABLE WIDGET)
+                 ============================================================ -->
+            @if (ActivePane === 'accounting') {
+                <bizapps-product-accounting-widget
+                    [Product]="record"
+                    [EditMode]="EditMode"
+                    [FormContext]="formContext"
+                    (Navigate)="OnFormNavigate($event)">
+                </bizapps-product-accounting-widget>
+            }
+
+            <!-- ============================================================
+                 PANE 5: DELIVERY & FULFILLMENT (DROPPABLE WIDGET)
+                 ============================================================ -->
+            @if (ActivePane === 'fulfillment') {
+                <bizapps-product-fulfillment-widget
+                    [Product]="record"
+                    [EditMode]="EditMode"
+                    [FormContext]="formContext"
+                    (Navigate)="OnFormNavigate($event)">
+                </bizapps-product-fulfillment-widget>
+            }
+
+            <!-- ============================================================
+                 PANE 6: SUBSCRIPTIONS & GRANTS (DROPPABLE WIDGET)
+                 ============================================================ -->
+            @if (ActivePane === 'subscriptions') {
+                <bizapps-product-subscription-widget
+                    [Product]="record"
+                    [EditMode]="EditMode"
+                    [FormContext]="formContext"
+                    (Navigate)="OnFormNavigate($event)">
+                </bizapps-product-subscription-widget>
+            }
+
+            <!-- ============================================================
+                 PANE 7: BUNDLE KIT ITEMS
+                 ============================================================ -->
+            @if (ActivePane === 'bundles' && record.IsSaved) {
+                <div class="mjo-widget-card">
+                    <div class="mjo-widget-head">
+                        <i class="fa-solid fa-boxes-stacked"></i>
+                        <span>Bundle Components &amp; Kit Items</span>
+                    </div>
+                    <mj-explorer-entity-data-grid
+                        [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Product Bundle Items','BundleProductID')"
+                        [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Product Bundle Items')"
+                        [AllowLoad]="true"
+                        [ShowToolbar]="true"
+                        [ShowNewButton]="true"
+                        (Navigate)="OnFormNavigate($event)"
+                        (AfterDataLoad)="SetSectionRowCount('productBundleItems', $event.totalRowCount)">
+                    </mj-explorer-entity-data-grid>
+                </div>
+            }
+
+            <!-- ============================================================
+                 PANE 8: SYSTEM METADATA
+                 ============================================================ -->
+            @if (ActivePane === 'systemMetadata' && !EditMode) {
+                <div class="mjo-widget-card">
+                    <div class="mjo-widget-head">
+                        <i class="fa-solid fa-database"></i>
+                        <span>System Identifiers &amp; Timestamps</span>
+                    </div>
+                    <div class="mjo-fields-grid">
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ID" Type="textbox" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="__mj_CreatedAt" Type="textbox" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="__mj_UpdatedAt" Type="textbox" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    </div>
+                </div>
+            }
+
+        </section>
+    </div>
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+</mj-record-form-container>
+}

@@ -1,0 +1,374 @@
+@if (record) {
+<mj-record-form-container [Record]="record" [FormComponent]="this"
+    (Navigate)="OnFormNavigate($event)"
+    (DeleteRequested)="OnDeleteRequested()"
+    (FavoriteToggled)="OnFavoriteToggled()"
+    (HistoryRequested)="OnHistoryRequested()"
+    (ListManagementRequested)="OnListManagementRequested()">
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="before-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+    <!-- ========================================
+         SUBSCRIPTION TERM HERO HEADER
+         ======================================== -->
+    <div class="mjo-term-hero-card">
+        <div class="mjo-term-hero-main">
+            <div class="mjo-term-avatar">
+                <i [class]="TermAvatarIcon" aria-hidden="true"></i>
+            </div>
+            <div class="mjo-term-hero-info">
+                <div class="mjo-term-hero-title-row">
+                    <span class="mjo-term-number">Term {{ record.TermNumber || 1 }}</span>
+                    <span [class]="StatusBadgeClass">{{ record.Status || 'Active' }}</span>
+                    @if (record.IsProrated) {
+                        <span class="mjo-prorated-chip">
+                            <i class="fa-solid fa-percent"></i> {{ record.ProrationFactor ? (record.ProrationFactor * 100).toFixed(0) + '% Prorated' : 'Prorated' }}
+                        </span>
+                    }
+                </div>
+                <div class="mjo-term-hero-sub-row">
+                    <span class="mjo-term-meta-item">
+                        <i class="fa-solid fa-calendar-days"></i> Coverage: <strong>{{ FormattedCoverageWindow }}</strong>
+                    </span>
+                    @if (record.SubscriptionID) {
+                        <span class="mjo-term-meta-item">
+                            <i class="fa-solid fa-arrows-rotate"></i> Subscription: <strong>{{ record.Subscription || record.SubscriptionID }}</strong>
+                        </span>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="mjo-term-hero-stats">
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Term Amount</span>
+                <span class="mjo-stat-val mjo-val--price">{{ FormatMoney(record.Amount) }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Term Number</span>
+                <span class="mjo-stat-val">Cycle #{{ record.TermNumber || 1 }}</span>
+            </div>
+            <div class="mjo-stat-block">
+                <span class="mjo-stat-label">Rev-Rec Releases</span>
+                <span class="mjo-stat-val">{{ RevRecJournalEntries.length }} Entries Materialized</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         TWO-COLUMN RESPONSIVE WORKSPACE: LEFT NAV + ACTIVE PANE
+         ================================================================ -->
+    <div class="mjo-sub-workspace">
+
+        <!-- RESPONSIVE LEFT NAVIGATION RAIL -->
+        <aside class="mjo-sub-left-nav" role="navigation" aria-label="Subscription term workspace sections">
+            <div class="mjo-nav-group-title">Revenue &amp; Schedule</div>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'revRec'" (click)="SelectPane('revRec')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-chart-waterfall"></i>
+                    <span>Deferred Revenue Waterfall</span>
+                </div>
+                @if (RevRecJournalEntries.length > 0) {
+                    <span class="mjo-nav-badge mjo-nav-badge--info">{{ RevRecJournalEntries.length }}</span>
+                }
+            </button>
+
+            <div class="mjo-nav-group-title">Term Configuration</div>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'timeline'" (click)="SelectPane('timeline')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-calendar-alt"></i>
+                    <span>Timeline &amp; Dates</span>
+                </div>
+            </button>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'financial'" (click)="SelectPane('financial')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-money-bill-wave"></i>
+                    <span>Financial &amp; Proration</span>
+                </div>
+            </button>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'context'" (click)="SelectPane('context')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-link"></i>
+                    <span>Parent Links &amp; Order</span>
+                </div>
+            </button>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'entitlements'" (click)="SelectPane('entitlements')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-key"></i>
+                    <span>Granted Entitlements</span>
+                </div>
+            </button>
+
+            <div class="mjo-nav-group-title">System</div>
+
+            <button type="button" class="mjo-nav-btn" [class.active]="ActivePane === 'systemMetadata'" (click)="SelectPane('systemMetadata')">
+                <div class="mjo-nav-btn-left">
+                    <i class="fa-solid fa-shield-alt"></i>
+                    <span>System Metadata</span>
+                </div>
+            </button>
+        </aside>
+
+        <!-- MAIN WORKSPACE CONTENT PANE -->
+        <main class="mjo-sub-workspace-content">
+
+            <!-- PANE 1: DEFERRED REVENUE WATERFALL (TERM SCOPED) -->
+            @if (ActivePane === 'revRec') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-chart-waterfall"></i> Term {{ record.TermNumber || 1 }} Deferred Revenue Waterfall</h2>
+                            <p class="mjo-pane-desc">ASC 606 revenue recognition schedule scoped strictly to this coverage term cycle.</p>
+                        </div>
+                        <div class="mjo-toggle-strip">
+                            <button type="button" class="mjo-toggle-btn" [class.mjo-toggle-btn--active]="ActiveAccountingView === 'waterfall'" (click)="ActiveAccountingView = 'waterfall'">
+                                <i class="fa-solid fa-chart-line"></i> Waterfall Schedule
+                            </button>
+                            <button type="button" class="mjo-toggle-btn" [class.mjo-toggle-btn--active]="ActiveAccountingView === 'grid'" (click)="ActiveAccountingView = 'grid'">
+                                <i class="fa-solid fa-table"></i> Term Journal Entries
+                            </button>
+                        </div>
+                    </div>
+
+                    @if (ActiveAccountingView === 'waterfall') {
+                        <mj-deferred-revenue-waterfall
+                            [JournalEntries]="RevRecJournalEntries"
+                            [Title]="'Term ' + (record.TermNumber || 1) + ' Rev-Rec Waterfall'"
+                            [ForceSingleItemMode]="true"
+                            (JournalEntrySelected)="OnJournalEntrySelected($event)">
+                        </mj-deferred-revenue-waterfall>
+                    } @else if (TermJournalEntryParams) {
+                        <div class="mjo-grid-pane">
+                            <mj-explorer-entity-data-grid
+                                [Params]="TermJournalEntryParams"
+                                [AllowLoad]="true"
+                                [ShowToolbar]="false"
+                                (Navigate)="OnFormNavigate($event)">
+                            </mj-explorer-entity-data-grid>
+                        </div>
+                    }
+                </div>
+            }
+
+            <!-- PANE 2: TIMELINE & COVERAGE DATES -->
+            @if (ActivePane === 'timeline') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-calendar-alt"></i> Term Timeline &amp; Coverage Dates</h2>
+                            <p class="mjo-pane-desc">Service start date, renewal expiration date, and grace period boundaries.</p>
+                        </div>
+                    </div>
+
+                    <div class="mjo-fields-grid">
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="StartDate"
+                            Type="datepicker"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="EndDate"
+                            Type="datepicker"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="GracePeriodEndDate"
+                            Type="datepicker"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                    </div>
+                </div>
+            }
+
+            <!-- PANE 3: FINANCIAL & PRORATION DETAILS -->
+            @if (ActivePane === 'financial') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-money-bill-wave"></i> Financial &amp; Proration Details</h2>
+                            <p class="mjo-pane-desc">Billed amount, proration factor calculation, and revenue recognition driver.</p>
+                        </div>
+                    </div>
+
+                    <div class="mjo-fields-grid">
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="Amount"
+                            Type="number"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="IsProrated"
+                            Type="checkbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="ProrationFactor"
+                            Type="number"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="RevenueRecognitionTypeID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            LinkType="Record"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                    </div>
+                </div>
+            }
+
+            <!-- PANE 4: SUBSCRIPTION & ORDER CONTEXT -->
+            @if (ActivePane === 'context') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-link"></i> Parent Links &amp; Originating Order</h2>
+                            <p class="mjo-pane-desc">Parent subscription record, order line provenance, and cycle sequence number.</p>
+                        </div>
+                    </div>
+
+                    <div class="mjo-fields-grid">
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="SubscriptionID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            LinkType="Record"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="OrderLineID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            LinkType="Record"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="TermNumber"
+                            Type="number"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="Status"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                    </div>
+                </div>
+            }
+
+            <!-- PANE 5: GRANTED ENTITLEMENTS -->
+            @if (ActivePane === 'entitlements') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-key"></i> Granted Entitlements</h2>
+                            <p class="mjo-pane-desc">Software entitlements and permission grants active during this coverage term window.</p>
+                        </div>
+                    </div>
+
+                    <div class="mjo-grid-pane">
+                        <mj-explorer-entity-data-grid
+                            [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Entitlement Grants','SubscriptionTermID')"
+                            [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Entitlement Grants')"
+                            [AllowLoad]="true"
+                            [ShowToolbar]="false"
+                            (Navigate)="OnFormNavigate($event)">
+                        </mj-explorer-entity-data-grid>
+                    </div>
+                </div>
+            }
+
+            <!-- PANE 6: SYSTEM METADATA -->
+            @if (ActivePane === 'systemMetadata') {
+                <div class="mjo-pane-card">
+                    <div class="mjo-pane-header">
+                        <div class="mjo-pane-title-area">
+                            <h2 class="mjo-pane-title"><i class="fa-solid fa-shield-alt"></i> System Metadata</h2>
+                            <p class="mjo-pane-desc">Term system primary key and audit timestamps.</p>
+                        </div>
+                    </div>
+
+                    <div class="mjo-fields-grid">
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="ID"
+                            Type="textbox"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="__mj_CreatedAt"
+                            Type="datepicker"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                        <mj-form-field 
+                            [Record]="record"
+                            [ShowLabel]="true"
+                            FieldName="__mj_UpdatedAt"
+                            Type="datepicker"
+                            [EditMode]="EditMode"
+                            [FormContext]="formContext"
+                            (Navigate)="OnFormNavigate($event)"
+                        ></mj-form-field>
+                    </div>
+                </div>
+            }
+
+        </main>
+    </div>
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+</mj-record-form-container>
+}

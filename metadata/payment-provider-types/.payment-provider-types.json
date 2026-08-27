@@ -1,0 +1,120 @@
+[
+  {
+    "fields": {
+      "Code": "Stripe",
+      "Name": "Stripe",
+      "Description": "Stripe payments — cards, wallets, hosted checkout.",
+      "DriverClass": "StripePaymentProvider",
+      "SupportsTokenization": 1,
+      "SupportsRefund": 1,
+      "SupportsWebhooks": 1,
+      "Sequence": 10,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C01"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.060Z",
+      "checksum": "8a429924cd927e3a553ca10d3238ff0f183966e22962e601cb8afc6a8850fae1"
+    }
+  },
+  {
+    "_comments": [
+      "Stripe ACH (US bank debit) — a SEPARATE type from 'Stripe', deliberately.",
+      "",
+      "The two rails are different money. They settle on different timescales (instant against up to",
+      "four business days), cost different amounts (2.9% + 30c against 0.8% capped at $5), and — the",
+      "one that actually shapes the code — a bank debit can be TAKEN BACK after it has been booked.",
+      "Folding them into one provider row would mean an operator could not enable one without the",
+      "other, and every fee expectation in the system would have to branch on the instrument rather",
+      "than on the configured account.",
+      "",
+      "SupportsTokenization is 1 because the instrument a debit charges IS a saved payment method —",
+      "collected once through a Stripe SetupIntent, along with the NACHA authorisation Stripe retains",
+      "against it. This driver never collects one; it charges one that already exists.",
+      "",
+      "SupportsRefund is 1 for a DELIBERATE refund (Orders.RefundPayment). A bank RETURN is a",
+      "different thing and does not go through the refund path — it arrives as a webhook and",
+      "PaymentSettlement writes the reversal."
+    ],
+    "fields": {
+      "Code": "StripeACH",
+      "Name": "Stripe ACH",
+      "Description": "Stripe US bank debits (ACH). Settles on the bank's schedule rather than at the till: a payment is captured by the webhook when the debit clears, and a debit RETURNED after settlement is reversed by a new payment rather than by editing the original. 0.8% capped at $5.",
+      "DriverClass": "StripeACHPaymentProvider",
+      "SupportsTokenization": 1,
+      "SupportsRefund": 1,
+      "SupportsWebhooks": 1,
+      "Sequence": 15,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C05"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.074Z",
+      "checksum": "b1d6cedd733a56075554c9c1edfd0138c16c08f97628deb50f0f577232a3b242"
+    }
+  },
+  {
+    "fields": {
+      "Code": "Manual",
+      "Name": "Manual",
+      "Description": "Finance records the money movement by hand (check, wire, cash). Always available.",
+      "DriverClass": "ManualPaymentProvider",
+      "SupportsTokenization": 0,
+      "SupportsRefund": 1,
+      "SupportsWebhooks": 0,
+      "Sequence": 20,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C02"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.088Z",
+      "checksum": "f734ed356df2a128bfc48718f2810e48d15f29bd2801f8a54c10ba5352fabc84"
+    }
+  },
+  {
+    "fields": {
+      "Code": "StoredValue",
+      "Name": "Stored Value",
+      "Description": "Money we already hold: a gift card (StoredValueAccount, a bearer instrument with a redeemable code) or an over-paid order's negative balance (account credit, D68). One driver, because the mechanics of spending them are identical even though their ownership, transferability, expiry and accounting treatment are not. No gateway — we are the institution, so there is no fee.",
+      "DriverClass": "StoredValuePaymentProvider",
+      "SupportsTokenization": 0,
+      "SupportsRefund": 1,
+      "SupportsWebhooks": 0,
+      "Sequence": 30,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C03"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.103Z",
+      "checksum": "02346de6e8959a11978e95c35d4682c1d0880a258b4849f4b26775f540d07b45"
+    }
+  },
+  {
+    "fields": {
+      "Code": "JPMorgan",
+      "Name": "J.P. Morgan",
+      "Description": "PLACEHOLDER, deliberately INACTIVE. Which API is an open question — legacy Orbital/Paymentech versus the newer J.P. Morgan Payments API — and the answer changes the driver, not just its credentials. The row exists so the type is addressable and the capability flags are somewhere to correct; activating it before a driver is registered would make PaymentProviderResolver refuse, which is the correct behaviour and a confusing way to discover this.",
+      "DriverClass": "JPMorganPaymentProvider",
+      "SupportsTokenization": 1,
+      "SupportsRefund": 1,
+      "SupportsWebhooks": 1,
+      "Sequence": 40,
+      "IsActive": 0
+    },
+    "primaryKey": {
+      "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C04"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.116Z",
+      "checksum": "a489abbb0a953a0f8d14e763de55ddc29fb2e64384f79e134a528106d27bd48a"
+    }
+  }
+]

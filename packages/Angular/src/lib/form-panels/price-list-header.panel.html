@@ -1,0 +1,17 @@
+<div class="mjo-doc-hero">
+    <div class="mjo-doc-hero__identity">
+        <div class="mjo-doc-hero__avatar">
+            <i class="fa-solid fa-tags" aria-hidden="true"></i>
+        </div>
+        <div class="mjo-doc-hero__copy">
+            <div class="mjo-doc-hero__title-row">
+                <h1 class="mjo-doc-hero__title">{{ Title }}</h1>
+                <span class="mjo-doc-chip">{{ Record.Code || 'CODE TBD' }}</span>
+                <span [class]="StatusClass">{{ Record.Status || 'Active' }}</span>
+            </div>
+            <div class="mjo-doc-hero__meta">
+                <span>Validity: <strong>{{ Validity }}</strong></span>
+            </div>
+        </div>
+    </div>
+</div>

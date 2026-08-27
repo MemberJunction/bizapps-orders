@@ -1,0 +1,12 @@
+{
+  "entity": "MJ: Template Categories",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".orders-template-categories.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true
+  }
+}

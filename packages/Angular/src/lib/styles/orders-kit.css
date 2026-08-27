@@ -1,0 +1,841 @@
+/* ============================================================================
+   BizApps Orders — component kit
+   ============================================================================
+   THE CANONICAL SOURCE for this app's own component CSS. Both consumers read
+   THIS FILE, so the mockups and the shipped UI cannot drift:
+
+     · packages/Angular/src/lib/styles/orders-kit.css   ← you are here
+     · mockups/assets/app.css                            @imports it
+
+   Only classes MJ does NOT ship live here. Page chrome, buttons, inputs, chips,
+   collapsible panels, overlays and tab navigation all come from
+   @memberjunction/ng-ui-components and @memberjunction/ng-base-forms at runtime;
+   the mockups shim those separately because they have no Angular to provide them.
+
+   Every value resolves through MJ's semantic tokens. No literal colours, with one
+   documented exception: the deepest aging step, whose ramp was chosen by running
+   the palette validator (see mockups/PROVENANCE.md).
+
+   NAMING. These share MJ's `mj-` prefix deliberately, so a reader cannot tell
+   whether `mj-money-strip` came from the framework or from us — which is the
+   point when the goal is one visual system. The cost is a possible future
+   collision if MJ ships a class of the same name; that would be a mechanical
+   rename caught by a build, and it has not happened yet.
+   ============================================================================ */
+
+/* ============================================================================
+   16. LAYOUT & TEXT HELPERS
+   ============================================================================
+   These were authored in `mockups/assets/app.css` §16 and never migrated here,
+   so the two consumers DID drift despite the promise at the top of this file:
+   the mockups styled them, the shipped app did not. 267 applications of `small`,
+   `muted`, `row`, `wrap`, `strong`, `mono`, `tiny`, `spacer` and `sec-label`
+   across the pages resolved to nothing — every caption rendered at full body
+   size in full-strength ink and every `.row` collapsed from a flex row to a
+   block stack. That single omission is most of the gap between the approved
+   mockups and what shipped.
+
+   Unprefixed on purpose — renaming ~267 call sites to `mj-` would buy nothing
+   and would break parity with the mockup markup they mirror.
+
+   TYPE SCALE — 12px is the floor, and we do NOT want a sub-12px token.
+   These arrived as raw px below MJ's smallest step: `small` 11.5px and `tiny`
+   10.5px. Both now resolve to `--mj-text-xs` (12px), MJ's own token, so the app
+   shares one scale instead of carrying two private sizes.
+
+   The obvious alternative — asking for a `--mj-text-xxs` — is the wrong ask, and
+   we should not raise it. 12px is the practical legibility floor for secondary
+   text (Material and Apple HIG both bottom out at 11–12px and reserve it for
+   non-essential labels), and `small` here is not decoration: it carries amounts,
+   counts and statuses on 120 elements. Shrinking DATA below the floor is exactly
+   the case the floor exists for, and a token would institutionalise it across
+   every app that adopts it.
+
+   Hierarchy that used to come from size now comes from COLOUR (`muted`) and
+   WEIGHT (`strong`) — both of which preserve the distinction at a legible size.
+   Size is the bluntest hierarchy tool available and the only one that costs
+   legibility, so it is the right one to give up.
+   ============================================================================ */
+
+.row  { display: flex; align-items: center; gap: var(--mj-space-2); }
+.row-t { display: flex; align-items: flex-start; gap: var(--mj-space-2); }
+.col  { display: flex; flex-direction: column; gap: var(--mj-space-2); }
+.wrap { flex-wrap: wrap; }
+.spacer { margin-left: auto; }
+.stack-2 > * + * { margin-top: var(--mj-space-2); }
+.stack-3 > * + * { margin-top: var(--mj-space-3); }
+.stack-4 > * + * { margin-top: var(--mj-space-4); }
+.stack-6 > * + * { margin-top: var(--mj-space-6); }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mj-space-4); }
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mj-space-4); }
+.muted  { color: var(--mj-text-muted); }
+/* 12px floor, on MJ's own token — see the TYPE SCALE note above. `small` and
+   `tiny` were 11.5px and 10.5px; both now resolve to --mj-text-xs and the
+   small/tiny distinction is carried by COLOUR and WEIGHT instead of size. */
+.small  { font-size: var(--mj-text-xs); }
+.tiny   { font-size: var(--mj-text-xs); }
+.strong { font-weight: var(--mj-font-semibold); }
+.mono   { font-family: var(--mj-font-family-mono); font-size: .92em; }
+.center { text-align: center; }
+.nowrap { white-space: nowrap; }
+.hidden { display: none !important; }
+
+/* Numeric input modifier — pairs with `mj-input` on the five money fields
+   (payment, refund, credit, return qty, allocation). Undefined until now, so
+   amounts typed into them left-aligned against right-aligned totals directly
+   beside them. Same treatment as `.mj-num`, which is what those totals use. */
+.is-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+}
+.sec-label {
+  font-size: var(--mj-text-xs); font-weight: var(--mj-font-bold); letter-spacing: .06em;
+  text-transform: uppercase; color: var(--mj-text-muted); margin-bottom: var(--mj-space-2);
+}
+
+/* Explanatory notes under a chart, table or panel. 51 of these across 14
+   `mjo-<page>__note` hooks were authored with NO rule anywhere, so every one sat
+   flush against the element above it — the note read as a wrapped continuation
+   of the legend rather than a separate caption. Prefix-scoped so the unrelated
+   `fe-books__note` (which sets its own padding) is untouched. */
+[class*="mjo-"][class*="__note"] { margin-top: var(--mj-space-2); }
+
+/* Two-pane working layout (payment entry, subscriptions, catalog) */
+.mj-split { display: flex; gap: var(--mj-space-4); align-items: flex-start; min-height: 0; }
+.mj-split > .left  { flex: 0 0 380px; min-width: 0; }
+.mj-split > .right { flex: 1; min-width: 0; }
+.mj-split--narrow-left > .left { flex: 0 0 300px; }
+
+@media (max-width: 1100px) {
+  .mj-split { flex-direction: column; }
+  .mj-split > .left, .mj-split > .right { flex: 1 1 auto; width: 100%; }
+  .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* ============================================================================
+   PAGE HEADER — three stacked rows compressed into two
+   ============================================================================
+   MJ stacks the identity column title -> subtitle -> meta, so our "as of 2:31 PM"
+   capsule landed on a third line of its own and the header stood 138px tall on
+   every section. The capsule is a timestamp for the subtitle, not a peer of it,
+   so it belongs BESIDE the subtitle rather than under it.
+
+   Done without restructuring MJ's template, so a future MJ header fix still
+   lands for us. Scoped to our shell — this is our editorial choice about our own
+   capsule, not an opinion about how every MJ header should read.
+
+   GRID, not flex-wrap. The first attempt used a wrapping flex row with order to
+   reseat the capsule; every child claimed its own line and the whole block
+   centred, because a full-width flex item forces a line break and the remaining
+   items had nothing to sit beside. Grid with EXPLICIT row and column placement
+   is deterministic — and it makes MJ's DOM order (title, subtitle, meta)
+   irrelevant, so the capsule renders to the LEFT of a subtitle that precedes it
+   in the markup, without touching the template. */
+mjo-section-shell .mj-page-header .mj-page-header-text {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  justify-items: start;
+  column-gap: var(--mj-space-2);
+  row-gap: 2px;
+}
+mjo-section-shell .mj-page-header .mj-page-header-title    { grid-row: 1; grid-column: 1 / -1; }
+mjo-section-shell .mj-page-header .mj-page-header-meta     { grid-row: 2; grid-column: 1; margin-top: 0; }
+mjo-section-shell .mj-page-header .mj-page-header-subtitle { grid-row: 2; grid-column: 2; margin-top: 0; }
+
+/* Reclaim the rest vertically. space-3 still clears the 40px icon tile with
+   room to spare; going tighter starts to crowd it. */
+mjo-section-shell .mj-page-header .mj-page-header-row--primary {
+  padding-top: var(--mj-space-3);
+  padding-bottom: var(--mj-space-3);
+}
+
+/* ============================================================================
+   CARD HOVER — undo MJ's ungated lift on cards that do nothing
+   ============================================================================
+   MJ lifts EVERY `.mj-card` on hover — `transform: translateY(-4px)` plus a
+   large shadow — from `explorer-app/src/lib/styles/_common.scss`. The selector
+   there is bare `.mj-card:hover`, with no gate on whether the card is
+   interactive, so a read-only dashboard panel rises under the cursor and
+   promises a click it will not accept.
+
+   This is not MJ's intent. `_shared-patterns.scss`, in the same package, heads
+   its own card-hover block "for clickable cards" and gates it properly on
+   `a.mj-card` / `.mj-card.clickable` — then weakens it with an ungated
+   `.mj-card:hover` of its own. Two competing rules, both ungated in practice.
+   Filed upstream; DELETE this block once MJ gates its own.
+
+   Scoped to the orders shell so it cannot alter any other app, and written the
+   way MJ says it means it: keep the lift where the card is genuinely a link or
+   is marked clickable, drop it everywhere else.
+
+   The values re-assert MJ's own RESTING state for `.mj-card` so that hovering a
+   non-interactive card is a true NO-OP rather than a different effect — an
+   earlier pass set a smaller shadow here, which only traded a card that rises
+   for one that flattens. `--mj-shadow-sm` is used rather than `_common.scss`'s
+   `var(--shadow)`: that variable is private to explorer-app and does not resolve
+   from here, so the declaration was silently dropped. */
+mjo-section-shell .mj-card:not(.clickable):not(a):hover {
+  transform: none;
+  box-shadow: var(--mj-shadow-sm);
+  border-color: transparent;
+}
+
+/* ============================================================================
+   7. MONEY  (U7)
+   ============================================================================ */
+
+.mj-num, .mj-money {
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
+  text-align: right; white-space: nowrap;
+}
+.mj-money--hero { font-size: 22px; font-weight: var(--mj-font-bold); letter-spacing: -0.01em; }
+.mj-money--lg   { font-size: 16px; font-weight: var(--mj-font-semibold); }
+.mj-money--neg  { color: var(--mj-status-error-text); }
+.mj-money--credit { color: var(--mj-status-success-text); }
+.mj-money--muted { color: var(--mj-text-muted); }
+
+/* The money strip — TotalGross / AmountPaid / Balance / status */
+/* Columns follow the CELLS THAT EXIST rather than a fixed three-plus-note.
+   Paid is conditional (drafts have none) and the note is optional, so the fixed
+   template left one or two empty panels sitting in the strip — which reads as a
+   figure that failed to load rather than a figure that does not apply. */
+.mj-money-strip {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+  border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-md);
+  background: var(--mj-bg-surface); overflow: hidden;
+}
+.mj-money-strip > div {
+  padding: var(--mj-space-3) var(--mj-space-4);
+  border-right: 1px solid var(--mj-border-default);
+}
+/* The chip row is the STATUS cell specifically — not whatever happens to be last.
+   Keyed on :last-child, this flex rule landed on BALANCE as soon as the status cell
+   stopped rendering (a draft has no PaymentStatus), which laid its label and value
+   side by side while TOTAL beside it stayed stacked. */
+.mj-money-strip > div:last-child { border-right: none; }
+.mj-money-strip > .mj-money-strip__status {
+  display: flex; align-items: center; gap: var(--mj-space-2);
+}
+.mj-money-strip .l {
+  font-size: 10px; font-weight: var(--mj-font-bold); letter-spacing: .07em;
+  text-transform: uppercase; color: var(--mj-text-muted); display: block; margin-bottom: 2px;
+}
+.mj-money-strip .v { font-size: 17px; font-weight: var(--mj-font-bold); font-variant-numeric: tabular-nums; }
+
+/* Decomposition ladder — net → promos → charges → tax → gross */
+.mj-ladder { font-size: 13px; }
+.mj-ladder-row {
+  display: flex; align-items: baseline; gap: var(--mj-space-2);
+  padding: 6px 0; border-bottom: 1px dashed var(--mj-border-subtle);
+}
+.mj-ladder-row > .label { color: var(--mj-text-secondary); display: flex; align-items: center; gap: 6px; }
+.mj-ladder-row > .amt { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: var(--mj-font-medium); }
+.mj-ladder-row.is-sub    { padding-left: var(--mj-space-4); font-size: 12px; color: var(--mj-text-muted); }
+.mj-ladder-row.is-sub > .amt { font-weight: var(--mj-font-normal); }
+.mj-ladder-row.is-discount > .amt { color: var(--mj-status-success-text); }
+.mj-ladder-row.is-total {
+  border-bottom: none; border-top: 2px solid var(--mj-border-strong);
+  margin-top: var(--mj-space-2); padding-top: var(--mj-space-3);
+}
+.mj-ladder-row.is-total > .label { font-weight: var(--mj-font-semibold); color: var(--mj-text-primary); }
+.mj-ladder-row.is-total > .amt { font-size: 18px; font-weight: var(--mj-font-bold); }
+.mj-ladder-note {
+  font-size: 11.5px; color: var(--mj-text-muted); padding: var(--mj-space-2) 0 0;
+  display: flex; gap: 6px; align-items: flex-start;
+}
+.mj-ladder-note i { margin-top: 2px; color: var(--mj-status-info); }
+
+/* The "why" disclosure — U2. A bare number is never acceptable. */
+.mj-why {
+  border: none; background: none; cursor: pointer; padding: 0 2px;
+  color: var(--mj-text-disabled); font-size: 10.5px;
+}
+.mj-why:hover { color: var(--mj-brand-primary); }
+.mj-why-body {
+  font-size: 11.5px; color: var(--mj-text-secondary);
+  background: var(--mj-bg-surface-sunken); border-left: 2px solid var(--mj-brand-primary);
+  border-radius: 0 var(--mj-radius-sm) var(--mj-radius-sm) 0;
+  padding: var(--mj-space-2) var(--mj-space-3); margin: var(--mj-space-2) 0;
+}
+.mj-why-body ol, .mj-why-body ul { margin: 4px 0 0; padding-left: var(--mj-space-4); }
+.mj-why-body li { margin: 2px 0; }
+.mj-why-body code {
+  font-family: var(--mj-font-family-mono); font-size: 10.5px;
+  background: var(--mj-bg-surface); padding: 1px 4px; border-radius: 3px;
+}
+
+/* ============================================================================
+   9. STATUS STEPPER  (D9 — order fixed, forward skip legal)
+   ============================================================================ */
+
+.mj-stepper { display: flex; align-items: center; gap: var(--mj-space-1); flex-wrap: wrap; }
+.mj-stepper .step {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 11px; border-radius: var(--mj-radius-full);
+  border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface);
+  font-size: 11.5px; font-weight: var(--mj-font-semibold); color: var(--mj-text-muted);
+  cursor: pointer;
+}
+.mj-stepper .step i { font-size: 9px; }
+.mj-stepper .step.is-done {
+  background: var(--mj-status-success-bg); border-color: color-mix(in srgb, var(--mj-status-success) 40%, transparent);
+  color: var(--mj-status-success-text);
+}
+.mj-stepper .step.is-current {
+  background: color-mix(in srgb, var(--mj-brand-primary) 12%, transparent);
+  border-color: var(--mj-brand-primary); color: var(--mj-brand-primary);
+}
+.mj-stepper .step.is-blocked { opacity: .45; cursor: not-allowed; }
+.mj-stepper .sep { color: var(--mj-text-disabled); font-size: 9px; }
+
+/* ============================================================================
+   13. STAT TILES  (cheap counts only — U11)
+   ============================================================================ */
+
+.mj-stat-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--mj-space-4);
+}
+.mj-stat {
+  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-md); padding: var(--mj-space-4);
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.mj-stat .l {
+  font-size: 11px; font-weight: var(--mj-font-semibold); letter-spacing: .04em;
+  text-transform: uppercase; color: var(--mj-text-muted);
+  display: flex; align-items: center; gap: 6px;
+}
+.mj-stat .v {
+  font-size: 25px; font-weight: var(--mj-font-bold); font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em; line-height: 1.15;
+}
+.mj-stat .d { font-size: 11.5px; color: var(--mj-text-muted); }
+.mj-stat.is-alert .v { color: var(--mj-status-error-text); }
+.mj-stat .spark { margin-top: var(--mj-space-2); height: 30px; }
+.mj-stat .spark svg { width: 100%; height: 30px; display: block; overflow: visible; }
+
+/* ============================================================================
+   14. AGING BAR
+   ============================================================================ */
+
+.mj-aging { display: flex; flex-direction: column; gap: 6px; }
+.mj-aging-bar {
+  display: flex; height: 26px; border-radius: var(--mj-radius-sm);
+  overflow: hidden; background: var(--mj-bg-surface-sunken);
+}
+.mj-aging-bar > span {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10.5px; font-weight: var(--mj-font-semibold); color: #fff;
+  min-width: 0; overflow: hidden; white-space: nowrap;
+}
+/* Aging severity ramp — VALIDATED, do not eyeball-substitute.
+   #64748b, #f59e0b, #ef4444, #991b1b passes CVD separation (worst adjacent
+   ΔE 13.9 deutan) and the normal-vision floor (ΔE 19.8) on BOTH the light and
+   dark surfaces. The earlier set used warning-700 next to error-600, which sat
+   at ΔE 2.8 deutan — the 60-day and 90-day buckets were indistinguishable.
+   The neutral first step is deliberate: "not late" is not a severity.
+   Every segment carries a visible amount and a legend, which is what discharges
+   the low-contrast warning on the amber step. See PROVENANCE.md. */
+.mj-aging-bar .b-cur  { background: var(--mj-color-neutral-500); }
+.mj-aging-bar .b-30   { background: var(--mj-color-warning-500); }
+.mj-aging-bar .b-60   { background: var(--mj-color-error-500); }
+/* Was the literal #991b1b, because MJ's error ramp stops at -700. Now fully
+   tokenised, and the reasoning is worth keeping because the first instinct was
+   the wrong one.
+
+   Re-measured independently (CIE76 + a Brettel deuteranope simulation) rather
+   than trusting the numbers above, whose validator script is NOT in this repo
+   and cannot be re-run. Worst adjacent pair, 31-60 vs 61+:
+
+       #991b1b (literal)              normal dE 26.6   deuteranope dE 23.8
+       --mj-color-error-700           normal dE 16.3   deuteranope dE 15.5
+       the REJECTED first attempt     normal dE 31.9   deuteranope dE  3.1
+
+   So the token step is a modest perceptual step DOWN, not a failure: dE 15 is
+   far above the ~2.3 just-noticeable difference, and nothing like the 3.1 that
+   made the original attempt genuinely unreadable. And the bar is never the sole
+   carrier — every segment shows its amount and the legend lists all four — so
+   WCAG 1.4.1 holds either way.
+
+   The token wins on a functional point the literal cannot match: a hardcoded
+   hex does not follow dark mode or a white-label rebrand, while every other
+   step of this ramp does. Trading ~10 dE of headroom for a ramp that themes
+   correctly is the right trade. */
+.mj-aging-bar .b-90   { background: var(--mj-color-error-700); }
+[data-theme="dark"] .mj-aging-bar .b-cur { background: var(--mj-color-neutral-500); }
+.mj-aging-bar > span.is-empty { display: none; }
+/* row-gap is explicit: the legend wraps to two rows in a narrow column, and a
+   single `gap` shorthand left the wrapped rows tighter than the note beneath
+   them, so the four buckets read as two unrelated pairs. */
+.mj-aging-legend { display: flex; gap: var(--mj-space-2) var(--mj-space-4); font-size: 11.5px; flex-wrap: wrap; }
+.mj-aging-legend > span { display: flex; align-items: center; gap: 6px; color: var(--mj-text-secondary); }
+.mj-aging-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+/* ============================================================================
+   15. TIMELINE  (subscription terms)
+   ============================================================================ */
+
+.mj-timeline { position: relative; padding: var(--mj-space-4) 0 var(--mj-space-2); }
+.mj-timeline-track {
+  position: relative; height: 34px;
+  background: var(--mj-bg-surface-sunken); border-radius: var(--mj-radius-sm);
+}
+.mj-timeline-term {
+  position: absolute; top: 4px; bottom: 4px; border-radius: var(--mj-radius-sm);
+  display: flex; align-items: center; padding: 0 var(--mj-space-2);
+  font-size: 11px; font-weight: var(--mj-font-semibold); color: #fff;
+  overflow: hidden; white-space: nowrap;
+}
+.mj-timeline-term.is-past   { background: var(--mj-color-neutral-400); }
+.mj-timeline-term.is-active { background: var(--mj-brand-primary); }
+.mj-timeline-term.is-future { background: color-mix(in srgb, var(--mj-brand-primary) 45%, var(--mj-bg-surface)); color: var(--mj-text-primary); }
+.mj-timeline-now {
+  position: absolute; top: -6px; bottom: -6px; width: 2px;
+  background: var(--mj-status-error);
+}
+.mj-timeline-now::after {
+  content: "today"; position: absolute; top: -16px; left: -14px;
+  font-size: 9.5px; font-weight: var(--mj-font-bold); color: var(--mj-status-error-text);
+}
+.mj-timeline-scale {
+  display: flex; justify-content: space-between; font-size: 10.5px;
+  color: var(--mj-text-muted); margin-top: 6px;
+}
+
+/* ============================================================================
+   17. KEYBOARD HINT STRIP  (U20 — shortcuts are visible, not hidden)
+   ============================================================================ */
+
+.mj-keys {
+  display: flex; align-items: center; gap: var(--mj-space-4); flex-wrap: wrap;
+  font-size: 11.5px; color: var(--mj-text-muted);
+}
+.mj-keys > span { display: inline-flex; align-items: center; gap: 5px; }
+kbd {
+  font-family: var(--mj-font-family); font-size: 10.5px; font-weight: var(--mj-font-semibold);
+  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-strong);
+  border-bottom-width: 2px; border-radius: var(--mj-radius-sm);
+  padding: 1px 5px; color: var(--mj-text-secondary); line-height: 1.5;
+}
+
+/* ============================================================================
+   19. TYPE-AHEAD  (fast entry)
+   ============================================================================ */
+
+/*
+ * The wrapper needs a STACKING CONTEXT, not just a positioning one.
+ *
+ * `position: relative` alone anchors the list under the input but leaves it in the
+ * parent's stacking order, so later siblings paint on top of it: the customer
+ * results rendered in the right place and were covered by the next section.
+ * `elementFromPoint` at the centre of the first option returned the section, not
+ * the option — the list was visible to the DOM and invisible to a person.
+ */
+.mj-typeahead { position: relative; z-index: 20; }
+.mj-typeahead-list {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+  z-index: var(--mj-z-popover); max-height: 320px; overflow: auto;
+  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-md); box-shadow: var(--mj-shadow-lg);
+  display: none;
+}
+.mj-typeahead-list.is-open { display: block; }
+.mj-typeahead-item {
+  display: flex; align-items: center; gap: var(--mj-space-3);
+  padding: var(--mj-space-2) var(--mj-space-3); cursor: pointer;
+  border-bottom: 1px solid var(--mj-border-subtle);
+}
+.mj-typeahead-item:last-child { border-bottom: none; }
+.mj-typeahead-item:hover, .mj-typeahead-item.is-cursor { background: var(--mj-bg-surface-hover); }
+.mj-typeahead-item .name { font-size: 13px; font-weight: var(--mj-font-medium); }
+.mj-typeahead-item .sub  { font-size: 11.5px; color: var(--mj-text-muted); }
+.mj-typeahead-item .end  { margin-left: auto; text-align: right; }
+.mj-typeahead-group {
+  padding: 5px var(--mj-space-3); font-size: 10px; font-weight: var(--mj-font-bold);
+  letter-spacing: .07em; text-transform: uppercase; color: var(--mj-text-muted);
+  background: var(--mj-bg-surface-card); border-bottom: 1px solid var(--mj-border-subtle);
+}
+
+/* ============================================================================
+   20. LINE ROW CARD  (fast entry)
+   ============================================================================ */
+
+.mj-linecard {
+  border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-md);
+  background: var(--mj-bg-surface); padding: var(--mj-space-3);
+}
+.mj-linecard + .mj-linecard { margin-top: var(--mj-space-2); }
+.mj-linecard-top { display: flex; align-items: flex-start; gap: var(--mj-space-3); }
+.mj-linecard-top .id { flex: 1; min-width: 0; }
+.mj-linecard-top .nm { font-size: 13.5px; font-weight: var(--mj-font-semibold); }
+.mj-linecard-top .mt { font-size: 11.5px; color: var(--mj-text-muted); margin-top: 1px; }
+.mj-linecard-top .qty { flex: none; }
+.mj-linecard-top .price { flex: none; width: 118px; text-align: right; }
+.mj-linecard-top .tot { flex: none; width: 104px; text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--mj-font-semibold); font-size: 14px; }
+.mj-linecard-conseq { display: flex; gap: 6px; flex-wrap: wrap; margin-top: var(--mj-space-2); }
+
+/* ============================================================================
+   21. DOCUMENT (the bill)  — U6
+   ============================================================================ */
+
+.mj-doc {
+  background: var(--mj-bg-surface); color: var(--mj-text-primary);
+  max-width: 860px; margin: 0 auto; padding: 56px 60px;
+  border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-md);
+}
+.mj-doc-head { display: flex; align-items: flex-start; gap: var(--mj-space-6); margin-bottom: var(--mj-space-10); }
+.mj-doc-head .issuer { flex: 1; }
+.mj-doc-head .issuer .co { font-size: 17px; font-weight: var(--mj-font-bold); display: flex; align-items: center; gap: 8px; }
+.mj-doc-head .issuer .co i { color: var(--mj-brand-primary); }
+.mj-doc-head .issuer .addr { font-size: 12px; color: var(--mj-text-muted); margin-top: 6px; line-height: 1.6; }
+.mj-doc-head .docmeta { text-align: right; flex: none; }
+.mj-doc-head .docmeta .kind {
+  font-size: 11px; font-weight: var(--mj-font-bold); letter-spacing: .12em;
+  text-transform: uppercase; color: var(--mj-text-muted);
+}
+.mj-doc-head .docmeta .num { font-size: 22px; font-weight: var(--mj-font-bold); letter-spacing: -0.01em; }
+.mj-doc-meta-grid {
+  display: grid; grid-template-columns: auto auto; gap: 3px var(--mj-space-4);
+  font-size: 12px; margin-top: var(--mj-space-3); text-align: right;
+}
+.mj-doc-meta-grid dt { color: var(--mj-text-muted); }
+.mj-doc-meta-grid dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: var(--mj-font-medium); }
+.mj-doc-parties { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mj-space-8); margin-bottom: var(--mj-space-8); }
+.mj-doc-parties .lbl {
+  font-size: 10px; font-weight: var(--mj-font-bold); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--mj-text-muted); margin-bottom: 6px;
+}
+.mj-doc-parties .who { font-size: 13px; line-height: 1.7; }
+.mj-doc-parties .who .nm { font-weight: var(--mj-font-semibold); }
+.mj-doc table.mj-table thead th { background: transparent; border-bottom: 2px solid var(--mj-text-primary); }
+.mj-doc-totals { display: flex; justify-content: flex-end; margin-top: var(--mj-space-5); }
+.mj-doc-totals .box { width: min(340px, 100%); }
+.mj-doc-due {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-top: var(--mj-space-3); padding-top: var(--mj-space-3);
+  border-top: 2px solid var(--mj-text-primary);
+}
+.mj-doc-due .l { font-size: 13px; font-weight: var(--mj-font-bold); text-transform: uppercase; letter-spacing: .06em; }
+.mj-doc-due .v { font-size: 24px; font-weight: var(--mj-font-bold); font-variant-numeric: tabular-nums; }
+.mj-doc-foot {
+  margin-top: var(--mj-space-10); padding-top: var(--mj-space-5);
+  border-top: 1px solid var(--mj-border-default);
+  font-size: 11.5px; color: var(--mj-text-muted); line-height: 1.7;
+}
+/*
+ * The paid/void stamp.
+ *
+ * ANCHORED TO THE BOTTOM, not the top. Top-right is where the invoice number and
+ * the date block already live, and the head's height varies with how many meta
+ * rows a document has — so no fixed `top` clears it in every render. It sat on
+ * top of the order number until a browser screenshot caught it. The footer band
+ * is a single line of small print on the left, leaving the right reliably empty.
+ */
+.mj-doc-stamp {
+  position: absolute; bottom: 96px; right: 64px; transform: rotate(-14deg);
+  border: 3px solid var(--mj-status-success); color: var(--mj-status-success-text);
+  border-radius: var(--mj-radius-md); padding: 6px 18px;
+  font-size: 22px; font-weight: var(--mj-font-bold); letter-spacing: .1em;
+  text-transform: uppercase; opacity: .85; pointer-events: none;
+}
+
+@media print {
+  .mj-topnav, .mj-rail, .mj-page-header, .mj-keys, .no-print { display: none !important; }
+  .mj-app, .mj-page-layout, .mj-page-body { height: auto; overflow: visible; display: block; }
+  .mj-page-body { padding: 0; }
+  .mj-doc { border: none; max-width: none; padding: 0; }
+  body { background: #fff; }
+}
+
+
+/* ============================================================================
+   CHROME THIS APP MUST SHIP ITSELF
+   ============================================================================
+   These were shimmed in mockups/assets/app.css on the assumption that MJ supplies
+   them at runtime, the way it supplies .mj-card, .mj-btn and .mj-input. It does
+   not. Loading the real app proved it: chips, banners, tabs, panels, the table
+   frame and the slide-in were all completely unstyled in MJ Explorer while
+   looking perfect in the mockups, because the mockups were reading the shim.
+
+   Anything a component of ours renders has to live HERE, in the stylesheet the
+   package ships, or it exists only in the mockups. The rule to apply when adding
+   a class: if our markup writes it, it belongs in this file. Only classes MJ
+   genuinely owns (.mj-page-layout, .mj-btn, .mj-input, .mj-card) stay as
+   mockup-side shims.
+
+   Names keep the mj- prefix deliberately — a reader should not have to care
+   whether a class came from the framework or from us.
+   ============================================================================ */
+
+.mj-iconbtn {
+  border: none; background: none; cursor: pointer;
+  color: var(--mj-text-secondary); font-size: 14px;
+  padding: var(--mj-space-2); border-radius: var(--mj-radius-md);
+  line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+}
+.mj-iconbtn:hover { background: var(--mj-bg-surface-hover); color: var(--mj-text-primary); }
+.mj-avatar {
+  width: 30px; height: 30px; border-radius: var(--mj-radius-full);
+  background: var(--mj-brand-primary); color: var(--mj-brand-on-primary);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11.5px; font-weight: var(--mj-font-semibold); flex: none;
+}
+/* `.mj-input` is deliberately NOT defined here — MJ owns it.
+   MJ ships it globally in ui-components/input/input.scss (`.mj-input, .mj-textarea`),
+   and this file is now global too (the section shell loads it with
+   ViewEncapsulation.None), so redefining it meant two global rules of equal
+   specificity fighting, with the winner decided by stylesheet LOAD ORDER — MJ's
+   happens to win today, which is luck, not design. It also differed from MJ's
+   (13px/6-10px/radius-md vs 14px/8-12px/radius-sm/min-height 38px), so whichever
+   won changed how every input in the app looked.
+
+   `.mj-select` stays: MJ styles `.mj-input, .mj-textarea` but ships no select rule,
+   so this is ours to own. Values match MJ's input so the two sit level. */
+.mj-select {
+  font-family: inherit; font-size: var(--mj-text-sm); color: var(--mj-text-primary);
+  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-sm); padding: 8px 12px; width: 100%;
+  min-height: 38px;
+}
+.mj-select:focus {
+  outline: none; border-color: var(--mj-border-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mj-brand-primary) 16%, transparent);
+}
+.mj-field { display: block; margin-bottom: var(--mj-space-3); }
+.mj-field > label {
+  display: block; font-size: 11px; font-weight: var(--mj-font-semibold);
+  letter-spacing: .04em; text-transform: uppercase;
+  color: var(--mj-text-muted); margin-bottom: 5px;
+}
+.mj-field .hint { font-size: 11.5px; color: var(--mj-text-muted); margin-top: 4px; }
+.mj-stated {
+  display: flex; align-items: baseline; gap: var(--mj-space-2);
+  padding: 6px 0;
+}
+.mj-stated .value { font-size: 13px; font-weight: var(--mj-font-medium); }
+.mj-stated .from {
+  font-size: 11px; color: var(--mj-text-muted);
+  background: var(--mj-bg-surface-sunken); border-radius: var(--mj-radius-sm);
+  padding: 1px 6px;
+}
+.mj-stepper-num {
+  display: inline-flex; align-items: center; border: 1px solid var(--mj-border-strong);
+  border-radius: var(--mj-radius-md); overflow: hidden; background: var(--mj-bg-surface);
+}
+.mj-stepper-num button {
+  border: none; background: none; cursor: pointer; color: var(--mj-text-secondary);
+  width: 26px; height: 28px; font-size: 11px;
+}
+.mj-stepper-num button:hover { background: var(--mj-bg-surface-hover); color: var(--mj-text-primary); }
+.mj-stepper-num input {
+  border: none; outline: none; background: none; width: 46px; text-align: center;
+  font-family: inherit; font-size: 13px; font-variant-numeric: tabular-nums; color: inherit;
+}
+.mj-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: var(--mj-radius-full);
+  font-size: 11.5px; font-weight: var(--mj-font-semibold);
+  background: var(--mj-status-neutral-bg); color: var(--mj-status-neutral-text);
+  white-space: nowrap;
+}
+.mj-chip i { font-size: 10px; }
+.mj-filter-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: var(--mj-radius-full);
+  border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface);
+  font-family: inherit; font-size: 12.5px; font-weight: var(--mj-font-medium);
+  color: var(--mj-text-secondary); cursor: pointer; white-space: nowrap;
+}
+.mj-filter-chip:hover { background: var(--mj-bg-surface-hover); color: var(--mj-text-primary); }
+.mj-filter-chip .count {
+  font-variant-numeric: tabular-nums; font-size: 11px;
+  background: var(--mj-bg-surface-sunken); border-radius: var(--mj-radius-full); padding: 0 6px;
+}
+.mj-filter-chip.is-active {
+  background: color-mix(in srgb, var(--mj-brand-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--mj-brand-primary) 45%, transparent);
+  color: var(--mj-brand-primary); font-weight: var(--mj-font-semibold);
+}
+.mj-filter-chip.is-active .count { background: color-mix(in srgb, var(--mj-brand-primary) 18%, transparent); }
+.mj-consequence {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--mj-text-secondary);
+  background: var(--mj-bg-surface-sunken);
+  border-radius: var(--mj-radius-sm); padding: 3px 8px;
+}
+.mj-consequence i { font-size: 10px; color: var(--mj-text-muted); }
+.mj-consequence.is-sub i    { color: var(--mj-color-violet-500); }
+.mj-consequence.is-event i  { color: var(--mj-status-info); }
+.mj-consequence.is-defer i  { color: var(--mj-status-warning); }
+.mj-card-pad { padding: var(--mj-space-4); }
+.mj-card-head {
+  display: flex; align-items: center; gap: var(--mj-space-2);
+  padding: var(--mj-space-3) var(--mj-space-4);
+  border-bottom: 1px solid var(--mj-border-default);
+}
+.mj-card-head h3 { font-size: 13px; letter-spacing: .01em; }
+.mj-card-head i { color: var(--mj-text-muted); font-size: 12px; }
+.mj-card-head .right { margin-left: auto; display: flex; gap: var(--mj-space-2); align-items: center; }
+.mj-panel {
+  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-md); margin-bottom: var(--mj-space-4);
+}
+.mj-panel > summary {
+  display: flex; align-items: center; gap: var(--mj-space-2);
+  padding: var(--mj-space-3) var(--mj-space-4); cursor: pointer;
+  font-size: 13px; font-weight: var(--mj-font-semibold);
+  list-style: none;
+}
+.mj-panel > summary::-webkit-details-marker { display: none; }
+.mj-panel > summary::before {
+  content: "\f105"; font-family: "Font Awesome 6 Free"; font-weight: 900;
+  font-size: 11px; color: var(--mj-text-muted); width: 10px;
+  transition: transform .14s ease;
+}
+.mj-panel[open] > summary::before { transform: rotate(90deg); }
+.mj-panel > summary > i:first-of-type { color: var(--mj-text-muted); font-size: 12px; }
+.mj-panel > summary .right { margin-left: auto; display: flex; gap: var(--mj-space-2); align-items: center; font-weight: var(--mj-font-normal); }
+.mj-panel-body { padding: 0 var(--mj-space-4) var(--mj-space-4); }
+.mj-panel-body.no-pad { padding: 0; }
+/* MJ ALREADY OWNS `.mj-table`. It is defined in ng-explorer-app's shared patterns, which
+   Explorer loads before this kit — so `width`, `border-collapse` and the base type were being
+   restated here purely to override MJ with the same thing, except in hardcoded pixels. Those
+   declarations are gone; what stays below is only what MJ's table does NOT do.
+
+   The one base property worth keeping is the SIZE: MJ's `--mj-text-sm` is 14px, and a dense
+   worklist reads better a step down. That is a deliberate deviation, so it is written as a token
+   rather than as 13px. */
+.mj-table { font-size: var(--mj-text-xs); }
+
+/* Additive, not a restatement: MJ's header has no sticky behaviour, and a worklist that scrolls
+   inside a card needs one — losing the column names on row 20 is what makes a long queue
+   unreadable. */
+.mj-table thead th {
+  text-align: left; font-size: var(--mj-text-xs); font-weight: var(--mj-font-bold);
+  letter-spacing: .06em; text-transform: uppercase; color: var(--mj-text-muted);
+  padding: var(--mj-space-2) var(--mj-space-3);
+  border-bottom: 1px solid var(--mj-border-strong);
+  background: var(--mj-bg-surface); position: sticky; top: 0; z-index: 1;
+  white-space: nowrap;
+}
+.mj-table thead th.num, .mj-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.mj-table thead th .sortable { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.mj-table thead th .sortable i { font-size: var(--mj-text-xs); opacity: .5; }
+.mj-table tbody td {
+  padding: var(--mj-space-3); border-bottom: 1px solid var(--mj-border-subtle);
+  vertical-align: middle;
+}
+/* Scoped to `.is-clickable`, which the worklist applies only when something is
+   actually listening (`[class.is-clickable]="RowClicked.observed"`). Unscoped,
+   EVERY table highlighted on hover — including read-only ones — which is a
+   promise of interactivity the row cannot keep. A highlight is the same
+   affordance as a lift: offer it only where a click does something. */
+.mj-table tbody tr.is-clickable:hover { background: var(--mj-bg-surface-hover); }
+.mj-table tbody tr.is-selected { background: color-mix(in srgb, var(--mj-brand-primary) 8%, transparent); }
+.mj-table tbody tr.is-clickable { cursor: pointer; }
+.mj-table tbody tr.is-total { background: var(--mj-bg-surface-card); font-weight: var(--mj-font-semibold); }
+.mj-table tbody tr.is-total td { border-bottom: none; border-top: 2px solid var(--mj-border-strong); }
+.mj-table .primary { font-weight: var(--mj-font-semibold); }
+.mj-table .secondary { font-size: var(--mj-text-xs); color: var(--mj-text-muted); }
+.mj-table-wrap {
+  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
+  border-radius: var(--mj-radius-md); overflow: auto;
+}
+/* The hand-rolled .mj-tabs / .mj-tab block lived here and is gone. The order
+   editor's five tabs now use MJ's own <mj-tab-nav>, which is the shipped,
+   tokenized component for exactly this job — a pane switcher over one record.
+
+   Not accounting's mj-workspace-card, despite the surface similarity: that models
+   OPEN DOCUMENTS, so its strip closes, reorders and adds tabs and carries a New
+   button — affordances that would be lies over five fixed panes of one order. It
+   also lives in accounting's transfer-pending/ folder, code explicitly parked for
+   another home, so depending on it would have bought a migration later.
+
+   The old red dot became an error-variant badge in the same slot the count uses.
+   A bare dot was a signifier with no meaning attached; only its aria-label said
+   what it meant, so a sighted user saw a dot and guessed. */
+
+.mj-slide-in {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: var(--mj-z-modal);
+  width: min(560px, 100vw); display: flex; flex-direction: column;
+  background: var(--mj-bg-surface); border-left: 1px solid var(--mj-border-default);
+  box-shadow: var(--mj-shadow-xl);
+  transform: translateX(100%); transition: transform .18s ease;
+}
+.mj-slide-in.is-open { transform: translateX(0); }
+.mj-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--mj-space-2); padding: var(--mj-space-12) var(--mj-space-6);
+  color: var(--mj-text-muted); text-align: center;
+}
+.mj-empty i { font-size: 26px; color: var(--mj-text-disabled); }
+.mj-empty .t { font-size: 14px; font-weight: var(--mj-font-semibold); color: var(--mj-text-secondary); }
+
+/* Status variants for the chrome above. */
+.mj-chip--success { background: var(--mj-status-success-bg); color: var(--mj-status-success-text); }
+.mj-chip--warning { background: var(--mj-status-warning-bg); color: var(--mj-status-warning-text); }
+.mj-chip--error   { background: var(--mj-status-error-bg);   color: var(--mj-status-error-text); }
+.mj-chip--info    { background: var(--mj-status-info-bg);    color: var(--mj-status-info-text); }
+.mj-chip--violet  { background: var(--mj-status-violet-bg);  color: var(--mj-status-violet-text); }
+.mj-chip--brand   { background: color-mix(in srgb, var(--mj-brand-primary) 13%, transparent); color: var(--mj-brand-primary); }
+.mj-chip--outline { background: transparent; border: 1px solid var(--mj-border-default); color: var(--mj-text-secondary); font-weight: var(--mj-font-medium); }
+.mj-table--compact tbody td { padding: 7px var(--mj-space-3); }
+.mj-table--lines tbody td { padding: var(--mj-space-2) var(--mj-space-3); }
+.mj-slide-in-head {
+  display: flex; align-items: center; gap: var(--mj-space-3); flex: none;
+  padding: var(--mj-space-4) var(--mj-space-5);
+  border-bottom: 1px solid var(--mj-border-default);
+}
+.mj-slide-in-head h2 { font-size: 15px; }
+.mj-slide-in-head .right { margin-left: auto; display: flex; gap: var(--mj-space-1); align-items: center; }
+.mj-slide-in-body { flex: 1; min-height: 0; overflow: auto; padding: var(--mj-space-5); }
+.mj-slide-in-foot {
+  flex: none; display: flex; gap: var(--mj-space-2); align-items: center;
+  padding: var(--mj-space-3) var(--mj-space-5);
+  border-top: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-card);
+}
+
+/*
+ * The table filter box.
+ *
+ * NAMED mjo-, NOT mj-. MJ defines its own `.mj-search` for Explorer's global
+ * search bar in the top chrome — a different control with different metrics — and
+ * ours inherited it, which is why the filter box rendered as a bare underline
+ * instead of a bordered field. Sharing the framework's prefix is right for
+ * classes MJ does not define; it is actively wrong for one it does.
+ */
+.mjo-search {
+  display: flex; align-items: center; gap: var(--mj-space-2);
+  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-strong);
+  border-radius: var(--mj-radius-md); padding: 6px 10px; min-width: 260px;
+}
+.mjo-search i { color: var(--mj-text-muted); font-size: 12px; }
+.mjo-search input {
+  border: none; outline: none; background: none; font-family: inherit;
+  font-size: 13px; color: inherit; width: 100%;
+}
+
+/* ── A standing explanation, not an alert ───────────────────────────────────
+   `mj-alert` is for something that HAPPENED or needs attention. Screens that permanently
+   explain how they work were using it, which put a full-width coloured card above the work
+   on every visit — read once, then scrolled past forever. This is the quiet form: same
+   information, one line's worth of weight, no dismissal to manage. */
+.mjo-note {
+    display: flex;
+    align-items: baseline;
+    gap: var(--mj-space-2);
+    margin: 0 0 var(--mj-space-3);
+    color: var(--mj-text-secondary);
+    font-size: var(--mj-text-xs);
+    line-height: var(--mj-leading-relaxed, 1.6);
+}
+
+.mjo-note > i {
+    color: var(--mj-text-tertiary);
+    flex: 0 0 auto;
+}

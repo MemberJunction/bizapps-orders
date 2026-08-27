@@ -1,0 +1,131 @@
+name: PostgreSQL migration parity
+
+# Validates that the T-SQL migrations in `migrations/` have working
+# PostgreSQL counterparts in `migrations-pg/` that apply cleanly to a fresh
+# PG database. Source of truth is SQL Server; PG is produced by the
+# MemberJunction `sql-converter` toolchain. See `migrations-pg/README.md`.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [next, main]
+    paths:
+      - 'migrations/**'
+      - 'migrations-pg/**'
+      - '.github/workflows/pg-migrations.yml'
+  push:
+    branches: [next]
+    paths:
+      - 'migrations/**'
+      - 'migrations-pg/**'
+
+concurrency:
+  group: pg-migrations-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pg-parity:
+    name: PG migration parity check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: bizapps_orders_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Must precede setup-node: `cache: 'pnpm'` needs pnpm already on PATH.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'pnpm'
+          cache-dependency-path: 'pnpm-lock.yaml'
+
+      # ─── Validate filenames in both directories ─────────────────────
+      - name: Validate T-SQL migration filenames
+        run: ./.github/scripts/validate-migration-filenames.sh migrations
+
+      - name: Validate PG migration filenames
+        run: ./.github/scripts/validate-migration-filenames.sh migrations-pg
+
+      # ─── Skip the heavy bits when there are no migrations yet ──────
+      - name: Detect migrations
+        id: detect
+        run: |
+          shopt -s nullglob
+          TSQL=( migrations/*.sql )
+          PG=( migrations-pg/*.sql )
+          echo "tsql_count=${#TSQL[@]}" >> "$GITHUB_OUTPUT"
+          echo "pg_count=${#PG[@]}"     >> "$GITHUB_OUTPUT"
+
+      - name: Skip — no migrations present
+        if: steps.detect.outputs.tsql_count == '0' && steps.detect.outputs.pg_count == '0'
+        run: |
+          echo "::notice::No migrations to validate. Skipping PG apply step."
+          exit 0
+
+      # ─── Ensure every T-SQL migration has a PG counterpart ─────────
+      - name: Verify PG counterparts exist for every T-SQL migration
+        if: steps.detect.outputs.tsql_count != '0'
+        run: |
+          missing=0
+          for f in migrations/*.sql; do
+            base=$(basename "$f" .sql)
+            if [ ! -f "migrations-pg/${base}.pg.sql" ] && [ ! -f "migrations-pg/${base}.pg-only.sql" ]; then
+              echo "::error file=$f::No PG counterpart found in migrations-pg/ (expected ${base}.pg.sql or ${base}.pg-only.sql)"
+              missing=$((missing + 1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            echo ""
+            echo "Generate the missing files with:"
+            echo "  pnpm exec mj sql-convert <file> --from tsql --to postgres \\"
+            echo "    --output migrations-pg/<file>.pg.sql --schema __mj_BizAppsOrders"
+            exit 1
+          fi
+
+      # ─── Apply PG migrations to fresh DB to verify they actually run ──
+      - name: Install dependencies
+        if: steps.detect.outputs.pg_count != '0'
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Apply PG migrations via Skyway
+        if: steps.detect.outputs.pg_count != '0'
+        env:
+          DB_PLATFORM: postgresql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_DATABASE: bizapps_orders_ci
+          DB_USERNAME: postgres
+          DB_PASSWORD: testpass
+          CODEGEN_DB_USERNAME: postgres
+          CODEGEN_DB_PASSWORD: testpass
+          DB_ENCRYPT: 'false'
+          DB_TRUST_SERVER_CERTIFICATE: 'true'
+        run: |
+          # `mj` resolves from @memberjunction/cli, a root devDependency.
+          pnpm exec mj migrate --verbose
+
+      # ─── Smoke checks ──────────────────────────────────────────────
+      - name: Verify schema exists
+        if: steps.detect.outputs.pg_count != '0'
+        env:
+          PGPASSWORD: testpass
+        run: |
+          psql -h localhost -U postgres -d bizapps_orders_ci -c \
+            "SELECT count(*) AS tables FROM information_schema.tables WHERE table_schema = '__mj_BizAppsOrders' AND table_type = 'BASE TABLE';"

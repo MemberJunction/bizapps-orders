@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-21 - Entitlements",
+    "Description": "What a purchase actually confers, and for how long (EN1-EN14). A ProductEntitlement is the template; an EntitlementGrant is the instance written inside the booking transaction. Downstream apps POLL grants to provision access, so a grant is the machine-readable answer to 'what is this customer allowed to do' - which makes a wrong one worse than a missing one. A grant that exists says access was decided; a grant with the wrong window says it was decided wrongly, and nothing downstream can tell the difference. Four validity modes produce four windows from the same purchase, and three of them can silently degrade into the fourth: ResolveValidityWindow falls back to Perpetual when a mode's own inputs are missing rather than failing the customer's order. That fallback is right, and it is exactly the shape that hides a misconfiguration - a ticket that should expire after the event granting access forever. So several checks assert ValidityModeApplied rather than only the dates, because the record of WHICH rule ran is what distinguishes a perpetual grant from a broken event grant.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Confirming writes the grants a product confers; two entitlements on ONE product get different windows (perpetual Feature alongside a 90-day seat count), which is the case that decided validity lives on the template; PerUnit multiplies template quantity by line quantity while an uncountable Feature stays null rather than becoming zero; a product-level Flat override beats the type's PerUnit default, exercising the walk end to end; an event ticket's window follows the EVENT with independent lead and lag and sits in the future relative to the purchase; a subscription grant follows its term and points at it; a silent template falls to the walk and records the mode it ACTUALLY applied when the requested one cannot be honoured; the beneficiary defaults to the payer and a line's ship-to overrides it; OnPaidInFull starts Suspended and is Active when paid in full at confirm, proving the balance is re-read after the rollup triggers ran; a full return revokes in place with a timestamp and a reason; a partial return reduces the seat count proportionally while the uncountable grant survives; a product with no templates grants nothing; re-saving a confirmed order does not grant twice; and a rolled-back confirm leaves no orphan grant."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "entitlements"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "8027483F-BC78-4CB8-82CF-1EA2E5E391E7"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.562Z",
+    "checksum": "e2f0aab061ef67c89f0dcf62e69623c4ddf755ff698403a2b6ae0cc530324330"
+  }
+}

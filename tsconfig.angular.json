@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "experimentalDecorators": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "types": [],
+    "lib": ["es2022", "dom"],
+    "baseUrl": ".",
+    "paths": {
+      "@mj-biz-apps/accounting-ng": ["../bizapps-accounting/packages/Angular/dist/public-api"],
+      "@memberjunction/ng-hierarchy-tree": ["../MJ/packages/Angular/Generic/hierarchy-tree/dist/public-api.d.ts"],
+      "@memberjunction/ng-hierarchy-tree/*": ["../MJ/packages/Angular/Generic/hierarchy-tree/dist/*"]
+    }
+  },
+  "angularCompilerOptions": {
+    "skipTemplateCodegen": true,
+    "strictMetadataEmit": true,
+    "enableResourceInlining": true,
+    "strictTemplates": true
+  }
+}

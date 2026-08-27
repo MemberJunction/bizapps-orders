@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BizApps Orders — plan vs what is in place</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --surface: #fffdf8;
+      --ink: #1c1915;
+      --muted: #5c564c;
+      --line: #e4ddd0;
+      --line-strong: #cfc6b4;
+      --shipped: #1f6b3a;
+      --shipped-bg: #e5f4ea;
+      --partial: #8a5a00;
+      --partial-bg: #fff3d6;
+      --gap: #9b1c1c;
+      --gap-bg: #fde8e8;
+      --later: #3d4a66;
+      --later-bg: #e8ecf4;
+      --stale: #6b4f1d;
+      --stale-bg: #f4ead6;
+      --accent: #264faf;
+      --shadow: 0 1px 0 rgba(28,25,21,.06);
+      --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      --sans: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+      --ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--ui);
+      font-size: 15.5px;
+      line-height: 1.55;
+    }
+    header.hero {
+      background: #17140f;
+      color: #f4efe4;
+      padding: 48px 28px 36px;
+    }
+    header.hero .wrap { max-width: 1080px; margin: 0 auto; }
+    header.hero p.kicker {
+      font-family: var(--mono);
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #c9b896;
+      margin: 0 0 10px;
+    }
+    header.hero h1 {
+      font-family: var(--sans);
+      font-weight: 600;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.15;
+      margin: 0 0 14px;
+    }
+    header.hero .lede {
+      max-width: 72ch;
+      color: #d8d0c2;
+      font-size: 16.5px;
+    }
+    header.hero .meta {
+      margin-top: 22px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      font-family: var(--mono);
+      font-size: 12px;
+      color: #b7ae9d;
+    }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
+    nav.toc {
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    nav.toc .wrap {
+      display: flex;
+      gap: 16px;
+      overflow-x: auto;
+      padding: 10px 28px;
+    }
+    nav.toc a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    nav.toc a:hover { color: var(--accent); }
+    main { padding: 36px 0 80px; }
+    section { margin: 0 0 48px; }
+    h2 {
+      font-family: var(--sans);
+      font-size: 28px;
+      margin: 0 0 8px;
+      letter-spacing: -.02em;
+    }
+    h3 {
+      font-family: var(--sans);
+      font-size: 20px;
+      margin: 28px 0 8px;
+    }
+    h4 { font-size: 15px; margin: 20px 0 6px; }
+    p { max-width: 78ch; }
+    .muted { color: var(--muted); }
+    .chip {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .02em;
+      padding: 2px 8px;
+      border-radius: 999px;
+      vertical-align: middle;
+    }
+    .chip.shipped { background: var(--shipped-bg); color: var(--shipped); }
+    .chip.partial { background: var(--partial-bg); color: var(--partial); }
+    .chip.gap { background: var(--gap-bg); color: var(--gap); }
+    .chip.later { background: var(--later-bg); color: var(--later); }
+    .chip.stale { background: var(--stale-bg); color: var(--stale); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      font-size: 14px;
+      margin: 12px 0 8px;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th {
+      background: #f1ece2;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    tr:last-child td { border-bottom: 0; }
+    code, .mono { font-family: var(--mono); font-size: 12.5px; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      padding: 16px 18px;
+      margin: 12px 0;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+    .stat { background: var(--surface); border: 1px solid var(--line); padding: 14px 16px; }
+    .stat b { display: block; font-size: 26px; font-family: var(--sans); }
+    .stat span { color: var(--muted); font-size: 13px; }
+    ul.tight li { margin: 4px 0; }
+    blockquote {
+      margin: 12px 0;
+      padding: 8px 14px;
+      border-left: 3px solid var(--line-strong);
+      color: var(--muted);
+    }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 18px; }
+    footer {
+      border-top: 1px solid var(--line);
+      padding: 24px 28px 48px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    a { color: var(--accent); }
+    .callout {
+      border: 1px solid var(--line-strong);
+      background: #fff8ea;
+      padding: 14px 16px;
+      margin: 16px 0;
+    }
+    .callout.danger { background: #fdeeee; border-color: #e8b4b4; }
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 800px) { .two-col { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap">
+      <p class="kicker">BizApps Orders · gap report · not a build</p>
+      <h1>The plan is still the authority for decisions. It is no longer the authority for what has shipped.</h1>
+      <p class="lede">
+        Compared <code>plans/archive/bizapps-orders-master.md</code> (D1–D84),
+        <code>plans/archive/orders-ux.md</code> (U1–U20),
+        <code>plans/archive/next-after-custom-forms.md</code> (2026-08-14),
+        and the companions, against the tree on <code>an-dev-3</code> / <code>next</code>
+        as of 2026-08-15. Nothing below is a proposal to start work — it is a map of
+        what is real, what is leftover, and what still needs a ruling.
+      </p>
+      <div class="meta">
+        <span>Sources of truth used: generated ORM, remote-op metadata, Angular nav, integration check bundles</span>
+        <span>Local MJ host wiring left alone</span>
+      </div>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <div class="wrap">
+      <a href="#summary">Summary</a>
+      <a href="#read">How to read</a>
+      <a href="#engine">Engine</a>
+      <a href="#decisions">Decisions</a>
+      <a href="#seq">§18 sequencing</a>
+      <a href="#ux">UX thesis</a>
+      <a href="#next">After-forms list</a>
+      <a href="#lxp">LXP</a>
+      <a href="#named">Named gaps</a>
+      <a href="#docs">Stale docs</a>
+      <a href="#nextwork">What is actually next</a>
+    </div>
+  </nav>
+
+  <main class="wrap">
+    <section id="summary">
+      <h2>1. Executive summary</h2>
+      <p>
+        The commercial engine is largely built. Booking, pricing, promotions, charges/tax,
+        payments (including intercompany legs and account credit), subscriptions
+        (create/extend/cancel/renew), returns, entitlements, gift-card issuance,
+        fulfillment ops, and document render/send all have server code and integration
+        checks. Master-plan §18 still says “NOW = per-line booking.” That sentence is
+        historical. The later note in <code>next-after-custom-forms.md</code> is the
+        honest one: the engine is ahead of the UI.
+      </p>
+      <div class="grid">
+        <div class="stat"><b>~engine</b><span>Shipped. Remaining work is named, often deliberately unfixed.</span></div>
+        <div class="stat"><b>~UX</b><span>One Order Header form is live. The thesis (live preview + confirm pre-flight + org-first parties) is not.</span></div>
+        <div class="stat"><b>LXP</b><span>Not launch-ready. Stub Stripe, no Origin, no grant-poll job, no dry-run gate.</span></div>
+        <div class="stat"><b>Docs</b><span>README, §18, and orders-ux.md still describe a world that was retired.</span></div>
+      </div>
+      <div class="legend">
+        <span class="chip shipped">shipped</span>
+        <span class="chip partial">partial / thin UI</span>
+        <span class="chip gap">gap vs plan</span>
+        <span class="chip later">deferred / out of scope / needs ruling</span>
+        <span class="chip stale">plan text is stale</span>
+      </div>
+      <div class="callout">
+        <strong>The single biggest mismatch:</strong> <code>orders-ux.md</code> still
+        opens with “Status: DESIGN. Nothing is built in Angular until the mockups are
+        signed off.” The Explorer app has four job-based sections, dashboards, worklists,
+        a custom Order Header form with Confirm as a verb, catalog/payment/sub heroes,
+        and header+overview panels on several entities. The mockups are no longer the
+        build gate. They are now a backlog of UX quality the live form has not absorbed.
+      </div>
+    </section>
+
+    <section id="read">
+      <h2>2. How to read the plan today</h2>
+      <p>Three documents, three jobs. Mixing them is how we rebuild things that already shipped.</p>
+      <table>
+        <thead>
+          <tr><th>Document</th><th>Trust for</th><th>Do not trust for</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>bizapps-orders-master.md</code></td>
+            <td>Rulings (D-numbers). What the product <em>is</em>.</td>
+            <td>§18 sequencing, D14/D20 “pending”, README’s <code>Orders.ConfirmOrder</code>, duplicate D66–D68 rows.</td>
+          </tr>
+          <tr>
+            <td><code>orders-ux.md</code></td>
+            <td>The UX thesis (U2, U4, U13, U14, U16, U18). Screen jobs.</td>
+            <td>U3 two-lane Fast Entry (later killed). “Nothing is built.” The ten remote-ops list that included retired Confirm/Preview ops.</td>
+          </tr>
+          <tr>
+            <td><code>next-after-custom-forms.md</code> (2026-08-14)</td>
+            <td>What was true of the UI the day the custom form landed.</td>
+            <td>Items 1–3 and leftover-related / header collapse — several of those have since shipped.</td>
+          </tr>
+          <tr>
+            <td><code>docs/orders-api-and-ui-architecture.md</code></td>
+            <td>How confirm actually works now: <code>order.Save()</code> + related records. Which remote ops remain and why.</td>
+            <td>—</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="muted">
+        Confirm is no longer a remote operation. Migration
+        <code>V202608091500__v0.1.x__Retire_draft_operations.sql</code> deleted
+        <code>Orders.SaveOrder</code>, <code>ConfirmOrder</code>, <code>PreviewOrder</code>,
+        and <code>PreviewConfirm</code>. Header + lines persist through
+        <code>DeclareRelatedRecords</code> / <code>SaveEntityGraph</code>. Booking lives
+        in <code>OrderEntityServer.Save()</code> on first transition to Confirmed.
+      </p>
+    </section>
+
+    <section id="engine">
+      <h2>3. What is actually in place</h2>
+      <h3>3.1 Server / engine</h3>
+      <table>
+        <thead><tr><th>Area</th><th>Status</th><th>Evidence</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Per-line booking (D10–D12)</td>
+            <td><span class="chip shipped">shipped</span></td>
+            <td><code>OrderLine.JournalEntryID</code>, factory, Save-override, <code>order-booking.checks.ts</code>. Zero-value lines correctly book nothing (§21a).</td>
+          </tr>
+          <tr>
+            <td>Company model S1 (D6/D7)</td>
+            <td><span class="chip shipped">shipped</span> <span class="chip stale">§4 still says pending</span></td>
+            <td>Generated entities have <code>Product.CompanyID</code> NOT NULL, <code>OrderLine.CompanyID</code> as a stamp, <code>ProductCategory.CompanyID</code>. Plan §4 still tags these <code>[S1 pending]</code>.</td>
+          </tr>
+          <tr>
+            <td>Forward-dated rev-rec (D14)</td>
+            <td><span class="chip shipped">shipped</span> <span class="chip stale">D14 says pending</span></td>
+            <td><code>revenue-recognition.checks.ts</code>. Schedule tables retired (D84).</td>
+          </tr>
+          <tr>
+            <td>Pricing walk (D69)</td>
+            <td><span class="chip shipped">shipped</span></td>
+            <td><code>Orders.PreviewPrice</code>, <code>Orders.PriceOrder</code>, <code>pricing.checks.ts</code>.</td>
+          </tr>
+          <tr>
+            <td>Promotions / charges / tax mechanism (D70–D73)</td>
+            <td><span class="chip shipped">shipped</span></td>
+            <td><code>promotions.checks.ts</code>, <code>charges.checks.ts</code>, <code>tax.checks.ts</code>. Remaining tax work is <em>data</em> (rates, vendor, rooftop), not the walk.</td>
+          </tr>
+          <tr>
+            <td>Payments, refunds, credits, IC legs (D57–D59, D66, D68)</td>
+            <td><span class="chip shipped">shipped</span></td>
+            <td>Capture / refund / apply-credit ops + <code>intercompany.checks.ts</code>, <code>account-credit.checks.ts</code>. Settlement of Due To/From is <em>not</em> built.</td>
+          </tr>
+          <tr>
+            <td>Subscriptions lifecycle (D52, D55)</td>
+            <td><span class="chip shipped">shipped</span> <span class="chip stale">D20 says deferred</span></td>
+            <td><code>Orders.CancelSubscription</code>, <code>Orders.SpawnRenewals</code>, term/proration/UTC checks.</td>
+          </tr>
+          <tr>
+            <td>Fulfillment ops (D15)</td>
+            <td><span class="chip shipped">shipped</span></td>
+            <td><code>GetFulfillmentQueue</code>, <code>FulfillOrderLines</code>. Order <em>splitting</em> is not.</td>
+          </tr>
+          <tr>
+            <td>Stripe + ACH + webhooks (D19, D77–D80)</td>
+            <td><span class="chip partial">stub-first</span></td>
+            <td>Real REST path exists; <code>IsLiveMode=0</code> uses the committed stub. No sandbox dry-run. Recon/disputes deferred on purpose.</td>
+          </tr>
+          <tr>
+            <td>Documents (D79)</td>
+            <td><span class="chip shipped">shipped</span></td>
+            <td>Actions <code>Generate Invoice</code> and <code>Send Document</code>. Send is not idempotent (named).</td>
+          </tr>
+          <tr>
+            <td>Sales rules (D26)</td>
+            <td><span class="chip partial">DiscountLimit only</span></td>
+            <td>Over-cap discount refuses and names the approver role. Other rule types and Task routing are schema-only. Scope is decorative.</td>
+          </tr>
+          <tr>
+            <td>Entitlements (D27)</td>
+            <td><span class="chip partial">grants yes, poll no</span></td>
+            <td>Grants created at booking (<code>entitlements.checks.ts</code>). No Scheduled Job / RSP poll for LXP. Provisioning engine later.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>3.2 Remote operations that remain (the honest list)</h3>
+      <p>From <code>metadata/remote-operations/types/</code> and <code>docs/orders-api-and-ui-architecture.md</code>:</p>
+      <table>
+        <thead><tr><th>Operation</th><th>Why it is not a Save</th></tr></thead>
+        <tbody>
+          <tr><td><code>Orders.PriceOrder</code></td><td>Full money walk, no write</td></tr>
+          <tr><td><code>Orders.PreviewPrice</code></td><td>One product, advisory</td></tr>
+          <tr><td><code>Orders.AdvanceOrderState</code></td><td>Climb above Confirmed (was CreateOrderInState)</td></tr>
+          <tr><td><code>Orders.CapturePayment</code></td><td>Talks to a provider, then books cash</td></tr>
+          <tr><td><code>Orders.RefundPayment</code></td><td>New reversal payment + mirrored JE</td></tr>
+          <tr><td><code>Orders.ApplyAccountCredit</code></td><td>Zero-cash reattribution</td></tr>
+          <tr><td><code>Orders.FulfillOrderLines</code> / <code>GetFulfillmentQueue</code></td><td>Set of lines + header advance</td></tr>
+          <tr><td><code>Orders.GetOverdueWorklist</code></td><td>Computed, clock-dependent</td></tr>
+          <tr><td><code>Orders.CancelSubscription</code></td><td>Policy in, reversal out</td></tr>
+          <tr><td><code>Orders.SpawnRenewals</code></td><td>Long-running set write</td></tr>
+        </tbody>
+      </table>
+      <p class="muted"><code>Orders.OpenPaymentIntent</code> exists as an Action / server custom, not in the RO types folder. Intent-open is still a required first step for gateway capture (D80).</p>
+
+      <h3>3.3 UI that is live</h3>
+      <ul class="tight">
+        <li>Four Explorer sections, job-based (U1): Orders, Payments, Receivables, Catalog. Fast Entry and Full Editor are <strong>off the rail</strong>.</li>
+        <li>Pages exist for dashboard, list, fulfillment, returns, payment entry, refunds, credits, overdue, customer A/R, subscriptions, products, pricing, promotions, charges &amp; tax.</li>
+        <li>Custom Order Header form is ClassFactory-registered. Confirm is a toolbar verb (<code>RunConfirm</code> / <code>ConfirmEligibility</code>), not a Status dropdown. Header collapse + leftover-related block shipped on this branch.</li>
+        <li>Line editor has ProductType extension weave (<code>line-extension-fields.ts</code>) so EventOrderLine required fields can appear before confirm — closer than the 08-14 note.</li>
+        <li>Header/overview <em>panels</em> register for Product Type, Product, Price List, Promotion, Payment, Subscription. <strong>No Order Header overview</strong> (test asserts that).</li>
+        <li>Custom Product / Payment / Subscription / Price List / Promotion forms exist as Pattern B compose, but <strong>only Order Header has <code>@RegisterClass</code></strong>. The others comment that they “win ClassFactory by extending generated” and do not actually decorate. Live path for those entities is generated form + slot panels.</li>
+      </ul>
+    </section>
+
+    <section id="decisions">
+      <h2>4. Decision log vs reality</h2>
+      <p>Grouped. Duplicate D66–D68 rows in the master are the same later rulings written twice.</p>
+      <table>
+        <thead><tr><th>Cluster</th><th>Ids</th><th>Plan said</th><th>Now</th></tr></thead>
+        <tbody>
+          <tr><td>Product identity</td><td>D1–D5, D29–D31, D34–D41, D47</td><td>Standing</td><td><span class="chip shipped">in place</span></td></tr>
+          <tr><td>Company model</td><td>D6, D7</td><td>S1 pending</td><td><span class="chip shipped">schema is in the ORM</span> <span class="chip stale">plan text stale</span></td></tr>
+          <tr><td>Lifecycle / booking</td><td>D8–D12, D50, D53</td><td>D12 built; rest standing</td><td><span class="chip shipped">in place</span></td></tr>
+          <tr><td>Rev-rec</td><td>D14, D35, D43, D84</td><td>D14 engine pending</td><td><span class="chip shipped">forward-dated JEs</span> <span class="chip stale">D14 stale</span></td></tr>
+          <tr><td>Fulfillment</td><td>D15</td><td>queue deferred</td><td><span class="chip shipped">ops shipped</span> <span class="chip later">splitting later</span></td></tr>
+          <tr><td>Reversals / refunds / credits</td><td>D16, D17, D59, D74, D75</td><td>write-off deferred; CreateOrderInState future</td><td><span class="chip shipped">refund + returns</span> <span class="chip later">write-off still deferred</span></td></tr>
+          <tr><td>Payments / providers</td><td>D18, D19, D36–D39, D42, D57, D77–D82</td><td>stub-first; live Stripe for LXP</td><td><span class="chip partial">stub default, live path unproven</span></td></tr>
+          <tr><td>Subscriptions</td><td>D20, D45, D46, D49, D51–D56, D61, D62, D66</td><td>D20 lifecycle deferred</td><td><span class="chip shipped">create/extend/cancel/renew</span> <span class="chip later">§21c no seat quantity</span></td></tr>
+          <tr><td>Pricing / promos / tax</td><td>D21–D23, D69–D73</td><td>tax deferred-by-complexity</td><td><span class="chip shipped">mechanism</span> <span class="chip later">tax data + finance call</span></td></tr>
+          <tr><td>Intercompany</td><td>D13, D66</td><td>legs at allocation</td><td><span class="chip shipped">legs</span> <span class="chip later">settlement unbuilt</span></td></tr>
+          <tr><td>Sales rules</td><td>D26</td><td>eval + routing not yet</td><td><span class="chip partial">DiscountLimit only; Tasks blocked</span></td></tr>
+          <tr><td>Entitlements</td><td>D27, D76</td><td>poll later</td><td><span class="chip partial">grants; no consumer poll</span></td></tr>
+          <tr><td>Visibility / roles</td><td>D28, §14</td><td>retired</td><td><span class="chip shipped">use MJ RLS; do not rebuild</span></td></tr>
+          <tr><td>Currency / FX</td><td>D24</td><td>deferred</td><td><span class="chip later">still out</span></td></tr>
+          <tr><td>Accounting peer</td><td>D81</td><td>optional:true is known-wrong</td><td><span class="chip later">still waiting on publish</span></td></tr>
+          <tr><td>UX forms-first</td><td>D33</td><td>forms + widgets</td><td><span class="chip partial">Order form yes; thesis incomplete</span></td></tr>
+          <tr><td>ProductBehavior seam</td><td>D4</td><td>schema ready, seam deferred</td><td><span class="chip later">still deferred</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="seq">
+      <h2>5. Master §18 sequencing — treat as archive</h2>
+      <table>
+        <thead><tr><th>#</th><th>Plan item</th><th>Reality</th></tr></thead>
+        <tbody>
+          <tr><td>1 NOW</td><td>Per-line booking</td><td><span class="chip shipped">done</span></td></tr>
+          <tr><td>2</td><td>Company-model S1</td><td><span class="chip shipped">in ORM</span> — plan still says pending</td></tr>
+          <tr><td>3</td><td>Rev-rec rework to D14</td><td><span class="chip shipped">done</span></td></tr>
+          <tr><td>4</td><td>LH4I slices</td><td><span class="chip gap">not closed</span> — see §8</td></tr>
+          <tr><td>5</td><td>Full GUI validation + order-editor pilot</td><td><span class="chip partial">one form, not the thesis</span></td></tr>
+          <tr><td>6</td><td>Cross-app FK hardening</td><td><span class="chip later">blocked on CodeGen include-mode</span></td></tr>
+          <tr><td>7 Later</td><td>IC design, sales-rules, sub lifecycle, refund UI, fulfillment, gift cards…</td><td>Most of that list later <em>shipped</em>. What remains from it: sales-rule engine, IC <em>settlement</em>, order splitting, gift-card <em>redemption/breakage</em>, provider expansion, CDP migration.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="ux">
+      <h2>6. UX thesis vs the live form</h2>
+      <p>
+        The thesis in <code>orders-ux.md</code> is three moves: live decomposition,
+        confirm as a pre-flight, and a real line editor. The live Order Header form
+        is a capable Pattern-B compose (hero, money, parties, lines, charges, accounting,
+        confirm verb, collapsible header). It is not yet that thesis.
+      </p>
+      <table>
+        <thead><tr><th>U#</th><th>Decision</th><th>Status</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>U1</td><td>Nav by job, not entity</td><td><span class="chip shipped">shipped</span></td><td>Four sections match the IA. Generated forms remain the admin fallback.</td></tr>
+          <tr><td>U2</td><td>Every computed number carries a why</td><td><span class="chip gap">gap</span></td><td>Fast Entry had a decomposition ladder. The live form does not surface <code>OrderLinePriceComponent</code> / charge basis as inline why.</td></tr>
+          <tr><td>U3</td><td>Two lanes: Fast Entry + Full editor</td><td><span class="chip later">superseded</span></td><td>08-14 ruling: one form. Angular Fast Entry / editor pages deleted 2026-08-25; mockups remain historical.</td></tr>
+          <tr><td>U4</td><td>Confirm is a pre-flight overlay</td><td><span class="chip gap">gap</span></td><td>Confirm is a verb that books. No overlay of JEs / subs / grants / blockers before the click. <code>PreviewConfirm</code> was retired; nothing replaced the review step.</td></tr>
+          <tr><td>U5</td><td>Drafts persist</td><td><span class="chip shipped">shipped</span></td><td>Draft is a real row. Section caches sub-pages.</td></tr>
+          <tr><td>U6</td><td>Order document is first-class</td><td><span class="chip partial">engine yes, surface thin</span></td><td>Generate Invoice / Send Document exist. Document page exists; not the print-quality bill the mock promised as a daily surface.</td></tr>
+          <tr><td>U7</td><td>Money typography component</td><td><span class="chip partial">partial</span></td><td><code>FormatMoney</code> / skip-cents on the hero. Not a shared money component everywhere.</td></tr>
+          <tr><td>U8</td><td>MJ chrome trio</td><td><span class="chip partial">sections yes</span></td><td>Section shell uses MJ chrome. Custom Order form is its own hero, not <code>mj-page-header</code>.</td></tr>
+          <tr><td>U9</td><td>Panels via BaseFormPanel</td><td><span class="chip partial">started</span></td><td>Catalog/commercial/document overview panels exist. Order has no overview panel. Payment/Sub still Pattern B heroes.</td></tr>
+          <tr><td>U10</td><td>Overlays only through form host</td><td><span class="chip partial">mostly</span></td><td>No bespoke dialog stack spotted as the main path. Confirm is in-page, not a host overlay.</td></tr>
+          <tr><td>U12</td><td>JEs shown, never edited, never duplicated</td><td><span class="chip shipped">accounting tab</span></td><td>Rolled-up journal approved 08-14. No more rollup work this cycle.</td></tr>
+          <tr><td>U13</td><td>Progressive disclosure from inheritance</td><td><span class="chip gap">gap</span></td><td>Event dates / membership term as stated facts are only partly on the line card. Org inference (D64) is stamped, not explained in the UI.</td></tr>
+          <tr><td>U14</td><td>Five numbers on the row, rest in a drawer</td><td><span class="chip partial">editor exists</span></td><td>Lines editor is real. Drawer vs row density still not the mock.</td></tr>
+          <tr><td>U15</td><td>Red-dot required state per tab</td><td><span class="chip gap">gap</span></td><td>Confirm blocked reason exists. No per-tab completeness dots.</td></tr>
+          <tr><td>U16</td><td>State shows real verbs</td><td><span class="chip partial">Confirm yes</span></td><td>Draft offers Confirm. Booked reversal / refund / cancel as first-class verbs on the form are not the U16 set.</td></tr>
+          <tr><td>U17</td><td>Cash application remainder → zero</td><td><span class="chip partial">payment entry page</span></td><td>Work page exists. Not woven into the Order form as the only cash path.</td></tr>
+          <tr><td>U18</td><td>Origin is first-class</td><td><span class="chip gap">no column</span></td><td>Staff vs LXP vs renewal vs migration is not a field. UX plan §11 called this a required schema add. Still missing. LXP support will invent it under pressure if we don’t.</td></tr>
+          <tr><td>U19</td><td>Tokens only</td><td><span class="chip partial">mostly</span></td><td>Orders kit uses tokens. Fast Entry still called out in tests as a leftover-banner holdout.</td></tr>
+          <tr><td>U20</td><td>Keyboard as a designed surface</td><td><span class="chip gap">gap</span></td><td>No visible shortcut strip. Fast Entry had the intent; the live form does not.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="next">
+      <h2>7. The 2026-08-14 “after custom forms” list, restated</h2>
+      <table>
+        <thead><tr><th>#</th><th>Item</th><th>Then</th><th>Now</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Check / ACH reference on Payment tab</td><td>Missing; Fast Entry was the only place</td><td><span class="chip shipped">InitialPaymentReference on the form</span></td></tr>
+          <tr><td>2</td><td>Confirm as a verb, hide Status / PaymentStatus as edits</td><td>Status dropdown</td><td><span class="chip shipped">Confirm button + eligibility</span> — verify PaymentStatus is still not an edit</td></tr>
+          <tr><td>3</td><td>Pull next / link path</td><td>Hygiene</td><td><span class="chip shipped">omnibus even with next</span></td></tr>
+          <tr><td>4</td><td>Org-first party picker</td><td>Two generic lookups</td><td><span class="chip gap">still two <code>mj-form-field</code> record links</span></td></tr>
+          <tr><td>5</td><td>Weave EventOrderLine onto the line card before confirm</td><td>Generated child after confirm hits immutability</td><td><span class="chip partial">extension-field weave exists</span> — qty&gt;1 attendees still deferred</td></tr>
+          <tr><td>6</td><td>Stated facts on the line (event dates, membership term)</td><td>Prompted or absent</td><td><span class="chip partial">partial</span></td></tr>
+          <td colspan="4"></td>
+          <tr><td>—</td><td>Delete Fast Entry / editor / workspace</td><td>Do after #1</td><td><span class="chip shipped">Angular pages gone; mockups historical</span></td></tr>
+          <tr><td>—</td><td>Header collapse + leftover related</td><td>Remembered, not in that list</td><td><span class="chip shipped">this session</span></td></tr>
+          <tr><td>12</td><td>Refresh living docs</td><td>Called out</td><td><span class="chip gap">still stale</span> — this report is the inventory; the plans themselves were not rewritten</td></tr>
+          <tr><td>13–14</td><td>Wire pnpm test / accounting CI vitest</td><td>Hygiene</td><td>Not re-verified here. Treat as still open unless someone closed them.</td></tr>
+          <tr><td>15</td><td>IsOverdue as EntityField</td><td>View existed, Explorer couldn’t filter</td><td><span class="chip shipped">on generated OrderHeader</span></td></tr>
+          <tr><td>16</td><td>Review seed variety</td><td>All 75 Confirmed; empty fulfillment / PriceList / Intent</td><td><span class="chip gap">still the demo problem</span></td></tr>
+          <tr><td>17</td><td>journal-entry-types metadata-pending</td><td>Confirm accounting seeded</td><td>Not re-audited this pass</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="lxp">
+      <h2>8. LXP / LH4I — first integrating consumer</h2>
+      <p>
+        Master §16: Orders is the exclusive go-forward commerce engine. Launch surface is
+        LH4I individual checkout — 3 digital tiers + coupons + track/bundle + Stripe card.
+        The gate that means “BAO ready” is a recorded dry run, not a checklist of tables.
+      </p>
+      <table>
+        <thead><tr><th>Gate step</th><th>Engine</th><th>Missing for a real LXP</th></tr></thead>
+        <tbody>
+          <tr><td>Buy a tier with a coupon</td><td>Products, bundles, promotions exist</td><td>No LH4I seed of the three Sidecar tiers. Coupon path is Orders-native promotions, not Stripe-hosted promotion codes (D22 Option A). Schema-freeze still parked with Robert.</td></tr>
+          <tr><td>Through Stripe checkout (test mode)</td><td>Intent + capture + webhook code exists</td><td><span class="chip gap">No live/test-mode dry run.</span> Default is the stub. Hosted Checkout subset is not a productized LXP API.</td></tr>
+          <tr><td>Order books</td><td>Confirm/Save books JEs</td><td>LXP would call entity graph save, not a dedicated checkout op. Fine if documented; not packaged as a consumer SDK.</td></tr>
+          <tr><td>Grants emitted</td><td>EntitlementGrant at booking</td><td>OK.</td></tr>
+          <tr><td>LXP-style poll reads them</td><td>—</td><td><span class="chip gap">No Scheduled Job / RSP poll, no published read contract.</span> Ethan still owns grant-shape questions (§20).</td></tr>
+          <tr><td>Sub + staged rev-rec</td><td>Shipped</td><td>Renewals are explicitly not a launch need.</td></tr>
+          <tr><td>Payment captured, A/R correct</td><td>Shipped on Manual / stub</td><td>Needs the Stripe test-mode pass.</td></tr>
+          <tr><td>See LXP orders in Explorer</td><td>—</td><td><span class="chip gap">U18 OriginChannel does not exist.</span> Support cannot tell staff-entered from checkout without inference.</td></tr>
+        </tbody>
+      </table>
+      <p class="muted">Tax at launch is still Jeremy + John’s call. Default: stay deferred. The tax <em>mechanism</em> is already there if they say yes.</p>
+    </section>
+
+    <section id="named">
+      <h2>9. Named gaps that need a ruling before code</h2>
+      <p>These are in the plan on purpose. Building them without the question answered is how we ship the wrong schema.</p>
+      <table>
+        <thead><tr><th>Gap</th><th>Where</th><th>Why it is blocked</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Event capacity / holds</td>
+            <td>§21b</td>
+            <td>Capacity=1 sold 5 seats. Counting <code>OrderLine.Quantity</code> is wrong (drafts, zero-value lines, concurrency). Needs a denormalized seat count or a hold/reservation model. Questions: does a hold survive a draft? Oversell fail vs waitlist? Per event or per ticket type?</td>
+          </tr>
+          <tr>
+            <td>Subscription quantity / seats</td>
+            <td>§21c</td>
+            <td>Qty 10 bills 10× and creates one Subscription with no seat count. Decide: multiplier, N subscriptions, or one sub + seat column.</td>
+          </tr>
+          <tr>
+            <td>Sales-rule eval + Task routing</td>
+            <td>§21 / D26</td>
+            <td>DiscountLimit is live. Other types are decorative. <code>Scope</code> does not scope. Routing needs bizapps-tasks installable next to current common (D44).</td>
+          </tr>
+          <tr>
+            <td>Intercompany settlement</td>
+            <td><code>intercompany-balancing.md</code> §8</td>
+            <td>Due To/From accumulate correctly and never clear. Deliberate. Needs a settlement design, not another booking path.</td>
+          </tr>
+          <tr>
+            <td>Order origin</td>
+            <td>U18 / UX §11</td>
+            <td>Schema add. Lookup vs nullable channel. Required before LXP traffic is indistinguishable from staff orders.</td>
+          </tr>
+          <tr>
+            <td>GL walk ownership / perf</td>
+            <td>§19 Q1</td>
+            <td>Walk lives in Orders; Payments/Inventory would reimplement. Linear scan of all links per resolve. Promote to AccountingEngineBase + index. Pre-volume, named.</td>
+          </tr>
+          <tr>
+            <td>Company-scope UX</td>
+            <td>§19 Q2</td>
+            <td>Marcelo’s “unselected companies don’t exist.” No doctrine, no code.</td>
+          </tr>
+          <tr>
+            <td>Pending-JE void semantics</td>
+            <td>§19 Q3</td>
+            <td>Hard-delete vs flag-and-carry if an order voids before batch.</td>
+          </tr>
+          <tr>
+            <td>Write-off op</td>
+            <td>D16</td>
+            <td>Deferred until a real finance need.</td>
+          </tr>
+          <tr>
+            <td>Currency / FX</td>
+            <td>D24</td>
+            <td>“Day one? No.” Design stands.</td>
+          </tr>
+          <tr>
+            <td>Tax data / vendor</td>
+            <td>§11, D23</td>
+            <td>Mechanism shipped. Rates, Avalara/Stripe Tax, rooftop, certificate inactivity, economic-nexus monitoring are the remaining tax work. Finance call gates launch-with-tax.</td>
+          </tr>
+          <tr>
+            <td>Order splitting / reservations</td>
+            <td>§21, D15</td>
+            <td>Queue shipped. Partial fulfillment that splits one order into several shipments did not. Robert: real-world need.</td>
+          </tr>
+          <tr>
+            <td>Statements / consolidated bills</td>
+            <td>§21, U6 cousin</td>
+            <td>Reports, not primitives. Not built.</td>
+          </tr>
+          <tr>
+            <td>CDP migration</td>
+            <td>§17</td>
+            <td>aidp Stage 4. Open-AR rule is decided; tooling is not.</td>
+          </tr>
+          <tr>
+            <td>Gift-card redemption / breakage / cross-company</td>
+            <td>§21 vs §22</td>
+            <td>Issuance + void-on-return shipped. The rest of the stored-value life cycle did not.</td>
+          </tr>
+          <tr>
+            <td>ProductBehavior plugin seam</td>
+            <td>D4</td>
+            <td>Schema ready. Not activated.</td>
+          </tr>
+          <tr>
+            <td>Accounting optional peer (D81)</td>
+            <td>docs/dependency-on-accounting.md</td>
+            <td>Known-wrong until accounting publishes. Do not invent a workaround flag.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="docs">
+      <h2>10. Documentation that will make the next person rebuild shipped work</h2>
+      <ul class="tight">
+        <li><code>README.md</code> still names <code>Orders.ConfirmOrder</code> as the confirm path.</li>
+        <li>Master §18 “NOW = per-line booking” and §4 <code>[S1 pending]</code>.</li>
+        <li>D14 “engine rework pending”, D20 “lifecycle deferred” — both built.</li>
+        <li>D66 / D67 / D68 appear twice with overlapping text.</li>
+        <li>D58 (no over-apply) vs later D68 (over-pay is legal). D68 won.</li>
+        <li><code>orders-ux.md</code> header still says DESIGN / nothing built; still specifies U3 two lanes.</li>
+        <li>UX §11 still lists <code>PreviewOrder</code> / <code>PreviewConfirm</code> / <code>SaveOrder</code> / <code>ConfirmOrder</code> as needed. Those were retired on purpose.</li>
+        <li><code>subscriptions-design.md</code> header still says “Proposal for review” while §6b says built.</li>
+        <li>Integration-testing plan Phase 4/5 (CI gate, <code>RUN_MUTATION_TESTS=1</code> must not skip-as-pass) is a process gap, not a product one.</li>
+      </ul>
+      <div class="callout danger">
+        If someone implements U3 Fast Entry or re-adds <code>Orders.ConfirmOrder</code>
+        because they read the UX plan or the README, they will be undoing a later ruling.
+        The first hygiene item is to stamp those docs, not to write more engine.
+      </div>
+    </section>
+
+    <section id="nextwork">
+      <h2>11. What is actually next (recommendation only)</h2>
+      <p>Not a commitment. Ordered by “closes a hole the live form already opened” then “needs a ruling.”</p>
+      <div class="two-col">
+        <div class="card">
+          <h4>Close without a new decision</h4>
+          <ol>
+            <li>Org-first party picker (Common Relationship). The order taker’s first action is still two uncorrelated lookups.</li>
+            <li>Finish stated facts on the line (event dates, membership term decided at confirm).</li>
+            <li>Delete dead Fast Entry / editor / workspace files now that they are off the rail and check-number lives on the header.</li>
+            <li>Confirm pre-flight (U4) as a <em>read</em> of what Save will do — not a resurrection of PreviewConfirm. PriceOrder + grant/sub preview is enough.</li>
+            <li>Stamp README / §18 / orders-ux.md so they stop lying about ConfirmOrder and Fast Entry.</li>
+            <li>Review-seed variety so fulfillment, intents, price lists, and a non-Confirmed order appear in a demo.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <h4>Do not start until someone answers</h4>
+          <ol>
+            <li>U18 Origin — required before LXP traffic.</li>
+            <li>LH4I dry-run: who owns the Stripe test account and the three-tier seed?</li>
+            <li>Event capacity / holds.</li>
+            <li>Subscription seats.</li>
+            <li>Sales-rule v-next (and the Tasks install blocker).</li>
+            <li>IC settlement.</li>
+            <li>Tax-at-launch finance call.</li>
+          </ol>
+        </div>
+      </div>
+      <p>
+        Order Overview as a first-class section was deliberately skipped in this session
+        (“do them all except orders, last”). The inventory + mockup already exist under
+        <code>plans/orders-headers-overview/</code>. That is a UX polish train, not an
+        engine train.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      Written 2026-08-15 from the plans and the tree. Not generated from a single status field —
+      several plan statuses contradict each other; this report prefers executable evidence
+      (ORM, remote-op types, nav model, check bundles, form registration) over the oldest
+      sentence that still says “pending.”
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<div class="mjo-doc-hero">
+    <div class="mjo-doc-hero__identity">
+        <div class="mjo-doc-hero__avatar">
+            <i [class]="AvatarIcon" aria-hidden="true"></i>
+        </div>
+        <div class="mjo-doc-hero__copy">
+            <div class="mjo-doc-hero__title-row">
+                <h1 class="mjo-doc-hero__title">{{ Title }}</h1>
+                <span class="mjo-doc-chip">{{ Record.SKU || 'SKU TBD' }}</span>
+                <span class="mjo-doc-chip">{{ TypeName }}</span>
+                <span [class]="StatusClass">{{ Record.Status || 'Draft' }}</span>
+            </div>
+        </div>
+    </div>
+    <div class="mjo-doc-hero__stats">
+        <div class="mjo-doc-stat">
+            <span class="mjo-doc-stat__label">List price</span>
+            <span class="mjo-doc-stat__value">{{ Price }}</span>
+        </div>
+        <div class="mjo-doc-stat">
+            <span class="mjo-doc-stat__label">Rev-rec</span>
+            <span class="mjo-doc-stat__value">{{ RevRec }}</span>
+        </div>
+        <div class="mjo-doc-stat">
+            <span class="mjo-doc-stat__label">Tax</span>
+            <span class="mjo-doc-stat__value">{{ Record.IsTaxable ? 'Taxable' : 'Exempt' }}</span>
+        </div>
+    </div>
+</div>

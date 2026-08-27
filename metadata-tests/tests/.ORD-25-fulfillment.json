@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-25 - Fulfillment",
+    "Description": "The shipping queue and the flip that closes an order (FU1-FU12). Fulfilment is a LOGISTICS fact, deliberately disconnected from revenue (D15) - no journal entry fires on Posted to Fulfilled, because revenue was settled at booking and releases on its own schedule. Letting shipping move the ledger would allow a warehouse delay to restate a closed period, so one check asserts the ledger is untouched. The case the bundle is built around is the MIXED order: one physical line and one subscription. Testing whether every line is Fulfilled passes every single-kind order and holds every mixed one open forever, because a subscription line never flips - it has nothing to flip. Only lines that CAN be fulfilled are allowed to hold an order, and reversals, bundle rollup parents and non-fulfillable product types are each excluded for their own reason.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A confirmed order with a physical line appears in the queue with its pending count; an order whose lines require no fulfilment never appears at all and auto-advances; flipping the last shippable line advances the order to Fulfilled and it sticks; a partly-worked order stays open and reports how many lines remain; a MIXED order advances once its shippable lines are done rather than waiting on a subscription line that can never flip; a second flip of the same line is refused by name with the line identified; refusals are per line so good scans in the same batch still land and the order still closes; fulfilment writes NO journal entry; AllOrNothing refuses the whole batch and leaves every line untouched; a reversal line neither queues nor flips; a bundle rollup parent never queues while its components do; and a fulfilled order leaves the queue."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "fulfillment"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "D13A9A85-29BE-45C2-BA79-F87A7773C12F"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.618Z",
+    "checksum": "aa3f2f326734a73f70a0b21fcd3e36efc9d915e3088cd6c3cbb54f3967d2a878"
+  }
+}

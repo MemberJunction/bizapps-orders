@@ -1,0 +1,12 @@
+{
+  "Name": "Adjustments",
+  "Source": "database",
+  "Load": "explicit",
+  "OnRemove": "delete",
+  "OrderBy": "Sequence ASC",
+  "Sequence": {
+    "Field": "Sequence",
+    "From": 1
+  },
+  "ClearAfterSave": false
+}

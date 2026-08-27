@@ -1,0 +1,21 @@
+[
+  {
+    "_comments": [
+      "Where the customer-facing document templates live, so somebody looking for 'the invoice' in",
+      "MJ Explorer finds it under one heading rather than among the hundred-odd AI prompt templates",
+      "that ship with the platform."
+    ],
+    "fields": {
+      "Name": "Orders: Documents",
+      "Description": "Customer-facing documents rendered from orders — invoices, quotes and credit memos. Edited here rather than in code so the wording and the styling can change without a deploy.",
+      "UserID": "@lookup:MJ: Users.Name=System"
+    },
+    "primaryKey": {
+      "ID": "F5F18EFD-4FE2-40D4-AB6A-DCDC3365E661"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:20:10.165Z",
+      "checksum": "d149ca316f8d1b07e8273d09f51621e0e9b4e95da8a12de09bd80120f366477c"
+    }
+  }
+]

@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overdue worklist — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  .ov-days {
+    display: inline-flex; align-items: baseline; gap: 3px;
+    font-variant-numeric: tabular-nums; font-weight: var(--mj-font-bold);
+  }
+  .ov-days .n { font-size: 17px; }
+  .ov-days .u { font-size: 10px; color: var(--mj-text-muted); font-weight: var(--mj-font-medium); }
+  .ov-t1 { color: var(--mj-color-warning-700); }
+  .ov-t2 { color: var(--mj-color-error-500); }
+  .ov-t3 { color: #991b1b; }
+  [data-theme="dark"] .ov-t1 { color: var(--mj-color-warning-300); }
+  [data-theme="dark"] .ov-t3 { color: var(--mj-color-error-300); }
+  .ov-next {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    padding: 3px 9px; border-radius: var(--mj-radius-full);
+    background: var(--mj-bg-surface-sunken); color: var(--mj-text-secondary);
+  }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta">
+    <span class="mj-chip mj-chip--error" id="ov-count">—</span>
+    <span class="mj-chip mj-chip--outline" id="ov-value">—</span>
+  </div>
+
+  <div slot="actions">
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-download"></i> Export</button>
+    <button class="mj-btn mj-btn--outline" id="ov-bulk-remind" disabled>
+      <i class="fa-regular fa-envelope"></i> Send reminders</button>
+    <a class="mj-btn mj-btn--primary" href="../payments/entry.html">
+      <i class="fa-solid fa-hand-holding-dollar"></i> Take a payment</a>
+  </div>
+
+  <div slot="toolbar">
+    <div class="mjo-search"><i class="fa-solid fa-magnifying-glass"></i>
+      <input placeholder="Customer or order…"></div>
+    <div class="row wrap" data-chips data-on-select="ovPreset" style="gap:6px">
+      <button class="mj-filter-chip is-active" data-value="all">All overdue <span class="count">4</span></button>
+      <button class="mj-filter-chip" data-value="t1">1–30 days <span class="count">2</span></button>
+      <button class="mj-filter-chip" data-value="t2">31–60 <span class="count">1</span></button>
+      <button class="mj-filter-chip" data-value="t3">61+ <span class="count">1</span></button>
+      <button class="mj-filter-chip" data-value="untouched">Never contacted <span class="count">1</span></button>
+      <button class="mj-filter-chip" data-value="grace"><i class="fa-solid fa-hourglass-half"></i> In grace <span class="count">1</span></button>
+    </div>
+  </div>
+
+  <div slot="body">
+    <div class="mock-note">
+      A worklist, not a report: rows are ordered by what to do next, every row carries its contact history, and
+      dunning <b>notifies a person rather than auto-cancelling anything</b>. A grace period extends access — it never
+      touches revenue, because those are different dates and storing one in place of the other silently revokes
+      access early.
+    </div>
+
+    <div class="mj-stat-grid" style="margin-bottom:var(--mj-space-6)">
+      <div class="mj-stat is-alert">
+        <span class="l"><i class="fa-solid fa-hourglass-half"></i> Total overdue</span>
+        <span class="v" id="s-total">—</span>
+        <span class="d" id="s-total-d">—</span>
+      </div>
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-clock"></i> Oldest</span>
+        <span class="v" id="s-oldest">—</span>
+        <span class="d" id="s-oldest-d">—</span>
+      </div>
+      <div class="mj-stat">
+        <span class="l"><i class="fa-regular fa-envelope"></i> Never contacted</span>
+        <span class="v" id="s-untouched">—</span>
+        <span class="d">Start here — the cheapest collections win</span>
+      </div>
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-rotate"></i> Subscription at risk</span>
+        <span class="v">1</span>
+        <span class="d"><a href="subscriptions.html">SUB-2050 in grace until Aug 5 →</a></span>
+      </div>
+    </div>
+
+    <div class="mj-table-wrap">
+      <table class="mj-table">
+        <thead>
+          <tr>
+            <th style="width:34px"><input type="checkbox" onchange="OV.all(this.checked)"></th>
+            <th style="width:80px" class="num">Late</th>
+            <th style="width:110px">Order</th>
+            <th>Customer</th>
+            <th style="width:56px">Co.</th>
+            <th class="num" style="width:118px">Balance</th>
+            <th style="width:96px">Due</th>
+            <th style="width:150px">Last contact</th>
+            <th>Next action</th>
+            <th style="width:120px">Owner</th>
+          </tr>
+        </thead>
+        <tbody id="ov-rows" data-on-row="ovOpen"></tbody>
+      </table>
+    </div>
+
+    <div class="grid-2" style="margin-top:var(--mj-space-4)">
+      <div class="mj-card">
+        <div class="mj-card-head"><i class="fa-solid fa-gear"></i><h3>Dunning settings</h3>
+          <span class="right"><span class="mj-chip mj-chip--outline">app setting, not a constant</span></span></div>
+        <div class="mj-card-pad">
+          <div class="mj-stated"><span class="muted small" style="width:210px">Grace period after a failed renewal</span>
+            <span class="value">7 days</span><span class="from">default</span></div>
+          <div class="mj-stated"><span class="muted small" style="width:210px">On failure</span>
+            <span class="value">Notify customer success</span><span class="from">never auto-cancel</span></div>
+          <div class="mj-stated"><span class="muted small" style="width:210px">Overdue flag</span>
+            <span class="value">Computed: balance &gt; 0 and past due</span>
+            <span class="from">never stored</span></div>
+          <div class="small muted" style="margin-top:var(--mj-space-3)">
+            Overdue changes with the clock, not with a write — so storing it would mean a nightly job whose only
+            purpose is to keep a column honest. It is computed in the view instead.
+          </div>
+        </div>
+      </div>
+
+      <div class="mj-card">
+        <div class="mj-card-head"><i class="fa-solid fa-lightbulb"></i><h3>What not to do here</h3></div>
+        <div class="mj-card-pad small stack-2">
+          <div class="row-t"><i class="fa-solid fa-xmark" style="color:var(--mj-status-error);margin-top:3px"></i>
+            <div><b>No auto-cancellation.</b> A failed card is usually an expired card, not a lost customer.
+              Cancelling on the system's schedule loses relationships that a phone call keeps.</div></div>
+          <div class="row-t"><i class="fa-solid fa-xmark" style="color:var(--mj-status-error);margin-top:3px"></i>
+            <div><b>No write-off button.</b> Writing off is an accounting decision with a ledger consequence; it
+              belongs behind an explicit action with authority attached, not on a worklist row.</div></div>
+          <div class="row-t"><i class="fa-solid fa-check" style="color:var(--mj-status-success);margin-top:3px"></i>
+            <div><b>Offer the credit first.</b> If the customer is holding one, collections should spend it before
+              chasing cash — which is why credits appear on the row.</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div slot="overlays">
+    <aside class="mj-slide-in" id="ov-detail">
+      <div class="mj-slide-in-head">
+        <div><h2 id="ovd-title">—</h2><div class="small muted" id="ovd-sub"></div></div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-slide-in-body" id="ovd-body"></div>
+      <div class="mj-slide-in-foot">
+        <a class="mj-btn mj-btn--primary mj-btn--sm" href="../payments/entry.html">Take payment</a>
+        <button class="mj-btn mj-btn--outline mj-btn--sm"><i class="fa-regular fa-envelope"></i> Send reminder</button>
+        <button class="mj-btn mj-btn--flat mj-btn--sm"><i class="fa-solid fa-phone"></i> Log a call</button>
+      </div>
+    </aside>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+const H = MJ.H;
+const r2 = n => Math.round(n * 100) / 100;
+let PRESET = 'all';
+const sel = new Set();
+
+function tier(days) { return days > 60 ? 3 : days > 30 ? 2 : 1; }
+
+const MATCH = {
+  all: () => true,
+  t1: r => tier(F.days(r.due)) === 1,
+  t2: r => tier(F.days(r.due)) === 2,
+  t3: r => tier(F.days(r.due)) === 3,
+  untouched: r => !r.lastContact,
+  grace: r => !!r.grace,
+};
+
+function nextAction(r) {
+  const days = F.days(r.due);
+  const cust = DB.customerByID(r.customerID);
+  if (cust && cust.credit > 0)
+    return { icon: 'fa-piggy-bank', text: `Apply their ${F.money(cust.credit)} credit first`, tone: 'success' };
+  if (r.grace) return { icon: 'fa-hourglass-half', text: 'Call before grace ends Aug 5', tone: 'warning' };
+  if (!r.lastContact) return { icon: 'fa-envelope', text: 'First reminder — never contacted', tone: 'info' };
+  if (r.attempts >= 3) return { icon: 'fa-phone', text: 'Escalate — 3 attempts, no response', tone: 'error' };
+  if (days > 60) return { icon: 'fa-phone', text: 'Phone call — email is not working', tone: 'error' };
+  return { icon: 'fa-envelope', text: 'Second reminder', tone: 'info' };
+}
+
+function render() {
+  const rows = DB.overdue.filter(MATCH[PRESET])
+    .slice().sort((a, b) => F.days(b.due) - F.days(a.due));
+
+  const total = r2(DB.overdue.reduce((s, r) => s + r.balance, 0));
+  document.getElementById('ov-count').textContent = `${DB.overdue.length} overdue`;
+  document.getElementById('ov-value').textContent = F.money(total);
+  document.getElementById('s-total').textContent = F.money0(total);
+  document.getElementById('s-total-d').textContent = `${DB.overdue.length} orders across ${new Set(DB.overdue.map(r => r.customerID)).size} customers`;
+
+  const oldest = DB.overdue.slice().sort((a, b) => F.days(b.due) - F.days(a.due))[0];
+  document.getElementById('s-oldest').textContent = F.days(oldest.due) + 'd';
+  document.getElementById('s-oldest-d').textContent = `${oldest.order} · ${oldest.customer}`;
+  document.getElementById('s-untouched').textContent = DB.overdue.filter(r => !r.lastContact).length;
+
+  document.getElementById('ov-rows').innerHTML = rows.map(r => {
+    const days = F.days(r.due);
+    const t = tier(days);
+    const act = nextAction(r);
+    const cust = DB.customerByID(r.customerID);
+    return `<tr class="is-clickable" data-row="${r.order}">
+      <td><input type="checkbox" ${sel.has(r.order) ? 'checked' : ''}
+                 onchange="OV.pick('${r.order}', this.checked)"></td>
+      <td class="num"><span class="ov-days ov-t${t}"><span class="n">${days}</span><span class="u">d</span></span></td>
+      <td><a class="mono primary" href="../orders/document.html">${r.order}</a></td>
+      <td><div>${r.customer}</div>
+        ${cust && cust.credit ? `<div class="secondary mj-money--credit">holds ${F.money(cust.credit)} credit</div>` : ''}
+        ${r.note ? `<div class="secondary">${r.note}</div>` : ''}</td>
+      <td>${H.company(r.company)}</td>
+      <td class="num strong">${F.money(r.balance)}</td>
+      <td>${F.dateShort(r.due)}</td>
+      <td>${r.lastContact
+        ? `${F.dateShort(r.lastContact)}<div class="secondary">${r.contactKind} · ${r.attempts} attempt${r.attempts === 1 ? '' : 's'}</div>`
+        : '<span class="mj-chip mj-chip--info">never</span>'}</td>
+      <td><span class="ov-next"><i class="fa-solid ${act.icon}"
+        style="color:var(--mj-status-${act.tone})"></i> ${act.text}</span></td>
+      <td class="small">${r.owner}</td>
+    </tr>`;
+  }).join('');
+
+  const n = sel.size;
+  document.getElementById('ov-bulk-remind').disabled = n === 0;
+  document.getElementById('ov-bulk-remind').innerHTML =
+    `<i class="fa-regular fa-envelope"></i> Send reminders${n ? ` (${n})` : ''}`;
+}
+
+const OV = {
+  pick(k, on) { on ? sel.add(k) : sel.delete(k); render(); },
+  all(on) {
+    sel.clear();
+    if (on) DB.overdue.filter(MATCH[PRESET]).forEach(r => sel.add(r.order));
+    render();
+  },
+};
+
+function ovPreset(v) { PRESET = v; sel.clear(); render(); }
+
+function ovOpen(orderNumber) {
+  const r = DB.overdue.find(x => x.order === orderNumber);
+  const o = DB.orderByNumber(orderNumber);
+  const cust = DB.customerByID(r.customerID);
+  const days = F.days(r.due);
+
+  document.getElementById('ovd-title').innerHTML = `<span class="mono">${r.order}</span>`;
+  document.getElementById('ovd-sub').textContent = `${r.customer} · ${days} days past due`;
+
+  document.getElementById('ovd-body').innerHTML = `
+    <div class="mj-money-strip" style="grid-template-columns:1fr 1fr">
+      <div><span class="l">Balance</span><span class="v">${F.money(r.balance)}</span></div>
+      <div><span class="l">Days late</span><span class="v ov-t${tier(days)}">${days}</span></div>
+    </div>
+
+    ${cust && cust.credit ? `<div class="mj-banner mj-banner--success" style="margin-top:var(--mj-space-3)">
+      <i class="fa-solid fa-piggy-bank"></i>
+      <div class="body"><strong>They are holding ${F.money(cust.credit)}.</strong> Apply it before chasing cash —
+      it reduces the balance without a conversation.
+      <div style="margin-top:4px"><a href="../payments/credit.html">Apply credit →</a></div></div></div>` : ''}
+
+    ${r.grace ? `<div class="mj-banner mj-banner--warning" style="margin-top:var(--mj-space-3)">
+      <i class="fa-solid fa-hourglass-half"></i>
+      <div class="body"><strong>Grace period ends ${F.date(r.grace)}.</strong> ${r.note || ''}
+      <div class="small" style="margin-top:4px">Grace extends <b>access</b>, not revenue. When it lapses the
+      subscription's access date passes; nothing is written back to the recognized revenue.</div></div></div>` : ''}
+
+    <div class="sec-label" style="margin-top:var(--mj-space-4)">The order</div>
+    <div class="mj-stated"><span class="muted small" style="width:130px">Memo</span>
+      <span class="value">${o ? o.description : '—'}</span></div>
+    <div class="mj-stated"><span class="muted small" style="width:130px">Ordered</span>
+      <span class="value">${o ? F.date(o.orderDate) : '—'}</span></div>
+    <div class="mj-stated"><span class="muted small" style="width:130px">Due</span>
+      <span class="value">${F.date(r.due)}</span></div>
+    <div class="mj-stated"><span class="muted small" style="width:130px">Total / paid</span>
+      <span class="value">${o ? F.money(o.gross) + ' / ' + F.money(o.paid) : '—'}</span></div>
+    <div class="mj-stated"><span class="muted small" style="width:130px">Origin</span>
+      <span class="value">${o ? H.origin(o.origin, o.originRef) : '—'}</span>
+      ${o && o.originDetail ? `<span class="from">${o.originDetail}</span>` : ''}</div>
+
+    <div class="sec-label" style="margin-top:var(--mj-space-4)">Contact history</div>
+    ${r.lastContact ? `
+      <table class="mj-table mj-table--compact"><tbody>
+        <tr><td>${F.date(r.lastContact)}</td><td>${r.contactKind} reminder</td>
+          <td class="small muted">no response</td></tr>
+        ${r.attempts > 1 ? `<tr><td>${F.date('2026-06-20')}</td><td>Email reminder</td>
+          <td class="small muted">delivered</td></tr>` : ''}
+        ${r.attempts > 2 ? `<tr><td>${F.date('2026-06-05')}</td><td>Email reminder</td>
+          <td class="small muted">delivered</td></tr>` : ''}
+      </tbody></table>`
+    : `<div class="small muted">Nobody has contacted them about this yet.</div>`}
+
+    <div class="mock-note is-api">The worklist itself comes from <code>Orders.GetOverdueWorklist</code>, which does
+      not exist yet — the overdue test is a computed surface, so the list has to be assembled server-side rather
+      than filtered on a stored flag. Stubbed here.</div>`;
+
+  MJ.open('#ov-detail');
+}
+
+MJ.mount({
+  nav: 'receivables', rail: 'overdue',
+  title: 'Overdue worklist',
+  icon: 'fa-solid fa-hourglass-half',
+  subtitle: 'Ordered by what to do next, not by what is biggest',
+  ready: render,
+});
+</script>
+</body>
+</html>

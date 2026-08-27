@@ -1,0 +1,387 @@
+[
+  {
+    "_comments": [
+      "ORDER HEADERS IS A LAYERED BASE VIEW.",
+      "",
+      "CodeGen keeps writing the whole generated view — 13 display joins, a geo join keyed by a",
+      "hardcoded entity GUID, an OUTER APPLY to a generated root-ID function — under the INNER name",
+      "below. This app then owns a four-line wrapper that selects `g.*` and adds `IsOverdue`.",
+      "",
+      "WHY NOT A COMPUTED COLUMN. The predicate needs GETUTCDATE(), and PostgreSQL generated columns",
+      "must be immutable — so it would work on SQL Server and fail to port, which is exactly what D41",
+      "ruled out when it chose trigger-maintained rollups for cross-platform parity. Layering is",
+      "SQL Server only (MJ refuses it on PG rather than shipping a documented footgun), so the PG side",
+      "keeps deriving IsOverdue in code from the same shared rule.",
+      "",
+      "WHY NOT A FULLY CUSTOM VIEW. BaseViewGenerated = 0 with no GeneratedBaseViewName makes CodeGen",
+      "stop generating entirely — this app would inherit all 81 lines and hand-maintain them forever,",
+      "and a foreign key added later would silently never get its display field.",
+      "",
+      "⚠️ ADOPTING THIS ON AN EXISTING ENTITY NEEDS A SCOPED forceRegeneration. Setting",
+      "GeneratedBaseViewName is a METADATA change, so the entity never lands in CodeGen's",
+      "modified/new list, and logSQLForNewOrModifiedEntity only writes migration output for entities",
+      "in that list. CodeGen WILL create the inner view in whatever database you ran it against and",
+      "emit NOTHING — your box looks right while every other environment never receives the view, and",
+      "the outer view then selects from an object that does not exist there. See the PR body for the",
+      "exact loop."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers"
+    },
+    "fields": {
+      "BaseViewGenerated": false,
+      "GeneratedBaseViewName": "vwOrderHeadersGenerated"
+    },
+    "sync": {
+      "lastModified": "2026-08-13T16:13:08.477Z",
+      "checksum": "e2c757a1b32295b7a6ab146cf576ec5022fc4f40f30cfdd2f66281e460d50372"
+    }
+  },
+  {
+    "_comments": [
+      "Payment Headers use generated form + header/journal contributions.",
+      "Related grids stay on (Lines first-class; satellites in More)."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Headers"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.604Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Subscriptions use generated form + header/terms/rev-rec contributions.",
+      "Related grids stay on (Terms and Entitlements first-class; the rest in More)."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscriptions"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.643Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Subscription Terms use generated form + header/rev-rec contributions."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Terms"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.680Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Products use generated form + header and domain widgets as contributions."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.753Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Price Lists use generated form + header and volume simulator."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Price Lists"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.790Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Promotions use generated form + identity header."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Promotions"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.717Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Product Types: identity header + Overview first, then generated details."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Types"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.823Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Product Categories: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.887Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Subscription Types: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Types"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.858Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Revenue Recognition Types: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Revenue Recognition Types"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.950Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Charge Types: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Charge Types"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.019Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Sales Authorities: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Sales Authorities"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:37.984Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Stored Value Accounts: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Stored Value Accounts"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.087Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Payment Providers: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Providers"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.052Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  },
+  {
+    "_comments": [
+      "Payment Types: identity header + Overview first."
+    ],
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Types"
+    },
+    "fields": {
+      "Configuration": {
+        "UI": {
+          "Form": {
+            "Layout": "left-nav",
+            "RelatedRolePolicy": "smart",
+            "PrimaryRelatedBudget": 6
+          }
+        }
+      }
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.114Z",
+      "checksum": "1db0b7d0ba262af59d8cff9d6e4eca10d35fb489db8f864df5993e25a46d4b65"
+    }
+  }
+]

@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-15 - Tax",
+    "Description": "Rate resolution by ship-to address, nexus, taxability and exemptions (TX1-TX14, D73). There are four ways to owe no tax - the product is not taxable, the seller has no nexus, the buyer is exempt, or no jurisdiction matches - and they produce the identical number, so these checks assert the REASON as well as the amount wherever a zero is expected. A suite that only asserted totals would pass with any of those wired to any of the others. Real US geography is seeded in the integration fixture rather than in app metadata, because these are test facts and shipping a US rate table with the app would be a maintenance promise nobody made.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Maryland charges 60 in one layer; Santa Clara charges 91.25 across two layers and San Mateo 93.75 on identical goods, a quarter point apart one county over; Northern Virginia charges 60 inside its postal range and Richmond 53 outside it; NYC stacks three layers to 88.75; the same NYC order charges ZERO when the company has no New York nexus and records that reason; a non-taxable product owes nothing where TX1 charged 60; taxability inherits from the product category when the product is silent; a customer exemption suppresses tax and is recorded as an exemption rather than as no-nexus; an exemption scoped to Publications exempts that line at 0 while merchandise on the same order for the same customer is taxed 60; an expired certificate is not an exemption and tax is charged; a category-specific rate of 0% beats the 6% Standard rate; a stated tax charge of 2% wins over resolution rather than stacking with it; and an order with no ship-to address still books with zero tax and full goods value."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "tax"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "4D811A86-06D4-4DA9-AD38-266E7EFDB5CB"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.476Z",
+    "checksum": "a0a147e985c95f151086addd6b86c083b46405d3676a89c2782f9df9f71ae464"
+  }
+}

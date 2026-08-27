@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-19 - Concurrency",
+    "Description": "What happens when two people confirm an order at the same instant (CN1-CN6). OrderNumber is an A/R document number and D30 makes two promises about it that nothing else in the suite tests: numbers are gap-conscious (a confirm that rolls back releases its number rather than burning it) and they are unique under contention. Both live in one small piece of SQL - UPDATE OrderSequence WITH (UPDLOCK, HOLDLOCK). Take the hints off and nothing visibly changes: every other check still passes, because they run one at a time. Two simultaneous confirms then read the same value and the second dies on the unique index, or - if that index were ever dropped - two customers share an invoice number. So these checks use a SECOND CONNECTION: ctx.Pool is a raw mssql pool, and a transaction taken from it is genuinely independent of the MJ provider's, which lets a check hold the counter row and watch a real confirm block on it. What this does NOT cover, stated plainly: two MJ confirms running at literally the same moment, since the suite has one provider - the competing actor is raw SQL performing the identical counter protocol.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A confirm blocks while another session holds the counter and resumes at the NEXT number rather than the one already taken; the counter advances by exactly one per number issued; a confirm that rolls back (a CoC line with no GL links) leaves the counter exactly where it found it, so no A/R document number is burned; the database refuses a second order carrying an existing number; the payment counter serializes identically, proving the hints were not dropped from one of the two copies; and two reversal lines saved together against one origin are refused when their SUM exceeds it while a legitimate 2 + 1 split against a 3-unit sale still books."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "concurrency"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "B9A54F00-9F07-4845-8D43-2F1E06B6ACE5"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.536Z",
+    "checksum": "46e5a9009786db059f1681b7e510a7e42eaa48acffed74abdf674c1a2e32c707"
+  }
+}

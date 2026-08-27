@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  .pw-step {
+    display: flex; align-items: flex-start; gap: var(--mj-space-3);
+    padding: var(--mj-space-3); border-left: 2px solid var(--mj-border-default);
+    margin-left: var(--mj-space-2);
+  }
+  .pw-step.is-hit { border-left-color: var(--mj-status-success); background: var(--mj-status-success-bg); }
+  .pw-step.is-skip { opacity: .55; }
+  .pw-step .ic {
+    width: 22px; height: 22px; border-radius: var(--mj-radius-full); flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 10px;
+    background: var(--mj-bg-surface-sunken); color: var(--mj-text-muted);
+  }
+  .pw-step.is-hit .ic { background: var(--mj-status-success); color: #fff; }
+  .pw-tier { display: grid; grid-template-columns: 90px 1fr auto; gap: var(--mj-space-2); align-items: center; }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta"><span class="mj-chip mj-chip--outline" id="pr-count">—</span></div>
+
+  <div slot="actions">
+    <button class="mj-btn mj-btn--outline" data-open="#pr-why">
+      <i class="fa-solid fa-circle-question"></i> Why is this price?</button>
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-plus"></i> New price list</button>
+    <button class="mj-btn mj-btn--primary"><i class="fa-solid fa-plus"></i> New price rule</button>
+  </div>
+
+  <div slot="body">
+    <div class="mock-note">
+      One row of price data <b>is one price rule</b>. Bands, seasons and time-of-day windows are several rows, and
+      priority disambiguates. Ties between equal-priority rules are refused when the rule is <i>saved</i> — not
+      resolved arbitrarily at read time, because a price that depends on row order is a price nobody can explain.
+    </div>
+
+    <div class="mj-split">
+      <aside class="left">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-tags"></i><h3>Price lists</h3></div>
+          <div class="mj-card-pad" id="pr-lists"></div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-sitemap"></i><h3>How a price resolves</h3></div>
+          <div class="mj-card-pad small">
+            The <b>same walk</b> GL accounts use — product, then its category, then that category's ancestors, then
+            the company, then a default resolver. One hierarchy to learn, not two.
+            <div class="mj-banner mj-banner--info" style="margin-top:var(--mj-space-3)">
+              <i class="fa-solid fa-keyboard"></i>
+              <div class="body">Typing a price directly on an order line <b>always wins</b>. The engine layers
+              suggestion on top of that rather than replacing it, so pricing can never block a baseline flow.</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <div class="right">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-list-ol"></i><h3>Price rules</h3>
+            <span class="right small muted">effective-dated · priority breaks ambiguity</span></div>
+          <table class="mj-table mj-table--compact">
+            <thead><tr><th>Product</th><th style="width:130px">List</th><th style="width:96px">Model</th>
+              <th class="num" style="width:100px">Unit</th><th class="num" style="width:70px">Priority</th>
+              <th style="width:170px">Effective</th><th style="width:110px">Bands</th></tr></thead>
+            <tbody id="pr-rows" data-on-row="prOpen" data-single-select></tbody>
+          </table>
+        </div>
+
+        <div class="grid-2" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card">
+            <div class="mj-card-head"><i class="fa-solid fa-layer-group"></i><h3>Tiered bands — Printed Handbook</h3></div>
+            <div class="mj-card-pad" id="pr-tiers"></div>
+          </div>
+
+          <div class="mj-card">
+            <div class="mj-card-head"><i class="fa-solid fa-triangle-exclamation"></i><h3>Ambiguity is refused at write time</h3></div>
+            <div class="mj-card-pad">
+              <div class="mj-banner mj-banner--error">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <div class="body"><strong>Two rules of priority 10 would both match.</strong>
+                  Saving a second flat rule for <i>Annual Membership</i> on the <i>Standard</i> list at priority 10
+                  is refused — with the conflicting rule named — rather than accepted and silently disambiguated
+                  later.</div>
+              </div>
+              <div class="small muted" style="margin-top:var(--mj-space-3)">
+                The alternative is a price that changes when someone reorders rows or reindexes a table. Refusing
+                the write means the person who created the ambiguity is the one who resolves it, while they still
+                remember what they meant.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-clock"></i><h3>Recurrence windows</h3></div>
+          <div class="mj-card-pad small">
+            Seasonal and time-of-day pricing is expressed as a recurrence on the rule and evaluated in code, never
+            filtered in SQL — which is why there is no child table for it. <i>Early Bird 2026</i> is simply a rule
+            with an end date; a Tuesday-only rate would be one rule with a day mask.
+            <table class="mj-table mj-table--compact" style="margin-top:var(--mj-space-3)">
+              <thead><tr><th>Rule</th><th>Window</th><th>Status today</th></tr></thead>
+              <tbody>
+                <tr><td>Early Bird 2026 — Conference ticket</td><td>Apr 1 – Aug 31, 2026</td>
+                  <td><span class="mj-chip mj-chip--success">in window</span></td></tr>
+                <tr><td>Standard — Conference ticket</td><td>Jan 1, 2026 →</td>
+                  <td><span class="mj-chip mj-chip--outline">in window, lower priority</span></td></tr>
+              </tbody>
+            </table>
+            <div class="small muted" style="margin-top:var(--mj-space-2)">
+              Both are valid right now; priority 20 beats 10, so early-bird wins until it expires and standard
+              takes over with no intervention.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div slot="overlays">
+    <div class="mj-modal" id="pr-why">
+      <div class="mj-modal-head">
+        <i class="fa-solid fa-circle-question" style="color:var(--mj-brand-primary)"></i>
+        <div><h2>Why is this price?</h2><div class="small muted">Run the real resolution walk against a scenario</div></div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-modal-body">
+        <div class="grid-3">
+          <div class="mj-field"><label>Product</label>
+            <select class="mj-select" id="pw-prod"></select></div>
+          <div class="mj-field"><label>Quantity</label>
+            <input class="mj-input is-num" id="pw-qty" value="5"></div>
+          <div class="mj-field"><label>As of</label>
+            <input class="mj-input" type="date" id="pw-date" value="2026-07-29"></div>
+        </div>
+        <div id="pw-out"></div>
+        <div class="mock-note is-api">This is the same pipeline order entry uses, invoked with a preview flag —
+          never a second implementation of the rules that could disagree with the first. That is the whole reason a
+          debugging surface like this is trustworthy.</div>
+      </div>
+      <div class="mj-modal-foot"><span class="right">
+        <button class="mj-btn mj-btn--flat" data-close>Close</button></span></div>
+    </div>
+
+    <aside class="mj-slide-in" id="pr-detail">
+      <div class="mj-slide-in-head">
+        <div><h2 id="prd-title">Price rule</h2><div class="small muted" id="prd-sub"></div></div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-slide-in-body" id="prd-body"></div>
+      <div class="mj-slide-in-foot">
+        <button class="mj-btn mj-btn--primary mj-btn--sm" data-close>Save</button>
+        <button class="mj-btn mj-btn--flat mj-btn--sm" data-close>Cancel</button>
+      </div>
+    </aside>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+const H = MJ.H;
+
+function render() {
+  document.getElementById('pr-count').textContent =
+    `${DB.productPrices.length} rules across ${DB.priceLists.length} lists`;
+
+  document.getElementById('pr-lists').innerHTML = DB.priceLists.map(l => `
+    <div style="padding:var(--mj-space-2) 0;border-bottom:1px solid var(--mj-border-subtle)">
+      <div class="row"><b>${l.name}</b>
+        ${l.isDefault ? '<span class="mj-chip mj-chip--brand">default</span>' : ''}
+        <span class="spacer">${H.company(l.companyID)}</span></div>
+      <div class="small muted">${F.date(l.from)} → ${l.to ? F.date(l.to) : 'open'} · ${l.products} products</div>
+    </div>`).join('');
+
+  document.getElementById('pr-rows').innerHTML = DB.productPrices.map(pp => {
+    const p = DB.products[pp.productID];
+    const list = DB.priceLists.find(l => l.id === pp.listID);
+    const expiring = pp.to && F.days(pp.to) > -60;
+    return `<tr class="is-clickable" data-row="${pp.id}">
+      <td><span class="primary">${p.name}</span><div class="secondary mono">${p.sku}</div></td>
+      <td>${list.name} ${H.company(list.companyID)}</td>
+      <td><span class="mj-chip mj-chip--outline">${pp.model}</span></td>
+      <td class="num strong">${F.money(pp.unit)}</td>
+      <td class="num">${pp.priority}</td>
+      <td class="small">${F.dateShort(pp.from)} → ${pp.to ? F.dateShort(pp.to) : 'open'}
+        ${expiring ? '<div class="secondary" style="color:var(--mj-status-warning-text)">expires soon</div>' : ''}</td>
+      <td>${pp.tiers.length ? `<span class="mj-chip mj-chip--info">${pp.tiers.length} bands</span>`
+        : '<span class="muted">—</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  const tiered = DB.productPrices.find(p => p.tiers.length);
+  document.getElementById('pr-tiers').innerHTML = tiered.tiers.map(t => `
+    <div class="pw-tier" style="padding:6px 0;border-bottom:1px solid var(--mj-border-subtle)">
+      <span class="small strong">${t.min}${t.max ? '–' + t.max : '+'}</span>
+      <span style="height:6px;background:var(--mj-bg-surface-sunken);border-radius:3px;overflow:hidden">
+        <span style="display:block;height:100%;width:${(t.unit / tiered.tiers[0].unit) * 100}%;
+          background:var(--mj-brand-primary)"></span></span>
+      <span class="mj-num strong">${F.money(t.unit)}</span>
+    </div>`).join('') + `
+    <div class="small muted" style="margin-top:var(--mj-space-3)">
+      Bands live on one rule because they answer one question — what does a unit cost at this volume. A separate
+      rule per band would need its own priority and could contradict its siblings.
+    </div>`;
+}
+
+function prOpen(id) {
+  const pp = DB.productPrices.find(x => x.id === id);
+  const p = DB.products[pp.productID];
+  const list = DB.priceLists.find(l => l.id === pp.listID);
+
+  document.getElementById('prd-title').textContent = p.name;
+  document.getElementById('prd-sub').innerHTML = `${list.name} · ${pp.model} · priority ${pp.priority}`;
+  document.getElementById('prd-body').innerHTML = `
+    <div class="grid-2">
+      <div class="mj-field"><label>Pricing model</label>
+        <select class="mj-select">${['Flat', 'Per unit', 'Tiered', 'Volume', 'Package', 'Usage']
+          .map(m => `<option ${m === pp.model ? 'selected' : ''}>${m}</option>`).join('')}</select></div>
+      <div class="mj-field"><label>Unit price</label>
+        <input class="mj-input is-num" value="${pp.unit.toFixed(2)}"></div>
+      <div class="mj-field"><label>Priority</label><input class="mj-input is-num" value="${pp.priority}">
+        <div class="hint">Higher wins. Equal priorities that both match are refused at save.</div></div>
+      <div class="mj-field"><label>Price list</label>
+        <select class="mj-select">${DB.priceLists.map(l =>
+          `<option ${l.id === pp.listID ? 'selected' : ''}>${l.name}</option>`).join('')}</select></div>
+      <div class="mj-field"><label>Effective from</label><input class="mj-input" type="date" value="${pp.from}"></div>
+      <div class="mj-field"><label>Effective to</label>
+        <input class="mj-input" type="date" value="${pp.to || ''}">
+        <div class="hint">Blank means open-ended.</div></div>
+    </div>
+
+    ${pp.tiers.length ? `<div class="sec-label" style="margin-top:var(--mj-space-4)">Bands</div>
+      <table class="mj-table mj-table--compact">
+        <thead><tr><th>From</th><th>To</th><th class="num">Unit price</th></tr></thead>
+        <tbody>${pp.tiers.map(t => `<tr><td>${t.min}</td><td>${t.max || '∞'}</td>
+          <td class="num">${F.money(t.unit)}</td></tr>`).join('')}</tbody>
+      </table>` : ''}
+
+    <div class="sec-label" style="margin-top:var(--mj-space-4)">Where this sits in the walk</div>
+    <div class="small muted">Attached at the <b>product</b> level, so it is found first and the category, its
+      ancestors and the company default are never consulted for this product on this list.</div>
+
+    <div class="mock-note">A price rule is deliberately small. Complexity lives in <i>how many rules</i> there are
+      and how they are dated, not in how many knobs each one has.</div>`;
+
+  MJ.open('#pr-detail');
+}
+
+/* the resolution-walk visualizer */
+function walk() {
+  const pid = document.getElementById('pw-prod').value;
+  const qty = parseFloat(document.getElementById('pw-qty').value) || 1;
+  const p = DB.products[pid];
+  const cat = DB.categories.find(c => c.id === p.categoryID);
+  const rules = DB.productPrices.filter(r => r.productID === pid);
+
+  let hit = null, band = null;
+  if (rules.length) {
+    hit = rules.slice().sort((a, b) => b.priority - a.priority)[0];
+    if (hit.tiers.length) {
+      band = hit.tiers.find(t => qty >= t.min && (t.max == null || qty <= t.max)) || hit.tiers.at(-1);
+    }
+  }
+  const price = band ? band.unit : hit ? hit.unit : p.price;
+
+  const step = (n, label, detail, state) => `
+    <div class="pw-step is-${state}">
+      <span class="ic">${state === 'hit' ? '<i class="fa-solid fa-check"></i>' : n}</span>
+      <div><b>${label}</b><div class="small muted">${detail}</div></div>
+    </div>`;
+
+  document.getElementById('pw-out').innerHTML = `
+    <div class="mj-money-strip" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:var(--mj-space-4)">
+      <div><span class="l">Resolved unit</span><span class="v">${F.money(price)}</span></div>
+      <div><span class="l">Quantity</span><span class="v">${F.qty(qty)}</span></div>
+      <div><span class="l">Line net</span><span class="v">${F.money(Math.round(price * qty * 100) / 100)}</span></div>
+    </div>
+
+    <div class="sec-label">The walk</div>
+    ${step(1, 'Direct entry on the line', 'Nothing typed — so resolution proceeds. A typed price would stop here.', 'skip')}
+    ${hit ? step(2, `Product — ${p.name}`,
+        `Rule on list <b>${DB.priceLists.find(l => l.id === hit.listID).name}</b>, model
+         <code>${hit.model}</code>, priority ${hit.priority}${band
+          ? ` · band <b>${band.min}${band.max ? '–' + band.max : '+'}</b> at ${F.money(band.unit)}` : ''}`, 'hit')
+      : step(2, `Product — ${p.name}`, 'No rule at the product level.', 'skip')}
+    ${step(3, `Its category — ${cat ? cat.name : '—'}`, hit ? 'Not reached.' : 'No rule here either.', 'skip')}
+    ${step(4, 'Category ancestors', 'Not reached.', 'skip')}
+    ${step(5, `Company — ${DB.companies[p.companyID].short}`, hit ? 'Not reached.' : 'No company default.', 'skip')}
+    ${step(6, 'Default resolver', hit ? 'Not reached.' : `Falls back to the product's list price ${F.money(p.price)}.`,
+      hit ? 'skip' : 'hit')}
+
+    ${band ? `<div class="mj-banner mj-banner--info" style="margin-top:var(--mj-space-4)">
+      <i class="fa-solid fa-layer-group"></i>
+      <div class="body">Quantity ${F.qty(qty)} lands in band <b>${band.min}${band.max ? '–' + band.max : '+'}</b>.
+      Change the quantity above and the band moves — which is exactly what the order line's price badge shows
+      while someone is typing.</div></div>` : ''}`;
+}
+
+MJ.mount({
+  nav: 'catalog', rail: 'pricing',
+  title: 'Pricing',
+  icon: 'fa-solid fa-tags',
+  subtitle: 'Rules, bands and dates — and a way to ask why a price came out that way',
+  ready() {
+    render();
+    const sel = document.getElementById('pw-prod');
+    sel.innerHTML = Object.values(DB.products)
+      .map(p => `<option value="${p.id}" ${p.id === 'PR5' ? 'selected' : ''}>${p.name}</option>`).join('');
+    ['pw-prod', 'pw-qty', 'pw-date'].forEach(id =>
+      document.getElementById(id).addEventListener('input', walk));
+    walk();
+  },
+});
+</script>
+</body>
+</html>

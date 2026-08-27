@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-06 - Subscription Renewal",
+    "Description": "Orders.SpawnRenewals end to end (SR1-SR11, D55) — the scheduled job that continues a subscription past its term. Because it runs unattended against live customers, most checks assert what it must NOT do: not renew outside the lead window, not renew when AutoRenew is off, not renew a canceled subscription, and above all not renew twice. Also covers the contiguous term append, booking and recognition over the new window, the IsRenewal bypass that lets a RejectDuplicate type renew itself, the subscription-level RenewalLeadDays override, Preview, and the RenewsSubscriptionID / SubscriptionEvent audit trail.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "One confirmed renewal order inside the lead window, appending a contiguous term 2 that books 1200 and recognizes 12 monthly slices dated into its own window; zero placed when outside the window, AutoRenew off, or canceled; a second pass places nothing; a RejectDuplicate type still renews; a 90-day subscription override fires at 60 days out; Preview writes nothing."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "subscription-renewal"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "03F3F87B-86F7-4A99-AC5D-8EF420D69FCB"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.352Z",
+    "checksum": "cee364cc964d2a5c10ea1e4d22cab8b728a4510c3befb7ee43d70d05d97e2050"
+  }
+}

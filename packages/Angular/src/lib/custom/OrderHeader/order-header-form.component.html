@@ -1,0 +1,416 @@
+@if (record) {
+<mj-record-form-container [Record]="record" [FormComponent]="this"
+    (Navigate)="OnFormNavigate($event)"
+    (DeleteRequested)="OnDeleteRequested()"
+    (FavoriteToggled)="OnFavoriteToggled()"
+    (HistoryRequested)="OnHistoryRequested()"
+    (ListManagementRequested)="OnListManagementRequested()">
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="before-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+    <div class="mjo-oh-hero" [class.is-collapsed]="!HeaderExpanded">
+        <div class="mjo-oh-hero__top">
+            <div class="mjo-oh-who">
+                <div class="mjo-oh-avatar"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+                <div>
+                    <div class="mjo-oh-title-row">
+                        <h1 class="mjo-oh-title">{{ HeaderTitle }}</h1>
+                        @if (ShowStatusChip) {
+                            <span [class]="StatusChipClass">{{ record.Status }}</span>
+                        }
+                    </div>
+                    <div class="mjo-oh-sub">{{ HeaderExpanded ? HeaderSubtitle : HeaderCollapsedMeta }}</div>
+                </div>
+            </div>
+            <div class="mjo-oh-hero__aside">
+                <div class="mjo-oh-money">
+                    <div>
+                        <span class="mjo-oh-kicker">{{ TotalLabel }}</span>
+                        <span class="mjo-oh-amt">{{ Money('total') }}</span>
+                    </div>
+                    <div>
+                        <span class="mjo-oh-kicker">Paid</span>
+                        <span class="mjo-oh-amt">{{ Money('paid') }}</span>
+                    </div>
+                    <div>
+                        <span class="mjo-oh-kicker">Balance</span>
+                        <span class="mjo-oh-amt">{{ Money('balance') }}</span>
+                    </div>
+                </div>
+                <button
+                    type="button"
+                    class="mjo-oh-hero__toggle"
+                    (click)="ToggleHeader()"
+                    [attr.aria-expanded]="HeaderExpanded"
+                    [attr.aria-label]="HeaderExpanded ? 'Collapse header' : 'Expand header'"
+                    [title]="HeaderExpanded ? 'Collapse header' : 'Expand header'">
+                    <i class="fa-solid" [class.fa-chevron-up]="HeaderExpanded" [class.fa-chevron-down]="!HeaderExpanded" aria-hidden="true"></i>
+                </button>
+            </div>
+        </div>
+
+        @if (HeaderExpanded) {
+        <div class="mjo-oh-facts">
+            <div class="mjo-oh-fact">
+                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderType" Type="select" [EditMode]="ComposeMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+            </div>
+            <div class="mjo-oh-fact">
+                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="CompanyID" Type="textbox" [EditMode]="ComposeMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+            </div>
+            <div class="mjo-oh-fact">
+                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+            </div>
+        </div>
+
+        <div class="mjo-oh-parties" [class.is-ship]="ExpandedParty === 'ship'" [class.is-bill]="ExpandedParty === 'bill'" [class.is-none]="ExpandedParty === null">
+            <div class="mjo-oh-bubble" [class.is-open]="ExpandedParty === 'ship'" [class.is-rail]="ExpandedParty === 'bill'">
+                <div
+                    class="mjo-oh-bubble__hit"
+                    role="button"
+                    tabindex="0"
+                    [attr.aria-expanded]="ExpandedParty === 'ship'"
+                    (click)="SelectParty('ship')"
+                    (keydown.enter)="SelectParty('ship')"
+                    (keydown.space)="SelectParty('ship'); $event.preventDefault()">
+                    <span class="mjo-oh-bubble__ic"><i class="fa-solid fa-truck-fast"></i></span>
+                    <span class="mjo-oh-bubble__copy">
+                        <span class="mjo-oh-bubble__role">Ship to</span>
+                        @if (ShipToIsSame) {
+                            <span class="mjo-oh-bubble__name">{{ ShipToName }}</span>
+                        } @else {
+                            <button type="button" class="mjo-oh-link mjo-oh-bubble__name" (click)="OpenShipTo($event)">{{ ShipToName }}</button>
+                        }
+                        <span class="mjo-oh-bubble__detail">{{ ShipToDetail }}</span>
+                    </span>
+                    <i class="fa-solid mjo-oh-bubble__chev" [class.fa-chevron-up]="ExpandedParty === 'ship'" [class.fa-chevron-down]="ExpandedParty !== 'ship'"></i>
+                </div>
+                @if (ExpandedParty === 'ship') {
+                    <div class="mjo-oh-bubble__edit">
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToOrganizationID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)" (ValueChange)="OnPartyPersonChange('ShipTo')"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="RequestedDeliveryDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <div class="mjo-oh-addr">
+                            <div class="mjo-oh-addr__bar">
+                                <span class="mjo-oh-addr__label">Address</span>
+                                @if (record.ShipToAddressID_Object) {
+                                    <button type="button" class="mjo-oh-addr__btn" (click)="ClearShipToAddress($event)" [disabled]="!EditMode">Clear</button>
+                                } @else {
+                                    <button type="button" class="mjo-oh-addr__btn" (click)="EnsureShipToAddress($event)" [disabled]="!EditMode">Add address</button>
+                                }
+                            </div>
+                            @if (record.ShipToAddressID_Object; as shipAddr) {
+                                <mj-form-field [Record]="shipAddr" [ShowLabel]="true" FieldName="Line1" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                                <mj-form-field [Record]="shipAddr" [ShowLabel]="true" FieldName="Line2" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                                <div class="mjo-oh-addr__row">
+                                    <mj-form-field [Record]="shipAddr" [ShowLabel]="true" FieldName="City" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                                    <mj-form-field [Record]="shipAddr" [ShowLabel]="true" FieldName="StateProvince" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                                    <mj-form-field [Record]="shipAddr" [ShowLabel]="true" FieldName="PostalCode" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                                </div>
+                                <mj-form-field [Record]="shipAddr" [ShowLabel]="true" FieldName="Country" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="mjo-oh-bubble" [class.is-open]="ExpandedParty === 'bill'" [class.is-rail]="ExpandedParty === 'ship'" [class.is-needed]="NeedsBillTo">
+                <div
+                    class="mjo-oh-bubble__hit"
+                    role="button"
+                    tabindex="0"
+                    [attr.aria-expanded]="ExpandedParty === 'bill'"
+                    (click)="SelectParty('bill')"
+                    (keydown.enter)="SelectParty('bill')"
+                    (keydown.space)="SelectParty('bill'); $event.preventDefault()">
+                    <span class="mjo-oh-bubble__ic"><i class="fa-solid fa-file-invoice-dollar"></i></span>
+                    <span class="mjo-oh-bubble__copy">
+                        <span class="mjo-oh-bubble__role">Bill to</span>
+                        @if (hasBillTo) {
+                            <button type="button" class="mjo-oh-link mjo-oh-bubble__name" (click)="OpenBillTo($event)">{{ BillToName }}</button>
+                        } @else {
+                            <span class="mjo-oh-bubble__name">{{ BillToName }}</span>
+                        }
+                        <span class="mjo-oh-bubble__detail">{{ BillToDetail }}</span>
+                    </span>
+                    <i class="fa-solid mjo-oh-bubble__chev" [class.fa-chevron-up]="ExpandedParty === 'bill'" [class.fa-chevron-down]="ExpandedParty !== 'bill'"></i>
+                </div>
+                @if (ExpandedParty === 'bill') {
+                    <div class="mjo-oh-bubble__edit">
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToOrganizationID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)" (ValueChange)="OnPartyPersonChange('BillTo')"></mj-form-field>
+                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentTermsTypeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                        <div class="mjo-oh-addr">
+                            <div class="mjo-oh-addr__bar">
+                                <span class="mjo-oh-addr__label">Address</span>
+                                @if (record.BillToAddressID_Object) {
+                                    <button type="button" class="mjo-oh-addr__btn" (click)="ClearBillToAddress($event)" [disabled]="!EditMode">Clear</button>
+                                } @else {
+                                    <button type="button" class="mjo-oh-addr__btn" (click)="EnsureBillToAddress($event)" [disabled]="!EditMode">Add address</button>
+                                }
+                            </div>
+                            @if (record.BillToAddressID_Object; as billAddr) {
+                                <mj-form-field [Record]="billAddr" [ShowLabel]="true" FieldName="Line1" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                                <mj-form-field [Record]="billAddr" [ShowLabel]="true" FieldName="Line2" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                                <div class="mjo-oh-addr__row">
+                                    <mj-form-field [Record]="billAddr" [ShowLabel]="true" FieldName="City" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                                    <mj-form-field [Record]="billAddr" [ShowLabel]="true" FieldName="StateProvince" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                                    <mj-form-field [Record]="billAddr" [ShowLabel]="true" FieldName="PostalCode" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                                </div>
+                                <mj-form-field [Record]="billAddr" [ShowLabel]="true" FieldName="Country" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (ConfirmBlockedReason) {
+            <div class="mjo-oh-todo">
+                <i class="fa-solid fa-circle-exclamation"></i>
+                <span>Before this can be confirmed</span>
+                @if (NeedsBillTo) {
+                    <button type="button" (click)="JumpToBill()">Need a bill-to party</button>
+                } @else if (NeedsPaymentReference) {
+                    <button type="button" (click)="JumpToPayment()">Need a check / ACH reference</button>
+                } @else {
+                    <span class="mjo-oh-todo__hint">{{ ConfirmBlockedReason }}</span>
+                }
+            </div>
+        }
+
+        @if (ConfirmError) {
+            <div class="mjo-oh-todo mjo-oh-todo--err" role="alert">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>{{ ConfirmError }}</span>
+            </div>
+        }
+
+        <mj-tab-nav
+            class="mjo-oh-tabs"
+            [Tabs]="ContextTabs"
+            [ActiveKey]="ActiveTab ?? ''"
+            (TabChange)="SelectTab($event)">
+        </mj-tab-nav>
+
+        @if (ActiveTab === 'payment') {
+            <div class="mjo-oh-tabpane">
+                <div class="mjo-oh-fields">
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentTypeID" Type="textbox" [EditMode]="ComposeMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentAmount" Type="number" [EditMode]="ComposeMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    @if (PaymentRequiresReference) {
+                        <label class="mjo-oh-ref">
+                            <span class="mjo-oh-ref__label">Check / ACH reference</span>
+                            <input
+                                class="mj-input"
+                                [ngModel]="PaymentReference"
+                                (ngModelChange)="SetPaymentReference($event)"
+                                [disabled]="!ComposeMode"
+                                placeholder="Check number or confirmation ID"
+                                autocomplete="off"
+                                aria-label="Check or ACH reference">
+                        </label>
+                    }
+                </div>
+                @if (record.IsSaved && PaymentParams) {
+                    <mj-explorer-entity-data-grid
+                        [Params]="PaymentParams"
+                        [AllowLoad]="true"
+                        [ShowToolbar]="true"
+                        [ShowNewButton]="false"
+                        [ShowDeleteButton]="false"
+                        [Height]="'fit-content'"
+                        [MaxHeight]="RelatedGridHeight"
+                        (Navigate)="OnFormNavigate($event)">
+                    </mj-explorer-entity-data-grid>
+                } @else {
+                    <div class="mjo-oh-hint">Intent only — the payment is created when the order is confirmed.</div>
+                }
+            </div>
+        }
+
+        @if (ActiveTab === 'details') {
+            <div class="mjo-oh-tabpane">
+                <div class="mjo-oh-fields">
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="DueDate" Type="datepicker" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ExternalDocumentNumber" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="FulfillmentStatus" Type="select" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Status" Type="select" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="SalesRepUserID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Description" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Notes" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                </div>
+            </div>
+        }
+
+        @if (ActiveTab === 'charges' && record.IsSaved) {
+            <div class="mjo-oh-tabpane">
+                @if (ChargeParams) {
+                    <mj-explorer-entity-data-grid
+                        [Params]="ChargeParams"
+                        [AllowLoad]="true"
+                        [ShowToolbar]="true"
+                        [ShowNewButton]="false"
+                        [ShowDeleteButton]="false"
+                        [Height]="'fit-content'"
+                        [MaxHeight]="RelatedGridHeight"
+                        (Navigate)="OnFormNavigate($event)">
+                    </mj-explorer-entity-data-grid>
+                    @if (record.MoneyLocked) {
+                        <div class="mjo-oh-hint">Charges were booked with the order and cannot be edited.</div>
+                    }
+                }
+            </div>
+        }
+
+        @if (ActiveTab === 'accounting' && record.IsSaved) {
+            <div class="mjo-oh-tabpane">
+                <div class="mjo-oh-acct__bar">
+                    <div>
+                        <h2>{{ AccountingView === 'summary' ? 'Order journal' : 'Line journals' }}</h2>
+                        <p>
+                            @if (AccountingView === 'summary') {
+                                What this order booked, as one entry per company — not a stored row
+                            } @else {
+                                One stored journal per order line — open a row to drill in
+                            }
+                        </p>
+                    </div>
+                    <div class="mjo-oh-switch" role="group" aria-label="Accounting view">
+                        <button type="button" [class.is-on]="AccountingView === 'summary'" (click)="SetAccountingView('summary')">Rolled up</button>
+                        <button type="button" [class.is-on]="AccountingView === 'detail'" (click)="SetAccountingView('detail')">
+                            By line
+                            @if (RollupJournalCount) {
+                                <span class="mjo-oh-switch__n">{{ RollupJournalCount }}</span>
+                            }
+                        </button>
+                        <button type="button" [class.is-on]="AccountingView === 'waterfall'" (click)="SetAccountingView('waterfall')">
+                            <i class="fa-solid fa-chart-line"></i> Rev-Rec Waterfall
+                        </button>
+                    </div>
+                </div>
+
+                @if (AccountingView === 'waterfall') {
+                    <div style="padding: 12px 0;">
+                        <mj-deferred-revenue-waterfall
+                            [JournalEntries]="RevRecJournalEntries"
+                            [Title]="'Order Rev-Rec &amp; Deferred Revenue Schedule'"
+                            (JournalEntrySelected)="OnJournalEntrySelected($event)">
+                        </mj-deferred-revenue-waterfall>
+                    </div>
+                } @else if (AccountingView === 'summary') {
+                    @if (RollupLoading) {
+                        <div class="mjo-oh-hint">Rolling up journals…</div>
+                    } @else if (RollupError) {
+                        <div class="mjo-oh-hint">{{ RollupError }}</div>
+                    } @else if (RollupCards.length === 0) {
+                        <div class="mjo-oh-hint">No journals yet — they appear when the order is confirmed.</div>
+                    } @else {
+                        @for (card of RollupCards; track card.CompanyID) {
+                            <article class="mjo-oh-jecard">
+                                <header class="mjo-oh-jecard__head">
+                                    <div>
+                                        <span class="mjo-oh-jecard__co">{{ card.Company }}</span>
+                                        <span class="mjo-oh-jecard__sub">{{ card.Rows.length }} {{ card.Rows.length === 1 ? 'line' : 'lines' }}</span>
+                                    </div>
+                                    <span class="mjo-oh-chip" [class.mjo-oh-chip--ok]="CardIsBalanced(card)">
+                                        {{ CardIsBalanced(card) ? 'Balanced' : 'Out of balance' }}
+                                    </span>
+                                </header>
+                                <table class="mjo-oh-je__table">
+                                    <thead>
+                                        <tr>
+                                            <th>Account</th>
+                                            <th class="is-num">Debit</th>
+                                            <th class="is-num">Credit</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @for (row of card.Rows; track row.Key) {
+                                            <tr>
+                                                <td>
+                                                    <div class="mjo-oh-acctline">
+                                                        @if (row.AccountCode) {
+                                                            <span class="mjo-oh-acctline__code">{{ row.AccountCode }}</span>
+                                                        }
+                                                        <span class="mjo-oh-acctline__name">{{ row.AccountName }}</span>
+                                                    </div>
+                                                    <div class="mjo-oh-acctline__meta">
+                                                        @for (dim of row.Dimensions; track dim.Name + dim.Value) {
+                                                            <span class="mjo-oh-dim">{{ dim.Name }} · {{ dim.Value }}</span>
+                                                        }
+                                                        <span class="mjo-oh-je__src">{{ SourceLineLabel(row.SourceLineCount) }}</span>
+                                                    </div>
+                                                </td>
+                                                <td class="is-num" [class.is-quiet]="!row.Debit">{{ RollupAmount(row.Debit) }}</td>
+                                                <td class="is-num" [class.is-quiet]="!row.Credit">{{ RollupAmount(row.Credit) }}</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                    <tfoot>
+                                        <tr>
+                                            <th>Total</th>
+                                            <td class="is-num">{{ RollupAmount(card.TotalDebit) }}</td>
+                                            <td class="is-num">{{ RollupAmount(card.TotalCredit) }}</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </article>
+                        }
+                    }
+                } @else if (JournalParams) {
+                    <mj-explorer-entity-data-grid
+                        [Params]="JournalParams"
+                        [AllowLoad]="true"
+                        [ShowToolbar]="true"
+                        [ShowNewButton]="false"
+                        [Height]="'fit-content'"
+                        [MaxHeight]="RelatedGridHeight"
+                        (Navigate)="OnFormNavigate($event)">
+                    </mj-explorer-entity-data-grid>
+                } @else {
+                    <div class="mjo-oh-hint">No line journals until this order has saved lines.</div>
+                }
+            </div>
+        }
+
+        @if (ActiveTab === 'subs' && record.IsSaved) {
+            <div class="mjo-oh-tabpane">
+                @if (SubscriptionParams) {
+                    <mj-explorer-entity-data-grid
+                        [Params]="SubscriptionParams"
+                        [AllowLoad]="true"
+                        [ShowToolbar]="true"
+                        [ShowNewButton]="false"
+                        [Height]="'fit-content'"
+                        [MaxHeight]="RelatedGridHeight"
+                        (Navigate)="OnFormNavigate($event)">
+                    </mj-explorer-entity-data-grid>
+                }
+            </div>
+        }
+        }
+    </div>
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-fields" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersOrderLines"
+        SectionName="Lines"
+        Icon="fa fa-list-ol"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="LineBadge"
+        [DefaultExpanded]="true">
+        <mjo-order-lines-editor
+            [Order]="record"
+            [EditMode]="ComposeMode"
+            (PricingChanged)="OnPricingChanged($event)"
+            (Navigate)="OnFormNavigate($event)">
+        </mjo-order-lines-editor>
+    </mj-collapsible-panel>
+
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+    <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-everything" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
+
+</mj-record-form-container>
+}

@@ -1,0 +1,25 @@
+CompanyCode,Code,Name,ParentCode,Description
+BCP,BOOKS,Books,,Print and digital titles
+BCP,HANDBOOKS,Handbooks,BOOKS,Editorial reference titles
+BCP,ANTHOLOGIES,Anthologies,BOOKS,Collected works
+BCP,EVENTS,Events,,Live and online programming
+BCP,CONFERENCES,Conferences,EVENTS,Multi-day in-person conferences
+BCP,ANNUAL-CONF,Annual Conference,CONFERENCES,Flagship annual meeting
+BCP,REGIONAL-CONF,Regional Conferences,CONFERENCES,Regional chapter meetings
+BCP,WEBINARS,Webinars,EVENTS,Online live and recorded sessions
+BCP,WEBINAR-LIVE,Live Webinars,WEBINARS,Scheduled live broadcasts
+BCP,WEBINAR-OD,On-Demand Webinars,WEBINARS,Recorded sessions
+BCP,WORKSHOPS,Workshops,EVENTS,Hands-on training seats
+BCP,TRADE-SHOWS,Trade Shows,EVENTS,Exhibit and booth programs
+BCP,MEMBERSHIPS,Memberships,,Recurring access programs
+BCP,MEM-INDIV,Individual,MEMBERSHIPS,Single-person memberships
+BCP,MEM-ORG,Institutional,MEMBERSHIPS,Organization-wide memberships
+BCP,SERVICES,Services,,Professional services
+BCP,BUNDLES,Bundles,,Packaged product kits
+BCP,GIFTS,Gift Cards,,Stored-value cards
+HH,BOOKS,Books,,
+HH,EVENTS,Events,,
+HH,CONFERENCES,Conferences,EVENTS,Harbor House conferences
+HH,WEBINARS,Webinars,EVENTS,Harbor House webinars
+HH,MEMBERSHIPS,Memberships,,
+ORPHAN,MISC,Unlinked,,

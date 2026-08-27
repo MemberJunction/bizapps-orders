@@ -1,0 +1,24 @@
+[
+  {
+    "fields": {
+      "Name": "Party Orders Overview",
+      "CategoryID": "@lookup:MJ: Query Categories.Name=Orders",
+      "UserQuestion": "What is this person or organization's complete order overview — counts, LTV, monthly trajectory, recent orders, and active subscriptions?",
+      "Description": "Single-query optimization for the Person and Organization form Overview section. Returns all figures, 6-month spend trajectory, top 6 recent orders, and top 4 active subscriptions in one round trip using JSON aggregation.",
+      "SQL": "@file:SQL/party-orders-overview.sql",
+      "TechnicalDescription": "Nunjucks-parameterized. PartyKind (person|organization) selects the bill-to / subscription join column; PartyID is the party UUID and is always passed through the sqlString filter. Aggregates __mj_BizAppsOrders.vwOrderHeaders and vwSubscriptions with nested JSON arrays for RecentOrdersJson, ActiveSubscriptionsJson, and MonthlyTrajectoryJson.",
+      "Status": "Approved",
+      "QualityRank": 9,
+      "ExecutionCostRank": 2,
+      "UsesTemplate": true
+    },
+    "relatedEntities": {},
+    "primaryKey": {
+      "ID": "4D6E8B1A-5F23-4C78-90A1-7B8C9D0E1F23"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:20:10.124Z",
+      "checksum": "01b075fd29a1307755e782305b07debbd76496f67c8e1c3447c60c0d596f9074"
+    }
+  }
+]

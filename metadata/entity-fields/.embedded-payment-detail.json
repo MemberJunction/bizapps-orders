@@ -1,0 +1,50 @@
+[
+  {
+    "_comments": [
+      "Marks the three PaymentDetail hosts as Embedded Records (MJ 6.2).",
+      "",
+      "Customer Payment Method.PaymentDetailID is required (wallet is a thin host).",
+      "Payment Header.PaymentDetailID and Order Header.InitialPaymentDetailID are optional.",
+      "OnClear is delete: D39 copy-on-use, unique 1:1 per host, never shared.",
+      "",
+      "Requires the MJ EntityField.EmbeddedRecord column (v6.1+). Push after that",
+      "migration has been applied to this database, then run CodeGen so the generated",
+      "classes emit {Field}_Object / {Field}_EnsureObject. Until then the same",
+      "declarations live on the shared entity subclasses."
+    ],
+    "fields": {
+      "EmbeddedRecord": "@file:payment-detail-embed.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Customer Payment Methods&Name=PaymentDetailID"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.509Z",
+      "checksum": "85e1e6e235acc3d35ed96e5873f68f4282c31d56e9b1222d59a8e5a8307178d9"
+    }
+  },
+  {
+    "fields": {
+      "EmbeddedRecord": "@file:payment-detail-embed.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Headers&Name=PaymentDetailID"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.479Z",
+      "checksum": "85e1e6e235acc3d35ed96e5873f68f4282c31d56e9b1222d59a8e5a8307178d9"
+    }
+  },
+  {
+    "fields": {
+      "EmbeddedRecord": "@file:payment-detail-embed.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=InitialPaymentDetailID"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.446Z",
+      "checksum": "85e1e6e235acc3d35ed96e5873f68f4282c31d56e9b1222d59a8e5a8307178d9"
+    }
+  }
+]

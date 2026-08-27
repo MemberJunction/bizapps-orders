@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-10 - Events and One-Time Deferred Revenue",
+    "Description": "Events sold in advance and earned on the day (EV1-EV10, D-EVENT/D14). A ticket is one-time FUTURE deferred revenue: Dr AR / Cr Deferred Revenue at booking, then a single forward-dated release on the event date. RR6 already proved the AllBackEnd rule by hand-setting a service period; this bundle covers the part that leaves untested - for a real event nobody should type those dates, because a hand-typed recognition date on every ticket sold means a typo books revenue in the wrong period with nothing downstream to disagree. The event knows when it is, so the line inherits its service period from EventProduct. Also covers explicit-period override, single-day events with no end date, non-event products being untouched, quantity scaling, the EventOrderLine attendee extension, and a two-company event order deferring on each company separately.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A ticket line carrying no dates inherits ServicePeriodStart/End from EventProduct; booking credits Deferred Revenue rather than Sales; exactly one release is written, dated the event's end; the release nets Deferred Revenue to zero and lands the amount in Sales once; an explicit period on the line wins; a single-day event with no end date recognizes on that day; a non-event product keeps no service period; quantity scales the deferral without splitting the release; attendee detail stores against the order line's own primary key; a two-company event order clears deferred revenue on each company separately."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "events"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "DBCDEC55-0FEE-41C0-9932-051269BA4D79"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.410Z",
+    "checksum": "f9c1c97c337682b63df201bcce8ea218127b5a18be744815620b8dca210196b5"
+  }
+}

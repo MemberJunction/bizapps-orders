@@ -1,0 +1,258 @@
+<div class="mj-checkout-widget-container"
+    [style.--mj-primary-color]="activeTheme()?.primaryColor || '#2563eb'"
+    [style.--mj-accent-color]="activeTheme()?.accentColor || '#3b82f6'"
+    [style.--mj-border-radius]="activeTheme()?.borderRadius || '8px'"
+    [style.--mj-bg-color]="activeTheme()?.backgroundColor || '#ffffff'"
+    [style.--mj-text-color]="activeTheme()?.textColor || '#0f172a'"
+    [style.--mj-font-family]="activeTheme()?.fontFamily || 'inherit'">
+
+    <!-- Widget Header -->
+    <header class="mj-widget-header">
+        <h2 class="mj-widget-title">{{ config?.title || 'Checkout' }}</h2>
+        @if (config?.description) {
+            <p class="mj-widget-description">{{ config?.description }}</p>
+        }
+    </header>
+
+    <!-- Error Banner -->
+    @if (displayErrorMessage()) {
+        <div class="mj-widget-error-banner" role="alert">
+            <span class="mj-error-icon">⚠️</span>
+            <span>{{ displayErrorMessage() }}</span>
+        </div>
+    }
+
+    <!-- Order Item & Pricing Summary -->
+    <div class="mj-widget-summary-card">
+        <div class="mj-summary-row">
+            <div class="mj-summary-item-info">
+                <span class="mj-product-name">{{ config?.productName || 'Order Item' }}</span>
+                @if (isFree()) {
+                    <span class="mj-badge-free">FREE</span>
+                }
+            </div>
+            <div class="mj-summary-price">
+                @if (isFree()) {
+                    <span class="mj-price-free">$0.00</span>
+                } @else {
+                    <span class="mj-price-amount">{{ currencySymbol() }}{{ (config?.unitPrice || 0).toFixed(2) }}</span>
+                }
+            </div>
+        </div>
+
+        @if (config?.allowQuantity) {
+            <div class="mj-quantity-selector-row">
+                <label for="quantityInput" class="mj-label">Quantity</label>
+                <div class="mj-qty-controls">
+                    <button type="button" class="mj-qty-btn" (click)="onQuantityChange(quantity() - 1)" [disabled]="quantity() <= 1">-</button>
+                    <input id="quantityInput" type="number" class="mj-qty-input" [ngModel]="quantity()" (ngModelChange)="onQuantityChange($event)" min="1" [max]="config?.maxQuantity || 50" />
+                    <button type="button" class="mj-qty-btn" (click)="onQuantityChange(quantity() + 1)" [disabled]="quantity() >= (config?.maxQuantity || 50)">+</button>
+                </div>
+            </div>
+        }
+    </div>
+
+    <!-- Registration / Contact / Product Extension Form Section -->
+    <section class="mj-widget-form-section">
+        @if (isSingleUnit()) {
+            <!-- Single Unit / Primary Form -->
+            <h3 class="mj-section-title">Details</h3>
+            <div class="mj-form-grid">
+                @for (field of activeFieldDefs(); track field.name) {
+                    <div class="mj-form-group" [class.full-width]="field.type === 'textarea' || field.name === 'email' || field.name === 'Email'">
+                        <label class="mj-label">
+                            {{ field.label }}
+                            @if (field.required) {
+                                <span class="mj-required">*</span>
+                            }
+                        </label>
+
+                        @switch (field.type) {
+                            @case ('textarea') {
+                                <textarea
+                                    class="mj-input mj-textarea"
+                                    [ngModel]="units()[0]?.[field.name]"
+                                    (ngModelChange)="updateUnitField(0, field.name, $event)"
+                                    [placeholder]="field.placeholder || ''"
+                                    [required]="field.required || false">
+                                </textarea>
+                            }
+                            @case ('select') {
+                                <select
+                                    class="mj-select"
+                                    [ngModel]="units()[0]?.[field.name]"
+                                    (ngModelChange)="updateUnitField(0, field.name, $event)"
+                                    [required]="field.required || false">
+                                    <option [ngValue]="''">Select {{ field.label }}</option>
+                                    @for (opt of field.options; track opt.value) {
+                                        <option [ngValue]="opt.value">{{ opt.label }}</option>
+                                    }
+                                </select>
+                            }
+                            @case ('boolean') {
+                                <label class="mj-checkbox-label">
+                                    <input
+                                        type="checkbox"
+                                        [ngModel]="units()[0]?.[field.name]"
+                                        (ngModelChange)="updateUnitField(0, field.name, $event)" />
+                                    <span>{{ field.label }}</span>
+                                </label>
+                            }
+                            @case ('number') {
+                                <input
+                                    type="number"
+                                    class="mj-input"
+                                    [ngModel]="units()[0]?.[field.name]"
+                                    (ngModelChange)="updateUnitField(0, field.name, $event)"
+                                    [placeholder]="field.placeholder || ''"
+                                    [required]="field.required || false" />
+                            }
+                            @case ('date') {
+                                <input
+                                    type="date"
+                                    class="mj-input"
+                                    [ngModel]="units()[0]?.[field.name]"
+                                    (ngModelChange)="updateUnitField(0, field.name, $event)"
+                                    [required]="field.required || false" />
+                            }
+                            @default {
+                                <input
+                                    [type]="field.name.toLowerCase().includes('email') ? 'email' : 'text'"
+                                    class="mj-input"
+                                    [ngModel]="units()[0]?.[field.name]"
+                                    (ngModelChange)="updateUnitField(0, field.name, $event)"
+                                    [placeholder]="field.placeholder || ''"
+                                    [required]="field.required || false" />
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        } @else {
+            <!-- Multi-Unit Matrix (Repeating Fieldsets for Quantity > 1) -->
+            <div class="mj-multi-attendee-header">
+                <h3 class="mj-section-title">Item Details ({{ quantity() }})</h3>
+                <button type="button" class="mj-btn-link" (click)="copyPrimaryToAll()">Copy Primary Info to All</button>
+            </div>
+
+            <div class="mj-attendee-matrix">
+                @for (unit of units(); track $index) {
+                    <div class="mj-attendee-card">
+                        <div class="mj-attendee-card-title">Item {{ $index + 1 }}</div>
+                        <div class="mj-form-grid">
+                            @for (field of activeFieldDefs(); track field.name) {
+                                <div class="mj-form-group" [class.full-width]="field.type === 'textarea' || field.name === 'email' || field.name === 'Email'">
+                                    <label class="mj-label">
+                                        {{ field.label }}
+                                        @if (field.required) {
+                                            <span class="mj-required">*</span>
+                                        }
+                                    </label>
+
+                                    @switch (field.type) {
+                                        @case ('textarea') {
+                                            <textarea
+                                                class="mj-input mj-textarea"
+                                                [ngModel]="unit[field.name]"
+                                                (ngModelChange)="updateUnitField($index, field.name, $event)"
+                                                [placeholder]="field.placeholder || ''"
+                                                [required]="field.required || false">
+                                            </textarea>
+                                        }
+                                        @case ('select') {
+                                            <select
+                                                class="mj-select"
+                                                [ngModel]="unit[field.name]"
+                                                (ngModelChange)="updateUnitField($index, field.name, $event)"
+                                                [required]="field.required || false">
+                                                <option [ngValue]="''">Select {{ field.label }}</option>
+                                                @for (opt of field.options; track opt.value) {
+                                                    <option [ngValue]="opt.value">{{ opt.label }}</option>
+                                                }
+                                            </select>
+                                        }
+                                        @case ('boolean') {
+                                            <label class="mj-checkbox-label">
+                                                <input
+                                                    type="checkbox"
+                                                    [ngModel]="unit[field.name]"
+                                                    (ngModelChange)="updateUnitField($index, field.name, $event)" />
+                                                <span>{{ field.label }}</span>
+                                            </label>
+                                        }
+                                        @case ('number') {
+                                            <input
+                                                type="number"
+                                                class="mj-input"
+                                                [ngModel]="unit[field.name]"
+                                                (ngModelChange)="updateUnitField($index, field.name, $event)"
+                                                [placeholder]="field.placeholder || ''"
+                                                [required]="field.required || false" />
+                                        }
+                                        @case ('date') {
+                                            <input
+                                                type="date"
+                                                class="mj-input"
+                                                [ngModel]="unit[field.name]"
+                                                (ngModelChange)="updateUnitField($index, field.name, $event)"
+                                                [required]="field.required || false" />
+                                        }
+                                        @default {
+                                            <input
+                                                [type]="field.name.toLowerCase().includes('email') ? 'email' : 'text'"
+                                                class="mj-input"
+                                                [ngModel]="unit[field.name]"
+                                                (ngModelChange)="updateUnitField($index, field.name, $event)"
+                                                [placeholder]="field.placeholder || ''"
+                                                [required]="field.required || false" />
+                                        }
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </section>
+
+    <!-- Stripe Embedded Payment Section -->
+    @if (!isFree()) {
+        <section class="mj-widget-payment-section">
+            <h3 class="mj-section-title">Payment</h3>
+            <div class="mj-stripe-container">
+                <div id="stripe-card-element" class="mj-stripe-mount-point">
+                    <!-- Stripe.js mounts secure hosted Elements iframe here -->
+                </div>
+                <div class="mj-stripe-badge">
+                    <span class="mj-stripe-lock-icon">🔒</span>
+                    <span>Secured by Stripe • PCI-DSS Level 1 Certified • End-to-end Encrypted</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Final Total Line -->
+        <div class="mj-checkout-total-row">
+            <span class="mj-total-label">Total Due</span>
+            <span class="mj-total-amount">{{ currencySymbol() }}{{ totalGross().toFixed(2) }}</span>
+        </div>
+    }
+
+    <!-- Actions -->
+    <div class="mj-widget-actions">
+        <button type="button" class="mj-btn-submit" [disabled]="!isFormValid() || isProcessing" (click)="handleSubmit()">
+            @if (isProcessing) {
+                <span class="mj-spinner"></span>
+                <span>Processing...</span>
+            } @else if (isFree()) {
+                <span>Complete Free Registration</span>
+            } @else {
+                <span>Pay {{ currencySymbol() }}{{ totalGross().toFixed(2) }}</span>
+            }
+        </button>
+
+        <button type="button" class="mj-btn-cancel" [disabled]="isProcessing" (click)="cancelled.emit()">
+            Cancel
+        </button>
+    </div>
+</div>

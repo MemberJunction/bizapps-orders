@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-04 - Payments and Rollups",
+    "Description": "The money-in half: rollup TRIGGERS, document numbering, and instrument handling (PR1-PR9, D30/D39/D42). Order totals roll up from lines; payments roll into AmountPaid/Balance/PaymentStatus across Unpaid -> PartiallyPaid -> Paid; a captured PaymentDetail is immutable at the database level; OrderNumber and PaymentNumber are auto-assigned and unique; and the D42 initial-payment intent becomes a real fully-applied payment whose instrument is a COPY, never the order's row.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "250 order reads Unpaid then PartiallyPaid at 100 then Paid at 250; tampering with a captured instrument is refused; ORD-/PAY- numbers match {6 digits}; the auto payment settles the order and carries its own PaymentDetail."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "payments-rollups"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "45EC7BD2-980D-49EA-AC3C-E1F7A749BBDF"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.323Z",
+    "checksum": "53cef290267af101679ef573003be107873ed7005be5817db367d9ae8a4be5d5"
+  }
+}

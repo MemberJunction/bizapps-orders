@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-28 - Invoicing",
+    "Description": "Orders: Generate Invoice - the order rendered as the document you send a customer (IV1-IV15). There is no Invoice record: the confirmed order IS the receivable, so an invoice is that order presented, and every defect in a presentation layer looks exactly like a working one. A charge nobody allocated is simply not on the bill. A discount recorded as a percentage prints as no discount at all, because OrderLine.DiscountAmount stays zero on that shape. A two-company order billed as one document names the wrong payee for half the money. None of those throw and none look wrong on the page. The checks are therefore weighted toward AMOUNTS TYING rather than elements being present, and the load-bearing one is that the documents an order produces sum back to OrderHeader.TotalGross.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A confirmed order renders as an Invoice numbered as the order itself; an order sold by two companies splits into one document per company whose grosses sum to the order, suffixed -A and -B stably, with the scalar HTML output null rather than half the bill; a draft renders as a Quote that is never settled and never overdue; a voided order is refused by name rather than rendered into something indistinguishable from a live bill; a return renders as a Credit Memo whose headline is a magnitude and whose footer offers the credit rather than demanding payment; a percentage discount is DERIVED from list-minus-net and reaches the ladder, which walks to the order total; a bundle nests its components and prints them without amounts so it is billed once; charges and tax print as named rows totalling the order's own line figures; a payment reduces the amount due and is named on the page; Format=DATA returns the figures and renders no markup; malformed and missing ids are refused with result codes rather than thrown at the caller; the rendered HTML fetches nothing external, so it survives a headless PDF render and an email body; two renders of the same order are byte-identical because nothing is stored; the action's DriverClass in metadata resolves to a registered class; and an ordinary order produces no diagnostic notes."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "invoicing"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "3F6D6E1A-5D0B-4F3B-9E2C-7A1C4E9D2B70"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.666Z",
+    "checksum": "813a0b1e60d761916132470343c276e371be5a080a3db4f349aefa31f2c04ea9"
+  }
+}

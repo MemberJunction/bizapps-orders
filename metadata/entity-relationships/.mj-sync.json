@@ -1,0 +1,12 @@
+{
+  "entity": "MJ: Entity Relationships",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "createNewFileIfNotFound": false,
+    "newFileName": ".entity-relationships.json",
+    "appendRecordsToExistingFile": false,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true
+  }
+}

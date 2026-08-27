@@ -1,0 +1,56 @@
+[
+  {
+    "_comments": [
+      "The invoice, as metadata.",
+      "",
+      "WHY THE HTML IS IN THE DATABASE. An invoice is the most-edited artefact in an order system and",
+      "the least interesting to a compiler: somebody wants the logo bigger, the remittance wording",
+      "changed, a VAT line added for one region. Every one of those is a deploy if the markup lives in",
+      "a TypeScript string, and none of them is a deploy if it lives here. The Action renders whatever",
+      "template it is pointed at, so a deployment can also override this one without forking the code.",
+      "",
+      "ONE TEMPLATE COVERS INVOICE, QUOTE AND CREDIT MEMO. They are the same document with different",
+      "words on it; keeping three files in step by hand is how the credit memo ends up with last",
+      "year's remittance address.",
+      "",
+      "The markup does no arithmetic — every figure arrives pre-formatted from InvoiceDisplay.ts — so",
+      "editing this template cannot make the page disagree with the ledger. That is the property that",
+      "makes it safe to hand to somebody who is not a developer."
+    ],
+    "fields": {
+      "Name": "Orders: Standard Invoice",
+      "Description": "The standard customer-facing document for an order: invoice, quote or credit memo depending on the order's status. Self-contained HTML with inline CSS — no external stylesheet, webfont or image host — so it renders identically as a PDF, in an email body, and opened straight from disk.",
+      "CategoryID": "@lookup:MJ: Template Categories.Name=Orders: Documents",
+      "UserPrompt": "Render one InvoiceDocument (see InvoiceBehavior.ts) as a printable page. The `doc` variable is a DisplayInvoice; `options.ShowDiagnostics` reveals the internal notes block, which must never be sent to a customer.",
+      "UserID": "@lookup:MJ: Users.Name=System",
+      "IsActive": true
+    },
+    "primaryKey": {
+      "ID": "7EB5EFF5-F7E8-4FCB-BD70-B574A001ABAC"
+    },
+    "relatedEntities": {
+      "MJ: Template Contents": [
+        {
+          "fields": {
+            "TemplateID": "@parent:ID",
+            "TypeID": "@lookup:MJ: Template Content Types.Name=HTML",
+            "TemplateText": "@file:invoice-standard.html",
+            "Priority": 1,
+            "IsActive": true
+          },
+          "primaryKey": {
+            "ID": "AE967735-13C5-4CE0-9ABE-F5974CCF2640"
+          },
+          "sync": {
+            "lastModified": "2026-08-24T20:20:11.667Z",
+            "checksum": "1176f3ca9e2ef4541d9cef3e123e57627ad1fdade9ca7eb11fd64e3c83b52fad"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:20:10.200Z",
+      "checksum": "801d177bcd571212e845703ce0498034753f0acfe77e2dbf5d1b0830f46e8d27"
+    }
+  }
+]

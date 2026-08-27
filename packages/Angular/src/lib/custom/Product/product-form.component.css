@@ -1,0 +1,310 @@
+/* ============================================================================
+   BizApps Orders — Custom Product Form Component (Responsive Left-Nav Layout)
+   ============================================================================ */
+
+/* ── 1. Hero Identity Header Card ─────────────────────────────────────────── */
+.mjo-record-header-card {
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-lg, 12px);
+    padding: var(--mj-space-4, 16px) var(--mj-space-5, 20px);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    margin-bottom: var(--mj-space-4, 16px);
+}
+
+.mjo-record-header-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--mj-space-4, 16px);
+    flex-wrap: wrap;
+}
+
+.mjo-record-identity {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-4, 16px);
+}
+
+.mjo-record-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: var(--mj-radius-md, 8px);
+    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 4px 10px rgba(2, 132, 199, 0.25);
+    flex-shrink: 0;
+}
+
+.mjo-record-title-area {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-2, 6px);
+}
+
+.mjo-record-title {
+    margin: 0;
+    font-size: var(--mj-text-lg, 18px);
+    font-weight: var(--mj-font-bold, 700);
+    color: var(--mj-text-primary, #0f172a);
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+}
+
+.mjo-record-badges {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2, 8px);
+    flex-wrap: wrap;
+}
+
+.mjo-entity-chip {
+    font-size: var(--mj-text-xs, 11.5px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-brand-primary, #0076b6);
+    background: var(--mj-status-info-bg, rgba(0, 118, 182, 0.12));
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-sm, 4px);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.mjo-sku-badge {
+    font-family: var(--mj-font-family-mono, monospace);
+    font-size: var(--mj-text-xs, 11.5px);
+    font-weight: 500;
+    color: var(--mj-text-secondary, #475569);
+    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.04));
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+    padding: 1px 7px;
+    border-radius: var(--mj-radius-sm, 4px);
+}
+
+.mjo-type-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--mj-text-xs, 11.5px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: #0284c7;
+    background: rgba(2, 132, 199, 0.12);
+    border: 1px solid rgba(2, 132, 199, 0.35);
+    padding: 2px 8px;
+    border-radius: var(--mj-radius-full, 9999px);
+}
+
+.mjo-status-chip {
+    font-size: var(--mj-text-xs, 11.5px);
+    font-weight: var(--mj-font-bold, 700);
+    padding: 2px 10px;
+    border-radius: var(--mj-radius-full, 9999px);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.mjo-status-chip--active {
+    background: var(--mj-color-success-100, #dcfce7);
+    color: var(--mj-color-success-700, #15803d);
+    border: 1px solid var(--mj-color-success-300, #86efac);
+}
+
+.mjo-status-chip--draft {
+    background: var(--mj-color-warning-100, #fef3c7);
+    color: var(--mj-color-warning-700, #b45309);
+    border: 1px solid var(--mj-color-warning-300, #fcd34d);
+}
+
+.mjo-status-chip--inactive {
+    background: var(--mj-bg-surface-sunken, #f1f5f9);
+    color: var(--mj-text-muted, #64748b);
+    border: 1px solid var(--mj-border-default, #cbd5e1);
+}
+
+/* Summary metric strip */
+.mjo-record-summary-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: var(--mj-space-3, 12px);
+    margin-top: var(--mj-space-3, 14px);
+    padding-top: var(--mj-space-3, 14px);
+    border-top: 1px solid var(--mj-border-default, #f1f5f9);
+}
+
+.mjo-stat-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mjo-stat-label {
+    font-size: var(--mj-text-xs, 10.5px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-text-muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.mjo-stat-val {
+    font-size: var(--mj-text-sm, 13.5px);
+    font-weight: var(--mj-font-bold, 700);
+    font-family: var(--mj-font-family-mono, monospace);
+    color: var(--mj-text-primary, #0f172a);
+}
+
+/* ── 2. Two-Column Workspace Layout ────────────────────────────────────────── */
+.mjo-workspace-layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: var(--mj-space-4, 16px);
+    align-items: start;
+}
+
+/* Left Nav Rail */
+.mjo-product-left-nav {
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-lg, 10px);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    position: sticky;
+    top: 16px;
+}
+
+.mjo-nav-group-title {
+    font-size: 10px;
+    font-weight: var(--mj-font-bold, 700);
+    color: var(--mj-text-muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 6px 10px 2px;
+}
+
+.mjo-nav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    border-radius: var(--mj-radius-md, 6px);
+    font-family: inherit;
+    font-size: var(--mj-text-xs, 12.5px);
+    font-weight: var(--mj-font-semibold, 600);
+    color: var(--mj-text-secondary, #475569);
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.15s ease;
+    box-sizing: border-box;
+}
+
+.mjo-nav-btn:hover {
+    background: var(--mj-bg-surface-sunken, #f1f5f9);
+    color: var(--mj-text-primary, #0f172a);
+}
+
+.mjo-nav-btn.active {
+    background: var(--mj-brand-primary, #0076b6);
+    color: #ffffff;
+    box-shadow: 0 2px 4px rgba(0, 118, 182, 0.25);
+}
+
+.mjo-nav-btn-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mjo-nav-btn-left i {
+    width: 16px;
+    text-align: center;
+    font-size: 13px;
+}
+
+.mjo-nav-badge {
+    font-size: 10px;
+    font-weight: var(--mj-font-bold, 700);
+    padding: 1px 6px;
+    border-radius: var(--mj-radius-full, 9999px);
+    background: rgba(0, 0, 0, 0.07);
+}
+
+.mjo-nav-btn.active .mjo-nav-badge {
+    background: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+}
+
+/* Responsive collapse on smaller screens */
+@media (max-width: 900px) {
+    .mjo-workspace-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .mjo-product-left-nav {
+        position: static;
+        flex-direction: row;
+        overflow-x: auto;
+        padding: 6px;
+        gap: 6px;
+    }
+
+    .mjo-nav-group-title { display: none; }
+    .mjo-nav-btn { width: auto; white-space: nowrap; }
+}
+
+/* ── 3. Content Workspace Widgets & Panes ──────────────────────────────────── */
+.mjo-workspace-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-3, 12px);
+}
+
+.mjo-pane-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-3, 12px);
+}
+
+.mjo-profile-banner {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: var(--mj-radius-md, 8px);
+    padding: var(--mj-space-3, 12px) var(--mj-space-4, 16px);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: var(--mj-text-sm, 12.5px);
+    color: #0369a1;
+}
+
+.mjo-widget-card {
+    background: var(--mj-bg-surface-card, #ffffff);
+    border: 1px solid var(--mj-border-default, #e2e8f0);
+    border-radius: var(--mj-radius-lg, 10px);
+    padding: var(--mj-space-4, 16px);
+}
+
+.mjo-widget-head {
+    font-size: var(--mj-text-sm, 13px);
+    font-weight: var(--mj-font-bold, 700);
+    color: var(--mj-text-primary, #0f172a);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: var(--mj-space-3, 12px);
+    padding-bottom: var(--mj-space-2, 8px);
+    border-bottom: 1px solid var(--mj-border-default, #f1f5f9);
+}
+
+.mjo-fields-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: var(--mj-space-3, 12px);
+}

@@ -1,0 +1,31 @@
+[
+  {
+    "_comments": [
+      "Order Header bill-to / ship-to street addresses are owner-held embeds of",
+      "MJ_BizApps_Common: Addresses. Addresses are first-class shared records",
+      "(AddressLink), so OnClear orphans — never deletes — the peer."
+    ],
+    "fields": {
+      "EmbeddedRecord": "@file:address-embed.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=BillToAddressID"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.361Z",
+      "checksum": "708a46b62702f523624379df5354ed95769dae0b76f7c343ae8f25766b979701"
+    }
+  },
+  {
+    "fields": {
+      "EmbeddedRecord": "@file:address-embed.json"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=ShipToAddressID"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:38.391Z",
+      "checksum": "708a46b62702f523624379df5354ed95769dae0b76f7c343ae8f25766b979701"
+    }
+  }
+]

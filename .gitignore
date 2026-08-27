@@ -1,0 +1,29 @@
+# Local configuration overrides for mjdev
+**/.mjrc.cjs
+
+.DS_Store
+.cache/
+node_modules/
+.turbo/
+.angular/
+dist/
+
+# CodeGen artifacts — regenerated per environment via `mj codegen`, never committed.
+# (The hand-authored baseline migration is the only committed SQL; codegen output
+#  is reproduced from it + the DB on demand.)
+codegen.output.log
+migrations/codegen/
+Schema Files/
+SQL Scripts/generated/
+
+.env
+
+# mj sync push logs — generated on every push, one file each. Not source.
+metadata/sql_logging/
+metadata-tests/sql_logging/
+.ux-harness/
+test-harnesses/.integration.lock
+
+# Sample documents written by test-harnesses/invoice-live.mjs so somebody can LOOK at them.
+# Rendered from whatever is in the database at the time; never a source artefact.
+.invoice-samples/

@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orders dashboard — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  .dsh-work { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--mj-space-4); }
+  .dsh-queue a {
+    display: flex; align-items: center; gap: var(--mj-space-3);
+    padding: var(--mj-space-3) 0; border-bottom: 1px solid var(--mj-border-subtle);
+    color: inherit;
+  }
+  .dsh-queue a:last-child { border-bottom: none; }
+  .dsh-queue a:hover { text-decoration: none; }
+  .dsh-queue a:hover .t { color: var(--mj-brand-primary); }
+  .dsh-queue .ic {
+    width: 32px; height: 32px; border-radius: var(--mj-radius-md); flex: none;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta">
+    <span class="mj-chip mj-chip--outline">All 3 companies</span>
+    <span class="mj-chip mj-chip--outline">as of Jul 29, 10:45</span>
+  </div>
+
+  <div slot="actions">
+    <div class="mj-segmented">
+      <button data-value="today">Today</button>
+      <button class="is-active" data-value="week">This week</button>
+      <button data-value="month">Month</button>
+    </div>
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-arrow-rotate-right"></i></button>
+    <a class="mj-btn mj-btn--primary" href="fast-entry.html"><i class="fa-solid fa-plus"></i> New order</a>
+  </div>
+
+  <div slot="body">
+
+    <div class="mock-note">
+      Every number here is a cheap count or a precomputed total — never an on-demand aggregate, because a dashboard
+      that takes four seconds to answer &ldquo;is today normal?&rdquo; gets closed. What earns space is the set of
+      things a person can <b>act on</b>, which is why the work queues sit above the trend.
+    </div>
+
+    <!-- ══ the four numbers that matter ══ -->
+    <div class="mj-stat-grid">
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-file-invoice-dollar"></i> Orders this week</span>
+        <span class="v" id="s-week">—</span>
+        <span class="d" id="s-week-d">—</span>
+      </div>
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-scale-balanced"></i> Booked this month</span>
+        <span class="v" id="s-booked">—</span>
+        <span class="d">revenue and deferred revenue, at Pending</span>
+      </div>
+      <div class="mj-stat is-alert">
+        <span class="l"><i class="fa-solid fa-hourglass-half"></i> Overdue</span>
+        <span class="v" id="s-overdue">—</span>
+        <span class="d"><a href="../receivables/overdue.html" id="s-overdue-d">—</a></span>
+      </div>
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-graduation-cap"></i> From LXP this week</span>
+        <span class="v" id="s-lxp">—</span>
+        <span class="d" id="s-lxp-d">—</span>
+      </div>
+    </div>
+
+    <!-- ══ work queues — the actionable part ══ -->
+    <div class="dsh-work" style="margin-top:var(--mj-space-6)">
+      <div class="mj-card">
+        <div class="mj-card-head"><i class="fa-solid fa-list-check"></i><h3>Needs someone</h3></div>
+        <div class="mj-card-pad dsh-queue" id="dsh-queues"></div>
+      </div>
+
+      <div class="mj-card">
+        <div class="mj-card-head"><i class="fa-solid fa-chart-simple"></i><h3>Orders per day</h3>
+          <span class="right small muted">last 7 days</span></div>
+        <div class="mj-card-pad">
+          <div id="dsh-days"></div>
+          <div class="small muted" style="margin-top:var(--mj-space-3)">
+            Bars rather than a line: seven discrete days are magnitudes to compare, not a curve to trace. One hue —
+            the days are the categories, so colouring them differently would encode nothing.
+          </div>
+        </div>
+      </div>
+
+      <div class="mj-card">
+        <div class="mj-card-head"><i class="fa-solid fa-layer-group"></i><h3>Where orders are sitting</h3></div>
+        <div class="mj-card-pad">
+          <div id="dsh-status"></div>
+          <div class="small muted" style="margin-top:var(--mj-space-3)">
+            Directly labelled, so the bar is a comparison aid rather than the only way to read the value.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ recent + attention ══ -->
+    <div class="mj-split" style="margin-top:var(--mj-space-6);align-items:stretch">
+      <div class="right" style="order:1">
+        <div class="mj-card" style="height:100%">
+          <div class="mj-card-head"><i class="fa-solid fa-clock-rotate-left"></i><h3>Latest orders</h3>
+            <span class="right"><a class="small" href="list.html">All orders →</a></span></div>
+          <table class="mj-table mj-table--compact">
+            <thead><tr><th style="width:100px">Order</th><th>Customer</th><th style="width:88px">Origin</th>
+              <th style="width:92px">Status</th><th class="num" style="width:110px">Total</th></tr></thead>
+            <tbody id="dsh-recent"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <aside class="left" style="order:2">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-triangle-exclamation"></i><h3>Worth a look</h3></div>
+          <div class="mj-card-pad stack-3" id="dsh-attention"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+const H = MJ.H, D = DB.ordersDash;
+
+function render() {
+  /* stat tiles — hero numbers, no plot */
+  document.getElementById('s-week').textContent = D.week.count;
+  document.getElementById('s-week-d').textContent = `${F.money0(D.week.gross)} · ${D.today.count} today`;
+  document.getElementById('s-booked').textContent = F.money0(D.bookedThisMonth);
+  document.getElementById('s-overdue').textContent = F.money0(D.overdueValue);
+  document.getElementById('s-overdue-d').textContent = `${D.overdueCount} orders — work the list →`;
+  document.getElementById('s-lxp').textContent = D.fromLXP.week;
+  document.getElementById('s-lxp-d').textContent =
+    `${F.money0(D.fromLXP.gross)} today · self-serve checkout`;
+
+  /* work queues */
+  const queues = [
+    { n: D.draft, label: 'Drafts waiting to be finished', href: 'list.html',
+      icon: 'fa-pen-ruler', tone: 'neutral' },
+    { n: D.confirmedNotPosted, label: 'Confirmed but not posted', href: 'list.html',
+      icon: 'fa-clock', tone: 'info', note: 'normally seconds — investigate if it lingers' },
+    { n: D.awaitingFulfilment, label: 'Waiting to ship', href: 'fulfillment.html',
+      icon: 'fa-dolly', tone: 'warning' },
+    { n: D.overdueCount, label: 'Overdue invoices', href: '../receivables/overdue.html',
+      icon: 'fa-hourglass-half', tone: 'error' },
+    { n: 2, label: 'Renewals due in 30 days', href: '../receivables/subscriptions.html',
+      icon: 'fa-rotate', tone: 'violet' },
+    { n: 1, label: 'Credits held by customers', href: '../payments/credit.html',
+      icon: 'fa-piggy-bank', tone: 'success', note: 'spendable — offer it before invoicing again' },
+  ];
+  const tone = {
+    neutral: ['var(--mj-status-neutral-bg)', 'var(--mj-status-neutral-text)'],
+    info:    ['var(--mj-status-info-bg)', 'var(--mj-status-info-text)'],
+    warning: ['var(--mj-status-warning-bg)', 'var(--mj-status-warning-text)'],
+    error:   ['var(--mj-status-error-bg)', 'var(--mj-status-error-text)'],
+    violet:  ['var(--mj-status-violet-bg)', 'var(--mj-status-violet-text)'],
+    success: ['var(--mj-status-success-bg)', 'var(--mj-status-success-text)'],
+  };
+  document.getElementById('dsh-queues').innerHTML = queues.map(q => `
+    <a href="${q.href}">
+      <span class="ic" style="background:${tone[q.tone][0]};color:${tone[q.tone][1]}">
+        <i class="fa-solid ${q.icon}"></i></span>
+      <span style="flex:1;min-width:0">
+        <span class="t" style="font-weight:var(--mj-font-medium)">${q.label}</span>
+        ${q.note ? `<span class="small muted" style="display:block">${q.note}</span>` : ''}
+      </span>
+      <b class="mj-num" style="font-size:16px">${q.n}</b>
+      <i class="fa-solid fa-chevron-right muted tiny"></i>
+    </a>`).join('');
+
+  /* day bars */
+  document.getElementById('dsh-days').innerHTML =
+    H.dayBars(D.weekSpark, ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed'], v => v + ' orders');
+
+  /* status mix — direct-labelled, single hue */
+  document.getElementById('dsh-status').innerHTML = H.bars(D.statusMix, { fmt: v => v + '' });
+
+  /* recent */
+  document.getElementById('dsh-recent').innerHTML = DB.orders
+    .slice().sort((a, b) => b.orderDate.localeCompare(a.orderDate)).slice(0, 7)
+    .map(o => `<tr>
+      <td><a class="mono" href="${o.status === 'Draft' ? 'editor.html' : 'document.html'}">${o.number}</a></td>
+      <td>${H.billTo(o)}</td>
+      <td>${H.origin(o.origin, o.originRef)}</td>
+      <td>${H.orderStatus(o.status)}</td>
+      <td class="num ${o.gross < 0 ? 'mj-money--neg' : ''}">${F.money(o.gross)}</td>
+    </tr>`).join('');
+
+  /* attention — specific, named, actionable */
+  document.getElementById('dsh-attention').innerHTML = `
+    <div class="mj-banner mj-banner--error">
+      <i class="fa-solid fa-hourglass-half"></i>
+      <div class="body"><strong>ORD-0961 is 90 days past due.</strong> $890.00 from Marcus Webb, two contact
+        attempts, no response since Jun 12.
+        <div style="margin-top:4px"><a href="../receivables/overdue.html">Work it →</a></div></div>
+    </div>
+    <div class="mj-banner mj-banner--warning">
+      <i class="fa-solid fa-rotate"></i>
+      <div class="body"><strong>A renewal payment failed.</strong> Lakeside Institute's SUB-2050 is in grace until
+        Aug 5. Dunning notifies CS rather than cancelling — someone has to call.
+        <div style="margin-top:4px"><a href="../receivables/subscriptions.html">Open the subscription →</a></div></div>
+    </div>
+    <div class="mj-banner mj-banner--success">
+      <i class="fa-solid fa-piggy-bank"></i>
+      <div class="body"><strong>Northwind holds $250.00 of credit.</strong> From an overpayment on ORD-1008 —
+        worth applying before their next invoice goes out.
+        <div style="margin-top:4px"><a href="../payments/credit.html">Apply it →</a></div></div>
+    </div>
+    <div class="mj-banner mj-banner--neutral">
+      <i class="fa-solid fa-dolly"></i>
+      <div class="body"><strong>ORD-0961 has been at Posted for 120 days</strong> waiting only on 10 handbooks.
+        Nothing financial is blocked — the goods never went out.
+        <div style="margin-top:4px"><a href="fulfillment.html">Fulfillment queue →</a></div></div>
+    </div>`;
+}
+
+MJ.mount({
+  nav: 'orders', rail: 'dashboard',
+  title: 'Orders',
+  icon: 'fa-solid fa-gauge-high',
+  subtitle: 'Is today normal, and what needs a person?',
+  ready: render,
+});
+</script>
+</body>
+</html>

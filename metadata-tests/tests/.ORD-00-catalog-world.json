@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-00 - Catalog World",
+    "Description": "Commit the shared ORD-WORLD catalog: selling companies and GL, memorable people and organizations, products and prices. No orders or payments. Later bundles take orders against this world. Types are looked up from app metadata, never created here.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Blue Cypress Press, Harbor House, Orphan Ledger; 8 customer orgs; ≥30 people; priced catalog including Style Handbook, conference ticket, memberships, gift card, bundle, and an unlinked product."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "catalog-world"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "965BCE27-8375-49E7-8FA2-F68D1B74DFDE"
+  }
+}

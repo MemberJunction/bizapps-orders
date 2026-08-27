@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Statement — Meridian Association — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+<style>
+  .doc-toolbar {
+    display: flex; align-items: center; gap: var(--mj-space-2); flex-wrap: wrap;
+    max-width: 860px; margin: 0 auto var(--mj-space-4);
+  }
+
+  /* The balance ladder — the spine of a statement. Opening, what moved, closing. */
+  .stmt-summary {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: var(--mj-space-4); margin-bottom: var(--mj-space-6);
+    padding: var(--mj-space-4); border: 1px solid var(--mj-border);
+    border-radius: var(--mj-radius-md); background: var(--mj-surface-alt);
+  }
+  .stmt-summary .cell .lbl {
+    font-size: var(--mj-text-xs); text-transform: uppercase; letter-spacing: .06em;
+    color: var(--mj-text-muted); margin-bottom: var(--mj-space-1);
+  }
+  .stmt-summary .cell .val { font-size: var(--mj-text-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stmt-summary .cell.is-due .val { color: var(--mj-danger-600, #b42318); }
+
+  /* Aging. Buckets are the one thing a credit controller reads first. */
+  .stmt-aging { margin: var(--mj-space-6) 0; }
+  .stmt-aging table { width: 100%; border-collapse: collapse; }
+  .stmt-aging th, .stmt-aging td {
+    padding: var(--mj-space-2) var(--mj-space-3); text-align: right;
+    font-variant-numeric: tabular-nums; border-bottom: 1px solid var(--mj-border-subtle);
+  }
+  .stmt-aging th:first-child, .stmt-aging td:first-child { text-align: left; }
+  .stmt-aging thead th {
+    font-size: var(--mj-text-xs); text-transform: uppercase; letter-spacing: .06em;
+    color: var(--mj-text-muted); font-weight: 600;
+  }
+  .stmt-aging td.is-hot { color: var(--mj-danger-600, #b42318); font-weight: 600; }
+  .stmt-aging .bar { height: 6px; border-radius: 3px; background: var(--mj-border-subtle); overflow: hidden; }
+  .stmt-aging .bar > i { display: block; height: 100%; background: var(--mj-brand-500, #2563eb); }
+  .stmt-aging .bar > i.is-hot { background: var(--mj-danger-500, #d92d20); }
+
+  /* Activity ledger. Running balance is the column people actually follow. */
+  .stmt-activity td.run { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stmt-activity tr.is-credit td.amt { color: var(--mj-success-700, #067647); }
+  .stmt-activity tr.is-open { background: var(--mj-warning-50, #fffaeb); }
+
+  .stmt-remit {
+    margin-top: var(--mj-space-6); padding-top: var(--mj-space-4);
+    border-top: 2px dashed var(--mj-border); display: grid;
+    grid-template-columns: 1fr auto; gap: var(--mj-space-6); align-items: start;
+  }
+  .stmt-remit .tear { font-size: var(--mj-text-xs); color: var(--mj-text-muted); }
+
+  @media print { .stmt-summary { break-inside: avoid; } .stmt-aging { break-inside: avoid; } }
+  @media (max-width: 720px) { .stmt-summary { grid-template-columns: repeat(2, 1fr); } }
+</style>
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta">
+    <span class="mj-chip mj-chip--brand">Statement</span>
+    <span class="mj-chip">July 2026</span>
+    <span class="mj-chip mj-chip--outline">3 open items</span>
+  </div>
+
+  <div slot="actions">
+    <a class="mj-btn mj-btn--outline" href="aging.html"><i class="fa-solid fa-arrow-left"></i> Aging</a>
+    <button class="mj-btn mj-btn--outline" onclick="window.print()"><i class="fa-solid fa-print"></i> Print</button>
+    <button class="mj-btn mj-btn--outline"><i class="fa-regular fa-file-pdf"></i> PDF</button>
+    <button class="mj-btn mj-btn--outline"><i class="fa-regular fa-envelope"></i> Email</button>
+    <a class="mj-btn mj-btn--primary" href="../payments/entry.html"><i class="fa-solid fa-hand-holding-dollar"></i> Take payment</a>
+  </div>
+
+  <div slot="body">
+
+    <div class="doc-toolbar no-print">
+      <div class="mj-segmented" data-on-select="setMode">
+        <button class="is-active" data-value="open">Open items</button>
+        <button data-value="activity">Full activity</button>
+      </div>
+      <span class="small muted spacer">
+        Two conventions, one document. Open-item lists what is still owed; activity replays the period.
+      </span>
+    </div>
+
+    <div class="mock-note" style="max-width:860px;margin:0 auto var(--mj-space-4)">
+      <b>A statement is not an invoice.</b> An invoice asks for money for one purchase; a statement tells a customer
+      where they stand across every purchase in a period. There is no Statement record and there should not be — it is
+      a <i>rendering of orders and payments between two dates</i>, so it can never disagree with the ledger it
+      summarises. Re-render it next year and it still reconciles.
+    </div>
+
+    <div class="doc-shell">
+      <div class="mj-doc" id="doc"></div>
+    </div>
+
+    <div class="doc-toolbar no-print" style="margin-top:var(--mj-space-6)">
+      <div class="mock-note" style="margin:0">
+        The remittance slip at the foot is deliberate: a cheque arriving with no reference is the single commonest
+        cause of unapplied cash. Print styles drop the shell and rail and run the document edge to edge — try
+        <kbd>⌘P</kbd>.
+      </div>
+    </div>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+let MODE = 'open';
+function setMode(v) { MODE = v; render(); }
+
+/* The statement period. Everything below is derived from these two dates — nothing is stored. */
+const PERIOD = { from: '2026-07-01', to: '2026-07-31' };
+const AS_OF = '2026-07-31';
+
+/** Whole days between two ISO dates, DST-proof. */
+function daysBetween(a, b) {
+  const p = s => { const [y, m, d] = String(s).split('T')[0].split('-').map(Number); return Date.UTC(y, m - 1, d); };
+  return Math.round((p(b) - p(a)) / 86400000);
+}
+
+function render() {
+  // ONE customer. A statement is per-payer, and the payer is the anchor for everything on it.
+  const org = DB.orgs['O1'];
+  const co = DB.companies['C1'];
+
+  const mine = DB.orders.filter(o =>
+    o.billToOrgID === 'O1' && o.status !== 'Voided' && o.orderDate <= PERIOD.to);
+
+  const opening = mine
+    .filter(o => o.orderDate < PERIOD.from)
+    .reduce((s, o) => s + o.balance, 0);
+
+  // Build the activity: every order raised and every payment received, in date order.
+  const events = [];
+  for (const o of mine.filter(o => o.orderDate >= PERIOD.from)) {
+    events.push({
+      date: o.orderDate, kind: 'Invoice', ref: o.number, note: o.description,
+      charge: o.gross, credit: 0, open: o.balance > 0, order: o,
+    });
+  }
+  for (const p of DB.payments.filter(p => p.partyOrgID === 'O1' && p.date >= PERIOD.from && p.date <= PERIOD.to)) {
+    events.push({
+      date: p.date, kind: p.typeCode === 'Refund' ? 'Refund' : 'Payment', ref: p.number,
+      note: p.typeCode === 'Refund' ? 'Refund issued' : `${p.typeCode} received`,
+      charge: p.typeCode === 'Refund' ? p.amount : 0,
+      credit: p.typeCode === 'Refund' ? 0 : p.amount, open: false,
+    });
+  }
+  events.sort((a, b) => a.date === b.date ? a.kind.localeCompare(b.kind) : a.date.localeCompare(b.date));
+
+  let running = opening;
+  for (const e of events) { running += e.charge - e.credit; e.running = running; }
+  const closing = running;
+
+  const charged = events.reduce((s, e) => s + e.charge, 0);
+  const received = events.reduce((s, e) => s + e.credit, 0);
+
+  // AGING, computed from due dates rather than stored. A bucket is a fact about today,
+  // not a column — the same order moves between buckets as the calendar moves.
+  const openOrders = mine.filter(o => o.balance > 0);
+  const buckets = [
+    { label: 'Not yet due', test: d => d < 0 },
+    { label: '1 – 30 days', test: d => d >= 0 && d <= 30 },
+    { label: '31 – 60 days', test: d => d > 30 && d <= 60 },
+    { label: '61 – 90 days', test: d => d > 60 && d <= 90 },
+    { label: 'Over 90 days', test: d => d > 90 },
+  ].map(b => ({ ...b, amount: 0 }));
+
+  for (const o of openOrders) {
+    const overdueBy = o.dueDate ? daysBetween(o.dueDate, AS_OF) : 0;
+    (buckets.find(b => b.test(overdueBy)) ?? buckets[1]).amount += o.balance;
+  }
+  const agedTotal = buckets.reduce((s, b) => s + b.amount, 0) || 1;
+
+  const rows = MODE === 'open'
+    ? openOrders.map(o => ({
+        date: o.orderDate, kind: 'Invoice', ref: o.number, note: o.description,
+        due: o.dueDate, charge: o.gross, credit: o.gross - o.balance, running: o.balance, open: true,
+      }))
+    : events;
+
+  document.getElementById('doc').innerHTML = `
+    <div class="mj-doc-head">
+      <div class="issuer">
+        <div class="nm">${co.name}</div>
+        <div class="addr">${DB.addresses[co.addressID] ? DB.addresses[co.addressID].lines.join('<br>') : ''}</div>
+      </div>
+      <div class="docmeta">
+        <div class="kind">Statement of account</div>
+        <div class="num">${F.date(PERIOD.from)} – ${F.date(PERIOD.to)}</div>
+        <dl class="mj-doc-meta-grid">
+          <dt>Account</dt><dd>${org.name}</dd>
+          <dt>Terms</dt><dd>${org.terms}</dd>
+          <dt>As of</dt><dd>${F.date(AS_OF)}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="mj-doc-parties">
+      <div>
+        <div class="lbl">Account</div>
+        <div class="who">
+          <div class="nm">${org.name}</div>
+          <div>${DB.addresses['A1'].lines.join('<br>')}</div>
+        </div>
+      </div>
+      <div>
+        <div class="lbl">Questions</div>
+        <div class="who">
+          <div>accounts@${co.name.toLowerCase().replace(/[^a-z]+/g, '')}.org</div>
+          <div>Quote your account name and the invoice number.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- THE LADDER. Opening + charges − payments = closing. If these four do not tie,
+         the statement is wrong and says so loudly rather than quietly. -->
+    <div class="stmt-summary">
+      <div class="cell">
+        <div class="lbl">Opening balance</div>
+        <div class="val">${F.money(opening)}</div>
+      </div>
+      <div class="cell">
+        <div class="lbl">Invoiced</div>
+        <div class="val">${F.money(charged)}</div>
+      </div>
+      <div class="cell">
+        <div class="lbl">Received</div>
+        <div class="val">−${F.money(received)}</div>
+      </div>
+      <div class="cell is-due">
+        <div class="lbl">Amount due</div>
+        <div class="val">${F.money(closing)}</div>
+      </div>
+    </div>
+
+    <div class="stmt-aging">
+      <table>
+        <thead>
+          <tr><th>Aged as of ${F.date(AS_OF)}</th><th style="width:38%"></th><th style="width:130px">Amount</th></tr>
+        </thead>
+        <tbody>
+          ${buckets.map(b => {
+            const hot = b.amount > 0 && b.label !== 'Not yet due' && b.label !== '1 – 30 days';
+            const pct = Math.round((b.amount / agedTotal) * 100);
+            return `<tr>
+              <td>${b.label}</td>
+              <td><div class="bar"><i class="${hot ? 'is-hot' : ''}" style="width:${pct}%"></i></div></td>
+              <td class="${hot ? 'is-hot' : ''}">${b.amount ? F.money(b.amount) : '—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <table class="mj-table stmt-activity">
+      <thead>
+        <tr>
+          <th style="width:96px">Date</th>
+          <th style="width:92px">Type</th>
+          <th style="width:120px">Reference</th>
+          <th>Detail</th>
+          ${MODE === 'open' ? '<th style="width:96px">Due</th>' : ''}
+          <th class="num" style="width:110px">Charges</th>
+          <th class="num" style="width:110px">Credits</th>
+          <th class="num" style="width:120px">${MODE === 'open' ? 'Outstanding' : 'Balance'}</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${MODE === 'activity' ? `<tr>
+          <td class="muted">${F.date(PERIOD.from)}</td>
+          <td class="muted">—</td><td class="muted">—</td>
+          <td class="muted">Balance brought forward</td>
+          <td class="num muted">—</td><td class="num muted">—</td>
+          <td class="num run">${F.money(opening)}</td>
+        </tr>` : ''}
+        ${rows.map(r => {
+          const overdue = r.due ? daysBetween(r.due, AS_OF) : -1;
+          return `<tr class="${r.credit && !r.charge ? 'is-credit' : ''} ${r.open && overdue > 0 ? 'is-open' : ''}">
+            <td>${F.date(r.date)}</td>
+            <td>${r.kind}</td>
+            <td><span class="primary">${r.ref}</span></td>
+            <td class="secondary">${r.note ?? ''}</td>
+            ${MODE === 'open' ? `<td>${r.due ? F.date(r.due) : '—'}${overdue > 0
+              ? `<div class="secondary" style="color:var(--mj-danger-600,#b42318)">${overdue} days overdue</div>` : ''}</td>` : ''}
+            <td class="num amt">${r.charge ? F.money(r.charge) : '—'}</td>
+            <td class="num amt">${r.credit ? '−' + F.money(r.credit) : '—'}</td>
+            <td class="num run">${F.money(r.running)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+
+    <div class="mj-doc-totals">
+      <div class="box">
+        <div class="mj-ladder">
+          <div class="mj-ladder-row"><span class="label">Opening balance</span>
+            <span class="amt">${F.money(opening)}</span></div>
+          <div class="mj-ladder-row is-sub"><span class="label">Invoiced this period</span>
+            <span class="amt">${F.money(charged)}</span></div>
+          <div class="mj-ladder-row is-sub is-discount"><span class="label">Payments received</span>
+            <span class="amt">−${F.money(received)}</span></div>
+          <div class="mj-ladder-row is-total"><span class="label">Amount due</span>
+            <span class="amt">${F.money(closing)}</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- REMITTANCE SLIP. A cheque with no reference is the commonest cause of unapplied cash,
+         so the document ends by telling the payer exactly what to write down. -->
+    <div class="stmt-remit">
+      <div>
+        <div class="lbl" style="font-size:var(--mj-text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--mj-text-muted)">
+          Remittance advice
+        </div>
+        <div style="margin-top:var(--mj-space-2)">
+          Please return this portion with your payment, or quote
+          <b>${org.name}</b> and the invoice numbers above when paying by transfer.
+        </div>
+        <div class="tear" style="margin-top:var(--mj-space-2)">
+          Payments post to the oldest invoice first unless you tell us otherwise.
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div class="lbl" style="font-size:var(--mj-text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--mj-text-muted)">
+          Amount enclosed
+        </div>
+        <div style="font-size:var(--mj-text-xl);font-weight:700;font-variant-numeric:tabular-nums;margin-top:var(--mj-space-1)">
+          ${F.money(closing)}
+        </div>
+        <div class="tear">Due ${F.date(AS_OF)}</div>
+      </div>
+    </div>
+  `;
+}
+
+MJ.mount({
+  nav: 'receivables', rail: 'statement',
+  title: 'Customer statement',
+  icon: 'fa-solid fa-file-invoice-dollar',
+  subtitle: 'Where a customer stands across a period — derived from orders and payments, never stored',
+  bodyClass: '',
+  ready: render,
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-24 - Bundles",
+    "Description": "Bundle expansion into component lines and the parentage that makes it usable (BN1-BN12). A bundle sold as ONE line forces one of everything: one tax treatment, one revenue schedule, one GL account, one entitlement, one returnable unit. A bundle of a publication (often exempt) and a conference registration (not) taxed at the header is simply wrong, and a bundle spanning a subscription and an event cannot be scheduled from a single line at all. So components become real order lines under a customer-facing parent that contributes ZERO. That last part is the hazard these checks are weighted toward: a parent that kept its money would double the order while every individual line still agreed with itself, and an allocation that rounded each share independently would lose a penny that nothing downstream would notice.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Selling a bundle creates one line per component beneath a rollup parent; every child names its parent LINE rather than only the bundle product, which is what lets two of the same bundle on one order be told apart; the parent contributes nothing, so the order totals the children alone and reads the bundle price rather than double it; the allocation sums EXACTLY to the bundle price on a three-way split that naive rounding would leave a penny short; allocation is by relative standalone selling price rather than an even split, so revenue lands on the right products; quantity multiplies through, with two bundles of three components producing six units and the whole line's value allocated; each child books its own journal entry and every entry balances per company; a SumOfParts component is priced from its own catalog price and takes no share of the bundle; the database itself refuses a rollup parent carrying money; an ordinary product is untouched; and a bundle inside a bundle is not expanded a second level."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "bundles"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "BC7817BF-DB78-4B79-A54F-F6AAF3C61D07"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.601Z",
+    "checksum": "435149e7eed36642834045eee19dfacc6efee9329b0848626df335ebe406a8cb"
+  }
+}

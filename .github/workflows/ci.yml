@@ -1,0 +1,179 @@
+name: CI
+
+# UNIT TESTS ONLY, DELIBERATELY.
+#
+# The 366 integration checks need a SQL Server, checkouts of two sibling private repos, an MJ core
+# migration and a metadata push. That is a local development environment, not a CI runner, and it is
+# not worth pretending otherwise: the first version of this file tried, described itself as working,
+# and failed on its third step having proved nothing (`actions/checkout` rejects a `path:` outside
+# the workspace, and `github.token` cannot read a private sibling repo anyway).
+#
+# So the division of labour is explicit:
+#
+#   HERE          the pure engines — ~1000 tests, no environment, seconds. This is where the
+#                 money arithmetic lives, so it is not a small gate. Volume vs Tiered banding,
+#                 stacking, charge basis, the taxability walk, allocation, reversal rules, and the
+#                 registry-parity guards that catch a bundle silently dropping out of the suite.
+#
+#   BEFORE MERGE  the integration suite, run locally against a real database:
+#
+#                     RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs
+#                     node scripts/assert-check-count.mjs /tmp/integration.log
+#
+#                 `RUN_MUTATION_TESTS=1` is NOT optional. Every check in that suite is
+#                 `RequiresMutation`, and MJ's driver contains `if (check.RequiresMutation &&
+#                 !mutationEnabled) continue;` — so a run without it executes NOTHING and reports
+#                 success. The count assertion exists because a green tally is not evidence on its
+#                 own; it fails if fewer checks ran than the registry declares.
+#
+# The integration suite has found more than thirty real defects, several of which balanced, totalled
+# and looked entirely correct. It is the more valuable of the two gates. It is just not one a hosted
+# runner can honestly provide, and a red X that everybody learns to ignore is worse than a documented
+# manual step.
+
+on:
+  pull_request:
+  push:
+    branches: [next]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # Must precede setup-node: `cache: 'pnpm'` needs pnpm already on PATH.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # BUILD BEFORE TESTING. `registry-parity.test.ts` imports a workspace package by NAME, whose
+      # `main` points at a `dist/` that `pnpm install --frozen-lockfile` does not produce — so without this the file fails
+      # to RESOLVE and never executes. The suite still reported ~989 passing and a red X, which is
+      # the worst shape a check can have: it looks like a known failure rather than a test that is
+      # not running. Locally the same command reports 1065, and the missing 76 are exactly this file.
+      #
+      # `build:packages` rather than `build`: it compiles the six @mj-biz-apps/orders-* packages the
+      # tests actually import, and skips mj_api / mj_explorer, which are MJ's apps and add Angular
+      # build time for no coverage here.
+      #
+      # Second reason, independent of the test: CI could not previously catch a BUILD break at all.
+      # package.json and package-lock.json disagreed about @types/express for 24 commits and every
+      # `pnpm install --frozen-lockfile` failed — nobody noticed, because the check was already red for the other reason.
+      #
+      # WHY `--continue`, AND WHY THE FAILURE IS DEFERRED TO THE LAST STEP. `orders-core-entities-server`
+      # does not compile on a runner at all: it imports `@mj-biz-apps/accounting-engine-base` for
+      # runtime values, and that package is unpublished — it exists here only because the mjdev
+      # dev-link puts accounting in the same npm workspace. A plain `pnpm run build:packages` therefore
+      # aborts the job on its first failing package and `npx vitest run` never executes, which puts us
+      # straight back in the shape this build step was added to escape: a red X that reads like a known
+      # failure but is really a thousand tests not running.
+      #
+      # So the build keeps going past what it cannot compile, the tests run and report, and the job is
+      # failed deliberately at the end. Nothing is downgraded to a warning — the check stays RED, and
+      # it goes green by itself the day accounting publishes, with nothing for anyone to remember to
+      # revert. (Same reasoning as `pg-migrations.yml`.)
+      #
+      # What this does NOT recover: `registry-parity.test.ts` imports `orders-core-entities-server` by
+      # name, so those 76 tests still cannot resolve while that package is unbuildable. ~989 of 1065
+      # run. The vitest config already stubs `accounting-engine-base` for the tests; that stub is a
+      # module-graph shim and deliberately does not paper over the compile.
+      - name: Build app packages
+        id: build
+        run: |
+          if pnpm run build:packages --continue; then
+            echo 'ok=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ok=false' >> "$GITHUB_OUTPUT"
+            echo "::error title=Build failed::One or more @mj-biz-apps/orders-* packages did not compile. Unit tests below ran against whatever did build."
+          fi
+
+      # Includes `registry-parity.test.ts`, which is the anti-vacuity floor: it asserts exact
+      # per-bundle check counts against the filesystem and cross-checks the four places a bundle
+      # name has to agree. Adding a bundle without a Test record, or a Test record that never joins
+      # the suite, both leave the integration suite passing with strictly less in it — and both have
+      # actually happened.
+      - name: Unit tests
+        id: unit
+        run: |
+          set -o pipefail
+          if npx vitest run 2>&1 | tee /tmp/vitest.log; then
+            echo 'ok=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'ok=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      # The run's landing page, so the tally is readable without expanding a log. When the build has
+      # broken, the collapsed view of a failing job shows only the LAST failing step, which would
+      # otherwise bury the thing you actually came to read.
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '## Orders CI'
+            echo
+            echo '| gate | result |'
+            echo '| --- | --- |'
+            if [ "${{ steps.build.outputs.ok }}" = 'true' ]; then
+              echo '| Build (`build:packages`) | ✅ passed |'
+            else
+              echo '| Build (`build:packages`) | ❌ failed — see the Build step |'
+            fi
+            if [ -f /tmp/vitest.log ]; then
+              # Strip the colour escapes first — vitest colourises on an Actions runner, and the codes
+              # sit BEFORE the leading whitespace, so an anchored grep silently matches nothing and the
+              # tally quietly degrades to "see log". Verified against a real run's output.
+              CLEAN=$(perl -pe 's/\e\[[0-9;]*m//g' /tmp/vitest.log)
+              # `|| true` because the step runs under `bash -e`: a grep that matches nothing would
+              # otherwise abort the step mid-summary rather than fall through to "see log".
+              FILES=$(printf '%s\n' "$CLEAN" | grep -E '^[[:space:]]*Test Files[[:space:]]' | tail -1 | sed -E 's/^[[:space:]]*Test Files[[:space:]]+//') || true
+              TESTS=$(printf '%s\n' "$CLEAN" | grep -E '^[[:space:]]*Tests[[:space:]]' | tail -1 | sed -E 's/^[[:space:]]*Tests[[:space:]]+//') || true
+              if [ "${{ steps.unit.outputs.ok }}" = 'true' ]; then
+                echo "| Unit tests | ✅ ${TESTS:-see log} |"
+              else
+                echo "| Unit tests | ❌ ${TESTS:-see log} |"
+              fi
+              echo
+              echo "Test files: ${FILES:-see log}"
+            else
+              echo '| Unit tests | ⚠️ did not run |'
+            fi
+            if [ "${{ steps.build.outputs.ok }}" != 'true' ]; then
+              echo
+              echo '> The build failure is expected while `@mj-biz-apps/accounting-engine-base` is'
+              echo '> unpublished. Tests downstream of a package that did not compile cannot run —'
+              echo '> a lower test count here is that, not a regression. See `.github/workflows/ci.yml`.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Advisory, not a gate. `migrations/_README.md` requires a changeset on any PR touching a
+      # migration, and that rule sat unenforced through several schema changes. A warning annotation
+      # is honest about what this is — a reminder in review — rather than a red X on documentation
+      # PRs that legitimately have no version impact.
+      - name: Changeset present?
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -z "$(find .changeset -name '*.md' ! -name 'README.md' -print -quit)" ]; then
+            echo "::warning title=No changeset::This PR carries no changeset. One is required for any change to migrations/ or a published package — run 'pnpm exec changeset'."
+          fi
+
+      - name: State plainly what this gate does not cover
+        if: always()
+        run: |
+          echo "::notice title=Integration checks are not run here::The 392 database checks need a local environment. Run 'RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs' before merging — see .github/workflows/ci.yml for why."
+
+      # THE GATE, and it is last on purpose. Failing earlier would skip every step above that is not
+      # marked `always()` — including the changeset reminder — and, more importantly, would collapse
+      # the job onto the build error again. Everything before this reports; this decides.
+      - name: Fail if the build broke or tests failed
+        if: always() && (steps.build.outputs.ok != 'true' || steps.unit.outputs.ok != 'true')
+        run: exit 1

@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Payments dashboard — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta">
+    <span class="mj-chip mj-chip--outline">All 3 companies</span>
+    <span class="mj-chip mj-chip--success"><i class="fa-solid fa-equals"></i> reconciled</span>
+  </div>
+
+  <div slot="actions">
+    <div class="mj-segmented">
+      <button data-value="today">Today</button>
+      <button class="is-active" data-value="week">This week</button>
+      <button data-value="month">Month</button>
+    </div>
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-arrow-rotate-right"></i></button>
+    <a class="mj-btn mj-btn--primary" href="entry.html"><i class="fa-solid fa-plus"></i> Take a payment</a>
+  </div>
+
+  <div slot="body">
+    <div class="mock-note">
+      An accounting team's first two questions are &ldquo;what came in?&rdquo; and &ldquo;does it tie?&rdquo; —
+      so cash received and the reconciliation state are the top row, and the structural guarantee that
+      unallocated cash is always zero gets said out loud rather than left to be trusted.
+    </div>
+
+    <div class="mj-stat-grid">
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-hand-holding-dollar"></i> Cash this week</span>
+        <span class="v" id="s-week">—</span>
+        <span class="d" id="s-week-d">—</span>
+      </div>
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-equals"></i> Unallocated</span>
+        <span class="v" style="color:var(--mj-status-success-text)">$0.00</span>
+        <span class="d">Always, by construction — a payment cannot capture unless it balances.</span>
+      </div>
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-clock"></i> Awaiting capture</span>
+        <span class="v" id="s-pending">—</span>
+        <span class="d" id="s-pending-d">—</span>
+      </div>
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-piggy-bank"></i> Credits outstanding</span>
+        <span class="v" id="s-credits">—</span>
+        <span class="d"><a href="credit.html">Offer them before invoicing again →</a></span>
+      </div>
+    </div>
+
+    <div class="mj-split" style="margin-top:var(--mj-space-6);align-items:stretch">
+      <div class="right" style="order:1">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-chart-simple"></i><h3>Cash received per day</h3>
+            <span class="right small muted">last 7 days</span></div>
+          <div class="mj-card-pad">
+            <div id="pd-days"></div>
+          </div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-clock-rotate-left"></i><h3>Latest payments</h3>
+            <span class="right"><a class="small" href="list.html">All payments →</a></span></div>
+          <table class="mj-table mj-table--compact">
+            <thead><tr><th style="width:104px">Payment</th><th>From</th><th style="width:110px">Tender</th>
+              <th style="width:96px">Status</th><th class="num" style="width:110px">Amount</th></tr></thead>
+            <tbody id="pd-recent"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <aside class="left" style="order:2">
+        <div class="mj-card">
+          <div class="mj-card-head"><i class="fa-solid fa-credit-card"></i><h3>How they paid</h3>
+            <span class="right small muted">this month</span></div>
+          <div class="mj-card-pad">
+            <div id="pd-tender"></div>
+            <div class="small muted" style="margin-top:var(--mj-space-3)">
+              One hue and a label per row. Four tenders in four colours would look like an encoding while encoding
+              nothing — the label already carries the identity.
+            </div>
+          </div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-receipt"></i><h3>Cost of taking money</h3></div>
+          <div class="mj-card-pad">
+            <div class="row" style="justify-content:space-between">
+              <span class="small muted">Processor fees this month</span>
+              <b class="mj-num" id="pd-fees">—</b></div>
+            <div class="row" style="justify-content:space-between;margin-top:6px">
+              <span class="small muted">Effective rate on card</span>
+              <b class="mj-num">2.90%</b></div>
+            <div class="small muted" style="margin-top:var(--mj-space-3)">
+              Booked as our expense against gross A/R, never netted into the customer's balance — a net credit
+              would leave a residue no payment could ever clear.
+            </div>
+          </div>
+        </div>
+
+        <div class="mj-card" style="margin-top:var(--mj-space-4)">
+          <div class="mj-card-head"><i class="fa-solid fa-triangle-exclamation"></i><h3>Worth a look</h3></div>
+          <div class="mj-card-pad stack-3">
+            <div class="mj-banner mj-banner--warning">
+              <i class="fa-solid fa-clock"></i>
+              <div class="body"><strong>PAY-3008 has been pending since this morning.</strong> $2,085.00 from
+                Northwind against ORD-1011. Allocations are still editable — they freeze at capture.
+                <div style="margin-top:4px"><a href="list.html">Open it →</a></div></div>
+            </div>
+            <div class="mj-banner mj-banner--neutral">
+              <i class="fa-solid fa-building-columns"></i>
+              <div class="body"><strong>No unmatched intercompany accounts.</strong> Every company pair that could
+                appear in an allocation has a Due To / Due From match configured, so no allocation will be refused.</div>
+            </div>
+            <div class="mj-banner mj-banner--success">
+              <i class="fa-solid fa-shield-halved"></i>
+              <div class="body"><strong>No disputes open.</strong> Chargebacks arrive as reversal payments, so they
+                would show in the refunds preset rather than in a separate queue.</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+const H = MJ.H, D = DB.paymentsDash;
+
+function render() {
+  document.getElementById('s-week').textContent = F.money0(D.weekCash);
+  document.getElementById('s-week-d').textContent = `${F.money0(D.todayCash)} today · ${F.money0(D.monthCash)} this month`;
+  document.getElementById('s-pending').textContent = F.money0(D.pendingValue);
+  document.getElementById('s-pending-d').textContent = `${D.pendingCount} payment awaiting capture`;
+  const credits = Math.round(DB.customers.reduce((s, c) => s + c.credit, 0) * 100) / 100;
+  document.getElementById('s-credits').textContent = F.money(credits);
+  document.getElementById('pd-fees').textContent = F.money(D.fees);
+
+  document.getElementById('pd-days').innerHTML =
+    H.dayBars(D.weekSpark, ['Thu', 'Fri', 'Sat', 'Sun', 'Mon', 'Tue', 'Wed'], v => F.money0(v));
+
+  document.getElementById('pd-tender').innerHTML =
+    H.bars(D.tenderMix.filter(t => t.value > 0), { fmt: v => F.money0(v) });
+
+  document.getElementById('pd-recent').innerHTML = DB.payments
+    .slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7)
+    .map(p => {
+      const party = p.partyOrgID ? DB.orgs[p.partyOrgID].name
+        : p.partyPersonID ? DB.people[p.partyPersonID].name : p.partyName;
+      const st = { Captured: 'mj-chip--success', Pending: 'mj-chip--warning',
+                   Refunded: 'mj-chip--violet' }[p.status] || '';
+      return `<tr>
+        <td><a class="mono" href="list.html">${p.number}</a></td>
+        <td>${party} ${p.origin === 'LXP' ? H.origin('LXP') : ''}</td>
+        <td class="small">${DB.paymentTypes.find(t => t.code === p.typeCode)?.name || p.typeCode}</td>
+        <td><span class="mj-chip ${st}">${p.status}</span></td>
+        <td class="num ${p.typeCode === 'Refund' ? 'mj-money--neg' : ''}">
+          ${p.typeCode === 'Refund' ? '−' : ''}${F.money(p.amount)}</td></tr>`;
+    }).join('');
+}
+
+MJ.mount({
+  nav: 'payments', rail: 'dashboard',
+  title: 'Payments',
+  icon: 'fa-solid fa-gauge-high',
+  subtitle: 'What came in, and whether it ties',
+  ready: render,
+});
+</script>
+</body>
+</html>

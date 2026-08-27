@@ -1,0 +1,28 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-18 - Arithmetic Edges",
+    "Description": "Awkward money through the REAL pipeline (AE1-AE12). The unit suite throws twelve awkward totals at nine awkward weight shapes and proves the allocators themselves - it found a genuine defect that way, and a largest-remainder rewrite came out of it. What it cannot prove is that the pipeline HANDS them the right numbers: the allocator can be perfect while the caller passes a pre-rounded basis, sums a column the database stored at a different scale, or reconciles against a total computed a second way. That gap is where money actually goes missing, so these checks put the same hostile numbers through Save() and read the result back out of the database, which is where the scale of every column (money 2dp, quantity 4dp, tax rate 6dp) finally applies. The invariant under all of them: every allocated total equals its parent EXACTLY at 2dp with no share of the wrong sign - not within a cent, because a cent that does not reconcile is a cent somebody has to find later.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Seven pennies across thirteen equal lines reconcile with no negative share; a repeating-decimal percentage still sums to the stated amount; a single penny of charge lands whole on exactly one line rather than being rounded onto all five or vanishing; three NYC tax layers apply to the same base without compounding; twenty penny lines against a larger discount reconcile; a 999999.99 line survives the round trip; a 4dp quantity against 2dp money reconciles to what was stored; promotion, charge and tax on 33.33 x 7 all reconcile at once; every journal entry balances to the penny rather than to a tolerance; a reversal of an awkward line leaves the customer exactly whole in goods, tax and gross; the same order confirmed twice produces byte-identical per-line money; and an over-large discount floors the line at zero rather than inventing a credit."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "arithmetic-edges"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "96F76555-117D-48B2-9ACB-C0DFF57718EA"
+  },
+  "sync": {
+    "lastModified": "2026-08-03T06:21:58.524Z",
+    "checksum": "7ecfbbf8561f28a99a81e43928f81ad07b47e99f5d108cc0856156f38667d658"
+  }
+}

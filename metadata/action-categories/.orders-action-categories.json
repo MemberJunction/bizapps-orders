@@ -1,0 +1,21 @@
+[
+  {
+    "_comments": [
+      "Orders actions sit under the platform's existing 'Business Apps' heading rather than at the",
+      "root, so an install with several Open Apps groups them the way a person expects to find them."
+    ],
+    "fields": {
+      "Name": "Orders",
+      "Description": "Actions over orders — rendering documents, and whatever else callers outside the browser need. Order state changes are remote operations, not actions: those are the API the UI calls, and they write.",
+      "ParentID": "@lookup:MJ: Action Categories.Name=Business Apps",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "359F5241-25D1-4949-A74F-C20CA3EECC3A"
+    },
+    "sync": {
+      "lastModified": "2026-08-24T20:19:35.695Z",
+      "checksum": "afeb107947ff9cac55722e59f00aadf9cecc7bf1e61411523a1631bde91fe187"
+    }
+  }
+]

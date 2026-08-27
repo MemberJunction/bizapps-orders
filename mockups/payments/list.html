@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>All payments — MJ Orders</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/app.css">
+</head>
+<body>
+
+<template id="page">
+
+  <div slot="meta"><span class="mj-chip mj-chip--outline" id="pl-count">—</span></div>
+
+  <div slot="actions">
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-filter"></i> Filters</button>
+    <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-download"></i> Export</button>
+    <a class="mj-btn mj-btn--primary" href="entry.html"><i class="fa-solid fa-plus"></i> Take a payment</a>
+  </div>
+
+  <div slot="toolbar">
+    <div class="mjo-search"><i class="fa-solid fa-magnifying-glass"></i>
+      <input id="pl-q" placeholder="Payment №, customer, order, check № or charge id…"></div>
+    <div class="row wrap" data-chips data-on-select="plPreset" style="gap:6px">
+      <button class="mj-filter-chip is-active" data-value="all">All <span class="count" id="c2-all">—</span></button>
+      <button class="mj-filter-chip" data-value="captured">Captured <span class="count" id="c2-captured">—</span></button>
+      <button class="mj-filter-chip" data-value="pending">Awaiting capture <span class="count" id="c2-pending">—</span></button>
+      <button class="mj-filter-chip" data-value="reversal">Refunds <span class="count" id="c2-reversal">—</span></button>
+      <button class="mj-filter-chip" data-value="lxp"><i class="fa-solid fa-graduation-cap"></i> From LXP <span class="count" id="c2-lxp">—</span></button>
+    </div>
+  </div>
+
+  <div slot="body">
+    <div class="mock-note">
+      Every row here reconciles: a payment's amount always equals the sum of its allocations, so
+      &ldquo;unapplied cash&rdquo; has no column because it has no existence. A payment that settles three orders
+      shows three allocations, and a refund un-applies proportionally across the same three.
+    </div>
+
+    <div class="mj-table-wrap">
+      <table class="mj-table">
+        <thead>
+          <tr>
+            <th style="width:110px">Payment</th>
+            <th style="width:92px">Date</th>
+            <th>From</th>
+            <th style="width:130px">Tender</th>
+            <th style="width:56px">Into</th>
+            <th style="width:104px">Status</th>
+            <th class="num" style="width:112px">Amount</th>
+            <th class="num" style="width:92px">Fee</th>
+            <th>Applied to</th>
+          </tr>
+        </thead>
+        <tbody id="pl-rows" data-on-row="plOpen" data-single-select></tbody>
+      </table>
+    </div>
+
+    <div class="grid-3" style="margin-top:var(--mj-space-4)">
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-equals"></i> Unallocated cash</span>
+        <span class="v" style="color:var(--mj-status-success-text)">$0.00</span>
+        <span class="d">Structurally always zero — the equality is enforced at capture.</span>
+      </div>
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-piggy-bank"></i> Credits outstanding</span>
+        <span class="v" id="pl-credits">—</span>
+        <span class="d"><a href="credit.html">Held as negative order balances →</a></span>
+      </div>
+      <div class="mj-stat">
+        <span class="l"><i class="fa-solid fa-receipt"></i> Processor fees this month</span>
+        <span class="v" id="pl-fees">—</span>
+        <span class="d">Our cost, never netted against the customer's balance.</span>
+      </div>
+    </div>
+  </div>
+
+  <div slot="overlays">
+    <aside class="mj-slide-in" id="pv">
+      <div class="mj-slide-in-head">
+        <div><h2 id="pv-num">—</h2><div class="small muted" id="pv-sub"></div></div>
+        <span class="right"><button class="mj-iconbtn" data-close><i class="fa-solid fa-xmark"></i></button></span>
+      </div>
+      <div class="mj-slide-in-body" id="pv-body"></div>
+      <div class="mj-slide-in-foot" id="pv-foot"></div>
+    </aside>
+  </div>
+</template>
+
+<script src="../assets/data.js"></script>
+<script src="../assets/shell.js"></script>
+<script>
+const H = MJ.H;
+let PRESET = 'all', Q = '';
+
+const MATCH = {
+  all:      () => true,
+  captured: p => p.status === 'Captured',
+  pending:  p => p.status === 'Pending',
+  reversal: p => p.status === 'Refunded' || p.typeCode === 'Refund',
+  lxp:      p => p.origin === 'LXP',
+};
+
+function payStatusChip(s) {
+  const map = { Captured: 'mj-chip--success', Pending: 'mj-chip--warning',
+                Failed: 'mj-chip--error', Refunded: 'mj-chip--violet', Disputed: 'mj-chip--error' };
+  return `<span class="mj-chip ${map[s] || ''}">${s}</span>`;
+}
+
+function partyName(p) {
+  if (p.partyOrgID) return DB.orgs[p.partyOrgID].name;
+  if (p.partyPersonID) return DB.people[p.partyPersonID].name;
+  return p.partyName || '—';
+}
+
+function tenderLabel(p) {
+  const t = DB.paymentTypes.find(x => x.code === p.typeCode);
+  const i = p.instrument || {};
+  const detail = i.brand ? `${i.brand} ···· ${i.last4}`
+    : i.reference ? i.reference
+    : i.bankLast4 ? `Bank ···· ${i.bankLast4}` : '';
+  return `${t ? t.name : p.typeCode}${detail ? `<div class="secondary">${detail}</div>` : ''}`;
+}
+
+function render() {
+  Object.keys(MATCH).forEach(k => {
+    const el = document.getElementById('c2-' + k);
+    if (el) el.textContent = DB.payments.filter(MATCH[k]).length;
+  });
+
+  const rows = DB.payments.filter(p => {
+    if (!MATCH[PRESET](p)) return false;
+    if (!Q) return true;
+    const hay = [p.number, partyName(p), p.providerChargeID, p.instrument?.reference,
+                 ...p.allocations.map(a => a.order)].filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(Q.toLowerCase());
+  }).slice().sort((a, b) => b.date.localeCompare(a.date));
+
+  document.getElementById('pl-count').textContent = `${rows.length} of ${DB.payments.length} payments`;
+
+  document.getElementById('pl-rows').innerHTML = rows.map(p => `
+    <tr class="is-clickable" data-row="${p.number}">
+      <td><span class="mono primary">${p.number}</span>
+        ${p.reverses ? `<div class="secondary">reverses ${p.reverses}</div>` : ''}</td>
+      <td>${F.dateShort(p.date)}<div class="secondary">${p.date.slice(0, 4)}</div></td>
+      <td>${partyName(p)} ${p.origin === 'LXP' ? H.origin('LXP', p.number) : ''}</td>
+      <td>${tenderLabel(p)}</td>
+      <td>${H.company(p.receivingCompanyID)}</td>
+      <td>${payStatusChip(p.status)}</td>
+      <td class="num strong ${p.typeCode === 'Refund' ? 'mj-money--neg' : ''}">
+        ${p.typeCode === 'Refund' ? '−' : ''}${F.money(p.amount)}</td>
+      <td class="num ${p.fee ? '' : 'muted'}">${p.fee ? F.money(p.fee) : '—'}</td>
+      <td class="small">${p.allocations.map(a =>
+        `<a class="mono" href="../orders/document.html">${a.order}</a>
+         <span class="muted">${F.money(a.amount)}</span>`).join('<br>')}</td>
+    </tr>`).join('');
+
+  const credits = DB.customers.reduce((s, c) => s + c.credit, 0);
+  document.getElementById('pl-credits').textContent = F.money(Math.round(credits * 100) / 100);
+  document.getElementById('pl-fees').textContent = F.money(DB.paymentsDash.fees);
+}
+
+function plPreset(v) { PRESET = v; render(); }
+
+function plOpen(number) {
+  const p = DB.paymentByNumber(number);
+  document.getElementById('pv-num').innerHTML = `<span class="mono">${p.number}</span>`;
+  document.getElementById('pv-sub').innerHTML =
+    `${partyName(p)} · ${F.date(p.date)} · into ${DB.companies[p.receivingCompanyID].short}`;
+
+  const allocSum = Math.round(p.allocations.reduce((s, a) => s + a.amount, 0) * 100) / 100;
+  const expected = p.typeCode === 'Refund' ? -p.amount : p.amount;
+
+  document.getElementById('pv-body').innerHTML = `
+    <div class="row wrap" style="gap:6px;margin-bottom:var(--mj-space-3)">
+      ${payStatusChip(p.status)}
+      <span class="mj-chip mj-chip--outline">${DB.paymentTypes.find(t => t.code === p.typeCode)?.name || p.typeCode}</span>
+      ${p.origin === 'LXP' ? H.origin('LXP') : ''}
+    </div>
+
+    <div class="mj-money-strip" style="grid-template-columns:1fr 1fr 1fr">
+      <div><span class="l">Gross</span><span class="v">${F.money(p.amount)}</span></div>
+      <div><span class="l">Fee</span><span class="v ${p.fee ? '' : 'mj-money--muted'}">${p.fee ? F.money(p.fee) : '—'}</span></div>
+      <div><span class="l">Net cash</span><span class="v">${F.money(p.net)}</span></div>
+    </div>
+
+    <div class="mj-banner ${Math.abs(allocSum - expected) < 0.005 ? 'mj-banner--success' : 'mj-banner--error'}"
+         style="margin-top:var(--mj-space-3)">
+      <i class="fa-solid fa-equals"></i>
+      <div class="body"><strong>Allocations sum to the amount.</strong>
+        ${F.money(allocSum)} across ${p.allocations.length} order${p.allocations.length === 1 ? '' : 's'}.
+        ${p.typeCode === 'Refund' ? ' A refund stores a positive magnitude with negative lines, so the check compares against the negative.' : ''}</div>
+    </div>
+
+    <div class="sec-label" style="margin-top:var(--mj-space-4)">Applied to</div>
+    <table class="mj-table mj-table--compact"><tbody>
+      ${p.allocations.map(a => {
+        const o = DB.orderByNumber(a.order);
+        return `<tr><td><a class="mono" href="../orders/document.html">${a.order}</a>
+          ${o ? `<div class="secondary">${o.description || ''}</div>` : ''}</td>
+          <td class="num strong ${a.amount < 0 ? 'mj-money--neg' : ''}">${F.money(a.amount)}</td></tr>`;
+      }).join('')}
+    </tbody></table>
+
+    ${p.instrument ? `<div class="sec-label" style="margin-top:var(--mj-space-4)">Instrument snapshot</div>
+      <div class="small">${Object.entries(p.instrument).map(([k, v]) =>
+        `<div class="row"><span class="muted" style="width:110px">${k}</span><span>${v}</span></div>`).join('')}</div>
+      <div class="small muted" style="margin-top:6px">Immutable. This payment's own copy, not a pointer at the
+        wallet — so it still reads correctly after the saved card is replaced.</div>` : ''}
+
+    ${p.je && p.je.length ? `<div class="sec-label" style="margin-top:var(--mj-space-4)">Booked</div>
+      ${p.je.map(j => `<table class="mj-table mj-table--compact"><tbody>
+        ${j.lines.map(x => `<tr><td style="width:34px" class="muted strong">${x.dr ? 'Dr' : 'Cr'}</td>
+          <td>${x.dr || x.cr}</td><td class="num">${F.money(x.amount)}</td></tr>`).join('')}
+      </tbody></table>
+      <div class="small"><a href="#">${j.entry} — open in Accounting ↗</a>
+        ${j.mirror ? '<span class="mj-chip mj-chip--violet">mirrored</span>' : ''}</div>`).join('')}`
+      : `<div class="mj-banner mj-banner--neutral" style="margin-top:var(--mj-space-4)">
+          <i class="fa-solid fa-hourglass-half"></i>
+          <div class="body">Nothing booked yet — this payment is still <b>Pending</b>. Its allocations remain
+          editable until capture, and freeze at it.</div></div>`}
+
+    ${p.note ? `<div class="mock-note">${p.note}</div>` : ''}`;
+
+  const acts = [];
+  if (p.status === 'Captured' && p.typeCode !== 'Refund') {
+    acts.push(`<a class="mj-btn mj-btn--outline mj-btn--sm" href="refund.html">
+      <i class="fa-solid fa-arrow-rotate-left"></i> Refund</a>`);
+  }
+  if (p.status === 'Pending') {
+    acts.push(`<button class="mj-btn mj-btn--primary mj-btn--sm"><i class="fa-solid fa-check"></i> Capture</button>`);
+    acts.push(`<a class="mj-btn mj-btn--outline mj-btn--sm" href="entry.html">Edit allocations</a>`);
+  }
+  acts.push(`<button class="mj-btn mj-btn--flat mj-btn--sm"><i class="fa-solid fa-print"></i> Receipt</button>`);
+  document.getElementById('pv-foot').innerHTML = acts.join('');
+
+  MJ.open('#pv');
+}
+
+MJ.mount({
+  nav: 'payments', rail: 'list',
+  title: 'All payments',
+  icon: 'fa-solid fa-table-list',
+  subtitle: 'Cash in, cash back, and exactly what each one settled',
+  ready() {
+    render();
+    document.getElementById('pl-q').addEventListener('input', e => { Q = e.target.value; render(); });
+  },
+});
+</script>
+</body>
+</html>
