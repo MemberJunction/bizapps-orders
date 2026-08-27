@@ -49,14 +49,14 @@
     "class-validator": "^0.14.3"
   },
   "peerDependencies": {
-    "@memberjunction/actions": "^6.1.0-edge.1",
-    "@memberjunction/actions-base": "^6.1.0-edge.1",
-    "@memberjunction/core": "^6.1.0-edge.1",
-    "@memberjunction/global": "^6.1.0-edge.1",
-    "@memberjunction/server": "^6.1.0-edge.1",
-    "@memberjunction/server-extensions-core": "^6.1.0-edge.1",
-    "@memberjunction/generic-database-provider": "^6.1.0-edge.1",
-    "@memberjunction/templates": "^6.1.0-edge.1",
+    "@memberjunction/actions": "^6.1.0-edge.4",
+    "@memberjunction/actions-base": "^6.1.0-edge.4",
+    "@memberjunction/core": "^6.1.0-edge.4",
+    "@memberjunction/global": "^6.1.0-edge.4",
+    "@memberjunction/server": "^6.1.0-edge.4",
+    "@memberjunction/server-extensions-core": "^6.1.0-edge.4",
+    "@memberjunction/generic-database-provider": "^6.1.0-edge.4",
+    "@memberjunction/templates": "^6.1.0-edge.4",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-entities": ">=0.1.0",
     "@mj-biz-apps/accounting-server": ">=0.1.0"

@@ -30,13 +30,13 @@
     "@mj-biz-apps/orders-entities": "5.1.0"
   },
   "peerDependencies": {
-    "@memberjunction/communication-engine": "^6.1.0-edge.1",
-    "@memberjunction/communication-types": "^6.1.0-edge.1",
-    "@memberjunction/core": "^6.1.0-edge.1",
-    "@memberjunction/core-entities": "^6.1.0-edge.1",
-    "@memberjunction/core-entities-server": "^6.1.0-edge.1",
-    "@memberjunction/global": "^6.1.0-edge.1",
-    "@memberjunction/sqlserver-dataprovider": "^6.1.0-edge.1",
+    "@memberjunction/communication-engine": "^6.1.0-edge.4",
+    "@memberjunction/communication-types": "^6.1.0-edge.4",
+    "@memberjunction/core": "^6.1.0-edge.4",
+    "@memberjunction/core-entities": "^6.1.0-edge.4",
+    "@memberjunction/core-entities-server": "^6.1.0-edge.4",
+    "@memberjunction/global": "^6.1.0-edge.4",
+    "@memberjunction/sqlserver-dataprovider": "^6.1.0-edge.4",
     "@mj-biz-apps/accounting-core-entities-server": ">=0.1.0",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/tasks-entities": "^1.2.3"
