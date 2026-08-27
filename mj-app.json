@@ -4,7 +4,7 @@
   "name": "mj-bizapps-orders",
   "displayName": "BizApps Orders",
   "description": "Unified order management for MemberJunction — products, orders, payments, subscriptions. The Order is the transactional substrate and the A/R primitive; payments and subscriptions are aspects of the same business event. Emits balanced journal entries into BizApps Accounting.",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "license": "BUSL-1.1",
   "icon": "fa-solid fa-cart-shopping",
   "publisher": {
@@ -12,7 +12,7 @@
     "url": "https://memberjunction.com"
   },
   "repository": "https://github.com/MemberJunction/bizapps-orders",
-  "mjVersionRange": ">=6.1.0-edge.1 <7.0.0",
+  "mjVersionRange": ">=6.1.0-edge.4 <7.0.0",
   "dependencies": {
     "mj-bizapps-common": {
       "version": ">=5.36.0 <6.0.0",

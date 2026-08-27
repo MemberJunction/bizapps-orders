@@ -1,5 +1,88 @@
 # @mj-biz-apps/orders-server
 
+## 5.2.0
+
+### Minor Changes
+
+- 2daf9b9: Fold inspected CodeGen output into a new migration so CRUD procedures and EntityField rows match columns added by later V migrations (PricingDriverClass, ProductType.Configuration, and related). A clean install was failing mj sync push of product-types on a stale spCreateProductType signature.
+- 44944fd: Add the entitlement read contract: `Orders.CheckEntitlement` and `Orders.ListEntitlements` evaluate in-force access (status + window + subscription access-through) instead of polling `EntitlementGrant.Status`. Cancel now revokes standing grants when access-through has already passed.
+- d0e5450: Scope CodeGen heal EXECs with authored excludeSchemas plus `@IncludedSchemaNames` for the Orders schema, instead of photographing sibling Open Apps. Strip Common Activity Types field inserts and the unscoped field-from-schema heal that broke from-scratch migrate.
+
+### Patch Changes
+
+- 8e42a02: Split the release into a version step and a publish step, so neither writes to a protected branch.
+
+  `version.yml` (new, on `next`) turns pending changesets into a reviewable "Version Packages" PR —
+  bumps, CHANGELOGs, the mj-app.json version and range, and a refreshed lockfile.
+  `release-readiness.yml` (new) gates the version PR and any PR to `main`. `publish.yml` keeps only
+  the publish half and refuses to run while changesets are pending.
+
+  Ported from bizapps-accounting, where the old flow published 0.2.0 to npm and then failed to write
+  the version bump back: `ci/commit_push.mjs` pushes straight to `main`, the `main-next-protect`
+  ruleset requires a pull request, and `github-actions[bot]` cannot be granted a bypass. This repo
+  carries the identical ruleset and would fail the same way on its first release.
+
+- e21ad46: Host the Angular checkout widget as an Angular Element on `GET /checkout/:slug`, retrieve Stripe intent status on complete (localhost has no webhook), skip a second confirmCardPayment when the intent already succeeded, and book `Orders.CapturePayment` after confirm so AmountPaid / PaymentHeader land without waiting for Stripe to POST. Stripe Capture treats an already-captured automatic-capture intent as success.
+- 07e0b10: Checkout hardening wave: fix the blocking defects and ship the anonymous edge.
+
+  Defect fixes in CheckoutSessionService:
+
+  - The payer Person is now resolved (find-or-create by the session's captured email) at
+    completion and stamped onto the session and the order's BillTo/ShipTo — previously every
+    widget order failed OrderHeaderEntity.Validate() with no customer.
+  - A session acquires a payment intent through the new OpenPaymentIntentForSession (amount
+    from the session's server-priced snapshot, provider from the widget's Configuration
+    paymentProviderId); the completion gate now verifies the intent's STATE (Succeeded, as
+    advanced by the signature-verified webhook) and that its amount covers the re-priced
+    total — mere existence of an intent id no longer books an order.
+  - The GuestOrder claim mint uses the real IdentityClaimEngineServer import (the previous
+    MJGlobal.ClassRegistry duck-type was dead code) and passes the entity GUID.
+  - EntitlementGrantClaimDriver.OnRevoke stamps RevokedAt + RevocationReason (the generated
+    validation rule rejected Revoked-without-RevokedAt, so revocations silently no-oped) and
+    failures are logged instead of swallowed; OnExpire logs failed saves.
+
+  Session hardening:
+
+  - ClientSessionKey is re-verified (constant-time) on every mutating call; ExpiresAt is
+    enforced past initialization (expired sessions transition to Expired); completion is
+    replay-safe (a Confirmed session returns its existing order) and never reverts to Open
+    once the order has committed; server-side quantity/line caps apply when unconfigured;
+    hand-rolled SQL escaping replaced with the sql-guards helpers; secret-shaped keys are
+    stripped from the Configuration returned to anonymous callers; Person rows are no longer
+    minted on the draft path; the platform-specific GETUTCDATE() filter is now portable.
+
+  The anonymous checkout edge (new):
+
+  - CheckoutServerExtension (DriverClass 'OrdersCheckoutEdge') mounts pre-auth REST routes
+    POST /checkout/{initialize,draft,payment-intent,complete} via the serverExtensions
+    mechanism, with fail-closed gates: body cap, per-IP(+slug) rate limiting, per-widget
+    origin allowlist (Configuration.allowedOrigins) with scoped CORS grants, and optional
+    Cloudflare Turnstile (Configuration.requireTurnstile + Settings.TurnstileSecretEnvVar).
+    Writes run as the configured ServiceUserEmail principal (system-user fallback). The
+    claim-driver Load anchors are now called from LoadBizAppsOrdersServer so the drivers
+    survive tree-shaking.
+
+- 844f85d: Public checkout URL is `GET /checkout/:slug` on the existing `OrdersCheckoutEdge` (vanilla HTML talking to the POST edge). The server package publishes `MJ_SERVER_EXTENSIONS` (and `package.json` `memberjunction.serverExtensions`) so a host that lists `@mj-biz-apps/orders-server` in `dynamicPackages.server[]` auto-loads the webhook and checkout edge. Initialize writes a SKU-resolved `productId` onto Configuration so that page can draft a line.
+- c490929: Checkout follow-up from the #115/#116 security review: fail-closed open catalog without widget CompanyID; do not serve the element source map on the public payment route unless opted in; book CapturePayment from payment_intent.succeeded (including AlreadyApplied retries); require a CSP nonce on the host page renderer.
+- Updated dependencies [e21ad46]
+- Updated dependencies [07e0b10]
+- Updated dependencies [844f85d]
+- Updated dependencies [c490929]
+- Updated dependencies [d8d94c7]
+- Updated dependencies [ce76550]
+- Updated dependencies [cf88598]
+- Updated dependencies [f426462]
+- Updated dependencies [c724132]
+- Updated dependencies [2daf9b9]
+- Updated dependencies [94af4e5]
+- Updated dependencies [44944fd]
+- Updated dependencies [d0e5450]
+- Updated dependencies [8ad33a8]
+- Updated dependencies [6367347]
+  - @mj-biz-apps/orders-core-entities-server@5.2.0
+  - @mj-biz-apps/orders-entities@5.2.0
+  - @mj-biz-apps/orders-actions@5.2.0
+
 ## 5.1.0
 
 ### Minor Changes
