@@ -15,6 +15,11 @@ const mocks = vi.hoisted(() => {
     const mockProductTypeLoad = vi.fn().mockResolvedValue(true);
     const mockPersonSave = vi.fn().mockResolvedValue(true);
     const mockIntentLoad = vi.fn().mockResolvedValue(true);
+    const mockIntentSave = vi.fn().mockResolvedValue(true);
+    const mockCaptureExecute = vi.fn().mockResolvedValue({
+        Success: true,
+        Output: { Success: true, PaymentHeaderID: 'ph-1', Status: 'Captured' }
+    });
 
     const DEFAULT_WIDGET_CONFIG = JSON.stringify({
         productId: 'prod-1',
@@ -93,7 +98,13 @@ const mocks = vi.hoisted(() => {
         ID = 'pi-row-1';
         Status = 'Succeeded';
         Amount = 100;
+        PaymentProviderID = 'pp-1';
+        OrderHeaderID: string | null = null;
+        BillToPersonID: string | null = null;
+        BillToOrganizationID: string | null = null;
+        LatestResult = { Success: true, Message: '', CompleteMessage: '' };
         Load = mockIntentLoad;
+        Save = mockIntentSave;
     }
 
     class MockExtensionEntity {
@@ -135,8 +146,10 @@ const mocks = vi.hoisted(() => {
         Origin = 'Widget';
         SourceCheckoutWidgetID = 'widget-1';
         BillToPersonID: string | null = null;
+        BillToOrganizationID: string | null = null;
         ShipToPersonID: string | null = null;
         TotalGross = 0;
+        AmountPaid = 0;
         OrderDate: Date | null = null;
         LatestResult = { Success: true, Message: '', CompleteMessage: '' };
         NewRecord = vi.fn();
@@ -200,6 +213,8 @@ const mocks = vi.hoisted(() => {
         mockProductTypeLoad,
         mockPersonSave,
         mockIntentLoad,
+        mockIntentSave,
+        mockCaptureExecute,
         mockClaimCreate: vi.fn().mockResolvedValue({ ID: 'claim-1' }),
         mockOpenPaymentIntent: vi.fn().mockResolvedValue({
             Success: true,
@@ -230,6 +245,12 @@ vi.mock('@memberjunction/core-entities-server', () => ({
 
 vi.mock('../PaymentIntentService.js', () => ({
     OpenPaymentIntent: (request: unknown, provider: unknown, user: unknown) => mocks.mockOpenPaymentIntent(request, provider, user)
+}));
+
+vi.mock('../CapturePaymentOperation.js', () => ({
+    CapturePaymentOperation: class {
+        ExecuteServer = (...args: unknown[]) => mocks.mockCaptureExecute(...args);
+    }
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -344,6 +365,15 @@ describe('CheckoutSessionService', () => {
         mocks.sessionRunViewResults = undefined;
         mocks.mockPaymentIntentInstance.Status = 'Succeeded';
         mocks.mockPaymentIntentInstance.Amount = 100;
+        mocks.mockPaymentIntentInstance.PaymentProviderID = 'pp-1';
+        mocks.mockPaymentIntentInstance.OrderHeaderID = null;
+        mocks.mockPaymentIntentInstance.BillToPersonID = null;
+        mocks.mockOrderInstance.AmountPaid = 0;
+        mocks.mockIntentSave.mockResolvedValue(true);
+        mocks.mockCaptureExecute.mockResolvedValue({
+            Success: true,
+            Output: { Success: true, PaymentHeaderID: 'ph-1', Status: 'Captured' }
+        });
         mocks.mockWidgetLoad.mockResolvedValue(true);
         mocks.mockSessionLoad.mockResolvedValue(true);
         mocks.mockOrderLoad.mockResolvedValue(true);
@@ -371,6 +401,20 @@ describe('CheckoutSessionService', () => {
             expect(res.CustomCSS).toBe('.custom-summit { border: 2px solid red; }');
             expect(res.CustomJS).toBe('console.log("Summit Widget Loaded");');
             expect(res.Configuration?.customUI).toBeDefined();
+        });
+
+        it('merges ProductType customUI and unitMode under widget overlay, and fills productName', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                productId: 'prod-1',
+                title: 'Summit',
+                customUI: { css: '.widget-wins { color: blue; }' },
+            });
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            expect(res.Success).toBe(true);
+            expect(res.Configuration?.productName).toBe('Conference VIP Pass');
+            expect(res.Configuration?.unitMode).toBe('perUnit');
+            expect(res.Configuration?.customUI?.css).toBe('.widget-wins { color: blue; }');
+            expect(res.Configuration?.customUI?.js).toBe('console.log("Event Type Hook");');
         });
 
         it('auto-discovers extension fields from ProductType metadata when not explicitly specified', async () => {
@@ -770,11 +814,80 @@ describe('CheckoutSessionService', () => {
                 return Promise.resolve({});
             });
 
-            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
             expect(res.Success).toBe(true);
             expect(res.Status).toBe('Confirmed');
             expect(mocks.mockSessionInstance.Status).toBe('Confirmed');
             expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalled();
+            expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+            const captureInput = mocks.mockCaptureExecute.mock.calls[0][0] as {
+                PaymentIntentID: string;
+                Amount: number;
+                TenderCode: string;
+                IdempotencyKey: string;
+                Allocations: Array<{ OrderHeaderID: string; Amount: number }>;
+                PaymentDetail: { PaymentProviderID: string } | null;
+            };
+            expect(captureInput.PaymentIntentID).toBe('pi-row-1');
+            expect(captureInput.Amount).toBe(100);
+            expect(captureInput.TenderCode).toBe('CreditCard');
+            expect(captureInput.IdempotencyKey).toBe('checkout-complete:sess-123');
+            expect(captureInput.Allocations).toEqual([{ OrderHeaderID: 'order-999', Amount: 100 }]);
+            expect(captureInput.PaymentDetail).toEqual({ PaymentProviderID: 'pp-1' });
+            expect(mocks.mockPaymentIntentInstance.OrderHeaderID).toBe('order-999');
+        });
+
+        it('still confirms the order when CapturePayment fails after commit', async () => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.mockPaymentIntentInstance.Amount = 100;
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = 100;
+                    line.LineTotalGross = 100 * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+            mocks.mockCaptureExecute.mockResolvedValueOnce({
+                Success: true,
+                Output: { Success: false, Message: 'UnknownTender', Blockers: [{ Message: 'nope' }] }
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(res.OrderID).toBe('order-999');
+            expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalled();
+        });
+
+        it('on Confirmed replay, books CapturePayment when the order is still unpaid', async () => {
+            mocks.mockSessionInstance.Status = 'Confirmed';
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockOrderInstance.TotalGross = 100;
+            mocks.mockOrderInstance.AmountPaid = 0;
+            mocks.mockOrderInstance.BillToPersonID = 'person-new-1';
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(res.OrderID).toBe('order-999');
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+        });
+
+        it('skips CapturePayment for a $0 order even when a context user is present', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockCaptureExecute).not.toHaveBeenCalled();
         });
 
         it('rejects paid order confirmation when payment capture is missing', async () => {

@@ -20,6 +20,12 @@ export interface CheckoutHostPageOptions {
     pageTitle?: string;
     /** Per-response CSP nonce for the inline style and boot script. */
     cspNonce?: string;
+    /**
+     * Relative URL of the `<mj-orders-checkout>` Angular Element bundle.
+     * When set, the page hosts the reusable Angular widget (customUI, introspected
+     * extension fields). When omitted, a vanilla fallback form is used.
+     */
+    elementSrc?: string;
 }
 
 export interface CheckoutHostErrorOptions {
@@ -36,8 +42,8 @@ export function checkoutHostSecurityHeaders(nonce: string): Record<string, strin
         "base-uri 'none'",
         "form-action 'none'",
         "frame-ancestors 'none'",
-        `script-src 'nonce-${n}' https://js.stripe.com`,
-        `style-src 'nonce-${n}'`,
+        `script-src 'nonce-${n}' 'self' https://js.stripe.com`,
+        `style-src 'nonce-${n}' 'self'`,
         "img-src 'self' data: https://*.stripe.com",
         'frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://*.stripe.com https://*.hcaptcha.com https://newassets.hcaptcha.com',
         "connect-src 'self' https://api.stripe.com https://m.stripe.network",
@@ -69,6 +75,25 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
     const slug = escapeAttr(options.slug);
     const apiRoot = escapeAttr(options.apiRoot);
     const nonceAttr = options.cspNonce ? ` nonce="${escapeAttr(options.cspNonce)}"` : '';
+    const elementSrc = options.elementSrc ? escapeAttr(options.elementSrc) : '';
+    if (elementSrc) {
+        return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="robots" content="noindex" />
+  <title>${title}</title>
+  <style${nonceAttr}>${PAGE_CSS}</style>
+  <script type="module" src="${elementSrc}"${nonceAttr}></script>
+</head>
+<body>
+  <main class="mj-co">
+    <mj-orders-checkout slug="${slug}" api-root="${apiRoot}" csp-nonce="${options.cspNonce ? escapeAttr(options.cspNonce) : ''}"></mj-orders-checkout>
+  </main>
+</body>
+</html>`;
+    }
     return `<!doctype html>
 <html lang="en">
 <head>
@@ -113,13 +138,14 @@ const PAGE_CSS = `
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; min-height: 100%; }
 body {
-  background: var(--mj-bg, #f6f7f9);
-  color: var(--mj-text, #1a1a1a);
-  font-family: var(--mj-font-body, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+  background: var(--mj-bg, #f8fafc);
+  color: var(--mj-text, #0f172a);
+  font-family: var(--mj-font-body, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
   -webkit-text-size-adjust: 100%;
+  min-height: 100vh;
 }
 .mj-co {
-  max-width: 32rem;
+  max-width: 36rem;
   margin: 0 auto;
   padding: clamp(1.5rem, 5vw, 3rem) clamp(1rem, 4vw, 2rem);
 }

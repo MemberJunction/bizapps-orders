@@ -428,7 +428,7 @@ export class RegistrationPageComponent {
 
 ### 2. Public checkout URL (MJAPI, not Explorer)
 
-Anonymous buyers do not have an Explorer session. The public URL is served by MJAPI on the existing `OrdersCheckoutEdge`:
+Anonymous buyers do not have an Explorer session. The public URL is served by MJAPI on the existing `OrdersCheckoutEdge` and hosts the reusable Angular `<mj-checkout-widget>` (packaged as the `<mj-orders-checkout>` custom element). Extension fields are introspected from the product type's `OrderLineExtensionEntity` — events are one product type, not a hard-coded form.
 
 ```
 GET {MJAPI}/checkout/:slug

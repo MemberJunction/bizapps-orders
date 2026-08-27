@@ -36,6 +36,8 @@ import {
     type CreateIntentResult,
     type RefundRequest,
     type RefundResult,
+    type RetrieveIntentRequest,
+    type RetrieveIntentResult,
     type WebhookEvent,
 } from './BasePaymentProvider.js';
 import {
@@ -151,6 +153,31 @@ export class StripePaymentProvider extends BasePaymentProvider {
         };
     }
 
+    public override async RetrieveIntent(request: RetrieveIntentRequest): Promise<RetrieveIntentResult> {
+        if (!request.ProviderIntentID) {
+            return { Success: false, Reason: 'A Stripe retrieve needs a provider intent id.' };
+        }
+        if (this.useStub) {
+            // The stub never sees a browser confirmCardPayment; it stays RequiresPayment
+            // until Capture, matching the card rail's opening state.
+            return { Success: true, Status: this.StubIntentStatus };
+        }
+        const result = await this.call(
+            'GET',
+            `/payment_intents/${encodeURIComponent(request.ProviderIntentID)}`,
+        );
+        if (!result.Ok) {
+            return { Success: false, Reason: result.Reason };
+        }
+        const currency = ((result.Body.currency as string) ?? 'usd').toUpperCase();
+        const minor = Number(result.Body.amount_received ?? result.Body.amount ?? 0);
+        return {
+            Success: true,
+            Status: MapStripeIntentStatus(result.Body.status as string),
+            Amount: Number.isFinite(minor) && minor > 0 ? FromMinorUnits(minor, currency) : undefined,
+        };
+    }
+
     // ─── Capture ───────────────────────────────────────────────────────────────
 
     public override async Capture(request: CaptureRequest): Promise<CaptureResult> {
@@ -177,7 +204,24 @@ export class StripePaymentProvider extends BasePaymentProvider {
             `/payment_intents/${encodeURIComponent(request.ProviderIntentID)}/capture`,
             body,
         );
-        if (!captured.Ok) return { Success: false, Reason: captured.Reason };
+        if (!captured.Ok) {
+            // Browser confirmCardPayment with automatic capture already captured the intent.
+            // POST /capture then returns payment_intent_unexpected_state. Treat that as
+            // success by reading the Succeeded intent — same money, not a second capture.
+            if (stripeCaptureAlreadyCollected(captured.Reason, captured.Body)) {
+                const retrieved = await this.call(
+                    'GET',
+                    `/payment_intents/${encodeURIComponent(request.ProviderIntentID)}`,
+                );
+                if (retrieved.Ok) {
+                    const retrievedStatus = MapStripeIntentStatus(retrieved.Body.status as string);
+                    if (retrievedStatus === 'Succeeded') {
+                        return this.captureResultFromIntent(retrieved.Body, request);
+                    }
+                }
+            }
+            return { Success: false, Reason: captured.Reason };
+        }
 
         const status = MapStripeIntentStatus(captured.Body.status as string);
         if (status !== 'Succeeded') {
@@ -186,21 +230,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
             return { Success: false, Reason: `Stripe reported the intent as '${captured.Body.status}' after capture.`, Status: status };
         }
 
-        const currency = (captured.Body.currency as string) ?? request.CurrencyCode;
-        const amountMinor = Number(captured.Body.amount_received ?? captured.Body.amount ?? 0);
-        const charge = this.latestCharge(captured.Body);
-
-        return {
-            Success: true,
-            Amount: FromMinorUnits(amountMinor, currency),
-            // UNDEFINED rather than zero when the fee is not expanded in the response. Stripe reports
-            // it on the balance transaction, which needs a separate fetch, and "we do not know the fee"
-            // must not read as "there was no fee" — the first leaves the fee leg unbooked, the second
-            // books a wrong one.
-            FeeAmount: await this.feeFor(charge, currency),
-            ProviderChargeID: charge ?? undefined,
-            Status: 'Succeeded',
-        };
+        return this.captureResultFromIntent(captured.Body, request);
     }
 
     // ─── Refund ────────────────────────────────────────────────────────────────
@@ -365,6 +395,31 @@ export class StripePaymentProvider extends BasePaymentProvider {
         return { Ok: false, Body: parsed, Reason: reason };
     }
 
+    /**
+     * Map a Succeeded Stripe PaymentIntent body onto our CaptureResult. Shared by a real
+     * POST /capture and by the already-captured retrieve fallback so both paths stamp the
+     * same charge id and fee.
+     */
+    private async captureResultFromIntent(
+        body: Record<string, unknown>,
+        request: CaptureRequest,
+    ): Promise<CaptureResult> {
+        const currency = (body.currency as string) ?? request.CurrencyCode;
+        const amountMinor = Number(body.amount_received ?? body.amount ?? 0);
+        const charge = this.latestCharge(body);
+        return {
+            Success: true,
+            Amount: FromMinorUnits(amountMinor, currency),
+            // UNDEFINED rather than zero when the fee is not expanded in the response. Stripe reports
+            // it on the balance transaction, which needs a separate fetch, and "we do not know the fee"
+            // must not read as "there was no fee" — the first leaves the fee leg unbooked, the second
+            // books a wrong one.
+            FeeAmount: await this.feeFor(charge, currency),
+            ProviderChargeID: charge ?? undefined,
+            Status: 'Succeeded',
+        };
+    }
+
     /** `latest_charge` is a string on modern API versions and an object on older expanded responses. */
     protected latestCharge(object: Record<string, unknown>): string | null {
         const latest = object.latest_charge;
@@ -412,6 +467,24 @@ export function ToFormBody(fields: Record<string, string>): string {
         if (value != null) params.append(key, String(value));
     }
     return params.toString();
+}
+
+/**
+ * True when Stripe refused POST /capture because the intent was already captured
+ * (automatic-capture confirmCardPayment, or a retried Capture).
+ */
+export function stripeCaptureAlreadyCollected(
+    reason: string | undefined,
+    body: Record<string, unknown>,
+): boolean {
+    const error = (body?.error ?? {}) as Record<string, unknown>;
+    const code = String(error.code ?? '');
+    const msg = `${reason ?? ''} ${String(error.message ?? '')}`.toLowerCase();
+    return (
+        code === 'payment_intent_unexpected_state' ||
+        msg.includes('already been captured') ||
+        msg.includes('already succeeded')
+    );
 }
 
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */

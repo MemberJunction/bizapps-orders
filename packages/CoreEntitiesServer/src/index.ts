@@ -221,6 +221,8 @@ export type {
     CreateIntentResult,
     CaptureRequest,
     CaptureResult,
+    RetrieveIntentRequest,
+    RetrieveIntentResult,
     RefundRequest,
     RefundResult,
     WebhookEvent,

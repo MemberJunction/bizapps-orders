@@ -8,7 +8,10 @@
  * the distribution slug plus the session id + client session key (re-verified inside the
  * service on every mutating call) are the credentials.
  *
- * `GET {RootPath}/:slug` is the first-party public page (vanilla HTML, no Explorer shell).
+ * `GET {RootPath}/:slug` is the first-party public page. It hosts the reusable
+ * Angular `<mj-checkout-widget>` (as `<mj-orders-checkout>`) when the element
+ * bundle is built; otherwise a vanilla fallback. Extension fields come from
+ * ProductType.OrderLineExtensionEntity metadata — not a hard-coded event form.
  * MJ auto-loads this extension from `@mj-biz-apps/orders-server`'s `MJ_SERVER_EXTENSIONS`
  * when the package is listed in the host `dynamicPackages.server[]`.
  *
@@ -59,6 +62,10 @@ import {
 import { CheckoutSessionService, EscapeText, type CheckoutLineInput } from '@mj-biz-apps/orders-core-entities-server';
 import type { CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isValidCheckoutSlug, originAllowed as originIsAllowed, resolveClientIp } from './checkout-edge-policy.js';
 import { checkoutHostSecurityHeaders, renderCheckoutHostErrorPage, renderCheckoutHostPage } from './checkout-host-page.js';
 
@@ -71,6 +78,32 @@ const DEFAULT_RATE_MAX_PER_WINDOW = 30;
 /** Aggregate cap per IP across all slugs — sits on top of the per-slug window. */
 const DEFAULT_RATE_MAX_GLOBAL = 90;
 const REAP_INTERVAL_MS = 60_000;
+
+const requireFromHere = createRequire(import.meta.url);
+
+/** Directory of the `<mj-orders-checkout>` Angular Element bundle, if it was built. */
+function resolveCheckoutElementDir(): string | null {
+    const candidates: string[] = [];
+    try {
+        const entry = requireFromHere.resolve('@mj-biz-apps/orders-ng');
+        candidates.push(path.join(path.dirname(entry), 'checkout-element'));
+    } catch {
+        /* package not resolvable */
+    }
+    try {
+        const here = path.dirname(fileURLToPath(import.meta.url));
+        candidates.push(path.resolve(here, '../../Angular/dist/checkout-element'));
+        candidates.push(path.resolve(here, '../../../Angular/dist/checkout-element'));
+    } catch {
+        /* non-file URL */
+    }
+    for (const dir of candidates) {
+        if (existsSync(path.join(dir, 'main.js'))) {
+            return dir;
+        }
+    }
+    return null;
+}
 /** Bounded size of the rate-limit map — oldest windows evict first. */
 const RATE_CACHE_MAX = 50_000;
 
@@ -120,6 +153,17 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const root = config.RootPath.replace(/\/+$/, '') || '/checkout';
         this.rootPath = root;
         const json = BodyParser.json({ limit: MAX_BODY });
+
+        const elementDir = resolveCheckoutElementDir();
+        if (elementDir) {
+            app.get(`${root}/element/main.js`, (_req, res) => {
+                res.type('application/javascript').sendFile(path.join(elementDir, 'main.js'));
+            });
+            app.get(`${root}/element/main.js.map`, (_req, res) => {
+                res.type('application/json').sendFile(path.join(elementDir, 'main.js.map'));
+            });
+            LogStatus(`[Orders] Checkout Angular Element served from ${elementDir} at GET ${root}/element/main.js`);
+        }
 
         const routes: Array<[string, (req: Request, res: Response) => Promise<void>]> = [
             [`${root}/initialize`, (req, res) => this.handleInitialize(req, res)],
@@ -385,7 +429,12 @@ export class CheckoutServerExtension extends BaseServerExtension {
             res
                 .status(200)
                 .setHeader('Content-Type', 'text/html; charset=utf-8')
-                .send(renderCheckoutHostPage({ slug, apiRoot: this.rootPath, cspNonce: nonce }));
+                .send(renderCheckoutHostPage({
+                    slug,
+                    apiRoot: this.rootPath,
+                    cspNonce: nonce,
+                    elementSrc: resolveCheckoutElementDir() ? `${this.rootPath}/element/main.js` : undefined,
+                }));
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             LogError(`[OrdersCheckoutEdge] Unhandled error on GET host: ${msg}`);

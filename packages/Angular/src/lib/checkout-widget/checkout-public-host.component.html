@@ -1,0 +1,28 @@
+<div class="mj-checkout-public">
+    @if (loadError) {
+        <div class="mj-widget-error-banner" role="alert">{{ loadError }}</div>
+    } @else if (successMessage) {
+        <div class="mj-checkout-success" role="status">
+            <div class="mj-checkout-success__icon" aria-hidden="true">✓</div>
+            <h1 class="mj-checkout-success__title">You're all set</h1>
+            <p class="mj-checkout-success__msg">{{ successMessage }}</p>
+            @if (orderNumber) {
+                <p class="mj-checkout-success__order">Order {{ orderNumber }}</p>
+            }
+        </div>
+    } @else if (!config) {
+        <p class="mj-checkout-public__status" role="status">Loading checkout…</p>
+    } @else {
+        <mj-checkout-widget
+            [config]="config"
+            [distributionSlug]="slug"
+            [sessionKey]="sessionKey"
+            [isProcessing]="processing"
+            [isPaymentReady]="isPaymentReady"
+            [stripePaymentMethodId]="stripePaymentMethodId"
+            [errorMessage]="errorMessage"
+            (submitted)="onSubmitted($event)"
+            (cancelled)="onCancelled()">
+        </mj-checkout-widget>
+    }
+</div>
