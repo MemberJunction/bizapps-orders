@@ -42,7 +42,21 @@ remains only for standing up a brand-new empty database; it is not a development
 Write migrations idempotently (`IF NOT EXISTS`, `IF COL_LENGTH(...) IS NULL`) and assume the database
 already has data. A migration that reads `__mj.Entity` must skip cleanly when the row is absent —
 CodeGen runs *after* migrations — and if the change is really about metadata (field categories,
-form layout), its home is `metadata/` and `mj sync push`, not a migration.
+form layout), its home is `metadata/` and `mj sync push` **during development**.
+
+**But `metadata/` ships to nobody.** MJ's manifest schema calls `mj-app.json`'s `metadata.directory`
+a dev-time pointer (`packages/OpenApp/Engine/src/manifest/manifest-schema.ts`), and `mj app install`
+runs migrations and nothing else. A `mj sync push` whose result lives only in your database is an
+**unshipped change** — the rows exist for you and for no host. At release the build engineer
+regenerates a `*__Metadata_Sync.sql` migration carrying those rows, and it installs alongside every
+other migration; that is how metadata reaches a customer.
+
+Two things about that step, because both fail quietly:
+- It must be generated from a **fresh** database. A push against a dev database emits `spUpdate*`,
+  which the generator refuses and which would overwrite host state.
+- **Nothing in CI detects a pending metadata change with no migration behind it.** The guard is the
+  release process, not a gate — so a `metadata/` edit that matters to a host is not "done" when it
+  merges, only when a release carries it.
 
 The review test: *if a colleague pulls this branch onto a database that already has last week's
 schema and runs `pnpm run mj:migrate`, do they get exactly the schema this branch describes?*
