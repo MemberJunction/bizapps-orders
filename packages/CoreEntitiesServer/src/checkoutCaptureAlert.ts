@@ -4,8 +4,14 @@
  * The log marker is the alert floor. A Tasks row is the human-visible artifact —
  * only if bizapps-tasks is installed AND a GENERAL TaskType can be resolved by
  * Code. TypeID is NOT NULL with no default; writing a Task without it always fails.
+ *
+ * Reads and writes go through the generated Tasks subclasses, not `.Get()` / `.Set()`.
  */
 import { LogError, Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import type {
+    mjBizAppsTasksTaskEntity,
+    mjBizAppsTasksTaskTypeEntity,
+} from '@mj-biz-apps/tasks-entities';
 import { CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER } from './checkoutCaptureRetry.js';
 import { EscapeText } from './sql-guards.js';
 
@@ -34,12 +40,11 @@ export async function raiseCheckoutCaptureTerminalAlert(
         }
 
         const rv = new RunView();
-        const types = await rv.RunView<{ ID: string }>(
+        const types = await rv.RunView<mjBizAppsTasksTaskTypeEntity>(
             {
                 EntityName: CHECKOUT_CAPTURE_TASK_TYPE_ENTITY,
                 ExtraFilter: `Code = '${EscapeText(CHECKOUT_CAPTURE_TASK_TYPE_CODE)}'`,
-                Fields: ['ID'],
-                ResultType: 'simple',
+                ResultType: 'entity_object',
                 MaxRows: 1,
             },
             contextUser,
@@ -50,15 +55,16 @@ export async function raiseCheckoutCaptureTerminalAlert(
             return;
         }
 
-        const task = await md.GetEntityObject(CHECKOUT_CAPTURE_TASK_ENTITY, contextUser);
-        task.NewRecord();
-        task.Set('Name', `Checkout capture not booked: ${orderID}`);
-        task.Set(
-            'Description',
-            `A Stripe payment settled and the checkout order is Confirmed, but Orders.CapturePayment was refused and will not succeed on retry.\n\nOrder: ${orderID}\nSession: ${sessionID ?? '(unknown)'}\nReason: ${reason}`,
+        const task = await md.GetEntityObject<mjBizAppsTasksTaskEntity>(
+            CHECKOUT_CAPTURE_TASK_ENTITY,
+            contextUser,
         );
-        task.Set('Status', 'Open');
-        task.Set('TypeID', typeID);
+        task.NewRecord();
+        task.TypeID = typeID;
+        task.Name = `Checkout capture not booked: ${orderID}`;
+        task.Description =
+            `A Stripe payment settled and the checkout order is Confirmed, but Orders.CapturePayment was refused and will not succeed on retry.\n\nOrder: ${orderID}\nSession: ${sessionID ?? '(unknown)'}\nReason: ${reason}`;
+        task.Status = 'Open';
         if (!(await task.Save())) {
             LogError(
                 `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Could not raise a Task: ${task.LatestResult?.CompleteMessage ?? 'unknown error'}`,

@@ -26,7 +26,8 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "5.1.0"
+    "@mj-biz-apps/orders-entities": "5.1.0",
+    "@mj-biz-apps/tasks-entities": "^1.2.3"
   },
   "peerDependencies": {
     "@memberjunction/communication-engine": "^6.1.0-edge.1",

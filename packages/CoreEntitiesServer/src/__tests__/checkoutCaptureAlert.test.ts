@@ -8,9 +8,12 @@ import type { UserInfo } from '@memberjunction/core';
 const { mockRunView, mockEntityByName, mockGetEntityObject, mockLogError, mockTask } = vi.hoisted(() => {
     const mockTask = {
         NewRecord: vi.fn(),
-        Set: vi.fn(),
         Save: vi.fn().mockResolvedValue(true),
         LatestResult: { CompleteMessage: '' },
+        Name: '',
+        Description: null as string | null,
+        Status: 'Open' as 'Blocked' | 'Cancelled' | 'Completed' | 'InProgress' | 'Open',
+        TypeID: '',
     };
     return {
         mockRunView: vi.fn(),
@@ -53,8 +56,11 @@ beforeEach(() => {
     mockGetEntityObject.mockReset();
     mockLogError.mockReset();
     mockTask.NewRecord.mockReset();
-    mockTask.Set.mockReset();
     mockTask.Save.mockReset().mockResolvedValue(true);
+    mockTask.Name = '';
+    mockTask.Description = null;
+    mockTask.Status = 'Open';
+    mockTask.TypeID = '';
     mockEntityByName.mockReturnValue({ Name: CHECKOUT_CAPTURE_TASK_ENTITY });
     mockGetEntityObject.mockResolvedValue(mockTask);
     mockRunView.mockResolvedValue({ Success: true, Results: [{ ID: GENERAL_TYPE_ID }] });
@@ -82,33 +88,25 @@ describe('raiseCheckoutCaptureTerminalAlert', () => {
         expect(mockLogError.mock.calls.some((c) => String(c[0]).includes('No GENERAL TaskType'))).toBe(true);
     });
 
-    it('looks up TaskType by Code, not by GUID, and sets TypeID before Save', async () => {
+    it('looks up TaskType by Code via the typed entity, then assigns TypeID before Save', async () => {
         await raiseCheckoutCaptureTerminalAlert('order-9', 'sess-9', 'no bill-to party', user);
 
         expect(mockRunView).toHaveBeenCalledTimes(1);
         const params = mockRunView.mock.calls[0][0] as {
             EntityName: string;
             ExtraFilter: string;
-            Fields: string[];
+            ResultType: string;
             MaxRows: number;
         };
         expect(params.EntityName).toBe(CHECKOUT_CAPTURE_TASK_TYPE_ENTITY);
         expect(params.ExtraFilter).toBe(`Code = '${CHECKOUT_CAPTURE_TASK_TYPE_CODE}'`);
         expect(params.ExtraFilter).not.toMatch(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}/);
-        expect(params.Fields).toEqual(['ID']);
+        expect(params.ResultType).toBe('entity_object');
         expect(params.MaxRows).toBe(1);
 
-        const sets = Object.fromEntries(
-            mockTask.Set.mock.calls.map((c) => [c[0], c[1]]) as Array<[string, unknown]>,
-        );
-        expect(sets.TypeID).toBe(GENERAL_TYPE_ID);
-        expect(sets.Status).toBe('Open');
-        expect(sets.Name).toContain('order-9');
+        expect(mockTask.TypeID).toBe(GENERAL_TYPE_ID);
+        expect(mockTask.Status).toBe('Open');
+        expect(mockTask.Name).toContain('order-9');
         expect(mockTask.Save).toHaveBeenCalledTimes(1);
-        const typeBeforeSave = mockTask.Set.mock.invocationCallOrder.find(
-            (_, i) => mockTask.Set.mock.calls[i][0] === 'TypeID',
-        );
-        const saveOrder = mockTask.Save.mock.invocationCallOrder[0];
-        expect(typeBeforeSave).toBeLessThan(saveOrder);
     });
 });

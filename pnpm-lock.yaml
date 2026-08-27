@@ -249,6 +249,9 @@ importers:
       '@mj-biz-apps/orders-entities':
         specifier: 5.1.0
         version: link:../Entities
+      '@mj-biz-apps/tasks-entities':
+        specifier: ^1.2.3
+        version: 1.2.3(@memberjunction/core@6.1.0-edge.3)(@memberjunction/global@6.1.0-edge.3)
     devDependencies:
       '@mj-biz-apps/accounting-core-entities-server':
         specifier: '>=0.1.0'
