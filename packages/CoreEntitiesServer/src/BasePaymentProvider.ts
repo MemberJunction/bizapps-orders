@@ -161,6 +161,12 @@ export interface WebhookEvent {
     Status?: IntentStatus;
     /** Present on a failure event, in the gateway's words. */
     FailureReason?: string;
+    /**
+     * When the gateway says the event happened. Stripe `created` (unix seconds).
+     * Used to bound checkout-capture webhook 500s; absent means the bound cannot
+     * be applied and retries follow Retryable only.
+     */
+    OccurredAt?: Date;
 }
 
 /**

@@ -92,7 +92,8 @@ export interface CheckoutWidgetConfiguration {
     /**
      * When true, this widget sells any product that shares its CompanyID — an
      * explicit open catalog, not the default. Absence of `productId` /
-     * `allowedProductIds` is NOT an open catalog. Server-side only.
+     * `allowedProductIds` is NOT an open catalog. Requires the widget
+     * CompanyID (fail-closed if unset). Server-side only.
      */
     allowAnyProduct?: boolean;
     /** Alternative product resolution by SKU when productId is not set. */
