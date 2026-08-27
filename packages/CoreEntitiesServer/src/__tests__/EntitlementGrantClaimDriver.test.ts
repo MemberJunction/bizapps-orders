@@ -4,7 +4,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
 import type { UserInfo } from '@memberjunction/core';
-import { BaseIdentityClaimDriver, type ClaimRedeemContext, type ClaimContext, type MJIdentityClaimEntity } from '@memberjunction/core-entities';
+// Local fallback contracts — see ../identityClaimContracts.ts. Restore this import to
+// '@memberjunction/core-entities' once MJ publishes these exports.
+import {
+    BaseIdentityClaimDriver,
+    type ClaimRedeemContext,
+    type ClaimContext,
+    type MJIdentityClaimEntity
+} from '../identityClaimContracts.js';
 
 const mockGrantSave = vi.fn().mockResolvedValue(true);
 const mockGrantLoad = vi.fn().mockResolvedValue(true);

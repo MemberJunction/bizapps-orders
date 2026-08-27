@@ -1,5 +1,63 @@
 # @mj-biz-apps/orders-entities
 
+## 5.2.0
+
+### Minor Changes
+
+- 2daf9b9: Fold inspected CodeGen output into a new migration so CRUD procedures and EntityField rows match columns added by later V migrations (PricingDriverClass, ProductType.Configuration, and related). A clean install was failing mj sync push of product-types on a stale spCreateProductType signature.
+- 94af4e5: Platform floor to MJ 6.1.0-edge.4 and app dependency floors to the latest
+  releases, read from npm at cut time: bizapps-common >=5.36.0,
+  bizapps-accounting >=0.4.0, bizapps-tasks >=1.4.0. Every @memberjunction/\*
+  dependency now pins ^6.1.0-edge.4 — caret, never exact: orders-ng's exact
+  ng-hierarchy-tree pin forced two MJ copies into consumers' Explorer trees and
+  split the ClassFactory registry (consumers carried a root override to undo it).
+- d0e5450: Scope CodeGen heal EXECs with authored excludeSchemas plus `@IncludedSchemaNames` for the Orders schema, instead of photographing sibling Open Apps. Strip Common Activity Types field inserts and the unscoped field-from-schema heal that broke from-scratch migrate.
+
+### Patch Changes
+
+- e21ad46: Host the Angular checkout widget as an Angular Element on `GET /checkout/:slug`, retrieve Stripe intent status on complete (localhost has no webhook), skip a second confirmCardPayment when the intent already succeeded, and book `Orders.CapturePayment` after confirm so AmountPaid / PaymentHeader land without waiting for Stripe to POST. Stripe Capture treats an already-captured automatic-capture intent as success.
+- 07e0b10: Checkout hardening wave: fix the blocking defects and ship the anonymous edge.
+
+  Defect fixes in CheckoutSessionService:
+
+  - The payer Person is now resolved (find-or-create by the session's captured email) at
+    completion and stamped onto the session and the order's BillTo/ShipTo — previously every
+    widget order failed OrderHeaderEntity.Validate() with no customer.
+  - A session acquires a payment intent through the new OpenPaymentIntentForSession (amount
+    from the session's server-priced snapshot, provider from the widget's Configuration
+    paymentProviderId); the completion gate now verifies the intent's STATE (Succeeded, as
+    advanced by the signature-verified webhook) and that its amount covers the re-priced
+    total — mere existence of an intent id no longer books an order.
+  - The GuestOrder claim mint uses the real IdentityClaimEngineServer import (the previous
+    MJGlobal.ClassRegistry duck-type was dead code) and passes the entity GUID.
+  - EntitlementGrantClaimDriver.OnRevoke stamps RevokedAt + RevocationReason (the generated
+    validation rule rejected Revoked-without-RevokedAt, so revocations silently no-oped) and
+    failures are logged instead of swallowed; OnExpire logs failed saves.
+
+  Session hardening:
+
+  - ClientSessionKey is re-verified (constant-time) on every mutating call; ExpiresAt is
+    enforced past initialization (expired sessions transition to Expired); completion is
+    replay-safe (a Confirmed session returns its existing order) and never reverts to Open
+    once the order has committed; server-side quantity/line caps apply when unconfigured;
+    hand-rolled SQL escaping replaced with the sql-guards helpers; secret-shaped keys are
+    stripped from the Configuration returned to anonymous callers; Person rows are no longer
+    minted on the draft path; the platform-specific GETUTCDATE() filter is now portable.
+
+  The anonymous checkout edge (new):
+
+  - CheckoutServerExtension (DriverClass 'OrdersCheckoutEdge') mounts pre-auth REST routes
+    POST /checkout/{initialize,draft,payment-intent,complete} via the serverExtensions
+    mechanism, with fail-closed gates: body cap, per-IP(+slug) rate limiting, per-widget
+    origin allowlist (Configuration.allowedOrigins) with scoped CORS grants, and optional
+    Cloudflare Turnstile (Configuration.requireTurnstile + Settings.TurnstileSecretEnvVar).
+    Writes run as the configured ServiceUserEmail principal (system-user fallback). The
+    claim-driver Load anchors are now called from LoadBizAppsOrdersServer so the drivers
+    survive tree-shaking.
+
+- c490929: Checkout follow-up from the #115/#116 security review: fail-closed open catalog without widget CompanyID; do not serve the element source map on the public payment route unless opted in; book CapturePayment from payment_intent.succeeded (including AlreadyApplied retries); require a CSP nonce on the host page renderer.
+- 8ad33a8: Route `Orders.PreviewPrice` through `OrderPricingService` (the same walk save and `Orders.PriceOrder` use) instead of calling `ResolvePrice` directly. Price resolution now loads rules from every in-force list assigned to the customer, so a member list cannot lose to catalog `BCP-STD` when both assignments are Priority 0.
+
 ## 5.1.0
 
 ### Minor Changes

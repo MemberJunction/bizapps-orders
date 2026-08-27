@@ -1,5 +1,26 @@
 # @mj-biz-apps/orders-ng
 
+## 5.2.0
+
+### Minor Changes
+
+- c724132: Add CheckoutWidget, CheckoutWidgetDistribution, and CheckoutSession entities, embedded checkout widget component, and session management with atomic Compare-and-Swap state transitions and identity claiming.
+- 2daf9b9: Fold inspected CodeGen output into a new migration so CRUD procedures and EntityField rows match columns added by later V migrations (PricingDriverClass, ProductType.Configuration, and related). A clean install was failing mj sync push of product-types on a stale spCreateProductType signature.
+- d0e5450: Scope CodeGen heal EXECs with authored excludeSchemas plus `@IncludedSchemaNames` for the Orders schema, instead of photographing sibling Open Apps. Strip Common Activity Types field inserts and the unscoped field-from-schema heal that broke from-scratch migrate.
+
+### Patch Changes
+
+- e21ad46: Host the Angular checkout widget as an Angular Element on `GET /checkout/:slug`, retrieve Stripe intent status on complete (localhost has no webhook), skip a second confirmCardPayment when the intent already succeeded, and book `Orders.CapturePayment` after confirm so AmountPaid / PaymentHeader land without waiting for Stripe to POST. Stripe Capture treats an already-captured automatic-capture intent as success.
+- c490929: Checkout follow-up from the #115/#116 security review: fail-closed open catalog without widget CompanyID; do not serve the element source map on the public payment route unless opted in; book CapturePayment from payment_intent.succeeded (including AlreadyApplied retries); require a CSP nonce on the host page renderer.
+- Updated dependencies [e21ad46]
+- Updated dependencies [07e0b10]
+- Updated dependencies [c490929]
+- Updated dependencies [2daf9b9]
+- Updated dependencies [94af4e5]
+- Updated dependencies [d0e5450]
+- Updated dependencies [8ad33a8]
+  - @mj-biz-apps/orders-entities@5.2.0
+
 ## 5.1.0
 
 ### Minor Changes

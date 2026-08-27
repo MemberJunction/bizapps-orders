@@ -96,3 +96,25 @@ export function RequireDate(value: string, field: string): string {
 export function EscapeText(value: string): string {
     return String(value).replace(/'/g, "''");
 }
+
+/**
+ * LOCAL FALLBACK for `EscapeSQLString` from `@memberjunction/global`.
+ *
+ * CLAUDE.md requires this function for SQL string escaping, but no published
+ * `@memberjunction/global` exports it — `6.1.0-edge.3` ships `Escape` and `EscapeHTML`
+ * and nothing else. Following the rule as written therefore broke the build. This keeps
+ * the rule followable at the call sites until MJ publishes the real one; delete it then
+ * and re-point `claimDriverHelpers.ts` and `GuestOrderClaimDriver.ts` at the package.
+ *
+ * Stricter than {@link EscapeText} on two counts, both of which CLAUDE.md calls out as
+ * the reasons to prefer `EscapeSQLString`: `null`/`undefined` become an empty string
+ * rather than the literal text `"null"`, and embedded null bytes are stripped — SQL
+ * Server truncates at `\0`, so a value carrying one can end a quoted literal early and
+ * leave the remainder of the input parsed as SQL.
+ */
+export function EscapeSQLString(value: string | null | undefined): string {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    return String(value).replace(/\0/g, '').replace(/'/g, "''");
+}

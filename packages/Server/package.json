@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-server",
   "type": "module",
-  "version": "5.1.0",
+  "version": "5.2.0",
   "description": "BizApps Orders server bootstrap - GraphQL resolvers and class registrations for the unified order-management Open App",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -42,21 +42,21 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-actions": "5.1.0",
-    "@mj-biz-apps/orders-core-entities-server": "5.1.0",
-    "@mj-biz-apps/orders-entities": "5.1.0",
+    "@mj-biz-apps/orders-actions": "5.2.0",
+    "@mj-biz-apps/orders-core-entities-server": "5.2.0",
+    "@mj-biz-apps/orders-entities": "5.2.0",
     "body-parser": "^2.2.0",
     "class-validator": "^0.14.3"
   },
   "peerDependencies": {
-    "@memberjunction/actions": "^6.1.0-edge.1",
-    "@memberjunction/actions-base": "^6.1.0-edge.1",
-    "@memberjunction/core": "^6.1.0-edge.1",
-    "@memberjunction/global": "^6.1.0-edge.1",
-    "@memberjunction/server": "^6.1.0-edge.1",
-    "@memberjunction/server-extensions-core": "^6.1.0-edge.1",
-    "@memberjunction/generic-database-provider": "^6.1.0-edge.1",
-    "@memberjunction/templates": "^6.1.0-edge.1",
+    "@memberjunction/actions": "^6.1.0-edge.4",
+    "@memberjunction/actions-base": "^6.1.0-edge.4",
+    "@memberjunction/core": "^6.1.0-edge.4",
+    "@memberjunction/global": "^6.1.0-edge.4",
+    "@memberjunction/server": "^6.1.0-edge.4",
+    "@memberjunction/server-extensions-core": "^6.1.0-edge.4",
+    "@memberjunction/generic-database-provider": "^6.1.0-edge.4",
+    "@memberjunction/templates": "^6.1.0-edge.4",
     "@mj-biz-apps/accounting-engine-base": ">=0.1.0",
     "@mj-biz-apps/accounting-entities": ">=0.1.0",
     "@mj-biz-apps/accounting-server": ">=0.1.0"

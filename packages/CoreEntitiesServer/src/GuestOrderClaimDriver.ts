@@ -8,14 +8,18 @@
  * @module @mj-biz-apps/orders-core-entities-server/GuestOrderClaimDriver
  */
 
-import { RegisterClass, EscapeSQLString } from '@memberjunction/global';
+import { RegisterClass } from '@memberjunction/global';
+// Local fallback — see sql-guards.ts. Restore to '@memberjunction/global' once published.
+import { EscapeSQLString } from './sql-guards.js';
 import { Metadata, RunView, UserInfo, IRunViewProvider } from '@memberjunction/core';
+// Local fallback contracts — see identityClaimContracts.ts. Restore this import to
+// '@memberjunction/core-entities' once MJ publishes these exports.
 import {
     BaseIdentityClaimDriver,
     type ClaimContext,
     type ClaimRedeemContext,
     type ClaimResult,
-} from '@memberjunction/core-entities';
+} from './identityClaimContracts.js';
 import {
     mjBizAppsOrdersOrderHeaderEntity,
     mjBizAppsOrdersEntitlementGrantEntity,
