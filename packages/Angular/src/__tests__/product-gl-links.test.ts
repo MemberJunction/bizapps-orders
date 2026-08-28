@@ -316,6 +316,48 @@ describe('#113 — editing, and how much of a link may change', () => {
     });
 });
 
+describe('#113 — the sentence a refused write shows', () => {
+    /** Reaches the private extractor with a stand-in entity carrying just LatestResult. */
+    function readable(completeMessage: string | null | undefined): string | null {
+        const c = panel() as unknown as { readableError(e: unknown): string | null };
+        return c.readableError({ LatestResult: { CompleteMessage: completeMessage } });
+    }
+
+    it('pulls the Message out of a validation blob', () => {
+        // This is the real one, observed on a refused retire: showing it verbatim buries the only
+        // sentence that says what to do inside JSON punctuation.
+        const raw = JSON.stringify({
+            Source: 'EndedAt',
+            Message: 'The end date must be after the start date.',
+            Value: '2026-08-28T00:00:00.000Z',
+            Type: 'Failure',
+        });
+        expect(readable(raw)).toBe('The end date must be after the start date.');
+    });
+
+    it('joins every Message when the server sends several', () => {
+        const raw = JSON.stringify([{ Message: 'First problem.' }, { Message: 'Second problem.' }]);
+        expect(readable(raw)).toBe('First problem. Second problem.');
+    });
+
+    it('passes plain text through untouched', () => {
+        // Not every refusal is JSON, and swallowing a plain message would leave the user with nothing.
+        expect(readable('the link could not be saved')).toBe('the link could not be saved');
+    });
+
+    it('passes JSON through when it carries no Message, rather than losing it', () => {
+        // Better an ugly blob than silence: the caller falls back to its own wording only on null.
+        const raw = JSON.stringify({ Source: 'EndedAt', Type: 'Failure' });
+        expect(readable(raw)).toBe(raw);
+    });
+
+    it('returns null when there is nothing to report, so the caller can use its own wording', () => {
+        expect(readable(null)).toBeNull();
+        expect(readable(undefined)).toBeNull();
+        expect(readable('')).toBeNull();
+    });
+});
+
 describe('#113 — what the status chip says', () => {
     const row = (over: Partial<ProductGLLinkRow>): ProductGLLinkRow => ({
         ID: 'x', RoleName: 'Revenue', AccountCode: '4000', AccountName: 'Sales',
