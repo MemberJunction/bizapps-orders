@@ -1,5 +1,42 @@
 # The Explorer cannot open a Product on the joined dev host
 
+> ## ROOT CAUSE FOUND 2026-08-27 — orders' generated code is behind its own migrations
+>
+> The client builds every GraphQL query from `__mj.EntityField` metadata. That metadata lists eight
+> `Root*ID` virtual fields for orders entities. Orders' generated resolvers know **two** of them. So
+> every load of the affected entities is rejected by the schema before it reaches the database.
+>
+> Measured against the live API, three queries, same session:
+>
+> | query | result |
+> |---|---|
+> | `mjBizAppsOrdersProduct { ID Name }` | **200 OK** |
+> | `mjBizAppsOrdersProduct { ID Name RootSuccessorProductID }` | **400** — `Cannot query field "RootSuccessorProductID"` |
+> | `mjBizAppsOrdersOrderHeader { ID RootReversesOrderHeaderID }` | **400** — `Cannot query field "RootReversesOrderHeaderID"` |
+>
+> **Present in generated code:** `RootParentOrderLineID`, `RootParentProductCategoryID`.
+> **Expected by the database, missing from generated code:** `RootReversesOrderHeaderID`,
+> `RootReversesOrderLineID`, `RootReversesPaymentHeaderID`, `RootSuccessorProductID`,
+> `RootMigratesFromSubscriptionID`, `RootMigratesToSubscriptionID`.
+>
+> So Products, Order Headers, Order Lines, Payment Headers and Subscriptions cannot be read by any
+> client. That is why the Product form never renders — and it is not a UI problem at all.
+>
+> ### What this also explains
+>
+> · **DN-17** (sales PR #33). `EmbeddedRecord.LoadEager()` returns null for an order that demonstrably
+>   exists — because loading an Order Header 400s. `Ensure()` then mints a second order. The sales-side
+>   fix contains the damage; THIS is the cause.
+> · **"No lines yet"** on a re-entered deal — Order Lines fail the same way.
+> · **sales spec 80** (#29) failing with "expected exactly one saved line, found 0".
+>
+> ### The fix
+>
+> Re-run CodeGen in bizapps-orders so the resolvers and entity subclasses match the migrations that
+> added those columns. The migrations are correct and the views are correct; only the generated layer
+> is stale. NOT done here: CodeGen writes metadata to the database it is pointed at, and this host is a
+> shared working database rather than a scratch one.
+
 **Measured 2026-08-27**, MJ `v6.1.0-edge.4`, Explorer at `localhost:4341`, API at `4143`, all six Open
 Apps wired into one workspace at `C:\v6`. Re-measured after merging orders' latest `next`, rebuilding
 all six packages and restarting the API — **it did not fix it.**
