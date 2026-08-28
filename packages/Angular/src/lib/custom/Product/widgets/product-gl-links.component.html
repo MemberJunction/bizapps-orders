@@ -4,14 +4,65 @@
             <i class="fa-solid fa-link"></i>
             GL Accounts
         </span>
-        <button
-            type="button"
-            class="mjo-gl-links__refresh"
-            title="Re-read this product's GL account links"
-            (click)="Refresh()">
-            <i class="fa-solid fa-rotate"></i>
-        </button>
+        <span class="mjo-gl-links__actions">
+            <!--
+                ADD is offered only on a SAVED product. A link stores the product's primary key in
+                RecordID, so there is nothing to point at until the record exists — the same reason
+                sales blocks Add line on an unsaved deal rather than failing at save time.
+            -->
+            @if (CanWrite && !Draft) {
+                <button
+                    type="button"
+                    class="mjo-gl-links__refresh"
+                    title="Link a GL account to this product"
+                    (click)="OpenDraft()">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
+            }
+            <button
+                type="button"
+                class="mjo-gl-links__refresh"
+                title="Re-read this product's GL account links"
+                (click)="Refresh()">
+                <i class="fa-solid fa-rotate"></i>
+            </button>
+        </span>
     </div>
+
+    <!--
+        A REFUSED WRITE IS SHOWN VERBATIM. GLAccountLinkEntityServer explains why it refused — usually
+        that an Active link already exists for this role, same company, same start date — and that
+        sentence is what teaches the reader to supersede with a LATER date instead. Replacing it with a
+        friendlier summary would remove the only part that says what to do next.
+    -->
+    @if (WriteError) {
+        <p class="mjo-gl-links__error">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            {{ WriteError }}
+        </p>
+    }
+
+    @if (Draft) {
+        <div class="mjo-gl-links__draft">
+            <select [(ngModel)]="Draft.RoleID" [disabled]="Saving" aria-label="Role">
+                <option value="">— role —</option>
+                @for (r of Roles; track r.ID) {
+                    <option [value]="r.ID">{{ r.Name }}</option>
+                }
+            </select>
+            <select [(ngModel)]="Draft.AccountID" [disabled]="Saving" aria-label="GL account">
+                <option value="">— account —</option>
+                @for (a of Accounts; track a.ID) {
+                    <option [value]="a.ID">{{ a.Label }}</option>
+                }
+            </select>
+            <!-- Starts today by default; a LATER date is how an existing mapping is superseded. -->
+            <input type="date" [(ngModel)]="Draft.StartedAt" [disabled]="Saving" aria-label="In force from" />
+            <button type="button" class="mjo-gl-links__btn" [disabled]="Saving || !Draft.RoleID || !Draft.AccountID"
+                    (click)="AddLink()">{{ Saving ? 'Linking…' : 'Link' }}</button>
+            <button type="button" class="mjo-gl-links__btn" [disabled]="Saving" (click)="CancelDraft()">Cancel</button>
+        </div>
+    }
 
     @if (Loading) {
         <p class="mjo-gl-links__note">Loading…</p>
@@ -48,6 +99,7 @@
                         -->
                         <th>From</th>
                         <th>To</th>
+                        <th><span class="mjo-gl-links__sr">Row actions</span></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -68,6 +120,31 @@
                             </td>
                             <td>{{ row.StartedAt ? (row.StartedAt | date: 'yyyy-MM-dd' : 'UTC') : '—' }}</td>
                             <td>{{ row.EndedAt ? (row.EndedAt | date: 'yyyy-MM-dd' : 'UTC') : '—' }}</td>
+                            <td>
+                                <!--
+                                    Retire, not delete — the link explains where money went, and ending
+                                    its window stops it applying while keeping the record. Offered only
+                                    on the link actually IN FORCE: retiring one already superseded or
+                                    ended changes nothing a reader can see, so the control would be a
+                                    button that appears to do nothing.
+                                -->
+                                @if (CanWrite && row.Active && HasApplied(row)) {
+                                    <button type="button" class="mjo-gl-links__btn" [disabled]="Saving"
+                                            title="End this link's window as of today. It stops applying immediately, and the record stays on the product as history."
+                                            (click)="RetireLink(row)">Retire</button>
+                                }
+                                <!--
+                                    A link that has not started yet has explained nothing, so removing it
+                                    destroys no history — and retiring it is impossible anyway, because
+                                    the server refuses an end date on or before the start. Without this,
+                                    a link created by mistake today could not be undone at all.
+                                -->
+                                @if (CanWrite && !HasApplied(row)) {
+                                    <button type="button" class="mjo-gl-links__btn" [disabled]="Saving"
+                                            title="Remove this link. It has not started yet, so nothing has booked through it."
+                                            (click)="RemoveLink(row)">Remove</button>
+                                }
+                            </td>
                         </tr>
                     }
                 </tbody>

@@ -119,6 +119,125 @@ describe('#113 — which GL link the product panel calls active', () => {
     });
 });
 
+describe('#113 — the write half refuses to act on an incomplete draft', () => {
+    /** A component with a product attached, as the form would supply it. */
+    function withProduct(product: unknown): BizAppsProductGLLinksComponent {
+        const c = panel();
+        (c as unknown as { Product: unknown }).Product = product;
+        return c;
+    }
+
+    it('offers writing only on a SAVED product', () => {
+        // RecordID stores the product's primary key, so there is nothing to point at until the record
+        // exists. Same reason sales blocks Add line on an unsaved deal instead of failing at save time.
+        expect(withProduct({ ID: 'p1', IsSaved: true }).CanWrite).toBe(true);
+        expect(withProduct({ ID: 'p1', IsSaved: false }).CanWrite).toBe(false);
+        expect(withProduct({ ID: '', IsSaved: true }).CanWrite).toBe(false);
+        expect(panel().CanWrite, 'no product at all').toBe(false);
+    });
+
+    it('opens a draft dated today in UTC, and closing it clears the error', () => {
+        const c = withProduct({ ID: 'p1', IsSaved: true });
+        (c as unknown as { WriteError: string | null }).WriteError = 'previous refusal';
+        c.OpenDraft();
+
+        expect(c.Draft, 'opening must produce a draft').toBeTruthy();
+        expect(c.WriteError, 'opening clears a stale refusal from a previous attempt').toBeNull();
+
+        // UTC, not local. The window is stored and rendered in UTC, and a local date would put the
+        // start a day out for anyone west of Greenwich — the same defect the From/To columns had.
+        const now = new Date();
+        const utc = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
+        expect(c.Draft?.StartedAt).toBe(utc);
+
+        c.CancelDraft();
+        expect(c.Draft).toBeNull();
+        expect(c.WriteError).toBeNull();
+    });
+
+    it('does nothing when the draft is missing a role or an account', async () => {
+        // The guard matters because the alternative is a link with a null FK reaching the server and
+        // being refused there — a round trip, and an error about a column instead of about the form.
+        const c = withProduct({ ID: 'p1', IsSaved: true });
+
+        for (const draft of [
+            { RoleID: '', AccountID: 'a1', StartedAt: '2026-01-01' },
+            { RoleID: 'r1', AccountID: '', StartedAt: '2026-01-01' },
+        ]) {
+            c.Draft = { ...draft };
+            await c.AddLink();
+            expect(c.Draft, 'an incomplete draft stays open rather than being silently discarded').toBeTruthy();
+            expect(c.Saving, 'and no write was started').toBe(false);
+        }
+    });
+
+    it('does nothing when there is no product to point at', async () => {
+        const c = panel();
+        c.Draft = { RoleID: 'r1', AccountID: 'a1', StartedAt: '2026-01-01' };
+        await c.AddLink();
+        expect(c.Saving).toBe(false);
+    });
+});
+
+describe('#113 — retire versus remove, and the boundary between them', () => {
+    const utcToday = () => {
+        const n = new Date();
+        return `${n.getUTCFullYear()}-${String(n.getUTCMonth() + 1).padStart(2, '0')}-${String(n.getUTCDate()).padStart(2, '0')}`;
+    };
+    const row = (over: Partial<ProductGLLinkRow>): ProductGLLinkRow => ({
+        ID: 'x', RoleName: 'Revenue', AccountCode: '4000', AccountName: 'Sales',
+        Status: 'Active', StartedAt: null, EndedAt: null, Active: true, ...over,
+    });
+
+    it('a link starting TODAY has explained nothing yet', () => {
+        // This is the case that made the hole: the server refuses an end date on or before the start,
+        // so a link mistyped today can only be undone by removing it.
+        expect(panel().HasApplied(row({ StartedAt: utcToday() }))).toBe(false);
+    });
+
+    it('a link starting in the PAST is assumed to have booked something — in BOTH shapes', () => {
+        // BOTH, because that is what the first version got wrong. StartedAt arrives as a Date from the
+        // engine cache and as an ISO string from the view fallback; the string-slicing version read
+        // "Wed Jan 01" out of a Date, compared it as text against "2026-08-28", and reported a link
+        // from 2020 as never having applied — offering Remove on six years of history. The original
+        // test used only the string shape, which is the one the bug did not have.
+        expect(panel().HasApplied(row({ StartedAt: '2020-01-01' })), 'ISO string').toBe(true);
+        expect(
+            panel().HasApplied(row({ StartedAt: new Date('2020-01-01T00:00:00.000Z') as unknown as string })),
+            'Date object — the shape the engine cache supplies',
+        ).toBe(true);
+    });
+
+    it('handles the Date shape for a same-day link too', () => {
+        const n = new Date();
+        const todayUtc = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()));
+        expect(panel().HasApplied(row({ StartedAt: todayUtc as unknown as string }))).toBe(false);
+    });
+
+    it('an unreadable date is assumed to have applied rather than offered for deletion', () => {
+        expect(panel().HasApplied(row({ StartedAt: 'not-a-date' }))).toBe(true);
+    });
+
+    it('a NULL start is the widest claim there is, so it counts as applied', () => {
+        // pickActiveLinkIndex reads a null StartedAt as "always has", so treating it as never-applied
+        // would let the one link with the broadest window be deleted outright.
+        expect(panel().HasApplied(row({ StartedAt: null }))).toBe(true);
+    });
+
+    it('a future-dated link has not applied either', () => {
+        expect(panel().HasApplied(row({ StartedAt: '2099-01-01' }))).toBe(false);
+    });
+
+    it('RemoveLink refuses a link that HAS applied, whatever the template offers', () => {
+        // The guard lives in the method as well as the template, so a stale render cannot delete
+        // history by being clicked a moment after the boundary moved.
+        const c = panel();
+        const before = c.Saving;
+        void c.RemoveLink(row({ StartedAt: '2020-01-01' }));
+        expect(c.Saving, 'no write was even started').toBe(before);
+    });
+});
+
 describe('#113 — what the status chip says', () => {
     const row = (over: Partial<ProductGLLinkRow>): ProductGLLinkRow => ({
         ID: 'x', RoleName: 'Revenue', AccountCode: '4000', AccountName: 'Sales',

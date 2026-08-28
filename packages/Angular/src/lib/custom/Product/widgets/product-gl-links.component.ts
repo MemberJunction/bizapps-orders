@@ -1,5 +1,5 @@
 import { ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
-import { CompositeKey, Metadata, RunView } from '@memberjunction/core';
+import { CompositeKey, Metadata, RunView, type BaseEntity } from '@memberjunction/core';
 import type { FormContext, FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { AccountingEngineBase, pickActiveLinkIndex, type LinkCandidate } from '@mj-biz-apps/accounting-engine-base';
 import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
@@ -138,6 +138,231 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         });
     }
 
+    // ── Writing: the half accounting has no UI for at all ─────────────────────────────────────────
+
+    /** Roles and accounts to choose from, filled by {@link Refresh} off the same engine the reader uses. */
+    public Roles: Array<{ ID: string; Name: string }> = [];
+    public Accounts: Array<{ ID: string; Label: string }> = [];
+
+    /** The add form. Null when closed — opening it is a deliberate act, not the default state. */
+    public Draft: { RoleID: string; AccountID: string; StartedAt: string } | null = null;
+
+    /** Set when a write is refused. The SERVER's message, verbatim — see {@link AddLink}. */
+    public WriteError: string | null = null;
+    public Saving = false;
+
+    /** A product must exist before anything can point at it: `RecordID` is its primary key. */
+    public get CanWrite(): boolean {
+        return !!this.Product?.ID && this.Product.IsSaved;
+    }
+
+    public OpenDraft(): void {
+        this.WriteError = null;
+        this.Draft = { RoleID: '', AccountID: '', StartedAt: this.today() };
+    }
+
+    public CancelDraft(): void {
+        this.Draft = null;
+        this.WriteError = null;
+    }
+
+    /**
+     * Creates the link.
+     *
+     * The polymorphic pair is NOT typed by a human, and that is the entire point of doing this here:
+     * `EntityID` is orders' Products entity and `RecordID` is the record already on screen. On
+     * accounting's own screen a person would have to paste the product's UUID into a text box, which is
+     * what #113 is reporting.
+     *
+     * ── THE REFUSAL IS SURFACED, NOT RE-IMPLEMENTED ──
+     *
+     * `GLAccountLinkEntityServer` refuses two ACTIVE links for the same (record, role) whose accounts
+     * share a company AND share a `StartedAt`, because the tie-break is a strict `>` and resolution
+     * would otherwise pick arbitrarily between two accounts that both balance. This does not restate
+     * that rule client-side: a copy would drift from it, and the copy would be the one that silently
+     * disagreed. It saves, and shows the server's own message when the server says no — which is also
+     * how the human learns that superseding means a LATER start date rather than a duplicate.
+     */
+    public async AddLink(): Promise<void> {
+        const draft = this.Draft;
+        if (!draft || !draft.RoleID || !draft.AccountID || !this.Product?.ID) {
+            return;
+        }
+        this.Saving = true;
+        this.WriteError = null;
+        this.cdr.detectChanges();
+        try {
+            const md = new Metadata();
+            const productEntity = md.Entities.find((e) => e.Name === PRODUCT_ENTITY);
+            if (!productEntity) {
+                throw new Error(`${PRODUCT_ENTITY} is not registered in metadata.`);
+            }
+            const link = await md.GetEntityObject<BaseEntity>(LINK_ENTITY);
+            link.NewRecord();
+            link.Set('GLAccountRoleID', draft.RoleID);
+            link.Set('GLAccountID', draft.AccountID);
+            link.Set('EntityID', productEntity.ID);
+            link.Set('RecordID', this.Product.ID);
+            link.Set('Status', 'Active');
+            link.Set('StartedAt', draft.StartedAt ? new Date(`${draft.StartedAt}T00:00:00.000Z`) : null);
+
+            if (!(await link.Save())) {
+                this.WriteError = this.readableError(link) ?? 'the link could not be saved';
+                return;
+            }
+            this.Draft = null;
+            await this.Refresh();
+        } catch (err) {
+            this.WriteError = err instanceof Error ? err.message : String(err);
+        } finally {
+            this.Saving = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * Whether a link can have explained any money yet.
+     *
+     * `pickActiveLinkIndex` treats a window as applying when `StartedAt <= now <= EndedAt`, so a link
+     * that starts TODAY OR LATER has not yet been the answer to any resolution. That is the boundary
+     * between the two destructive-looking actions below, and it is deliberately conservative: dated in
+     * the past means assume it booked something.
+     */
+    public HasApplied(row: ProductGLLinkRow): boolean {
+        if (!row.StartedAt) {
+            return true;   // a null start means "always has" — the widest possible claim
+        }
+        /**
+         * PARSED, NOT STRING-SLICED. `StartedAt` reaches this row as a `Date` from the engine cache and
+         * as an ISO string from the view fallback, and the first version sliced `String(value)` — which
+         * for a Date yields "Wed Jan 01", compares greater than "2026-08-28", and reported a link from
+         * 2020 as never having applied. It offered Remove on a link that had been booking for six
+         * years. The unit test missed it by passing a string, which is the shape the bug did not have.
+         */
+        const started = new Date(row.StartedAt as unknown as string | Date);
+        if (Number.isNaN(started.getTime())) {
+            return true;   // unreadable date — assume it applied rather than offer to delete it
+        }
+        return started.getTime() < new Date(`${this.today()}T00:00:00.000Z`).getTime();
+    }
+
+    /**
+     * Ends a link's window, which is how accounting retires a mapping that has been in force.
+     *
+     * ── WHY THIS IS NOT A DELETE ──
+     *
+     * A GL link explains where money went. Deleting one that has already booked would remove the
+     * explanation for journal entries that still exist, and nothing else records which mapping was in
+     * force at the time. Ending the window keeps the history and stops the link applying.
+     *
+     * ── AND WHAT "TODAY" ACTUALLY MEANS HERE ──
+     *
+     * `EndedAt` is stored at MIDNIGHT UTC, and `pickActiveLinkIndex` excludes a link once `now > ended`.
+     * Midnight has already passed by the time anyone clicks, so retiring stops the link IMMEDIATELY
+     * rather than at the end of the day. Verified in the browser: a link dated 2020-01-01 retired on
+     * 2026-08-28 rendered as Superseded on the spot, not as still in force.
+     *
+     * This comment previously claimed the opposite — "applies for the whole of today and stops
+     * tomorrow" — and the button's tooltip said so too. The behaviour is the defensible one; the
+     * description was wrong, and it is the description that changed.
+     */
+    public async RetireLink(row: ProductGLLinkRow): Promise<void> {
+        this.Saving = true;
+        this.WriteError = null;
+        this.cdr.detectChanges();
+        try {
+            const md = new Metadata();
+            const link = await md.GetEntityObject<BaseEntity>(LINK_ENTITY);
+            if (!(await link.InnerLoad(CompositeKey.FromID(row.ID)))) {
+                throw new Error(`link ${row.ID} could not be re-read`);
+            }
+            link.Set('EndedAt', new Date(`${this.today()}T00:00:00.000Z`));
+            if (!(await link.Save())) {
+                this.WriteError = this.readableError(link) ?? 'the link could not be retired';
+                return;
+            }
+            await this.Refresh();
+        } catch (err) {
+            this.WriteError = err instanceof Error ? err.message : String(err);
+        } finally {
+            this.Saving = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * Deletes a link that cannot have explained anything yet.
+     *
+     * ── WHY THIS EXISTS DESPITE THE ARGUMENT AGAINST DELETING ──
+     *
+     * Retiring is right for a mapping that has been in force. It is USELESS for one created by
+     * mistake a minute ago: the server refuses `EndedAt` on or before `StartedAt` ("The end date must
+     * be after the start date"), so a link mistyped today could be neither retired nor removed. That
+     * was a real hole — found by clicking Retire on a link the same test had just created.
+     *
+     * The boundary is {@link HasApplied}: a link starting today or later has never been the answer to
+     * a resolution, so deleting it destroys no explanation of anything. One that started earlier keeps
+     * the retire path and cannot be deleted from here at all.
+     */
+    public async RemoveLink(row: ProductGLLinkRow): Promise<void> {
+        if (this.HasApplied(row)) {
+            return;   // the template does not offer this, and neither does the method
+        }
+        this.Saving = true;
+        this.WriteError = null;
+        this.cdr.detectChanges();
+        try {
+            const md = new Metadata();
+            const link = await md.GetEntityObject<BaseEntity>(LINK_ENTITY);
+            if (!(await link.InnerLoad(CompositeKey.FromID(row.ID)))) {
+                throw new Error(`link ${row.ID} could not be re-read`);
+            }
+            if (!(await link.Delete())) {
+                this.WriteError = this.readableError(link) ?? 'the link could not be removed';
+                return;
+            }
+            await this.Refresh();
+        } catch (err) {
+            this.WriteError = err instanceof Error ? err.message : String(err);
+        } finally {
+            this.Saving = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * The sentence a human should read out of a refused save.
+     *
+     * `CompleteMessage` can be a JSON blob of validation results — the retire failure arrived as
+     * `{"Source":"EndedAt","Message":"The end date must be after the start date.",...}`, and showing
+     * that verbatim buries the one sentence that matters inside punctuation. This pulls the `Message`
+     * out when it is there and falls back to the raw text when it is not, so nothing is ever swallowed.
+     */
+    private readableError(entity: BaseEntity): string | null {
+        const raw = entity.LatestResult?.CompleteMessage;
+        if (!raw) {
+            return null;
+        }
+        try {
+            const parsed = JSON.parse(raw) as { Message?: string } | Array<{ Message?: string }>;
+            const messages = (Array.isArray(parsed) ? parsed : [parsed])
+                .map((p) => p?.Message)
+                .filter((m): m is string => !!m);
+            if (messages.length) {
+                return messages.join(' ');
+            }
+        } catch {
+            /* not JSON — the raw text is already the message */
+        }
+        return raw;
+    }
+
+    /** Today in UTC as `yyyy-MM-dd` — the same zone the window is stored and rendered in. */
+    private today(): string {
+        const n = new Date();
+        return `${n.getUTCFullYear()}-${String(n.getUTCMonth() + 1).padStart(2, '0')}-${String(n.getUTCDate()).padStart(2, '0')}`;
+    }
+
     private async load(): Promise<ProductGLLinkRow[]> {
         const productID = this.Product?.ID;
         if (!productID) {
@@ -167,6 +392,27 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         // is a component-level property and does not exist on Metadata.
         await AccountingEngineBase.Instance.Config(false, md.CurrentUser);
         const engine = AccountingEngineBase.Instance;
+
+        /**
+         * The pickers come from the SAME engine cache the reader uses, so a role or account offered here
+         * is one resolution can actually see. Accounts carry their code, name and company in the label
+         * because a link may legitimately point at another company's account — the server derives the
+         * link's company from the account and `ResolveLinkedAccount(..., forCompanyID)` disambiguates —
+         * and choosing between "4000 Sales" twice with no way to tell them apart is how the wrong one
+         * gets picked.
+         */
+        this.Roles = engine.GLAccountRoles
+            .map((r) => ({ ID: String(r.ID), Name: String(r.Name ?? '(unnamed role)') }))
+            .sort((a, b) => a.Name.localeCompare(b.Name));
+        this.Accounts = engine.GLAccounts
+            .map((a) => {
+                const company = (a as unknown as { Company?: string }).Company;
+                return {
+                    ID: String(a.ID),
+                    Label: `${a.Code ?? '(no code)'} ${a.Name ?? ''}${company ? ` — ${company}` : ''}`.trim(),
+                };
+            })
+            .sort((a, b) => a.Label.localeCompare(b.Label));
 
         /**
          * READ THROUGH THE ENGINE, fall back to a view only if the cache has nothing. The engine is the
