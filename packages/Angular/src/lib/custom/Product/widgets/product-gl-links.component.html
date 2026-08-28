@@ -38,6 +38,14 @@
                         <th>Role</th>
                         <th>Account</th>
                         <th>Status</th>
+                        <!--
+                            RENDERED IN UTC, EXPLICITLY. Angular's date pipe formats in the browser's LOCAL
+                            zone by default, and StartedAt/EndedAt are datetimeoffset stored as UTC midnight —
+                            so west of Greenwich a link starting 2026-01-01 renders as 2025-12-31. Observed
+                            exactly that on this panel before the timezone argument was added. Sales'
+                            deal-workspace.dates.ts records the same hazard: "a stored 20 November renders
+                            as the 19th".
+                        -->
                         <th>From</th>
                         <th>To</th>
                     </tr>
@@ -58,8 +66,8 @@
                                     {{ StatusLabel(row) }}
                                 </span>
                             </td>
-                            <td>{{ row.StartedAt ? (row.StartedAt | date: 'yyyy-MM-dd') : '—' }}</td>
-                            <td>{{ row.EndedAt ? (row.EndedAt | date: 'yyyy-MM-dd') : '—' }}</td>
+                            <td>{{ row.StartedAt ? (row.StartedAt | date: 'yyyy-MM-dd' : 'UTC') : '—' }}</td>
+                            <td>{{ row.EndedAt ? (row.EndedAt | date: 'yyyy-MM-dd' : 'UTC') : '—' }}</td>
                         </tr>
                     }
                 </tbody>
