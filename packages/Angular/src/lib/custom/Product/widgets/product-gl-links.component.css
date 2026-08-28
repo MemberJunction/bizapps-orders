@@ -216,3 +216,22 @@
     white-space: nowrap;
     border: 0;
 }
+
+/* Small inline label so the two date inputs in the edit row say which end they are. */
+.mjo-gl-links__lbl {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    opacity: 0.8;
+}
+
+.mjo-gl-links__draft .mjo-gl-links__note {
+    flex-basis: 100%;
+    margin: 2px 0 0;
+}
+
+.mjo-gl-links__draft select:disabled,
+.mjo-gl-links__draft input:disabled {
+    opacity: 0.55;
+}

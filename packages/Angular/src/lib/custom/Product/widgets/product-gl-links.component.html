@@ -64,6 +64,43 @@
         </div>
     }
 
+    @if (Editing) {
+        <div class="mjo-gl-links__draft">
+            <!--
+                On a link that has ALREADY applied, role / account / start are disabled rather than
+                hidden: seeing what the mapping is, and that it cannot be changed here, is the point.
+                Hiding them would read as "this link has no account", which is the confusion #112 was.
+            -->
+            <select [(ngModel)]="Editing.RoleID" [disabled]="Saving || Editing.Applied" aria-label="Role">
+                @for (r of Roles; track r.ID) {
+                    <option [value]="r.ID">{{ r.Name }}</option>
+                }
+            </select>
+            <select [(ngModel)]="Editing.AccountID" [disabled]="Saving || Editing.Applied" aria-label="GL account">
+                @for (a of Accounts; track a.ID) {
+                    <option [value]="a.ID">{{ a.Label }}</option>
+                }
+            </select>
+            <label class="mjo-gl-links__lbl">from
+                <input type="date" [(ngModel)]="Editing.StartedAt"
+                       [disabled]="Saving || Editing.Applied" aria-label="In force from" />
+            </label>
+            <!-- Always editable, and clearable: emptying it undoes a retire applied by mistake. -->
+            <label class="mjo-gl-links__lbl">to
+                <input type="date" [(ngModel)]="Editing.EndedAt" [disabled]="Saving" aria-label="In force to" />
+            </label>
+            <button type="button" class="mjo-gl-links__btn" [disabled]="Saving"
+                    (click)="SaveEdit()">{{ Saving ? 'Saving…' : 'Save' }}</button>
+            <button type="button" class="mjo-gl-links__btn" [disabled]="Saving" (click)="CancelEdit()">Cancel</button>
+            @if (Editing.Applied) {
+                <span class="mjo-gl-links__note">
+                    This link has been in force, so only its end date can change here. To book a
+                    different account, add a link with a later start date.
+                </span>
+            }
+        </div>
+    }
+
     @if (Loading) {
         <p class="mjo-gl-links__note">Loading…</p>
     } @else if (LoadError) {
@@ -128,6 +165,16 @@
                                     ended changes nothing a reader can see, so the control would be a
                                     button that appears to do nothing.
                                 -->
+                                <!--
+                                    EDIT is offered on every link, but it does not mean the same thing
+                                    on both sides of HasApplied — see OpenEdit. On a link that has
+                                    booked, only the end date opens; the rest is history.
+                                -->
+                                @if (CanWrite && Editing?.ID !== row.ID) {
+                                    <button type="button" class="mjo-gl-links__btn" [disabled]="Saving"
+                                            title="Edit this link"
+                                            (click)="OpenEdit(row)">Edit</button>
+                                }
                                 @if (CanWrite && row.Active && HasApplied(row)) {
                                     <button type="button" class="mjo-gl-links__btn" [disabled]="Saving"
                                             title="End this link's window as of today. It stops applying immediately, and the record stays on the product as history."

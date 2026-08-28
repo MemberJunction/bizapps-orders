@@ -247,6 +247,75 @@ describe('#113 — retire versus remove, and the boundary between them', () => {
     });
 });
 
+describe('#113 — editing, and how much of a link may change', () => {
+    const utcToday = () => {
+        const n = new Date();
+        return `${n.getUTCFullYear()}-${String(n.getUTCMonth() + 1).padStart(2, '0')}-${String(n.getUTCDate()).padStart(2, '0')}`;
+    };
+    const row = (over: Partial<ProductGLLinkRow>): ProductGLLinkRow => ({
+        ID: 'link-1', RoleName: 'Revenue', AccountCode: '4000', AccountName: 'Sales',
+        Status: 'Active', StartedAt: null, EndedAt: null, Active: true, ...over,
+    });
+    function ready(): BizAppsProductGLLinksComponent {
+        const c = panel();
+        (c as unknown as { Product: unknown }).Product = { ID: 'p1', IsSaved: true };
+        c.Roles = [{ ID: 'role-rev', Name: 'Revenue' }];
+        c.Accounts = [{ ID: 'acct-4000', Label: '4000 Sales — Blue Cypress' }];
+        return c;
+    }
+
+    it('a NOT-YET-APPLIED link opens fully editable', () => {
+        const c = ready();
+        c.OpenEdit(row({ StartedAt: utcToday() }));
+        expect(c.Editing?.Applied, 'nothing has booked through it').toBe(false);
+        // Role and account resolve back to ids so the pickers open on the CURRENT values rather than
+        // blank — a blank picker on an edit reads as "this link has no account".
+        expect(c.Editing?.RoleID).toBe('role-rev');
+        expect(c.Editing?.AccountID).toBe('acct-4000');
+        expect(c.Editing?.StartedAt).toBe(utcToday());
+    });
+
+    it('an APPLIED link opens marked so only its end date may change', () => {
+        const c = ready();
+        c.OpenEdit(row({ StartedAt: '2020-01-01' }));
+        expect(
+            c.Editing?.Applied,
+            'it has been the reason journal entries name their account; its identity is history',
+        ).toBe(true);
+    });
+
+    it('opening an edit closes the add draft, so only one form is live', () => {
+        const c = ready();
+        c.OpenDraft();
+        expect(c.Draft).toBeTruthy();
+        c.OpenEdit(row({ StartedAt: utcToday() }));
+        expect(c.Draft, 'two open forms would leave it ambiguous which Save applies').toBeNull();
+        c.CancelEdit();
+        expect(c.Editing).toBeNull();
+    });
+
+    it('reads dates back in UTC, from either shape', () => {
+        const c = ready();
+        c.OpenEdit(row({ StartedAt: '2020-01-01', EndedAt: new Date('2026-03-04T00:00:00.000Z') as unknown as string }));
+        // An <input type="date"> takes yyyy-MM-dd and renders a Date as BLANK with no error, so the
+        // conversion has to happen here — and in UTC, or the day slips west of Greenwich.
+        expect(c.Editing?.StartedAt).toBe('2020-01-01');
+        expect(c.Editing?.EndedAt).toBe('2026-03-04');
+    });
+
+    it('a null end date becomes an empty input, which is what clears it again', () => {
+        const c = ready();
+        c.OpenEdit(row({ StartedAt: '2020-01-01', EndedAt: null }));
+        expect(c.Editing?.EndedAt).toBe('');
+    });
+
+    it('SaveEdit does nothing when no edit is open', async () => {
+        const c = ready();
+        await c.SaveEdit();
+        expect(c.WriteError, 'no attempt was made, so there is nothing to report').toBeNull();
+    });
+});
+
 describe('#113 — what the status chip says', () => {
     const row = (over: Partial<ProductGLLinkRow>): ProductGLLinkRow => ({
         ID: 'x', RoleName: 'Revenue', AccountCode: '4000', AccountName: 'Sales',

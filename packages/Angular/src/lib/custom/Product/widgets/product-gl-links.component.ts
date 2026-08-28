@@ -188,6 +188,127 @@ export class BizAppsProductGLLinksComponent implements OnInit {
     }
 
     /**
+     * The link being edited, or null. `Applied` decides how much of it may change — see {@link OpenEdit}.
+     */
+    public Editing: {
+        ID: string;
+        RoleID: string;
+        AccountID: string;
+        StartedAt: string;
+        EndedAt: string;
+        Applied: boolean;
+    } | null = null;
+
+    /**
+     * Opens an edit for one link.
+     *
+     * ── WHAT MAY CHANGE DEPENDS ON WHETHER IT HAS BOOKED ──
+     *
+     * #113 asks for "adding/editing/deleting" and editing has to exist. But a link is not an ordinary
+     * record: while it is in force it is the reason journal entries name the account they name. Letting
+     * someone re-point the account or move the start date on such a link would silently rewrite the
+     * explanation for money that has already moved, and nothing else records what the mapping used to
+     * be.
+     *
+     * So the split follows {@link HasApplied}, the same boundary Remove uses:
+     *
+     * · NOT applied yet — nothing has booked through it, so role, account and start date are all
+     *   editable. This is the "I picked the wrong account a minute ago" case.
+     * · ALREADY applied — only the END date may change. That is a correction to when the mapping
+     *   stopped, which is a statement about the future of a window rather than a rewrite of its past.
+     *   To change where an applied product books, add a link with a later start; superseding is the
+     *   accounting-correct edit and `pickActiveLinkIndex` already understands it.
+     */
+    public OpenEdit(row: ProductGLLinkRow): void {
+        this.WriteError = null;
+        this.Draft = null;
+        this.Editing = {
+            ID: row.ID,
+            RoleID: this.roleIdOf(row),
+            AccountID: this.accountIdOf(row),
+            StartedAt: this.asDateInput(row.StartedAt),
+            EndedAt: this.asDateInput(row.EndedAt),
+            Applied: this.HasApplied(row),
+        };
+    }
+
+    public CancelEdit(): void {
+        this.Editing = null;
+        this.WriteError = null;
+    }
+
+    /**
+     * Writes the edit.
+     *
+     * Only the fields the tier allows are assigned — the guard is here as well as in the template, so a
+     * stale render cannot rewrite an applied link's account by being clicked after the boundary moved.
+     * An empty end date clears it, which is how a retire applied by mistake is undone.
+     */
+    public async SaveEdit(): Promise<void> {
+        const edit = this.Editing;
+        if (!edit) {
+            return;
+        }
+        this.Saving = true;
+        this.WriteError = null;
+        this.cdr.detectChanges();
+        try {
+            const md = new Metadata();
+            const link = await md.GetEntityObject<BaseEntity>(LINK_ENTITY);
+            if (!(await link.InnerLoad(CompositeKey.FromID(edit.ID)))) {
+                throw new Error(`link ${edit.ID} could not be re-read`);
+            }
+
+            if (!edit.Applied) {
+                link.Set('GLAccountRoleID', edit.RoleID);
+                link.Set('GLAccountID', edit.AccountID);
+                link.Set('StartedAt', edit.StartedAt ? new Date(`${edit.StartedAt}T00:00:00.000Z`) : null);
+            }
+            link.Set('EndedAt', edit.EndedAt ? new Date(`${edit.EndedAt}T00:00:00.000Z`) : null);
+
+            if (!(await link.Save())) {
+                this.WriteError = this.readableError(link) ?? 'the link could not be updated';
+                return;
+            }
+            this.Editing = null;
+            await this.Refresh(true);
+        } catch (err) {
+            this.WriteError = err instanceof Error ? err.message : String(err);
+        } finally {
+            this.Saving = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /** The role id behind a rendered row, resolved by name against the same engine list the picker uses. */
+    private roleIdOf(row: ProductGLLinkRow): string {
+        return this.Roles.find((r) => r.Name === row.RoleName)?.ID ?? '';
+    }
+
+    /** The account id behind a rendered row, matched on the code the row displays. */
+    private accountIdOf(row: ProductGLLinkRow): string {
+        return this.Accounts.find((a) => a.Label.startsWith(`${row.AccountCode} `))?.ID ?? '';
+    }
+
+    /**
+     * `yyyy-MM-dd` for a date input, in UTC.
+     *
+     * The same conversion the sales workspace isolates in `deal-workspace.dates.ts`: an
+     * `<input type="date">` reads and writes strings while the field holds a Date, and handing an input
+     * a Date renders it BLANK with no error. UTC because the window is stored and displayed in UTC.
+     */
+    private asDateInput(value: string | null): string {
+        if (!value) {
+            return '';
+        }
+        const d = new Date(value as unknown as string | Date);
+        if (Number.isNaN(d.getTime())) {
+            return '';
+        }
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    }
+
+    /**
      * Creates the link.
      *
      * The polymorphic pair is NOT typed by a human, and that is the entire point of doing this here:
