@@ -64,6 +64,59 @@
 > **200** and no `Cannot query field` error appeared anywhere — so the drifted metadata really is what
 > produces the 400s. It is the cause; deleting it is just not a safe cure.
 >
+> ### THE FULL EXPERIMENT, on a clone — 2026-08-27
+>
+> `MJ_V6_DriftTest` was restored from a backup of `MJ_V6_Host`, reproducing the drift exactly (8
+> `EntityField` rows / 9 view columns) and baselining at **save-deal 36/36**. Then:
+>
+> **1. CodeGen could not run at all.** It failed on the metadata-heal procedures:
+>
+> ```
+> spUpdateExistingEntitiesFromSchema has too many arguments specified
+> @IncludedSchemaNames is not a parameter for spUpdateExistingEntityFieldsFromSchema
+> ```
+>
+> The host's core was last migrated **2026-08-19**; its heal procs take 1 / 1 / 2 parameters while the
+> edge.4 CLI passes more. The DATABASE's core is older than the CLI. That is why the drift could never
+> self-heal: the tool that would normalize it cannot execute.
+>
+> **2. Upgrading the core fixed that.** `mj migrate -t v6.1.0-edge.4` applied 11 migrations and the heal
+> procs went to 2 / 2 / 3. The argument errors disappeared.
+>
+> **3. CodeGen then normalized the drift, exactly as hoped.**
+>
+> | | before | after |
+> |---|---|---|
+> | `Root*` EntityField rows | 8 | **2** |
+> | `Root*` view columns | 9 | **2** |
+>
+> And the regenerated source was **byte-identical to what is committed** — which is the proof that the
+> repo was right all along and the database was the thing out of step.
+>
+> **4. But it broke writes, and this is the part that matters.** `save-deal` went 36/36 -> 0/36 with
+> `Failed to save order header: Error executing SQL`. Cause, from CodeGen's own log:
+>
+> ```
+> Error generating field validator function from check constraint for entity
+> MJ_BizApps_Orders: Order Headers and field InitialPaymentAmount. LLM returned invalid result.
+> ```
+>
+> CodeGen DROPS the CRUD procedures and then regenerates them. Generating Order Headers' procs needs a
+> CHECK constraint parsed by an LLM, no API credentials are configured locally, so generation fails
+> AFTER the drop. Measured directly: orders went from 146 procedures to 144, and the two missing are
+> exactly **`spCreateOrderHeader` and `spUpdateOrderHeader`**. Nothing was created to replace them.
+>
+> ### ⚠️ CONCLUSION: DO NOT RUN CODEGEN ON `MJ_V6_Host` AS THINGS STAND
+>
+> It would drop order creation and updating and not put them back. The working host was verified
+> untouched throughout (save-deal 36/36 after every step) precisely because all of this ran on a clone.
+>
+> The sequence that WOULD work, in order: configure CodeGen's LLM credentials, upgrade the core to
+> edge.4, run CodeGen, rebuild, re-test writes. Step one is not optional — without it CodeGen is
+> destructive on any entity whose CHECK constraints it cannot parse. Worth raising with MJ separately:
+> dropping a CRUD procedure before knowing it can be regenerated is a bad failure mode regardless of
+> credentials.
+
 > ### Where that leaves the fix
 >
 > Both cheap options are now ruled out by measurement: regenerating code to match the drift (CodeGen
