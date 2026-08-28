@@ -99,11 +99,32 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         await this.Refresh();
     }
 
-    public async Refresh(): Promise<void> {
+    /**
+     * Re-reads the links.
+     *
+     * ── WHY A WRITE MUST PASS `true` ──
+     *
+     * `load()` prefers the engine's cached links and only falls back to a view read when the cache
+     * holds none for this product. That is right for a plain refresh and WRONG straight after a write:
+     * the cache is a snapshot taken at `Config()` time, so a product that already had one link would
+     * keep showing exactly that one — the row just added, or the retirement just applied, would be
+     * invisible until something else reloaded the engine.
+     *
+     * It survived the first browser test only because that test started from a product with NO links,
+     * where the cache is empty and the fallback runs anyway. Adding a second link is the case that
+     * would have shown nothing.
+     *
+     * @param reloadEngine - force the accounting engine to re-read before rendering. Every write path
+     *                       passes true; `ngOnInit` and the manual refresh button do not need to.
+     */
+    public async Refresh(reloadEngine = false): Promise<void> {
         this.Loading = true;
         this.LoadError = null;
         this.cdr.detectChanges();
         try {
+            if (reloadEngine) {
+                await AccountingEngineBase.Instance.Config(true, new Metadata().CurrentUser);
+            }
             this.Rows = await this.load();
         } catch (err) {
             this.Rows = [];
@@ -211,7 +232,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
                 return;
             }
             this.Draft = null;
-            await this.Refresh();
+            await this.Refresh(true);
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
@@ -281,7 +302,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
                 this.WriteError = this.readableError(link) ?? 'the link could not be retired';
                 return;
             }
-            await this.Refresh();
+            await this.Refresh(true);
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
@@ -321,7 +342,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
                 this.WriteError = this.readableError(link) ?? 'the link could not be removed';
                 return;
             }
-            await this.Refresh();
+            await this.Refresh(true);
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {

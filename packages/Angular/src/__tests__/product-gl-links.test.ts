@@ -165,9 +165,18 @@ describe('#113 — the write half refuses to act on an incomplete draft', () => 
             { RoleID: 'r1', AccountID: '', StartedAt: '2026-01-01' },
         ]) {
             c.Draft = { ...draft };
+            (c as unknown as { WriteError: string | null }).WriteError = null;
             await c.AddLink();
+
             expect(c.Draft, 'an incomplete draft stays open rather than being silently discarded').toBeTruthy();
-            expect(c.Saving, 'and no write was started').toBe(false);
+            // WriteError, not Saving. `Saving` is reset in a `finally`, so it reads false whether the
+            // guard returned early or the attempt ran and failed — the assertion could not tell the two
+            // apart, and a mutation removing the guard passed against it. A guarded call never reaches
+            // the try block at all, so it cannot have recorded an error.
+            expect(
+                c.WriteError,
+                'the guard means no attempt was made, so there is nothing to report',
+            ).toBeNull();
         }
     });
 
