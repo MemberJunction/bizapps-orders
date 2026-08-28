@@ -45,6 +45,38 @@
 > database anyone is using.
 >
 > The 109 regenerated files from that run were reverted; `generated.ts` is byte-identical to before.
+>
+> ### ⚠️ AND DELETING THE DRIFTED METADATA IS NOT THE FIX EITHER — tried 2026-08-27, reverted
+>
+> The obvious small remedy was to delete just the six `EntityField` rows the resolvers do not know,
+> leaving the view columns alone: the client would stop asking for them and loads would succeed. It was
+> tried on `MJ_V6_Host` with every row backed up first.
+>
+> **It breaks saving.** `save-deal` went from 36/36 to **2 passed / 34 failed** immediately, and a
+> browser deal save stopped landing at all — the failure moved from "the deal saved but its lines are
+> missing" to "no row appeared in 30s, so the save itself never landed". Removing a field from an
+> entity's declared shape evidently disagrees with the generated CRUD path that still writes it.
+>
+> The six rows were restored from backup and the API restarted: `save-deal` 36/36, full suite back to
+> 132 passed / 1 failed (CD24 only, pre-existing). No residue.
+>
+> One thing the experiment DID establish: with the six rows gone, `mjBizAppsOrdersProduct` answered
+> **200** and no `Cannot query field` error appeared anywhere — so the drifted metadata really is what
+> produces the 400s. It is the cause; deleting it is just not a safe cure.
+>
+> ### Where that leaves the fix
+>
+> Both cheap options are now ruled out by measurement: regenerating code to match the drift (CodeGen
+> removes these fields rather than adding them) and deleting the drifted metadata (breaks writes). What
+> is left is making the database, its views and the generated code agree in ONE operation rather than
+> patching one layer — i.e. a full CodeGen against a host someone is willing to have rewritten, with
+> the write path re-tested afterwards. That is a decision about `MJ_V6_Host`, not a fix to apply
+> casually.
+>
+> Worth knowing: MJ `next` now carries `887ba9cc79 fix(codegen): catch entity fields the base view
+> cannot produce`, which adds `validateEntityFieldsResolve()` — a non-fatal detector for exactly this
+> drift class. It reports; it does not repair, and it checks fields against the base VIEW, whereas the
+> 400s here are metadata-versus-RESOLVER. It would not have fixed this host, but it would have named it.
 **Measured 2026-08-27**, MJ `v6.1.0-edge.4`, Explorer at `localhost:4341`, API at `4143`, all six Open
 Apps wired into one workspace at `C:\v6`. Re-measured after merging orders' latest `next`, rebuilding
 all six packages and restarting the API — **it did not fix it.**
