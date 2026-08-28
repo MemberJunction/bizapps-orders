@@ -1,42 +1,50 @@
 # The Explorer cannot open a Product on the joined dev host
 
-> ## ROOT CAUSE FOUND 2026-08-27 — orders' generated code is behind its own migrations
+> ## ROOT CAUSE — `MJ_V6_Host` HAS DRIFTED. The repo is not stale.
 >
-> The client builds every GraphQL query from `__mj.EntityField` metadata. That metadata lists eight
-> `Root*ID` virtual fields for orders entities. Orders' generated resolvers know **two** of them. So
-> every load of the affected entities is rejected by the schema before it reaches the database.
->
-> Measured against the live API, three queries, same session:
+> Every client builds its GraphQL query from `__mj.EntityField`. On `MJ_V6_Host` that metadata lists
+> **eight** `Root*ID` virtual fields for orders entities; orders' generated resolvers know **two**. The
+> schema rejects the query before the database is touched. Measured live, three queries, one session:
 >
 > | query | result |
 > |---|---|
 > | `mjBizAppsOrdersProduct { ID Name }` | **200 OK** |
-> | `mjBizAppsOrdersProduct { ID Name RootSuccessorProductID }` | **400** — `Cannot query field "RootSuccessorProductID"` |
-> | `mjBizAppsOrdersOrderHeader { ID RootReversesOrderHeaderID }` | **400** — `Cannot query field "RootReversesOrderHeaderID"` |
->
-> **Present in generated code:** `RootParentOrderLineID`, `RootParentProductCategoryID`.
-> **Expected by the database, missing from generated code:** `RootReversesOrderHeaderID`,
-> `RootReversesOrderLineID`, `RootReversesPaymentHeaderID`, `RootSuccessorProductID`,
-> `RootMigratesFromSubscriptionID`, `RootMigratesToSubscriptionID`.
+> | `mjBizAppsOrdersProduct { ID Name RootSuccessorProductID }` | **400** — `Cannot query field` |
+> | `mjBizAppsOrdersOrderHeader { ID RootReversesOrderHeaderID }` | **400** — `Cannot query field` |
 >
 > So Products, Order Headers, Order Lines, Payment Headers and Subscriptions cannot be read by any
-> client. That is why the Product form never renders — and it is not a UI problem at all.
+> client on that host. That is why the Product form never renders — it is not a UI problem.
 >
-> ### What this also explains
+> ### Which side is wrong — corrected 2026-08-27
 >
-> · **DN-17** (sales PR #33). `EmbeddedRecord.LoadEager()` returns null for an order that demonstrably
->   exists — because loading an Order Header 400s. `Ensure()` then mints a second order. The sales-side
->   fix contains the damage; THIS is the cause.
-> · **"No lines yet"** on a re-entered deal — Order Lines fail the same way.
-> · **sales spec 80** (#29) failing with "expected exactly one saved line, found 0".
+> My first reading was that orders' generated code was behind its own migrations. **That was wrong**, and
+> a scratch database settled it. Built from orders' migrations alone, on MJ v6.1.0-edge.4:
 >
-> ### The fix
+> | | `Root*` columns in orders views | `Root*` EntityField rows |
+> |---|---|---|
+> | scratch, from empty | **2** | **2** |
+> | `MJ_V6_Host` | **9** | **8** |
 >
-> Re-run CodeGen in bizapps-orders so the resolvers and entity subclasses match the migrations that
-> added those columns. The migrations are correct and the views are correct; only the generated layer
-> is stale. NOT done here: CodeGen writes metadata to the database it is pointed at, and this host is a
-> shared working database rather than a scratch one.
-
+> Two is exactly what the generated code carries. A from-empty install is SELF-CONSISTENT. The extra six
+> on `MJ_V6_Host` were produced by an older MJ CodeGen and were never committed anywhere — the database
+> drifted ahead of every repo, which is the KI-24 baseline-drift class one repo over.
+>
+> ### And CodeGen REMOVES them rather than adding them
+>
+> Running `mj codegen` against the scratch database (`DB_DATABASE=MJ_V6_PinCheck`, 492 entities, 52s)
+> took orders' views from **2 `Root*` columns to 0**, and the regenerated resolvers from two to one. So
+> the remedy for a drifted host is NORMALIZATION, not regenerating code to match the extra fields.
+>
+> ### ⚠️ But do not run it against `MJ_V6_Host` yet
+>
+> CodeGen's own output was not fully self-consistent on the scratch run: it left
+> `RootParentProductCategoryID` in `EntityField` **and** in the resolvers while dropping it from
+> `vwProductCategories`. That is the same shape of mismatch, just smaller and one layer down — a field
+> the API will ask the view for and not find. Running CodeGen on the working host could trade a
+> GraphQL-validation failure for a SQL one. Worth raising with whoever owns MJ CodeGen before touching a
+> database anyone is using.
+>
+> The 109 regenerated files from that run were reverted; `generated.ts` is byte-identical to before.
 **Measured 2026-08-27**, MJ `v6.1.0-edge.4`, Explorer at `localhost:4341`, API at `4143`, all six Open
 Apps wired into one workspace at `C:\v6`. Re-measured after merging orders' latest `next`, rebuilding
 all six packages and restarting the API — **it did not fix it.**
