@@ -106,6 +106,43 @@
 > AFTER the drop. Measured directly: orders went from 146 procedures to 144, and the two missing are
 > exactly **`spCreateOrderHeader` and `spUpdateOrderHeader`**. Nothing was created to replace them.
 >
+> ### ❌ APPLYING IT TO `MJ_V6_Host` FAILED, AND WAS ROLLED BACK — 2026-08-27
+>
+> Backed up first (738 MB -> 185 MB compressed, verified with RESTORE HEADERONLY), then ran the
+> rehearsed sequence against the host. CodeGen exited 1 and left the host WORSE than the clone run:
+> `spCreateOrderHeader`, `spUpdateOrderHeader`, `spCreateEventOrderLine` and `spUpdateEventOrderLine`
+> gone, drift only half-normalized (EntityFields still 8, view columns 9 -> 3).
+>
+> Restored from the backup immediately. Verified: 146 orders procedures, both OrderHeader procs present,
+> full suite back to **132 passed / 1 failed** (CD24 only). API restarted. No residue.
+>
+> **Why the clone succeeded and the host did not.** On the clone those procedures were already ABSENT
+> from an earlier failed run, so CodeGen created them fresh. On the host they EXISTED, so it took the
+> drop-and-recreate path — and that is the path that fails. Reproduced deterministically by restoring
+> the clone from the host's own backup and re-running: identical exit 1, identical four files.
+>
+> **The real cause, from the SQL batch warning:**
+>
+> ```
+> View or function '__mj_BizAppsOrders.vwOrderHeaders'
+> has more column names specified than columns defined
+> ```
+>
+> CodeGen regenerates `vwOrderHeaders`; orders layers a hand-authored view over it
+> (`V202608131541__OrderHeaders_layered_inner_view`, `V202608131542__OrderHeaders_IsOverdue_outer_view`).
+> The outer view declares more column names than the regenerated inner view produces, so the view fails
+> to create — and every CRUD procedure depending on it then fails, which is why the GRANT hits a missing
+> object. `EventOrderLine` fails the same way.
+>
+> **So the blocker is orders' layered views, not the LLM flag and not the drift.** Until the layered
+> OrderHeaders/EventOrderLine views and CodeGen's regenerated base views agree on their column lists,
+> CodeGen cannot complete against any database where those procedures already exist — which is every
+> real one.
+>
+> Also worth reporting to MJ: `Post-CodeGen CRUD validation passed (516 entities checked)` printed
+> SUCCESS on a run that had just left four CRUD procedures missing. That validator is not checking what
+> its name claims.
+
 > ### ✅ SOLVED — and no LLM is needed. Proven end to end on the clone, 2026-08-27
 >
 > The LLM was never required; the feature was simply switched on and could not work. Orders'
