@@ -106,7 +106,41 @@
 > AFTER the drop. Measured directly: orders went from 146 procedures to 144, and the two missing are
 > exactly **`spCreateOrderHeader` and `spUpdateOrderHeader`**. Nothing was created to replace them.
 >
-> ### ⚠️ CONCLUSION: DO NOT RUN CODEGEN ON `MJ_V6_Host` AS THINGS STAND
+> ### ✅ SOLVED — and no LLM is needed. Proven end to end on the clone, 2026-08-27
+>
+> The LLM was never required; the feature was simply switched on and could not work. Orders'
+> `mj.config.cjs` had `{ name: 'ParseCheckConstraints', enabled: true }` with no provider key. Turning
+> it off is the whole fix (committed separately on `fix/codegen-check-constraints-no-llm`).
+>
+> The full sequence, run against `MJ_V6_DriftTest`:
+>
+> | step | result |
+> |---|---|
+> | 1. `ParseCheckConstraints: false` | no LLM is called at all |
+> | 2. `mj migrate -t v6.1.0-edge.4` | 11 core migrations; heal procs 1/1/2 -> 2/2/3 |
+> | 3. `mj codegen` | **exit 0**, CRUD validation passed (516 entities) |
+> | drift | `Root*` EntityFields **8 -> 2**, view columns **9 -> 2** |
+> | `spCreateOrderHeader` / `spUpdateOrderHeader` | **restored** |
+> | `save-deal` | **36 / 36** |
+> | full integration suite | **132 passed / 1 failed** — CD24 only, matching the host's own baseline |
+>
+> The database now matches the code that is ALREADY COMMITTED — the normalized state has the same two
+> `Root*` fields the generated code carries. So the fix is database-side only; no code change is
+> required for it.
+>
+> ### One caveat to settle before applying it to the host
+>
+> That CodeGen run also rewrote 109 files in the repo — including ~2,900 lines removed from
+> `entity_subclasses.ts` (230 `Validate` blocks) and several whole form components such as
+> `CheckoutWidget`. Those were NOT committed. The stored validator source is intact — `__mj.GeneratedCode`
+> holds 211 rows on both the host and the clone, identical — so nothing was destroyed; the regenerated
+> OUTPUT simply differs from what is committed, for reasons unrelated to the `Root*` drift.
+>
+> That difference deserves its own look before anyone commits regenerated code. It does not block the
+> database fix, because the fix is the normalization and the committed code already matches the
+> normalized shape.
+
+> ### ⚠️ CONCLUSION: SUPERSEDED — the earlier conclusion, kept for the reasoning
 >
 > It would drop order creation and updating and not put them back. The working host was verified
 > untouched throughout (save-deal 36/36 after every step) precisely because all of this ran on a clone.
