@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, Input, OnDestroy, OnInit, Output } from '@angular/core';
 import { CompositeKey, Metadata, RunView, type BaseEntity } from '@memberjunction/core';
 import type { FormContext, FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { AccountingEngineBase, pickActiveLinkIndex, type LinkCandidate } from '@mj-biz-apps/accounting-engine-base';
@@ -158,7 +158,7 @@ export interface ProductGLLinkRow {
     templateUrl: './product-gl-links.component.html',
     styleUrls: ['./product-gl-links.component.css'],
 })
-export class BizAppsProductGLLinksComponent implements OnInit {
+export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
     @Input() public Product!: mjBizAppsOrdersProductEntity;
     @Input() public EditMode = false;
     @Input() public FormContext?: FormContext;
@@ -173,7 +173,14 @@ export class BizAppsProductGLLinksComponent implements OnInit {
     constructor(private readonly cdr: ChangeDetectorRef) {}
 
     public async ngOnInit(): Promise<void> {
-        await this.Refresh();
+        /**
+         * FALSE, explicitly. The first mount is the one place a cached answer is what you want — the
+         * engine has usually just been configured by whatever rendered the form, and forcing a reload
+         * here would make opening any product form pay for ten entity loads.
+         *
+         * Every other caller wants the opposite, which is why `Refresh` defaults to true.
+         */
+        await this.Refresh(false);
     }
 
     /**
@@ -192,12 +199,49 @@ export class BizAppsProductGLLinksComponent implements OnInit {
      * would have shown nothing.
      *
      * @param reloadEngine - force the accounting engine to re-read before rendering. Every write path
-     *                       passes true; `ngOnInit` and the manual refresh button do not need to.
+     *                       defaults TRUE. `ngOnInit` passes false, because a first mount is the one
+     *                       place a cached answer is the right one; the refresh button and every write
+     *                       take the default, because both are asking the panel to go and look.
      */
-    public async Refresh(reloadEngine = false): Promise<void> {
+    /**
+     * Set in `ngOnDestroy`, checked before every `detectChanges`.
+     *
+     * Every write ends with `finally { Saving = false; cdr.detectChanges(); }` AFTER an awaited save
+     * and engine reload. Navigate away mid-save and those resolve against a torn-down view, so
+     * `detectChanges` throws `ViewDestroyedError` — and because it throws from `finally`, the
+     * preceding `catch` cannot absorb it and it escapes as an unhandled rejection. This file's own
+     * comment elsewhere notes that a console error is treated as a broken screen by the Playwright
+     * keystone, so it would fail a suite rather than merely litter the console.
+     */
+    private destroyed = false;
+
+    public ngOnDestroy(): void {
+        this.destroyed = true;
+    }
+
+    /** `detectChanges`, unless the view is gone. */
+    private tick(): void {
+        if (!this.destroyed) {
+            this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * `reloadEngine` DEFAULTS TRUE, and the default is the whole point.
+     *
+     * It used to default false, so the refresh icon re-ran `load()` against a cache nobody had
+     * invalidated — and `load()`'s own `Config(false, …)` is a no-op once the engine is loaded. A
+     * colleague retiring a link from accounting's own screen was therefore invisible here: the button
+     * rendered the identical stale row, still chipped "In force", for the rest of the session.
+     *
+     * A user who presses refresh is asking the panel to go and look. Writes already passed `true`
+     * explicitly; making that the default means the only path that can serve a cached answer is the
+     * initial load, which is the one place a cache is what you want.
+     */
+    public async Refresh(reloadEngine = true): Promise<void> {
         this.Loading = true;
         this.LoadError = null;
-        this.cdr.detectChanges();
+        this.tick();
         try {
             if (reloadEngine) {
                 await AccountingEngineBase.Instance.Config(true, new Metadata().CurrentUser);
@@ -208,7 +252,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
             this.LoadError = err instanceof Error ? err.message : String(err);
         } finally {
             this.Loading = false;
-            this.cdr.detectChanges();
+            this.tick();
         }
     }
 
@@ -356,6 +400,32 @@ export class BizAppsProductGLLinksComponent implements OnInit {
      */
     private EditAccountOptions: ReadonlyArray<AccountOption> = [];
 
+    /**
+     * The role options for one edit, with the link's current role re-admitted when the engine has no
+     * such role.
+     *
+     * Accounts got this treatment and roles did not, which left the identical hole one field over. A
+     * link whose role is missing from the engine cache — deleted, or filtered out by row-level
+     * permissions — renders `(unknown role)` in the table, and the select then matched no option and
+     * rendered BLANK. Carrying `RoleID` on the row fixed the duplicate-name case only; it cannot put a
+     * matching `<option>` in a list that does not contain one.
+     *
+     * Disabled for the same reason as the account equivalent: visible so the picker never reads as
+     * "this link has no role", unselectable so a save cannot write an orphan id back.
+     */
+    public get EditRoles(): ReadonlyArray<AccountOption> {
+        return this.EditRoleOptions;
+    }
+
+    private EditRoleOptions: ReadonlyArray<AccountOption> = [];
+
+    private roleOptionsForEditing(row: ProductGLLinkRow): ReadonlyArray<AccountOption> {
+        const current = idKey(row.RoleID);
+        const offered = this.Roles.map((r) => ({ ID: r.ID, Label: r.Name }));
+        if (!current || offered.some((r) => idKey(r.ID) === current)) return offered;
+        return [...offered, { ID: current, Label: `${row.RoleName} — no longer available`, Disabled: true }];
+    }
+
     /** The options for one edit, with the link's current account re-admitted when it is not offerable. */
     private optionsForEditing(row: ProductGLLinkRow): ReadonlyArray<AccountOption> {
         const current = idKey(row.AccountID);
@@ -399,6 +469,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         this.WriteError = null;
         this.Draft = null;
         this.EditAccountOptions = this.optionsForEditing(row);
+        this.EditRoleOptions = this.roleOptionsForEditing(row);
         this.Editing = {
             ID: row.ID,
             // Normalised HERE too, not only in load(): this is the boundary that feeds the select,
@@ -414,6 +485,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
     public CancelEdit(): void {
         this.Editing = null;
         this.EditAccountOptions = [];
+        this.EditRoleOptions = [];
         this.WriteError = null;
     }
 
@@ -431,7 +503,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         }
         this.Saving = true;
         this.WriteError = null;
-        this.cdr.detectChanges();
+        this.tick();
         try {
             const md = new Metadata();
             const link = await md.GetEntityObject<BaseEntity>(LINK_ENTITY);
@@ -476,7 +548,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
             this.Saving = false;
-            this.cdr.detectChanges();
+            this.tick();
         }
     }
 
@@ -532,7 +604,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         }
         this.Saving = true;
         this.WriteError = null;
-        this.cdr.detectChanges();
+        this.tick();
         try {
             const md = new Metadata();
             const productEntity = md.Entities.find((e) => e.Name === PRODUCT_ENTITY);
@@ -558,7 +630,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
             this.Saving = false;
-            this.cdr.detectChanges();
+            this.tick();
         }
     }
 
@@ -621,13 +693,14 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         if (this.Editing && idKey(this.Editing.ID) === idKey(id)) {
             this.Editing = null;
             this.EditAccountOptions = [];
+            this.EditRoleOptions = [];
         }
     }
 
     public async RetireLink(row: ProductGLLinkRow): Promise<void> {
         this.Saving = true;
         this.WriteError = null;
-        this.cdr.detectChanges();
+        this.tick();
         try {
             const md = new Metadata();
             const link = await md.GetEntityObject<BaseEntity>(LINK_ENTITY);
@@ -646,7 +719,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
             this.Saving = false;
-            this.cdr.detectChanges();
+            this.tick();
         }
     }
 
@@ -670,7 +743,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         }
         this.Saving = true;
         this.WriteError = null;
-        this.cdr.detectChanges();
+        this.tick();
         try {
             const md = new Metadata();
             const link = await md.GetEntityObject<BaseEntity>(LINK_ENTITY);
@@ -688,7 +761,7 @@ export class BizAppsProductGLLinksComponent implements OnInit {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
             this.Saving = false;
-            this.cdr.detectChanges();
+            this.tick();
         }
     }
 
@@ -776,6 +849,13 @@ export class BizAppsProductGLLinksComponent implements OnInit {
          * dead configuration looks exactly like configuration that works, and stays wrong until
          * someone reconciles. Offering only accounts that can actually be reached means the panel
          * cannot create one.
+         *
+         * ONE CORRECTION TO THE ABOVE, because an earlier version of this comment stated only half of
+         * it: skipping is not always silent. When the walk finds nothing at the category, the product
+         * type or the company default either, `GLAccountResolver.Resolve` THROWS and the order confirm
+         * hard-fails naming the role. So a dead link produces either a silent fallback or a loud
+         * refusal, depending on what else is configured. The scoping is right in both cases; only the
+         * "looks like it works" half of the argument is specific to the first.
          *
          * The label still carries code, name and company. Codes repeat across companies, and after
          * scoping they no longer collide here — but the label is also what a reader checks the row

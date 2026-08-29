@@ -332,6 +332,75 @@ describe('#113 — which accounts the picker may offer (PR #125 review)', () => 
     });
 });
 
+describe('#113 — the ROLE picker gets the same treatment as the account picker', () => {
+    /**
+     * The account picker was given a current-value fallback and the role picker was not, leaving the
+     * identical hole one field over. A link whose role is missing from the engine cache — deleted, or
+     * filtered out by row-level permissions — renders '(unknown role)' in the table, and the select
+     * then matched no option and rendered BLANK: "this link has no role", which is the #112 confusion.
+     *
+     * Carrying `RoleID` on the row did NOT fix this, though an earlier commit message of mine claimed
+     * it did. Carrying the id preserves the model value; it cannot put a matching <option> into a list
+     * that has none.
+     */
+    const row = (over: Partial<ProductGLLinkRow>): ProductGLLinkRow => ({
+        ID: 'link-1', RoleID: 'role-rev', AccountID: 'acct-4000',
+        RoleName: 'Revenue', AccountCode: '4000', AccountName: 'Sales',
+        Status: 'Active', StartedAt: null, EndedAt: null, Active: true, ...over,
+    });
+
+    function ready() {
+        const c = panel();
+        (c as unknown as { Product: unknown }).Product = { ID: 'p1', IsSaved: true };
+        c.EditMode = true;
+        c.Roles = [{ ID: 'role-rev', Name: 'Revenue' }];
+        c.Accounts = [{ ID: 'acct-4000', Label: '4000 Sales — Blue Cypress' }];
+        return c;
+    }
+
+    it('offers the roles the engine knows', () => {
+        const c = ready();
+        c.OpenEdit(row({ StartedAt: '2099-01-01' }));
+        expect(c.EditRoles.map((r) => r.ID)).toEqual(['role-rev']);
+        expect(c.EditRoles.some((r) => r.Disabled)).toBe(false);
+    });
+
+    it('re-admits a role the engine no longer returns, so the select is never blank', () => {
+        const c = ready();
+        c.OpenEdit(row({ RoleID: 'role-gone', RoleName: '(unknown role)', StartedAt: '2099-01-01' }));
+        const last = c.EditRoles[c.EditRoles.length - 1];
+        expect(last.ID, 'the current role must still be present').toBe('role-gone');
+        expect(last.Disabled, 'visible, but not choosable — a save must not write an orphan id back').toBe(true);
+        expect(c.Editing?.RoleID, 'and the model value matches an option').toBe(last.ID);
+    });
+
+    it('matches the current role case-insensitively, like every other id comparison here', () => {
+        const c = ready();
+        c.Roles = [{ ID: 'role-rev', Name: 'Revenue' }];
+        c.OpenEdit(row({ RoleID: 'ROLE-REV', StartedAt: '2099-01-01' }));
+        expect(c.EditRoles, 'a case difference must not fabricate a second, disabled copy').toHaveLength(1);
+    });
+});
+
+describe('#113 — a destroyed view is never detected against', () => {
+    /**
+     * Every write ends with `finally { Saving = false; detectChanges(); }` after an awaited save and
+     * engine reload. Navigate away mid-save and those resolve against a torn-down view, so
+     * `detectChanges` throws — and from a `finally`, so the preceding `catch` cannot absorb it and it
+     * escapes as an unhandled rejection. This file treats a console error as a broken screen.
+     */
+    it('stops calling detectChanges once ngOnDestroy has run', () => {
+        let calls = 0;
+        const c = new BizAppsProductGLLinksComponent({ detectChanges: () => { calls++; } } as never);
+        const tick = (c as unknown as { tick(): void }).tick.bind(c);
+        tick();
+        expect(calls, 'a live view is detected against as usual').toBe(1);
+        c.ngOnDestroy();
+        tick();
+        expect(calls, 'and a destroyed one is not').toBe(1);
+    });
+});
+
 describe('#113 — what Remove tells the user, on a link that is in force TODAY', () => {
     /**
      * ── THE MOST DANGEROUS THING THE AUDIT FOUND ──────────────────────────────────────────────────
@@ -474,6 +543,8 @@ describe('#113 — ids compare by VALUE, not by the case they arrive in', () => 
 
     it('does NOT re-admit an account as unavailable merely because the row spelled its id in caps', () => {
         const c = Object.create(BizAppsProductGLLinksComponent.prototype) as BizAppsProductGLLinksComponent;
+        // Object.create bypasses field initialisers, so the collections need setting explicitly.
+        c.Roles = [{ ID: 'role-rev', Name: 'Revenue' }];
         c.Accounts = [{ ID: lower, Label: '40000 Sales — Blue Cypress' }];
         c.OpenEdit({
             ID: 'link-1', RoleID: 'role-rev', AccountID: UPPER,

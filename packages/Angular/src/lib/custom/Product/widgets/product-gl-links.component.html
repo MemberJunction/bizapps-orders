@@ -50,6 +50,19 @@
                     <option [value]="r.ID">{{ r.Name }}</option>
                 }
             </select>
+            @if (Accounts.length === 0) {
+                <!--
+                    An empty picker and "no accounts exist" look identical to a reader and mean opposite
+                    things — the same distinction the load-error message below is careful about. Scoping
+                    to the product's company made this reachable: a company whose chart has not been
+                    seeded yields nothing, and without this the form renders a permanently disabled Link
+                    button with no explanation.
+                -->
+                <span class="mjo-gl-links__note">
+                    No GL accounts exist for this product's company yet, so there is nothing to link to.
+                    They are created in Accounting.
+                </span>
+            }
             <select [(ngModel)]="Draft.AccountID" [disabled]="Saving" aria-label="GL account">
                 <option value="">— account —</option>
                 @for (a of Accounts; track a.ID) {
@@ -72,8 +85,8 @@
                 Hiding them would read as "this link has no account", which is the confusion #112 was.
             -->
             <select [(ngModel)]="Editing.RoleID" [disabled]="Saving || Editing.Applied" aria-label="Role">
-                @for (r of Roles; track r.ID) {
-                    <option [value]="r.ID">{{ r.Name }}</option>
+                @for (r of EditRoles; track r.ID) {
+                    <option [value]="r.ID" [disabled]="r.Disabled === true">{{ r.Label }}</option>
                 }
             </select>
             <select [(ngModel)]="Editing.AccountID" [disabled]="Saving || Editing.Applied" aria-label="GL account">
