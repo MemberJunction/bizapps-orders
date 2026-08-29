@@ -46,6 +46,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { DecideWebhookAction, type WebhookAction } from './PaymentProviderBehavior.js';
 import { SettlePaymentForEvent } from './PaymentSettlement.js';
+import { EscapeSQLString } from './sql-guards.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import type { WebhookEvent } from './BasePaymentProvider.js';
 import { CheckoutSessionService } from './CheckoutSessionService.js';
@@ -231,8 +232,10 @@ async function findIntent(
     if (!event.ProviderIntentID) return null;
     // Escaped rather than interpolated raw: this value came off the wire. It is inside a verified
     // payload, so it is not attacker-controlled in practice — but "verified" and "safe to concatenate
-    // into SQL" are different claims, and only one of them is being made here.
-    const safe = event.ProviderIntentID.replace(/'/g, "''");
+    // into SQL" are different claims, and only one of them is being made here. Use EscapeSQLString
+    // (the mandated guard) rather than an ad-hoc quote-double: it also strips null bytes and handles
+    // null/undefined, per the repo's SQL-safety rule.
+    const safe = EscapeSQLString(event.ProviderIntentID);
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const result = await rv.RunView<{ ID: string; Status: string; ProviderEventID: string | null }>(
         {

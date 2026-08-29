@@ -59,7 +59,7 @@ import {
     type ExtensionInitResult,
     type ServerExtensionConfig,
 } from '@memberjunction/server-extensions-core';
-import { CheckoutSessionService, EscapeText, type CheckoutLineInput } from '@mj-biz-apps/orders-core-entities-server';
+import { CheckoutSessionService, EscapeText, EscapeSQLString, type CheckoutLineInput } from '@mj-biz-apps/orders-core-entities-server';
 import type { CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
@@ -319,7 +319,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
             const sessRes = await rv.RunView<{ ID: string; CheckoutWidgetID: string }>({
                 EntityName: CHECKOUT_SESSION_ENTITY,
                 Fields: ['ID', 'CheckoutWidgetID'],
-                ExtraFilter: `ID = '${EscapeText(sessionId)}'`,
+                ExtraFilter: `ID = '${EscapeSQLString(sessionId)}'`,
                 ResultType: 'simple',
             }, user);
             widgetId = sessRes?.Success && sessRes.Results?.length ? sessRes.Results[0].CheckoutWidgetID : null;
@@ -332,7 +332,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const widgetRes = await rv.RunView<{ ID: string; Configuration: string | null }>({
             EntityName: CHECKOUT_WIDGET_ENTITY,
             Fields: ['ID', 'Configuration'],
-            ExtraFilter: `ID = '${EscapeText(widgetId)}'`,
+            ExtraFilter: `ID = '${EscapeSQLString(widgetId)}'`,
             ResultType: 'simple',
         }, user);
         const configRaw = widgetRes?.Success && widgetRes.Results?.length ? widgetRes.Results[0].Configuration : null;
