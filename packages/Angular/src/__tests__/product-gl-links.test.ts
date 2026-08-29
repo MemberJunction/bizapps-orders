@@ -19,7 +19,11 @@
 import { describe, expect, it } from 'vitest';
 import { pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
 
-import { BizAppsProductGLLinksComponent, type ProductGLLinkRow } from '../lib/custom/Product/widgets/product-gl-links.component';
+import {
+    AccountIsOfferable,
+    BizAppsProductGLLinksComponent,
+    type ProductGLLinkRow,
+} from '../lib/custom/Product/widgets/product-gl-links.component';
 
 /** The component with a no-op change detector — nothing here touches the view. */
 function panel(): BizAppsProductGLLinksComponent {
@@ -247,13 +251,54 @@ describe('#113 — retire versus remove, and the boundary between them', () => {
     });
 });
 
+describe('#113 — which accounts the picker may offer (PR #125 review)', () => {
+    /**
+     * The panel used to offer every GL account in the system. A link to another company's account is
+     * not merely untidy: `GLAccountResolver.Resolve` passes the order line's company down and
+     * `AccountingBridge` filters candidates by the ACCOUNT's company before the window rules run, so
+     * the booking path SKIPS such a link and falls through to the category, the product type and
+     * finally the company default.
+     *
+     * So the failure is not a wrong posting — it is configuration that looks set and does nothing.
+     * That is the worse of the two, because a wrong posting is at least visible in the ledger.
+     */
+    const BC = 'company-blue-cypress';
+    const BETTY = 'company-betty';
+
+    it('offers an account belonging to the product\'s company', () => {
+        expect(AccountIsOfferable(BC, BC)).toBe(true);
+    });
+
+    it('REFUSES an account belonging to another company — the booking would skip it', () => {
+        expect(AccountIsOfferable(BETTY, BC)).toBe(false);
+    });
+
+    it('compares case- and whitespace-insensitively, because ids arrive from several sources', () => {
+        expect(AccountIsOfferable('  COMPANY-Blue-Cypress ', BC)).toBe(true);
+    });
+
+    it('offers everything when the product has no company, rather than an empty picker', () => {
+        // Product.CompanyID is NOT NULL, so this is a defensive branch. An empty picker would read as
+        // "no accounts exist"; the unfiltered list is at worst what shipped before.
+        expect(AccountIsOfferable(BETTY, null)).toBe(true);
+        expect(AccountIsOfferable(BETTY, '   ')).toBe(true);
+    });
+
+    it('refuses an account with NO company when the product has one', () => {
+        // A company-less account cannot satisfy a company-scoped resolution, so offering it would be
+        // offering another dead link.
+        expect(AccountIsOfferable(null, BC)).toBe(false);
+    });
+});
+
 describe('#113 — editing, and how much of a link may change', () => {
     const utcToday = () => {
         const n = new Date();
         return `${n.getUTCFullYear()}-${String(n.getUTCMonth() + 1).padStart(2, '0')}-${String(n.getUTCDate()).padStart(2, '0')}`;
     };
     const row = (over: Partial<ProductGLLinkRow>): ProductGLLinkRow => ({
-        ID: 'link-1', RoleName: 'Revenue', AccountCode: '4000', AccountName: 'Sales',
+        ID: 'link-1', RoleID: 'role-rev', AccountID: 'acct-4000',
+        RoleName: 'Revenue', AccountCode: '4000', AccountName: 'Sales',
         Status: 'Active', StartedAt: null, EndedAt: null, Active: true, ...over,
     });
     function ready(): BizAppsProductGLLinksComponent {
@@ -268,11 +313,49 @@ describe('#113 — editing, and how much of a link may change', () => {
         const c = ready();
         c.OpenEdit(row({ StartedAt: utcToday() }));
         expect(c.Editing?.Applied, 'nothing has booked through it').toBe(false);
-        // Role and account resolve back to ids so the pickers open on the CURRENT values rather than
-        // blank — a blank picker on an edit reads as "this link has no account".
+        // The pickers open on the CURRENT values rather than blank — a blank picker on an edit reads
+        // as "this link has no account". The ids come off the ROW; see the collision check below for
+        // why they are no longer looked up.
         expect(c.Editing?.RoleID).toBe('role-rev');
         expect(c.Editing?.AccountID).toBe('acct-4000');
         expect(c.Editing?.StartedAt).toBe(utcToday());
+    });
+
+    it('opens the account the row NAMES, even when another company shares its code (PR #125 review)', () => {
+        /**
+         * ── THE BUG ANDREW CAUGHT, AND IT IS A REPEAT OFFENDER ────────────────────────────────
+         *
+         * `OpenEdit` used to find the account by scanning the picker for the first label starting
+         * with the row's code. GL account codes REPEAT ACROSS COMPANIES by design — every company
+         * has a 40000 — so it returned whichever sorted first, and on a not-yet-applied link Save
+         * then wrote that arbitrary account.
+         *
+         * The same shape had already cost a day earlier in this project: a probe picked a GL account
+         * by code prefix, matched another company's, and made a tie-guard look broken when it was
+         * working correctly. Identity is the ID; a code is a label.
+         *
+         * Ordering here is deliberate. Blue Cypress sorts FIRST, so a code search would return it —
+         * the row names the Betty account, and only carrying the id gets that right.
+         */
+        const c = ready();
+        c.Accounts = [
+            { ID: 'acct-bc-40000', Label: '40000 Sales — Blue Cypress' },
+            { ID: 'acct-betty-40000', Label: '40000 Sales — Betty' },
+        ];
+        c.OpenEdit(row({ AccountCode: '40000', AccountID: 'acct-betty-40000', StartedAt: utcToday() }));
+        expect(c.Editing?.AccountID, 'the row named Betty; a code search would have returned Blue Cypress').toBe(
+            'acct-betty-40000',
+        );
+    });
+
+    it('opens the role the row NAMES rather than matching on its name', () => {
+        // Same defect, same fix, one field over. Role names are not unique either, and a row whose
+        // role could not be resolved renders '(unknown role)' -- which matched nothing and opened the
+        // picker blank, reading as "this link has no role".
+        const c = ready();
+        c.Roles = [{ ID: 'role-a', Name: 'Revenue' }, { ID: 'role-b', Name: 'Revenue' }];
+        c.OpenEdit(row({ RoleID: 'role-b', StartedAt: utcToday() }));
+        expect(c.Editing?.RoleID).toBe('role-b');
     });
 
     it('an APPLIED link opens marked so only its end date may change', () => {

@@ -27,9 +27,49 @@ export interface GLLinkLike {
     EndedAt: unknown;
 }
 
+/**
+ * May this GL account be offered for a product owned by `productCompanyID`?
+ *
+ * A named rule rather than an inline filter, because it decides whether a link the user creates will
+ * ever be reachable, and that deserves to be pinned by a test rather than reviewed by eye.
+ *
+ * An account belonging to another company is not offerable: `GLAccountResolver.Resolve` passes the
+ * order line's company down as `expectedCompanyID` and `AccountingBridge` filters candidates by the
+ * ACCOUNT's company before the window rules run, so such a link is silently SKIPPED at booking time
+ * rather than used. Dead configuration looks exactly like working configuration, which is why the
+ * panel must not be able to create it.
+ *
+ * A blank `productCompanyID` offers everything. `Product.CompanyID` is NOT NULL so this should not
+ * happen, but this runs in a browser against whatever the form holds; an empty picker would read as
+ * "no accounts exist" and give the user nothing to act on, where the unfiltered list is at worst what
+ * shipped before.
+ */
+export function AccountIsOfferable(
+    accountCompanyID: string | null | undefined,
+    productCompanyID: string | null | undefined,
+): boolean {
+    const product = String(productCompanyID ?? '').trim().toLowerCase();
+    if (!product) return true;
+    return String(accountCompanyID ?? '').trim().toLowerCase() === product;
+}
+
 /** One link, flattened for display. Nothing here is computed — every field is read off the row. */
 export interface ProductGLLinkRow {
     ID: string;
+    /**
+     * The role and account IDS, carried rather than re-derived.
+     *
+     * These used to be looked up when the Edit form opened — the role by matching `RoleName`, the
+     * account by finding the first picker label starting with the row's code. Both are wrong for the
+     * same reason: neither name nor code is unique. GL account codes REPEAT ACROSS COMPANIES by
+     * design — "40000 Sales" exists in every one of them — so the code search returned whichever
+     * company sorted first, and saving a not-yet-applied link wrote that arbitrary account.
+     *
+     * The ids are right here when the row is built. Carrying them removes the search, and with it the
+     * class of bug.
+     */
+    RoleID: string;
+    AccountID: string;
     RoleName: string;
     AccountCode: string;
     AccountName: string;
@@ -224,8 +264,8 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         this.Draft = null;
         this.Editing = {
             ID: row.ID,
-            RoleID: this.roleIdOf(row),
-            AccountID: this.accountIdOf(row),
+            RoleID: row.RoleID,
+            AccountID: row.AccountID,
             StartedAt: this.asDateInput(row.StartedAt),
             EndedAt: this.asDateInput(row.EndedAt),
             Applied: this.HasApplied(row),
@@ -278,16 +318,6 @@ export class BizAppsProductGLLinksComponent implements OnInit {
             this.Saving = false;
             this.cdr.detectChanges();
         }
-    }
-
-    /** The role id behind a rendered row, resolved by name against the same engine list the picker uses. */
-    private roleIdOf(row: ProductGLLinkRow): string {
-        return this.Roles.find((r) => r.Name === row.RoleName)?.ID ?? '';
-    }
-
-    /** The account id behind a rendered row, matched on the code the row displays. */
-    private accountIdOf(row: ProductGLLinkRow): string {
-        return this.Accounts.find((a) => a.Label.startsWith(`${row.AccountCode} `))?.ID ?? '';
     }
 
     /**
@@ -537,16 +567,37 @@ export class BizAppsProductGLLinksComponent implements OnInit {
 
         /**
          * The pickers come from the SAME engine cache the reader uses, so a role or account offered here
-         * is one resolution can actually see. Accounts carry their code, name and company in the label
-         * because a link may legitimately point at another company's account — the server derives the
-         * link's company from the account and `ResolveLinkedAccount(..., forCompanyID)` disambiguates —
-         * and choosing between "4000 Sales" twice with no way to tell them apart is how the wrong one
-         * gets picked.
+         * is one resolution can actually see.
+         *
+         * ── ACCOUNTS ARE SCOPED TO THIS PRODUCT'S COMPANY, AND THE REASON IS NOT COSMETIC ──────────
+         *
+         * This used to offer every GL account in the system, on the reasoning that a link may
+         * legitimately point at another company's account because the resolver disambiguates. Reading
+         * the booking path settles it the other way.
+         *
+         * `GLAccountResolver.Resolve` passes the ORDER LINE's company down as `expectedCompanyID`
+         * ("the resolved account must belong to it"), and `AccountingBridge` uses it to filter
+         * candidates by the ACCOUNT's company before `pickActiveLinkIndex` ever runs. So a link to
+         * another company's account is not a link that books to the wrong company — it is a link the
+         * booking path SKIPS, falling through to the category, the product type, and finally the
+         * company default.
+         *
+         * That is the worse outcome of the two. A wrong posting is at least visible in the ledger;
+         * dead configuration looks exactly like configuration that works, and stays wrong until
+         * someone reconciles. Offering only accounts that can actually be reached means the panel
+         * cannot create one.
+         *
+         * The label still carries code, name and company. Codes repeat across companies, and after
+         * scoping they no longer collide here — but the label is also what a reader checks the row
+         * against, so it keeps saying which company it belongs to.
          */
         this.Roles = engine.GLAccountRoles
             .map((r) => ({ ID: String(r.ID), Name: String(r.Name ?? '(unnamed role)') }))
             .sort((a, b) => a.Name.localeCompare(b.Name));
         this.Accounts = engine.GLAccounts
+            .filter((a) =>
+                AccountIsOfferable((a as unknown as { CompanyID?: string }).CompanyID, this.Product?.CompanyID),
+            )
             .map((a) => {
                 const company = (a as unknown as { Company?: string }).Company;
                 return {
@@ -579,6 +630,8 @@ export class BizAppsProductGLLinksComponent implements OnInit {
                 );
                 return {
                     ID: String(l.ID),
+                    RoleID: String(l.GLAccountRoleID ?? ''),
+                    AccountID: String(l.GLAccountID ?? ''),
                     RoleName: role?.Name ?? '(unknown role)',
                     AccountCode: account?.Code ?? '(unknown)',
                     AccountName: account?.Name ?? '',
