@@ -186,14 +186,19 @@
                                             (click)="RetireLink(row)">Retire</button>
                                 }
                                 <!--
-                                    A link that has not started yet has explained nothing, so removing it
-                                    destroys no history — and retiring it is impossible anyway, because
-                                    the server refuses an end date on or before the start. Without this,
-                                    a link created by mistake today could not be undone at all.
+                                    Remove exists because retiring is impossible for a link that starts
+                                    today: CK_GLAccountLink_Window enforces EndedAt > StartedAt, so a
+                                    mistake made today has no other undo.
+
+                                    The WARNING is conditional, because the two cases are not the same. A
+                                    future-dated link has explained nothing. A link dated TODAY is already
+                                    in force — pickActiveLinkIndex includes t === started — so orders
+                                    booked today may have resolved through it. The button used to claim
+                                    otherwise on both.
                                 -->
                                 @if (CanWrite && !HasApplied(row)) {
                                     <button type="button" class="mjo-gl-links__btn" [disabled]="Saving"
-                                            title="Remove this link. It has not started yet, so nothing has booked through it."
+                                            [title]="RemoveWarning(row)"
                                             (click)="RemoveLink(row)">Remove</button>
                                 }
                             </td>

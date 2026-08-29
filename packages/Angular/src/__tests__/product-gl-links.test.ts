@@ -129,6 +129,9 @@ describe('#113 — the write half refuses to act on an incomplete draft', () => 
     function withProduct(product: unknown): BizAppsProductGLLinksComponent {
         const c = panel();
         (c as unknown as { Product: unknown }).Product = product;
+        // The panel is only writable in edit mode; these cases are about the PRODUCT, so put the form
+        // in the state where the product is the remaining variable.
+        c.EditMode = true;
         return c;
     }
 
@@ -139,6 +142,34 @@ describe('#113 — the write half refuses to act on an incomplete draft', () => 
         expect(withProduct({ ID: 'p1', IsSaved: false }).CanWrite).toBe(false);
         expect(withProduct({ ID: '', IsSaved: true }).CanWrite).toBe(false);
         expect(panel().CanWrite, 'no product at all').toBe(false);
+    });
+
+    it('refuses a draft with no START DATE, which would otherwise write a link that does nothing', async () => {
+        /**
+         * `<input type="date">` is clearable, and neither the guard nor the template's disabled-state
+         * checked it. A null `StartedAt` LOSES `pickActiveLinkIndex`'s tie-break — it compares
+         * `(started ?? -Infinity)` — so the link was written, accepted by the server (a different start
+         * means the duplicate rule does not fire), and silently ranked below any dated link. It showed
+         * up as history beside the link it was meant to replace, with no error explaining why, and
+         * `HasApplied(null)` returns true so no Remove was offered either.
+         */
+        const c = withProduct({ ID: 'p1', IsSaved: true });
+        c.Draft = { RoleID: 'r1', AccountID: 'a1', StartedAt: '' };
+        await c.AddLink();
+        expect(c.WriteError, 'the guard means no attempt was made').toBeNull();
+        expect(c.Draft, 'and the draft stays open so the date can be supplied').toBeTruthy();
+    });
+
+    it('offers no writing at all while the form is READ-ONLY', () => {
+        /**
+         * `EditMode` was accepted as an `@Input` and never read, so Add, Edit, Retire and Remove stayed
+         * live on a form the user was only viewing — the sibling pricing widget gates every one of its
+         * edit affordances on the same input. An unread `@Input` is worse than a missing one: it reads
+         * as though the gating is handled.
+         */
+        const c = withProduct({ ID: 'p1', IsSaved: true });
+        c.EditMode = false;
+        expect(c.CanWrite).toBe(false);
     });
 
     it('opens a draft dated today in UTC, and closing it clears the error', () => {
@@ -298,6 +329,51 @@ describe('#113 — which accounts the picker may offer (PR #125 review)', () => 
         // A company-less account cannot satisfy a company-scoped resolution, so offering it would be
         // offering another dead link.
         expect(AccountIsOfferable(null, BC)).toBe(false);
+    });
+});
+
+describe('#113 — what Remove tells the user, on a link that is in force TODAY', () => {
+    /**
+     * ── THE MOST DANGEROUS THING THE AUDIT FOUND ──────────────────────────────────────────────────
+     *
+     * `pickActiveLinkIndex` skips only when `t < started`, so a link starting at today's UTC midnight
+     * IS the one resolution picks. `HasApplied` used a strict `<`, so it reported the same link as
+     * never having applied. `OpenDraft` defaults the start to today, so EVERY link this panel creates
+     * spent its first UTC day rendering an "In force" chip beside a Remove button whose title read
+     * "It has not started yet, so nothing has booked through it" — with `Delete()` behind it.
+     *
+     * The button cannot simply be withdrawn: `CK_GLAccountLink_Window` enforces
+     * `EndedAt > StartedAt`, so a link created today cannot be retired and Remove is its only undo.
+     * The defect was the sentence, so the sentence is what these pin.
+     */
+    const row = (over: Partial<ProductGLLinkRow>): ProductGLLinkRow => ({
+        ID: 'link-1', RoleID: 'role-rev', AccountID: 'acct-4000',
+        RoleName: 'Revenue', AccountCode: '4000', AccountName: 'Sales',
+        Status: 'Active', StartedAt: null, EndedAt: null, Active: false, ...over,
+    });
+
+    it('does NOT claim nothing has booked when the link is in force', () => {
+        const warning = panel().RemoveWarning(row({ Active: true }));
+        expect(warning).not.toContain('nothing has booked');
+        expect(warning, 'it must say the link is live right now').toContain('IN FORCE');
+    });
+
+    it('explains WHY retiring is not offered instead, so the user is not left guessing', () => {
+        // Without this the honest warning just reads as "this is dangerous", with no route forward.
+        expect(panel().RemoveWarning(row({ Active: true }))).toContain('cannot end on the day it starts');
+    });
+
+    it('keeps the simple wording for a link that genuinely has not started', () => {
+        const warning = panel().RemoveWarning(row({ Active: false, StartedAt: '2099-01-01' }));
+        expect(warning).toContain('nothing has booked through it');
+        expect(warning).not.toContain('IN FORCE');
+    });
+
+    it('and the two cases really do produce different sentences', () => {
+        // Guards against a future edit collapsing the branch back to one string.
+        expect(panel().RemoveWarning(row({ Active: true }))).not.toBe(
+            panel().RemoveWarning(row({ Active: false })),
+        );
     });
 });
 

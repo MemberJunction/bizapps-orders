@@ -66,6 +66,17 @@ export interface AccountOption {
     Disabled?: boolean;
 }
 
+/**
+ * Ids reach a filter string as SQL text, so they are SHAPE-CHECKED rather than escaped.
+ *
+ * `CLAUDE.md` forbids inline `.replace(/'/g, "''")` in an `ExtraFilter` outright — it misses
+ * null-byte injection, breaks on null/undefined, and spreads divergent ad-hoc sanitisation. Its
+ * prescribed helpers live in `sql-guards.ts` under CoreEntitiesServer, which an Angular package must
+ * not depend on, so this mirrors the browser-side guard this package already uses in
+ * `lib/data/orders-queries.ts` instead of inventing a third spelling.
+ */
+const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
 export function idKey(id: unknown): string {
     return String(id ?? '').trim().toLowerCase();
 }
@@ -229,6 +240,30 @@ export class BizAppsProductGLLinksComponent implements OnInit {
         return this.HasApplied(row) ? 'Superseded' : 'Not started';
     }
 
+    /**
+     * What Remove actually does to THIS row, said accurately.
+     *
+     * ── THE CONTROL USED TO ASSERT SOMETHING FALSE ────────────────────────────────────────────────
+     *
+     * Its title read "It has not started yet, so nothing has booked through it." That is true of a link
+     * dated in the future and FALSE of a link dated today, because `pickActiveLinkIndex` skips only
+     * when `t < started` — a link starting at today's UTC midnight is already the one resolution
+     * picks. `OpenDraft` defaults the start to today, so every link this panel creates spends its
+     * first UTC day in exactly that state: chip reading "In force", button promising nothing had
+     * booked, and `Delete()` behind it.
+     *
+     * The button stays, because it has to. `CK_GLAccountLink_Window` enforces `EndedAt > StartedAt`,
+     * so a link created today CANNOT be retired — Remove is the only way to undo a mistake made today.
+     * What was wrong was the sentence, not the affordance.
+     */
+    public RemoveWarning(row: ProductGLLinkRow): string {
+        return row.Active
+            ? 'Remove this link permanently. It is IN FORCE today, so orders booked today may already '
+                + 'have resolved through it. It cannot be retired instead, because a link cannot end on '
+                + 'the day it starts.'
+            : 'Remove this link permanently. It has not started yet, so nothing has booked through it.';
+    }
+
     /** Opens accounting's Account Links screen, which is where a link is created or retired. */
     public OpenLink(row: ProductGLLinkRow): void {
         this.Navigate.emit({
@@ -253,7 +288,15 @@ export class BizAppsProductGLLinksComponent implements OnInit {
 
     /** A product must exist before anything can point at it: `RecordID` is its primary key. */
     public get CanWrite(): boolean {
-        return !!this.Product?.ID && this.Product.IsSaved;
+        /**
+         * `EditMode` IS READ HERE, and its absence was a real defect rather than a tidy-up.
+         *
+         * The parent passes it in and this component accepted it and never looked at it, so Add, Edit,
+         * Retire and Remove stayed live while the form was in read-only mode — the sibling pricing
+         * widget gates every one of its edit affordances on the same input. An unread `@Input` also
+         * reads, to anyone scanning the class, as though the gating were already handled.
+         */
+        return this.EditMode && !!this.Product?.ID && this.Product.IsSaved;
     }
 
     public OpenDraft(): void {
@@ -474,7 +517,17 @@ export class BizAppsProductGLLinksComponent implements OnInit {
      */
     public async AddLink(): Promise<void> {
         const draft = this.Draft;
-        if (!draft || !draft.RoleID || !draft.AccountID || !this.Product?.ID) {
+        /**
+         * The START DATE IS REQUIRED, and leaving it optional produced a link that did nothing.
+         *
+         * `<input type="date">` is clearable, and neither this guard nor the template's disabled-state
+         * checked it. A null `StartedAt` then LOSES `pickActiveLinkIndex`'s tie-break — it compares
+         * `(started ?? -Infinity)` — so the new link was written, accepted by the server (a different
+         * start means the duplicate rule does not fire), and silently ranked below any dated link.
+         * The row appeared as history next to the one it was meant to replace, with no error to explain
+         * it, and `HasApplied(null)` returns true so the panel offered no way to remove it either.
+         */
+        if (!draft || !draft.RoleID || !draft.AccountID || !draft.StartedAt || !this.Product?.ID) {
             return;
         }
         this.Saving = true;
@@ -793,12 +846,19 @@ export class BizAppsProductGLLinksComponent implements OnInit {
 
     /** The view read, used only when the engine cache holds nothing for this product. */
     private async readDirect(entityID: string, recordID: string): Promise<GLLinkLike[]> {
+        /**
+         * Refused rather than sanitised. Both values are UUIDs by construction — one is an entity id
+         * from metadata, the other the product's primary key — so anything that is not UUID-shaped is a
+         * programming error, and returning it as an empty result would hide that behind a panel reading
+         * "no GL accounts are linked".
+         */
+        if (!UUID_PATTERN.test(entityID) || !UUID_PATTERN.test(recordID)) {
+            throw new Error('the GL account links could not be read: the product could not be identified');
+        }
         const rv = new RunView();
         const res = await rv.RunView<Record<string, unknown>>({
             EntityName: LINK_ENTITY,
-            ExtraFilter:
-                `EntityID = '${entityID.replace(/'/g, "''")}' `
-                + `AND RecordID = '${recordID.replace(/'/g, "''")}'`,
+            ExtraFilter: `EntityID = '${entityID}' AND RecordID = '${recordID}'`,
             ResultType: 'simple',
             Fields: ['ID', 'GLAccountID', 'GLAccountRoleID', 'Status', 'StartedAt', 'EndedAt'],
         });
